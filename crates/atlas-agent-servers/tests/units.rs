@@ -36,7 +36,7 @@ fn registered(registry: &SessionRegistry, id: &str) -> Arc<Mutex<AcpThread>> {
         session_id(id),
         AcpSession {
             thread: Arc::downgrade(&thread),
-            suppress_abort_err: false,
+            cancel_signal: CancelSignal::new(),
             session_modes: None,
             config_options: None,
             ref_count: 1,
@@ -120,25 +120,54 @@ fn a_dropped_thread_is_reported_as_an_unknown_session() {
     assert!(registry.thread(&session_id("s1")).is_err());
 }
 
+/// The property the cancel deadline rests on: a cancel belongs to the turns
+/// that were already running when it fired, and to no others.
+///
+/// This replaced a session-wide `suppress_abort_err` bool that `cancel` set
+/// and the first turn to resolve consumed — so a cancel could be spent on a
+/// turn it was not meant for, and a turn started afterwards could inherit a
+/// suppression nobody asked for.
+#[test]
+fn a_cancel_belongs_to_the_turns_it_interrupted() {
+    let signal = CancelSignal::new();
+
+    // A turn already running when the cancel lands.
+    let during = signal.waiter().probe();
+    assert!(!during.fired(), "nothing has been cancelled yet");
+
+    signal.fire();
+    assert!(during.fired(), "the running turn's own cancel");
+
+    // A turn that starts afterwards must not inherit it.
+    let after = signal.waiter().probe();
+    assert!(
+        !after.fired(),
+        "a later turn inherited a cancel meant for an earlier one"
+    );
+
+    // And a second cancel reaches the later turn, without needing the first
+    // to have been consumed by anyone.
+    signal.fire();
+    assert!(after.fired());
+    assert!(during.fired(), "reading a probe must not consume it");
+}
+
+/// One signal per session, so cancelling one chat cannot end another's turn.
 #[test]
 fn cancel_state_is_stored_per_session() {
     let registry = SessionRegistry::new();
-    let _thread = registered(&registry, "s1");
+    let _one = registered(&registry, "s1");
+    let _two = registered(&registry, "s2");
 
-    registry.with_session(&session_id("s1"), |session| {
-        session.suppress_abort_err = true;
-    });
-    let taken = registry.with_session(&session_id("s1"), |session| {
-        let was = session.suppress_abort_err;
-        session.suppress_abort_err = false;
-        was
-    });
+    let watching_two = registry
+        .with_session(&session_id("s2"), |session| session.cancel_signal.waiter().probe())
+        .expect("s2 exists");
 
-    assert_eq!(taken, Some(true));
-    assert_eq!(
-        registry.with_session(&session_id("s1"), |s| s.suppress_abort_err),
-        Some(false),
-        "the flag is consumed, so a cancel cannot leak into a later turn"
+    registry.with_session(&session_id("s1"), |session| session.cancel_signal.fire());
+
+    assert!(
+        !watching_two.fired(),
+        "cancelling one session cancelled another"
     );
 }
 
@@ -252,6 +281,189 @@ fn a_line_that_is_not_json_is_ignored_rather_than_recorded() {
 
     let (backlog, _rx) = log.subscribe();
     assert!(backlog.is_empty());
+}
+
+/// ATL-235. The message cap alone never bounded memory, because Atlas tees its
+/// own `fs/read_text_file` responses in here and those carry whole files. Sixty
+/// 2 MB reads — ordinary behaviour for a coding agent — parked 120 MB.
+#[test]
+fn reading_big_files_does_not_grow_the_ring_past_its_byte_budget() {
+    let log = AcpDebugLog::new();
+
+    let file = "x".repeat(2 * 1024 * 1024);
+    for id in 0..60 {
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"result":{{"content":"{file}"}}}}"#
+        );
+        log.record_line(AcpDebugMessageDirection::Outgoing, &line);
+    }
+
+    // Asserted against the measured 120 MB, not against the constant: a bound
+    // stated only in terms of the thing being tuned goes vacuous the moment
+    // someone raises it.
+    let pushed_through = 60 * file.len();
+    assert!(
+        log.retained_bytes() < pushed_through / 100,
+        "ring holds {} bytes of the {pushed_through} pushed through it",
+        log.retained_bytes()
+    );
+    assert!(log.retained_bytes() <= MAX_DEBUG_BACKLOG_BYTES);
+
+    // The conversation is still legible — the bodies went, the exchange did not.
+    let (backlog, _rx) = log.subscribe();
+    assert_eq!(backlog.len(), 60, "messages were dropped, not just bodies");
+    assert!(
+        !format!("{:?}", backlog.last().expect("a message")).contains(&file),
+        "an oversized body survived verbatim"
+    );
+}
+
+/// Elision handles one huge message; this is the other half. Enough
+/// individually-reasonable messages still add up, and only the byte budget
+/// catches that — which is why the message cap alone was never a bound.
+#[test]
+fn the_byte_budget_evicts_even_when_no_single_message_is_oversized() {
+    let log = AcpDebugLog::new();
+
+    let body = "z".repeat(MAX_DEBUG_MESSAGE_BYTES - 128);
+    let line = format!(r#"{{"jsonrpc":"2.0","method":"session/update","params":{{"t":"{body}"}}}}"#);
+    assert!(
+        line.len() <= MAX_DEBUG_MESSAGE_BYTES,
+        "fixture must stay under the per-message cap or it tests elision instead"
+    );
+
+    // Enough to pass the byte budget twice over, and far short of the 2000
+    // message cap, so only the byte budget can be what evicts.
+    let sent = (MAX_DEBUG_BACKLOG_BYTES * 2).div_ceil(line.len());
+    assert!(sent < 2000, "fixture must not reach the message cap");
+    for _ in 0..sent {
+        log.record_line(AcpDebugMessageDirection::Incoming, &line);
+    }
+
+    assert!(
+        log.retained_bytes() <= MAX_DEBUG_BACKLOG_BYTES,
+        "ring holds {} bytes after {sent} in-cap messages, budget is {}",
+        log.retained_bytes(),
+        MAX_DEBUG_BACKLOG_BYTES
+    );
+    let (backlog, _rx) = log.subscribe();
+    assert!(
+        backlog.len() < sent,
+        "nothing was evicted: {} messages held of {sent} sent, all under the \
+         per-message cap and under the 2000-message cap",
+        backlog.len()
+    );
+}
+
+/// The envelope has to outlive the body, or the ring stops being a record of
+/// the conversation and becomes a record of its small half.
+#[test]
+fn an_elided_message_keeps_its_method_and_says_what_it_dropped() {
+    let log = AcpDebugLog::new();
+
+    let big = "y".repeat(MAX_DEBUG_MESSAGE_BYTES * 2);
+    let line = format!(
+        r#"{{"jsonrpc":"2.0","id":7,"method":"fs/read_text_file","params":{{"content":"{big}"}}}}"#
+    );
+    log.record_line(AcpDebugMessageDirection::Outgoing, &line);
+
+    let (backlog, _rx) = log.subscribe();
+    let AcpDebugMessageContent::Request { method, params, .. } =
+        &backlog.first().expect("one message").message
+    else {
+        panic!("expected a request, got {:?}", backlog.first());
+    };
+
+    assert_eq!(method.as_ref(), "fs/read_text_file");
+    let params = params.as_ref().expect("a marker, not an absent body");
+    assert_eq!(
+        params["atlasElided"]["bytes"].as_u64(),
+        Some(line.len() as u64),
+        "the marker should say how big the dropped body was: {params}"
+    );
+}
+
+/// The elision had a hole exactly where an agent controls the size. An error
+/// response's `data` is an unbounded value, and `parse_value` puts the whole
+/// error object in it as a string when it cannot deserialize — so an oversized
+/// error line was kept verbatim while being charged as if it had been elided,
+/// and the byte budget never fired for it.
+#[test]
+fn an_oversized_error_response_is_elided_like_any_other_payload() {
+    let log = AcpDebugLog::new();
+
+    let big = "e".repeat(MAX_DEBUG_MESSAGE_BYTES * 4);
+    let line = format!(
+        r#"{{"jsonrpc":"2.0","id":9,"error":{{"code":-32603,"message":"boom","data":"{big}"}}}}"#
+    );
+    log.record_line(AcpDebugMessageDirection::Incoming, &line);
+
+    assert!(
+        log.retained_bytes() < line.len() / 4,
+        "an error body was charged as elided but kept whole: {} bytes held of a {} byte line",
+        log.retained_bytes(),
+        line.len()
+    );
+
+    let (backlog, _rx) = log.subscribe();
+    assert!(
+        !format!("{:?}", backlog.first().expect("one message")).contains(&big),
+        "the error body survived verbatim"
+    );
+}
+
+/// Enough oversized error lines must still be evicted. This is the budget
+/// itself, on the message shape that used to escape it.
+#[test]
+fn oversized_error_responses_are_bounded_in_aggregate() {
+    let log = AcpDebugLog::new();
+
+    let big = "e".repeat(MAX_DEBUG_MESSAGE_BYTES * 4);
+    for id in 0..200 {
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"error":{{"code":-32603,"message":"boom","data":"{big}"}}}}"#
+        );
+        log.record_line(AcpDebugMessageDirection::Incoming, &line);
+    }
+
+    // Measured from the ring's actual contents, not from its own accounting.
+    // Asserting `retained_bytes() <= budget` would have passed while the bug
+    // was live, because the bug WAS the accounting: it reported ~128 bytes for
+    // a message it kept whole, so the budget it is compared against never
+    // fired. A test of a self-reported number cannot catch a self-report that
+    // lies.
+    let (backlog, _rx) = log.subscribe();
+    let held: usize = backlog.iter().map(|m| format!("{m:?}").len()).sum();
+    assert!(
+        held < 200 * big.len() / 10,
+        "the ring really holds {held} bytes after {} bytes of error responses",
+        200 * big.len()
+    );
+    assert!(log.retained_bytes() <= MAX_DEBUG_BACKLOG_BYTES);
+}
+
+/// `trailing_stderr` is what turns "process exited" into a reason, so a huge
+/// stderr line has to be cut rather than dropped — and the reason an agent
+/// died is at the start of what it printed.
+#[test]
+fn an_oversized_stderr_line_is_cut_but_still_explains_itself() {
+    let log = AcpDebugLog::new();
+
+    let mut line = String::from("Error: cannot find module 'foo'");
+    line.push_str(&"!".repeat(MAX_DEBUG_MESSAGE_BYTES * 2));
+    log.record_line(AcpDebugMessageDirection::Stderr, &line);
+
+    let trailing = log.trailing_stderr().expect("stderr should still explain");
+    assert!(
+        trailing.starts_with("Error: cannot find module 'foo'"),
+        "the reason was cut away: {}",
+        &trailing[..60.min(trailing.len())]
+    );
+    assert!(
+        trailing.len() < line.len(),
+        "an oversized stderr line was retained whole"
+    );
+    assert!(log.retained_bytes() <= MAX_DEBUG_BACKLOG_BYTES);
 }
 
 #[test]

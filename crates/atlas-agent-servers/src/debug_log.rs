@@ -17,6 +17,53 @@ use agent_client_protocol::schema::v1 as acp;
 /// Zed's cap, kept as-is. A chatty agent must not grow this without bound.
 const MAX_DEBUG_BACKLOG_MESSAGES: usize = 2000;
 
+/// Total payload bytes the ring may retain, across every message in it.
+///
+/// A message cap alone does not bound memory, because a message is not a
+/// bounded thing: Atlas's own `fs/read_text_file` response carries the whole
+/// file, and `connection.rs` tees every outgoing line in here before the write.
+/// An agent reading sixty 2 MB files — the ordinary behaviour of a coding
+/// agent, not an attack — parked 120 MB in this ring, and at the 2000-message
+/// cap the same workload reaches gigabytes.
+pub const MAX_DEBUG_BACKLOG_BYTES: usize = 4 * 1024 * 1024;
+
+/// The largest single payload kept verbatim. Anything longer is replaced by
+/// [`elided_payload`], which keeps the shape of the conversation — direction,
+/// method, id, and how big the body was — and drops the body itself.
+///
+/// Sized so an ordinary RPC is never touched and a file transfer always is.
+pub const MAX_DEBUG_MESSAGE_BYTES: usize = 16 * 1024;
+
+/// The fixed cost of an elided message: the marker object and the envelope
+/// around it. Anything variable-length the message still carries — a method
+/// name, an error's own message — is measured and added, so this is a floor
+/// that is enforced rather than a number that is asserted.
+const ELIDED_MESSAGE_BYTES: usize = 128;
+
+/// How much of an error's `message` survives elision. An `acp::Error` message
+/// is specified as "a concise single sentence", so this is generous for a
+/// well-behaved agent and a bound on one that is not.
+const MAX_ERROR_MESSAGE_BYTES: usize = 1024;
+
+/// Cut `text` to at most `max` bytes, on a character boundary.
+fn truncate_on_char_boundary(text: &mut String, max: usize) {
+    if text.len() <= max {
+        return;
+    }
+    let mut cut = max;
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
+}
+
+/// What replaces a payload too big to keep. A marker object rather than `None`,
+/// so a reader can tell "there was a body, it was 2 MB" from "there was no
+/// body" — the two mean different things when reading a transcript.
+fn elided_payload(bytes: usize) -> serde_json::Value {
+    serde_json::json!({ "atlasElided": { "bytes": bytes } })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AcpDebugMessageDirection {
     Incoming,
@@ -129,12 +176,80 @@ impl AcpDebugMessage {
 
         Some(Self { direction, message })
     }
+
+    /// Drop the body, keep the envelope, and report what is left.
+    ///
+    /// `original_bytes` is the wire length this message came from, kept in the
+    /// marker so a reader can see what was dropped. Stderr is the exception:
+    /// its text *is* the payload and [`AcpDebugLog::trailing_stderr`] is what
+    /// explains an agent's death, so an over-long line is cut to a prefix
+    /// rather than replaced — the reason an agent died is at the start of what
+    /// it printed, not the end.
+    fn elide_payload(&mut self, original_bytes: usize) -> usize {
+        match &mut self.message {
+            AcpDebugMessageContent::Request { method, params, .. }
+            | AcpDebugMessageContent::Notification { method, params, .. } => {
+                *params = Some(elided_payload(original_bytes));
+                ELIDED_MESSAGE_BYTES + method.len()
+            }
+            AcpDebugMessageContent::Response { result, .. } => {
+                // The error arm elides too. "An error carries a message, not a
+                // body" was an assumption about output an agent controls, not
+                // something enforced: `data` is an unbounded `Value`, and
+                // `parse_value` puts the WHOLE error object in it as a string
+                // when it fails to deserialize. An oversized error line would
+                // have been kept verbatim while being charged as if elided,
+                // which is the one shape that defeats the budget entirely.
+                match result {
+                    Ok(payload) => {
+                        *payload = Some(elided_payload(original_bytes));
+                        ELIDED_MESSAGE_BYTES
+                    }
+                    Err(err) => {
+                        err.data = Some(elided_payload(original_bytes));
+                        truncate_on_char_boundary(&mut err.message, MAX_ERROR_MESSAGE_BYTES);
+                        ELIDED_MESSAGE_BYTES + err.message.len()
+                    }
+                }
+            }
+            AcpDebugMessageContent::Stderr { line } => {
+                let mut text = line.to_string();
+                truncate_on_char_boundary(&mut text, MAX_DEBUG_MESSAGE_BYTES);
+                *line = Arc::from(format!("{text}… [{original_bytes} bytes]"));
+                line.len()
+            }
+        }
+    }
+}
+
+/// A message plus what it costs to keep, so eviction can be driven by bytes
+/// without re-measuring the payload on every insert.
+struct RetainedMessage {
+    message: AcpDebugMessage,
+    bytes: usize,
 }
 
 #[derive(Default)]
 struct AcpDebugLogState {
-    messages: VecDeque<AcpDebugMessage>,
+    messages: VecDeque<RetainedMessage>,
     subscribers: Vec<tokio::sync::mpsc::UnboundedSender<AcpDebugMessage>>,
+    /// Running sum of `messages[..].bytes`, maintained on both ends.
+    retained_bytes: usize,
+}
+
+impl AcpDebugLogState {
+    /// The only two ways the deque changes, so the running total cannot drift
+    /// away from the messages it is counting.
+    fn push_back(&mut self, retained: RetainedMessage) {
+        self.retained_bytes = self.retained_bytes.saturating_add(retained.bytes);
+        self.messages.push_back(retained);
+    }
+
+    fn pop_front(&mut self) {
+        if let Some(retained) = self.messages.pop_front() {
+            self.retained_bytes = self.retained_bytes.saturating_sub(retained.bytes);
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -156,7 +271,11 @@ impl AcpDebugLog {
         tokio::sync::mpsc::UnboundedReceiver<AcpDebugMessage>,
     ) {
         let mut state = self.lock();
-        let backlog = state.messages.iter().cloned().collect();
+        let backlog = state
+            .messages
+            .iter()
+            .map(|retained| retained.message.clone())
+            .collect();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         state.subscribers.push(sender);
         (backlog, receiver)
@@ -167,23 +286,64 @@ impl AcpDebugLog {
         if messages.is_empty() {
             return;
         }
-        self.record_messages(messages);
+
+        // The wire line is the honest measure of what this costs, and it is
+        // already in hand — measuring the parsed payload would mean
+        // re-serialising it. A line over the cap has its body dropped here,
+        // before anything retains it, and reports what it shrank to.
+        //
+        // A batch line charges its full length to every message in it. That
+        // over-counts, which is the safe direction: the budget binds sooner,
+        // never later.
+        let line_bytes = line.len();
+        let retained = messages
+            .into_iter()
+            .map(|mut message| {
+                let bytes = if line_bytes > MAX_DEBUG_MESSAGE_BYTES {
+                    message.elide_payload(line_bytes)
+                } else {
+                    line_bytes
+                };
+                RetainedMessage { message, bytes }
+            })
+            .collect();
+
+        self.record_messages(retained);
     }
 
-    fn record_messages(&self, messages: Vec<AcpDebugMessage>) {
+    fn record_messages(&self, messages: Vec<RetainedMessage>) {
         let mut state = self.lock();
 
         state.subscribers.retain(|sender| !sender.is_closed());
-        for message in messages {
-            if state.messages.len() == MAX_DEBUG_BACKLOG_MESSAGES {
-                state.messages.pop_front();
+        for retained in messages {
+            let message = retained.message.clone();
+            state.push_back(retained);
+
+            // Two caps, both enforced from the front. The message cap bounds a
+            // chatty agent; the byte cap bounds a verbose one, which the
+            // message cap alone never could. `len() > 1` keeps the newest
+            // message even if it alone is over budget, so the ring can never
+            // answer "nothing happened" to something that just did.
+            while state.messages.len() > MAX_DEBUG_BACKLOG_MESSAGES
+                || (state.retained_bytes > MAX_DEBUG_BACKLOG_BYTES && state.messages.len() > 1)
+            {
+                state.pop_front();
             }
-            state.messages.push_back(message.clone());
 
             for sender in &state.subscribers {
                 let _ = sender.send(message.clone());
             }
         }
+    }
+
+    /// What the ring is charging itself for, which is what
+    /// [`MAX_DEBUG_BACKLOG_BYTES`] bounds.
+    ///
+    /// An estimate, deliberately biased high: a batch line charges its whole
+    /// length to each message in it. Read it as "the budget's own view of the
+    /// ring", not as a measurement of heap.
+    pub fn retained_bytes(&self) -> usize {
+        self.lock().retained_bytes
     }
 
     /// The run of stderr lines at the very end of the log.
@@ -196,6 +356,7 @@ impl AcpDebugLog {
         let mut lines = state
             .messages
             .iter()
+            .map(|retained| &retained.message)
             .rev()
             .take_while(|message| matches!(&message.message, AcpDebugMessageContent::Stderr { .. }))
             .filter_map(|message| match &message.message {

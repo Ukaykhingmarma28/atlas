@@ -348,6 +348,8 @@ interface ChatActions {
     setStopping: (sessionId: string, on: boolean) => void;
     /** Flag/clear "the backing agent process died" (drives Restart + rebind). */
     setDisconnected: (sessionId: string, on: boolean) => void;
+    /** The user force-killed the agent from the composer. */
+    noteAgentKilled: (sessionId: string) => void;
     setSessionTitle: (sessionId: string, title: string) => void;
     setTranscriptLoading: (sessionId: string, loading: boolean) => void;
     /** Mark a resumed session as bound-but-not-yet-loaded. See
@@ -958,6 +960,26 @@ export const useChatStore = createSelectors(
           set((s) => {
             const session = s.sessions[sessionId];
             if (session) session.stopping = on || undefined;
+          }),
+        // Killing an agent drops its connection, and the exit-watch task that
+        // would have produced `agent_disconnected` goes with it. So nothing
+        // arrives to end the turn: this records what that delta does, plus the
+        // turn terminal Rust normally emits ahead of it (`agent_disconnected`
+        // above is written assuming the status is already error). Without the
+        // status and tool-call reset the composer keeps offering Stop for a
+        // process that no longer exists, underneath a Restart banner.
+        //
+        // The transcript is deliberately untouched — the conversation survives
+        // and `acpSessionId` is what a restart resumes from.
+        noteAgentKilled: (sessionId) =>
+          set((s) => {
+            const session = s.sessions[sessionId];
+            if (!session) return;
+            session.status = "error";
+            session.stopping = undefined;
+            session.retryStatus = undefined;
+            session.inflightToolIds = undefined;
+            session.disconnected = true;
           }),
         setSessionTitle: (sessionId, title) =>
           set((s) => {

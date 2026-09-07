@@ -13,18 +13,116 @@ pub struct AcpSession {
     /// Weak so a thread the UI has dropped does not keep living because the
     /// connection still lists its session.
     pub thread: Weak<Mutex<AcpThread>>,
-    /// Set by `cancel` and consumed by the next `prompt` result.
+    /// Fired by `cancel`, awaited by the in-flight `prompt`. See [`CancelSignal`].
     ///
-    /// Some agents answer a cancelled turn with an internal error whose text is
-    /// "This operation was aborted" rather than a clean `Cancelled` stop reason.
-    /// Without this flag that surfaces as an error toast for something the user
-    /// deliberately did.
-    pub suppress_abort_err: bool,
+    /// This replaced a `suppress_abort_err: bool` that `cancel` set and the
+    /// next `prompt` result consumed. Some agents answer a cancelled turn with
+    /// an internal error reading "This operation was aborted" rather than a
+    /// clean `Cancelled` stop reason, and that must not surface as an error
+    /// toast for something the user deliberately did — but one bool for a
+    /// whole session is answered by whichever turn resolves first, which is
+    /// not necessarily the turn it was set for.
+    pub cancel_signal: CancelSignal,
     pub session_modes: Option<Arc<Mutex<acp::SessionModeState>>>,
     pub config_options: Option<ConfigOptions>,
     /// How many handles are open on this session. `close_session` only reaches
     /// the wire when this hits zero.
     pub ref_count: usize,
+}
+
+/// The local half of cancelling a turn.
+///
+/// `cancel` is a *notification* on the wire — there is no response and no
+/// obligation on the agent to act. An agent that is wedged (deadlocked, blocked
+/// on a network call, stopped) ignores it, and nothing else in the stack has a
+/// clock, so the prompt future stayed pending forever and the chat could only
+/// be recovered by quitting Atlas.
+///
+/// This is the clock. `prompt` waits on it and gives the agent a bounded grace
+/// period to answer its own cancellation before resolving the turn locally.
+///
+/// A generation counter rather than a `Notify` on purpose: a receiver takes its
+/// snapshot before the request is sent, so a cancel that lands in the gap
+/// between sending and awaiting is still seen rather than missed.
+#[derive(Clone)]
+pub struct CancelSignal {
+    tx: Arc<tokio::sync::watch::Sender<u64>>,
+}
+
+impl Default for CancelSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CancelSignal {
+    pub fn new() -> Self {
+        Self {
+            tx: Arc::new(tokio::sync::watch::channel(0).0),
+        }
+    }
+
+    /// Idempotent by construction: the composer leaves its stop button live
+    /// while a stop is pending, so a user watching nothing happen presses it
+    /// again. Each press is another generation, and every waiter already
+    /// waiting is woken by the first.
+    pub fn fire(&self) {
+        self.tx.send_modify(|generation| *generation += 1);
+    }
+
+    /// Resolves on the next [`fire`](Self::fire) *after* this call. Call it
+    /// before sending the request the cancel would apply to.
+    pub fn waiter(&self) -> CancelWaiter {
+        CancelWaiter {
+            rx: self.tx.subscribe(),
+        }
+    }
+}
+
+pub struct CancelWaiter {
+    rx: tokio::sync::watch::Receiver<u64>,
+}
+
+impl CancelWaiter {
+    /// A handle that answers "has a cancel fired since this waiter was taken",
+    /// without consuming the waiter. Holds a receiver, never the sender, so it
+    /// cannot keep a closed session's signal alive.
+    pub fn probe(&self) -> CancelProbe {
+        CancelProbe {
+            rx: self.rx.clone(),
+        }
+    }
+
+    /// Waits for a cancel. Never resolves if none comes — a legitimate turn
+    /// runs for as long as it runs, which is why this is not a request timeout.
+    pub async fn cancelled(mut self) {
+        // A dropped sender means the session was removed from the registry,
+        // which happens on close or teardown. Nobody is going to answer that
+        // turn, so it counts: parking here instead would leak the request
+        // future, and its `Arc<dyn AgentConnection>` with it, for the life of
+        // the process.
+        let _ = self.rx.changed().await;
+    }
+}
+
+/// Whether this turn's own cancel has fired.
+///
+/// The rule it encodes: a turn suppresses an "operation was aborted" error
+/// only if a cancel was fired for its session *while it was running*. A
+/// session-wide bool could not express that — it was set by one turn and
+/// consumed by whichever resolved first, so a cancel could be spent on a turn
+/// it was never meant for, and a turn started after a cancel could inherit a
+/// suppression it never asked for.
+pub struct CancelProbe {
+    rx: tokio::sync::watch::Receiver<u64>,
+}
+
+impl CancelProbe {
+    pub fn fired(&self) -> bool {
+        // `Err` is a dropped sender: the session is gone, which is not a
+        // cancel anyone asked for, so an error on this turn is real.
+        self.rx.has_changed().unwrap_or(false)
+    }
 }
 
 /// A session whose `session/load` or `session/new` RPC is still in flight.
