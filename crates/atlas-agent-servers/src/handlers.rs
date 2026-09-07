@@ -432,29 +432,50 @@ fn read_text_file(
     roots: &[PathBuf],
 ) -> anyhow::Result<String> {
     let path = resolve_within_roots(path, roots)?;
-    let content = std::fs::read_to_string(&path)?;
     if line.is_none() && limit.is_none() {
-        return Ok(content);
+        return Ok(std::fs::read_to_string(&path)?);
     }
 
+    // Stream when a window was asked for. `read_to_string` first would load the
+    // whole file to hand back one line of it — and `line`/`limit` exist
+    // precisely so a client does not have to do that. It also decided the
+    // encoding of the whole file: a byte the caller never asked for could fail
+    // a read of a range that is perfectly good text.
     let skip = line.unwrap_or(1).saturating_sub(1) as usize;
     let take = limit.map(|limit| limit as usize).unwrap_or(usize::MAX);
-    let selected: Vec<&str> = content.lines().skip(skip).take(take).collect();
+
+    let file = std::fs::File::open(&path)?;
+    // `read_to_string` used to be what rejected a directory. Opening one
+    // succeeds on unix and only the *read* fails — which a `limit: 0` window
+    // never performs, so without this an unreadable path would answer with a
+    // confident empty string instead of an error.
+    if file.metadata()?.is_dir() {
+        return Err(std::io::Error::from(std::io::ErrorKind::IsADirectory).into());
+    }
+    let mut selected = Vec::new();
+    for line in std::io::BufRead::lines(std::io::BufReader::new(file))
+        .skip(skip)
+        .take(take)
+    {
+        selected.push(line?);
+    }
     Ok(selected.join("\n"))
 }
 
 /// Reject a path outside every root in `roots`, before it ever reaches
-/// `std::fs`. `path` may not exist yet (a write's target), so this resolves
-/// `.`/`..` lexically rather than calling `canonicalize` on it directly —
-/// canonicalize only the roots, which are expected to exist, and compare
-/// against those.
+/// `std::fs`. `path` may not exist yet (a write's target), so `.`/`..` are
+/// resolved lexically first and then the deepest part of the result that *does*
+/// exist is canonicalized — see [`canonicalize_deepest_ancestor`].
 ///
-/// Lexical resolution does not chase symlinks inside an allowed root, so a
-/// symlink planted there that points back out is not caught here — the ACP
-/// permission prompt (`request_permission`) is the place for that class of
-/// check, same as Zed's own model. This closes the reported gap: an agent
-/// handing back an absolute path or a `../` climb outside every granted
-/// directory.
+/// That two-step is what makes the check hold against symlinks: a link planted
+/// inside a granted root that points back out is followed while resolving the
+/// ancestor, so the comparison sees where the path really lands rather than
+/// where it appears to. The planted-symlink test below pins it.
+///
+/// A root that cannot be canonicalized grants nothing. It is the only
+/// fail-closed choice available: the alternative is comparing a canonical
+/// target against a non-canonical root, which is a different namespace and
+/// therefore not a comparison at all.
 fn resolve_within_roots(path: &Path, roots: &[PathBuf]) -> anyhow::Result<PathBuf> {
     // ONE namespace for both sides. The first version compared a lexically
     // normalized target against canonicalized roots — two namespaces, papered
@@ -466,9 +487,17 @@ fn resolve_within_roots(path: &Path, roots: &[PathBuf]) -> anyhow::Result<PathBu
     // disk — and re-joining the not-yet-existing tail closes both.
     let resolved = canonicalize_deepest_ancestor(&normalize_lexically(path));
     for root in roots {
-        let canon_root = root
-            .canonicalize()
-            .unwrap_or_else(|_| normalize_lexically(root));
+        // A root that is gone grants nothing. Falling back to a lexical form
+        // here would compare a canonical target against a non-canonical root —
+        // two namespaces again, which is the bug this function already carries
+        // a note about.
+        let Ok(canon_root) = root.canonicalize() else {
+            tracing::warn!(
+                root = %root.display(),
+                "granted directory cannot be resolved; refusing paths under it"
+            );
+            continue;
+        };
         if resolved.starts_with(&canon_root) {
             return Ok(resolved);
         }
@@ -648,6 +677,135 @@ mod fs_bound_tests {
         );
         let _ = std::fs::remove_dir_all(&cwd);
         let _ = std::fs::remove_dir_all(&extra_dir);
+    }
+
+    /// ATL-236. The old body ran `read_to_string` before looking at `line` or
+    /// `limit`, so a windowed read paid for the whole file.
+    ///
+    /// Proven by encoding rather than by size, because a size test can only
+    /// ever be slow and suggestive: bytes that are not UTF-8 sit *after* the
+    /// requested line, so a whole-file read cannot succeed and a streaming
+    /// read cannot fail. It is the same defect, made deterministic.
+    #[test]
+    fn a_windowed_read_does_not_pay_for_the_rest_of_the_file() {
+        let root = test_root();
+        let path = root.join("mixed.log");
+
+        let mut bytes = b"the line that was asked for\n".to_vec();
+        bytes.extend_from_slice(&[0xff, 0xfe, 0x00]);
+        bytes.push(b'\n');
+        std::fs::write(&path, &bytes).expect("write fixture");
+
+        assert!(
+            std::fs::read_to_string(&path).is_err(),
+            "fixture is pointless unless a whole-file read of it fails"
+        );
+
+        let out = read_text_file(&path, Some(1), Some(1), std::slice::from_ref(&root))
+            .expect("a windowed read must not decode past its window");
+        assert_eq!(out, "the line that was asked for");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The window itself still has to be right — a streaming rewrite is only
+    /// worth anything if `line` stays 1-based and `limit` still counts lines.
+    #[test]
+    fn line_is_one_based_and_limit_counts_lines() {
+        let root = test_root();
+        let path = root.join("numbers.txt");
+        std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").expect("write fixture");
+        let roots = std::slice::from_ref(&root);
+
+        assert_eq!(
+            read_text_file(&path, None, None, roots).expect("whole file"),
+            "one\ntwo\nthree\nfour\nfive\n",
+            "an unwindowed read is byte-for-byte, trailing newline included"
+        );
+        assert_eq!(
+            read_text_file(&path, Some(2), Some(2), roots).expect("window"),
+            "two\nthree"
+        );
+        assert_eq!(
+            read_text_file(&path, Some(1), None, roots).expect("from the top"),
+            "one\ntwo\nthree\nfour\nfive"
+        );
+        assert_eq!(
+            read_text_file(&path, None, Some(1), roots).expect("first line only"),
+            "one"
+        );
+        assert_eq!(
+            read_text_file(&path, Some(99), Some(3), roots).expect("past the end"),
+            "",
+            "a window past the end is empty, not an error"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A granted directory that no longer exists cannot be compared against,
+    /// so it grants nothing. The alternative — comparing a canonical target
+    /// against a lexical root — is the two-namespace bug this function was
+    /// already fixed for once.
+    #[test]
+    fn a_root_that_cannot_be_resolved_grants_nothing() {
+        // Canonical on purpose. `temp_dir()` is a symlink on macOS
+        // (`/var/…` → `/private/var/…`), and under a symlinked root the old
+        // lexical fallback happened to reject anyway — so this test passed
+        // against the very code it was written to rule out. The difference is
+        // only observable when the root is already in the canonical namespace.
+        let root = test_root().canonicalize().expect("canonicalize the root");
+        let target = root.join("file.txt");
+        assert!(
+            resolve_within_roots(&target, std::slice::from_ref(&root)).is_ok(),
+            "sanity: the root grants while it exists"
+        );
+
+        std::fs::remove_dir_all(&root).expect("remove the root");
+        assert!(
+            resolve_within_roots(&target, std::slice::from_ref(&root)).is_err(),
+            "a vanished root must not still grant paths under it"
+        );
+    }
+
+    /// A zero-length window pulls nothing from the iterator, so an error that
+    /// only surfaces on read — a directory — would never be raised. The old
+    /// whole-file read failed first and got this right by accident; the
+    /// streaming version has to mean it.
+    #[test]
+    fn an_unreadable_path_is_an_error_even_for_an_empty_window() {
+        let root = test_root();
+        let dir = root.join("a-directory");
+        std::fs::create_dir_all(&dir).expect("create the directory");
+        let roots = std::slice::from_ref(&root);
+
+        for (line, limit) in [(None, Some(0)), (Some(1), Some(0)), (None, None), (Some(1), None)] {
+            assert!(
+                read_text_file(&dir, line, limit, roots).is_err(),
+                "reading a directory answered successfully for line={line:?} limit={limit:?}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The containment check has to run before the file is opened, not after.
+    #[test]
+    fn a_read_outside_the_roots_is_refused() {
+        let root = test_root();
+        let outside = test_root();
+        let secret = outside.join("secret.txt");
+        std::fs::write(&secret, "not yours\n").expect("write fixture");
+
+        let err = read_text_file(&secret, Some(1), Some(1), std::slice::from_ref(&root))
+            .expect_err("a read outside every granted directory must be refused");
+        assert!(
+            err.to_string().contains("outside this session's granted"),
+            "unexpected refusal reason: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }
 

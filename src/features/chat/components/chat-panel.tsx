@@ -828,6 +828,23 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     const cs = useChatStore.getState();
     const s = cs.sessions[tabId];
     if (!s?.acpAgentId || !s.acpSessionId) return;
+
+    // Pressing Stop again while a stop is already pending means the first one
+    // did not appear to work, so escalate to killing the process. The backend
+    // resolves a cancel the agent ignores after a grace period, which covers a
+    // wedged *turn*; an agent that is wedged outright would hang the next turn
+    // too, and this is the way out of that without quitting Atlas.
+    //
+    // Killing drops the connection, which takes its exit-watch task with it —
+    // so no `agent_disconnected` arrives to clear the flags. We asked for this,
+    // so we record it ourselves, which is also what raises the Restart banner.
+    if (s.stopping) {
+      cs.actions.noteAgentKilled(tabId);
+      cs.actions.clearQueue(tabId);
+      cs.actions.clearPermissionsForSession(s.acpSessionId);
+      agents.kill(s.acpAgentId).catch(() => {});
+      return;
+    }
     // Do NOT flip to idle optimistically: the backend may still be winding
     // tools down, and lying "idle" here let a new send race the still-live
     // turn (interleaved deltas; native history loss). Mark stop-requested

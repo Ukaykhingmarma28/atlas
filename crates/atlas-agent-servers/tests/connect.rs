@@ -212,9 +212,17 @@ async fn a_missing_binary_fails_to_spawn() {
     );
 }
 
-/// An agent that never answers `initialize` must not hang the connect forever.
+/// The handshake has no timeout, and this pins that as the current state
+/// rather than as a guarantee.
+///
+/// Named for what it checks. It used to be called
+/// `an_agent_that_never_answers_does_not_hang_forever`, which claimed the
+/// opposite of its own assertion: it passes *because* the connect hangs. The
+/// cancel grace added for a wedged turn does not apply here — there is no
+/// session to cancel until `initialize` returns, so recovery on this path is
+/// still the caller's problem (`AgentHost::kill`).
 #[tokio::test]
-async fn an_agent_that_never_answers_does_not_hang_forever() {
+async fn an_agent_that_never_answers_initialize_leaves_the_connect_pending() {
     let connect = connect(command("/bin/sh", &["-c", "sleep 30"]));
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), connect).await;
 
@@ -695,4 +703,489 @@ async fn an_embedded_terminal_in_tool_call_meta_is_created_and_streams() {
         Some(0),
         "the meta exit must land"
     );
+}
+
+/// Handshakes, opens a session, then goes silent on `session/prompt` — and
+/// ignores `session/cancel` too, which is the whole point. A wedged agent is
+/// alive (so nothing detects an exit) and unresponsive (so nothing on the wire
+/// resolves the turn).
+const WEDGED_AGENT: &str = r#"
+import sys, json
+def send(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "protocolVersion": 1, "agentCapabilities": {}, "authMethods": [],
+            "agentInfo": {"name": "wedged-agent", "version": "9.9.9"}}})
+    elif method == "session/new":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": "session-1"}})
+    # session/prompt and session/cancel deliberately get no answer.
+"#;
+
+fn wedged_agent_command() -> Option<AgentServerCommand> {
+    Some(AgentServerCommand {
+        path: PathBuf::from(python()?),
+        args: vec!["-c".to_string(), WEDGED_AGENT.to_string()],
+        env: Some(HashMap::new()),
+    })
+}
+
+/// ATL-232. `cancel` is a notification — no response, no obligation — so an
+/// agent that ignores it left the prompt future pending forever and the only
+/// way out was quitting Atlas. The turn now resolves locally once the agent has
+/// had its grace period to answer for itself.
+///
+/// Deliberately a real child process over real pipes: the defect is that
+/// nothing in the stack owns a clock, and a mock transport would supply the
+/// very thing whose absence is under test.
+#[tokio::test]
+async fn a_cancel_the_agent_ignores_still_ends_the_turn() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let Some(command) = wedged_agent_command() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
+        session_id.clone(),
+        vec![acp::ContentBlock::from("do something slow")],
+    )));
+
+    // Let the prompt actually reach the wire, so this exercises "cancel during
+    // a live turn" rather than "cancel before the request went out".
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!prompt.is_finished(), "the agent was supposed to go silent");
+
+    connection.cancel(&session_id);
+
+    // Generous against the grace period: what is under test is that a bound
+    // exists at all, not its exact value.
+    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+        .await
+        .expect("the turn outlived its cancel grace — this is the ATL-232 hang")
+        .expect("prompt task panicked")
+        .expect("a cancelled turn is a normal stop, not an error");
+
+    assert_eq!(
+        response.stop_reason,
+        acp::StopReason::Cancelled,
+        "a locally-resolved cancel must still read as cancelled"
+    );
+}
+
+/// Pressing Stop twice is what a user does when nothing appears to happen, and
+/// the composer leaves the button live while a stop is pending. Every press
+/// must be harmless.
+#[tokio::test]
+async fn cancelling_repeatedly_is_harmless() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let Some(command) = wedged_agent_command() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
+        session_id.clone(),
+        vec![acp::ContentBlock::from("do something slow")],
+    )));
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    for _ in 0..5 {
+        connection.cancel(&session_id);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+        .await
+        .expect("repeated cancels must not postpone the deadline")
+        .expect("prompt task panicked")
+        .expect("a cancelled turn is a normal stop, not an error");
+    assert_eq!(response.stop_reason, acp::StopReason::Cancelled);
+
+    // Cancelling a turn that already ended must not panic or wedge anything.
+    connection.cancel(&session_id);
+}
+
+/// The grace period only starts when the user asks to stop. A turn nobody
+/// cancelled must not be capped by it, or every legitimate long turn dies at
+/// the deadline — the exact failure a flat request timeout would have caused.
+#[tokio::test]
+async fn an_uncancelled_turn_is_not_capped_by_the_grace_period() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let Some(command) = wedged_agent_command() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
+        session_id,
+        vec![acp::ContentBlock::from("a turn that takes a while")],
+    )));
+
+    // Well past the grace period, with no cancel sent.
+    tokio::time::sleep(std::time::Duration::from_secs(7)).await;
+    assert!(
+        !prompt.is_finished(),
+        "an uncancelled turn was resolved by the cancel deadline — the clock \
+         must not start until the user asks to stop"
+    );
+    prompt.abort();
+}
+
+// ------------------------------------------------------------------ fs/* gaps
+//
+// ATL-233's containment check and ATL-236's coverage list meet here. The check
+// itself has unit tests; what had never been exercised was the path an agent
+// actually takes to reach it — a real `fs/write_text_file` request, over a real
+// pipe, against a session whose granted roots the test chose.
+
+/// Asks the client to write and then read a path OUTSIDE the granted root, and
+/// records what it was told. Reporting through a file because the outcome is
+/// the agent's, not the thread's: what is under test is what the agent was
+/// allowed to do, which no amount of reading our own state can answer.
+const FS_ESCAPE_AGENT: &str = r#"
+import sys, json
+outside = OUTSIDE
+result_file = RESULT_FILE
+pending = {}
+outcome = {}
+def send(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+prompt_id = None
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "protocolVersion": 1, "agentCapabilities": {}, "authMethods": [],
+            "agentInfo": {"name": "fs-escape-agent", "version": "9.9.9"}}})
+    elif method == "session/new":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": "session-1"}})
+    elif method == "session/prompt":
+        prompt_id = msg["id"]
+        pending[300] = "write"
+        send({"jsonrpc": "2.0", "id": 300, "method": "fs/write_text_file",
+              "params": {"sessionId": "session-1", "path": outside,
+                         "content": "written by the agent, outside the project root\n"}})
+    elif msg.get("id") in pending:
+        which = pending.pop(msg["id"])
+        outcome[which] = "error" if "error" in msg else "ok"
+        if which == "write":
+            pending[301] = "read"
+            send({"jsonrpc": "2.0", "id": 301, "method": "fs/read_text_file",
+                  "params": {"sessionId": "session-1", "path": outside}})
+        else:
+            open(result_file, "w").write(json.dumps(outcome))
+            send({"jsonrpc": "2.0", "id": prompt_id, "result": {"stopReason": "end_turn"}})
+"#;
+
+fn fs_escape_agent_command(outside: &std::path::Path, result_file: &std::path::Path) -> Option<AgentServerCommand> {
+    let script = FS_ESCAPE_AGENT
+        .replace("OUTSIDE", &format!("{:?}", outside.display().to_string()))
+        .replace("RESULT_FILE", &format!("{:?}", result_file.display().to_string()));
+    Some(AgentServerCommand {
+        path: PathBuf::from(python()?),
+        args: vec!["-c".to_string(), script],
+        env: Some(HashMap::new()),
+    })
+}
+
+/// ATL-233. The agent is a child process with the user's own privileges, so
+/// this is not a privilege boundary — it is the backstop for a model steered by
+/// repository content, and the containment a self-sandboxing agent delegated to
+/// us. `create_dir_all` running before the write is the concrete half: a
+/// refused write must not leave a directory tree behind as a side effect.
+#[tokio::test]
+async fn an_agent_cannot_write_outside_the_sessions_granted_directories() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let base = std::env::temp_dir().join(format!(
+        "atlas-fs-escape-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let granted = base.join("project");
+    let escaped = base.join("NOT-the-project/deep/nested/escaped.txt");
+    let result_file = base.join("outcome.json");
+    std::fs::create_dir_all(&granted).expect("create the granted root");
+
+    let Some(command) = fs_escape_agent_command(&escaped, &result_file) else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![granted.clone()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    connection
+        .clone()
+        .prompt(acp::PromptRequest::new(
+            session_id,
+            vec![acp::ContentBlock::from("go outside")],
+        ))
+        .await
+        .expect("the turn itself should end normally");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&result_file).expect("agent wrote no outcome"))
+            .expect("outcome is json");
+
+    assert_eq!(
+        outcome["write"], "error",
+        "the write was serviced rather than refused: {outcome}"
+    );
+    assert_eq!(
+        outcome["read"], "error",
+        "the read was serviced rather than refused: {outcome}"
+    );
+    assert!(
+        !escaped.exists(),
+        "a refused write still put a file on disk at {}",
+        escaped.display()
+    );
+    assert!(
+        !escaped.parent().expect("a parent").exists(),
+        "a refused write still created directories outside the root"
+    );
+    assert!(
+        !base.join("NOT-the-project").exists(),
+        "create_dir_all ran before the containment check"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// ATL-236 gap 1. Every fake agent in this suite emits well-formed JSON, and
+/// the only malformed-input test sat at the debug-log layer — a helper, not the
+/// transport. A garbage line from a real agent must be survivable: agents print
+/// stray output, and losing the connection over one line loses the session.
+#[tokio::test]
+async fn a_garbage_line_from_the_agent_does_not_kill_the_connection() {
+    let script = r#"
+import sys, json
+def send(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+sys.stdout.write("this is not json at all\n")
+sys.stdout.flush()
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        sys.stdout.write("{ not valid json either\n")
+        sys.stdout.flush()
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "protocolVersion": 1, "agentCapabilities": {}, "authMethods": [],
+            "agentInfo": {"name": "noisy-agent", "version": "9.9.9"}}})
+    elif msg.get("method") == "session/new":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": "session-1"}})
+"#;
+    let Some(python) = python() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let command = AgentServerCommand {
+        path: PathBuf::from(python),
+        args: vec!["-c".to_string(), script.to_string()],
+        env: Some(HashMap::new()),
+    };
+
+    use atlas_acp_thread::AgentConnection as _;
+    let connection = Arc::new(
+        tokio::time::timeout(std::time::Duration::from_secs(10), connect(command))
+            .await
+            .expect("a garbage line stalled the handshake")
+            .expect("a garbage line killed the handshake"),
+    );
+    assert_eq!(connection.telemetry_id().as_ref(), "noisy-agent");
+
+    connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("the connection must still be usable after the garbage");
+}
+
+/// ATL-236 gap 2. Start-up death and drop-kill were covered; dying *mid-turn*
+/// was not. The prompt must fail rather than hang — the agent is gone, so
+/// nothing will ever answer it.
+#[tokio::test]
+async fn an_agent_that_dies_mid_prompt_fails_the_turn_rather_than_hanging() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let script = r#"
+import sys, json, os
+def send(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "protocolVersion": 1, "agentCapabilities": {}, "authMethods": [],
+            "agentInfo": {"name": "dying-agent", "version": "9.9.9"}}})
+    elif method == "session/new":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": "session-1"}})
+    elif method == "session/prompt":
+        sys.stderr.write("agent crashed mid-turn\n")
+        sys.stderr.flush()
+        os._exit(7)
+"#;
+    let Some(python) = python() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let command = AgentServerCommand {
+        path: PathBuf::from(python),
+        args: vec!["-c".to_string(), script.to_string()],
+        env: Some(HashMap::new()),
+    };
+
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        connection.clone().prompt(acp::PromptRequest::new(
+            session_id,
+            vec![acp::ContentBlock::from("crash please")],
+        )),
+    )
+    .await
+    .expect("a dead agent left the prompt pending");
+
+    assert!(
+        result.is_err(),
+        "an agent that died mid-turn reported success: {result:?}"
+    );
+}
+
+/// ATL-236 gap 4, aimed at the machinery this change introduced: the cancel
+/// deadline is a `watch` channel read from one task and fired from another,
+/// and everything else in this suite drives it from a single thread.
+///
+/// Scope, stated honestly because the obvious reading is wrong: this does NOT
+/// prove that a cancel landing between the waiter being taken and the request
+/// being written is seen. `prompt(...)` is `spawn`'s argument, so the waiter
+/// is taken on this task before the canceller is spawned — that ordering is
+/// deterministic and would hold on a current-thread runtime too. What that
+/// property actually rests on is the `subscribe()` snapshot, pinned directly
+/// in `a_cancel_belongs_to_the_turns_it_interrupted` (tests/units.rs).
+///
+/// What this adds is real concurrency around the deadline: several tasks
+/// firing the signal while another awaits it, on four worker threads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_cancel_racing_the_prompt_is_still_seen() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let Some(command) = wedged_agent_command() else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let thread = connection
+        .clone()
+        .new_session(vec![std::env::temp_dir()])
+        .await
+        .expect("session/new failed");
+    let session_id = thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .session_id()
+        .clone();
+
+    // No sleep between the two: the cancel is meant to land in the window
+    // between the prompt being created and its request being written.
+    let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
+        session_id.clone(),
+        vec![acp::ContentBlock::from("race me")],
+    )));
+    let canceller = tokio::spawn({
+        let connection = connection.clone();
+        let session_id = session_id.clone();
+        async move {
+            for _ in 0..3 {
+                connection.cancel(&session_id);
+                tokio::task::yield_now().await;
+            }
+        }
+    });
+
+    canceller.await.expect("canceller panicked");
+    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+        .await
+        .expect("a cancel racing the prompt was dropped, and the turn hung")
+        .expect("prompt task panicked")
+        .expect("a cancelled turn is a normal stop, not an error");
+    assert_eq!(response.stop_reason, acp::StopReason::Cancelled);
 }

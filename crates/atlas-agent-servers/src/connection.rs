@@ -28,7 +28,9 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::debug_log::{AcpDebugLog, AcpDebugMessage, AcpDebugMessageDirection};
 use crate::handlers::{self, ClientContext};
-use crate::session::{AcpSession, ConfigOptions, SessionDirectories, SessionRegistry};
+use crate::session::{
+    AcpSession, CancelSignal, CancelWaiter, ConfigOptions, SessionDirectories, SessionRegistry,
+};
 use crate::session_list::AcpSessionList;
 
 /// Zed rejects anything below v1 outright rather than trying to degrade.
@@ -41,6 +43,22 @@ const MINIMUM_SUPPORTED_VERSION: ProtocolVersion = ProtocolVersion::V1;
 /// Reporting the RPC error would tell the user "connection closed" when the
 /// real answer — on stderr — is one tick away.
 const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
+
+/// How long an agent gets to answer its own cancellation before the turn is
+/// resolved locally.
+///
+/// `session/prompt` deliberately has no timeout — a legitimate turn runs for
+/// minutes and a flat deadline would kill working sessions. The clock starts
+/// only once the user has asked to stop, which is the point at which waiting
+/// indefinitely stops being correct: they have said they do not want the
+/// result, so the only question left is how long to be polite about it.
+///
+/// Long enough that a healthy agent always wins the race — acknowledging a
+/// cancel is a wire round-trip plus whatever teardown the agent does, well
+/// inside a second — and short enough to be a recovery rather than a second
+/// wait. Losing the race costs the turn's real stop reason and token counts,
+/// which is a fair price for a chat that unfreezes.
+const CANCEL_GRACE: Duration = Duration::from_secs(5);
 
 /// What a session's `AcpThread` events are sent to.
 ///
@@ -380,7 +398,7 @@ impl AcpConnection {
             session_id.clone(),
             AcpSession {
                 thread: Arc::downgrade(&thread),
-                suppress_abort_err: false,
+                cancel_signal: CancelSignal::new(),
                 session_modes: None,
                 config_options: None,
                 ref_count: 1,
@@ -624,7 +642,7 @@ impl AgentConnection for AcpConnection {
                 session_id.clone(),
                 AcpSession {
                     thread: Arc::downgrade(&thread),
-                    suppress_abort_err: false,
+                    cancel_signal: CancelSignal::new(),
                     session_modes: response.modes.map(|modes| Arc::new(Mutex::new(modes))),
                     config_options: response
                         .config_options
@@ -819,19 +837,56 @@ impl AgentConnection for AcpConnection {
         let conn = self.connection.clone();
         let sessions = self.sessions.clone();
         let session_id = params.session_id.clone();
+        // Taken before the request goes out, so a cancel that lands while we
+        // are still sending is seen rather than missed. The probe is this
+        // turn's own view of it: whether a cancel fired while THIS turn was
+        // running, which is what decides an abort-shaped error's fate below.
+        let cancel_waiter =
+            sessions.with_session(&session_id, |session| session.cancel_signal.waiter());
+        let cancel_probe = cancel_waiter.as_ref().map(CancelWaiter::probe);
 
         async move {
-            let result = conn.send_request(params).block_task().await;
+            let result = match cancel_waiter {
+                Some(waiter) => {
+                    let request = conn.send_request(params).block_task();
+                    futures::pin_mut!(request);
+                    let deadline = async move {
+                        waiter.cancelled().await;
+                        tokio::time::sleep(CANCEL_GRACE).await;
+                    };
+                    futures::pin_mut!(deadline);
 
-            // Consume the flag whatever the outcome, so a cancel cannot leak
-            // into a later turn's error handling.
-            let suppress_abort_err = sessions
-                .with_session(&session_id, |session| {
-                    let suppress = session.suppress_abort_err;
-                    session.suppress_abort_err = false;
-                    suppress
-                })
-                .unwrap_or(false);
+                    match futures::future::select(request, deadline).await {
+                        futures::future::Either::Left((result, _)) => result,
+                        futures::future::Either::Right(((), _)) => {
+                            // The agent was told to stop and did not answer, so
+                            // answer for it.
+                            //
+                            // Dropping the request future is not merely giving
+                            // up locally: the SDK's `SentRequestCancellation`
+                            // has a `Drop` that sends a cancellation for the
+                            // abandoned request id (`jsonrpc.rs:4742`), so the
+                            // agent is told again, through the channel it
+                            // ignored the first time. A reply that arrives
+                            // after this has no waiter, which is what
+                            // "cancelled" means.
+                            tracing::warn!(
+                                session = %session_id,
+                                grace_ms = CANCEL_GRACE.as_millis(),
+                                "agent did not acknowledge a cancel; resolving the turn locally"
+                            );
+                            return Ok(acp::PromptResponse::new(acp::StopReason::Cancelled));
+                        }
+                    }
+                }
+                // No session to hang a clock on. The request is still the right
+                // thing to await; an unknown session id fails on its own.
+                None => conn.send_request(params).block_task().await,
+            };
+
+            // Read, not consumed: this turn's own answer, so it cannot be
+            // spent by a sibling turn or inherited by a later one.
+            let suppress_abort_err = cancel_probe.is_some_and(|probe| probe.fired());
 
             let err = match result {
                 Ok(response) => return Ok(response),
@@ -875,12 +930,18 @@ impl AgentConnection for AcpConnection {
     }
 
     fn cancel(&self, session_id: &acp::SessionId) {
-        self.sessions.with_session(session_id, |session| {
-            session.suppress_abort_err = true;
-        });
+        let signal = self
+            .sessions
+            .with_session(session_id, |session| session.cancel_signal.clone());
         let _ = self
             .connection
             .send_notification(acp::CancelNotification::new(session_id.clone()));
+        // After the notification, not before: a healthy agent should get the
+        // whole grace period to answer it, and starting the clock first would
+        // spend part of that on our own write.
+        if let Some(signal) = signal {
+            signal.fire();
+        }
     }
 
     fn request_elicitations(&self) -> Option<ElicitationStoreHandle> {
