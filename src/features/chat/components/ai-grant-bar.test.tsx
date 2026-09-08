@@ -10,6 +10,22 @@ vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a)
 let signedIn = true;
 let orgs: { id: string; name: string }[] | null = [{ id: "org_1", name: "Acme" }];
 let activeOrgId: string | null = "org_1";
+/** The DESKTOP's organisations — the ones the user sees. The bar names the
+ *  active one of these, not the account's cloud org. */
+type DesktopOrg = { id: string; name: string; syncEnabled: boolean; remoteId?: string };
+let desktopOrgs: DesktopOrg[] = [
+  { id: "local_1", name: "Acme", syncEnabled: true, remoteId: "org_1" },
+];
+let activeDesktopOrgId: string | null = "local_1";
+const enableSync = vi.fn(async () => {});
+vi.mock("@/features/organisations/stores/org-store", () => ({
+  useOrgStore: (selector: (s: unknown) => unknown) =>
+    selector({
+      organisations: desktopOrgs,
+      activeOrganisationId: activeDesktopOrgId,
+      actions: { enableSync },
+    }),
+}));
 vi.mock("@/features/auth/stores/auth-store", () => ({
   useAuthStore: (selector: (s: unknown) => unknown) =>
     selector({
@@ -20,7 +36,19 @@ vi.mock("@/features/auth/stores/auth-store", () => ({
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiGrantBar } from "./ai-grant-bar";
-import { useAiGrantStore, type Entitlement } from "../stores/ai-grant-store";
+import {
+  useAiGrantStore,
+  useAiGrantProbe,
+  useNoAiGrant,
+  type Entitlement,
+} from "../stores/ai-grant-store";
+
+/** A stand-in composer: mounts the probe and reports the lock, nothing else. */
+function Composer() {
+  useAiGrantProbe();
+  const locked = useNoAiGrant();
+  return <div data-testid="composer" data-locked={locked ? "yes" : "no"} />;
+}
 
 const NO_GRANT: Entitlement = {
   state: "noGrant",
@@ -45,7 +73,10 @@ describe("the no-grant setup state (bar 14)", () => {
     signedIn = true;
     orgs = [{ id: "org_1", name: "Acme" }];
     activeOrgId = "org_1";
+    desktopOrgs = [{ id: "local_1", name: "Acme", syncEnabled: true, remoteId: "org_1" }];
+    activeDesktopOrgId = "local_1";
     seed(null);
+    useAiGrantStore.setState({ probedOrgId: null });
   });
 
   // There is no global setup file, so nothing unmounts the previous render —
@@ -70,6 +101,9 @@ describe("the no-grant setup state (bar 14)", () => {
     // `orgs: null` is "not known yet" — a blip after sign-in. Rendering
     // "undefined doesn't have AI grants" would be worse than saying nothing.
     orgs = null;
+    // ...and the desktop has not restored its orgs either.
+    desktopOrgs = [];
+    activeDesktopOrgId = null;
     seed(NO_GRANT);
     render(<AiGrantBar />);
     expect((await screen.findByTestId("ai-grant-bar")).textContent).toContain("This organisation");
@@ -142,6 +176,9 @@ describe("the no-grant setup state (bar 14)", () => {
 });
 
 describe("the grant store's composer lock", () => {
+  // The cases below that render (the composer stand-in, the bar) need the
+  // same unmount discipline as the first describe.
+  afterEach(cleanup);
   beforeEach(() => {
     invoke.mockReset();
     seed(null);
@@ -223,5 +260,76 @@ describe("the grant store's composer lock", () => {
     expect(s.entitlement).toBeNull();
     expect(s.requested).toBe(false);
     expect(s.dismissed).toBe(false);
+  });
+
+  // ── Which organisation the bar is about ─────────────────────────────────
+
+  it("names the DESKTOP's active org, not the account's cloud org", () => {
+    // The auth snapshot only knows cloud orgs. With the desktop on "Main" (a
+    // synced org the account also has) and the account's last cloud org
+    // "Demo", the bar read "Demo doesn't have AI grants" — the wrong org.
+    orgs = [
+      { id: "org_demo", name: "Demo" },
+      { id: "org_main", name: "Main" },
+    ];
+    activeOrgId = "org_demo";
+    desktopOrgs = [{ id: "local_main", name: "Main", syncEnabled: true, remoteId: "org_main" }];
+    activeDesktopOrgId = "local_main";
+    seed(NO_GRANT);
+    render(<AiGrantBar />);
+    expect(screen.getByTestId("ai-grant-bar").textContent).toContain("Main");
+    expect(screen.getByTestId("ai-grant-bar").textContent).not.toContain("Demo");
+  });
+
+  it("tells a local org to turn on sync, without asking the gateway", async () => {
+    // A local org is not missing a grant — it is not on the gateway's side at
+    // all. Nothing to probe, nothing to request; the composer locks with the
+    // reason on it, and the account's cloud org is never named.
+    activeOrgId = "org_demo";
+    orgs = [{ id: "org_demo", name: "Demo" }];
+    desktopOrgs = [{ id: "local_2", name: "Local", syncEnabled: false }];
+    activeDesktopOrgId = "local_2";
+    invoke.mockResolvedValue(NO_GRANT);
+    render(
+      <>
+        <Composer />
+        <AiGrantBar />
+      </>,
+    );
+    const bar = await screen.findByTestId("ai-grant-bar");
+    expect(bar.textContent).toContain("Local");
+    expect(bar.textContent).toContain("is local");
+    expect(bar.textContent).not.toContain("Demo");
+    expect(bar.textContent).not.toContain("Request");
+    expect(screen.getByTestId("composer").dataset.locked).toBe("yes");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("probes a synced org under its gateway id", async () => {
+    invoke.mockResolvedValue({ state: "entitled", models: ["m"] });
+    desktopOrgs = [{ id: "local_3", name: "Demo-1", syncEnabled: true, remoteId: "org_d1" }];
+    activeDesktopOrgId = "local_3";
+    render(<Composer />);
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    expect(useAiGrantStore.getState().probedOrgId).toBe("org_d1");
+    await waitFor(() => expect(screen.getByTestId("composer").dataset.locked).toBe("no"));
+  });
+
+  it("offers the switcher's Turn-on-sync action for a local org", async () => {
+    // The one thing that unlocks the agent, beside the notice that names it —
+    // the same `enableSync` the org switcher's item calls, for the same org.
+    desktopOrgs = [{ id: "local_2", name: "Local", syncEnabled: false }];
+    activeDesktopOrgId = "local_2";
+    enableSync.mockClear();
+    render(
+      <>
+        <Composer />
+        <AiGrantBar />
+      </>,
+    );
+    const bar = await screen.findByTestId("ai-grant-bar");
+    await userEvent.click(screen.getByRole("button", { name: /turn on sync/i }));
+    expect(enableSync).toHaveBeenCalledWith("local_2");
+    expect(bar.textContent).not.toContain("Refresh");
   });
 });

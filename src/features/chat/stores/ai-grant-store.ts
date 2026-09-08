@@ -15,12 +15,17 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
+import type { Organisation } from "@/features/organisations/types";
 
-/** What the gateway said about this account's AI access. */
+/** What the gateway said about this account's AI access — or, for a local
+ *  organisation, the answer Atlas can give without asking: the native agent
+ *  bills an organisation the gateway knows, and a local org is not one. */
 export type Entitlement =
   | { state: "entitled"; models: string[] }
   | { state: "noGrant"; message: string }
-  | { state: "unknown"; reason: string };
+  | { state: "unknown"; reason: string }
+  | { state: "localOrg" };
 
 interface AiGrantState {
   /** `null` = not asked yet, or asked and we could not find out. */
@@ -51,6 +56,10 @@ interface AiGrantState {
     resetForOrg: () => void;
     /** Probe once per org, however many composers are mounted. */
     ensureProbed: (orgId: string | null) => void;
+    /** The active org is local-only: settle the answer without a probe. Keyed
+     *  by the LOCAL org id, so switching between two local orgs re-settles
+     *  (and drops the previous one's dismissal) like a probe would. */
+    settleLocalOrg: (orgId: string) => void;
   };
 }
 
@@ -127,9 +136,34 @@ export const useAiGrantStore = createSelectors(
         inFlight = null;
         void actions.probe();
       },
+      settleLocalOrg: (orgId) => {
+        const { probedOrgId, actions } = get();
+        if (probedOrgId === orgId) return;
+        actions.resetForOrg();
+        // A probe still running belongs to the synced org we just left; its
+        // answer must not land on this one.
+        inFlight = null;
+        set({ probedOrgId: orgId, entitlement: { state: "localOrg" } });
+      },
     },
   })),
 );
+
+/** The organisation Atlas is acting for — the DESKTOP's active org, which is
+ *  the one the user sees in the switcher. The auth snapshot's `activeOrgId`
+ *  is the account's cloud org and never names a local one, so keying the
+ *  grant on it showed a local org the cloud org's name and the cloud org's
+ *  answer ("Main" rendering as "Demo doesn't have AI grants"). */
+export function useActiveOrganisation(): Organisation | null {
+  return useOrgStore((s) => s.organisations.find((o) => o.id === s.activeOrganisationId) ?? null);
+}
+
+/** Whether the native agent can be billed to this org at all: only a synced
+ *  org exists on the gateway's side. `remoteId` is the proof of the link;
+ *  `syncEnabled` alone is the user's intent. */
+export function isLocalOrg(org: Organisation | null): boolean {
+  return !org || !org.syncEnabled || !org.remoteId;
+}
 
 /**
  * Drives the probe from the composer.
@@ -145,14 +179,21 @@ export const useAiGrantStore = createSelectors(
 export function useAiGrantProbe(): void {
   const snapshot = useAuthStore((s) => s.snapshot);
   const signedIn = snapshot.status === "signed-in";
-  const activeOrgId = snapshot.status === "signed-in" ? (snapshot.activeOrgId ?? null) : null;
+  const org = useActiveOrganisation();
+  const local = isLocalOrg(org);
+  const localId = org?.id ?? null;
+  // A synced org is asked about under its gateway identity — the same id the
+  // account token is minted for once the desktop's choice has been pushed.
+  const remoteId = local ? null : (org?.remoteId ?? null);
 
   useEffect(() => {
-    const { resetForOrg, ensureProbed } = useAiGrantStore.getState().actions;
+    const { resetForOrg, ensureProbed, settleLocalOrg } = useAiGrantStore.getState().actions;
     // Signed out there is no token to ask with, and no grant to speak of.
     if (!signedIn) resetForOrg();
-    else ensureProbed(activeOrgId);
-  }, [signedIn, activeOrgId]);
+    // A local org has nothing to ask the gateway about.
+    else if (local && localId) settleLocalOrg(localId);
+    else ensureProbed(remoteId);
+  }, [signedIn, local, localId, remoteId]);
 }
 
 /**
@@ -162,5 +203,7 @@ export function useAiGrantProbe(): void {
  * leave the composer alone. Offline is not a refusal.
  */
 export function useNoAiGrant(): boolean {
-  return useAiGrantStore((s) => s.entitlement?.state === "noGrant");
+  return useAiGrantStore(
+    (s) => s.entitlement?.state === "noGrant" || s.entitlement?.state === "localOrg",
+  );
 }

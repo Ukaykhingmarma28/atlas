@@ -1,9 +1,10 @@
-import { useCallback } from "react";
-import { Check, RotateCw, ShieldAlert, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Check, Cloud, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
-import { useAiGrantStore } from "../stores/ai-grant-store";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai-grant-store";
 
 /**
  * The native agent's no-grant setup state (spec D15a, acceptance bar item 14).
@@ -48,7 +49,12 @@ export function AiGrantBar() {
   // signed-in arm, which is also the only arm this bar renders under.
   const account = snapshot.status === "signed-in" ? snapshot : null;
   const activeOrgId = account?.activeOrgId ?? null;
-  const orgName = account?.orgs?.find((o) => o.id === activeOrgId)?.name ?? null;
+  // The desktop's active org names the bar. The auth snapshot only knows the
+  // account's CLOUD orgs, so it is the fallback, never the source — for a
+  // local org it would name whichever cloud org the account last used.
+  const org = useActiveOrganisation();
+  const orgName = org?.name ?? account?.orgs?.find((o) => o.id === activeOrgId)?.name ?? null;
+  const local = isLocalOrg(org);
 
   const entitlement = useAiGrantStore.use.entitlement();
   const checking = useAiGrantStore.use.checking();
@@ -56,6 +62,27 @@ export function AiGrantBar() {
   const requested = useAiGrantStore.use.requested();
   const dismissed = useAiGrantStore.use.dismissed();
   const { refresh, request, dismiss } = useAiGrantStore.use.actions();
+  // The switcher's "Turn on sync for {org}…" item, offered here as well so the
+  // one action that unlocks the agent is beside the notice that names it.
+  const enableSync = useOrgStore((s) => s.actions.enableSync);
+  const [syncing, setSyncing] = useState(false);
+  const onTurnOnSync = useCallback(async () => {
+    if (!org) return;
+    // Signed out, `enableSync` opens sign-in and returns at once — no spinner
+    // to show. Signed in it round-trips: hold the syncing state until it
+    // settles (success → the bar goes away with the probe; failure → the
+    // store's own toast).
+    if (!account) {
+      void enableSync(org.id);
+      return;
+    }
+    setSyncing(true);
+    try {
+      await enableSync(org.id);
+    } finally {
+      setSyncing(false);
+    }
+  }, [account, enableSync, org]);
 
   const onRefresh = useCallback(async () => {
     // A failed re-check leaves the bar exactly as it was rather than clearing
@@ -71,19 +98,67 @@ export function AiGrantBar() {
     }
   }, [request]);
 
-  if (entitlement?.state !== "noGrant" || dismissed) return null;
+  if (dismissed) return null;
 
-  return (
-    <div data-testid="ai-grant-bar" className={STRIP} title={entitlement.message}>
-      <div className="flex min-w-0 items-center gap-2">
-        <ShieldAlert size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-        <span className="truncate">
+  // A local organisation: not a grant that is missing, a link that is. The
+  // native agent bills an org the gateway knows, and this one only exists on
+  // this machine — so the only action is turning on sync, which lives in the
+  // org switcher, not here.
+  if (entitlement?.state === "localOrg" && local) {
+    return (
+      <div
+        data-testid="ai-grant-bar"
+        className={STRIP}
+        title="Atlas Agent works with organisations synced to your account"
+      >
+        <span className="min-w-0 truncate">
           <span className="font-semibold text-[var(--text-primary)]">
             {orgName ?? "This organisation"}
           </span>
-          <span className="text-[var(--text-tertiary)]"> doesn&apos;t have AI grants</span>
+          <span className="text-[var(--text-tertiary)]">
+            {" "}
+            is local — sync it to use Atlas Agent
+          </span>
         </span>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void onTurnOnSync()}
+            disabled={syncing}
+            title={
+              account
+                ? "Create this organisation in your Atlas account"
+                : "Sign in to sync this organisation"
+            }
+            className={cn(ACTION, syncing ? "cursor-default" : "cursor-pointer")}
+          >
+            <Cloud size={11} className={cn(syncing && "animate-pulse")} />
+            {syncing ? "Syncing…" : "Turn on sync"}
+          </button>
+          <button
+            type="button"
+            onClick={() => dismiss()}
+            title="Dismiss"
+            className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            <X size={12} />
+          </button>
+        </div>
       </div>
+    );
+  }
+
+  if (entitlement?.state !== "noGrant") return null;
+
+  return (
+    <div data-testid="ai-grant-bar" className={STRIP} title={entitlement.message}>
+      <span className="min-w-0 truncate">
+        <span className="font-semibold text-[var(--text-primary)]">
+          {orgName ?? "This organisation"}
+        </span>
+        <span className="text-[var(--text-tertiary)]"> doesn&apos;t have AI grants</span>
+      </span>
 
       <div className="flex shrink-0 items-center gap-0.5">
         <button
