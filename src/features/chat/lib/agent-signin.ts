@@ -13,6 +13,7 @@
 
 import { agents, listenAuthRunDone, type AuthRunDone } from "./agents-api";
 import { catalogEntry } from "@/features/agents/lib/agent-meta";
+import { logEvent } from "@/features/log/lib/log";
 
 /** A completion watcher armed BEFORE the login subprocess exists.
  *
@@ -91,11 +92,42 @@ export async function runSignInMethod(
     } finally {
       watcher.dispose();
     }
+    await authenticateAfterCliLogin(agentId, method.id, label);
+    return;
   }
-  // The adapters explicitly want this after the CLI login ("then call
-  // authenticate() with methodId …"): it re-reads the credentials the login
-  // just wrote, so the live session stops failing without a restart.
+  // No CLI to run: the RPC IS the login (Codex's browser OAuth), so its
+  // failure is the sign-in failing.
   await agents.authenticate(agentId, method.id);
+}
+
+/** The `authenticate()` that follows a CLI login is a courtesy, not a check.
+ *
+ *  It lets a live agent re-read the credentials the login just wrote without
+ *  a respawn — but the CLI login is the sign-in, and the agent re-reads the
+ *  credentials on its next `session/new` anyway. Adapters commonly do not
+ *  implement the RPC for terminal methods (claude-agent-acp rejects every id
+ *  but its gateway ones with "Method not implemented."), and one that does
+ *  cannot tell Atlas anything the rebind will not. So a rejection here is
+ *  logged and the flow proceeds; the rebind is what verifies the login, and a
+ *  second refusal lands on the "signed in but refused" path with the agent's
+ *  own words. Blocking on it is what parked every Claude Code sign-in on an
+ *  error after a login that had worked. */
+export async function authenticateAfterCliLogin(
+  agentId: string,
+  methodId: string,
+  label: string,
+): Promise<void> {
+  try {
+    await agents.authenticate(agentId, methodId);
+  } catch (err) {
+    logEvent({
+      source: "atlas",
+      kind: "agent-auth",
+      summary: `${label}: authenticate after the CLI login was rejected; relying on the rebind`,
+      status: "failure",
+      payload: { agent: agentId, method: methodId, error: errInfo(err).message },
+    });
+  }
 }
 
 /** Error classification the Rust side computed, when it sent one.

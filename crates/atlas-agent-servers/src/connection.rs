@@ -28,7 +28,9 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::debug_log::{AcpDebugLog, AcpDebugMessage, AcpDebugMessageDirection};
 use crate::handlers::{self, ClientContext};
-use crate::session::{AcpSession, ConfigOptions, SessionDirectories, SessionRegistry};
+use crate::session::{
+    AcpSession, CancelSignal, CancelWaiter, ConfigOptions, SessionDirectories, SessionRegistry,
+};
 use crate::session_list::AcpSessionList;
 
 /// Zed rejects anything below v1 outright rather than trying to degrade.
@@ -41,6 +43,22 @@ const MINIMUM_SUPPORTED_VERSION: ProtocolVersion = ProtocolVersion::V1;
 /// Reporting the RPC error would tell the user "connection closed" when the
 /// real answer — on stderr — is one tick away.
 const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
+
+/// How long an agent gets to answer its own cancellation before the turn is
+/// resolved locally.
+///
+/// `session/prompt` deliberately has no timeout — a legitimate turn runs for
+/// minutes and a flat deadline would kill working sessions. The clock starts
+/// only once the user has asked to stop, which is the point at which waiting
+/// indefinitely stops being correct: they have said they do not want the
+/// result, so the only question left is how long to be polite about it.
+///
+/// Long enough that a healthy agent always wins the race — acknowledging a
+/// cancel is a wire round-trip plus whatever teardown the agent does, well
+/// inside a second — and short enough to be a recovery rather than a second
+/// wait. Losing the race costs the turn's real stop reason and token counts,
+/// which is a fair price for a chat that unfreezes.
+const CANCEL_GRACE: Duration = Duration::from_secs(5);
 
 /// What a session's `AcpThread` events are sent to.
 ///
@@ -380,7 +398,7 @@ impl AcpConnection {
             session_id.clone(),
             AcpSession {
                 thread: Arc::downgrade(&thread),
-                suppress_abort_err: false,
+                cancel_signal: CancelSignal::new(),
                 session_modes: None,
                 config_options: None,
                 ref_count: 1,
@@ -577,6 +595,60 @@ pub fn map_acp_error(err: acp::Error) -> anyhow::Error {
     }
 }
 
+/// The `data` the TypeScript ACP SDK attaches to an `InternalError`: a thrown
+/// `Error`'s message, verbatim. Shared by `prompt` and `authenticate`, which
+/// both want the words rather than `Internal error: { "details": … }`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ErrorDetails {
+    details: Box<str>,
+}
+
+/// What a rejected `authenticate` means for the sign-in that issued it.
+///
+/// A terminal method IS the sign-in: the host ran the agent's login CLI and
+/// the agent re-reads the credentials on its next `session/new`. Several
+/// adapters therefore do not implement `authenticate` for those methods at
+/// all — claude-agent-acp throws `"Method not implemented."` (wrapped by its
+/// SDK as `-32603` with `details`) for every id but its gateway ones. That
+/// rejection is not a failed login, and treating it as one parked every
+/// Claude Code user on an error after a login that had worked.
+///
+/// So for a terminal method an unimplemented `authenticate` is `Ok`: the
+/// rebind that follows is the real check. For an `agent` method the RPC is
+/// the whole login, so "not implemented" is a real failure — reported in the
+/// agent's words rather than the SDK's envelope.
+pub fn authenticate_outcome(err: acp::Error, method_is_terminal: bool) -> Result<()> {
+    if err.code == acp::ErrorCode::AuthRequired {
+        return Err(map_acp_error(err));
+    }
+    let details = match err.code {
+        acp::ErrorCode::MethodNotFound => None,
+        acp::ErrorCode::InternalError => match &err.data {
+            Some(data) => match serde_json::from_value::<ErrorDetails>(data.clone()) {
+                Ok(ErrorDetails { details }) => Some(details),
+                Err(_) => return Err(anyhow!(err)),
+            },
+            None => return Err(anyhow!(err)),
+        },
+        _ => return Err(anyhow!(err)),
+    };
+    let unimplemented = details
+        .as_deref()
+        .is_none_or(|d| d.to_ascii_lowercase().contains("not implemented"));
+    match (unimplemented, method_is_terminal, details) {
+        (true, true, _) => {
+            tracing::debug!("agent does not implement authenticate for a terminal method; the login CLI already ran");
+            Ok(())
+        }
+        (true, false, _) => Err(anyhow!(
+            "the agent does not support signing in this way (authenticate is not implemented for this method)"
+        )),
+        (false, _, Some(details)) => Err(anyhow!(details)),
+        (false, _, None) => Err(anyhow!(err)),
+    }
+}
+
 impl Drop for AcpConnection {
     fn drop(&mut self) {
         // Zed kills the child here (`acp.rs:1528-1534`). The child is owned by
@@ -624,7 +696,7 @@ impl AgentConnection for AcpConnection {
                 session_id.clone(),
                 AcpSession {
                     thread: Arc::downgrade(&thread),
-                    suppress_abort_err: false,
+                    cancel_signal: CancelSignal::new(),
                     session_modes: response.modes.map(|modes| Arc::new(Mutex::new(modes))),
                     config_options: response
                         .config_options
@@ -787,11 +859,24 @@ impl AgentConnection for AcpConnection {
 
     fn authenticate(&self, method: acp::AuthMethodId) -> BoxFuture<'static, Result<()>> {
         let conn = self.connection.clone();
+        // Both of Zed's terminal shapes count — see `terminal_auth_command_for`.
+        let method_is_terminal = self
+            .auth_methods
+            .iter()
+            .find(|m| m.id() == &method)
+            .is_some_and(|m| {
+                matches!(m, acp::AuthMethod::Terminal(_))
+                    || meta_terminal_auth_command(&self.id, &method, m).is_some()
+            });
         async move {
-            conn.send_request(acp::AuthenticateRequest::new(method))
+            match conn
+                .send_request(acp::AuthenticateRequest::new(method))
                 .block_task()
-                .await?;
-            Ok(())
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(err) => authenticate_outcome(err, method_is_terminal),
+            }
         }
         .boxed()
     }
@@ -819,19 +904,56 @@ impl AgentConnection for AcpConnection {
         let conn = self.connection.clone();
         let sessions = self.sessions.clone();
         let session_id = params.session_id.clone();
+        // Taken before the request goes out, so a cancel that lands while we
+        // are still sending is seen rather than missed. The probe is this
+        // turn's own view of it: whether a cancel fired while THIS turn was
+        // running, which is what decides an abort-shaped error's fate below.
+        let cancel_waiter =
+            sessions.with_session(&session_id, |session| session.cancel_signal.waiter());
+        let cancel_probe = cancel_waiter.as_ref().map(CancelWaiter::probe);
 
         async move {
-            let result = conn.send_request(params).block_task().await;
+            let result = match cancel_waiter {
+                Some(waiter) => {
+                    let request = conn.send_request(params).block_task();
+                    futures::pin_mut!(request);
+                    let deadline = async move {
+                        waiter.cancelled().await;
+                        tokio::time::sleep(CANCEL_GRACE).await;
+                    };
+                    futures::pin_mut!(deadline);
 
-            // Consume the flag whatever the outcome, so a cancel cannot leak
-            // into a later turn's error handling.
-            let suppress_abort_err = sessions
-                .with_session(&session_id, |session| {
-                    let suppress = session.suppress_abort_err;
-                    session.suppress_abort_err = false;
-                    suppress
-                })
-                .unwrap_or(false);
+                    match futures::future::select(request, deadline).await {
+                        futures::future::Either::Left((result, _)) => result,
+                        futures::future::Either::Right(((), _)) => {
+                            // The agent was told to stop and did not answer, so
+                            // answer for it.
+                            //
+                            // Dropping the request future is not merely giving
+                            // up locally: the SDK's `SentRequestCancellation`
+                            // has a `Drop` that sends a cancellation for the
+                            // abandoned request id (`jsonrpc.rs:4742`), so the
+                            // agent is told again, through the channel it
+                            // ignored the first time. A reply that arrives
+                            // after this has no waiter, which is what
+                            // "cancelled" means.
+                            tracing::warn!(
+                                session = %session_id,
+                                grace_ms = CANCEL_GRACE.as_millis(),
+                                "agent did not acknowledge a cancel; resolving the turn locally"
+                            );
+                            return Ok(acp::PromptResponse::new(acp::StopReason::Cancelled));
+                        }
+                    }
+                }
+                // No session to hang a clock on. The request is still the right
+                // thing to await; an unknown session id fails on its own.
+                None => conn.send_request(params).block_task().await,
+            };
+
+            // Read, not consumed: this turn's own answer, so it cannot be
+            // spent by a sibling turn or inherited by a later one.
+            let suppress_abort_err = cancel_probe.is_some_and(|probe| probe.fired());
 
             let err = match result {
                 Ok(response) => return Ok(response),
@@ -851,12 +973,6 @@ impl AgentConnection for AcpConnection {
             // Some agents report a cancelled turn as an internal error whose
             // details say the operation was aborted. When we are the ones who
             // cancelled, that is a normal stop, not a failure to show the user.
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct ErrorDetails {
-                details: Box<str>,
-            }
-
             match serde_json::from_value::<ErrorDetails>(data.clone()) {
                 Ok(ErrorDetails { details }) => {
                     if suppress_abort_err
@@ -875,12 +991,18 @@ impl AgentConnection for AcpConnection {
     }
 
     fn cancel(&self, session_id: &acp::SessionId) {
-        self.sessions.with_session(session_id, |session| {
-            session.suppress_abort_err = true;
-        });
+        let signal = self
+            .sessions
+            .with_session(session_id, |session| session.cancel_signal.clone());
         let _ = self
             .connection
             .send_notification(acp::CancelNotification::new(session_id.clone()));
+        // After the notification, not before: a healthy agent should get the
+        // whole grace period to answer it, and starting the clock first would
+        // spend part of that on our own write.
+        if let Some(signal) = signal {
+            signal.fire();
+        }
     }
 
     fn request_elicitations(&self) -> Option<ElicitationStoreHandle> {
@@ -1704,3 +1826,49 @@ mod model_select_tests {
     }
 }
 
+#[cfg(test)]
+mod authenticate_tests {
+    use super::*;
+
+    /// What the TypeScript ACP SDK sends for a thrown `Error`: `-32603` with
+    /// the message under `data.details`.
+    fn internal(details: &str) -> acp::Error {
+        acp::Error::internal_error().data(serde_json::json!({ "details": details }))
+    }
+
+    /// The Claude Code regression: the login CLI ran, the user confirmed, and
+    /// claude-agent-acp answered `authenticate` with "Method not implemented."
+    /// That is the adapter declining a courtesy, not a failed sign-in.
+    #[test]
+    fn an_unimplemented_authenticate_is_fine_for_a_terminal_method() {
+        assert!(authenticate_outcome(internal("Method not implemented."), true).is_ok());
+        assert!(authenticate_outcome(acp::Error::method_not_found(), true).is_ok());
+    }
+
+    /// For an `agent` method the RPC IS the login, so declining it is a real
+    /// failure — and one the user needs to read as "this way in doesn't work".
+    #[test]
+    fn an_unimplemented_authenticate_fails_an_agent_method() {
+        let err = authenticate_outcome(internal("Method not implemented."), false)
+            .expect_err("no login happened");
+        assert!(err.to_string().contains("does not support"), "{err}");
+    }
+
+    /// Any other internal error surfaces its own words, not the SDK envelope
+    /// (`Internal error: { "details": … }`) — whichever method kind.
+    #[test]
+    fn other_internal_errors_surface_their_details() {
+        for terminal in [true, false] {
+            let err = authenticate_outcome(internal("browser could not be opened"), terminal)
+                .expect_err("a real failure");
+            assert_eq!(err.to_string(), "browser could not be opened");
+        }
+    }
+
+    /// `AuthRequired` stays typed so the host can route into sign-in.
+    #[test]
+    fn auth_required_stays_typed() {
+        let err = authenticate_outcome(acp::Error::auth_required(), true).expect_err("typed");
+        assert!(err.downcast_ref::<AuthRequired>().is_some());
+    }
+}

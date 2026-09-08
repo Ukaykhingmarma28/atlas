@@ -1,4 +1,5 @@
-import type { SessionModeInfo } from "./agents";
+import type { ImageAttachment, SessionModeInfo } from "./agents";
+import type { MentionData } from "@/features/chat/lib/mentions";
 
 /** The agents Atlas has first-party BRANDING for — labels, brand icons and
  *  `.agent-*` CSS tokens, which are Atlas's own design rather than registry
@@ -323,6 +324,27 @@ export interface ChatSession {
    * flag clears.
    */
   resumePending?: boolean;
+  /**
+   * The first message of a session that has not finished binding yet.
+   *
+   * Sending while the agent is still spawning used to park the prompt in the
+   * composer queue, which rendered as a QUEUED chip — the same treatment as
+   * typing during a live turn. For a brand-new session that reads as "Atlas
+   * did not send my message". So the message is recorded in the transcript
+   * the moment it is sent, the session shows as starting, and the prompt is
+   * held HERE (not in the queue) until the bind lands; the drain effect then
+   * dispatches it without re-recording it. Sends typed while this is set
+   * still queue behind it as before.
+   */
+  pendingSend?: PendingSend;
+}
+
+/** See `ChatSession.pendingSend`. Mentions are kept as sent — unlike the
+ *  string queue, this path loses nothing. */
+export interface PendingSend {
+  content: string;
+  mentions: MentionData[];
+  attachments?: ImageAttachment[];
 }
 
 export interface ChatMessage {

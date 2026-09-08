@@ -16,8 +16,9 @@
 // One method type per branch, mirroring ACP:
 //   `agent`    → call `authenticate(methodId)` and let the CLI drive itself.
 //   `terminal` → open the login CLI in a REAL terminal and let the user drive
-//                it, with a dock offering "I've finished signing in" →
-//                `authenticate()`. Atlas no longer runs these headlessly
+//                it, with a dock offering "I've finished signing in" → a
+//                best-effort `authenticate()`, then the rebind that actually
+//                checks the login. Atlas no longer runs these headlessly
 //                first: piped stdio cannot answer a login that asks a
 //                question, so that path could only ever hang (#24).
 //   `env_var`  → a read-only checklist of variables the user must export. There
@@ -50,6 +51,7 @@ import {
 } from "@/features/chat/lib/agents-api";
 import {
   AGENT_SIGNIN_EVENT,
+  authenticateAfterCliLogin,
   errInfo,
   runSignInMethod,
   takeSignInCallback,
@@ -58,6 +60,7 @@ import {
 import { detectKeyNeed, envVarsForProvider } from "@/features/chat/lib/agent-key-need";
 import { copyText } from "@/lib/clipboard";
 import { pluginIdForAgent } from "@/types/agent";
+import { useCenterPanelCenterX } from "@/features/layout/lib/use-center-panel-x";
 import { agentMeta, catalogEntry } from "@/features/agents/lib/agent-meta";
 import { logEvent } from "@/features/log/lib/log";
 import {
@@ -361,25 +364,19 @@ function AgentOAuthModal({
    *  headless path makes after its login exits.
    *
    *  Not a verification, and it must not be described as one. ACP does not
-   *  require an agent to fail `authenticate` when it is still signed out, and
-   *  adapters commonly answer `Ok` regardless; what this reliably does is give
-   *  the running agent a chance to pick the new credentials up without a
-   *  respawn. A failure IS surfaced when one comes, but silence is not proof. */
+   *  require an agent to fail `authenticate` when it is still signed out, nor
+   *  to implement it for a terminal method at all (claude-agent-acp rejects
+   *  with "Method not implemented."); adapters commonly answer `Ok` regardless.
+   *  So neither its silence nor its refusal decides anything here — see
+   *  `authenticateAfterCliLogin`. The rebind `finish` triggers is the check,
+   *  and a second refusal reaches the user with the agent's own words. */
   const confirmTerminalSignIn = async (method: AuthMethodWire) => {
     if (!agentId) return;
     // Stays in the dock: the terminal behind it is still what the user is
     // looking at, and this is one call with nothing to show.
     setPhase({ kind: "running", label: `Checking ${label}…`, docked: true });
-    try {
-      await agents.authenticate(agentId, method.id);
-      finish(true);
-    } catch (err) {
-      setPhase({
-        kind: "error",
-        message: errInfo(err).message,
-        manualCommand: manualCommandFor(method) ?? undefined,
-      });
-    }
+    await authenticateAfterCliLogin(agentId, method.id, label);
+    finish(true);
   };
 
   /** ACP `logout` (A2) — the agent drops its own credentials; Atlas holds none
@@ -441,6 +438,11 @@ function AgentOAuthModal({
     phase.kind === "loading" ||
     phase.kind === "terminal" ||
     ((phase.kind === "running" || phase.kind === "done") && phase.docked);
+  // Centred on the content, not the window: with source control or the
+  // workspace switcher open, `left-1/2` sat the dock half a panel off-centre.
+  // `left-1/2` stays as the fallback for a window with no centre panel.
+  const centerX = useCenterPanelCenterX();
+  const centred = centerX != null ? { left: centerX } : undefined;
 
   return (
     <Dialog.Root open modal={!docked} onOpenChange={(o) => !o && dismiss()}>
@@ -463,6 +465,7 @@ function AgentOAuthModal({
               if (phase.kind === "terminal") e.preventDefault();
             }}
             className="fixed bottom-12 left-1/2 z-[var(--z-modal)] max-w-[92vw] -translate-x-1/2"
+            style={centred}
           >
             <SignInDock label={label}>
               {phase.kind === "terminal" ? (
@@ -495,6 +498,7 @@ function AgentOAuthModal({
               "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
               "shadow-[var(--shadow-overlay)] text-text-primary",
             )}
+            style={centred}
           >
             <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
               <Info className="mt-0.5 size-4 text-text-tertiary" />

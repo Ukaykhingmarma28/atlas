@@ -1,4 +1,5 @@
 import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { useChatStore } from "../stores/chat-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
@@ -37,6 +38,34 @@ const reportedBindFailures = new Set<string>();
  *  absorbs a transient; a failure that repeats is reported as before. */
 const retriedBinds = new Set<string>();
 const BIND_RETRY_MS = 1500;
+
+/** How long a bind hop (connect, `session/new`) may stay silent before the
+ *  user is told. A hop that never resolves has no error to report, so without
+ *  this the only symptom is a message parked in the composer queue for as long
+ *  as the app lives — which is what "messages get queued no matter what" was.
+ *  Nothing is aborted: the hop is still awaited, this only says so. */
+const BIND_STALL_MS = 30_000;
+
+/** Await a bind hop, reporting once if it stalls. The hop itself is untouched. */
+async function watchStall<T>(hop: Promise<T>, label: string, tabId: string): Promise<T> {
+  const timer = window.setTimeout(() => {
+    toast.error(
+      `${label} has not answered in 30s. Restart it from the composer's agent menu, or relaunch Atlas.`,
+    );
+    logEvent({
+      source: "atlas",
+      kind: "agent-bind",
+      summary: `${label}: bind stalled (no answer after ${BIND_STALL_MS / 1000}s)`,
+      status: "failure",
+      payload: { tabId },
+    });
+  }, BIND_STALL_MS);
+  try {
+    return await hop;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 /** Tab+agent pairs we have ALREADY walked through sign-in once.
  *
@@ -101,6 +130,7 @@ const GitDiffModal = lazy(() =>
 );
 import { Sparkles, Search, ChevronDown, ArrowRight, GitCompare, FlaskConical } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
+import { DitherField } from "@/ui/dither-field";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
@@ -308,7 +338,8 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
         // not a single global default — so per-tab agents run in parallel.
         const at = useChatStore.getState().sessions[tabId]?.agentType;
         const pluginId = pluginIdForAgent(at);
-        const agent = await ensureAgent(pluginId);
+        const label = agentMeta(at).label;
+        const agent = await watchStall(ensureAgent(pluginId), label, tabId);
         if (cancelled) return;
         // Resolve cwd from THIS tab's workspace, not the global currentProject:
         // background workspaces keep their chat panels mounted, so a bind that
@@ -317,7 +348,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
         // "/" fallback would dodge the running-workspace eviction guard.
         const cwd =
           workspacePathForTab(tabId) ?? useProjectStore.getState().currentProject?.path ?? "/";
-        const init = await agents.newSession(agent.agent_id, cwd);
+        const init = await watchStall(agents.newSession(agent.agent_id, cwd), label, tabId);
         const key = init.key;
         if (cancelled) return;
         // Guard against an agent switch that landed mid-bind: if the tab's
@@ -485,6 +516,16 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
           useChatStore.getState().actions.setAcpModesPending(tabId, false);
           const at = useChatStore.getState().sessions[tabId]?.agentType;
           const key = `${tabId}:${pluginIdForAgent(at)}`;
+          // The log panel gets every failure, deduped or not: the dedupe below
+          // is about not re-toasting, and a failure that reaches neither the
+          // toast nor the log is one nobody can diagnose.
+          logEvent({
+            source: "atlas",
+            kind: "agent-bind",
+            summary: `${agentMeta(at).label}: bind failed — ${errInfo(err).message.slice(0, 200)}`,
+            status: "failure",
+            payload: { tabId, agent: at, kind: errInfo(err).kind },
+          });
           // First failure of an automatic bind: try once more, quietly, before
           // telling anyone. `pending` is released in `finally` below, so the
           // delayed call is not coalesced away.
@@ -495,7 +536,24 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
             }, BIND_RETRY_MS);
             return;
           }
-          if (!reportedBindFailures.has(key)) {
+          // The first message held for this bind cannot go out: drop the
+          // "starting" state and park the text in the queue instead, where
+          // it stays visible (and retryable) beside the failure reported
+          // below. Its bubble stays in the transcript.
+          const held = useChatStore.getState().sessions[tabId]?.pendingSend;
+          if (held) {
+            const actions = useChatStore.getState().actions;
+            actions.setPendingSend(tabId, undefined);
+            actions.updateSessionStatus(tabId, "idle");
+            actions.enqueueMessage(tabId, held.content);
+          }
+          // A message is sitting in the queue waiting on this bind: the user
+          // is watching, so the failure is reported even if an earlier one
+          // for this tab+agent already was. The dedupe exists to stop the
+          // focus-retry re-toasting into the void, not to hide the reason a
+          // send never went out.
+          const waiting = (useChatStore.getState().queues[tabId]?.length ?? 0) > 0;
+          if (waiting || !reportedBindFailures.has(key)) {
             reportedBindFailures.add(key);
             // Cursor (and friends) reject `session/new` when signed out, so the
             // "you need to sign in" case lands HERE, not on the turn-failure
@@ -663,7 +721,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
   // capture phase so the browser's default focus traversal never steals it.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!matchesAction(e, "chat.cyclePermissionMode")) return;
       const root = rootRef.current;
       const active = document.activeElement as HTMLElement | null;
       // Only intercept when focus is somewhere inside this chat panel.
@@ -736,7 +794,15 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
   const prevStatusRef = useRef<string | null>(null);
   const prevAcpRef = useRef<string | undefined>(undefined);
   const prevResumingRef = useRef(false);
-  const handleSendRef = useRef<((content: string, mentions: MentionData[]) => void) | null>(null);
+  const handleSendRef = useRef<
+    | ((
+        content: string,
+        mentions: MentionData[],
+        attachments?: ImageAttachment[],
+        opts?: { recorded?: boolean },
+      ) => void)
+    | null
+  >(null);
   const handleStopRef = useRef<(() => void) | null>(null);
   // STABLE wrappers passed to the memoized <ChatComposer> so it doesn't
   // re-render on every ChatPanel render (i.e. every streaming chunk). The real
@@ -779,6 +845,22 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     const turnFinished = prev === "running" && cur !== "running";
     const justBound = !prevAcp && !!curAcp;
     const justResumed = prevResuming && !curResuming && !!curAcp;
+    if (justBound || justResumed) {
+      // The first message held while the session was starting goes out
+      // ahead of the queue — it was recorded in the transcript at send time,
+      // so it is dispatched without being recorded again.
+      const state = useChatStore.getState();
+      const held = state.sessions[tabId]?.pendingSend;
+      if (held) {
+        state.actions.setPendingSend(tabId, undefined);
+        Promise.resolve().then(() =>
+          handleSendRef.current?.(held.content, held.mentions, held.attachments, {
+            recorded: true,
+          }),
+        );
+        return;
+      }
+    }
     if (turnFinished || justBound || justResumed) {
       const next = useChatStore.getState().actions.shiftQueue(tabId);
       if (next && handleSendRef.current) {
@@ -826,7 +908,32 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
   const handleStop = () => {
     const cs = useChatStore.getState();
     const s = cs.sessions[tabId];
+    // Stop while the session is still starting: nothing has been dispatched,
+    // so there is nothing to cancel on the wire — just let go of the held
+    // message. The bubble stays, as it would for a cancelled turn.
+    if (s?.pendingSend) {
+      cs.actions.setPendingSend(tabId, undefined);
+      cs.actions.updateSessionStatus(tabId, "idle");
+      return;
+    }
     if (!s?.acpAgentId || !s.acpSessionId) return;
+
+    // Pressing Stop again while a stop is already pending means the first one
+    // did not appear to work, so escalate to killing the process. The backend
+    // resolves a cancel the agent ignores after a grace period, which covers a
+    // wedged *turn*; an agent that is wedged outright would hang the next turn
+    // too, and this is the way out of that without quitting Atlas.
+    //
+    // Killing drops the connection, which takes its exit-watch task with it —
+    // so no `agent_disconnected` arrives to clear the flags. We asked for this,
+    // so we record it ourselves, which is also what raises the Restart banner.
+    if (s.stopping) {
+      cs.actions.noteAgentKilled(tabId);
+      cs.actions.clearQueue(tabId);
+      cs.actions.clearPermissionsForSession(s.acpSessionId);
+      agents.kill(s.acpAgentId).catch(() => {});
+      return;
+    }
     // Do NOT flip to idle optimistically: the backend may still be winding
     // tools down, and lying "idle" here let a new send race the still-live
     // turn (interleaved deltas; native history loss). Mark stop-requested
@@ -854,6 +961,9 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     content: string,
     mentions: MentionData[],
     attachments?: ImageAttachment[],
+    /** `recorded`: the user bubble, title and running status were already
+     *  applied when this message was held as `pendingSend`; only dispatch. */
+    opts?: { recorded?: boolean },
   ) => {
     const actualContent = content;
 
@@ -883,25 +993,62 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     // haven't landed, so the optimistic `acpSessionId` points at a session the
     // manager hasn't installed. Queue rather than send into the void.
     if (!bound?.acpAgentId || !bound.acpSessionId || bound.resumePending) {
-      useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+      const cs = useChatStore.getState();
+      // The FIRST message into a session that is still starting is not
+      // "typed during a turn" — nothing is running, the agent is just not up
+      // yet (an in-tab agent switch respawns + `session/new` in 2–3 s). Show
+      // it as sent, with the agent shown as starting, and hold the prompt on
+      // the session; the drain effect dispatches it when the bind lands. A
+      // QUEUED chip here read as "Atlas didn't send it". Anything typed
+      // after it, or while a turn is live, still queues.
+      const firstWhileStarting =
+        !bound?.pendingSend &&
+        (cs.queues[tabId]?.length ?? 0) === 0 &&
+        !isBusyAgentStatus(bound?.status);
+      if (firstWhileStarting) {
+        addMessage(tabId, "user", actualContent, attachments);
+        logEvent({
+          source: "chat",
+          kind: "send-agent",
+          summary: actualContent.slice(0, 120),
+          payload: { tabId, mentionCount: mentions.length, heldForBind: true },
+        });
+        if (session.messages.length === 0) {
+          setSessionTitle(
+            tabId,
+            actualContent.slice(0, 40) + (actualContent.length > 40 ? "..." : ""),
+          );
+        }
+        updateSessionStatus(tabId, "running");
+        cs.actions.setPendingSend(tabId, { content: actualContent, mentions, attachments });
+        return;
+      }
+      cs.actions.enqueueMessage(tabId, actualContent);
       return;
     }
 
-    // The user-visible message keeps the prose as the user typed it,
-    // including the shortform mention references (`@file:src/foo.rs` etc).
-    // The context block goes only to the agent, not the local transcript.
-    addMessage(tabId, "user", actualContent, attachments);
-    logEvent({
-      source: "chat",
-      kind: "send-agent",
-      summary: actualContent.slice(0, 120),
-      payload: { tabId, mentionCount: mentions.length },
-    });
+    if (!opts?.recorded) {
+      // The user-visible message keeps the prose as the user typed it,
+      // including the shortform mention references (`@file:src/foo.rs` etc).
+      // The context block goes only to the agent, not the local transcript.
+      addMessage(tabId, "user", actualContent, attachments);
+      logEvent({
+        source: "chat",
+        kind: "send-agent",
+        summary: actualContent.slice(0, 120),
+        payload: { tabId, mentionCount: mentions.length },
+      });
 
-    if (session.messages.length === 0) {
-      setSessionTitle(tabId, actualContent.slice(0, 40) + (actualContent.length > 40 ? "..." : ""));
+      if (session.messages.length === 0) {
+        setSessionTitle(
+          tabId,
+          actualContent.slice(0, 40) + (actualContent.length > 40 ? "..." : ""),
+        );
+      }
     }
-
+    // Idempotent for a held send (already running while it started), and it
+    // re-asserts the state if a fresh session's initial `idle` status landed
+    // between the bind and this dispatch.
     updateSessionStatus(tabId, "running");
 
     // Expand mentions. Bodies that have no URI (notes, papers, past sessions)
@@ -995,6 +1142,9 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
                 agentType={session.agentType}
                 topInset={HEADER_INSET}
                 onShowJumpChange={onShowJumpChange}
+                workingLabel={
+                  session.pendingSend ? `Starting ${agentMeta(session.agentType).label}` : undefined
+                }
               />
             </Suspense>
             <div className="absolute inset-x-0 top-0 z-20">
@@ -1258,8 +1408,15 @@ const WELCOME_SUGGESTIONS = [
 
 function WelcomeState() {
   return (
-    <div className="h-full flex items-center justify-center px-6">
-      <div className="w-full max-w-[440px] flex flex-col items-center text-center">
+    <div className="relative h-full flex items-center justify-center overflow-hidden px-6">
+      {/* The landing hero's ASCII cloud field, hollowed under the copy and
+          faded out at the edges so it never reaches the header or the
+          composer. Behind everything: the content stacks on `relative`. */}
+      <DitherField
+        mode="glyphs"
+        className="[mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,#000_30%,transparent_100%)]"
+      />
+      <div className="relative w-full max-w-[440px] flex flex-col items-center text-center">
         {/* Hero: Atlas mark over a soft accent glow (radial gradient, no
             backdrop-filter — cheap + static in WKWebView). */}
         <div className="relative mb-5">

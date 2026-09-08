@@ -74,6 +74,11 @@ const TransientMarkdown = memo(function TransientMarkdown({
   const lastRun = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
+    // Re-armed on every run, not only at construction: the cleanup below
+    // latches it false, and StrictMode's mount/unmount/mount (or a virtualizer
+    // row remount) would otherwise leave every large tail mute for the rest
+    // of the block — the one correct finding of the reverted PR 245.
+    alive.current = true;
     if (small || timer.current !== null) return;
     const due = Math.max(0, TRANSIENT_THROTTLE_MS - (performance.now() - lastRun.current));
     timer.current = window.setTimeout(() => {
@@ -94,6 +99,10 @@ const TransientMarkdown = memo(function TransientMarkdown({
     () => () => {
       alive.current = false;
       if (timer.current !== null) window.clearTimeout(timer.current);
+      // The scheduler early-returns while a timer is recorded, and only the
+      // (now cancelled) callback would have cleared it — without this a
+      // remount mid-tick never schedules another parse.
+      timer.current = null;
     },
     [],
   );
@@ -219,7 +228,15 @@ function useBlocks(source: string, streaming: boolean, whole: boolean): string[]
 
   useEffect(
     () => () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        // The split effect above coalesces on "a frame is already pending";
+        // a cancelled frame left recorded here reads as pending forever, so
+        // every later source change early-returns and the tail freezes at
+        // its first split until settle. StrictMode's mount→unmount→mount on
+        // the first chunk hit this on every dev run.
+        rafRef.current = null;
+      }
     },
     [],
   );

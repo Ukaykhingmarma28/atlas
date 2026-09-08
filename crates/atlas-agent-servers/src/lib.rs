@@ -14,9 +14,13 @@
 //! - **Ref-counted `close_session` with pending-load dedup**, so a second opener
 //!   joins the in-flight load and the session is only really closed once the
 //!   last handle goes.
-//! - **`suppress_abort_err`**, which turns an agent's "operation was aborted"
-//!   internal error into a clean `StopReason::Cancelled` when we are the ones
-//!   who cancelled.
+//! - **[`session::CancelSignal`]**, which does two jobs a cancel needs and the
+//!   wire notification cannot do alone. It turns an agent's "operation was
+//!   aborted" internal error into a clean `StopReason::Cancelled` when we are
+//!   the ones who cancelled — per turn, so a cancel cannot be spent on a turn
+//!   it was not meant for. And it is the deadline: `cancel` is a notification
+//!   with no response and no obligation, so an agent that ignores it left the
+//!   prompt pending forever, and the chat could only be recovered by quitting.
 //! - **`LoadError::Exited { status, stderr }` fanned out to every live session**,
 //!   so an agent dying mid-turn surfaces in the conversation.
 //!
@@ -66,6 +70,7 @@ pub use connection::{
 };
 pub use debug_log::{
     AcpDebugLog, AcpDebugMessage, AcpDebugMessageContent, AcpDebugMessageDirection,
+    MAX_DEBUG_BACKLOG_BYTES, MAX_DEBUG_MESSAGE_BYTES,
 };
 pub use handlers::ClientContext;
 pub use host_env::sanitize_host_env;
@@ -73,5 +78,8 @@ pub use server::{
     env_quirks, load_proxy_env, AgentServer, AgentServerDelegate, ConnectOptions,
     CustomAgentServer, ExternalAgentServer,
 };
-pub use session::{AcpSession, ConfigOptions, SessionDirectories, SessionRegistry};
+pub use session::{
+    AcpSession, CancelProbe, CancelSignal, CancelWaiter, ConfigOptions, SessionDirectories,
+    SessionRegistry,
+};
 pub use session_list::AcpSessionList;

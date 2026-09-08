@@ -135,6 +135,11 @@ interface TranscriptProps {
    *  content padding so the first row clears it while still scrolling under. */
   topInset?: number;
   onShowJumpChange?: (visible: boolean, newCount?: number) => void;
+  /** What the working indicator says while the session is still binding and
+   *  the first message is held (see `ChatSession.pendingSend`) — "Starting
+   *  Claude Code" rather than "Thinking", which would claim a turn that has
+   *  not been dispatched yet. */
+  workingLabel?: string;
 }
 
 /** Per (tab, session) scroll position, so switching away and back returns the
@@ -172,16 +177,25 @@ function saveScroll(cacheKey: string, saved: Saved): void {
  * the reader is actually asking. It occupies a fixed-height row so its arrival
  * and departure don't jolt the thread it sits under.
  */
-function WorkingIndicator() {
+function WorkingIndicator({ label = "Thinking" }: { label?: string }) {
   return (
     <div className="mx-auto w-full max-w-[760px] px-6 pt-2 pb-3">
-      <LoadingState label="Thinking" />
+      <LoadingState label={label} />
     </div>
   );
 }
 
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function Transcript(
-  { tabId, acpSessionId, messages, isStreaming, agentType, topInset = 0, onShowJumpChange },
+  {
+    tabId,
+    acpSessionId,
+    messages,
+    isStreaming,
+    agentType,
+    topInset = 0,
+    onShowJumpChange,
+    workingLabel,
+  },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -672,7 +686,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
               />
             </div>
           ))}
-          {working && <WorkingIndicator />}
+          {working && <WorkingIndicator label={workingLabel} />}
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import type {
   ClaudePermissionMode,
   SwitchableAgent,
   AgentType,
+  PendingSend,
 } from "@/types/agent";
 import { CLAUDE_PERMISSION_MODES } from "@/types/agent";
 import type { PendingPermission } from "@/types/acp";
@@ -346,8 +347,12 @@ interface ChatActions {
     updateSessionStatus: (sessionId: string, status: AgentStatus) => void;
     /** Mark a session as stop-requested (Stop clicked, terminal not yet in). */
     setStopping: (sessionId: string, on: boolean) => void;
+    /** See `ChatSession.pendingSend`. `undefined` clears it. */
+    setPendingSend: (sessionId: string, pending: PendingSend | undefined) => void;
     /** Flag/clear "the backing agent process died" (drives Restart + rebind). */
     setDisconnected: (sessionId: string, on: boolean) => void;
+    /** The user force-killed the agent from the composer. */
+    noteAgentKilled: (sessionId: string) => void;
     setSessionTitle: (sessionId: string, title: string) => void;
     setTranscriptLoading: (sessionId: string, loading: boolean) => void;
     /** Mark a resumed session as bound-but-not-yet-loaded. See
@@ -959,6 +964,31 @@ export const useChatStore = createSelectors(
             const session = s.sessions[sessionId];
             if (session) session.stopping = on || undefined;
           }),
+        // Killing an agent drops its connection, and the exit-watch task that
+        // would have produced `agent_disconnected` goes with it. So nothing
+        // arrives to end the turn: this records what that delta does, plus the
+        // turn terminal Rust normally emits ahead of it (`agent_disconnected`
+        // above is written assuming the status is already error). Without the
+        // status and tool-call reset the composer keeps offering Stop for a
+        // process that no longer exists, underneath a Restart banner.
+        //
+        // The transcript is deliberately untouched — the conversation survives
+        // and `acpSessionId` is what a restart resumes from.
+        noteAgentKilled: (sessionId) =>
+          set((s) => {
+            const session = s.sessions[sessionId];
+            if (!session) return;
+            session.status = "error";
+            session.stopping = undefined;
+            session.retryStatus = undefined;
+            session.inflightToolIds = undefined;
+            session.disconnected = true;
+          }),
+        setPendingSend: (sessionId, pending) =>
+          set((s) => {
+            const session = s.sessions[sessionId];
+            if (session) session.pendingSend = pending;
+          }),
         setSessionTitle: (sessionId, title) =>
           set((s) => {
             const session = s.sessions[sessionId];
@@ -1009,6 +1039,9 @@ export const useChatStore = createSelectors(
               // reset. Leaving it set would silently queue every future send in
               // this tab forever.
               session.resumePending = false;
+              // A first message still waiting on the old bind belongs to the
+              // conversation being dropped, exactly like the queue below.
+              session.pendingSend = undefined;
             }
             delete s.queues[sessionId];
           }),
