@@ -60,6 +60,7 @@ import {
 import { detectKeyNeed, envVarsForProvider } from "@/features/chat/lib/agent-key-need";
 import { copyText } from "@/lib/clipboard";
 import { pluginIdForAgent } from "@/types/agent";
+import { useCenterPanelCenterX } from "@/features/layout/lib/use-center-panel-x";
 import { agentMeta, catalogEntry } from "@/features/agents/lib/agent-meta";
 import { logEvent } from "@/features/log/lib/log";
 import {
@@ -437,6 +438,11 @@ function AgentOAuthModal({
     phase.kind === "loading" ||
     phase.kind === "terminal" ||
     ((phase.kind === "running" || phase.kind === "done") && phase.docked);
+  // Centred on the content, not the window: with source control or the
+  // workspace switcher open, `left-1/2` sat the dock half a panel off-centre.
+  // `left-1/2` stays as the fallback for a window with no centre panel.
+  const centerX = useCenterPanelCenterX();
+  const centred = centerX != null ? { left: centerX } : undefined;
 
   return (
     <Dialog.Root open modal={!docked} onOpenChange={(o) => !o && dismiss()}>
@@ -459,6 +465,7 @@ function AgentOAuthModal({
               if (phase.kind === "terminal") e.preventDefault();
             }}
             className="fixed bottom-12 left-1/2 z-[var(--z-modal)] max-w-[92vw] -translate-x-1/2"
+            style={centred}
           >
             <SignInDock label={label}>
               {phase.kind === "terminal" ? (
@@ -491,6 +498,7 @@ function AgentOAuthModal({
               "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
               "shadow-[var(--shadow-overlay)] text-text-primary",
             )}
+            style={centred}
           >
             <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
               <Info className="mt-0.5 size-4 text-text-tertiary" />

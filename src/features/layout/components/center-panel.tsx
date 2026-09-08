@@ -241,7 +241,11 @@ export function CenterPanel() {
   // workspaces the user couldn't even see. A workspace with no view yet (never
   // visited this session) renders nothing until its first cold load.
   return (
-    <div className="h-full w-full bg-bg-surface relative">
+    // `data-atlas-center-panel`: the anchor for overlays that should centre on
+    // the CONTENT, not the window — see `use-center-panel-x.ts`. A `fixed
+    // left-1/2` pill drifts off-centre by half the width of whichever side
+    // panel is open.
+    <div data-atlas-center-panel className="h-full w-full bg-bg-surface relative">
       {workspaces.map((ws) => {
         const isActive = ws.id === activeWorkspaceId;
         const view = isActive ? mirrorView : viewsByWs[ws.id];

@@ -130,6 +130,7 @@ const GitDiffModal = lazy(() =>
 );
 import { Sparkles, Search, ChevronDown, ArrowRight, GitCompare, FlaskConical } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
+import { DitherField } from "@/ui/dither-field";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
@@ -1407,8 +1408,15 @@ const WELCOME_SUGGESTIONS = [
 
 function WelcomeState() {
   return (
-    <div className="h-full flex items-center justify-center px-6">
-      <div className="w-full max-w-[440px] flex flex-col items-center text-center">
+    <div className="relative h-full flex items-center justify-center overflow-hidden px-6">
+      {/* The landing hero's ASCII cloud field, hollowed under the copy and
+          faded out at the edges so it never reaches the header or the
+          composer. Behind everything: the content stacks on `relative`. */}
+      <DitherField
+        mode="glyphs"
+        className="[mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,#000_30%,transparent_100%)]"
+      />
+      <div className="relative w-full max-w-[440px] flex flex-col items-center text-center">
         {/* Hero: Atlas mark over a soft accent glow (radial gradient, no
             backdrop-filter — cheap + static in WKWebView). */}
         <div className="relative mb-5">
