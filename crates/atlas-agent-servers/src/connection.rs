@@ -595,6 +595,60 @@ pub fn map_acp_error(err: acp::Error) -> anyhow::Error {
     }
 }
 
+/// The `data` the TypeScript ACP SDK attaches to an `InternalError`: a thrown
+/// `Error`'s message, verbatim. Shared by `prompt` and `authenticate`, which
+/// both want the words rather than `Internal error: { "details": … }`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ErrorDetails {
+    details: Box<str>,
+}
+
+/// What a rejected `authenticate` means for the sign-in that issued it.
+///
+/// A terminal method IS the sign-in: the host ran the agent's login CLI and
+/// the agent re-reads the credentials on its next `session/new`. Several
+/// adapters therefore do not implement `authenticate` for those methods at
+/// all — claude-agent-acp throws `"Method not implemented."` (wrapped by its
+/// SDK as `-32603` with `details`) for every id but its gateway ones. That
+/// rejection is not a failed login, and treating it as one parked every
+/// Claude Code user on an error after a login that had worked.
+///
+/// So for a terminal method an unimplemented `authenticate` is `Ok`: the
+/// rebind that follows is the real check. For an `agent` method the RPC is
+/// the whole login, so "not implemented" is a real failure — reported in the
+/// agent's words rather than the SDK's envelope.
+pub fn authenticate_outcome(err: acp::Error, method_is_terminal: bool) -> Result<()> {
+    if err.code == acp::ErrorCode::AuthRequired {
+        return Err(map_acp_error(err));
+    }
+    let details = match err.code {
+        acp::ErrorCode::MethodNotFound => None,
+        acp::ErrorCode::InternalError => match &err.data {
+            Some(data) => match serde_json::from_value::<ErrorDetails>(data.clone()) {
+                Ok(ErrorDetails { details }) => Some(details),
+                Err(_) => return Err(anyhow!(err)),
+            },
+            None => return Err(anyhow!(err)),
+        },
+        _ => return Err(anyhow!(err)),
+    };
+    let unimplemented = details
+        .as_deref()
+        .is_none_or(|d| d.to_ascii_lowercase().contains("not implemented"));
+    match (unimplemented, method_is_terminal, details) {
+        (true, true, _) => {
+            tracing::debug!("agent does not implement authenticate for a terminal method; the login CLI already ran");
+            Ok(())
+        }
+        (true, false, _) => Err(anyhow!(
+            "the agent does not support signing in this way (authenticate is not implemented for this method)"
+        )),
+        (false, _, Some(details)) => Err(anyhow!(details)),
+        (false, _, None) => Err(anyhow!(err)),
+    }
+}
+
 impl Drop for AcpConnection {
     fn drop(&mut self) {
         // Zed kills the child here (`acp.rs:1528-1534`). The child is owned by
@@ -805,11 +859,24 @@ impl AgentConnection for AcpConnection {
 
     fn authenticate(&self, method: acp::AuthMethodId) -> BoxFuture<'static, Result<()>> {
         let conn = self.connection.clone();
+        // Both of Zed's terminal shapes count — see `terminal_auth_command_for`.
+        let method_is_terminal = self
+            .auth_methods
+            .iter()
+            .find(|m| m.id() == &method)
+            .is_some_and(|m| {
+                matches!(m, acp::AuthMethod::Terminal(_))
+                    || meta_terminal_auth_command(&self.id, &method, m).is_some()
+            });
         async move {
-            conn.send_request(acp::AuthenticateRequest::new(method))
+            match conn
+                .send_request(acp::AuthenticateRequest::new(method))
                 .block_task()
-                .await?;
-            Ok(())
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(err) => authenticate_outcome(err, method_is_terminal),
+            }
         }
         .boxed()
     }
@@ -906,12 +973,6 @@ impl AgentConnection for AcpConnection {
             // Some agents report a cancelled turn as an internal error whose
             // details say the operation was aborted. When we are the ones who
             // cancelled, that is a normal stop, not a failure to show the user.
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct ErrorDetails {
-                details: Box<str>,
-            }
-
             match serde_json::from_value::<ErrorDetails>(data.clone()) {
                 Ok(ErrorDetails { details }) => {
                     if suppress_abort_err
@@ -1765,3 +1826,49 @@ mod model_select_tests {
     }
 }
 
+#[cfg(test)]
+mod authenticate_tests {
+    use super::*;
+
+    /// What the TypeScript ACP SDK sends for a thrown `Error`: `-32603` with
+    /// the message under `data.details`.
+    fn internal(details: &str) -> acp::Error {
+        acp::Error::internal_error().data(serde_json::json!({ "details": details }))
+    }
+
+    /// The Claude Code regression: the login CLI ran, the user confirmed, and
+    /// claude-agent-acp answered `authenticate` with "Method not implemented."
+    /// That is the adapter declining a courtesy, not a failed sign-in.
+    #[test]
+    fn an_unimplemented_authenticate_is_fine_for_a_terminal_method() {
+        assert!(authenticate_outcome(internal("Method not implemented."), true).is_ok());
+        assert!(authenticate_outcome(acp::Error::method_not_found(), true).is_ok());
+    }
+
+    /// For an `agent` method the RPC IS the login, so declining it is a real
+    /// failure — and one the user needs to read as "this way in doesn't work".
+    #[test]
+    fn an_unimplemented_authenticate_fails_an_agent_method() {
+        let err = authenticate_outcome(internal("Method not implemented."), false)
+            .expect_err("no login happened");
+        assert!(err.to_string().contains("does not support"), "{err}");
+    }
+
+    /// Any other internal error surfaces its own words, not the SDK envelope
+    /// (`Internal error: { "details": … }`) — whichever method kind.
+    #[test]
+    fn other_internal_errors_surface_their_details() {
+        for terminal in [true, false] {
+            let err = authenticate_outcome(internal("browser could not be opened"), terminal)
+                .expect_err("a real failure");
+            assert_eq!(err.to_string(), "browser could not be opened");
+        }
+    }
+
+    /// `AuthRequired` stays typed so the host can route into sign-in.
+    #[test]
+    fn auth_required_stays_typed() {
+        let err = authenticate_outcome(acp::Error::auth_required(), true).expect_err("typed");
+        assert!(err.downcast_ref::<AuthRequired>().is_some());
+    }
+}

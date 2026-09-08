@@ -1,20 +1,15 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import { memo, useEffect, useRef, useState, useMemo } from "react";
 import {
   CachedMarkdown,
-  noteTailHtml,
   parseTransientOffThread,
   transientWorkerAvailable,
 } from "@/lib/markdown-cache";
 import { parseMarkdown } from "@/lib/markdown-render";
 import {
-  splitBlocks,
-  mayStartNewBlock,
+  splitTopLevelBlocks,
   hasReferenceDefinitions,
   isIncompleteCodeFence,
-  type BlockSplit,
 } from "@/lib/markdown-blocks";
-import { closeIncompleteMarkdown } from "@/lib/markdown-stream";
-import { applyHtml } from "@/lib/dom-html";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,24 +20,10 @@ import { cn } from "@/lib/utils";
  * translation of Zed's per-line layout cache / Open WebUI's per-block tokens:
  * markdown formats LIVE as it streams, with bounded re-work.
  *
- * Three rules keep the live edge from flickering, and all three matter:
- *
- *  1. **The tail is repaired before it is parsed** (`closeIncompleteMarkdown`).
- *     A stream cuts markdown mid-token, so `**bol` is literal asterisks for a
- *     few frames and then the words snap to bold. Closing the dangling marker
- *     means the text is already bold while the rest of it arrives.
- *  2. **The tail is PATCHED, not replaced** (`applyHtml`). Re-setting
- *     `innerHTML` every frame destroys the nodes the reader is looking at:
- *     selection is dropped, hover resets, and WebKit repaints the whole block
- *     instead of the one line that changed.
- *  3. **The split is incremental.** Re-parsing the whole message to find block
- *     boundaries on every frame made per-frame cost scale with the length of
- *     the answer; while the tail only grows, it is a substring.
- *
- * Each block wrapper is `.atlas-md-block` (`display: contents`) so the N
- * per-block containers vanish from layout and their block elements remain
- * layout-siblings inside one formatting context — preserving prose
- * margin-collapse / vertical rhythm identical to a single-container render.
+ * Uses `display:contents` on each block wrapper so the N per-block `CachedMarkdown`
+ * containers vanish from layout and their block elements remain layout-siblings
+ * inside one formatting context — preserving prose margin-collapse / vertical
+ * rhythm identical to the old single-container render.
  */
 
 /** Below this length the live tail parses inline on every frame (sub-ms, and
@@ -52,15 +33,6 @@ import { cn } from "@/lib/utils";
 const INLINE_PARSE_LIMIT = 2000;
 /** Parse cadence for a large live tail. */
 const TRANSIENT_THROTTLE_MS = 120;
-/** A per-frame inline parse that costs more than this has outgrown the inline
- *  path regardless of length (a table, a dense list), so the block is demoted
- *  to the throttled off-thread lane for the rest of its life. Length alone was
- *  the wrong proxy: 1.5 KB of table markup is an order of magnitude more work
- *  than 1.5 KB of prose. */
-const INLINE_BUDGET_MS = 6;
-/** Longest the incremental split may run without a real re-parse. A backstop,
- *  not the mechanism — `mayStartNewBlock` catches boundaries as they arrive. */
-const RESPLIT_MAX_MS = 500;
 
 /**
  * Renderer for the STREAMING TAIL only — deliberately bypasses `CachedMarkdown`.
@@ -75,8 +47,7 @@ const RESPLIT_MAX_MS = 500;
  * requested again must never touch the cache or the queue.
  *
  * The block re-renders as `CachedMarkdown` the moment it settles, which parses
- * and caches the final text once — and shows this renderer's last html
- * (`noteTailHtml`) in the meantime, so the swap is invisible.
+ * and caches the final text once.
  */
 const TransientMarkdown = memo(function TransientMarkdown({
   source,
@@ -87,19 +58,8 @@ const TransientMarkdown = memo(function TransientMarkdown({
   className?: string;
   unstyled?: boolean;
 }) {
-  // Parse the REPAIRED copy; everything downstream still keys off the raw
-  // source, which is what the settled block will be rendered from.
-  const repaired = useMemo(() => closeIncompleteMarkdown(source), [source]);
-
-  const overBudget = useRef(false);
-  const small = repaired.length <= INLINE_PARSE_LIMIT && !overBudget.current;
-  const inline = useMemo(() => {
-    if (!small) return null;
-    const started = performance.now();
-    const html = parseMarkdown(repaired);
-    if (performance.now() - started > INLINE_BUDGET_MS) overBudget.current = true;
-    return html;
-  }, [small, repaired]);
+  const small = source.length <= INLINE_PARSE_LIMIT;
+  const inline = useMemo(() => (small ? parseMarkdown(source) : null), [small, source]);
 
   // Large tail: throttled trailing-edge parse of the LATEST source. The parse
   // itself runs on the markdown worker via the transient lane (single slot,
@@ -108,22 +68,17 @@ const TransientMarkdown = memo(function TransientMarkdown({
   // late in a long block, exactly while rAF delta flushes were running. The
   // sync parse remains only as the no-worker fallback.
   const [big, setBig] = useState("");
-  const latest = useRef(repaired);
-  latest.current = repaired;
+  const latest = useRef(source);
+  latest.current = source;
   const timer = useRef<number | null>(null);
   const lastRun = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
-    // Set on every run, not once at mount: React re-runs effects on the same
-    // instance (StrictMode's mount/unmount/mount in development), and a latch
-    // that only ever went false left the throttled path permanently mute —
-    // large blocks stopped updating mid-answer and only caught up on settle.
+    // Re-armed on every run, not only at construction: the cleanup below
+    // latches it false, and StrictMode's mount/unmount/mount (or a virtualizer
+    // row remount) would otherwise leave every large tail mute for the rest
+    // of the block — the one correct finding of the reverted PR 245.
     alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  useEffect(() => {
     if (small || timer.current !== null) return;
     const due = Math.max(0, TRANSIENT_THROTTLE_MS - (performance.now() - lastRun.current));
     timer.current = window.setTimeout(() => {
@@ -139,10 +94,15 @@ const TransientMarkdown = memo(function TransientMarkdown({
         setBig(parseMarkdown(latest.current));
       }
     }, due);
-  }, [small, repaired]);
+  }, [small, source]);
   useEffect(
     () => () => {
+      alive.current = false;
       if (timer.current !== null) window.clearTimeout(timer.current);
+      // The scheduler early-returns while a timer is recorded, and only the
+      // (now cancelled) callback would have cleared it — without this a
+      // remount mid-tick never schedules another parse.
+      timer.current = null;
     },
     [],
   );
@@ -153,25 +113,11 @@ const TransientMarkdown = memo(function TransientMarkdown({
   const html = inline ?? (big || lastHtml.current);
   lastHtml.current = html;
 
-  const ref = useRef<HTMLDivElement>(null);
-  // Patch, don't replace — see `applyHtml`. This is what keeps a selection
-  // inside a live answer alive and stops WebKit repainting the whole block
-  // every frame.
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (node) applyHtml(node, html);
-  }, [html]);
-
-  // Hand the settling block something formatted to show while it parses.
-  // Keyed by the RAW source: that is what `CachedMarkdown` will ask with.
-  useEffect(() => {
-    if (html) noteTailHtml(source, html);
-  }, [source, html]);
-
   // Same external-link interception as CachedMarkdown — a click on a link in
   // the live tail must not navigate the WKWebView away from Atlas. (Copy-code
   // bars are skipped: fences render as plain text until they close, and the
   // settled block gets them from CachedMarkdown.)
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
@@ -196,6 +142,8 @@ const TransientMarkdown = memo(function TransientMarkdown({
           : "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text",
         className,
       )}
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 });
@@ -230,14 +178,12 @@ const MarkdownBlock = memo(function MarkdownBlock({
     );
   }
   // The live tail bypasses the cache/worker entirely — see TransientMarkdown.
-  // `atlas-stream-tail` is what draws the caret, inline at the end of the last
-  // line rather than as a block of its own below it.
   if (trailing) {
     return (
       <TransientMarkdown
         source={source}
         unstyled={unstyled}
-        className="atlas-md-block atlas-stream-tail"
+        className={cn("[display:contents]", className)}
       />
     );
   }
@@ -246,35 +192,20 @@ const MarkdownBlock = memo(function MarkdownBlock({
       source={source}
       unstyled={unstyled}
       priority={priority}
-      className="atlas-md-block"
+      className={cn("[display:contents]", className)}
     />
   );
 });
 
-/**
- * Block split for a growing source.
- *
- * Full re-splits cost a remark parse of the WHOLE message, and running one per
- * frame made the per-frame cost of streaming scale with the length of the
- * answer — a long turn got progressively jankier as it went. While the tail is
- * only being appended to, the split is a substring of the source instead
- * (`tailStart`), and a real re-parse happens only when the delta could actually
- * have opened a new block.
- *
- * Getting that condition wrong cannot break rendering: the trailing block is
- * rendered by parsing it as markdown, so a tail that briefly holds two blocks
- * looks identical — only cache granularity is affected, and the periodic
- * backstop re-split repairs even that.
- */
+/** rAF-coalesced block split: at most one split per frame while streaming; a
+ *  synchronous, memoized split when settled. */
 function useBlocks(source: string, streaming: boolean, whole: boolean): string[] {
   const [blocks, setBlocks] = useState<string[]>(() =>
-    whole ? [source] : splitBlocks(source).blocks,
+    whole ? [source] : splitTopLevelBlocks(source),
   );
   const rafRef = useRef<number | null>(null);
   const latest = useRef(source);
   latest.current = source;
-  /** Last real split, and the source it was computed from. */
-  const split = useRef<SplitState | null>(null);
 
   useEffect(() => {
     if (whole) return;
@@ -284,59 +215,33 @@ function useBlocks(source: string, streaming: boolean, whole: boolean): string[]
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      const at = splitBlocks(source);
-      split.current = { at, source, when: performance.now() };
-      setBlocks(at.blocks);
+      setBlocks(splitTopLevelBlocks(source));
       return;
     }
-    // Streaming: coalesce to one update per frame.
+    // Streaming: coalesce to one split per frame.
     if (rafRef.current != null) return;
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
-      setBlocks(nextBlocks(split, latest.current));
+      setBlocks(splitTopLevelBlocks(latest.current));
     });
   }, [source, streaming, whole]);
 
   useEffect(
     () => () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        // The split effect above coalesces on "a frame is already pending";
+        // a cancelled frame left recorded here reads as pending forever, so
+        // every later source change early-returns and the tail freezes at
+        // its first split until settle. StrictMode's mount→unmount→mount on
+        // the first chunk hit this on every dev run.
+        rafRef.current = null;
+      }
     },
     [],
   );
 
   return blocks;
-}
-
-interface SplitState {
-  at: BlockSplit;
-  /** The source `at` was computed from. */
-  source: string;
-  /** When the last REAL re-split ran — drives the backstop. */
-  when: number;
-}
-
-/** One streaming step: grow the tail if nothing structural arrived, otherwise
- *  re-split. Mutates the `split` ref, which is the incremental state. */
-function nextBlocks(split: { current: SplitState | null }, source: string): string[] {
-  const prev = split.current;
-  const grown =
-    prev !== null && source.length >= prev.source.length && source.startsWith(prev.source);
-  if (prev && grown) {
-    const delta = source.slice(prev.source.length);
-    const tail = prev.at.blocks[prev.at.blocks.length - 1] ?? "";
-    const stale = performance.now() - prev.when > RESPLIT_MAX_MS;
-    if (!stale && !mayStartNewBlock(delta, isIncompleteCodeFence(tail))) {
-      // Pure append: rebuild only the trailing block, by slicing.
-      const blocks = prev.at.blocks.slice(0, -1);
-      blocks.push(source.slice(prev.at.tailStart));
-      prev.at = { blocks, tailStart: prev.at.tailStart };
-      prev.source = source;
-      return blocks;
-    }
-  }
-  const at = splitBlocks(source);
-  split.current = { at, source, when: performance.now() };
-  return at.blocks;
 }
 
 export function StreamingMarkdown({
@@ -359,15 +264,8 @@ export function StreamingMarkdown({
   // streaming the definition may not have arrived yet anyway, so block-level is
   // fine there and avoids a per-frame whole-message re-parse. (Both rare in
   // agent output.)
-  //
-  // Short-circuited on `streaming` rather than computed and then ignored: the
-  // check is two regexes over the WHOLE message, and running them per frame put
-  // the length of the answer back into the per-frame cost the block split just
-  // took out of it.
-  const renderWhole = useMemo(
-    () => !streaming && hasReferenceDefinitions(source),
-    [streaming, source],
-  );
+  const hasRefs = useMemo(() => hasReferenceDefinitions(source), [source]);
+  const renderWhole = hasRefs && !streaming;
   const blocks = useBlocks(source, streaming, renderWhole);
 
   if (renderWhole) {
@@ -382,6 +280,7 @@ export function StreamingMarkdown({
   }
 
   const lastIdx = blocks.length - 1;
+  const trailingIsFence = streaming && lastIdx >= 0 && isIncompleteCodeFence(blocks[lastIdx]);
 
   return (
     <div className={className}>
@@ -395,6 +294,9 @@ export function StreamingMarkdown({
           priority={priority}
         />
       ))}
+      {/* Terminal-style caret after the last block while streaming — unless the
+          trailing block is an open fence, which draws its own caret. */}
+      {streaming && !trailingIsFence && <span className="atlas-stream-caret" aria-hidden />}
     </div>
   );
 }

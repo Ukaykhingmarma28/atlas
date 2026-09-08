@@ -26,6 +26,7 @@ type CatalogStub = Partial<{
   authKinds: ("agent" | "env_var" | "terminal")[];
 }>;
 let catalog: Record<string, CatalogStub> = {};
+vi.mock("@/features/log/lib/log", () => ({ logEvent: () => {} }));
 vi.mock("@/features/agents/lib/agent-meta", () => ({
   agentMeta: (id: string) => ({ label: id }),
   catalogEntry: (id: string) => catalog[id] ?? null,

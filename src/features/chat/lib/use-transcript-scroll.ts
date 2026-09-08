@@ -178,7 +178,13 @@ export function useTranscriptScroll({
 
   useEffect(
     () => () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current);
+        // `onScroll` and the resize observer coalesce on "a frame is already
+        // pending" — a cancelled id left here would mute both for the rest of
+        // the mount (StrictMode's remount in dev did exactly that).
+        frame.current = null;
+      }
     },
     [],
   );

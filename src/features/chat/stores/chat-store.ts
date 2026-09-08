@@ -10,6 +10,7 @@ import type {
   ClaudePermissionMode,
   SwitchableAgent,
   AgentType,
+  PendingSend,
 } from "@/types/agent";
 import { CLAUDE_PERMISSION_MODES } from "@/types/agent";
 import type { PendingPermission } from "@/types/acp";
@@ -346,6 +347,8 @@ interface ChatActions {
     updateSessionStatus: (sessionId: string, status: AgentStatus) => void;
     /** Mark a session as stop-requested (Stop clicked, terminal not yet in). */
     setStopping: (sessionId: string, on: boolean) => void;
+    /** See `ChatSession.pendingSend`. `undefined` clears it. */
+    setPendingSend: (sessionId: string, pending: PendingSend | undefined) => void;
     /** Flag/clear "the backing agent process died" (drives Restart + rebind). */
     setDisconnected: (sessionId: string, on: boolean) => void;
     /** The user force-killed the agent from the composer. */
@@ -981,6 +984,11 @@ export const useChatStore = createSelectors(
             session.inflightToolIds = undefined;
             session.disconnected = true;
           }),
+        setPendingSend: (sessionId, pending) =>
+          set((s) => {
+            const session = s.sessions[sessionId];
+            if (session) session.pendingSend = pending;
+          }),
         setSessionTitle: (sessionId, title) =>
           set((s) => {
             const session = s.sessions[sessionId];
@@ -1031,6 +1039,9 @@ export const useChatStore = createSelectors(
               // reset. Leaving it set would silently queue every future send in
               // this tab forever.
               session.resumePending = false;
+              // A first message still waiting on the old bind belongs to the
+              // conversation being dropped, exactly like the queue below.
+              session.pendingSend = undefined;
             }
             delete s.queues[sessionId];
           }),

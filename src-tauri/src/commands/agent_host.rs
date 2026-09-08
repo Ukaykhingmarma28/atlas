@@ -635,10 +635,17 @@ impl AgentHost {
     /// Connect to an agent, or join the connection already in flight.
     pub async fn spawn(&self, plugin_id: &str) -> Result<AgentInfo> {
         let agent = self.agent_for(plugin_id)?;
-        self.manager
-            .connection(agent.clone())
-            .await
-            .map_err(HostError::from)?;
+        // The bind lifecycle is logged at info on purpose: a session that never
+        // opens shows up to the user only as a message parked in the composer
+        // queue, and the terminal is the one place that can say which hop —
+        // connect, or session/new — never came back.
+        let started = std::time::Instant::now();
+        tracing::info!(plugin_id, "agent connect requested");
+        if let Err(err) = self.manager.connection(agent.clone()).await {
+            tracing::warn!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, %err, "agent connect failed");
+            return Err(HostError::from(err));
+        }
+        tracing::info!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, "agent connected");
         Ok(AgentInfo {
             agent_id: self.handle_for(&agent),
             display_name: self.display_name(plugin_id),
@@ -681,11 +688,17 @@ impl AgentHost {
         let record = self.record_for(agent_id)?;
         let mut work_dirs = vec![cwd.clone()];
         work_dirs.extend(additional_directories);
-        let thread = self
-            .manager
-            .new_session(record.agent.clone(), work_dirs)
-            .await
-            .map_err(HostError::from)?;
+        let plugin_id = record.plugin_id.as_str();
+        let started = std::time::Instant::now();
+        tracing::info!(plugin_id, cwd = %cwd.display(), "session/new requested");
+        let thread = match self.manager.new_session(record.agent.clone(), work_dirs).await {
+            Ok(thread) => thread,
+            Err(err) => {
+                tracing::warn!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, %err, "session/new failed");
+                return Err(HostError::from(err));
+            }
+        };
+        tracing::info!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, "session/new opened");
         Ok(self.bind(agent_id, &record, cwd, thread))
     }
 

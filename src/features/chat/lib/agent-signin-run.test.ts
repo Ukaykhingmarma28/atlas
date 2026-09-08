@@ -17,6 +17,7 @@ vi.mock("@/features/agents/lib/agent-meta", () => ({
   agentMeta: (id: string) => ({ label: id }),
   catalogEntry: () => null,
 }));
+vi.mock("@/features/log/lib/log", () => ({ logEvent: () => {} }));
 
 interface DoneEvent {
   success: boolean;
@@ -48,6 +49,8 @@ const bus = {
 /** What `runAuthMethod` does: spawn, and let the process finish whenever. */
 let onRun: (runId: string) => void = () => {};
 let nextRunId = "run-1";
+/** What ACP `authenticate` answers — settable per test, like `onRun`. */
+let onAuthenticate: () => Promise<void> = async () => {};
 
 vi.mock("./agents-api", () => ({
   agents: {
@@ -56,7 +59,7 @@ vi.mock("./agents-api", () => ({
       onRun(runId);
       return runId;
     },
-    authenticate: async () => {},
+    authenticate: () => onAuthenticate(),
   },
   ensureAgent: () => {},
   listenAuthRunDone: (handler: (p: DoneEvent) => void) => bus.listen(handler),
@@ -79,6 +82,7 @@ beforeEach(() => {
   bus.handlers.clear();
   onRun = () => {};
   nextRunId = "run-1";
+  onAuthenticate = async () => {};
 });
 
 describe("waiting for a login subprocess", () => {
@@ -137,5 +141,38 @@ describe("waiting for a login subprocess", () => {
       runSignInMethod("codex", { id: "chatgpt", terminalCommand: null }, "Codex"),
     ).resolves.toBeUndefined();
     expect(bus.handlers.size).toBe(0);
+  });
+});
+
+describe("authenticate after a CLI login", () => {
+  /// The Claude Code regression: claude-agent-acp does not implement
+  /// `authenticate` for its terminal methods and answers "Method not
+  /// implemented." — after a login that had worked. The CLI login IS the
+  /// sign-in; the rebind that follows is the check, so this must not fail it.
+  it("is not failed by an agent that rejects the courtesy call", async () => {
+    onRun = (runId) => bus.emit(done(runId));
+    onAuthenticate = async () => {
+      throw new Error('Internal error: { "details": "Method not implemented." }');
+    };
+
+    await expect(
+      runSignInMethod(
+        "claude-code",
+        { id: "claude-ai-login", terminalCommand: "node index.js --cli auth login" },
+        "Claude Code",
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  /// With no CLI to run the RPC is the whole login, so its refusal is the
+  /// sign-in failing and has to reach the user.
+  it("still fails a command-less method whose authenticate rejects", async () => {
+    onAuthenticate = async () => {
+      throw new Error("sign-in cancelled");
+    };
+
+    await expect(
+      runSignInMethod("codex", { id: "chatgpt", terminalCommand: null }, "Codex"),
+    ).rejects.toThrow("sign-in cancelled");
   });
 });
