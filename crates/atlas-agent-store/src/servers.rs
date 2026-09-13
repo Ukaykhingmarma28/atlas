@@ -164,82 +164,97 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
         let loading_status = self.loading_status.clone();
 
         Box::pin(async move {
-            tokio::fs::create_dir_all(&installation_dir)
-                .await
-                .with_context(|| format!("creating {installation_dir:?}"))?;
+            let result = async {
+                tokio::fs::create_dir_all(&installation_dir)
+                    .await
+                    .with_context(|| format!("creating {installation_dir:?}"))?;
 
-            let platform_key = current_platform_key().context("unsupported platform")?;
-            let target = targets.get(platform_key).with_context(|| {
-                let mut available = targets.keys().cloned().collect::<Vec<_>>();
-                available.sort();
-                format!(
-                    "no target specified for platform '{platform_key}'. Available platforms: {}",
-                    available.join(", ")
-                )
-            })?;
+                let platform_key = current_platform_key().context("unsupported platform")?;
+                let target = targets.get(platform_key).with_context(|| {
+                    let mut available = targets.keys().cloned().collect::<Vec<_>>();
+                    available.sort();
+                    format!(
+                        "no target specified for platform '{platform_key}'. Available platforms: {}",
+                        available.join(", ")
+                    )
+                })?;
 
-            let env = layered_env(
-                project_env.await,
-                &target.env,
-                extra_env,
-                &byok_env,
-                &settings_env,
-            );
+                let env = layered_env(
+                    project_env.await,
+                    &target.env,
+                    extra_env,
+                    &byok_env,
+                    &settings_env,
+                );
 
-            let archive_url = &target.archive;
-            let version_dir = versioned_archive_cache_dir(
-                &installation_dir,
-                Some(&version),
-                archive_url,
-                target.sha256.as_deref(),
-            );
+                let archive_url = &target.archive;
+                let version_dir = versioned_archive_cache_dir(
+                    &installation_dir,
+                    Some(&version),
+                    archive_url,
+                    target.sha256.as_deref(),
+                );
 
-            if !is_dir(&version_dir).await {
-                if let Some(tx) = &loading_status {
-                    tx.send(Some(format!("Installing {version}…"))).ok();
-                }
-
-                // The registry's own checksum wins; failing that, GitHub's
-                // recorded digest for the release asset. Both absent means an
-                // unverified install, which is what Zed does too.
-                let sha256 = match &target.sha256 {
-                    Some(sha256) => Some(sha256.clone()),
-                    None => match github_release_archive_from_url(archive_url) {
-                        Some(release) => github_release_digest(&*http, &release).await,
-                        None => None,
-                    },
-                };
-
-                let kind = registry_archive_kind_for_url(archive_url)?;
-                install_archive(&*http, archive_url, sha256.as_deref(), &version_dir, &kind).await?;
-            }
-
-            let cmd_path = resolve_target_cmd(&node, &target.cmd, &version_dir).await?;
-
-            // Detached, as in Zed: the previous version's directory is dead
-            // weight, not a correctness problem, and removing it should never
-            // delay the agent starting.
-            tokio::spawn({
-                let installation_dir = installation_dir.clone();
-                let version_dir = version_dir.clone();
-                async move {
-                    if let Err(error) =
-                        remove_stale_versioned_archive_cache_dirs(&installation_dir, &version_dir)
-                            .await
-                    {
-                        tracing::warn!(error = %format!("{error:#}"), "archive cache GC failed");
+                if !is_dir(&version_dir).await {
+                    if let Some(tx) = &loading_status {
+                        tx.send(Some(format!("Installing {version}…"))).ok();
                     }
+
+                    // The registry's own checksum wins; failing that, GitHub's
+                    // recorded digest for the release asset. Both absent means an
+                    // unverified install, which is what Zed does too.
+                    let sha256 = match &target.sha256 {
+                        Some(sha256) => Some(sha256.clone()),
+                        None => match github_release_archive_from_url(archive_url) {
+                            Some(release) => github_release_digest(&*http, &release).await,
+                            None => None,
+                        },
+                    };
+
+                    let kind = registry_archive_kind_for_url(archive_url)?;
+                    install_archive(&*http, archive_url, sha256.as_deref(), &version_dir, &kind)
+                        .await?;
                 }
-            });
 
-            let mut args = target.args.clone();
-            args.extend(extra_args);
+                let cmd_path = resolve_target_cmd(&node, &target.cmd, &version_dir).await?;
 
-            Ok(AgentServerCommand {
-                path: cmd_path,
-                args,
-                env: Some(env),
-            })
+                // Detached, as in Zed: the previous version's directory is dead
+                // weight, not a correctness problem, and removing it should never
+                // delay the agent starting.
+                tokio::spawn({
+                    let installation_dir = installation_dir.clone();
+                    let version_dir = version_dir.clone();
+                    async move {
+                        if let Err(error) = remove_stale_versioned_archive_cache_dirs(
+                            &installation_dir,
+                            &version_dir,
+                        )
+                        .await
+                        {
+                            tracing::warn!(error = %format!("{error:#}"), "archive cache GC failed");
+                        }
+                    }
+                });
+
+                let mut args = target.args.clone();
+                args.extend(extra_args);
+
+                Ok(AgentServerCommand {
+                    path: cmd_path,
+                    args,
+                    env: Some(env),
+                })
+            }
+            .await;
+
+            // Ready or failed, the "Installing …" text must not outlive the
+            // attempt — the same contract as the npx target below. Without
+            // it a finished or failed archive install left the tab reading
+            // "Installing <version>…" for good.
+            if let Some(tx) = &loading_status {
+                tx.send(None).ok();
+            }
+            result
         })
     }
 }
@@ -259,16 +274,7 @@ async fn resolve_target_cmd(
         return node.binary_path().await;
     }
 
-    anyhow::ensure!(
-        !cmd.contains(".."),
-        "command path cannot contain '..': {cmd}"
-    );
-    let relative = cmd
-        .strip_prefix("./")
-        .or_else(|| cmd.strip_prefix(".\\"))
-        .with_context(|| format!("command must be relative (start with './'): {cmd}"))?;
-
-    let cmd_path = version_dir.join(relative);
+    let cmd_path = version_dir.join(relative_target_cmd(cmd)?);
     anyhow::ensure!(
         tokio::fs::metadata(&cmd_path)
             .await
@@ -278,6 +284,23 @@ async fn resolve_target_cmd(
         cmd_path.display()
     );
     Ok(cmd_path)
+}
+
+/// The archive-relative part of a registry target's `cmd`.
+///
+/// Some registry targets name the binary bare (`amp-acp.exe` on Windows)
+/// instead of `./amp-acp.exe`. A bare file name can only mean the archive
+/// root, so it is exactly as contained as `./`; anything carrying a separator
+/// or a drive still has to spell the `./` out.
+fn relative_target_cmd(cmd: &str) -> Result<&str> {
+    anyhow::ensure!(
+        !cmd.contains(".."),
+        "command path cannot contain '..': {cmd}"
+    );
+    cmd.strip_prefix("./")
+        .or_else(|| cmd.strip_prefix(".\\"))
+        .or_else(|| (!cmd.is_empty() && !cmd.contains(['/', '\\', ':'])).then_some(cmd))
+        .with_context(|| format!("command must be relative (start with './'): {cmd}"))
 }
 
 // ------------------------------------------------------- registry: npx target
@@ -484,6 +507,32 @@ mod tests {
     use super::*;
 
     const PACKAGE: &str = "@scope/agent";
+
+    #[test]
+    fn target_cmd_accepts_dot_relative_paths_and_bare_names() {
+        assert_eq!(relative_target_cmd("./bin/agent").unwrap(), "bin/agent");
+        assert_eq!(
+            relative_target_cmd("./dist-package\\cursor-agent.cmd").unwrap(),
+            "dist-package\\cursor-agent.cmd"
+        );
+        assert_eq!(relative_target_cmd(".\\agent.exe").unwrap(), "agent.exe");
+        assert_eq!(relative_target_cmd("amp-acp.exe").unwrap(), "amp-acp.exe");
+    }
+
+    #[test]
+    fn target_cmd_refuses_anything_that_could_leave_the_archive() {
+        for cmd in [
+            "",
+            "/usr/bin/agent",
+            "C:\\agent.exe",
+            "C:agent.exe",
+            "bin/agent",
+            "./../agent",
+            "..\\agent.exe",
+        ] {
+            assert!(relative_target_cmd(cmd).is_err(), "accepted {cmd:?}");
+        }
+    }
 
     /// An install dir whose `node_modules/@scope/agent` is at `version`.
     fn installed(version: &str) -> tempfile::TempDir {

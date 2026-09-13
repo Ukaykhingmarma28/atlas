@@ -46,6 +46,21 @@ describe("withDeadline", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("re-arms while the hop reports progress, and rejects once it stops", async () => {
+    const never = new Promise<void>(() => {});
+    let working = true;
+    const settled = withDeadline(never, 1000, "x", () => working).then(
+      () => "resolved",
+      (e: unknown) => e,
+    );
+    vi.advanceTimersByTime(3500);
+    await Promise.resolve();
+    expect(vi.getTimerCount()).toBe(1);
+    working = false;
+    vi.advanceTimersByTime(1000);
+    expect(isDeadlineError(await settled)).toBe(true);
+  });
+
   it("isDeadlineError rejects ordinary errors and backend rejections", () => {
     expect(isDeadlineError(new Error("nope"))).toBe(false);
     expect(isDeadlineError({ message: "x", kind: "auth" })).toBe(false);

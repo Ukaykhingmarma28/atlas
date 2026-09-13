@@ -80,6 +80,37 @@ describe("failPendingBinds", () => {
     expect(useChatStore.getState().sessions[STARTING].bindError).toBeUndefined();
   });
 
+  it("noteAgentRemoved flags bound tabs too, and leaves other agents alone", () => {
+    // An uninstall drops the connection of a BOUND tab with no delta, so
+    // unlike failPendingBinds this must reach tabs that already have a session.
+    const { actions } = useChatStore.getState();
+    actions.setAgentStartingStatus(pluginIdForAgent("codex"), "Installing codex-acp…");
+    actions.noteAgentRemoved(pluginIdForAgent("codex"), "Codex was removed");
+
+    const s = useChatStore.getState();
+    for (const tab of [STARTING, BOUND]) {
+      expect(s.sessions[tab].status).toBe("idle");
+      expect(s.sessions[tab].disconnected).toBe(true);
+      expect(s.sessions[tab].bindError).toBe("Codex was removed");
+    }
+    expect(s.sessions[BOUND].acpSessionId).toBe("acp-1");
+    expect(s.sessions[STARTING].pendingSend).toBeUndefined();
+    expect(s.queues[STARTING]).toEqual(["first"]);
+    expect(s.sessions[OTHER].status).toBe("running");
+    expect(s.sessions[OTHER].disconnected).toBeFalsy();
+    expect(pluginIdForAgent("codex") in s.agentStartingStatus).toBe(false);
+  });
+
+  it("switching a removed agent's tab to another agent clears the disconnected state", () => {
+    const { actions } = useChatStore.getState();
+    actions.noteAgentRemoved(pluginIdForAgent("codex"), "Codex was removed");
+    actions.switchChatAgent(BOUND, "cersei");
+    const s = useChatStore.getState().sessions[BOUND];
+    expect(s.agentType).toBe("cersei");
+    expect(s.disconnected).toBeFalsy();
+    expect(s.bindError).toBeUndefined();
+  });
+
   it("setAgentStartingStatus stores text and clears on null", () => {
     const { actions } = useChatStore.getState();
     actions.setAgentStartingStatus("p", "Downloading Node.js…");

@@ -378,7 +378,8 @@ async fn a_registry_binary_agent_reports_a_bad_checksum_rather_than_running() {
     );
 }
 
-/// Install progress reaches the UI's watcher while the download runs.
+/// Install progress reaches the UI's watcher while the download runs, and is
+/// cleared once it is over — a status left behind reads "Installing …" forever.
 #[tokio::test]
 async fn installing_reports_progress_on_the_loading_channel() {
     let contents = b"the agent";
@@ -394,18 +395,51 @@ async fn installing_reports_progress_on_the_loading_channel() {
     let mut loading = fixture.store.watch_loading_status(&id).unwrap();
     assert_eq!(*loading.borrow_and_update(), None);
 
-    fixture
+    let mut command = fixture
         .store
         .agent_server(&id)
         .unwrap()
-        .get_command(vec![], HashMap::new())
-        .await
-        .unwrap();
+        .get_command(vec![], HashMap::new());
 
+    tokio::select! {
+        biased;
+        changed = loading.changed() => changed.unwrap(),
+        _ = &mut command => panic!("the install finished without reporting progress"),
+    }
     assert_eq!(
         loading.borrow_and_update().as_deref(),
         Some("Installing 2.1.0…")
     );
+
+    command.await.unwrap();
+    assert_eq!(*loading.borrow_and_update(), None);
+}
+
+/// A failed install clears its progress too. It used to leave the status set,
+/// so the tab kept reading "Installing …" after the error.
+#[tokio::test]
+async fn a_failed_install_clears_its_progress() {
+    let http = FakeHttp::new().with(ARCHIVE_URL, 200, b"the agent".to_vec());
+    let wrong_digest = Some("00".repeat(32));
+    let fixture = fixture_with_http(vec![binary_agent("some-cli", "2.1.0", wrong_digest)], http);
+
+    fixture
+        .store
+        .set_settings(settings(&[("some-cli", AgentServerSettings::registry())]))
+        .await;
+
+    let id = AgentId::new("some-cli");
+    let mut loading = fixture.store.watch_loading_status(&id).unwrap();
+
+    let result = fixture
+        .store
+        .agent_server(&id)
+        .unwrap()
+        .get_command(vec![], HashMap::new())
+        .await;
+
+    assert!(result.is_err(), "a checksum mismatch must fail the install");
+    assert_eq!(*loading.borrow_and_update(), None);
 }
 
 // ------------------------------------------------- version-bump notification

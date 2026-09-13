@@ -58,6 +58,7 @@ import {
   startCatalogListener,
 } from "@/features/agents/stores/agent-registry-store";
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
+import { watchRemovedAgents } from "@/features/chat/lib/removed-agents";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
 import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
 import { primeNativeNotificationPermission, sendNativeNotification } from "@/lib/native-notify";
@@ -137,6 +138,9 @@ export function App() {
     // …and stay current: discovery finishes after boot, and installs /
     // acquisitions / settings toggles all change how an agent launches.
     startCatalogListener();
+    // An uninstall drops the agent's connection with no delta to any tab on
+    // it; the catalog shrinking is what settles those tabs.
+    return watchRemovedAgents();
   }, []);
 
   // Refresh the `atlas` CLI helper at `~/.local/bin/atlas` on every

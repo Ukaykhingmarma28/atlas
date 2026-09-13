@@ -583,6 +583,16 @@ interface ChatActions {
      * rebind) take over. Returns nothing; safe to call for a plugin no tab is on.
      */
     failPendingBinds: (pluginId: string, reason?: string) => void;
+    /**
+     * The agent behind `pluginId` was uninstalled, bound tabs included. The
+     * backend dropped its connection without a delta (there is no session to
+     * route one by), so this records what one would have: every tab on that
+     * plugin drops to idle, a held first message goes back to the queue, and
+     * the tab is flagged disconnected with `reason` so the banner can offer a
+     * switch instead of a restart that cannot succeed. Untouched tabs are the
+     * caller's to re-point (`removed-agents.ts`).
+     */
+    noteAgentRemoved: (pluginId: string, reason: string) => void;
   };
 }
 
@@ -817,6 +827,10 @@ export const useChatStore = createSelectors(
             sess.acpSessionId = undefined;
             sess.acpCurrentMode = undefined;
             sess.acpCurrentModel = undefined;
+            // A dead or removed PREVIOUS agent is not this one's state: the
+            // banner that offered "Switch agent" must not outlive the switch.
+            sess.disconnected = undefined;
+            sess.bindError = undefined;
             // The provider only applies to the native agent; clear it so the
             // composer re-defaults from BYOK keys if cersei is chosen.
             sess.cerseiProvider = undefined;
@@ -1676,6 +1690,25 @@ export const useChatStore = createSelectors(
               session.acpModesPending = false;
               session.disconnected = true;
               if (reason) session.bindError = reason;
+            }
+          }),
+        noteAgentRemoved: (pluginId, reason) =>
+          set((s) => {
+            delete s.agentStartingStatus[pluginId];
+            for (const [tabId, session] of Object.entries(s.sessions)) {
+              if (pluginIdForAgent(session.agentType) !== pluginId) continue;
+              const held = session.pendingSend;
+              if (held) {
+                session.pendingSend = undefined;
+                s.queues[tabId] = [...(s.queues[tabId] ?? []), held.content];
+              }
+              session.status = "idle";
+              session.stopping = undefined;
+              session.retryStatus = undefined;
+              session.inflightToolIds = undefined;
+              session.acpModesPending = false;
+              session.disconnected = true;
+              session.bindError = reason;
             }
           }),
       },
