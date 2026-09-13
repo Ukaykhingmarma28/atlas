@@ -81,6 +81,13 @@ interface LayoutState {
   plansPanel: {
     width: number;
   };
+  /** The Timeline tab's split: the session nav on the left, the open Session
+   *  on the right. `showSidebar` only applies while a Session is open — with
+   *  nothing open the nav is the whole point and is always drawn. */
+  timelinePanel: {
+    showSidebar: boolean;
+    sidebarWidth: number;
+  };
   tabs: Tab[];
   /** Per-workspace saved view (tabs + split layout + history). The singular
    *  fields below (`tabs`/`groupOrder`/`activeByGroup`/…) are a live MIRROR of
@@ -134,6 +141,8 @@ interface LayoutActions {
     setChatSidebarWidth: (width: number) => void;
     setBashPanelWidth: (width: number) => void;
     setPlansPanelWidth: (width: number) => void;
+    toggleTimelineSidebar: () => void;
+    setTimelineSidebarWidth: (width: number) => void;
     setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
     setRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     /** Make the right panel visible AND switch it to `section` (e.g. open the
@@ -213,6 +222,10 @@ const initialState: LayoutState = {
   },
   plansPanel: {
     width: 380,
+  },
+  timelinePanel: {
+    showSidebar: true,
+    sidebarWidth: 300,
   },
   tabs: [
     {
@@ -443,6 +456,14 @@ export const useLayoutStore = createSelectors(
           toggleKnowledgeInspector: () =>
             set((s) => {
               s.knowledgePanel.showInspector = !s.knowledgePanel.showInspector;
+            }),
+          toggleTimelineSidebar: () =>
+            set((s) => {
+              s.timelinePanel.showSidebar = !s.timelinePanel.showSidebar;
+            }),
+          setTimelineSidebarWidth: (width) =>
+            set((s) => {
+              s.timelinePanel.sidebarWidth = Math.max(220, Math.min(width, 480));
             }),
           setKnowledgeSidebarWidth: (width) =>
             set((s) => {
@@ -957,6 +978,7 @@ export const useLayoutStore = createSelectors(
           chatSidebar: s.chatSidebar,
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
+          timelinePanel: s.timelinePanel,
           tabBarVisible: s.tabBarVisible,
         }),
         // One-level-deep merge so persisted slices overlay the defaults

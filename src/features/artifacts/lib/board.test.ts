@@ -9,7 +9,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bucketByDay, formatDuration, startOfDay, tokenLabel } from "./board";
+import {
+  bucketByDay,
+  formatDuration,
+  groupSessions,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  tokenLabel,
+} from "./board";
 import type { BoardSession } from "../types";
 
 function session(overrides: Partial<BoardSession> = {}): BoardSession {
@@ -118,5 +126,30 @@ describe("tokenLabel", () => {
 
   it("reaches billions, because cache reads do", () => {
     expect(tokenLabel(session({ cacheReadTokens: 1_548_473_497 }))).toBe("1.55B cached");
+  });
+});
+
+describe("grouping grain", () => {
+  it("starts a week on Monday and a month on the 1st", () => {
+    // A Sunday — the day the Sunday-first convention gets wrong.
+    const sunday = new Date(2026, 6, 12, 15, 0);
+    expect(new Date(startOfWeek(sunday)).getDate()).toBe(6); // Monday 6 Jul
+    expect(new Date(startOfWeek(sunday)).getDay()).toBe(1);
+    expect(new Date(startOfMonth(sunday)).getDate()).toBe(1);
+  });
+
+  it("folds a week of days into one bucket", () => {
+    const day = 86_400_000;
+    const monday = new Date(startOfWeek(new Date()) + 9 * 3_600_000);
+    const rows = [0, 1, 2].map((i) =>
+      session({
+        id: `s${i}`,
+        lastActivityAt: new Date(monday.getTime() + i * day).toISOString(),
+      }),
+    );
+    expect(groupSessions(rows, "day")).toHaveLength(3);
+    const [week] = groupSessions(rows, "week");
+    expect(week.sessions).toHaveLength(3);
+    expect(week.label).toBe("This week");
   });
 });

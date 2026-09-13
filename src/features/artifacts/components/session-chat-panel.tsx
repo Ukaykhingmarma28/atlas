@@ -44,7 +44,7 @@ import { useSessionChatStore, UNTITLED } from "../stores/session-chat-store";
 import type { SessionDetail as Detail, TimelineEntry } from "../types";
 import { CheckpointScopePicker, defaultScope } from "./checkpoint-scope-picker";
 import { SessionChatMessage } from "./session-chat-message";
-import { AgentGlyph } from "./session-list";
+import { AgentGlyph } from "./agent-glyph";
 
 /**
  * The questions worth putting in front of someone who has never used this.
