@@ -51,6 +51,8 @@ import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { jumpToSession } from "@/features/chat/lib/tab-workspace";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
+import { isWindows } from "@/lib/platform";
+import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
   startCatalogListener,
@@ -142,8 +144,10 @@ export function App() {
   // replaced with the current version. Failures are non-fatal — the
   // app still works without the helper, the user just can't type
   // `atlas ./` in their terminal until they hit the install button
-  // in Settings → General.
+  // in Settings → General. Not on Windows: the helper is a bash script
+  // (see `commands::cli::cli_install_helper`).
   useEffect(() => {
+    if (isWindows) return;
     void invoke("cli_install_helper").catch((e) => {
       console.warn("atlas CLI helper refresh failed:", e);
     });
@@ -888,7 +892,7 @@ export function App() {
         useRecentChatsStore.getState().actions.record({
           tabId,
           projectPath: path,
-          projectName: path.split("/").pop() || path,
+          projectName: basename(path),
           // Strip any Atlas-injected memory scaffolding the title may carry
           // (resumed sessions); a dirty fragment cleans to "" → fall back.
           title: stripInjectedContext(s.title) || "Chat",

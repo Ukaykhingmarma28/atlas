@@ -712,6 +712,7 @@ dependencies = [
  "dashmap",
  "dirs",
  "dotenvy",
+ "dunce",
  "futures",
  "ignore",
  "mimalloc",

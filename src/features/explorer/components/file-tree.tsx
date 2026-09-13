@@ -14,6 +14,7 @@ import { useProjectStore } from "@/features/project/stores/project-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { FolderPlus, FoldVertical, UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { basename } from "@/lib/paths";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { TreeRow } from "./tree-row";
 import { openFile } from "@/lib/open-file";
@@ -652,7 +653,7 @@ export function FileTree() {
           file-tree updates live off the filesystem watcher. */}
       <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border-default">
         <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
-          {rootPath ? rootPath.split("/").pop() : "Files"}
+          {rootPath ? basename(rootPath) : "Files"}
         </span>
         <div className="flex items-center gap-0.5">
           <FoldExpandButton tree={tree} onCollapseAll={collapseAll} onExpandAll={expandAllLoaded} />

@@ -57,6 +57,7 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { GitDot, NumStatPill } from "./git-summary";
 
@@ -883,13 +884,14 @@ export function WorkspaceSidebar() {
       className="flex flex-col h-screen w-[244px] shrink-0 bg-transparent"
       data-tauri-drag-region
     >
-      {/* Titlebar band: the traffic lights live here, so the rail's own
-       *  controls keep right (left in fullscreen, where the lights are gone).
+      {/* Titlebar band: on macOS the traffic lights live here, so the rail's
+       *  own controls keep right (left in fullscreen, where the lights are gone,
+       *  and on other platforms, which never have them).
        *  No rule under it — the org row below is the visual top of the rail. */}
       <div
         className={cn(
           "h-[30px] shrink-0 flex items-center gap-0.5 px-2",
-          fullscreen ? "justify-start" : "justify-end",
+          fullscreen || !isMac ? "justify-start" : "justify-end",
         )}
         data-tauri-drag-region
       >

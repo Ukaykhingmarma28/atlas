@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod logging;
+#[cfg(target_os = "macos")]
 mod menu;
 mod state;
 mod telemetry;
@@ -98,17 +99,22 @@ pub fn run() {
         }
     }));
 
+    // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
+    // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
+    // the tab instead of tearing down the window. See `menu.rs`.
+    //
+    // macOS only. Elsewhere a menu is a Win32/GTK menu bar drawn inside the
+    // window under Atlas's own titlebar, and the key-equivalent fallthrough it
+    // exists to catch is AppKit behaviour.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::build).on_menu_event(|app, event| {
+        if event.id() == menu::CLOSE_TAB_ID {
+            use tauri::Emitter;
+            let _ = app.emit("atlas:close-active-tab", ());
+        }
+    });
+
     builder
-        // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
-        // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
-        // the tab instead of tearing down the window. See `menu.rs`.
-        .menu(menu::build)
-        .on_menu_event(|app, event| {
-            if event.id() == menu::CLOSE_TAB_ID {
-                use tauri::Emitter;
-                let _ = app.emit("atlas:close-active-tab", ());
-            }
-        })
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 // Opaque dark window background. Fills the brief gap between

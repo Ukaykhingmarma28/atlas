@@ -310,7 +310,7 @@ fn resolve_path_with_base(base: Option<&str>, raw: &str) -> Option<String> {
         PathBuf::from(cwd).join(s.strip_prefix("./").unwrap_or(&s))
     };
 
-    let canon = std::fs::canonicalize(&path).ok()?;
+    let canon = dunce::canonicalize(&path).ok()?;
     Some(canon.to_string_lossy().into_owned())
 }
 

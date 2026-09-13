@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
+import { basename } from "@/lib/paths";
 import { logEvent } from "@/features/log/lib/log";
 import { flushAll } from "../lib/flush-registry";
 import { captureSnapshot, restoreSnapshot, evictSnapshot } from "../lib/workspace-snapshot";
@@ -179,7 +180,7 @@ const uuid = (): string =>
     ? crypto.randomUUID()
     : `ws-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const nameOf = (path: string): string => path.split("/").pop() || path;
+const nameOf = (path: string): string => basename(path);
 
 /** Latest workspace id clicked while a switch was already in flight. The current
  *  switch drains it in its `finally`, so rapid clicks coalesce to the last one
@@ -709,7 +710,11 @@ export const useWorkspaceStore = createSelectors(
 
       hydrate: (payload) => {
         set({
-          workspaces: payload.workspaces ?? [],
+          // Names used to be the last `/`-segment of the path, which on
+          // Windows is the whole path — re-derive those so saved rows heal.
+          workspaces: (payload.workspaces ?? []).map((w) =>
+            w.name === w.path ? { ...w, name: nameOf(w.path) } : w,
+          ),
           groups: payload.groups ?? [],
           activeWorkspaceId: payload.activeWorkspaceId ?? null,
         });

@@ -77,7 +77,7 @@ pub fn parse_project_path(args: &[String]) -> Option<String> {
     if raw.starts_with('-') {
         return None;
     }
-    let abs = std::fs::canonicalize(raw).ok()?;
+    let abs = dunce::canonicalize(raw).ok()?;
     if abs.is_dir() {
         Some(abs.to_string_lossy().into_owned())
     } else {
@@ -142,6 +142,11 @@ pub fn cli_status() -> CliStatus {
 /// confirmation without a second IPC round-trip.
 #[tauri::command]
 pub async fn cli_install_helper() -> Result<CliStatus, String> {
+    // The helper is a bash script that relaunches Atlas with `open -n`; neither
+    // exists on Windows, where it would only shadow `atlas` in Git Bash.
+    if cfg!(windows) {
+        return Err("the atlas CLI helper is not available on Windows yet".to_string());
+    }
     let version = env!("CARGO_PKG_VERSION").to_string();
     let path = helper_path().ok_or_else(|| "could not resolve $HOME".to_string())?;
 

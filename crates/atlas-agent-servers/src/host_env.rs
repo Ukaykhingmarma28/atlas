@@ -52,15 +52,24 @@ fn enrich_path() {
     // 3. The `~/.nvm/versions/node/*` enumeration on a background thread, kept
     //    as a belt-and-suspenders fallback for the rare case where the login
     //    shell probe fails or times out.
-    apply_cheap_path_extras();
-    merge_login_shell_path();
-    nvm_path_walk();
+    //
+    // Unix only. A Windows GUI process inherits the user's full PATH from
+    // Explorer, and every pass here is POSIX-shaped (`:` separators, `/`-rooted
+    // entries, `$SHELL -lic`, `kill -9`) — running them on Windows corrupted
+    // PATH at boot and broke every later git/node/agent spawn.
+    #[cfg(unix)]
+    {
+        apply_cheap_path_extras();
+        merge_login_shell_path();
+        nvm_path_walk();
+    }
 }
 
 /// Query the user's login+interactive shell for its `PATH` and merge it into
 /// the process environment. Bounded by a 3s timeout so a slow shell rc (conda
 /// init, etc.) can't hang app startup — on timeout we fall back to the
 /// hardcoded extras already applied in `apply_cheap_path_extras`.
+#[cfg(unix)]
 fn merge_login_shell_path() {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
@@ -98,6 +107,7 @@ fn merge_login_shell_path() {
     }
 }
 
+#[cfg(unix)]
 fn apply_cheap_path_extras() {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut extras: Vec<String> = Vec::new();
@@ -122,6 +132,7 @@ fn apply_cheap_path_extras() {
 /// so ALL process-env mutation is confined to `sanitize_host_env` on the main
 /// thread before any child processes spawn — the old background-thread version
 /// mutated PATH mid-flight (M8).
+#[cfg(unix)]
 fn nvm_path_walk() {
     let home = match std::env::var("HOME") {
         Ok(h) if !h.is_empty() => h,
@@ -152,6 +163,7 @@ fn nvm_path_walk() {
     prepend_to_path(&extras);
 }
 
+#[cfg(unix)]
 fn prepend_to_path(extras: &[String]) {
     let base = std::env::var("PATH").unwrap_or_default();
     let mut path_parts: Vec<String> = if base.is_empty() {
@@ -193,6 +205,7 @@ fn prepend_to_path(extras: &[String]) {
 /// `claude_setup::resolve_cli`, which already probes with `-lic` for the same
 /// reason. Interactive rcs can print noise; callers must parse defensively
 /// (last line / filtered entries).
+#[cfg(unix)]
 fn probe_shell(
     shell: &str,
     script: &str,

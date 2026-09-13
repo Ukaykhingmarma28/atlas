@@ -38,3 +38,8 @@
 # test` and `tauri dev` are unaffected by any of this.
 [env]
 MACOSX_DEPLOYMENT_TARGET = "11.0"
+# Windows x86_64 only: aws-lc-sys (rustls' `aws-lc-rs` provider) assembles its
+# x86_64 code with NASM, which a stock MSVC toolchain lacks. This lets it link
+# the prebuilt NASM objects it ships instead. aws-lc-sys ignores it on every
+# other target, and the Tauri CLI never sets it, so it doesn't un-align caches.
+AWS_LC_SYS_PREBUILT_NASM = "1"

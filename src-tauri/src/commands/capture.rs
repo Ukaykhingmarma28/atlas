@@ -84,7 +84,7 @@ fn lock_ok<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// was renamed or removed) — an id is still needed to read back what was
 /// already stored under it.
 pub(crate) fn workspace_id_for(root: &std::path::Path) -> String {
-    std::fs::canonicalize(root)
+    dunce::canonicalize(root)
         .unwrap_or_else(|_| root.to_path_buf())
         .to_string_lossy()
         .to_string()
@@ -732,7 +732,7 @@ impl CaptureState {
             // `out_of_repo`, and its touch can never match a commit. Retry
             // against the canonicalised root before accepting that verdict.
             if path.out_of_repo {
-                if let Ok(real_root) = std::fs::canonicalize(workspace_root) {
+                if let Ok(real_root) = dunce::canonicalize(workspace_root) {
                     if real_root != workspace_root {
                         let retry = resolve_path(&raw, &real_root);
                         if !retry.out_of_repo {

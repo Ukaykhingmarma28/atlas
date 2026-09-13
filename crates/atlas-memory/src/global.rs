@@ -79,14 +79,17 @@ struct Ledger {
 }
 
 /// Resolve the global memory dir: `ATLAS_GLOBAL_MEMORY_DIR` if set, else
-/// `$HOME/.atlas/memory` (falling back to `./.atlas/memory` if `$HOME` is unset).
+/// `$HOME/.atlas/memory` (`%USERPROFILE%` on Windows, where `HOME` is normally
+/// unset; falling back to `./.atlas/memory` if neither is set).
 pub fn global_dir() -> PathBuf {
     if let Ok(d) = std::env::var(GLOBAL_DIR_ENV) {
         if !d.is_empty() {
             return PathBuf::from(d);
         }
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home).join(".atlas").join("memory")
 }
 
