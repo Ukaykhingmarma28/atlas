@@ -79,6 +79,19 @@ export interface SessionModeInfo {
   description?: string | null;
 }
 
+/** What `native_agent_refresh_models` returns — the picker's Refresh for the
+ *  native agent (ADR-0007). Mirrors Rust `NativeModelsRefresh`. */
+export interface NativeModelsRefresh {
+  models: SessionModeInfo[];
+  /** The first entitled row: what a new session starts on. */
+  defaultModel: string;
+  /** Anything the user can see changed. */
+  changed: boolean;
+  /** The native connection was restarted so the engine picks up the new
+   *  rows; open native sessions were told and rebind on their next send. */
+  reconnected: boolean;
+}
+
 export interface SessionSnapshot {
   agent_id: AgentId;
   session_id: AcpSessionId;
@@ -109,6 +122,24 @@ export interface SessionSnapshot {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Not a session delta: the manager's per-agent loading status (`Downloading
+ * Node.js…`, `Installing @agentclientprotocol/codex-acp 1.11.0…`) while a
+ * plugin's connect is in flight. Keyed by PLUGIN id because there is no
+ * session — and no `agent_id` — until the connect finishes. `null` clears it.
+ * Mirrors `AgentManagerEvent::LoadingStatusChanged` forwarded onto the
+ * `atlas:agents` window event as `{kind: "loading_status", plugin_id, status}`.
+ */
+export interface LoadingStatusEvent {
+  kind: "loading_status";
+  plugin_id: string;
+  status: string | null;
+}
+
+/** Everything the `atlas:agents` window event can carry. Session-scoped
+ *  deltas, plus the session-less loading status above. */
+export type AgentStreamEvent = AgentDelta | LoadingStatusEvent;
 
 /**
  * Single multiplexed delta stream emitted on the `atlas:agents` window event.

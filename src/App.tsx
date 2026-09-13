@@ -16,7 +16,11 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
 import { useProjectStore, type AppStateWire } from "@/features/project/stores/project-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { listenAgents, resetAgentByAgentId } from "@/features/chat/lib/agents-api";
+import {
+  listenAgents,
+  pluginIdForAgentId,
+  resetAgentByAgentId,
+} from "@/features/chat/lib/agents-api";
 import type { PendingPermission } from "@/types/acp";
 import type { AgentDelta } from "@/types/agents";
 import { cycleChatAgent } from "@/features/chat/lib/switch-agent";
@@ -35,7 +39,6 @@ import { flushAll } from "@/features/workspaces/lib/flush-registry";
 import { captureSnapshot } from "@/features/workspaces/lib/workspace-snapshot";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   useRecentFilesStore,
   ensureRecentFilesListener,
@@ -54,11 +57,8 @@ import {
 } from "@/features/agents/stores/agent-registry-store";
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
+import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
+import { primeNativeNotificationPermission, sendNativeNotification } from "@/lib/native-notify";
 import { logEvent } from "@/features/log/lib/log";
 import { warmMarkdownWorker, primeMarkdownRenderer } from "@/lib/markdown-cache";
 import { primeMarkdown } from "@/lib/markdown";
@@ -436,6 +436,22 @@ export function App() {
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newTabPaletteOpen, setNewTabPaletteOpen] = useState(false);
+  // The workspace rail's "Open module" row opens the same palette ⌘⌥N does.
+  // The palette's state lives here, so the rail asks for it by event rather
+  // than the state being lifted into a store for one caller.
+  useEffect(() => {
+    const open = () => setNewTabPaletteOpen(true);
+    window.addEventListener("atlas:new-tab-palette", open);
+    return () => window.removeEventListener("atlas:new-tab-palette", open);
+  }, []);
+  // Same arrangement for ⌘K: the rail's org-row search button asks for the
+  // command palette by event, because the palette's open state lives here and
+  // one caller does not justify lifting it into a store.
+  useEffect(() => {
+    const open = () => setCommandPaletteOpen(true);
+    window.addEventListener("atlas:command-palette", open);
+    return () => window.removeEventListener("atlas:command-palette", open);
+  }, []);
   const [layoutSwitcherOpen, setLayoutSwitcherOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
@@ -543,42 +559,9 @@ export function App() {
     /** Timer drain that survives RAF being paused — see `schedule` below. */
     let backstopId: ReturnType<typeof setTimeout> | null = null;
 
-    // "Is Atlas actually in front of the user?" — tracked via the NATIVE window
-    // focus, NOT web focus/blur. The web events keep reporting "focused" when
-    // Atlas is fullscreen on its own macOS Space and the user swipes to another
-    // desktop (the webview never blurs), so notifications would wrongly stay
-    // suppressed. The native key-window status flips correctly on a Space
-    // switch / app deactivation, which is the signal we actually want.
-    let windowFocused = true;
-    let unlistenFocus: (() => void) | null = null;
-    const appWindow = getCurrentWindow();
-    void appWindow
-      .isFocused()
-      .then((f) => {
-        windowFocused = f;
-      })
-      .catch(() => {});
-    // Front-load the "cold wake" after the window has been idle/occluded: WebKit
-    // throttles the WKWebView's main thread + rAF + layout while inactive, so the
-    // first interaction (e.g. scrolling the chat) eats the catch-up. Firing this
-    // on the focus/visibility RISING edge lets listeners (chat virtualizer,
-    // markdown worker) warm the pipeline before the user touches anything.
-    const signalActive = () => window.dispatchEvent(new CustomEvent("atlas:window-active"));
-    void appWindow
-      .onFocusChanged(({ payload: focused }) => {
-        if (focused && !windowFocused) signalActive();
-        windowFocused = focused;
-      })
-      .then((un) => {
-        unlistenFocus = un;
-      })
-      .catch(() => {});
-    // Space switches / occlusion don't always flip native key-window focus, so
-    // also wake on the page becoming visible again.
-    const onVisible = () => {
-      if (document.visibilityState === "visible") signalActive();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    // Native window focus + the "cold wake" signal live in `src/lib/window-focus.ts`
+    // now — the terminal notifier needs the same answer this file did.
+    const stopFocusTracking = initWindowFocusTracking();
 
     // ── Idle-while-focused cold wake ─────────────────────────────────────────
     // The focus/visibility edges above never fire when Atlas stays the focused,
@@ -595,6 +578,7 @@ export function App() {
     //      a 3s watchdog → main-thread sync fallback on the first big message).
     const IDLE_RETURN_MS = 30_000;
     const KEEP_WARM_MS = 20_000;
+    const signalActive = () => window.dispatchEvent(new CustomEvent("atlas:window-active"));
     let lastActivityAt = Date.now();
     const onUserActivity = () => {
       const now = Date.now();
@@ -606,7 +590,7 @@ export function App() {
     window.addEventListener("keydown", onUserActivity, { passive: true });
     window.addEventListener("wheel", onUserActivity, { passive: true });
     const keepWarm = window.setInterval(() => {
-      if (windowFocused && document.visibilityState === "visible") {
+      if (isWindowFocused() && document.visibilityState === "visible") {
         warmMarkdownWorker();
       }
     }, KEEP_WARM_MS);
@@ -616,24 +600,9 @@ export function App() {
     // other removal path and grew one key per session forever).
     const pruneTimer = window.setTimeout(() => pruneContextUsageCache(), 15_000);
 
-    let permissionState: "unknown" | "granted" | "denied" = "unknown";
-    // Establish notification permission EAGERLY at startup. The old lazy path
-    // only asked the OS the first time a notification fired while unfocused —
-    // so if every agent turn finished while Atlas was focused, permission was
-    // never granted and the first real (background) notification was lost to
-    // the permission prompt. Priming it here means later notifications just
-    // fire. (Best-effort; macOS still needs the app code-signed to deliver.)
-    void (async () => {
-      try {
-        permissionState = (await isPermissionGranted())
-          ? "granted"
-          : (await requestPermission()) === "granted"
-            ? "granted"
-            : "denied";
-      } catch {
-        /* permission unavailable — notifications silently no-op */
-      }
-    })();
+    // Establish notification permission EAGERLY at startup (see native-notify.ts
+    // for why lazy asking lost the first real background notification).
+    void primeNativeNotificationPermission();
     // Name the SESSION's workspace, not the active project — a finish in
     // workspace B while A is focused used to read "Atlas — A".
     const sessionProjectName = (acpSessionId: string): string => {
@@ -645,47 +614,20 @@ export function App() {
         .workspaces.find((w) => w.path === sess?.workingDirectory)?.name;
       return byPath ?? useProjectStore.getState().currentProject?.name ?? "Atlas";
     };
-    const notifyAgentDone = async (acpSessionId: string) => {
-      if (windowFocused) return;
-      try {
-        if (permissionState === "unknown") {
-          const granted = (await isPermissionGranted())
-            ? true
-            : (await requestPermission()) === "granted";
-          permissionState = granted ? "granted" : "denied";
-        }
-        if (permissionState !== "granted") return;
-        sendNotification({
-          title: `Atlas: ${sessionProjectName(acpSessionId)}`,
-          body: "Agent task finished.",
-        });
-      } catch (e) {
-        console.warn("agent-done notification failed:", e);
-      }
-    };
+    const notifyAgentDone = (acpSessionId: string) =>
+      sendNativeNotification({
+        title: `Atlas: ${sessionProjectName(acpSessionId)}`,
+        body: "Agent task finished.",
+      });
 
     // Sibling of notifyAgentDone — fires when the agent issues a
-    // permission_request and the window isn't focused. Shares the
-    // permission state machine and focus tracker above so we never
-    // double-prompt for OS notification access.
-    const notifyPermissionRequested = async (toolTitle: string, acpSessionId: string) => {
-      if (windowFocused) return;
-      try {
-        if (permissionState === "unknown") {
-          const granted = (await isPermissionGranted())
-            ? true
-            : (await requestPermission()) === "granted";
-          permissionState = granted ? "granted" : "denied";
-        }
-        if (permissionState !== "granted") return;
-        sendNotification({
-          title: `Atlas: ${sessionProjectName(acpSessionId)} needs permission`,
-          body: `Approve "${toolTitle}" to continue.`,
-        });
-      } catch (e) {
-        console.warn("permission-request notification failed:", e);
-      }
-    };
+    // permission_request and the window isn't focused (the gate lives in
+    // `sendNativeNotification`).
+    const notifyPermissionRequested = (toolTitle: string, acpSessionId: string) =>
+      sendNativeNotification({
+        title: `Atlas: ${sessionProjectName(acpSessionId)} needs permission`,
+        body: `Approve "${toolTitle}" to continue.`,
+      });
 
     /** Longest a batch may be held for an active scroll gesture. Bounded so a
      *  continuous fling can never starve the stream — worst case the reader
@@ -961,6 +903,14 @@ export function App() {
 
     listenAgents((env) => {
       if (cancelled) return;
+      const actions = useChatStore.getState().actions;
+      // Session-less: the manager's per-plugin install/launch progress. Not a
+      // delta, so it never enters the RAF buffer — the label it drives is a
+      // single store write per change, and every tab on that agent reads it.
+      if (env.kind === "loading_status") {
+        actions.setAgentStartingStatus(env.plugin_id, env.status);
+        return;
+      }
       if (
         env.kind === "status" ||
         env.kind === "message_appended" ||
@@ -968,7 +918,6 @@ export function App() {
       ) {
         recordRecentChat(env.session_id);
       }
-      const actions = useChatStore.getState().actions;
       switch (env.kind) {
         case "text_chunk":
           bufferChunk(env);
@@ -1033,6 +982,13 @@ export function App() {
           // Forced: teardown correctness outranks the scroll-hold.
           flush(true);
           actions.clearPermissionsForAgent(env.agent_id);
+          // Tabs still waiting to be bound on this agent have no session id
+          // for the reducer to route by; fail them by plugin instead. Read
+          // the pairing BEFORE the cache reset below forgets it.
+          {
+            const pluginId = pluginIdForAgentId(env.agent_id);
+            if (pluginId) actions.failPendingBinds(pluginId, env.reason);
+          }
           // Reset the spawn cache for the plugin that actually died — the old
           // resetDefaultAgent() only ever cleared claude-code-ts, so a crashed
           // Codex adapter stayed cached-dead until app restart (H4).
@@ -1138,8 +1094,7 @@ export function App() {
       if (rafId !== null) cancelAnimationFrame(rafId);
       if (backstopId !== null) clearTimeout(backstopId);
       window.removeEventListener("atlas:window-active", flushOnWake);
-      unlistenFocus?.();
-      document.removeEventListener("visibilitychange", onVisible);
+      stopFocusTracking();
       window.removeEventListener("pointerdown", onUserActivity);
       window.removeEventListener("keydown", onUserActivity);
       window.removeEventListener("wheel", onUserActivity);

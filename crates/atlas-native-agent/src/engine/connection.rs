@@ -36,13 +36,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::RwLock;
 
 use agent_client_protocol::schema::v1 as acp;
 use anyhow::anyhow;
 use anyhow::Result;
 use atlas_acp_thread::{
     AcpThread, AcpThreadHandle, AgentConnection, AgentId, AgentModelId, AgentModelInfo,
-    AgentModelList, AgentModelSelector, AgentSessionModes, AuthorizationKind,
+    AgentModelList, AgentModelSelector, AgentSessionModes, AgentSessionRewind, AuthorizationKind,
 };
 use crate::AgentSessionEffort;
 use atlas_agent_servers::ThreadEventSink;
@@ -61,7 +62,11 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use tokio::sync::oneshot;
 
+use crate::engine::auth::SystemClock;
+use crate::engine::catalog_cache::{self, CatalogueFetcher, CatalogueUnavailable};
+use crate::engine::config::EngineHome;
 use crate::engine::config::EngineSettings;
+use crate::engine::config::WireDialect;
 use crate::engine::approvals;
 use crate::engine::memory::{self, MemorySearch};
 use crate::engine::modes;
@@ -259,6 +264,60 @@ impl TurnWaiters {
     }
 }
 
+/// The catalogue this connection is running on (ADR-0007).
+///
+/// Captured at connect from the fetched-and-cached gateway list, and the
+/// single source for both the picker and the model a thread starts on. The
+/// engine loaded the same rows into its own catalogue at startup and will
+/// not reload them; that is why [`LiveCatalogue::fingerprint`] exists — a
+/// refresh whose fingerprint differs needs a new connection, one whose
+/// fingerprint matches may swap the labels in place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveCatalogue {
+    /// What the composer lists, in the gateway's order.
+    pub picker: Vec<AgentModelInfo>,
+    /// The first entitled row: what a session runs on before any pick.
+    pub default_model: String,
+    /// Slugs and context windows, in order — the engine-relevant identity.
+    pub fingerprint: u64,
+    /// When the rows were fetched (unix seconds). `0` for a pinned model.
+    pub fetched_at: u64,
+    /// The gateway did not answer at connect and an older cache carried it.
+    pub stale: bool,
+}
+
+impl LiveCatalogue {
+    /// A single pinned model, for a provider whose list the seam does not
+    /// own (the dev Responses provider).
+    fn single(model: String) -> Self {
+        Self {
+            picker: vec![AgentModelInfo {
+                id: AgentModelId::new(model.as_str()),
+                name: model.as_str().into(),
+                description: None,
+                icon: None,
+                is_latest: false,
+                cost: None,
+                disabled: None,
+            }],
+            default_model: model,
+            fingerprint: 0,
+            fetched_at: 0,
+            stale: false,
+        }
+    }
+
+    fn from_projection(projected: catalog_cache::ProjectedCatalogue, fetched_at: u64, stale: bool) -> Self {
+        Self {
+            picker: projected.picker,
+            default_model: projected.default_model,
+            fingerprint: projected.fingerprint,
+            fetched_at,
+            stale,
+        }
+    }
+}
+
 pub struct EngineConnection {
     id: AgentId,
     requests: InProcessAppServerRequestHandle,
@@ -267,6 +326,10 @@ pub struct EngineConnection {
     thread_events: ThreadEventSink,
     request_ids: Arc<RequestIds>,
     settings: EngineSettings,
+    /// The model list this connection runs on. A std lock, not a tokio one:
+    /// the host reads it under `futures::executor::block_on` on the send
+    /// path, where a lock that parks the runtime would deadlock it.
+    catalogue: Arc<RwLock<LiveCatalogue>>,
     /// The pump. Held so it is aborted when the connection is dropped rather
     /// than outliving it against a dead runtime.
     _pump: Arc<PumpHandle>,
@@ -317,9 +380,17 @@ impl EngineConnection {
         external_auth: Option<Arc<dyn ExternalAuth>>,
         default_mode: Option<acp::SessionModeId>,
     ) -> Result<Arc<Self>> {
-        Self::connect_full(id, settings, thread_events, external_auth, default_mode, None).await
+        Self::connect_full(id, settings, thread_events, external_auth, default_mode, None, None).await
     }
 
+    /// Opens the connection.
+    ///
+    /// `catalogue` is how the model list is fetched (ADR-0007). It is
+    /// required on the gateway dialect — there is no list without it — and
+    /// ignored on the Responses one, where `settings.model` names the single
+    /// pinned model. The resolve runs here, on the host runtime, before the
+    /// engine starts: it may wait on the network for up to the fetch timeout,
+    /// and the engine's startup task is the wrong place to do that waiting.
     pub async fn connect_full(
         id: AgentId,
         settings: EngineSettings,
@@ -327,8 +398,48 @@ impl EngineConnection {
         external_auth: Option<Arc<dyn ExternalAuth>>,
         default_mode: Option<acp::SessionModeId>,
         memory_search: Option<MemorySearch>,
+        catalogue: Option<Arc<dyn CatalogueFetcher>>,
     ) -> Result<Arc<Self>> {
-        let (runtime, client) = start_engine(&settings, external_auth).await?;
+        let (live, response) = match settings.provider.wire {
+            WireDialect::Chat => {
+                let Some(fetcher) = catalogue else {
+                    return Err(anyhow!(
+                        "the gateway dialect needs a catalogue fetcher and none was supplied"
+                    ));
+                };
+                let resolved = catalog_cache::resolve(
+                    settings.home.path(),
+                    fetcher.as_ref(),
+                    &SystemClock,
+                    false,
+                )
+                .await?;
+                let stale = resolved.is_stale();
+                let cache = resolved.into_cache();
+                let Some(projected) = catalog_cache::project(&cache) else {
+                    return Err(CatalogueUnavailable::no_entitled_models().into());
+                };
+                let response = projected.response.clone();
+                (
+                    LiveCatalogue::from_projection(projected, cache.fetched_at, stale),
+                    Some(response),
+                )
+            }
+            WireDialect::Responses => {
+                let Some(model) = settings.model.clone() else {
+                    return Err(anyhow!("the Responses dialect needs a configured model"));
+                };
+                (LiveCatalogue::single(model), None)
+            }
+        };
+        tracing::info!(
+            default_model = %live.default_model,
+            models = live.picker.len(),
+            stale = live.stale,
+            "native agent: model catalogue resolved",
+        );
+
+        let (runtime, client) = start_engine(&settings, external_auth, response.as_ref()).await?;
         let max_retries = settings.stream_max_retries;
         let requests = client.request_handle();
         let sessions = Arc::new(EngineSessions::default());
@@ -352,12 +463,58 @@ impl EngineConnection {
             thread_events,
             request_ids: Arc::new(RequestIds::default()),
             settings,
+            catalogue: Arc::new(RwLock::new(live)),
             _pump: Arc::new(PumpHandle(pump)),
             runtime: Arc::new(runtime),
             session_modes: Arc::new(Mutex::new(HashMap::new())),
             default_mode,
             memory_search,
         }))
+    }
+
+    /// The model a thread starts on before any pick: the catalogue's first
+    /// entitled row (ADR-0007).
+    fn default_model(&self) -> String {
+        self.catalogue
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .default_model
+            .clone()
+    }
+
+    /// The catalogue this connection is running on.
+    pub fn catalogue_snapshot(&self) -> LiveCatalogue {
+        self.catalogue
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Swaps in refreshed labels without a reconnect.
+    ///
+    /// Only for a catalogue with the **same fingerprint**: the engine loaded
+    /// its rows once, at startup, so a list with a different slug set or a
+    /// different context window is a list the engine does not know, and
+    /// offering it here would let the user pick a model the engine would
+    /// invent metadata for (`model_info_from_slug`) and the gateway would
+    /// `400`. That case is a reconnect, and this refuses it.
+    pub fn replace_catalogue_metadata(&self, next: LiveCatalogue) -> Result<()> {
+        let mut live = self
+            .catalogue
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if live.fingerprint != next.fingerprint {
+            return Err(anyhow!(
+                "the model list changed in a way the running engine cannot pick up; reconnect"
+            ));
+        }
+        *live = next;
+        Ok(())
+    }
+
+    /// The engine's private home — where the catalogue cache lives.
+    pub fn engine_home(&self) -> &EngineHome {
+        &self.settings.home
     }
 
     async fn call<T: serde::de::DeserializeOwned>(
@@ -406,7 +563,7 @@ impl EngineConnection {
         let model = self
             .sessions
             .selected_model(session_id)
-            .unwrap_or_else(|| self.settings.model.clone());
+            .unwrap_or_else(|| self.default_model());
         let response: v2::ThreadForkResponse = self
             .call(|request_id| ClientRequest::ThreadFork {
                 request_id,
@@ -907,7 +1064,7 @@ impl AgentConnection for EngineConnection {
                 .call(|request_id| ClientRequest::ThreadStart {
                     request_id,
                     params: v2::ThreadStartParams {
-                        model: Some(self.settings.model.clone()),
+                        model: Some(self.default_model()),
                         model_provider: Some(self.settings.provider.id.clone()),
                         cwd: Some(cwd.to_string_lossy().into_owned()),
                         // Declared only when retrieval exists. Advertising a
@@ -1013,7 +1170,7 @@ impl AgentConnection for EngineConnection {
                     params: v2::ThreadResumeParams {
                         thread_id: session_id.to_string(),
                         cwd: Some(cwd.to_string_lossy().into_owned()),
-                        model: Some(self.settings.model.clone()),
+                        model: Some(self.default_model()),
                         model_provider: Some(self.settings.provider.id.clone()),
                         ..Default::default()
                     },
@@ -1064,7 +1221,7 @@ impl AgentConnection for EngineConnection {
                                 .call(|request_id| ClientRequest::ThreadStart {
                                     request_id,
                                     params: v2::ThreadStartParams {
-                                        model: Some(self.settings.model.clone()),
+                                        model: Some(self.default_model()),
                                         model_provider: Some(self.settings.provider.id.clone()),
                                         cwd: Some(cwd.to_string_lossy().into_owned()),
                                         dynamic_tools: self
@@ -1144,7 +1301,7 @@ impl AgentConnection for EngineConnection {
         let model = self
             .sessions
             .selected_model(&params.session_id)
-            .unwrap_or_else(|| self.settings.model.clone());
+            .unwrap_or_else(|| self.default_model());
 
         // A slash command is not something to say to the model — sent as a
         // turn it would arrive as the literal text "/compact", which the
@@ -1485,6 +1642,18 @@ impl AgentConnection for EngineConnection {
         .boxed()
     }
 
+    fn supports_rewind(&self) -> bool {
+        true
+    }
+
+    fn rewind(&self, session_id: &acp::SessionId) -> Option<Arc<dyn AgentSessionRewind>> {
+        self.sessions.thread(session_id)?;
+        Some(Arc::new(EngineSessionRewind {
+            connection: self.clone_rewind_handle(),
+            session_id: session_id.clone(),
+        }))
+    }
+
     fn session_modes(&self, session_id: &acp::SessionId) -> Option<Arc<dyn AgentSessionModes>> {
         self.sessions.thread(session_id)?;
         Some(Arc::new(EngineSessionModes {
@@ -1493,15 +1662,14 @@ impl AgentConnection for EngineConnection {
         }))
     }
 
-    /// The models the gateway will actually serve (D3).
+    /// The models the gateway will actually serve (ADR-0007).
     ///
     /// Returning `None` here — which this did until now — is why the composer
     /// fell back to the **BYOK** picker: with no model list from the agent, the
     /// only list the app had was the user's own provider keys. That is a list
     /// of models this agent cannot use, priced at rates that do not apply, and
     /// picking one sends a slug the gateway answers with `403
-    /// model_not_allowed`. The catalogue was authored and reaching the engine
-    /// the whole time; nothing published it.
+    /// model_not_allowed`.
     fn model_selector(&self, session_id: &acp::SessionId) -> Option<Arc<dyn AgentModelSelector>> {
         self.sessions.thread(session_id)?;
         Some(Arc::new(EngineModelSelector {
@@ -1509,6 +1677,7 @@ impl AgentConnection for EngineConnection {
             request_ids: self.request_ids.clone(),
             session_id: session_id.clone(),
             sessions: self.sessions.clone(),
+            catalogue: self.catalogue.clone(),
         }))
     }
 
@@ -1868,7 +2037,132 @@ struct ConnectionHandle {
     turns: Arc<TurnWaiters>,
 }
 
+/// What a rewind needs, and no more: the request channel to reach the engine
+/// and the session table to reach the thread. Same reason the other session
+/// controls hold parts rather than the connection — see `ConnectionHandle`.
+#[derive(Clone)]
+struct RewindHandle {
+    requests: InProcessAppServerRequestHandle,
+    request_ids: Arc<RequestIds>,
+    sessions: Arc<EngineSessions>,
+}
+
+struct EngineSessionRewind {
+    connection: RewindHandle,
+    session_id: acp::SessionId,
+}
+
+impl AgentSessionRewind for EngineSessionRewind {
+    fn run(&self) -> BoxFuture<'static, Result<Option<String>>> {
+        let handle = self.connection.clone();
+        let session_id = self.session_id.clone();
+        async move { handle.rewind_last_turn(&session_id).await }.boxed()
+    }
+}
+
+impl RewindHandle {
+    /// Drop the last turn and hand back the prompt that started it.
+    ///
+    /// This is the rewind half of "retry": `thread/rollback` drops the turn
+    /// from the engine's durable history, the thread's entries are trimmed to
+    /// match so the transcript shows what the model now remembers, and the
+    /// caller re-sends the returned text through the ordinary send path.
+    ///
+    /// Deliberately NOT a re-implementation of `prompt`'s turn machinery.
+    /// Rewinding and re-sending are separable failures — a rewind that lands
+    /// and a send that does not must leave the user holding their prompt, not
+    /// a silently shortened thread — and splitting them here is what lets the
+    /// host report the two apart.
+    ///
+    /// Unlike `/undo` this is not itself a turn, so there is no `/undo` user
+    /// entry to skip: the turn being dropped starts at the LAST user entry,
+    /// not the second-to-last.
+    ///
+    /// `None` means the engine declined — almost always an empty thread. It is
+    /// NOT a promise that nothing moved: the request layer folds a refusal and
+    /// a dead channel into one error, and a channel that dies after the
+    /// rollback ran lands here too. Everything past a rollback known to have
+    /// succeeded is an `Err`, so the only ambiguity left is this one.
+    ///
+    /// Only the FLATTENED text survives. `ContentBlock::to_text` returns a
+    /// resource link as a bare URI and joins mixed blocks without the newlines
+    /// the original input carried (`thread.rs:99` vs `sink.rs:351`), so a turn
+    /// whose prompt mixed prose and `@`-mentions does not round-trip verbatim.
+    /// Attachments are not reconstructed at all — the thread stores what was
+    /// sent, not the composer state that produced it.
+    async fn rewind_last_turn(&self, session_id: &acp::SessionId) -> Result<Option<String>> {
+        // Ask before trimming. The engine refusing (nothing to drop) has to
+        // leave the transcript exactly as it was, so nothing local moves until
+        // the durable history has already moved.
+        let rolled = self
+            .requests
+            .request_typed::<v2::ThreadRollbackResponse>(ClientRequest::ThreadRollback {
+                request_id: self.request_ids.next(),
+                params: v2::ThreadRollbackParams {
+                    thread_id: session_id.to_string(),
+                    num_turns: 1,
+                },
+            })
+            .await;
+        if let Err(e) = rolled {
+            // A refusal and a broken channel are the same value here — the
+            // request layer does not distinguish "the engine said no" from "the
+            // engine never answered", and a transport error can also arrive
+            // AFTER the rollback ran. So this is honestly `None` only in the
+            // first case, and the caller is told as much rather than being
+            // promised the history is untouched. Erring instead would put a
+            // scary message in front of the far commoner empty-thread case.
+            tracing::debug!("thread/rollback declined or failed: {e}");
+            return Ok(None);
+        }
+
+        // Past this point the durable history has ALREADY shrunk. Reporting
+        // `None` — "nothing to rewind" — from here would tell the user nothing
+        // happened while the engine and the transcript silently disagree about
+        // the conversation. An error is the only honest answer.
+        let Some(thread) = self.sessions.thread(session_id) else {
+            return Err(anyhow!(
+                "rewound the engine's history but the session's thread is gone; \
+                 reopen the conversation to resynchronise"
+            ));
+        };
+        let mut locked = thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let last_user = locked
+            .entries()
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(ix, entry)| match entry {
+                atlas_acp_thread::AgentThreadEntry::UserMessage(msg) => {
+                    Some((ix, msg.content.to_text().to_string()))
+                }
+                _ => None,
+            });
+        let Some((from, text)) = last_user else {
+            return Err(anyhow!(
+                "rewound the engine's history but the transcript holds no prompt to \
+                 replay; reopen the conversation to resynchronise"
+            ));
+        };
+        // `EntriesRemoved` is what the delta projector turns into
+        // `HistoryRewound`, which is what trims the store's mirror and
+        // resolves any permission request stranded by the removal.
+        locked.remove_entries_from(from);
+        Ok(Some(text))
+    }
+}
+
 impl EngineConnection {
+    fn clone_rewind_handle(&self) -> RewindHandle {
+        RewindHandle {
+            requests: self.requests.clone(),
+            request_ids: self.request_ids.clone(),
+            sessions: self.sessions.clone(),
+        }
+    }
+
     fn clone_handle(&self) -> ConnectionHandle {
         ConnectionHandle {
             requests: self.requests.clone(),
@@ -1961,12 +2255,12 @@ impl AgentSessionModes for EngineSessionModes {
     }
 }
 
-/// The composer's model picker, backed by the authored catalogue.
+/// The composer's model picker, backed by the connection's live catalogue.
 ///
-/// The list is Atlas's, not the engine's: the engine would fetch one from
-/// `{base}/models`, and the gateway's reply is stock-OpenAI shaped where the
-/// engine expects its own rich record, so that fetch cannot parse (D3). The
-/// catalogue is the source of truth for both.
+/// The list is the gateway's, fetched and cached by the seam (ADR-0007) and
+/// captured on the connection at connect. The engine would fetch one from
+/// `{base}/models` itself, but the gateway's reply is stock-OpenAI shaped
+/// where the engine expects its own rich record, so that fetch cannot parse.
 struct EngineModelSelector {
     requests: InProcessAppServerRequestHandle,
     request_ids: Arc<RequestIds>,
@@ -1978,41 +2272,33 @@ struct EngineModelSelector {
     /// exactly how the picker's tick mark never moved and the choice never
     /// reached a turn.
     sessions: Arc<EngineSessions>,
+    /// The connection's catalogue, shared rather than copied: a refresh that
+    /// swaps the labels in place is visible to the next selector the host
+    /// builds.
+    catalogue: Arc<RwLock<LiveCatalogue>>,
 }
 
 impl EngineModelSelector {
-    fn catalogue() -> Vec<AgentModelInfo> {
-        let Ok(catalog) = crate::engine::catalog::atlas_catalog() else {
-            // The catalogue is authored in this repo and covered by its own
-            // tests, so this is a build-time impossibility rather than a
-            // runtime condition — but an empty picker is a better failure than
-            // a panic in the composer.
-            tracing::error!("the authored model catalogue failed to parse");
-            return Vec::new();
-        };
-        catalog
-            .models
-            .into_iter()
-            .map(|model| AgentModelInfo {
-                id: AgentModelId::new(model.slug.as_str()),
-                name: model.display_name.as_str().into(),
-                description: model.description.as_deref().map(Into::into),
-                icon: None,
-                is_latest: false,
-                // Deliberately blank. The BYOK picker shows per-million
-                // provider rates, which are not what an Atlas turn costs — a
-                // turn is metered against the account's own weighted cap. A
-                // number here would be a wrong number.
-                cost: None,
-                disabled: None,
-            })
-            .collect()
+    fn catalogue(&self) -> Vec<AgentModelInfo> {
+        self.catalogue
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .picker
+            .clone()
+    }
+
+    fn default_model(&self) -> String {
+        self.catalogue
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .default_model
+            .clone()
     }
 }
 
 impl AgentModelSelector for EngineModelSelector {
     fn list_models(&self) -> BoxFuture<'static, Result<AgentModelList>> {
-        let models = Self::catalogue();
+        let models = self.catalogue();
         async move { Ok(AgentModelList::Flat(models)) }.boxed()
     }
 
@@ -2021,7 +2307,7 @@ impl AgentModelSelector for EngineModelSelector {
         // `403 model_not_allowed`, which arrives as a failed turn well after
         // the user made the choice; saying no here keeps the cause next to the
         // click.
-        let known = Self::catalogue().into_iter().any(|m| m.id == model_id);
+        let known = self.catalogue().into_iter().any(|m| m.id == model_id);
         let requests = self.requests.clone();
         let request_id = self.request_ids.next();
         let thread_id = self.session_id.to_string();
@@ -2050,13 +2336,14 @@ impl AgentModelSelector for EngineModelSelector {
     }
 
     fn selected_model(&self) -> BoxFuture<'static, Result<AgentModelInfo>> {
-        // The per-session choice, or the catalogue default before any choice.
+        // The per-session choice, or the catalogue's first entitled row
+        // before any choice.
         let selected = self
             .sessions
             .selected_model(&self.session_id)
             .map(|m| AgentModelId::new(m.as_str()))
-            .unwrap_or_else(|| AgentModelId::new(crate::engine::catalog::DEFAULT_MODEL));
-        let found = Self::catalogue().into_iter().find(|m| m.id == selected);
+            .unwrap_or_else(|| AgentModelId::new(self.default_model().as_str()));
+        let found = self.catalogue().into_iter().find(|m| m.id == selected);
         async move {
             found.ok_or_else(|| anyhow!("the selected model is not in the catalogue"))
         }

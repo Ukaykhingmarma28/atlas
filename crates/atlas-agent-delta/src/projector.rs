@@ -246,6 +246,33 @@ impl DeltaProjector {
         self.forget_session(session_id);
     }
 
+    /// Drop every session, for the app's way out.
+    ///
+    /// Each projection holds its session's only strong `AcpThreadHandle`, and
+    /// the thread holds an `Arc<dyn AgentConnection>` — so a projector left
+    /// full at quit pins every connection past the manager's own sweep, and
+    /// the agent processes outlive Atlas. The host calls this from its
+    /// shutdown, after the manager's; nothing is emitted, because there is
+    /// no one left to tell.
+    pub fn shutdown(&self) {
+        self.sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.elicitations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
     /// Drop everything keyed to a session whose event stream has ended.
     ///
     /// `sessions` used to be the only table cleaned up here. The permission and

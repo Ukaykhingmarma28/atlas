@@ -38,7 +38,7 @@ use atlas_acp_thread::{
     ElicitationEntryId, ElicitationStoreEvent, SelectedPermissionOutcome, TerminalAuthCommand,
 };
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
-use atlas_agent_manager::{Agent, AgentManager, ResumeMode};
+use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
 use atlas_agent_servers::{AcpConnectionDefaults, AgentServer, ConnectOptions};
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
@@ -78,6 +78,21 @@ pub struct SessionModeInfo {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+}
+
+/// What the picker's Refresh got back (ADR-0007).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeModelsRefresh {
+    /// The list, as the picker shows it.
+    pub models: Vec<SessionModeInfo>,
+    /// The first entitled row: what a new session starts on.
+    pub default_model: String,
+    /// Anything the user can see changed.
+    pub changed: bool,
+    /// The native connection was dropped so the engine picks up the new
+    /// rows. Open native sessions were told, and rebind on their next send.
+    pub reconnected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -237,11 +252,22 @@ fn elicitation_response(
         .map_err(|e| HostError::new(e.to_string(), ErrorClass::Fatal))
 }
 
+/// How long the boot backfill waits on one agent's `session/list` import,
+/// connect included. Longer than the transport's own `REQUEST_TIMEOUT` so a
+/// slow-but-answering agent is not cut off by the outer clock first; an agent
+/// that hits this is one whose connect is wedged, and it is tried again next
+/// launch rather than marked done.
+const BACKFILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 pub struct AgentHost {
     manager: Arc<AgentManager>,
     projector: Arc<DeltaProjector>,
     store: Arc<AgentServerStore>,
     registry: Arc<AgentRegistryStore>,
+    /// Atlas's config directory — what the native engine's home is derived
+    /// from. Kept so the model-catalogue refresh can find the cache the
+    /// connection reads (ADR-0007) without a connection being open.
+    config_dir: PathBuf,
     agents: Mutex<HashMap<AgentId, AgentRecord>>,
     /// One uuid per plugin id, for the life of the process. The frontend spawns
     /// per tab and expects a stable handle back; the ported manager keeps one
@@ -304,9 +330,10 @@ fn select_native_agent(config_dir: &Path) -> Arc<dyn atlas_agent_servers::AgentS
     } else {
         EngineSettings::gateway(config_dir, cwd)
     };
+    // No model in this line: none is named in code (ADR-0007). The
+    // connection logs the catalogue it resolved when it connects.
     tracing::info!(
         provider = %settings.provider.base_url,
-        model = %settings.model,
         home = %settings.home.path().display(),
         "native agent: Atlas Agent",
     );
@@ -374,6 +401,7 @@ impl AgentHost {
             projector,
             store,
             registry,
+            config_dir,
             agents: Mutex::new(HashMap::new()),
             by_plugin: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -459,6 +487,12 @@ impl AgentHost {
         // (ATL-227, ATL-228).
         self.manager.shutdown();
         lock(&self.sessions).clear();
+        // The projector holds each session's only strong thread handle, and
+        // the thread holds the connection `Arc`. Left in place it pinned every
+        // connection past both sweeps above, so no `Drop` ran and no child was
+        // killed at quit — the app-servers from a launch two days earlier
+        // (plan, diagnosis D). Cleared last: nothing may route to it after.
+        self.projector.shutdown();
     }
 
     // ---- identity --------------------------------------------------------
@@ -627,6 +661,12 @@ impl AgentHost {
                 .clone()
                 .downcast::<atlas_native_agent::EngineConnection>()
                 .is_some(),
+            // Asked of the connection, not inferred from its concrete type.
+            // `supports_fork` above still downcasts, and that is exactly the
+            // identity check ADR-0002 rules out — a second one would entrench
+            // it. Any connection that answers true here is offered the
+            // affordance, native or not.
+            supports_rewind: connection.supports_rewind(),
         }
     }
 
@@ -656,10 +696,26 @@ impl AgentHost {
     /// Drop an agent's connection. The next spawn starts a fresh one.
     pub fn kill(&self, agent_id: AgentId) -> Result<()> {
         let record = self.record_for(agent_id)?;
-        self.forget_request_elicitations(&ThreadAgentId::new(record.plugin_id.as_str()));
-        self.manager.drop_connection(&record.agent);
-        lock(&self.sessions).retain(|_, session| session.agent != record.agent);
+        self.kill_agent(&record.plugin_id, &record.agent);
         Ok(())
+    }
+
+    /// [`Self::kill`], keyed by plugin id rather than by spawn handle.
+    ///
+    /// The escape hatch for a tab that never got a handle: a connect that has
+    /// not answered has no `AgentInfo` to name it by, so the renderer's
+    /// "cancel" button only has the plugin id it asked for. Works whether the
+    /// connection is up, still connecting, or already gone.
+    pub fn kill_plugin(&self, plugin_id: &str) -> Result<()> {
+        let agent = self.agent_for(plugin_id)?;
+        self.kill_agent(plugin_id, &agent);
+        Ok(())
+    }
+
+    fn kill_agent(&self, plugin_id: &str, agent: &Agent) {
+        self.forget_request_elicitations(&ThreadAgentId::new(plugin_id));
+        self.manager.drop_connection(agent);
+        lock(&self.sessions).retain(|_, session| &session.agent != agent);
     }
 
     /// Drop the native agent's connection, if one is open.
@@ -677,6 +733,135 @@ impl AgentHost {
         self.forget_request_elicitations(&ThreadAgentId::new(CERSEI_AGENT_ID));
         self.manager.drop_connection(&Agent::Native);
         lock(&self.sessions).retain(|_, session| session.agent != Agent::Native);
+    }
+
+    /// Re-fetch the native agent's model catalogue from the gateway
+    /// (ADR-0007): the picker's Refresh.
+    ///
+    /// The fetcher is the app's — the gateway, over the registered token and
+    /// org sources. [`Self::refresh_native_models_with`] is the same routine
+    /// with the fetcher supplied, so a test can drive it against a fake.
+    pub async fn refresh_native_models(&self) -> Result<NativeModelsRefresh> {
+        use atlas_native_agent::engine::config::GATEWAY_BASE_URL;
+        use atlas_native_agent::engine::GatewayCatalogueFetcher;
+        let fetcher = GatewayCatalogueFetcher::registered(GATEWAY_BASE_URL);
+        self.refresh_native_models_with(&fetcher).await
+    }
+
+    /// See [`Self::refresh_native_models`].
+    ///
+    /// Three outcomes, decided by comparing what the gateway now says with
+    /// what the live engine loaded at connect:
+    ///
+    /// - **No live engine**: the cache is rewritten and the next spawn reads
+    ///   it. Nothing to reconcile.
+    /// - **Same fingerprint** (same slugs and context windows): labels swap
+    ///   into the live connection. No teardown.
+    /// - **Different fingerprint**: the engine loaded rows it will not reload,
+    ///   and a slug it does not know gets invented metadata the gateway
+    ///   `400`s. So the connection is dropped, exactly as sign-out drops it,
+    ///   and every open native session is told so; the next spawn reconnects
+    ///   on the fresh cache without a network round trip. A running turn
+    ///   blocks this — the cache is already written, so nothing is lost by
+    ///   asking the user to stop first.
+    pub async fn refresh_native_models_with(
+        &self,
+        fetcher: &dyn atlas_native_agent::engine::CatalogueFetcher,
+    ) -> Result<NativeModelsRefresh> {
+        use atlas_native_agent::engine::catalog_cache::{project, refresh_now};
+        use atlas_native_agent::engine::{EngineConnection, EngineHome, SystemClock};
+
+        let home = EngineHome::under_config_dir(&self.config_dir);
+        let cache = refresh_now(home.path(), fetcher, &SystemClock)
+            .await
+            .map_err(|err| HostError::classified(format!("could not refresh models: {err}")))?;
+        let Some(projected) = project(&cache) else {
+            // Written anyway: the next connect will refuse on the same
+            // grounds, honestly, rather than run on the previous list.
+            return Err(HostError::new(
+                "the gateway lists no models this organisation may use",
+                ErrorClass::Fatal,
+            ));
+        };
+        let models: Vec<SessionModeInfo> = projected
+            .picker
+            .iter()
+            .map(|model| SessionModeInfo {
+                id: model.id.as_str().to_string(),
+                name: model.name.to_string(),
+                description: model.description.as_deref().map(str::to_string),
+            })
+            .collect();
+        let default_model = projected.default_model.clone();
+
+        let live = self
+            .manager
+            .connected(&Agent::Native)
+            .and_then(|connection| connection.downcast::<EngineConnection>());
+        let Some(live) = live else {
+            return Ok(NativeModelsRefresh {
+                models,
+                default_model,
+                changed: true,
+                reconnected: false,
+            });
+        };
+
+        let before = live.catalogue_snapshot();
+        if before.fingerprint == projected.fingerprint {
+            let next = atlas_native_agent::engine::connection::LiveCatalogue {
+                picker: projected.picker,
+                default_model: projected.default_model,
+                fingerprint: projected.fingerprint,
+                fetched_at: cache.fetched_at,
+                stale: false,
+            };
+            live.replace_catalogue_metadata(next).map_err(HostError::from)?;
+            let before_labels: Vec<(String, Option<String>)> = before
+                .picker
+                .iter()
+                .map(|m| (m.name.to_string(), m.description.as_deref().map(str::to_string)))
+                .collect();
+            let after_labels: Vec<(String, Option<String>)> = models
+                .iter()
+                .map(|m| (m.name.clone(), m.description.clone()))
+                .collect();
+            let changed = before_labels != after_labels;
+            return Ok(NativeModelsRefresh {
+                models,
+                default_model,
+                changed,
+                reconnected: false,
+            });
+        }
+
+        let native_sessions: Vec<String> = lock(&self.sessions)
+            .iter()
+            .filter(|(_, record)| record.agent == Agent::Native)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let running = native_sessions
+            .iter()
+            .any(|id| self.thread(id).is_ok_and(|handle| lock_thread(&handle).is_generating()));
+        if running {
+            return Err(HostError::new(
+                "A turn is running. Stop it, then refresh models again — the new list applies at the next restart.",
+                ErrorClass::Fatal,
+            ));
+        }
+        for id in &native_sessions {
+            self.projector.note_agent_disconnected(
+                &acp::SessionId::new(id.as_str()),
+                "the model list changed; restart to continue",
+            );
+        }
+        self.drop_native_connection();
+        Ok(NativeModelsRefresh {
+            models,
+            default_model,
+            changed: true,
+            reconnected: true,
+        })
     }
 
     pub async fn new_session(
@@ -1161,6 +1346,29 @@ impl AgentHost {
         Ok(Some(forked))
     }
 
+    /// Drop the last exchange and return the prompt that started it.
+    ///
+    /// The rewind half of a retry. `None` means "not retryable here" — either
+    /// the agent is not the native one (no ACP agent has a rewind verb; the
+    /// capability record in schema 1.5.0 has `fork`, `resume`, `list`,
+    /// `delete` and `close`, and nothing that forgets turns) or the thread has
+    /// no exchange left to drop. Callers re-send the returned text through the
+    /// ordinary send path, so a rewind that lands and a send that fails are
+    /// two outcomes the UI can tell apart.
+    pub async fn rewind_last_turn(&self, key: &SessionKey) -> Result<Option<String>> {
+        let session_id = acp::SessionId::new(key.session_id.as_str());
+        let connection = lock_thread(&self.thread(&key.session_id)?).connection().clone();
+        // Through the seam, not a downcast: an agent that grows a rewind gets
+        // this for free, and nothing here names a concrete connection type.
+        let Some(rewind) = connection.rewind(&session_id) else {
+            return Ok(None);
+        };
+        rewind
+            .run()
+            .await
+            .map_err(|e| HostError::classified(e.to_string()))
+    }
+
     fn native_connection(&self, session_id: &str) -> Result<Arc<atlas_native_agent::EngineConnection>> {
         let connection = lock_thread(&self.thread(session_id)?).connection().clone();
         connection
@@ -1640,12 +1848,49 @@ impl AgentHost {
             if history.store().has_backfilled(&agent_id) {
                 continue;
             }
-            match self.import_from(&plugin_id).await {
-                Ok(rows) => tracing::info!(%plugin_id, rows, "backfilled history"),
-                Err(e) => tracing::warn!(error = %e.message, %plugin_id, "backfill found nothing"),
+            // An agent whose connect already failed this launch is not going
+            // to list anything; asking again only starts a second doomed
+            // attempt. Left unmarked, so it is tried on the next launch.
+            if self.connect_has_failed(&plugin_id) {
+                tracing::warn!(%plugin_id, "backfill skipped: the agent's connect failed");
+                continue;
+            }
+            // Bounded per agent. The import runs at boot, sequentially over
+            // every installed agent, and the user's first click joins whatever
+            // connect it started — so one agent that never answers used to
+            // hold every later one, and the user, behind it (diagnosis B).
+            match tokio::time::timeout(BACKFILL_TIMEOUT, self.import_from(&plugin_id)).await {
+                Ok(Ok(rows)) => tracing::info!(%plugin_id, rows, "backfilled history"),
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e.message, %plugin_id, "backfill found nothing")
+                }
+                // Not marked: a timeout says nothing about the agent's history,
+                // only about this launch, so the next one tries again.
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        %plugin_id,
+                        timeout_secs = BACKFILL_TIMEOUT.as_secs(),
+                        "backfill timed out; will retry next launch"
+                    );
+                    continue;
+                }
             }
             history.store().mark_backfilled(&agent_id);
         }
+    }
+
+    /// Whether the manager currently holds a failed connect for `plugin_id`.
+    ///
+    /// `Error` entries are evicted from the manager's table as they land, so
+    /// this is usually a brief window — but it is exactly the window the boot
+    /// backfill runs in, one agent after another.
+    fn connect_has_failed(&self, plugin_id: &str) -> bool {
+        let Ok(agent) = self.agent_for(plugin_id) else {
+            return false;
+        };
+        self.manager
+            .entry(&agent)
+            .is_some_and(|entry| matches!(&*lock(&entry), AgentConnectionEntry::Error { .. }))
     }
 
     /// Fetch one agent's sessions and write the new ones. Answers how many.
@@ -1986,6 +2231,7 @@ pub struct PluginCapabilities {
     pub supports_load_session: bool,
     pub supports_session_list: bool,
     pub supports_fork: bool,
+    pub supports_rewind: bool,
 }
 
 /// A registry agent's cached icon, as a data URL.
@@ -2590,6 +2836,115 @@ mod tests {
             host.manager().connected(&Agent::Native).is_none(),
             "sign-out leaves nothing running",
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A scripted gateway for the model-list refresh (ADR-0007).
+    struct FakeCatalogue {
+        rows: Vec<(&'static str, bool)>,
+        error: Option<atlas_native_agent::engine::FetchError>,
+    }
+
+    impl atlas_native_agent::engine::CatalogueFetcher for FakeCatalogue {
+        fn fetch(
+            &self,
+        ) -> futures::future::BoxFuture<
+            '_,
+            std::result::Result<
+                atlas_native_agent::engine::catalog_cache::GatewayCatalogue,
+                atlas_native_agent::engine::FetchError,
+            >,
+        > {
+            use atlas_native_agent::engine::catalog_cache::{GatewayCatalogue, GatewayRow};
+            use futures::FutureExt;
+            let answer = match &self.error {
+                Some(err) => Err(err.clone()),
+                None => Ok(GatewayCatalogue {
+                    has_grant: true,
+                    rows: self
+                        .rows
+                        .iter()
+                        .map(|(id, entitled)| GatewayRow {
+                            id: id.to_string(),
+                            publisher: None,
+                            entitled: *entitled,
+                            display_name: None,
+                            description: None,
+                            context_window: None,
+                        })
+                        .collect(),
+                }),
+            };
+            async move { answer }.boxed()
+        }
+
+        fn org(&self) -> Option<String> {
+            Some("org_1".to_string())
+        }
+    }
+
+    /// ADR-0007: the picker's Refresh rewrites the cache the next connect
+    /// reads and answers with the list — with no engine open, that is the
+    /// whole job, and the next spawn picks the rows up without a request.
+    #[tokio::test]
+    async fn refreshing_models_rewrites_the_cache_the_next_connect_reads() {
+        use atlas_native_agent::engine::catalog_cache::load_cache;
+        let native = Arc::new(RebindingNative { fresh_id: "s-1" });
+        let (host, dir) = fresh_host_with_native(native);
+
+        let refreshed = host
+            .refresh_native_models_with(&FakeCatalogue {
+                rows: vec![("model-a", true), ("model-locked", false), ("model-b", true)],
+                error: None,
+            })
+            .await
+            .expect("the gateway answered");
+
+        let ids: Vec<&str> = refreshed.models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["model-a", "model-b"], "entitled rows, gateway order");
+        assert_eq!(refreshed.default_model, "model-a");
+        assert!(refreshed.changed);
+        assert!(!refreshed.reconnected, "nothing was open, so nothing was torn down");
+
+        let home = atlas_native_agent::engine::EngineHome::under_config_dir(&dir);
+        let cache = load_cache(home.path()).await.expect("the cache was written");
+        assert_eq!(cache.org.as_deref(), Some("org_1"), "keyed by the org it was fetched for");
+        assert_eq!(cache.rows.len(), 3, "the gateway's rows verbatim, locked one included");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A refresh the gateway refuses reaches the frontend classified, so a
+    /// credential failure routes to sign-in and an empty grant reads as the
+    /// setup problem it is — never as "the button did nothing".
+    #[tokio::test]
+    async fn a_refused_refresh_is_classified_for_the_frontend() {
+        let native = Arc::new(RebindingNative { fresh_id: "s-1" });
+        let (host, dir) = fresh_host_with_native(native);
+
+        let Err(denied) = host
+            .refresh_native_models_with(&FakeCatalogue {
+                rows: vec![],
+                error: Some(atlas_native_agent::engine::FetchError::Unauthorized(String::new())),
+            })
+            .await
+        else {
+            panic!("a 401 is a refusal");
+        };
+        assert!(matches!(denied.class, ErrorClass::Auth), "{denied:?}");
+
+        let Err(nothing) = host
+            .refresh_native_models_with(&FakeCatalogue {
+                rows: vec![("model-locked", false)],
+                error: None,
+            })
+            .await
+        else {
+            panic!("a list with nothing entitled is no list");
+        };
+        assert!(matches!(nothing.class, ErrorClass::Fatal), "{nothing:?}");
+        assert!(nothing.message.contains("no models"), "{}", nothing.message);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

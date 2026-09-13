@@ -35,14 +35,19 @@ import {
   useState,
 } from "react";
 import type { ChatMessage } from "@/types/agent";
-import { type SwitchableAgent } from "@/types/agent";
-import { agentMeta, switchableAgentOf } from "@/features/agents/lib/agent-meta";
-import { AgentIcons, ExternalAgentIcon, AgentMonogram } from "@/components/agent-icons";
-import { AtlasIcon } from "@/components/atlas-icon";
+import {
+  agentMeta,
+  catalogEntry as agentCatalogEntry,
+  switchableAgentOf,
+} from "@/features/agents/lib/agent-meta";
+import { useIsTabVisible } from "@/features/layout/lib/use-tab-visible";
 import { projectRows, RowKind, type Projection, type Row } from "../lib/turn-rows";
 import { useTranscriptScroll } from "../lib/use-transcript-scroll";
+import { useThawed } from "../lib/use-thawed";
 import { useChatStore } from "../stores/chat-store";
 import { saveThreadToKb } from "../lib/turn-actions";
+import { sessionCanRetry } from "../lib/retry-gate";
+import { pinScope } from "../stores/chat-pins-store";
 import { cn } from "@/lib/utils";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { GradualBlur } from "@/components/gradual-blur";
@@ -108,18 +113,6 @@ const STICKY_SETTLE_MS = 4000;
 /** Shared with the composer — see `switchableAgentOf`. */
 const switchable = switchableAgentOf;
 
-/** Resolved ONCE per thread and handed to every row as a stable element — a
- *  session's agent never changes mid-thread, so deriving this per row would be
- *  pure per-row cost in the scroll path. */
-const AGENT_ICON: Record<SwitchableAgent, React.ReactNode> = {
-  codex: <AgentIcons.Codex className="size-3.5 text-[var(--text-secondary)]" />,
-  opencode: <AgentIcons.OpenCode className="size-3.5 text-[var(--text-secondary)]" />,
-  cursor: <AgentIcons.Cursor className="size-3.5 text-[var(--text-secondary)]" />,
-  kilo: <AgentIcons.Kilo className="size-3.5 text-[var(--text-secondary)]" />,
-  cersei: <AtlasIcon size={14} />,
-  "claude-code": <AgentIcons.Claude className="size-3.5 text-[var(--text-secondary)]" />,
-};
-
 export interface TranscriptHandle {
   scrollToBottom: () => void;
   scrollToMessage: (messageIndex: number) => void;
@@ -140,6 +133,15 @@ interface TranscriptProps {
    *  Claude Code" rather than "Thinking", which would claim a turn that has
    *  not been dispatched yet. */
   workingLabel?: string;
+  /** Offered under the working indicator once a start has stalled (30 s with
+   *  no session): restart the agent's process, or switch this tab to another
+   *  agent. Only meaningful with `workingLabel`; absent for a normal turn. */
+  onStallRestart?: () => void;
+  onStallSwitch?: () => void;
+  onStallCopyDiagnostics?: () => void;
+  /** Bumped on every restart so the indicator's elapsed clock (and its stall
+   *  state) start over with the new attempt. */
+  workingEpoch?: number;
 }
 
 /** Per (tab, session) scroll position, so switching away and back returns the
@@ -177,10 +179,79 @@ function saveScroll(cacheKey: string, saved: Saved): void {
  * the reader is actually asking. It occupies a fixed-height row so its arrival
  * and departure don't jolt the thread it sits under.
  */
-function WorkingIndicator({ label = "Thinking" }: { label?: string }) {
+function WorkingIndicator({
+  label = "Thinking",
+  onStallRestart,
+  onStallSwitch,
+  onStallCopyDiagnostics,
+}: {
+  label?: string;
+  onStallRestart?: () => void;
+  onStallSwitch?: () => void;
+  onStallCopyDiagnostics?: () => void;
+}) {
+  const stall =
+    onStallRestart || onStallSwitch ? (
+      <StallNotice
+        onRestart={onStallRestart}
+        onSwitch={onStallSwitch}
+        onCopyDiagnostics={onStallCopyDiagnostics}
+      />
+    ) : undefined;
   return (
     <div className="mx-auto w-full max-w-[760px] px-6 pt-2 pb-3">
-      <LoadingState label={label} />
+      <LoadingState label={label} stalledContent={stall} />
+    </div>
+  );
+}
+
+/**
+ * The persistent way out of a start that has stalled. Replaces a one-shot
+ * toast that said the same thing and then vanished, leaving the user with a
+ * "Starting Codex" that never changed. A first run legitimately takes minutes
+ * (Node download + `npm install`), so the copy says so; the two actions are
+ * the only ones that actually help — killing the wedged connect, or leaving
+ * the agent behind.
+ */
+function StallNotice({
+  onRestart,
+  onSwitch,
+  onCopyDiagnostics,
+}: {
+  onRestart?: () => void;
+  onSwitch?: () => void;
+  onCopyDiagnostics?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-[11px] leading-[16px] text-[var(--text-tertiary)]">
+      <span className="select-text">Still starting… this can take a few minutes on first run.</span>
+      {onRestart && (
+        <button
+          type="button"
+          onClick={onRestart}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Restart agent
+        </button>
+      )}
+      {onSwitch && (
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Switch agent
+        </button>
+      )}
+      {onCopyDiagnostics && (
+        <button
+          type="button"
+          onClick={onCopyDiagnostics}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Copy diagnostics
+        </button>
+      )}
     </div>
   );
 }
@@ -195,33 +266,68 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     topInset = 0,
     onShowJumpChange,
     workingLabel,
+    onStallRestart,
+    onStallSwitch,
+    onStallCopyDiagnostics,
+    workingEpoch,
   },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cacheKey = `${tabId}:${acpSessionId}`;
+  const pinScopeKey = pinScope(tabId, acpSessionId);
   const agent = switchable(agentType);
+  // Is this tab the one showing in its column? Boolean selector: flips only
+  // for the two tabs involved in a switch. Gates the idle window fill below.
+  const tabVisible = useIsTabVisible(tabId);
+
+  // ── Frozen while hidden ──────────────────────────────────────────────
+  //
+  // A hidden chat tab stays MOUNTED AND LAID OUT (`visibility:hidden` — see
+  // the chat wrapper in `center-panel.tsx`), which is what makes switching
+  // back to a long thread instant. The cost is that everything below here
+  // would otherwise keep running for a thread nobody can see: a streaming
+  // background chat re-projects its rows, re-parses its live tail, appends
+  // DOM, fires the ResizeObserver and writes `scrollTop` — several times a
+  // second, on the same main thread the VISIBLE transcript is scrolling.
+  // That is frame budget spent on nothing, and it lands in exactly the frames
+  // a fling cannot spare.
+  //
+  // So a hidden transcript is FROZEN: it keeps rendering the last row set it
+  // had while visible and ignores every message that arrives meanwhile. The
+  // panel around it stays live (its own store subscription drives the title,
+  // the status pill, notifications, queued sends) — only the row list stops.
+  //
+  // `useThawed` is the second half, and it is about WHEN the catch-up lands:
+  // one frame after the tab shows, never on the switch frame itself.
+  /** Showing AND caught up — the only state in which this transcript moves. */
+  const live = useThawed(tabVisible);
+
   // Only the just-sent user message plays the bubble entrance (id-scoped —
   // see UserRowView). Primitive selector: changes once per user send.
   const justSentMessageId = useChatStore((s) => s.sessions[tabId]?.justSentMessageId);
-  const { label: agentLabel, iconDataUrl: agentIconUrl } = agentMeta(agent);
-  // MEMOIZED, and it must stay that way: this element is handed to every
-  // row, and rows are memo()'d with default shallow compare. The previous
-  // un-memoized `?? <fallback JSX>` allocated a fresh element per Transcript
-  // render for external agents — new prop identity → every row re-rendered
-  // on every streaming delta / window growth / scroll flip, which is what
-  // reintroduced whole-thread blanking during fast scroll.
-  const agentIcon = useMemo(
-    () =>
-      AGENT_ICON[agent] ??
-      (agentIconUrl ? (
-        <ExternalAgentIcon dataUrl={agentIconUrl} size={14} />
-      ) : (
-        <AgentMonogram label={agentLabel} size={14} />
-      )),
-    [agent, agentIconUrl, agentLabel],
-  );
+  // A send that landed while this tab was hidden has no entrance to play. The
+  // row mounts on the catch-up render, one frame after the switch, and a
+  // filled opacity animation there is both a lie (the message is not new to
+  // the thread, only to the DOM) and a fresh compositing layer in the frame
+  // right after the most expensive one. Recording the id as consumed while
+  // hidden is enough — the entrance is a one-shot either way.
+  const consumedJustSent = useRef<string | undefined>(justSentMessageId);
+  if (!live) consumedJustSent.current = justSentMessageId;
+  const entranceMessageId =
+    justSentMessageId === consumedJustSent.current ? undefined : justSentMessageId;
+  const { label: agentLabel } = agentMeta(agent);
+
+  // Whether a retry is possible RIGHT NOW. Selector returns a boolean and is
+  // O(1), so it runs on every store write but re-renders only when the answer
+  // flips — the same bargain as `justSentMessageId` above. Doing this per-row
+  // instead, or selecting the session object, would put a comparison of the
+  // whole session on every streaming frame.
+  // Discovered, not inferred from the agent id (ADR-0002) — the same catalog
+  // flag `supportsFork` uses, computed from the live connection.
+  const supportsRewind = agentCatalogEntry(agent)?.supportsRewind === true;
+  const canRetry = useChatStore((s) => sessionCanRetry(s.sessions[tabId], supportsRewind));
 
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   /** Turns whose tool-call block the reader has opened. */
@@ -246,8 +352,18 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   // Previous projection, threaded back in for structural sharing: rows that
   // didn't change come back as the SAME objects, so the memo'd row views hold
   // per streaming frame instead of re-rendering the whole mounted window.
+  //
+  // It doubles as the freeze store. Returning it unchanged while `!live` is
+  // the entire mechanism: `rows`, `visible`, `working` and `tailLen` all
+  // derive from here, so holding one object still holds the window, the
+  // live-edge follow, the session-switch anchor and the row elements
+  // themselves. The projection pass never runs for a hidden thread, and the
+  // one it eventually runs on catch-up shares structure with this same
+  // object — so the rows that did not change while hidden come back
+  // identical and never re-render.
   const prevProjectionRef = useRef<Projection | null>(null);
   const projection = useMemo(() => {
+    if (!live && prevProjectionRef.current) return prevProjectionRef.current;
     const next = projectRows(
       messages,
       { expanded, expandedTurns, streaming: isStreaming },
@@ -255,7 +371,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     );
     prevProjectionRef.current = next;
     return next;
-  }, [messages, expanded, expandedTurns, isStreaming]);
+  }, [messages, expanded, expandedTurns, isStreaming, live]);
   const rows: Row[] = projection.rows;
 
   // ── Is the live turn still silent? ───────────────────────────────────
@@ -291,6 +407,16 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const stale = startIndex > windowFloor;
   const safeStart = stale ? windowFloor : startIndex;
   const visible = useMemo(() => rows.slice(safeStart), [rows, safeStart]);
+  // Retry belongs to the thread's LAST user message, which is a fact about the
+  // session's history — not about which row happens to be last in the DOM (an
+  // assistant turn projects to several rows, and the window may be truncated
+  // at the top). Recomputed only when the projection changes.
+  const lastUserRowId = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].kind === RowKind.User) return rows[i].id;
+    }
+    return undefined;
+  }, [rows]);
   const canGrow = safeStart > 0;
 
   // Fold the correction back into state. Rendering from `safeStart` alone
@@ -389,6 +515,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     onGrow,
     onBeforeGrow: captureGrowAnchor,
     onContentResize,
+    visible: live,
   });
 
   // ── Fill the window during IDLE, not during scroll ───────────────────
@@ -413,6 +540,13 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     // Very long threads keep the on-demand path: mounting tens of thousands of
     // rows to save a rare prepend is a bad trade.
     if (rows.length > MAX_IDLE_FILL) return;
+    // Hidden tab: don't fill. A chat stays mounted behind whichever tab is
+    // showing (kept laid out, see the chat wrapper in `center-panel.tsx`), so
+    // every chunk mounted here would cost DOM and layout in a panel nobody can
+    // see — and a never-visited tab that stays at its initial window is what
+    // keeps that wrapper cheap. The effect re-runs when the tab shows, so the
+    // fill resumes in idle slices and never lands on the switch frame.
+    if (!live) return;
 
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, o?: { timeout?: number }) => number;
@@ -457,7 +591,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     };
     // Re-runs on each `startIndex` change, which is what drives the loop
     // forward one chunk per idle slice until the window covers everything.
-  }, [startIndex, rows.length, growPending, captureGrowAnchor]);
+  }, [startIndex, rows.length, growPending, captureGrowAnchor, live]);
   // Re-anchor after growing upward: put the recorded row back under the same
   // pixel. Layout effect, so the correction lands in the same frame and is
   // never seen.
@@ -478,6 +612,13 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const pendingAnchorRef = useRef<string | null>(null);
   const settledFor = useRef<string | null>(null);
   useLayoutEffect(() => {
+    // Frozen rows belong to the PREVIOUS session here. A hidden tab can change
+    // `cacheKey` under us (a rebind mints a new acpSessionId, "New chat"
+    // resets in place), and settling against the stale row set would both
+    // anchor to a row that is about to disappear and mark this session as
+    // already settled — so the real content would land unanchored. Wait for
+    // the catch-up; `live` is in the deps, so this runs the moment it does.
+    if (!live) return;
     if (settledFor.current === cacheKey) return;
     if (rows.length === 0) return;
     settledFor.current = cacheKey;
@@ -505,7 +646,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     const start = Math.max(0, Math.min(lastUser, rows.length - WINDOW_INITIAL));
     setStartIndex(start);
     pendingAnchorRef.current = lastUser >= 0 ? rows[lastUser].id : null;
-  }, [cacheKey, rows]);
+  }, [cacheKey, rows, live]);
 
   useLayoutEffect(() => {
     const id = pendingAnchorRef.current;
@@ -588,7 +729,10 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
 
   useEffect(() => () => onShowJumpChange?.(false), [onShowJumpChange]);
 
-  // Persist position on unmount so a tab switch returns the reader.
+  // Persist position on unmount so reopening returns the reader. A tab switch
+  // no longer unmounts (the panel stays mounted and laid out behind the active
+  // tab, keeping `scrollTop` in the DOM); this covers closing the tab or the
+  // workspace and coming back.
   useEffect(() => {
     return () => {
       const el = scrollRef.current;
@@ -613,21 +757,54 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     setNewCount(0);
   }, []);
 
+  // A jump has two ways of arriving before it can be honoured, and both used
+  // to be silently dropped:
+  //
+  //  * The target row is ALREADY in the window. `setStartIndex` with an
+  //    unchanged value schedules no render, so the anchor layout effect never
+  //    ran and nothing moved. `jumpTick` exists purely to force that render.
+  //  * The caller has just changed the message list (the pin jump clears the
+  //    role filter first) and dispatched in the same tick, so the projection
+  //    we hold is the OLD one and the index is not in it yet. The index is
+  //    parked in `pendingJumpRef` and retried when the projection changes.
+  const pendingJumpRef = useRef<number | null>(null);
+  const [, setJumpTick] = useState(0);
+  const projectionRef = useRef(projection);
+  projectionRef.current = projection;
+
+  const tryJump = useCallback(() => {
+    const messageIndex = pendingJumpRef.current;
+    if (messageIndex === null) return;
+    const proj = projectionRef.current;
+    const turn = proj.turns.find((t) => t.messageIndex === messageIndex);
+    const rowId = turn ? proj.rows[turn.rowStart]?.id : undefined;
+    if (!rowId) return;
+    const target = rowsRef.current.findIndex((r) => r.id === rowId);
+    if (target < 0) return;
+    pendingJumpRef.current = null;
+    // Widen the window first if the target is above it, then anchor once the
+    // row exists. Same settle-over-renders shape the timeline uses for
+    // jump-to-Checkpoint.
+    setStartIndex((i) => (target < i ? Math.max(0, target - 10) : i));
+    pendingAnchorRef.current = rowId;
+    setJumpTick((n) => n + 1);
+  }, []);
+
   const scrollToMessage = useCallback(
     (messageIndex: number) => {
-      const turn = projection.turns.find((t) => t.messageIndex === messageIndex);
-      const rowId = turn ? projection.rows[turn.rowStart]?.id : undefined;
-      if (!rowId) return;
-      const target = rowsRef.current.findIndex((r) => r.id === rowId);
-      if (target < 0) return;
-      // Widen the window first if the target is above it, then anchor once the
-      // row exists. Same settle-over-renders shape the timeline uses for
-      // jump-to-Checkpoint.
-      setStartIndex((i) => (target < i ? Math.max(0, target - 10) : i));
-      pendingAnchorRef.current = rowId;
+      pendingJumpRef.current = messageIndex;
+      tryJump();
     },
-    [projection],
+    [tryJump],
   );
+
+  useEffect(() => {
+    if (pendingJumpRef.current !== null) tryJump();
+  }, [projection, tryJump]);
+  // A jump that never resolved must not fire into the next session's thread.
+  useEffect(() => {
+    pendingJumpRef.current = null;
+  }, [cacheKey]);
 
   useImperativeHandle(ref, () => ({ scrollToBottom, scrollToMessage }), [
     scrollToBottom,
@@ -645,6 +822,62 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
 
   // ── Turn-footer actions ──────────────────────────────────────────────
   const onSaveKb = useCallback(() => void saveThreadToKb(tabId), [tabId]);
+
+  // ── The rows, as one memoized element ────────────────────────────────
+  //
+  // The row VIEWS are memo'd, but building the list was not: every Transcript
+  // render allocated a wrapper element per mounted row — thousands, for a long
+  // thread — for React to walk and discard. This component re-renders on every
+  // streaming frame of its own session, and (until the freeze above) did so
+  // for hidden tabs too. Memoizing the array means React sees the identical
+  // element and skips the subtree outright, so a frozen transcript costs
+  // nothing per chunk beyond the parent's own render, and a live one only pays
+  // for what actually changed.
+  //
+  // Every dep is either stable by construction (the callbacks, `pinScopeKey`)
+  // or changes at most once per turn. `visible` is the projection's own slice,
+  // so it holds while the projection does.
+  const canRetryRowId = canRetry ? lastUserRowId : undefined;
+  const rowViews = useMemo(
+    () =>
+      visible.map((row, i) => (
+        // `group` is the hover scope for the user row's action bar
+        // (`user-row-actions.tsx`), which is hidden until the row is hovered.
+        // It is the only `group-hover:` selector in the thread, and it is not
+        // free — see the fling hover-suspension in `use-transcript-scroll.ts`,
+        // which exists specifically to stop it firing for every row that
+        // passes under a resting pointer mid-scroll. Don't add a second one.
+        <div key={row.id} className="atlas-row group" data-row-id={row.id}>
+          <RowView
+            row={row}
+            tabId={tabId}
+            agentLabel={agentLabel}
+            justSentMessageId={entranceMessageId}
+            onExpandTurn={toggleTurn}
+            // Absolute position in the thread, so the newest messages — the
+            // ones on screen after a history load — are parsed first. Index
+            // within `visible` would shift as the window grows.
+            priority={safeStart + i}
+            onToggleExpand={toggleExpand}
+            onSaveKb={onSaveKb}
+            canRetryRowId={canRetryRowId}
+            pinScopeKey={pinScopeKey}
+          />
+        </div>
+      )),
+    [
+      visible,
+      safeStart,
+      tabId,
+      agentLabel,
+      entranceMessageId,
+      canRetryRowId,
+      pinScopeKey,
+      toggleTurn,
+      toggleExpand,
+      onSaveKb,
+    ],
+  );
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -668,25 +901,16 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
               No messages yet.
             </div>
           )}
-          {visible.map((row, i) => (
-            <div key={row.id} className="atlas-row group" data-row-id={row.id}>
-              <RowView
-                row={row}
-                tabId={tabId}
-                agentLabel={agentLabel}
-                agentIcon={agentIcon}
-                justSentMessageId={justSentMessageId}
-                onExpandTurn={toggleTurn}
-                // Absolute position in the thread, so the newest messages —
-                // the ones on screen after a history load — are parsed first.
-                // Index within `visible` would shift as the window grows.
-                priority={safeStart + i}
-                onToggleExpand={toggleExpand}
-                onSaveKb={onSaveKb}
-              />
-            </div>
-          ))}
-          {working && <WorkingIndicator label={workingLabel} />}
+          {rowViews}
+          {working && (
+            <WorkingIndicator
+              key={workingEpoch}
+              label={workingLabel}
+              onStallRestart={workingLabel ? onStallRestart : undefined}
+              onStallSwitch={workingLabel ? onStallSwitch : undefined}
+              onStallCopyDiagnostics={workingLabel ? onStallCopyDiagnostics : undefined}
+            />
+          )}
         </div>
       </div>
 
@@ -741,21 +965,28 @@ function RowView({
   justSentMessageId,
   tabId,
   agentLabel,
-  agentIcon,
   priority,
   onToggleExpand,
   onExpandTurn,
   onSaveKb,
+  canRetryRowId,
+  pinScopeKey,
 }: {
   row: Row;
   justSentMessageId?: string;
   tabId: string;
   agentLabel: string;
-  agentIcon: React.ReactNode;
   priority: number;
   onToggleExpand: (id: string) => void;
   onExpandTurn: (turnId: string) => void;
   onSaveKb: () => void;
+  /** Id of the one row allowed to show a retry button, or `undefined` when no
+   *  retry is possible. An id compare here keeps `UserRowView`'s prop a plain
+   *  boolean. */
+  canRetryRowId?: string;
+  /** Pin scope for this thread — resolved once here rather than per row, so a
+   *  row never reads the chat store. */
+  pinScopeKey: string;
 }) {
   switch (row.kind) {
     case RowKind.User:
@@ -767,13 +998,14 @@ function RowView({
           // message id. The unprefixed compare never matched — the entrance
           // animation was silently dead until this fix.
           justSent={row.id === `u:${justSentMessageId}`}
+          tabId={tabId}
+          canRetry={row.id === canRetryRowId}
+          pinScopeKey={pinScopeKey}
           onToggleExpand={onToggleExpand}
         />
       );
     case RowKind.Prose:
-      return (
-        <ProseRowView row={row} agentLabel={agentLabel} agentIcon={agentIcon} priority={priority} />
-      );
+      return <ProseRowView row={row} agentLabel={agentLabel} priority={priority} />;
     case RowKind.Thinking:
       return <ThinkingRowView row={row} onToggleExpand={onToggleExpand} />;
     case RowKind.Marker:

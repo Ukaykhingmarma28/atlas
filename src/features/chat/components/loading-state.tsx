@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -54,9 +54,18 @@ function format(ms: number): string {
   return `${Math.floor(total / 60)}m ${(total % 60).toFixed(1)}s`;
 }
 
-/** Elapsed since mount, written straight to the DOM — see the perf note above. */
-function useElapsed() {
+/** How long the indicator waits before calling the wait a stall. */
+export const STALL_AFTER_MS = 30_000;
+
+/** Elapsed since mount, written straight to the DOM — see the perf note above.
+ *
+ *  `stalled` is the one piece of React state here: it flips true ONCE, when
+ *  the wait has outlasted `stallAfterMs`, so the caller can swap in a "still
+ *  going…" affordance. One re-render in thirty seconds; the ticking label
+ *  itself never goes through React. */
+function useElapsed(stallAfterMs: number) {
   const ref = useRef<HTMLSpanElement>(null);
+  const [stalled, setStalled] = useState(false);
   useEffect(() => {
     const start = performance.now();
     const paint = () => {
@@ -69,28 +78,37 @@ function useElapsed() {
     };
     paint();
     const id = window.setInterval(paint, 100);
+    const stallId = window.setTimeout(() => setStalled(true), stallAfterMs);
     document.addEventListener("visibilitychange", paint);
     return () => {
       window.clearInterval(id);
+      window.clearTimeout(stallId);
       document.removeEventListener("visibilitychange", paint);
     };
-  }, []);
-  return ref;
+  }, [stallAfterMs]);
+  return { ref, stalled };
 }
 
 export const LoadingState = memo(function LoadingState({
   label = "Thinking",
   variant = "dots",
   className,
+  stalledContent,
+  stallAfterMs = STALL_AFTER_MS,
 }: {
   label?: string;
   variant?: LoaderVariant;
   className?: string;
+  /** Rendered under the indicator once the wait has outlasted `stallAfterMs`
+   *  — the way out of a start that is not going to finish on its own. Nothing
+   *  is rendered (and no state flips) when this is not given. */
+  stalledContent?: ReactNode;
+  stallAfterMs?: number;
 }) {
-  const elapsed = useElapsed();
+  const { ref: elapsed, stalled } = useElapsed(stallAfterMs);
   const { delays, dur, round } = PATTERNS[variant] ?? PATTERNS.dots;
 
-  return (
+  const indicator = (
     <div
       role="status"
       aria-live="polite"
@@ -109,7 +127,11 @@ export const LoadingState = memo(function LoadingState({
             style={
               d === null
                 ? { opacity: 0.07 }
-                : { opacity: 0.15, animationDuration: `${dur}ms`, animationDelay: `${d}ms` }
+                : {
+                    opacity: 0.15,
+                    animationDuration: `${dur}ms`,
+                    animationDelay: `${d}ms`,
+                  }
             }
           />
         ))}
@@ -119,6 +141,13 @@ export const LoadingState = memo(function LoadingState({
         ref={elapsed}
         className="font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]"
       />
+    </div>
+  );
+  if (!stalledContent || !stalled) return indicator;
+  return (
+    <div className="flex flex-col gap-1">
+      {indicator}
+      {stalledContent}
     </div>
   );
 });

@@ -30,6 +30,7 @@ import { CachedMarkdown } from "@/lib/markdown-cache";
 import { StreamingMarkdown } from "./streaming-markdown";
 import { openDetail } from "../stores/detail-panel-store";
 import { openTurnDiff } from "../lib/open-turn-diff";
+import { UserRowActions } from "./user-row-actions";
 import type {
   UserRow,
   ProseRow,
@@ -40,6 +41,7 @@ import type {
   TurnFooterRow,
   MarkerState,
 } from "../lib/turn-rows";
+import { userRowMessageId } from "../lib/turn-rows";
 import { M } from "../lib/row-metrics";
 
 /** Shared by every row: the centred content column. */
@@ -51,11 +53,17 @@ function Column({ children, className }: { children: React.ReactNode; className?
 
 export const UserRowView = memo(function UserRowView({
   row,
+  tabId,
   priority,
   justSent = false,
+  canRetry = false,
+  pinScopeKey,
   onToggleExpand,
 }: {
   row: UserRow;
+  /** Passed rather than read from a store: house rule 3, and a primitive prop
+   *  keeps the shallow-compare `memo` above intact. */
+  tabId: string;
   /** Position in the thread — newest parses first. See `CachedMarkdown`. */
   priority: number;
   /** True ONLY for the message the user sent just now (id-scoped in the
@@ -64,20 +72,32 @@ export const UserRowView = memo(function UserRowView({
    *  row mounted during an early scroll — bulk entrance animations during
    *  fast scroll were a blanking contributor. */
   justSent?: boolean;
+  /** True only for the thread's last user message on an agent that can rewind.
+   *  Resolved by the transcript so this stays a boolean — a callback minted in
+   *  the row map would defeat the memo for every row on every frame. */
+  canRetry?: boolean;
+  /** Pin scope for this thread — resolved once by the transcript. */
+  pinScopeKey: string;
   onToggleExpand: (id: string) => void;
 }) {
   return (
     // Generous space BELOW the prompt: the gap is what separates one exchange
     // from the next, and a tight one made the agent's reply read as a
     // continuation of the user's own message.
-    <Column className="flex justify-end pt-6 pb-5">
+    // `pb-7` (28px) is not slack, it is the action bar's room: the bar is
+    // absolutely positioned at `top-full`, so its 8px top pad and 20px icons
+    // have to fit under the bubble or a hovered row overhangs into the agent's
+    // reply. Reserved statically for EVERY user row — hovered or not, with an
+    // expand toggle or without — so revealing the bar can never move anything
+    // (house rule 1).
+    <Column className="flex justify-end pt-6 pb-7">
       {/* `min-w-0` on both flex levels, `max-w-full` on the bubble: a pasted
           code block is `white-space: pre` (unwrappable), and a flex item's
           automatic minimum size floors at that intrinsic width — the pre's own
           `overflow-x: auto` cannot save an ancestor that refuses to shrink, so
           a long paste dragged the whole bubble past the viewport edge. With
           the chain capped, the fence scrolls horizontally INSIDE the bubble. */}
-      <div className="flex min-w-0 max-w-[80%] flex-col items-end">
+      <div className="relative flex min-w-0 max-w-[80%] flex-col items-end">
         {/* The prompt is markdown too. It is written in the same composer that
             accepts fences and lists, and rendering it as flat text collapsed
             every newline — a pasted snippet came back as one run-on paragraph.
@@ -117,12 +137,29 @@ export const UserRowView = memo(function UserRowView({
           </button>
         )}
         <ExpandToggle row={row} onToggleExpand={onToggleExpand} />
+        <UserRowActions
+          tabId={tabId}
+          text={row.text}
+          canRetry={canRetry}
+          messageId={userRowMessageId(row.id)}
+          timestamp={row.timestamp}
+          pinScopeKey={pinScopeKey}
+          toggleAbove={clampable(row)}
+        />
       </div>
     </Column>
   );
 });
 
-/** Rendered only when the bubble is long enough to actually be clamped. */
+/**
+ * "Show more" / "Show less", rendered only when the bubble is long enough that
+ * the height clamp actually bites.
+ *
+ * In flow and always visible, unlike the action bar beneath it. That is
+ * deliberate: this one is not an action on the message, it is the only way to
+ * know the bubble is truncated at all. Hiding it until hover would mean a
+ * clamped prompt looks like a complete one.
+ */
 function ExpandToggle({
   row,
   onToggleExpand,
@@ -130,12 +167,7 @@ function ExpandToggle({
   row: UserRow;
   onToggleExpand: (id: string) => void;
 }) {
-  // Cheap approximation rather than measuring: a short, newline-free prompt is
-  // never clamped, so the common case costs a length check. Being slightly
-  // conservative here only means the affordance appears on a prompt that did not
-  // strictly need it.
-  const maybeLong = row.text.length > 220 || row.text.split("\n").length > M.userMaxLines;
-  if (!maybeLong) return null;
+  if (!clampable(row)) return null;
   return (
     <button
       type="button"
@@ -147,41 +179,60 @@ function ExpandToggle({
   );
 }
 
+/**
+ * Is this bubble long enough that the height clamp bites — i.e. does it get a
+ * "Show more" toggle?
+ *
+ * A cheap approximation rather than a measurement: a short, newline-free
+ * prompt is never clamped, so the common case costs a length check and no
+ * layout read. Being slightly conservative only means the affordance appears
+ * on a prompt that did not strictly need it.
+ *
+ * Shared, not duplicated: `UserRowActions` needs the same answer to decide its
+ * own top padding (the toggle sits between the bubble and the action bar, so
+ * the bar must not add a second gap on top of it). The two drifting apart
+ * would show up as uneven spacing on exactly the rows that have a toggle.
+ */
+function clampable(row: UserRow): boolean {
+  return row.text.length > 220 || row.text.split("\n").length > M.userMaxLines;
+}
+
 // ── Prose ──────────────────────────────────────────────────────────────────
 
 export const ProseRowView = memo(function ProseRowView({
   row,
   agentLabel,
-  agentIcon,
   priority,
 }: {
   row: ProseRow;
   agentLabel: string;
-  agentIcon: React.ReactNode;
   /** Position in the thread — newest parses first. See `CachedMarkdown`. */
   priority: number;
 }) {
   return (
     <Column className="py-2">
-      {/* Identity on the left (glyph + which model wrote this), timestamp
-          pushed right. The agent's NAME is dropped: the glyph already says it,
-          and it was the least useful token in a line that has to compete with
-          the prose underneath it. */}
+      {/* One left-aligned group: model, dot, time. The timestamp used to be
+          pushed to the far right with `ml-auto`, which left a long empty span
+          across a 760px column and read as two unrelated headers rather than
+          one line of provenance. It stays against the left edge the prose
+          below it also starts from.
+
+          What answers a message is the MODEL, so the model leads; the time is
+          the qualifier and follows the separator. The agent glyph is gone —
+          it repeated what the model name already says, and an icon is the
+          heaviest possible way to say it in a line that competes with the
+          prose underneath. `agentLabel` is the fallback for a row whose model
+          is unknown (an older thread, a resumed session), so the line never
+          degrades to a bare timestamp with no provenance at all. */}
       {row.showHeader && (
-        <div className="flex h-[22px] items-center gap-2">
-          <span
-            className="grid size-4 shrink-0 place-items-center"
-            title={agentLabel}
-            aria-label={agentLabel}
-          >
-            {agentIcon}
+        <div className="flex h-[22px] items-center gap-1.5">
+          <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-tertiary)]">
+            {row.model || agentLabel}
           </span>
-          {row.model && (
-            <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-tertiary)]">
-              {row.model}
-            </span>
-          )}
-          <span className="ml-auto shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
+          <span aria-hidden className="shrink-0 text-[10px] text-[var(--text-ghost)]">
+            ·
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
             {new Date(row.timestamp).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",

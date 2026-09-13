@@ -788,6 +788,20 @@ pub struct RetryStatus {
 pub enum LoadError {
     Unsupported { message: Arc<str> },
     Exited { status: Option<i32>, stderr: Arc<str> },
+    /// A hop on the connect/bind path ran past its deadline while the agent
+    /// process was still alive. Distinct from `Exited`: the process did not
+    /// die, it went silent — and from `Other`, so a caller can tell "the
+    /// agent never answered" from "the agent answered with an error".
+    ///
+    /// `phase` is the wire method (or step) that was waited on —
+    /// `initialize`, `session/new`, `connect` — and `after` how long. `stderr`
+    /// is the trailing stderr at the moment of expiry, when there was any.
+    TimedOut {
+        agent: Arc<str>,
+        phase: Arc<str>,
+        after: Duration,
+        stderr: Option<Arc<str>>,
+    },
     Other(Arc<str>),
 }
 
@@ -799,6 +813,22 @@ impl Display for LoadError {
                 Some(status) => write!(f, "Agent exited with status {status}: {stderr}"),
                 None => write!(f, "Agent exited: {stderr}"),
             },
+            LoadError::TimedOut {
+                agent,
+                phase,
+                after,
+                stderr,
+            } => {
+                write!(
+                    f,
+                    "{agent} did not answer `{phase}` within {}s",
+                    after.as_secs()
+                )?;
+                match stderr {
+                    Some(stderr) if !stderr.is_empty() => write!(f, ": {stderr}"),
+                    _ => Ok(()),
+                }
+            }
             LoadError::Other(message) => write!(f, "{message}"),
         }
     }

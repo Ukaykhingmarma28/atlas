@@ -1,10 +1,14 @@
 import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { copyText } from "@/lib/clipboard";
 import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { useChatStore } from "../stores/chat-store";
+import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
 import { stripInjectedContext } from "../lib/atlas-context";
-import { agents, ensureAgent } from "../lib/agents-api";
+import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
+import { isDeadlineError, withDeadline } from "../lib/with-deadline";
+import { cycleChatAgent } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
 import type { ImageAttachment, SessionKey } from "@/types/agents";
@@ -39,19 +43,24 @@ const reportedBindFailures = new Set<string>();
 const retriedBinds = new Set<string>();
 const BIND_RETRY_MS = 1500;
 
-/** How long a bind hop (connect, `session/new`) may stay silent before the
- *  user is told. A hop that never resolves has no error to report, so without
- *  this the only symptom is a message parked in the composer queue for as long
- *  as the app lives — which is what "messages get queued no matter what" was.
- *  Nothing is aborted: the hop is still awaited, this only says so. */
+/** How long a bind hop (connect, `session/new`) may stay silent before it is
+ *  noted as stalled. The soft notice only: the transcript's working indicator
+ *  carries its own 30 s clock and shows the persistent Restart / Switch
+ *  affordance (`StallNotice`); this just puts the stall in the log. */
 const BIND_STALL_MS = 30_000;
 
-/** Await a bind hop, reporting once if it stalls. The hop itself is untouched. */
+/** How long a bind hop may stay silent before the renderer gives up on it.
+ *  A hop that never settles used to leave the panel's closure-local `pending`
+ *  flag set forever, which silently disabled every retry path (focus, sign-in,
+ *  silent) — the "Starting Codex" that never ends. Generous because a first
+ *  run legitimately downloads Node and `npm install`s the adapter; PR 1 of the
+ *  stalled-start plan makes that a per-version cost rather than per-launch. */
+const BIND_DEADLINE_MS = 3 * 60_000;
+
+/** Await a bind hop, logging once if it stalls. The hop itself is untouched —
+ *  the deadline that actually ends it is `withDeadline`. */
 async function watchStall<T>(hop: Promise<T>, label: string, tabId: string): Promise<T> {
   const timer = window.setTimeout(() => {
-    toast.error(
-      `${label} has not answered in 30s. Restart it from the composer's agent menu, or relaunch Atlas.`,
-    );
     logEvent({
       source: "atlas",
       kind: "agent-bind",
@@ -186,7 +195,13 @@ async function rebindDisconnectedSession(tabId: string): Promise<boolean> {
   }
 }
 
-export function ChatPanel({ tabId }: ChatPanelProps) {
+// `memo`: the panel's only prop is a stable `tabId`, and every mounted chat
+// stays mounted behind whichever tab is showing. Without this, each tab switch
+// re-rendered EVERY mounted chat (the center panel re-renders on the layout
+// store's active-tab write and re-emits these elements), and each of those
+// walked its whole transcript's row list. Streaming re-renders still arrive
+// through this panel's own store subscription.
+export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // Subscribe to ONLY this tab's session. Streaming chunks on other tabs
   // shouldn't repaint this panel — immer preserves reference equality for
   // unchanged sub-paths, so `s.sessions[tabId]` only changes when this tab
@@ -310,6 +325,22 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
   );
 
   const acpSessionId = session?.acpSessionId ?? "";
+  /** Handle on the bind effect's in-flight attempt — see `epoch` inside it.
+   *  Null whenever no bind effect is mounted (tab already bound). */
+  const bindControlRef = useRef<{
+    retry: () => void;
+    abandon: () => void;
+    kick: () => void;
+  } | null>(null);
+  /** Bumped on every Restart so the working indicator's clock starts over. */
+  const [bindEpoch, setBindEpoch] = useState(0);
+  // The manager's install/launch progress for this tab's agent, when it sends
+  // any ("Downloading Node.js…"); replaces the generic "Starting {agent}".
+  const startingPluginId = pluginIdForAgent(session?.agentType);
+  const startingStatus = useChatStore((s) => s.agentStartingStatus[startingPluginId]);
+  // One scope for the whole panel — the header's pin dropdown and the
+  // transcript's per-row pin buttons must address the same bucket.
+  const pinScopeKey = pinScope(tabId, session?.acpSessionId);
 
   // A fresh chat starts on the native agent and starts immediately: the
   // default needs no probe, so there is no window in which the tab has to sit
@@ -330,17 +361,33 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     if (session.acpSessionId) return;
     let cancelled = false;
     let pending = false;
+    // Attempt generation. `retry`/`abandon` (below) bump it, which makes the
+    // in-flight attempt stale: its later steps bail, and its `finally` no
+    // longer owns `pending`. That is what lets a Restart start a NEW attempt
+    // while the hung one is still parked on the backend, and what lets Stop
+    // free the tab so the next send binds again.
+    let epoch = 0;
     const ensureBound = async () => {
       if (cancelled || pending) return;
       pending = true;
+      const myEpoch = ++epoch;
+      const stale = () => cancelled || myEpoch !== epoch;
       try {
         // Bind to THIS session's chosen agent (Claude by default, or Codex),
         // not a single global default — so per-tab agents run in parallel.
         const at = useChatStore.getState().sessions[tabId]?.agentType;
         const pluginId = pluginIdForAgent(at);
         const label = agentMeta(at).label;
-        const agent = await watchStall(ensureAgent(pluginId), label, tabId);
-        if (cancelled) return;
+        const agent = await watchStall(
+          withDeadline(
+            ensureAgent(pluginId),
+            BIND_DEADLINE_MS,
+            `${label} has not finished connecting`,
+          ),
+          label,
+          tabId,
+        );
+        if (stale()) return;
         // Resolve cwd from THIS tab's workspace, not the global currentProject:
         // background workspaces keep their chat panels mounted, so a bind that
         // fires after a workspace switch (failed-bind retry, agent change)
@@ -348,9 +395,17 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
         // "/" fallback would dodge the running-workspace eviction guard.
         const cwd =
           workspacePathForTab(tabId) ?? useProjectStore.getState().currentProject?.path ?? "/";
-        const init = await watchStall(agents.newSession(agent.agent_id, cwd), label, tabId);
+        const init = await watchStall(
+          withDeadline(
+            agents.newSession(agent.agent_id, cwd),
+            BIND_DEADLINE_MS,
+            `${label} has not answered \`session/new\``,
+          ),
+          label,
+          tabId,
+        );
         const key = init.key;
-        if (cancelled) return;
+        if (stale()) return;
         // Guard against an agent switch that landed mid-bind: if the tab's
         // agentType changed since we picked `pluginId`, this binding is for the
         // wrong agent — abandon it so we don't clobber the tab with a stale
@@ -384,12 +439,12 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
           } catch (err) {
             console.warn("setMode at session create failed:", err);
           }
-          if (cancelled) return;
+          if (stale()) return;
         }
         // Seed the store before binding: binding is the point at which queued
         // sends become eligible, so the first prompt sees the agent's actual
         // default instead of a hard-coded Atlas fallback.
-        if (!cancelled) {
+        if (!stale()) {
           const actions = useChatStore.getState().actions;
           if (
             nowAt === "claude-code" &&
@@ -421,7 +476,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
         // of its own permission pill.
         try {
           const snap = await agents.snapshotMeta(key);
-          if (!cancelled) {
+          if (!stale()) {
             // Defensive `?.` — a snapshot from an older agent build may omit
             // these arrays; a throw here used to silently skip ALL seeding.
             const modes = snap.available_modes ?? [];
@@ -494,7 +549,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
                 } catch (err) {
                   console.warn("re-applying a config-option pref failed:", err);
                 }
-                if (cancelled) return;
+                if (stale()) return;
               }
             }
             // Boot finished (with or without modes) — drop the loading state.
@@ -502,7 +557,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
           }
         } catch (err) {
           console.warn("snapshot for modes failed:", err);
-          if (!cancelled) useChatStore.getState().actions.setAcpModesPending(tabId, false);
+          if (!stale()) useChatStore.getState().actions.setAcpModesPending(tabId, false);
         }
       } catch (err) {
         console.warn("Agent session creation failed:", err);
@@ -512,7 +567,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
         // one — `explain_spawn_failure` names the agent and the fix (check your
         // connection, or sign in with `cursor-agent login`). Deduped per
         // tab+agent because the focus handler retries this bind.
-        if (!cancelled) {
+        if (!stale()) {
           useChatStore.getState().actions.setAcpModesPending(tabId, false);
           const at = useChatStore.getState().sessions[tabId]?.agentType;
           const key = `${tabId}:${pluginIdForAgent(at)}`;
@@ -526,13 +581,27 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
             status: "failure",
             payload: { tabId, agent: at, kind: errInfo(err).kind },
           });
+          // The hop outlived the client deadline. The backend future is still
+          // parked, so a retry would only join it: kill the plugin's
+          // connection (by plugin id — there is no session to kill by) and
+          // forget the cached agent, so the next attempt is a fresh connect.
+          // A three-minute hang is not the boot transient the silent retry
+          // exists for either, so that is spent too and the failure reports.
+          if (isDeadlineError(err)) {
+            const timedOutPlugin = pluginIdForAgent(at);
+            agents
+              .killPlugin(timedOutPlugin)
+              .catch((e) => console.warn("killPlugin after bind timeout failed:", e));
+            resetAgent(timedOutPlugin);
+            retriedBinds.add(key);
+          }
           // First failure of an automatic bind: try once more, quietly, before
           // telling anyone. `pending` is released in `finally` below, so the
           // delayed call is not coalesced away.
           if (!retriedBinds.has(key)) {
             retriedBinds.add(key);
             window.setTimeout(() => {
-              if (!cancelled) void ensureBound();
+              if (!stale()) void ensureBound();
             }, BIND_RETRY_MS);
             return;
           }
@@ -597,8 +666,27 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
           }
         }
       } finally {
-        pending = false;
+        // A superseded attempt does not release the flag: the attempt that
+        // replaced it owns `pending` now.
+        if (myEpoch === epoch) pending = false;
       }
+    };
+    bindControlRef.current = {
+      retry: () => {
+        epoch += 1;
+        pending = false;
+        const at = useChatStore.getState().sessions[tabId]?.agentType;
+        const key = `${tabId}:${pluginIdForAgent(at)}`;
+        reportedBindFailures.delete(key);
+        signInAttempted.delete(key);
+        retriedBinds.delete(key);
+        void ensureBound();
+      },
+      abandon: () => {
+        epoch += 1;
+        pending = false;
+      },
+      kick: () => void ensureBound(),
     };
     // Eager bind on mount.
     void ensureBound();
@@ -614,6 +702,7 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     window.addEventListener("atlas:chat-input-focused", handler);
     return () => {
       cancelled = true;
+      bindControlRef.current = null;
       window.removeEventListener("atlas:chat-input-focused", handler);
     };
     // `!!session` is in the dep list so the bind effect actually
@@ -820,6 +909,32 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
   // defeat their memo() exactly like they would the composer's.
   const onPermissionSend = useCallback((t: string) => handleSendRef.current?.(t, []), []);
   const onOpenSearchStable = useCallback(() => setSearchPaletteOpen(true), []);
+  // Same shape as the bash panel's jump: the transcript projects
+  // `filteredMessages`, so the filter must be cleared first and the index
+  // resolved against the FULL list — the transcript picks the jump up once the
+  // unfiltered projection lands (see `scrollToMessage`).
+  const onJumpToPinStable = useCallback(
+    (pin: ChatPin) => {
+      const messages = useChatStore.getState().sessions[tabId]?.messages ?? [];
+      const index = resolvePinIndex(messages, pin);
+      if (index < 0) {
+        // Enough to tell "the thread is empty" from "the id was re-minted and
+        // the text drifted" from the console alone, without logging content.
+        console.warn("chat pins: pin did not resolve", {
+          tabId,
+          messages: messages.length,
+          idPresent: messages.some((m) => m.id === pin.messageId),
+          userMessages: messages.filter((m) => m.role === "user").length,
+          textLen: pin.text.length,
+        });
+        toast.error("That message is no longer in this thread");
+        return;
+      }
+      setRoleFilter("all");
+      window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index } }));
+    },
+    [tabId],
+  );
   const onToggleBashStable = useCallback(() => {
     setBashPanelOpen((v) => !v);
     setPlansPanelOpen(false);
@@ -905,6 +1020,45 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     );
   }
 
+  /** "Restart agent" on the stall notice: kill the plugin's (wedged) connect,
+   *  forget the cached agent, re-arm the per-tab dedupes and bind again. The
+   *  held first message stays held and dispatches when the new bind lands. */
+  const handleRestartAgent = async () => {
+    const pid = pluginIdForAgent(useChatStore.getState().sessions[tabId]?.agentType);
+    setBindEpoch((n) => n + 1);
+    logEvent({
+      source: "atlas",
+      kind: "agent-bind",
+      summary: `${agentMeta(useChatStore.getState().sessions[tabId]?.agentType).label}: restart requested while starting`,
+      payload: { tabId },
+    });
+    try {
+      await agents.killPlugin(pid);
+    } catch (e) {
+      console.warn("killPlugin on restart failed:", e);
+    }
+    resetAgent(pid);
+    bindControlRef.current?.retry();
+  };
+  /** "Switch agent" on the stall notice — the same path as ⌥/. With a first
+   *  message held and no session yet, the switch happens in this tab and the
+   *  message carries over (see `switchAgentForTab`). */
+  const handleSwitchAgent = () => cycleChatAgent(tabId);
+  /** "Copy diagnostics" on the stall notice: install state, npm log and
+   *  Atlas log tails for this agent, as one text blob for a support report. */
+  const handleCopyDiagnostics = async () => {
+    const pid = pluginIdForAgent(useChatStore.getState().sessions[tabId]?.agentType);
+    let text: string;
+    try {
+      text = await agents.startDiagnostics(pid);
+    } catch (e) {
+      toast.error(`Could not gather diagnostics: ${errInfo(e).message}`);
+      return;
+    }
+    if (await copyText(text)) toast.success("Diagnostics copied");
+    else toast.error("Could not copy diagnostics to the clipboard");
+  };
+
   const handleStop = () => {
     const cs = useChatStore.getState();
     const s = cs.sessions[tabId];
@@ -912,6 +1066,14 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
     // so there is nothing to cancel on the wire — just let go of the held
     // message. The bubble stays, as it would for a cancelled turn.
     if (s?.pendingSend) {
+      // ...but the CONNECT the message was waiting on may be wedged, and the
+      // next send would otherwise re-enter "Starting" on the very same parked
+      // backend future. Abandon this attempt, kill the plugin's connection and
+      // forget the cached agent, so a following send starts a fresh connect.
+      const pid = pluginIdForAgent(s.agentType);
+      bindControlRef.current?.abandon();
+      agents.killPlugin(pid).catch((e) => console.warn("killPlugin on Stop failed:", e));
+      resetAgent(pid);
       cs.actions.setPendingSend(tabId, undefined);
       cs.actions.updateSessionStatus(tabId, "idle");
       return;
@@ -1020,7 +1182,14 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
           );
         }
         updateSessionStatus(tabId, "running");
-        cs.actions.setPendingSend(tabId, { content: actualContent, mentions, attachments });
+        cs.actions.setPendingSend(tabId, {
+          content: actualContent,
+          mentions,
+          attachments,
+        });
+        // A bind that was abandoned (Stop while starting) is not re-run by
+        // anything but composer focus; make sure this send has one to wait on.
+        bindControlRef.current?.kick();
         return;
       }
       cs.actions.enqueueMessage(tabId, actualContent);
@@ -1143,8 +1312,14 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
                 topInset={HEADER_INSET}
                 onShowJumpChange={onShowJumpChange}
                 workingLabel={
-                  session.pendingSend ? `Starting ${agentMeta(session.agentType).label}` : undefined
+                  session.pendingSend
+                    ? (startingStatus ?? `Starting ${agentMeta(session.agentType).label}`)
+                    : undefined
                 }
+                workingEpoch={bindEpoch}
+                onStallRestart={handleRestartAgent}
+                onStallSwitch={handleSwitchAgent}
+                onStallCopyDiagnostics={handleCopyDiagnostics}
               />
             </Suspense>
             <div className="absolute inset-x-0 top-0 z-20">
@@ -1154,6 +1329,8 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
                 roleFilter={roleFilter}
                 onRoleFilterChange={setRoleFilter}
                 onOpenSearch={onOpenSearchStable}
+                pinScopeKey={pinScopeKey}
+                onJumpToPin={onJumpToPinStable}
                 bashPanelOpen={bashPanelOpen}
                 onToggleBash={onToggleBashStable}
                 plansPanelOpen={plansPanelOpen}
@@ -1259,19 +1436,21 @@ export function ChatPanel({ tabId }: ChatPanelProps) {
       )}
     </div>
   );
-}
+});
 
 /** Shown when the session's agent process died: one explicit affordance to
  *  respawn + resume. Sending a message does the same thing implicitly. */
 function DisconnectedBanner({ tabId }: { tabId: string }) {
   const disconnected = useChatStore((s) => !!s.sessions[tabId]?.disconnected);
+  const bindError = useChatStore((s) => s.sessions[tabId]?.bindError);
   const [restarting, setRestarting] = useState(false);
   if (!disconnected) return null;
   return (
     <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[12px]">
-      <span className="text-[var(--text-secondary)]">
-        The agent process exited. Your conversation is safe — restart to continue where you left
-        off.
+      <span className="select-text text-[var(--text-secondary)]">
+        {bindError
+          ? `The agent exited while starting (${bindError.slice(0, 160)}). Your message is back in the queue — restart to try again.`
+          : "The agent process exited. Your conversation is safe — restart to continue where you left off."}
       </span>
       <button
         disabled={restarting}
@@ -1392,7 +1571,7 @@ const ChatComposer = memo(function ChatComposer({
           onStop={onStop}
           running={running}
           stopping={stopping}
-          placeholder="Ask Atlas what to do…"
+          placeholder="Ask Atlas what to do ..."
         />
       </div>
     </>
@@ -1408,53 +1587,53 @@ const WELCOME_SUGGESTIONS = [
 
 function WelcomeState() {
   return (
+    // No entrance animations here, deliberately. Every `atlas-fade-in` element
+    // is `animation-fill-mode: both`, and a filled accelerated opacity
+    // animation leaves the element on its own compositing layer for good. This
+    // panel stays MOUNTED behind whichever tab is showing (see the chat wrapper
+    // in `center-panel.tsx`), and WebKit took ~100ms to drop those stale layers
+    // when the wrapper turned `visibility:hidden` — so the suggestion cards kept
+    // painting on top of the tab you had just switched to.
     <div className="relative h-full flex items-center justify-center overflow-hidden px-6">
       {/* The landing hero's ASCII cloud field, hollowed under the copy and
           faded out at the edges so it never reaches the header or the
           composer. Behind everything: the content stacks on `relative`. */}
       <DitherField
         mode="glyphs"
-        className="[mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,#000_30%,transparent_100%)]"
+        // +40%: the radial mask below mattes the field against the panel, so
+        // at the landing's own alpha it reads far fainter here than it does
+        // there. The mask also holds full weight further out now — it used to
+        // start dissolving at 30% of the ellipse, which dimmed the field
+        // exactly where the hollow had just made it dense.
+        ink={1.4}
+        className="[mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,#000_55%,transparent_100%)]"
       />
       <div className="relative w-full max-w-[440px] flex flex-col items-center text-center">
-        {/* Hero: Atlas mark over a soft accent glow (radial gradient, no
-            backdrop-filter — cheap + static in WKWebView). */}
-        <div className="relative mb-5">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.16]"
-            style={{
-              background: "radial-gradient(circle, var(--accent-primary) 0%, transparent 68%)",
-            }}
-          />
-          <AtlasIcon
-            size={60}
-            className="atlas-fade-in rounded-[18px] ring-1 ring-white/10 shadow-[0_12px_50px_-12px_rgba(0,0,0,0.85)]"
-          />
-        </div>
+        {/* Hero: the Atlas mark on black. It used to sit on a 260px accent
+            radial gradient; on AMOLED black that halo read as a smudge behind
+            the mark rather than a light source, and it competed with the
+            dither field's own centre. The ring and the drop shadow are what
+            separate the mark from the panel. */}
+        <AtlasIcon
+          size={60}
+          className="mb-5 rounded-[18px] ring-1 ring-white/10 shadow-[0_12px_50px_-12px_rgba(0,0,0,0.85)]"
+        />
 
-        <h2
-          className="atlas-fade-in bg-gradient-to-b from-white to-white/55 bg-clip-text text-[22px] font-semibold tracking-tight text-transparent"
-          style={{ animationDelay: "40ms" }}
-        >
+        <h2 className="bg-gradient-to-b from-white to-white/55 bg-clip-text text-[22px] font-semibold tracking-tight text-transparent">
           Atlas
         </h2>
-        <p
-          className="atlas-fade-in mt-1.5 text-[13px] text-[var(--text-tertiary)]"
-          style={{ animationDelay: "80ms" }}
-        >
+        <p className="mt-1.5 text-[13px] text-[var(--text-tertiary)]">
           Code with Agents. Tools, plans, and edits all live.
         </p>
 
         <div className="mt-7 grid w-full grid-cols-2 gap-2.5">
-          {WELCOME_SUGGESTIONS.map(({ text, Icon }, i) => (
+          {WELCOME_SUGGESTIONS.map(({ text, Icon }) => (
             <button
               key={text}
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text } }))
               }
-              style={{ animationDelay: `${120 + i * 50}ms` }}
-              className="group atlas-fade-in relative flex flex-col gap-2.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)] cursor-pointer"
+              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)] cursor-pointer"
             >
               <div className="flex items-center justify-between">
                 <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)] transition-colors group-hover:text-[var(--text-primary)]">

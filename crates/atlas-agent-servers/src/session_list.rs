@@ -22,15 +22,20 @@ use agent_client_protocol::{Agent, ConnectionTo};
 use chrono::{DateTime, Utc};
 use anyhow::Result;
 use atlas_acp_thread::{
-    AgentSessionInfo, AgentSessionList, AgentSessionListRequest, AgentSessionListResponse,
+    AgentId, AgentSessionInfo, AgentSessionList, AgentSessionListRequest,
+    AgentSessionListResponse,
 };
 use futures::future::BoxFuture;
 use futures::FutureExt;
 
-use crate::connection::map_acp_error;
+use crate::connection::{map_acp_error, with_request_deadline};
+use crate::debug_log::AcpDebugLog;
 
 pub struct AcpSessionList {
     connection: ConnectionTo<Agent>,
+    /// Who to name, and what stderr to attach, when `session/list` times out.
+    agent: AgentId,
+    debug_log: AcpDebugLog,
     supports_delete: bool,
 }
 
@@ -48,11 +53,15 @@ impl AcpSessionList {
     /// the only thing that decides whether an agent can be imported from.
     pub(crate) fn for_capabilities(
         connection: ConnectionTo<Agent>,
+        agent: AgentId,
+        debug_log: AcpDebugLog,
         capabilities: &acp::AgentCapabilities,
     ) -> Option<Arc<Self>> {
         capabilities.session_capabilities.list.as_ref()?;
         Some(Arc::new(Self {
             connection,
+            agent,
+            debug_log,
             supports_delete: capabilities.session_capabilities.delete.is_some(),
         }))
     }
@@ -64,15 +73,22 @@ impl AgentSessionList for AcpSessionList {
         request: AgentSessionListRequest,
     ) -> BoxFuture<'static, Result<AgentSessionListResponse>> {
         let connection = self.connection.clone();
+        let agent = self.agent.clone();
+        let debug_log = self.debug_log.clone();
         async move {
             let mut acp_request = acp::ListSessionsRequest::new();
             acp_request.cwd = request.cwd;
             acp_request.cursor = request.cursor;
-            let response = connection
-                .send_request(acp_request)
-                .block_task()
-                .await
-                .map_err(map_acp_error)?;
+            // On the boot backfill path, so it gets the connect/bind deadline:
+            // an agent that lists forever must not hold the import.
+            let response = with_request_deadline(&agent, "session/list", &debug_log, async {
+                connection
+                    .send_request(acp_request)
+                    .block_task()
+                    .await
+                    .map_err(map_acp_error)
+            })
+            .await?;
             Ok(AgentSessionListResponse {
                 sessions: response.sessions.into_iter().map(session_info).collect(),
                 next_cursor: response.next_cursor,

@@ -6,6 +6,7 @@ pub mod auth;
 pub mod save_guard;
 pub mod agent_transcript;
 pub mod agents;
+pub mod diagnostics;
 pub mod app_state;
 pub mod atlas_config;
 pub mod browser;

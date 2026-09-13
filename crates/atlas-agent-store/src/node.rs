@@ -19,9 +19,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{bail, Context as _, Result};
 use semver::Version;
+use tokio::sync::watch;
 
 use crate::archive::{install_archive, registry_archive_kind_for_url};
 use crate::http::HttpClient;
@@ -29,10 +31,30 @@ use crate::http::HttpClient;
 const NODE_VERSION: &str = "v24.11.0";
 const NODE_CA_CERTS_ENV_VAR: &str = "NODE_EXTRA_CA_CERTS";
 
+/// How long one `npm <subcommand>` may run before it is killed. npm's own
+/// fetch timeouts (see [`npm_command_args`]) bound each registry request; this
+/// bounds the whole invocation, so a 290 MB install on a slow link still fits
+/// but a wedged one cannot hold a "Starting …" bubble forever.
+const NPM_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// How long the Node tarball download + extract may take while holding the
+/// install lock. Past this, every agent waiting on Node fails with a clear
+/// error instead of queueing behind a stalled socket.
+const NODE_INSTALL_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// What the managed user-level npmrc pins. `update-notifier=false` stops npm
+/// making a `GET registry.npmjs.org/npm` on every run just to advertise a
+/// newer npm — one fewer network round-trip on the agent start path.
+const USER_NPMRC: &str = "update-notifier=false\n";
+
+/// A loading-status channel, as the store hands it out (`Some(text)` while
+/// something is in flight, `None` when the agent is ready).
+pub type LoadingStatus = watch::Sender<Option<String>>;
+
 #[cfg(not(windows))]
-const NODE_PATH: &str = "bin/node";
+pub(crate) const NODE_PATH: &str = "bin/node";
 #[cfg(windows)]
-const NODE_PATH: &str = "node.exe";
+pub(crate) const NODE_PATH: &str = "node.exe";
 
 // `bin/npm` in the distribution is a symlink to npm's CLI entry point, so
 // `node bin/npm …` runs npm without a shell. Windows ships no such symlink.
@@ -73,7 +95,16 @@ impl NodeRuntime {
     }
 
     pub async fn binary_path(&self) -> Result<PathBuf> {
-        Ok(self.install_if_needed().await?.join(NODE_PATH))
+        Ok(self.install_if_needed(None).await?.join(NODE_PATH))
+    }
+
+    /// Install Node if it is missing, reporting a download to `loading_status`.
+    ///
+    /// Callers that will go on to run npm call this first, so the user sees
+    /// "Downloading Node.js…" during the one step that can take minutes rather
+    /// than a bare "Starting …". When Node is already present nothing is sent.
+    pub async fn ensure_installed(&self, loading_status: Option<&LoadingStatus>) -> Result<PathBuf> {
+        self.install_if_needed(loading_status).await
     }
 
     /// Run `npm <subcommand> <args>`, retrying once.
@@ -86,10 +117,15 @@ impl NodeRuntime {
         subcommand: &str,
         args: &[&str],
     ) -> Result<Output> {
-        let node_dir = self.install_if_needed().await?;
+        let node_dir = self.install_if_needed(None).await?;
 
         let mut output = self.npm_attempt(&node_dir, directory, subcommand, args).await;
-        if output.is_err() {
+        // Retry spawn/IO failures only. A timeout already waited ten minutes;
+        // doing it again would double the hang the deadline exists to end.
+        if output
+            .as_ref()
+            .is_err_and(|error| !error.is::<NpmTimedOut>())
+        {
             output = self.npm_attempt(&node_dir, directory, subcommand, args).await;
         }
         let output = output.with_context(|| format!("launching npm {subcommand}"))?;
@@ -127,7 +163,18 @@ impl NodeRuntime {
         if let Some(directory) = directory {
             command.current_dir(directory);
         }
-        Ok(command.output().await?)
+        // Dropping the future on timeout must take the npm process with it,
+        // or the next attempt races an orphan over the same `node_modules`.
+        command.kill_on_drop(true);
+
+        match tokio::time::timeout(NPM_TIMEOUT, command.output()).await {
+            Ok(output) => Ok(output?),
+            Err(_elapsed) => Err(NpmTimedOut {
+                subcommand: subcommand.to_owned(),
+                timeout: NPM_TIMEOUT,
+            }
+            .into()),
+        }
     }
 
     // The `install` guard is held across the download and extract on purpose:
@@ -138,7 +185,7 @@ impl NodeRuntime {
         clippy::await_holding_invalid_type,
         reason = "the install lock must span the download so concurrent callers do not race the extract"
     )]
-    async fn install_if_needed(&self) -> Result<PathBuf> {
+    async fn install_if_needed(&self, loading_status: Option<&LoadingStatus>) -> Result<PathBuf> {
         let (containing_dir, http, install) = match &*self.0 {
             Inner::Unavailable(reason) => bail!("Node.js is unavailable: {reason}"),
             Inner::Managed {
@@ -167,31 +214,75 @@ impl NodeRuntime {
                 "https://nodejs.org/dist/{NODE_VERSION}/node-{NODE_VERSION}-{os}-{arch}.{extension}"
             );
             tracing::info!(url, "downloading the managed Node.js runtime");
+            if let Some(tx) = loading_status {
+                tx.send(Some("Downloading Node.js…".to_owned())).ok();
+            }
 
             // The tarball's single top-level directory is the version directory,
             // so extracting it *into* the containing dir produces `node_dir`.
             let kind = registry_archive_kind_for_url(&url)?;
-            install_archive(&**http, &url, None, containing_dir, &kind)
-                .await
-                .context("installing the managed Node.js runtime")?;
+            // Bounded, because the install lock is held across this: a stalled
+            // nodejs.org socket would otherwise block every agent for good.
+            // A timeout leaves `install` as `None`, so the next caller retries.
+            tokio::time::timeout(
+                NODE_INSTALL_TIMEOUT,
+                install_archive(&**http, &url, None, containing_dir, &kind),
+            )
+            .await
+            .map_err(|_elapsed| {
+                anyhow::anyhow!(
+                    "the Node.js runtime download from {url} did not finish within {} minutes \
+                     (nodejs.org may be unreachable)",
+                    NODE_INSTALL_TIMEOUT.as_secs() / 60
+                )
+            })?
+            .context("installing the managed Node.js runtime")?;
 
             anyhow::ensure!(
                 node_install_works(&node_dir).await,
                 "the downloaded Node.js runtime at {node_dir:?} does not run"
             );
+
+            // A fresh runtime starts with a fresh npm cache. This is the only
+            // place the cache is wiped: keeping it across launches is what lets
+            // `--prefer-offline` answer an already-installed package without a
+            // registry round-trip.
+            let _ = tokio::fs::remove_dir_all(node_dir.join("cache")).await;
         }
 
         // Outside the install branch on purpose, so an installation from an
         // earlier Atlas version gets these too.
-        let _ = tokio::fs::remove_dir_all(node_dir.join("cache")).await;
         let _ = tokio::fs::create_dir_all(node_dir.join("cache")).await;
-        let _ = tokio::fs::write(node_dir.join("blank_user_npmrc"), []).await;
+        let _ = tokio::fs::write(node_dir.join("blank_user_npmrc"), USER_NPMRC).await;
         let _ = tokio::fs::write(node_dir.join("blank_global_npmrc"), []).await;
 
         *install = Some(node_dir.clone());
         Ok(node_dir)
     }
 }
+
+/// `npm <subcommand>` outlived [`NPM_TIMEOUT`] and was killed.
+///
+/// Its own type so [`NodeRuntime::run_npm_subcommand`] can tell it apart from
+/// a spawn failure and skip the retry.
+#[derive(Debug)]
+struct NpmTimedOut {
+    subcommand: String,
+    timeout: Duration,
+}
+
+impl std::fmt::Display for NpmTimedOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "npm {} did not finish within {} minutes (the npm registry may be unreachable)",
+            self.subcommand,
+            self.timeout.as_secs() / 60
+        )
+    }
+}
+
+impl std::error::Error for NpmTimedOut {}
 
 /// Whether the Node at `node_dir` actually runs.
 ///
@@ -254,6 +345,26 @@ fn node_platform() -> Result<(&'static str, &'static str)> {
     Ok((os, arch))
 }
 
+/// The fetch policy every managed npm run gets. Zed's
+/// (`node_runtime.rs:1140-1150`) is `--fetch-timeout 5000` with retries of
+/// 2000/5000 ms, tuned for a language server; an ACP agent install can be
+/// 290 MB, so the per-request timeout is a minute and the retry ceiling ten
+/// seconds. `--prefer-offline` makes a warm cache skip the registry entirely,
+/// and audit/fund are two more round-trips that answer nothing we act on.
+const NPM_FETCH_ARGS: &[&str] = &[
+    "--no-audit",
+    "--no-fund",
+    "--prefer-offline",
+    "--fetch-timeout",
+    "60000",
+    "--fetch-retries",
+    "2",
+    "--fetch-retry-mintimeout",
+    "2000",
+    "--fetch-retry-maxtimeout",
+    "10000",
+];
+
 /// Ported from `build_npm_command_args` (`node_runtime.rs:1124-1158`). Every
 /// path is pinned at the managed install so npm never reads the user's npmrc or
 /// writes their global cache.
@@ -280,6 +391,7 @@ fn npm_command_args(
             .to_string_lossy()
             .into_owned(),
     );
+    command_args.extend(NPM_FETCH_ARGS.iter().map(std::string::ToString::to_string));
     command_args.extend(args.iter().map(std::string::ToString::to_string));
     command_args
 }
@@ -399,4 +511,120 @@ pub fn bounded_npm_package_spec(package_spec: &str) -> (&str, String) {
     }
 
     (package_name, format!("{package_name}@0.0.0 - {version}"))
+}
+
+/// The version ceiling a package spec implies, if it names a parseable one.
+///
+/// Same split as [`bounded_npm_package_spec`]: `pkg@1.2.3` → `1.2.3`;
+/// `pkg`, `pkg@latest` and a bare scoped name → `None`.
+fn package_spec_ceiling(package_spec: &str) -> Option<Version> {
+    let (package_name, version) = package_spec.rsplit_once('@')?;
+    if package_name.is_empty() {
+        return None;
+    }
+    Version::parse(version).ok()
+}
+
+/// Whether an already-installed package satisfies `wanted_spec`, so the
+/// `npm install` can be skipped.
+///
+/// The bounded spec is a ceiling (`0.0.0 - <version>`), so "satisfies" is
+/// `installed <= ceiling`. A spec with no parseable version (`pkg`,
+/// `pkg@latest`) has no ceiling to check, so any installed copy counts; the
+/// caller still requires the package to exist and declare an executable.
+pub fn installed_version_satisfies(installed: &str, wanted_spec: &str) -> bool {
+    let Some(ceiling) = package_spec_ceiling(wanted_spec) else {
+        return true;
+    };
+    match Version::parse(installed.trim()) {
+        Ok(installed) => installed <= ceiling,
+        Err(_) => false,
+    }
+}
+
+/// The `version` an installed npm package declares, or `None` when it is not
+/// installed or its `package.json` does not parse.
+pub async fn installed_package_version(node_modules_dir: &Path, name: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct PackageJson {
+        version: Option<String>,
+    }
+
+    let package_json_path = node_modules_dir.join(name).join("package.json");
+    let contents = tokio::fs::read_to_string(&package_json_path).await.ok()?;
+    let package_json: PackageJson = serde_json::from_str(&contents).ok()?;
+    Some(package_json.version.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_version_is_a_ceiling_check() {
+        assert!(installed_version_satisfies("1.2.3", "pkg@1.2.3"));
+        assert!(installed_version_satisfies("1.0.0", "pkg@1.2.3"));
+        assert!(installed_version_satisfies("0.0.1", "@scope/pkg@1.2.3"));
+        assert!(!installed_version_satisfies("1.2.4", "pkg@1.2.3"));
+        assert!(!installed_version_satisfies("2.0.0", "@scope/pkg@1.2.3"));
+
+        // Prereleases order below their release, as semver says.
+        assert!(installed_version_satisfies("1.2.3-beta.1", "pkg@1.2.3"));
+        assert!(!installed_version_satisfies("1.2.3", "pkg@1.2.3-beta.1"));
+    }
+
+    #[test]
+    fn unparseable_installed_version_forces_a_reinstall() {
+        assert!(!installed_version_satisfies("", "pkg@1.2.3"));
+        assert!(!installed_version_satisfies("garbage", "pkg@1.2.3"));
+    }
+
+    #[test]
+    fn a_spec_without_a_ceiling_accepts_any_installed_copy() {
+        assert!(installed_version_satisfies("9.9.9", "pkg"));
+        assert!(installed_version_satisfies("9.9.9", "@scope/pkg"));
+        assert!(installed_version_satisfies("9.9.9", "pkg@latest"));
+        assert!(installed_version_satisfies("", "pkg@latest"));
+    }
+
+    #[test]
+    fn npm_args_pin_config_and_bound_fetches() {
+        let node_dir = Path::new("/opt/atlas/node/node-v24");
+        let npm = node_dir.join("bin/npm");
+        let args = npm_command_args(
+            &npm,
+            node_dir,
+            Some(Path::new("/opt/atlas/npx/codex")),
+            "install",
+            &["codex-acp@0.0.0 - 1.0.0", "--save-exact"],
+        );
+
+        let joined = args.join(" ");
+        assert!(joined.starts_with(&format!(
+            "{} --prefix /opt/atlas/npx/codex install --cache=/opt/atlas/node/node-v24/cache \
+             --userconfig /opt/atlas/node/node-v24/blank_user_npmrc \
+             --globalconfig /opt/atlas/node/node-v24/blank_global_npmrc ",
+            npm.display()
+        )), "got {joined}");
+        assert!(joined.contains(
+            "--no-audit --no-fund --prefer-offline --fetch-timeout 60000 --fetch-retries 2 \
+             --fetch-retry-mintimeout 2000 --fetch-retry-maxtimeout 10000"
+        ), "got {joined}");
+        // The caller's own args come last.
+        assert_eq!(&args[args.len() - 2..], ["codex-acp@0.0.0 - 1.0.0", "--save-exact"]);
+    }
+
+    #[test]
+    fn npm_timeout_error_names_the_phase() {
+        let error: anyhow::Error = NpmTimedOut {
+            subcommand: "install".into(),
+            timeout: NPM_TIMEOUT,
+        }
+        .into();
+        assert!(error.is::<NpmTimedOut>());
+        assert_eq!(
+            error.to_string(),
+            "npm install did not finish within 10 minutes (the npm registry may be unreachable)"
+        );
+    }
 }

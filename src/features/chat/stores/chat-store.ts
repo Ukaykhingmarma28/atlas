@@ -12,7 +12,7 @@ import type {
   AgentType,
   PendingSend,
 } from "@/types/agent";
-import { CLAUDE_PERMISSION_MODES } from "@/types/agent";
+import { CLAUDE_PERMISSION_MODES, pluginIdForAgent } from "@/types/agent";
 import type { PendingPermission } from "@/types/acp";
 import type {
   AgentDelta,
@@ -321,6 +321,16 @@ interface ChatState {
    */
   drafts: Record<string, string>;
   activeSessionId: string | null;
+  /**
+   * The manager's live loading status per PLUGIN id ("Downloading Node.js…",
+   * "Installing @agentclientprotocol/codex-acp 1.11.0…") while that plugin's
+   * connect is in flight. Keyed by plugin, not tab: the status belongs to the
+   * one connection every tab on that agent is waiting for, and there is no
+   * session to key it by until the connect finishes. Rendered in place of the
+   * generic "Starting {agent}" label; an entry is removed when the manager
+   * sends `null`.
+   */
+  agentStartingStatus: Record<string, string>;
 }
 
 interface ChatActions {
@@ -415,6 +425,11 @@ interface ChatActions {
       currentModel: string | null,
       availableModels: SessionModeInfo[],
     ) => void;
+    /** Replace the model list on EVERY session of an agent type at once — the
+     *  native agent's picker Refresh (ADR-0007), whose list belongs to the
+     *  agent rather than to one session. Never touches a session's current
+     *  model. Caches per agentType like `setAcpModels`. */
+    setAcpModelsForAgent: (agentType: string, availableModels: SessionModeInfo[]) => void;
     /** Pick an ACP model and push it to the bound agent (`session/set_model`). */
     setAcpModel: (sessionId: string, modelId: string) => void;
     /** Seed the ACP slash-command list from a session snapshot's
@@ -553,6 +568,21 @@ interface ChatActions {
      *  doesn't linger and trick the user into clicking Allow on a
      *  request the agent already abandoned. */
     clearPermissionsForSession: (acpSessionId: string) => void;
+    /** Record (or, with `null`, clear) the manager's loading status for a
+     *  plugin — see `ChatState.agentStartingStatus`. */
+    setAgentStartingStatus: (pluginId: string, status: string | null) => void;
+    /**
+     * The connection for `pluginId` is gone (its child died, or its connect
+     * failed) while tabs on that agent were still waiting to be bound. Deltas
+     * route by `session_id`, and an unbound tab has none, so without this a
+     * tab sitting on "Starting {agent}" never learned the process it was
+     * waiting for had already exited. For every tab on that plugin that has no
+     * `acpSessionId` and is holding a first message or starting: the held
+     * message goes back to the queue chip, the status drops to idle, and the
+     * tab is flagged `disconnected` so the Restart banner (and the next send's
+     * rebind) take over. Returns nothing; safe to call for a plugin no tab is on.
+     */
+    failPendingBinds: (pluginId: string, reason?: string) => void;
   };
 }
 
@@ -706,6 +736,7 @@ export const useChatStore = createSelectors(
       queues: {},
       drafts: {},
       activeSessionId: null,
+      agentStartingStatus: {},
       actions: {
         // No explicit agent → resolve the priority default (Claude Code when
         // it's installed + authed, otherwise the native Atlas agent). Never
@@ -1180,7 +1211,10 @@ export const useChatStore = createSelectors(
           if (session.agentType) saveConfigOptionPref(session.agentType, configId, value);
           try {
             await agents.setConfigOption(
-              { agent_id: session.acpAgentId, session_id: session.acpSessionId },
+              {
+                agent_id: session.acpAgentId,
+                session_id: session.acpSessionId,
+              },
               configId,
               value,
             );
@@ -1279,6 +1313,17 @@ export const useChatStore = createSelectors(
           const at = get().sessions[sessionId]?.agentType;
           if (availableModels.length > 0 && at) {
             saveCachedAcpModels(at, { availableModels });
+          }
+        },
+        setAcpModelsForAgent: (agentType, availableModels) => {
+          set((s) => {
+            for (const session of Object.values(s.sessions)) {
+              if (session.agentType !== agentType) continue;
+              session.acpAvailableModels = availableModels;
+            }
+          });
+          if (availableModels.length > 0) {
+            saveCachedAcpModels(agentType, { availableModels });
           }
         },
         setAcpModel: (sessionId, modelId) => {
@@ -1561,6 +1606,8 @@ export const useChatStore = createSelectors(
             }
             session.acpAgentId = agentId;
             session.acpSessionId = acpSessionId;
+            // A bind that landed supersedes whatever the last one died of.
+            session.bindError = undefined;
             // Stamp the session's project root the moment it's bound (the agent
             // was created with this cwd). Without it `workingDirectory` stays ""
             // and the chat never lands in the workspace "Chats" list / running
@@ -1599,6 +1646,37 @@ export const useChatStore = createSelectors(
         applyAgentDelta: (env) =>
           set((s) => {
             applyDeltaToDraft(s, env);
+          }),
+        setAgentStartingStatus: (pluginId, status) =>
+          set((s) => {
+            if (status === null || status === "") {
+              if (pluginId in s.agentStartingStatus) delete s.agentStartingStatus[pluginId];
+              return;
+            }
+            if (s.agentStartingStatus[pluginId] !== status)
+              s.agentStartingStatus[pluginId] = status;
+          }),
+        failPendingBinds: (pluginId, reason) =>
+          set((s) => {
+            delete s.agentStartingStatus[pluginId];
+            for (const [tabId, session] of Object.entries(s.sessions)) {
+              if (session.acpSessionId) continue;
+              if (pluginIdForAgent(session.agentType) !== pluginId) continue;
+              const starting = !!session.pendingSend || session.status === "running";
+              if (!starting) continue;
+              const held = session.pendingSend;
+              if (held) {
+                session.pendingSend = undefined;
+                s.queues[tabId] = [...(s.queues[tabId] ?? []), held.content];
+              }
+              session.status = "idle";
+              session.stopping = undefined;
+              session.retryStatus = undefined;
+              session.inflightToolIds = undefined;
+              session.acpModesPending = false;
+              session.disconnected = true;
+              if (reason) session.bindError = reason;
+            }
           }),
       },
     })),
@@ -2126,7 +2204,22 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
         cut -= 1;
         if (session.messages[cut]?.role === "user") remaining -= 1;
       }
-      if (remaining === 0) session.messages.splice(cut);
+      if (remaining !== 0) return;
+      const dropped = session.messages.splice(cut);
+      // Splicing the log is not the whole rewind: two caches derived from it
+      // live on the session and neither is recomputed from `messages`.
+      //   * `userMessageCount`, incremented by `addMessage` (:899) and read by
+      //     the sidebar. A rewind that only spliced left it permanently high —
+      //     visibly so under retry, which rewinds and re-adds on every press.
+      //   * `livePlan`, set by the `plan_updated` delta (:2046) and read by
+      //     the docked plan pill. Left alone it kept showing the plan of the
+      //     turn that was just discarded.
+      // `replaceMessages` (:1310) recomputes the count and preview on a
+      // history load; the plan comes back via `hydrateSessionSnapshot` (:1341).
+      const droppedUsers = dropped.reduce((n, m) => (m.role === "user" ? n + 1 : n), 0);
+      session.userMessageCount = Math.max(0, (session.userMessageCount ?? 0) - droppedUsers);
+      if (session.messages.length === 0) session.firstUserContent = undefined;
+      session.livePlan = undefined;
       return;
     }
     case "mode_changed": {

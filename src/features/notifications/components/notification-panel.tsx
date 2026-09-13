@@ -1,11 +1,22 @@
-import { useMemo } from "react";
-import { Bell, Shield, AlertTriangle, X, Sparkles } from "lucide-react";
+import { lazy, Suspense, useMemo } from "react";
+import { Bell, Shield, AlertTriangle, X, Sparkles, BellRing, SquareTerminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
 import { AtlasIcon } from "@/components/atlas-icon";
-import { ProviderLogo } from "@/components/provider-logo";
+// `@lobehub/icons` (~34 KB runtime + 21 glyphs) only matters once a chat-done
+// row is on screen; this was its one eager importer, which put it in the boot
+// set. The other three consumers already sit behind lazy panels.
+const ProviderLogo = lazy(() =>
+  import("@/components/provider-logo").then((m) => ({ default: m.ProviderLogo })),
+);
 import { jumpToSession } from "@/features/chat/lib/tab-workspace";
-import { useNotificationsStore, type AppNotification } from "../stores/notifications-store";
+import { jumpToTerminal } from "@/features/terminal/lib/jump-to-terminal";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
+import {
+  useNotificationsStore,
+  visibleItems,
+  type AppNotification,
+} from "../stores/notifications-store";
 
 /** Bucket a timestamp into a relative-day group label. */
 function dayBucket(iso: string): string {
@@ -21,7 +32,11 @@ function dayBucket(iso: string): string {
 
 export function NotificationPanel() {
   const open = useNotificationsStore.use.panelOpen();
-  const items = useNotificationsStore.use.items();
+  const allItems = useNotificationsStore.use.items();
+  const activeOrgId = useOrgStore.use.activeOrganisationId();
+  // Org-scoped view over a global list: switching organisations must not
+  // lose the other org's items, only hide them.
+  const items = useMemo(() => visibleItems(allItems, activeOrgId), [allItems, activeOrgId]);
   const { close, clearAll } = useNotificationsStore.use.actions();
 
   // Preserve first-seen order within each day bucket (items are newest-first).
@@ -163,15 +178,29 @@ function NotificationCard({ n }: { n: AppNotification }) {
 function NotificationIcon({ n }: { n: AppNotification }) {
   if (n.kind === "permission")
     return <Shield size={15} className="text-accent" strokeWidth={1.5} />;
-  if (n.kind === "agent-failed" || n.kind === "chat-error")
+  if (n.kind === "agent-failed" || n.kind === "chat-error" || n.kind === "terminal-failed")
     return <AlertTriangle size={15} className="text-[var(--status-error)]" strokeWidth={1.5} />;
-  if (n.kind === "chat-done" && n.provider) return <ProviderLogo id={n.provider} size={16} />;
+  if (n.kind === "terminal-attention")
+    return <BellRing size={15} className="text-[var(--status-warning)]" strokeWidth={1.5} />;
+  if (n.kind === "terminal-done")
+    return <SquareTerminal size={15} className="text-text-secondary" strokeWidth={1.5} />;
+  if (n.kind === "chat-done" && n.provider)
+    return (
+      // 22 = size + 6, the box ProviderLogo renders, so the row never shifts.
+      <Suspense fallback={<span className="shrink-0" style={{ width: 22, height: 22 }} />}>
+        <ProviderLogo id={n.provider} size={16} />
+      </Suspense>
+    );
   if (n.source === "agent") return <AtlasIcon size={16} className="rounded-[5px]" />;
   return <Sparkles size={15} className="text-text-secondary" strokeWidth={1.5} />;
 }
 
-/** Best-effort: bring the originating chat into view. */
+/** Best-effort: bring the originating chat or terminal into view. */
 function focusNotification(n: AppNotification) {
+  if (n.source === "terminal" && n.tabId) {
+    void jumpToTerminal({ tabId: n.tabId, terminalId: n.terminalId, workspaceId: n.workspaceId });
+    return;
+  }
   if (n.source === "agent" && n.tabId) {
     // Workspace-aware: a bare setActiveTab on a tab from ANOTHER workspace
     // falls back to tabs[0] of the current one — jumpToSession switches to the

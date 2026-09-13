@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { markScrollHot } from "@/lib/scroll-hot";
+import { isScrollHot, markScrollHot } from "@/lib/scroll-hot";
 
 /** How close to the top (px) the window grows at. Generous on purpose: growing
  *  early happens off-screen and is invisible, growing late is a hitch the reader
@@ -36,6 +36,11 @@ const GROW_MARGIN = 2200;
 
 /** Slack (px) within which "there is more below" reads as "you are at the end". */
 const AT_END = 80;
+
+/** How long after the last scroll frame the hover suspension lifts. A touch
+ *  longer than `markScrollHot`'s window so the flag never flickers between two
+ *  momentum events. */
+const HOVER_RESUME_MS = 200;
 
 export interface TranscriptScroll {
   /** True while content extends below the fold — drives the fade + jump pill. */
@@ -62,6 +67,7 @@ export function useTranscriptScroll({
   onGrow,
   onBeforeGrow,
   onContentResize,
+  visible = true,
 }: {
   scrollRef: RefObject<HTMLElement | null>;
   /** The scrolled content, watched for size changes. */
@@ -74,11 +80,21 @@ export function useTranscriptScroll({
   /** Content changed size — the caller may want to re-hold a scroll anchor.
    *  Runs BEFORE the re-sample so the sample sees the corrected position. */
   onContentResize?: () => void;
+  /** Is this transcript the one showing in its column? A hidden chat tab stays
+   *  MOUNTED AND LAID OUT (`visibility:hidden`, see the chat wrapper in
+   *  `center-panel.tsx`), so unlike a `display:none` scroller it reports real
+   *  geometry — the zero-height guard in `sample` cannot catch it. Sampling it
+   *  is pure waste at best (nobody can see the fade or the pill) and wrong at
+   *  worst: a grow fired from here mounts rows and reflows a panel nobody is
+   *  looking at, on the same main thread the VISIBLE transcript is scrolling. */
+  visible?: boolean;
 }): TranscriptScroll {
   const [more, setMore] = useState(false);
 
   const frame = useRef<number | null>(null);
   const dirty = useRef(true);
+  /** Non-null while `data-scroll-hot` is set on the content. */
+  const hoverResume = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Cached geometry. Valid until the content resizes. */
   const metrics = useRef({ scrollHeight: 0, clientHeight: 0 });
   const atEndRef = useRef(true);
@@ -89,6 +105,8 @@ export function useTranscriptScroll({
   // which is pure churn in the one path that must stay cheap.
   const growable = useRef(canGrow);
   growable.current = canGrow;
+  const showing = useRef(visible);
+  showing.current = visible;
   const grow = useRef(onGrow);
   grow.current = onGrow;
   const beforeGrow = useRef(onBeforeGrow);
@@ -107,11 +125,74 @@ export function useTranscriptScroll({
     dirty.current = false;
   }, [scrollRef]);
 
+  // Hover is suspended for the duration of a fling.
+  //
+  // The user row's action bar reveals on `group-hover`, which compiles to
+  // `:is(:where(.group):hover *)`, so each row that passes under a resting
+  // pointer invalidates style for its ENTIRE subtree — hundreds of nodes for a
+  // long markdown bubble. Several rows a second, mid-fling, is exactly the
+  // work the tile deadline cannot absorb. It also stops a fling that ends with
+  // the pointer over a bubble from landing a click on a control the reader
+  // never meant to reach. `pointer-events: none` on the content makes the
+  // scroller itself the hit target, so wheel and momentum events keep flowing
+  // while nothing underneath can be hovered.
+  //
+  // One attribute write per fling, not per frame: the property inherits, so
+  // toggling it recalculates inherited style once down the subtree — a cost
+  // paid at the first frame and the release, and never again while scrolling.
+  // Released by a timer that keeps re-arming while the scroll-hot clock is
+  // still running, so a fling with gaps between events does not flicker.
+  //
+  // Called from `onScroll`, NOT `sample`: the resize observer also runs
+  // `sample`, and a markdown block settling mid-stream must not make the
+  // thread unclickable. Free after the first event of a gesture — the release
+  // timer does the polling, so nothing is scheduled per scroll event.
+  const suspendHover = useCallback(() => {
+    if (hoverResume.current !== null) return;
+    const content = contentRef.current;
+    if (!content) return;
+    content.setAttribute("data-scroll-hot", "");
+    const release = () => {
+      if (isScrollHot()) {
+        hoverResume.current = setTimeout(release, HOVER_RESUME_MS);
+        return;
+      }
+      hoverResume.current = null;
+      contentRef.current?.removeAttribute("data-scroll-hot");
+    };
+    hoverResume.current = setTimeout(release, HOVER_RESUME_MS);
+  }, [contentRef]);
+
   const sample = useCallback(() => {
     frame.current = null;
     const el = scrollRef.current;
     if (!el) return;
+
+    // Hidden tab: change nothing, and above all do not GROW. This is the
+    // `visibility:hidden` sibling of the zero-height guard below — that one
+    // catches a `display:none` scroller by its 0×0 geometry, this one catches
+    // a hidden-but-laid-out chat, whose geometry is real and therefore
+    // believable. `atEndRef` keeps whatever the reader left it at, so a tab
+    // hidden while scrolled up comes back scrolled up. Leave the cached
+    // numbers dirty: the first sample after the tab shows re-measures.
+    if (!showing.current) {
+      dirty.current = true;
+      return;
+    }
+
     if (dirty.current) measure();
+
+    // A HIDDEN scroller knows nothing. A chat tab stays mounted while another
+    // tab shows, and a `display:none` scroller (background workspace) reports
+    // 0×0 with `scrollTop` 0 — which reads as "at the very end AND at the very
+    // top". Believing it latched `atEnd` (a reader scrolled up in a background
+    // streaming tab was snapped to the bottom on return) and fired a grow into
+    // a panel nobody was looking at. Leave the cached geometry dirty so the
+    // first visible sample re-measures, and change nothing.
+    if (metrics.current.clientHeight === 0) {
+      dirty.current = true;
+      return;
+    }
 
     // The only read on a clean pass, and the only one that never forces layout.
     const top = el.scrollTop;
@@ -147,9 +228,10 @@ export function useTranscriptScroll({
     // batch briefly so the streaming re-render doesn't land inside a scroll
     // frame (see scroll-hot.ts; that collision is what blanks tiles).
     markScrollHot();
+    suspendHover();
     if (frame.current !== null) return;
     frame.current = requestAnimationFrame(sample);
-  }, [sample]);
+  }, [sample, suspendHover]);
 
   // Content height changes invalidate every cached number, and they happen for
   // reasons that have nothing to do with scrolling: the window grew, a thinking
@@ -176,6 +258,19 @@ export function useTranscriptScroll({
     return () => observer.disconnect();
   }, [contentRef, scrollRef, sample]);
 
+  // Coming back into view, re-sample once. Everything that happened while
+  // hidden left the geometry dirty on purpose (the guard in `sample`), and a
+  // window resized while this tab was in the background is a real change that
+  // no scroll or resize event will announce again. In a frame, not inline: the
+  // measure forces layout, and the frame the tab becomes visible is the one
+  // frame that must stay free of it.
+  useEffect(() => {
+    if (!visible) return;
+    dirty.current = true;
+    if (frame.current !== null) return;
+    frame.current = requestAnimationFrame(sample);
+  }, [visible, sample]);
+
   useEffect(
     () => () => {
       if (frame.current !== null) {
@@ -184,6 +279,12 @@ export function useTranscriptScroll({
         // pending" — a cancelled id left here would mute both for the rest of
         // the mount (StrictMode's remount in dev did exactly that).
         frame.current = null;
+      }
+      if (hoverResume.current !== null) {
+        clearTimeout(hoverResume.current);
+        // Same latch: a stale id here would mean "already suspended" forever
+        // and the attribute would never be written again.
+        hoverResume.current = null;
       }
     },
     [],

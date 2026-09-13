@@ -33,7 +33,10 @@ use crate::archive::{
     versioned_archive_cache_dir,
 };
 use crate::http::HttpClient;
-use crate::node::{bounded_npm_package_spec, npm_command_env, read_package_executable, NodeRuntime};
+use crate::node::{
+    bounded_npm_package_spec, installed_package_version, installed_version_satisfies,
+    npm_command_env, read_package_executable, NodeRuntime,
+};
 use crate::registry::{current_platform_key, RegistryTargetConfig};
 
 /// The environment an agent inherits from the project it is opened in.
@@ -289,6 +292,7 @@ pub struct LocalRegistryNpxAgent {
     pub(crate) distribution_env: HashMap<String, String>,
     pub(crate) settings_env: HashMap<String, String>,
     pub(crate) byok_env: HashMap<String, String>,
+    pub(crate) loading_status: Option<watch::Sender<Option<String>>>,
 }
 
 impl ExternalAgentServer for LocalRegistryNpxAgent {
@@ -304,48 +308,161 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
         let node = self.node.clone();
         let project_env = self.project_env.project_env();
         let install_dir = self.install_dir.clone();
+        let version = self.version.clone();
         let package = self.package.clone();
         let args = self.args.clone();
         let distribution_env = self.distribution_env.clone();
         let settings_env = self.settings_env.clone();
         let byok_env = self.byok_env.clone();
+        let loading_status = self.loading_status.clone();
 
         Box::pin(async move {
-            tokio::fs::create_dir_all(&install_dir)
-                .await
-                .with_context(|| format!("creating {install_dir:?}"))?;
+            let result = async {
+                tokio::fs::create_dir_all(&install_dir)
+                    .await
+                    .with_context(|| format!("creating {install_dir:?}"))?;
 
-            let (package_name, package_spec) = bounded_npm_package_spec(&package);
-            node.run_npm_subcommand(
-                Some(&install_dir),
-                "install",
-                &[package_spec.as_str(), "--save-exact"],
-            )
-            .await?;
+                // Node first, and through the status-aware path: this is the
+                // one step that can take minutes on a fresh machine, and every
+                // later call (`run_npm_subcommand`, `binary_path`) would install
+                // it silently.
+                let node_binary = node
+                    .ensure_installed(loading_status.as_ref())
+                    .await?
+                    .join(crate::node::NODE_PATH);
 
-            let executable =
-                read_package_executable(&install_dir.join("node_modules"), package_name).await?;
-            let node_binary = node.binary_path().await?;
+                let (package_name, package_spec) = bounded_npm_package_spec(&package);
+                let node_modules = install_dir.join("node_modules");
 
-            // npm's own env (the managed Node first on `PATH`) layers over the
-            // project's and under the distribution's, exactly as Zed orders it
-            // at `agent_server_store.rs:1405-1411`. It has to beat the project
-            // env specifically: the project almost always has a `PATH` of its
-            // own, and the point of this layer is that ours wins.
-            let mut base = project_env.await;
-            base.extend(npm_command_env(&node_binary));
-            let env = layered_env(base, &distribution_env, extra_env, &byok_env, &settings_env);
+                // Install only when the copy on disk cannot serve the spec. Zed
+                // runs `npm install` on every connect; that made each agent
+                // start a registry round-trip, and a registry that does not
+                // answer made it a hang. Now it is a per-version cost.
+                if let Some(reason) = install_needed(&install_dir, package_name, &package).await {
+                    tracing::info!(
+                        package = %package_spec,
+                        %reason,
+                        "running npm install for the agent package"
+                    );
+                    if let Some(tx) = &loading_status {
+                        tx.send(Some(format!("Installing {package_name} {version}…")))
+                            .ok();
+                    }
+                    node.run_npm_subcommand(
+                        Some(&install_dir),
+                        "install",
+                        &[package_spec.as_str(), "--save-exact"],
+                    )
+                    .await?;
+                    write_wanted_spec(&install_dir, &package).await;
+                } else {
+                    tracing::info!(
+                        package = %package_spec,
+                        "agent package already installed within its version ceiling; \
+                         skipping npm install"
+                    );
+                }
 
-            let mut command_args = vec![executable.to_string_lossy().into_owned()];
-            command_args.extend(args);
-            command_args.extend(extra_args);
+                let executable = read_package_executable(&node_modules, package_name).await?;
 
-            Ok(AgentServerCommand {
-                path: node_binary,
-                args: command_args,
-                env: Some(env),
-            })
+                // npm's own env (the managed Node first on `PATH`) layers over the
+                // project's and under the distribution's, exactly as Zed orders it
+                // at `agent_server_store.rs:1405-1411`. It has to beat the project
+                // env specifically: the project almost always has a `PATH` of its
+                // own, and the point of this layer is that ours wins.
+                let mut base = project_env.await;
+                base.extend(npm_command_env(&node_binary));
+                let env =
+                    layered_env(base, &distribution_env, extra_env, &byok_env, &settings_env);
+
+                let mut command_args = vec![executable.to_string_lossy().into_owned()];
+                command_args.extend(args);
+                command_args.extend(extra_args);
+
+                Ok(AgentServerCommand {
+                    path: node_binary,
+                    args: command_args,
+                    env: Some(env),
+                })
+            }
+            .await;
+
+            // Ready or failed, the "Installing …" text must not outlive the
+            // attempt: the manager surfaces the error itself.
+            if let Some(tx) = &loading_status {
+                tx.send(None).ok();
+            }
+            result
         })
+    }
+}
+
+/// The sidecar recording which package spec the install directory was last
+/// installed against.
+///
+/// The ceiling check alone can never upgrade: an installed `1.11.0` satisfies
+/// `<= 1.12.0` when the registry moves on, so the install would be skipped
+/// forever. The sidecar makes a registry bump visible: a different spec here
+/// means "the registry now wants something newer than we resolved against".
+const WANTED_SPEC_FILE: &str = ".atlas-wanted";
+
+async fn read_wanted_spec(install_dir: &std::path::Path) -> Option<String> {
+    tokio::fs::read_to_string(install_dir.join(WANTED_SPEC_FILE))
+        .await
+        .ok()
+        .map(|spec| spec.trim().to_owned())
+}
+
+async fn write_wanted_spec(install_dir: &std::path::Path, package_spec: &str) {
+    if let Err(error) =
+        tokio::fs::write(install_dir.join(WANTED_SPEC_FILE), format!("{package_spec}\n")).await
+    {
+        tracing::warn!(
+            path = %install_dir.join(WANTED_SPEC_FILE).display(),
+            %error,
+            "could not record the installed package spec; the next launch will re-check"
+        );
+    }
+}
+
+/// Why the package under `<install_dir>/node_modules/<name>` has to be
+/// (re)installed, or `None` when the copy on disk already serves
+/// `package_spec` (the raw registry spec, e.g. `@scope/pkg@1.11.0`) and
+/// declares an executable.
+///
+/// A satisfied install with no [`WANTED_SPEC_FILE`] — every install made
+/// before the sidecar existed — is adopted: the sidecar is written with the
+/// current spec and the install is skipped, so existing users stay offline and
+/// upgrades kick in at the next ceiling change.
+async fn install_needed(
+    install_dir: &std::path::Path,
+    package_name: &str,
+    package_spec: &str,
+) -> Option<String> {
+    let node_modules = install_dir.join("node_modules");
+    let Some(installed) = installed_package_version(&node_modules, package_name).await else {
+        return Some("package.json missing or unparsable".to_owned());
+    };
+    if !installed_version_satisfies(&installed, package_spec) {
+        return Some(format!(
+            "installed {installed} is outside the ceiling of {package_spec}"
+        ));
+    }
+    if read_package_executable(&node_modules, package_name)
+        .await
+        .is_err()
+    {
+        return Some("installed package declares no usable executable".to_owned());
+    }
+    match read_wanted_spec(install_dir).await {
+        Some(previous) if previous == package_spec => None,
+        Some(previous) => Some(format!(
+            "registry now wants {package_spec} (installed against {previous})"
+        )),
+        None => {
+            write_wanted_spec(install_dir, package_spec).await;
+            None
+        }
     }
 }
 
@@ -360,4 +477,87 @@ async fn is_dir(path: &std::path::Path) -> bool {
         .await
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PACKAGE: &str = "@scope/agent";
+
+    /// An install dir whose `node_modules/@scope/agent` is at `version`.
+    fn installed(version: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let package_dir = dir.path().join("node_modules").join(PACKAGE);
+        std::fs::create_dir_all(&package_dir).unwrap();
+        std::fs::write(
+            package_dir.join("package.json"),
+            format!(r#"{{"version": "{version}", "bin": "cli.js"}}"#),
+        )
+        .unwrap();
+        dir
+    }
+
+    fn sidecar(dir: &tempfile::TempDir) -> Option<String> {
+        std::fs::read_to_string(dir.path().join(WANTED_SPEC_FILE)).ok()
+    }
+
+    #[tokio::test]
+    async fn missing_sidecar_with_satisfied_ceiling_is_adopted_and_skipped() {
+        let dir = installed("1.11.0");
+        assert_eq!(sidecar(&dir), None);
+
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0").await,
+            None
+        );
+        assert_eq!(sidecar(&dir).as_deref(), Some("@scope/agent@1.11.0\n"));
+    }
+
+    #[tokio::test]
+    async fn a_registry_bump_forces_an_install_even_within_the_ceiling() {
+        let dir = installed("1.11.0");
+        write_wanted_spec(dir.path(), "@scope/agent@1.11.0").await;
+
+        // 1.11.0 <= 1.12.0, so the ceiling alone would skip; the sidecar says
+        // the registry moved on.
+        let reason = install_needed(dir.path(), PACKAGE, "@scope/agent@1.12.0")
+            .await
+            .expect("a differing sidecar must force an install");
+        assert_eq!(
+            reason,
+            "registry now wants @scope/agent@1.12.0 (installed against @scope/agent@1.11.0)"
+        );
+        // Not rewritten until the install actually succeeds.
+        assert_eq!(sidecar(&dir).as_deref(), Some("@scope/agent@1.11.0\n"));
+    }
+
+    #[tokio::test]
+    async fn an_equal_sidecar_skips_the_install() {
+        let dir = installed("1.11.0");
+        write_wanted_spec(dir.path(), "@scope/agent@1.11.0").await;
+
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0").await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_or_out_of_range_install_is_reported_before_the_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0")
+                .await
+                .as_deref(),
+            Some("package.json missing or unparsable")
+        );
+        assert_eq!(sidecar(&dir), None, "nothing is adopted without an install");
+
+        let dir = installed("2.0.0");
+        assert!(install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0")
+            .await
+            .is_some_and(|reason| reason.contains("outside the ceiling")));
+        assert_eq!(sidecar(&dir), None);
+    }
 }

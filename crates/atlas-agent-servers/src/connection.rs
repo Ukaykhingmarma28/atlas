@@ -6,6 +6,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -43,6 +44,27 @@ const MINIMUM_SUPPORTED_VERSION: ProtocolVersion = ProtocolVersion::V1;
 /// Reporting the RPC error would tell the user "connection closed" when the
 /// real answer — on stderr — is one tick away.
 const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
+
+/// How long the child gets to hand over its connection and to answer
+/// `initialize`.
+///
+/// Before this the handshake was raced only against the child *dying*. A child
+/// that is alive but silent — or whose grandchild `codex app-server` is wedged
+/// — won that race forever, and the tab sat on "connecting" with nothing to
+/// report. Generous: a cold `node` start on a slow disk is seconds, not a
+/// minute, so expiry means the agent is not going to answer.
+const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long the exit path lets the stderr reader catch up before it builds
+/// the `Exited` error out of what was recorded.
+const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(100);
+
+/// How long a one-shot RPC on the connect/bind path may take: `session/new`,
+/// `session/load`, `session/resume`, `authenticate`, `session/list`.
+///
+/// Longer than [`INITIALIZE_TIMEOUT`] because `session/load` replays history
+/// and `session/new` may set a mode round-trip behind it. `session/prompt`
+/// deliberately has no deadline — see [`CANCEL_GRACE`].
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long an agent gets to answer its own cancellation before the turn is
 /// resolved locally.
@@ -152,13 +174,12 @@ impl AcpConnection {
             child_command.current_dir(cwd);
         }
 
-        let mut child = child_command
-            .spawn()
+        let mut child = AgentChild::spawn(&mut child_command)
             .with_context(|| format!("failed to spawn agent server {:?}", command.path))?;
 
-        let stdout = child.stdout.take().context("failed to take stdout")?;
-        let stdin = child.stdin.take().context("failed to take stdin")?;
-        let stderr = child.stderr.take().context("failed to take stderr")?;
+        let stdout = child.inner.stdout.take().context("failed to take stdout")?;
+        let stdin = child.inner.stdin.take().context("failed to take stdin")?;
+        let stderr = child.inner.stderr.take().context("failed to take stderr")?;
         tracing::debug!(?command.path, args = ?command.args, "spawned external agent server");
 
         let debug_log = AcpDebugLog::new();
@@ -217,19 +238,34 @@ impl AcpConnection {
         // Race the handshake against the child dying. Without this a binary
         // that exits immediately leaves us awaiting a handle that will never
         // arrive, and the UI hangs on "connecting" forever.
+        //
+        // And against the clock. The child owns nothing but its pipes here, so
+        // a child that neither dies nor answers used to hold this future — and
+        // every caller joined on it — for good. On expiry the timeout drops
+        // the select, the select drops `status_fut`, and `status_fut` drops
+        // the child, whose `Drop` kills the whole process group. Nothing else
+        // needs to reach in.
         let mut status_fut = Box::pin(wait_for_exit(child, debug_log.clone()));
         let connection_rx = Box::pin(async move {
             connection_rx
                 .await
                 .context("failed to receive ACP connection handle")
         });
-        let connection = match futures::future::select(connection_rx, status_fut).await {
-            futures::future::Either::Left((connection, rest)) => {
+        let connection = match tokio::time::timeout(
+            INITIALIZE_TIMEOUT,
+            futures::future::select(connection_rx, status_fut),
+        )
+        .await
+        {
+            Ok(futures::future::Either::Left((connection, rest))) => {
                 status_fut = rest;
                 connection?
             }
-            futures::future::Either::Right(((load_error, _child), _)) => {
+            Ok(futures::future::Either::Right(((load_error, _child), _))) => {
                 return Err(load_error.into())
+            }
+            Err(_elapsed) => {
+                return Err(timed_out(&agent_id, "handshake", INITIALIZE_TIMEOUT, &debug_log));
             }
         };
 
@@ -243,9 +279,15 @@ impl AcpConnection {
                 .block_task(),
         );
 
-        let (response, status_fut) = match futures::future::select(initialize, status_fut).await {
-            futures::future::Either::Left((Ok(response), rest)) => (response, rest),
-            futures::future::Either::Left((Err(error), rest)) => {
+        // Same shape as above: expiry drops `status_fut`, which kills the tree.
+        let (response, status_fut) = match tokio::time::timeout(
+            INITIALIZE_TIMEOUT,
+            futures::future::select(initialize, status_fut),
+        )
+        .await
+        {
+            Ok(futures::future::Either::Left((Ok(response), rest))) => (response, rest),
+            Ok(futures::future::Either::Left((Err(error), rest))) => {
                 // See INITIALIZE_EXIT_GRACE: prefer the exit status if it is
                 // about to land, because it carries the stderr that explains it.
                 let timer = Box::pin(tokio::time::sleep(INITIALIZE_EXIT_GRACE));
@@ -256,8 +298,11 @@ impl AcpConnection {
                 }
                 return Err(anyhow!(error));
             }
-            futures::future::Either::Right(((load_error, _child), _)) => {
+            Ok(futures::future::Either::Right(((load_error, _child), _))) => {
                 return Err(load_error.into())
+            }
+            Err(_elapsed) => {
+                return Err(timed_out(&agent_id, "initialize", INITIALIZE_TIMEOUT, &debug_log));
             }
         };
 
@@ -294,8 +339,12 @@ impl AcpConnection {
 
         // Built before the connection moves into the struct, and only when the
         // agent advertised `sessionCapabilities.list`.
-        let session_list =
-            AcpSessionList::for_capabilities(connection.clone(), &response.agent_capabilities);
+        let session_list = AcpSessionList::for_capabilities(
+            connection.clone(),
+            agent_id.clone(),
+            debug_log.clone(),
+            &response.agent_capabilities,
+        );
 
         Ok(Self {
             id: agent_id,
@@ -328,6 +377,19 @@ impl AcpConnection {
 
     pub fn agent_capabilities(&self) -> &acp::AgentCapabilities {
         &self.agent_capabilities
+    }
+
+    /// Runs one RPC on the connect/bind path under [`REQUEST_TIMEOUT`].
+    ///
+    /// Expiry becomes [`LoadError::TimedOut`] with the trailing stderr, so a
+    /// `session/new` against a wedged app-server fails with a reason instead
+    /// of parking the caller. Never used for `session/prompt`.
+    fn request_deadline<'a, T: 'a>(
+        &'a self,
+        phase: &'static str,
+        request: impl Future<Output = Result<T>> + 'a,
+    ) -> impl Future<Output = Result<T>> + 'a {
+        with_request_deadline(&self.id, phase, &self.debug_log, request)
     }
 
     fn directories(&self, work_dirs: &[PathBuf]) -> Result<SessionDirectories> {
@@ -421,7 +483,8 @@ impl AcpConnection {
         // flight, taking the sessions entry with it. Handing back a thread with
         // no live session would produce one that silently receives nothing.
         let attached = self.sessions.with_session(&session_id, |session| {
-            session.session_modes = response.modes.map(|modes| Arc::new(Mutex::new(modes)));
+            let modes = session_modes_of(response.modes, response.config_options.as_deref());
+            session.session_modes = modes.map(|modes| Arc::new(Mutex::new(modes)));
             session.config_options = response
                 .config_options
                 .map(|options| ConfigOptions::new(Arc::new(Mutex::new(options))));
@@ -440,13 +503,116 @@ struct SessionConfigResponse {
     config_options: Option<Vec<acp::SessionConfigOption>>,
 }
 
+/// The agent process, owned so that dropping it kills the whole tree.
+///
+/// Ported from the shape of Zed's `util::process::Child`
+/// (`crates/util/src/process.rs`). The child is started in a session of its
+/// own (`setsid` in `pre_exec`), so its pid is also its process-group id, and
+/// the kill is `killpg(SIGKILL)` rather than `kill`: `codex-acp` is `node` →
+/// `codex.js app-server` → a native `codex app-server`, and killing only
+/// `node` orphaned the rest — which is how app-servers from a launch two days
+/// earlier were still running. `kill_on_drop` stays on as the backstop for
+/// the direct child, and tokio's orphan reaper still collects its status.
+///
+/// `setsid` also detaches the child from Atlas's controlling terminal, which
+/// is right: the agent is on pipes and must never try to prompt.
+struct AgentChild {
+    inner: tokio::process::Child,
+    /// The process group to signal. `None` where there is no such thing.
+    pgid: Option<i32>,
+}
+
+impl AgentChild {
+    fn spawn(command: &mut tokio::process::Command) -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
+            // SAFETY: `setsid` is async-signal-safe and touches nothing the
+            // parent shares with the child; it either succeeds or, if the
+            // child somehow already leads a group, fails harmlessly.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::setsid();
+                    Ok(())
+                });
+            }
+        }
+        let inner = command.spawn()?;
+        #[cfg(unix)]
+        let pgid = inner.id().map(|pid| pid as i32);
+        #[cfg(not(unix))]
+        let pgid = None;
+        Ok(Self { inner, pgid })
+    }
+
+    /// Kill the child and everything it spawned. Idempotent; safe after the
+    /// direct child has been reaped, because its grandchildren keep the group
+    /// alive and `killpg` on an empty group is `ESRCH`, not a fault.
+    fn kill_tree(&mut self) {
+        #[cfg(unix)]
+        if let Some(pgid) = self.pgid {
+            // SAFETY: plain syscall on a pgid we created; no memory involved.
+            unsafe {
+                libc::killpg(pgid, libc::SIGKILL);
+            }
+        }
+        // The backstop, and the whole of the non-unix path.
+        let _ = self.inner.start_kill();
+    }
+
+    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.inner.wait().await
+    }
+}
+
+impl Drop for AgentChild {
+    fn drop(&mut self) {
+        self.kill_tree();
+    }
+}
+
+/// The error for a hop that ran past its deadline, carrying what the agent was
+/// saying on stderr when it went quiet.
+fn timed_out(
+    agent: &AgentId,
+    phase: &str,
+    after: Duration,
+    debug_log: &AcpDebugLog,
+) -> anyhow::Error {
+    anyhow!(LoadError::TimedOut {
+        agent: Arc::from(agent.as_str()),
+        phase: Arc::from(phase),
+        after,
+        stderr: debug_log
+            .trailing_stderr()
+            .filter(|stderr| !stderr.is_empty())
+            .map(Arc::from),
+    })
+}
+
+/// Runs a one-shot RPC on the connect/bind path under [`REQUEST_TIMEOUT`].
+/// Free-standing so [`AcpSessionList`] can use it without a connection.
+pub(crate) async fn with_request_deadline<T>(
+    agent: &AgentId,
+    phase: &str,
+    debug_log: &AcpDebugLog,
+    request: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    match tokio::time::timeout(REQUEST_TIMEOUT, request).await {
+        Ok(result) => result,
+        Err(_elapsed) => Err(timed_out(agent, phase, REQUEST_TIMEOUT, debug_log)),
+    }
+}
+
 /// Waits for the child and turns its exit into a `LoadError` carrying the
-/// trailing stderr. The child is returned so the caller keeps owning it.
-async fn wait_for_exit(
-    mut child: tokio::process::Child,
-    debug_log: AcpDebugLog,
-) -> (LoadError, tokio::process::Child) {
+/// trailing stderr. The child is returned so the caller keeps owning it — and
+/// so that dropping it, whenever that happens, kills whatever it left behind.
+async fn wait_for_exit(mut child: AgentChild, debug_log: AcpDebugLog) -> (LoadError, AgentChild) {
     let status = child.wait().await;
+    // The stderr reader is a separate task; under load it can still be a poll
+    // behind the exit status, and the last line it has not recorded yet is
+    // usually the one that says why the agent died. The pipe is closed now,
+    // so this is a bounded wait for the reader to catch up, not for the agent.
+    tokio::time::sleep(STDERR_DRAIN_GRACE).await;
     let error = LoadError::Exited {
         status: status.ok().and_then(|status| status.code()),
         stderr: debug_log
@@ -652,11 +818,11 @@ pub fn authenticate_outcome(err: acp::Error, method_is_terminal: bool) -> Result
 impl Drop for AcpConnection {
     fn drop(&mut self) {
         // Zed kills the child here (`acp.rs:1528-1534`). The child is owned by
-        // the wait task, so aborting that task drops it — and the spawn set
-        // `kill_on_drop`, which is what actually signals the process. Without
-        // this the agent outlives the connection that started it: nothing else
-        // holds a handle to kill it, and it sits there holding its model
-        // subscription until the app exits.
+        // the wait task, so aborting that task drops it — and `AgentChild`'s
+        // `Drop` kills its process group, with `kill_on_drop` as the backstop.
+        // Without this the agent outlives the connection that started it:
+        // nothing else holds a handle to kill it, and it sits there holding
+        // its model subscription until the app exits.
         self._wait_task.abort();
         self._io_task.abort();
         self._stderr_task.abort();
@@ -683,21 +849,25 @@ impl AgentConnection for AcpConnection {
         async move {
             let directories = self.directories(&work_dirs)?;
             let response = self
-                .connection
-                .send_request(directories.into_new_session_request(Vec::new()))
-                .block_task()
-                .await
-                .map_err(map_acp_error)?;
+                .request_deadline("session/new", async {
+                    self.connection
+                        .send_request(directories.into_new_session_request(Vec::new()))
+                        .block_task()
+                        .await
+                        .map_err(map_acp_error)
+                })
+                .await?;
 
             let session_id = response.session_id.clone();
             let thread = self.new_thread(session_id.clone(), work_dirs, None);
+            let modes = session_modes_of(response.modes, response.config_options.as_deref());
 
             self.sessions.insert(
                 session_id.clone(),
                 AcpSession {
                     thread: Arc::downgrade(&thread),
                     cancel_signal: CancelSignal::new(),
-                    session_modes: response.modes.map(|modes| Arc::new(Mutex::new(modes))),
+                    session_modes: modes.map(|modes| Arc::new(Mutex::new(modes))),
                     config_options: response
                         .config_options
                         .map(|options| ConfigOptions::new(Arc::new(Mutex::new(options)))),
@@ -725,23 +895,27 @@ impl AgentConnection for AcpConnection {
         title: Option<Arc<str>>,
     ) -> BoxFuture<'static, Result<AcpThreadHandle>> {
         async move {
-            self.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
-                async move {
-                    let mut request = acp::LoadSessionRequest::new(id, dirs.cwd);
-                    if !dirs.additional_directories.is_empty() {
-                        request.additional_directories = dirs.additional_directories;
+            let this = self.clone();
+            self.request_deadline("session/load", async move {
+                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
+                    async move {
+                        let mut request = acp::LoadSessionRequest::new(id, dirs.cwd);
+                        if !dirs.additional_directories.is_empty() {
+                            request.additional_directories = dirs.additional_directories;
+                        }
+                        let response = conn
+                            .send_request(request)
+                            .block_task()
+                            .await
+                            .map_err(map_acp_error)?;
+                        Ok(SessionConfigResponse {
+                            modes: response.modes,
+                            config_options: response.config_options,
+                        })
                     }
-                    let response = conn
-                        .send_request(request)
-                        .block_task()
-                        .await
-                        .map_err(map_acp_error)?;
-                    Ok(SessionConfigResponse {
-                        modes: response.modes,
-                        config_options: response.config_options,
-                    })
-                }
-                .boxed()
+                    .boxed()
+                })
+                .await
             })
             .await
         }
@@ -759,23 +933,27 @@ impl AgentConnection for AcpConnection {
         title: Option<Arc<str>>,
     ) -> BoxFuture<'static, Result<AcpThreadHandle>> {
         async move {
-            self.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
-                async move {
-                    let mut request = acp::ResumeSessionRequest::new(id, dirs.cwd);
-                    if !dirs.additional_directories.is_empty() {
-                        request.additional_directories = dirs.additional_directories;
+            let this = self.clone();
+            self.request_deadline("session/resume", async move {
+                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
+                    async move {
+                        let mut request = acp::ResumeSessionRequest::new(id, dirs.cwd);
+                        if !dirs.additional_directories.is_empty() {
+                            request.additional_directories = dirs.additional_directories;
+                        }
+                        let response = conn
+                            .send_request(request)
+                            .block_task()
+                            .await
+                            .map_err(map_acp_error)?;
+                        Ok(SessionConfigResponse {
+                            modes: response.modes,
+                            config_options: response.config_options,
+                        })
                     }
-                    let response = conn
-                        .send_request(request)
-                        .block_task()
-                        .await
-                        .map_err(map_acp_error)?;
-                    Ok(SessionConfigResponse {
-                        modes: response.modes,
-                        config_options: response.config_options,
-                    })
-                }
-                .boxed()
+                    .boxed()
+                })
+                .await
             })
             .await
         }
@@ -859,6 +1037,8 @@ impl AgentConnection for AcpConnection {
 
     fn authenticate(&self, method: acp::AuthMethodId) -> BoxFuture<'static, Result<()>> {
         let conn = self.connection.clone();
+        let agent_id = self.id.clone();
+        let debug_log = self.debug_log.clone();
         // Both of Zed's terminal shapes count — see `terminal_auth_command_for`.
         let method_is_terminal = self
             .auth_methods
@@ -869,14 +1049,17 @@ impl AgentConnection for AcpConnection {
                     || meta_terminal_auth_command(&self.id, &method, m).is_some()
             });
         async move {
-            match conn
-                .send_request(acp::AuthenticateRequest::new(method))
-                .block_task()
-                .await
-            {
-                Ok(_) => Ok(()),
-                Err(err) => authenticate_outcome(err, method_is_terminal),
-            }
+            with_request_deadline(&agent_id, "authenticate", &debug_log, async {
+                match conn
+                    .send_request(acp::AuthenticateRequest::new(method))
+                    .block_task()
+                    .await
+                {
+                    Ok(_) => Ok(()),
+                    Err(err) => authenticate_outcome(err, method_is_terminal),
+                }
+            })
+            .await
         }
         .boxed()
     }
@@ -1091,13 +1274,17 @@ impl AcpConnection {
             initial
         };
 
+        // On the `session/new` path, so it gets the same deadline: a wedged
+        // agent that answered `session/new` and then went quiet must not park
+        // the bind here instead. Expiry is just "the mode did not take".
+        let set_mode = self.connection.send_request(acp::SetSessionModeRequest::new(
+            session_id.clone(),
+            default_mode,
+        ));
         if self
-            .connection
-            .send_request(acp::SetSessionModeRequest::new(
-                session_id.clone(),
-                default_mode,
-            ))
-            .block_task()
+            .request_deadline("session/set_mode", async {
+                set_mode.block_task().await.map_err(map_acp_error)
+            })
             .await
             .is_err()
         {
@@ -1157,6 +1344,73 @@ impl AgentSessionModes for AcpSessionModes {
         }
         .boxed()
     }
+}
+
+/// The session's modes, from whichever of the two wires the agent used.
+///
+/// ACP carries modes on a dedicated `modes` field of the `session/new` /
+/// `session/load` / `session/resume` response, and that is what Claude and
+/// Codex send. OpenCode sends none: its modes arrive ONLY as a `category:
+/// "mode"` select among the session config options, the same way every agent
+/// advertises its model picker. The two wires describe one setting, and the
+/// composer's mode pill reads the `modes` state, so an agent that used the
+/// other wire had a mode picker nowhere — the frontend hides the `mode` select
+/// from the generic knobs precisely because the pill is meant to own it.
+///
+/// The `modes` field wins when present. The select is consulted only in its
+/// absence, so an agent that sends both keeps its `modes` state untouched and
+/// nothing but the `mode` category is ever lifted into the pill.
+fn session_modes_of(
+    modes: Option<acp::SessionModeState>,
+    config_options: Option<&[acp::SessionConfigOption]>,
+) -> Option<acp::SessionModeState> {
+    modes.or_else(|| config_options.and_then(mode_select_of))
+}
+
+/// The `category: "mode"` select of a config-option list as a
+/// [`acp::SessionModeState`]: each choice is a mode, the current value is the
+/// current mode. Groups flatten, as in [`model_select_of`]. `None` when the
+/// agent expresses no such select, or it is not a select, or it has no choices.
+pub(crate) fn mode_select_of(
+    options: &[acp::SessionConfigOption],
+) -> Option<acp::SessionModeState> {
+    options.iter().find_map(|option| {
+        if !matches!(
+            option.category,
+            Some(acp::SessionConfigOptionCategory::Mode)
+        ) {
+            return None;
+        }
+        let acp::SessionConfigKind::Select(select) = &option.kind else {
+            return None;
+        };
+        let choices: Vec<&acp::SessionConfigSelectOption> = match &select.options {
+            acp::SessionConfigSelectOptions::Ungrouped(choices) => choices.iter().collect(),
+            acp::SessionConfigSelectOptions::Grouped(groups) => {
+                groups.iter().flat_map(|group| group.options.iter()).collect()
+            }
+            _ => return None,
+        };
+        if choices.is_empty() {
+            return None;
+        }
+        let available_modes = choices
+            .into_iter()
+            .map(|choice| {
+                let name = if choice.name.is_empty() {
+                    choice.value.0.as_ref().to_string()
+                } else {
+                    choice.name.clone()
+                };
+                acp::SessionMode::new(acp::SessionModeId::new(choice.value.0.clone()), name)
+                    .description(choice.description.clone())
+            })
+            .collect();
+        Some(acp::SessionModeState::new(
+            acp::SessionModeId::new(select.current_value.0.clone()),
+            available_modes,
+        ))
+    })
 }
 
 /// The model picker an agent advertises, projected out of its config options.
@@ -1870,5 +2124,147 @@ mod authenticate_tests {
     fn auth_required_stays_typed() {
         let err = authenticate_outcome(acp::Error::auth_required(), true).expect_err("typed");
         assert!(err.downcast_ref::<AuthRequired>().is_some());
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    /// A hop that runs past its deadline surfaces as a typed `TimedOut` naming
+    /// the phase, so the manager and the UI can tell "never answered" from
+    /// "answered with an error" — and the message reads like the exit path's.
+    #[tokio::test(start_paused = true)]
+    async fn an_expired_request_becomes_a_typed_timed_out_error() {
+        let agent = AgentId::new("codex-acp");
+        let debug_log = AcpDebugLog::new();
+        debug_log.record_line(AcpDebugMessageDirection::Stderr, "app-server: waiting on lock");
+
+        let result: Result<()> =
+            with_request_deadline(&agent, "session/new", &debug_log, std::future::pending()).await;
+
+        let error = result.expect_err("a request that never answers fails");
+        let load_error = error
+            .downcast_ref::<LoadError>()
+            .expect("the failure is a LoadError the manager can carry");
+        match load_error {
+            LoadError::TimedOut {
+                agent,
+                phase,
+                after,
+                stderr,
+            } => {
+                assert_eq!(agent.as_ref(), "codex-acp");
+                assert_eq!(phase.as_ref(), "session/new");
+                assert_eq!(*after, REQUEST_TIMEOUT);
+                assert!(
+                    stderr.as_deref().is_some_and(|s| s.contains("waiting on lock")),
+                    "the trailing stderr rides along: {stderr:?}"
+                );
+            }
+            other => panic!("expected TimedOut, got {other:?}"),
+        }
+        assert_eq!(
+            load_error.to_string(),
+            "codex-acp did not answer `session/new` within 120s: app-server: waiting on lock"
+        );
+    }
+
+    /// A request that answers in time is passed through untouched.
+    #[tokio::test(start_paused = true)]
+    async fn a_request_that_answers_in_time_is_untouched() {
+        let agent = AgentId::new("codex-acp");
+        let debug_log = AcpDebugLog::new();
+        let value = with_request_deadline(&agent, "session/new", &debug_log, async { Ok(7) })
+            .await
+            .expect("answered");
+        assert_eq!(value, 7);
+    }
+
+    /// Without stderr the message stops at the deadline; no dangling colon.
+    #[test]
+    fn a_timed_out_error_without_stderr_has_no_trailing_reason() {
+        let error = LoadError::TimedOut {
+            agent: "codex-acp".into(),
+            phase: "initialize".into(),
+            after: INITIALIZE_TIMEOUT,
+            stderr: None,
+        };
+        assert_eq!(
+            error.to_string(),
+            "codex-acp did not answer `initialize` within 60s"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mode_select_tests {
+    use super::*;
+
+    fn options(v: serde_json::Value) -> Vec<acp::SessionConfigOption> {
+        serde_json::from_value(v).expect("config options this schema understands")
+    }
+
+    /// OpenCode's shape: no `modes` on the session, one `category: "mode"`
+    /// select carrying build/plan. It becomes the pill's mode state.
+    #[test]
+    fn a_mode_select_becomes_session_modes_when_the_agent_sends_none() {
+        let opts = options(serde_json::json!([
+            { "id": "model", "name": "Model", "category": "model", "type": "select",
+              "currentValue": "anthropic/claude", "options": [ { "value": "anthropic/claude", "name": "Claude" } ] },
+            { "id": "mode", "name": "Session Mode", "category": "mode", "type": "select",
+              "currentValue": "plan",
+              "options": [
+                { "value": "build", "name": "Build", "description": "Edits files" },
+                { "value": "plan", "name": "Plan" }
+              ] },
+            { "id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+              "currentValue": "high", "options": [ { "value": "high", "name": "High" } ] }
+        ]));
+        let modes = session_modes_of(None, Some(&opts)).expect("modes from the select");
+        assert_eq!(modes.current_mode_id.0.as_ref(), "plan");
+        let ids: Vec<&str> = modes.available_modes.iter().map(|m| m.id.0.as_ref()).collect();
+        assert_eq!(ids, ["build", "plan"]);
+        assert_eq!(modes.available_modes[0].name, "Build");
+        assert_eq!(modes.available_modes[0].description.as_deref(), Some("Edits files"));
+        assert_eq!(modes.available_modes[1].description, None);
+    }
+
+    /// The dedicated `modes` wire wins: an agent that sends both keeps its own
+    /// state, and the select never reaches the pill.
+    #[test]
+    fn the_modes_field_is_preferred_over_the_select() {
+        let opts = options(serde_json::json!([
+            { "id": "mode", "name": "Mode", "category": "mode", "type": "select",
+              "currentValue": "b", "options": [ { "value": "b", "name": "B" } ] }
+        ]));
+        let own = acp::SessionModeState::new("default", vec![acp::SessionMode::new("default", "Default")]);
+        let modes = session_modes_of(Some(own), Some(&opts)).expect("the agent's own modes");
+        assert_eq!(modes.current_mode_id.0.as_ref(), "default");
+    }
+
+    /// Only the `mode` category is lifted. Model and effort selects, and a
+    /// mode-category option that is not a select, leave the pill empty.
+    #[test]
+    fn other_categories_and_non_selects_are_not_modes() {
+        let opts = options(serde_json::json!([
+            { "id": "model", "name": "Model", "category": "model", "type": "select",
+              "currentValue": "m", "options": [ { "value": "m", "name": "M" } ] },
+            { "id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+              "currentValue": "high", "options": [ { "value": "high", "name": "High" } ] },
+            { "id": "yolo", "name": "Yolo", "category": "mode", "type": "boolean", "currentValue": true }
+        ]));
+        assert!(session_modes_of(None, Some(&opts)).is_none());
+        assert!(session_modes_of(None, None).is_none());
+    }
+
+    /// A select with no choices is a dead control, not a mode list.
+    #[test]
+    fn an_empty_mode_select_is_not_modes() {
+        let opts = options(serde_json::json!([
+            { "id": "mode", "name": "Mode", "category": "mode", "type": "select",
+              "currentValue": "", "options": [] }
+        ]));
+        assert!(mode_select_of(&opts).is_none());
     }
 }

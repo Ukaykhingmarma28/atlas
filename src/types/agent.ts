@@ -184,6 +184,10 @@ export interface ChatSession {
    *  affordance) respawns the agent and load_session-resumes where the
    *  transcript kind supports it. Never auto-restarted silently. */
   disconnected?: boolean;
+  /** Why the last bind for this tab gave up, when it did so without a
+   *  session (`failPendingBinds`): the manager's reason for the lost
+   *  connection. Shown beside the Restart affordance; cleared on (re)bind. */
+  bindError?: string;
   /** Live retry countdown (native agent): a transient provider failure is
    *  being retried after a backoff. Cleared when content resumes flowing or
    *  the turn ends. */
