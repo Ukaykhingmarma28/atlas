@@ -71,6 +71,7 @@ import { FeedbackPanel } from "@/features/feedback/components/feedback-panel";
 import { UpdateAvailableModal } from "@/features/updater/components/update-available-modal";
 import { LoadingOrganisationOverlay } from "@/features/organisations/components/loading-organisation-overlay";
 import { StopAgentsDialog } from "@/features/workspaces/components/stop-agents-dialog";
+import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
   isOrgReconciled,
@@ -1430,6 +1431,7 @@ export function App() {
       <ConnectDialog />
       <LoadingOrganisationOverlay />
       <StopAgentsDialog />
+      <RemoveAgentDialog />
       <BrowserOverlayWatcher />
       <Toaster
         position="bottom-right"
