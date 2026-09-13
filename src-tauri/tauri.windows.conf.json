@@ -22,7 +22,18 @@
   },
   "bundle": {
     "targets": [
-      "nsis"
-    ]
+      "msi"
+    ],
+    "publisher": "Atlas",
+    "homepage": "https://tryatlas.cc/",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    }
   }
 }
