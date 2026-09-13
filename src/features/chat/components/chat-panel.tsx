@@ -1454,8 +1454,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
 /** Shown when the session's agent process died: one explicit affordance to
  *  respawn + resume. Sending a message does the same thing implicitly.
  *
- *  An agent that was UNINSTALLED is the one case a restart cannot fix, so the
- *  banner offers a switch instead (`removed-agents.ts` is what flags the tab). */
+ *  An agent that was UNINSTALLED is the one case a restart cannot fix. That
+ *  state is not this banner's: `RemovedAgentBar` (tucked into the composer,
+ *  rendered from `message-input.tsx`) takes it, and offers a switch. */
 function DisconnectedBanner({ tabId }: { tabId: string }) {
   const disconnected = useChatStore((s) => !!s.sessions[tabId]?.disconnected);
   const bindError = useChatStore((s) => s.sessions[tabId]?.bindError);
@@ -1465,7 +1466,6 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
   useAgentRegistryStore((s) => s.signature);
   const [restarting, setRestarting] = useState(false);
   if (!disconnected) return null;
-  const meta = agentMeta(agentType);
   // By plugin id, not `meta.external`: a `claude*` registry agent wears
   // first-party branding (`external: false`) while still being uninstallable.
   const pluginId = pluginIdForAgent(agentType);
@@ -1473,22 +1473,7 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
     pluginId !== pluginIdForAgent(NATIVE_AGENT_ID) &&
     useAgentRegistryStore.getState().catalog.length > 0 &&
     !agentCatalogEntry(pluginId)?.installed;
-  if (removed) {
-    return (
-      <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[12px]">
-        <span className="select-text text-[var(--text-secondary)]">
-          {meta.label} is no longer installed. Switch this chat to another agent, or reinstall it
-          from Settings → Agents.
-        </span>
-        <button
-          onClick={() => cycleChatAgent(tabId)}
-          className="shrink-0 px-2.5 h-6 rounded-md bg-[var(--text-primary)] text-[var(--bg-primary)] text-[11px] font-medium hover:bg-[var(--text-secondary)] cursor-pointer"
-        >
-          Switch agent
-        </button>
-      </div>
-    );
-  }
+  if (removed) return null;
   return (
     <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[12px]">
       <span className="select-text text-[var(--text-secondary)]">

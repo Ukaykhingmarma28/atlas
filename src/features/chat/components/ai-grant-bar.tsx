@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai-grant-store";
+import { COMPOSER_STRIP, COMPOSER_STRIP_ACTION } from "./composer-strip";
 
 /**
  * The native agent's no-grant setup state (spec D15a, acceptance bar item 14).
@@ -27,21 +28,10 @@ import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai
  * The org NAME is right there in the auth snapshot.
  */
 
-/**
- * The tucked strip, same construction as the artifacts composer's checkpoint
- * scope picker: inset by `mx-2` so the composer's box reads as the wider
- * element, `rounded-t-2xl` to match the agent composer's rounding, and
- * `-mb-3.5` against `pb-5` so the composer overlaps its lower half. `z-0`
- * keeps it behind — the composer carries `relative z-30`.
- */
-const STRIP =
-  "atlas-pill-in relative z-0 mx-2 -mb-3.5 flex items-center justify-between gap-3 " +
-  "rounded-t-2xl bg-[var(--bg-tertiary)] px-3.5 pt-1.5 pb-5 text-[11px]";
-
-const ACTION =
-  "flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors " +
-  "text-[var(--text-secondary)] hover:bg-white/[0.05] hover:text-[var(--text-primary)] " +
-  "disabled:cursor-default disabled:text-[var(--text-tertiary)]/40 disabled:hover:bg-transparent";
+// The strip itself lives in `composer-strip.ts`, shared with every other
+// notice that tucks into the composer (`removed-agent-bar.tsx`).
+const STRIP = COMPOSER_STRIP;
+const ACTION = COMPOSER_STRIP_ACTION;
 
 export function AiGrantBar() {
   const snapshot = useAuthStore((s) => s.snapshot);
