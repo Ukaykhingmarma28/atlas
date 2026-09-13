@@ -889,3 +889,109 @@ async fn the_harness_counts_one_attempt_per_connect() {
         .expect("reconnected");
     assert_eq!(server.attempts(), 2);
 }
+
+/// A restart that finds a connect still in flight joins it while the attempt
+/// is young — that attempt *is* the restart — but replaces it once it has gone
+/// stale. Before this the no-op was unconditional, so a handshake that never
+/// answered was also one the Restart button could never get out of (plan,
+/// diagnosis B).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_replaces_a_stale_connect_but_joins_a_young_one() {
+    let catalog = TestCatalog::new(&["claude-code"]);
+    let gate = Gate::shut();
+    let server = TestServer::gated("claude-code", gate.clone());
+    let manager = manager(catalog, server.clone());
+    manager.set_deadlines(atlas_agent_manager::Deadlines {
+        connect: atlas_agent_manager::CONNECT_DEADLINE,
+        restart_stale_after: Duration::from_millis(100),
+    });
+    let key = custom("claude-code");
+
+    let first = manager.request_connection(key.clone(), server.clone());
+    // Young: a restart is a no-op and hands back the same entry.
+    let joined = manager.restart_connection(key.clone(), server.clone());
+    assert!(
+        Arc::ptr_eq(&first, &joined),
+        "a restart while the attempt is young joins it"
+    );
+    assert_eq!(server.attempts(), 1);
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // Stale: the restart cancels the first attempt and starts another.
+    let replaced = manager.restart_connection(key.clone(), server.clone());
+    assert!(
+        !Arc::ptr_eq(&first, &replaced),
+        "a restart past the stale threshold starts a fresh attempt"
+    );
+    assert_eq!(server.attempts(), 2);
+
+    // The first attempt's waiters are released, not left on a dead future.
+    let outcome = tokio::time::timeout(Duration::from_secs(5), settle(first.clone()))
+        .await
+        .expect("the stale attempt's waiter is released");
+    assert!(outcome.is_err(), "a cancelled connect does not report success");
+    wait_for(|| (server.connects_cancelled() == 1).then_some(()))
+        .await
+        .expect("the stale attempt was cancelled, not abandoned");
+
+    // And the fresh one still completes once the server answers.
+    gate.open();
+    settle(replaced).await.expect("the replacement connects");
+    wait_for(|| (manager.connection_status(&key) == AgentConnectionStatus::Connected).then_some(()))
+        .await
+        .expect("connected");
+    assert_eq!(
+        server.attempts(),
+        server.live_connections() + server.connects_cancelled(),
+        "every attempt is accounted for"
+    );
+}
+
+/// The ceiling on a whole connect attempt: an attempt that never resolves is
+/// turned into `TimedOut { phase: "connect" }`, evicted, and its waiters are
+/// released — a `Connecting` entry can no longer be permanent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connect_that_never_answers_is_evicted_at_the_deadline() {
+    let catalog = TestCatalog::new(&["claude-code"]);
+    let gate = Gate::shut();
+    let server = TestServer::gated("claude-code", gate.clone());
+    let manager = manager(catalog, server.clone());
+    manager.set_deadlines(atlas_agent_manager::Deadlines {
+        connect: Duration::from_millis(100),
+        restart_stale_after: atlas_agent_manager::RESTART_STALE_AFTER,
+    });
+    let key = custom("claude-code");
+    let mut events = manager.subscribe();
+
+    let entry = manager.request_connection(key.clone(), server.clone());
+    let outcome = tokio::time::timeout(Duration::from_secs(5), settle(entry))
+        .await
+        .expect("the waiter is released at the deadline");
+    match outcome {
+        Err(LoadError::TimedOut { phase, .. }) => assert_eq!(phase.as_ref(), "connect"),
+        other => panic!("expected TimedOut {{ phase: \"connect\" }}, got {other:?}"),
+    }
+
+    wait_for(|| (manager.entry(&key).is_none()).then_some(()))
+        .await
+        .expect("the expired attempt is evicted from the table");
+    assert_eq!(
+        manager.connection_status(&key),
+        AgentConnectionStatus::Disconnected
+    );
+    let failed = wait_for(|| loop {
+        match events.try_recv() {
+            Ok(AgentManagerEvent::ConnectionFailed { error, .. }) => {
+                return Some(matches!(error, LoadError::TimedOut { .. }))
+            }
+            Ok(_) => continue,
+            Err(_) => return None,
+        }
+    })
+    .await;
+    assert_eq!(failed, Some(true), "the failure is announced as a timeout");
+    wait_for(|| (server.connects_cancelled() == 1).then_some(()))
+        .await
+        .expect("the expired connect future is dropped, not abandoned");
+}

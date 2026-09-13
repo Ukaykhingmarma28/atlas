@@ -124,6 +124,24 @@ export interface SessionSnapshot {
 }
 
 /**
+ * Not a session delta: the manager's per-agent loading status (`Downloading
+ * Node.js…`, `Installing @agentclientprotocol/codex-acp 1.11.0…`) while a
+ * plugin's connect is in flight. Keyed by PLUGIN id because there is no
+ * session — and no `agent_id` — until the connect finishes. `null` clears it.
+ * Mirrors `AgentManagerEvent::LoadingStatusChanged` forwarded onto the
+ * `atlas:agents` window event as `{kind: "loading_status", plugin_id, status}`.
+ */
+export interface LoadingStatusEvent {
+  kind: "loading_status";
+  plugin_id: string;
+  status: string | null;
+}
+
+/** Everything the `atlas:agents` window event can carry. Session-scoped
+ *  deltas, plus the session-less loading status above. */
+export type AgentStreamEvent = AgentDelta | LoadingStatusEvent;
+
+/**
  * Single multiplexed delta stream emitted on the `atlas:agents` window event.
  * `kind` discriminates; `agent_id` + `session_id` route to the right tab.
  */

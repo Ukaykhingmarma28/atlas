@@ -72,15 +72,25 @@ pub async fn get_body(
 ///
 /// A user agent is set because GitHub's release API rejects requests without
 /// one, and the checksum-recovery path calls it.
+///
+/// Timeouts are per connect and per read, never per request: the same client
+/// fetches a 200 MB archive, and a whole-request deadline that fits a bad
+/// link would cut a good one short. A read that makes no progress for
+/// [`READ_TIMEOUT`] is a stalled socket, and that is what has to fail.
 pub struct ReqwestClient {
     client: reqwest::Client,
 }
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 impl ReqwestClient {
     pub fn new(user_agent: &str) -> Result<Self> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .user_agent(user_agent.to_owned())
+                .connect_timeout(CONNECT_TIMEOUT)
+                .read_timeout(READ_TIMEOUT)
                 .build()
                 .context("building the HTTP client")?,
         })

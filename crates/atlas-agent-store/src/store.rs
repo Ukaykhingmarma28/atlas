@@ -374,6 +374,7 @@ impl AgentServerStore {
                 distribution_env: npx.env.clone(),
                 settings_env: settings_env.clone(),
                 byok_env: byok_env.clone(),
+                loading_status: Some(channels.loading_status.clone()),
             }),
         };
 

@@ -10,7 +10,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentId, AgentInfo, AcpSessionId, PermissionDecision } from "@/types/acp";
 import type { AgentCatalog, CatalogChangeReason } from "@/types/agent-catalog";
 import type {
-  AgentDelta,
+  AgentStreamEvent,
   ImageAttachment,
   NativeModelsRefresh,
   SessionKey,
@@ -101,6 +101,14 @@ export const agents = {
   listRunning: () => invoke<AgentInfo[]>("agents_list_running"),
   spawn: (pluginId: string) => invoke<AgentInfo>("agents_spawn", { pluginId }),
   kill: (agentId: AgentId) => invoke<void>("agents_kill", { agentId }),
+  /** Kill by PLUGIN id — the way out of a connect that never finished. A
+   *  session-less bind (spawn / `session/new` still in flight) has no
+   *  `agent_id` to hand `kill`, so this drops whatever connection the manager
+   *  holds for the plugin, in-flight or live, and the next `spawn` starts
+   *  fresh. Pair with `resetAgent` so the renderer forgets it too. */
+  killPlugin: (pluginId: string) => invoke<void>("agents_kill_plugin", { pluginId }),
+  /** Plain-text start diagnostics (install state, npm + Atlas log tails) for a support report. */
+  startDiagnostics: (pluginId: string) => invoke<string>("agents_start_diagnostics", { pluginId }),
 
   /** `additionalDirectories` are extra workspace roots (P3.2). Fixed for the
    *  session's life, so they must be passed here rather than inferred later;
@@ -153,7 +161,13 @@ export const agents = {
     requestId: string,
     action: "accept" | "decline" | "cancel",
     content?: Record<string, unknown>,
-  ) => invoke<void>("agents_respond_elicitation", { agentId, requestId, action, content }),
+  ) =>
+    invoke<void>("agents_respond_elicitation", {
+      agentId,
+      requestId,
+      action,
+      content,
+    }),
   /** Branch a session from its current state (P3.4). Null when unsupported. */
   forkSession: (key: SessionKey) => invoke<string | null>("agents_fork_session", { key }),
   /** Rewind the last exchange, resolving to the prompt that started it — or
@@ -239,8 +253,8 @@ export const listenAuthRunProgress = (
  * Subscribe to the single multiplexed delta stream. Every delta carries
  * `agent_id` + `session_id` so the consumer can route to the right tab.
  */
-export const listenAgents = (handler: (env: AgentDelta) => void): Promise<UnlistenFn> =>
-  listen<AgentDelta>("atlas:agents", (e) => handler(e.payload));
+export const listenAgents = (handler: (env: AgentStreamEvent) => void): Promise<UnlistenFn> =>
+  listen<AgentStreamEvent>("atlas:agents", (e) => handler(e.payload));
 
 /** Fires whenever how-an-agent-launches changes: discovery finished, the
  *  manifest refreshed, an install/uninstall, a settings toggle, or a
@@ -334,6 +348,24 @@ export function resetAgentByAgentId(agentId: string): void {
       return;
     }
   }
+}
+
+/** Forget the live agent for `pluginId` so the next `ensureAgent` spawns
+ *  afresh. Used after `agents.killPlugin` (a bind that timed out, or Stop
+ *  pressed while still starting): a cached `AgentInfo` for a process we just
+ *  killed would hand every later bind a dead `agent_id`. */
+export function resetAgent(pluginId: string): void {
+  cachedAgents.delete(pluginId);
+}
+
+/** The plugin that owns a live `agent_id`, or `null` when the renderer has no
+ *  record of it (connect still in flight, or already reset). Read BEFORE
+ *  `resetAgentByAgentId` — that is what forgets the pairing. */
+export function pluginIdForAgentId(agentId: string): string | null {
+  for (const [pluginId, info] of cachedAgents) {
+    if (info.agent_id === agentId) return pluginId;
+  }
+  return null;
 }
 
 // Back-compat thin wrappers (default = Claude) for existing callers.

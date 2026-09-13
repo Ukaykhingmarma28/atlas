@@ -576,6 +576,56 @@ pub fn install_manager(app: &AppHandle) {
     };
     app.manage(host.clone());
 
+    // Connect-phase events the webview needs but no delta carries: the install
+    // status text ("Downloading Node.js…") for the `Starting …` row, and a
+    // connect that gave up at its deadline, counted so the next stall report
+    // comes with the phase and not a screenshot of a timer.
+    {
+        let app = app.clone();
+        let mut events = host.manager().subscribe();
+        tauri::async_runtime::spawn(async move {
+            use atlas_agent_manager::{Agent, AgentManagerEvent};
+            loop {
+                match events.recv().await {
+                    Ok(AgentManagerEvent::LoadingStatusChanged {
+                        agent: Agent::Custom { id },
+                        status,
+                    }) => {
+                        let _ = app.emit(
+                            "atlas:agents",
+                            serde_json::json!({
+                                "kind": "loading_status",
+                                "plugin_id": id.to_string(),
+                                "status": status,
+                            }),
+                        );
+                    }
+                    Ok(AgentManagerEvent::ConnectionFailed {
+                        agent: Agent::Custom { id },
+                        error: atlas_acp_thread::LoadError::TimedOut { phase, after, .. },
+                    }) => {
+                        tracing::warn!(plugin_id = %id, %phase, after_s = after.as_secs(), "agent start timed out");
+                        if let Some(telemetry) =
+                            app.try_state::<Arc<crate::telemetry::TelemetryClient>>()
+                        {
+                            telemetry.capture(
+                                "agent_start_timed_out",
+                                serde_json::json!({
+                                    "agent_id": id.to_string(),
+                                    "phase": phase.to_string(),
+                                    "after_s": after.as_secs(),
+                                }),
+                            );
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        });
+    }
+
     // The sidebar refreshes from store changes, not from watching anyone's
     // files (ADR-0001). One task forwards them to the webview.
     if let Some(history) = host.history() {
@@ -832,6 +882,14 @@ pub async fn agents_spawn(
 #[tauri::command]
 pub fn agents_kill(agent_id: AgentId, host: State<'_, Arc<AgentHost>>) -> Result<(), String> {
     host.kill(agent_id).map_err(|e| e.to_string())
+}
+
+/// [`agents_kill`] by plugin id, for a tab whose connect never handed back a
+/// handle to kill by. Cancels an in-flight connect, drops a live one, and is
+/// a no-op for an agent that is not running. Renderer arg: `pluginId`.
+#[tauri::command]
+pub fn agents_kill_plugin(plugin_id: String, host: State<'_, Arc<AgentHost>>) -> Result<(), String> {
+    host.kill_plugin(&plugin_id).map_err(|e| e.to_string())
 }
 
 /// Open a session on a connected agent.

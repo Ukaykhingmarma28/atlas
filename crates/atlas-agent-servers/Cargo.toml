@@ -20,6 +20,11 @@ tokio-util = { version = "0.7", features = ["compat"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
+# `setsid` + `killpg`, so an agent's whole process tree dies with its
+# connection (see `AgentChild` in connection.rs). Same pin as atlas-terminal.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
 

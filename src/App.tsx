@@ -16,7 +16,11 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
 import { useProjectStore, type AppStateWire } from "@/features/project/stores/project-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { listenAgents, resetAgentByAgentId } from "@/features/chat/lib/agents-api";
+import {
+  listenAgents,
+  pluginIdForAgentId,
+  resetAgentByAgentId,
+} from "@/features/chat/lib/agents-api";
 import type { PendingPermission } from "@/types/acp";
 import type { AgentDelta } from "@/types/agents";
 import { cycleChatAgent } from "@/features/chat/lib/switch-agent";
@@ -899,6 +903,14 @@ export function App() {
 
     listenAgents((env) => {
       if (cancelled) return;
+      const actions = useChatStore.getState().actions;
+      // Session-less: the manager's per-plugin install/launch progress. Not a
+      // delta, so it never enters the RAF buffer — the label it drives is a
+      // single store write per change, and every tab on that agent reads it.
+      if (env.kind === "loading_status") {
+        actions.setAgentStartingStatus(env.plugin_id, env.status);
+        return;
+      }
       if (
         env.kind === "status" ||
         env.kind === "message_appended" ||
@@ -906,7 +918,6 @@ export function App() {
       ) {
         recordRecentChat(env.session_id);
       }
-      const actions = useChatStore.getState().actions;
       switch (env.kind) {
         case "text_chunk":
           bufferChunk(env);
@@ -971,6 +982,13 @@ export function App() {
           // Forced: teardown correctness outranks the scroll-hold.
           flush(true);
           actions.clearPermissionsForAgent(env.agent_id);
+          // Tabs still waiting to be bound on this agent have no session id
+          // for the reducer to route by; fail them by plugin instead. Read
+          // the pairing BEFORE the cache reset below forgets it.
+          {
+            const pluginId = pluginIdForAgentId(env.agent_id);
+            if (pluginId) actions.failPendingBinds(pluginId, env.reason);
+          }
           // Reset the spawn cache for the plugin that actually died — the old
           // resetDefaultAgent() only ever cleared claude-code-ts, so a crashed
           // Codex adapter stayed cached-dead until app restart (H4).

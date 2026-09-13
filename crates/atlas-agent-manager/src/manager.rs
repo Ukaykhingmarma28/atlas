@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1 as acp;
 use anyhow::{anyhow, Result};
@@ -17,6 +18,44 @@ use crate::catalog::AgentCatalog;
 
 /// How many manager events are buffered for a slow subscriber.
 const EVENT_BUFFER: usize = 64;
+
+/// The ceiling on one connect attempt, end to end.
+///
+/// The attempt includes resolving the command — which for an external agent
+/// may be a download and an install — so this is minutes, not seconds. Its
+/// job is not to be a good estimate; the transport already bounds each hop
+/// (`INITIALIZE_TIMEOUT`, `REQUEST_TIMEOUT` in atlas-agent-servers). Its job
+/// is to make "a `Connecting` entry is permanent" impossible: whatever hangs
+/// inside the attempt, the entry becomes an error and is evicted, and the
+/// next request starts fresh.
+pub const CONNECT_DEADLINE: Duration = Duration::from_secs(20 * 60);
+
+/// How old an in-flight connect must be before a restart replaces it.
+///
+/// Younger than this, a restart is a no-op: that attempt *is* the restart,
+/// and tearing it down would leave the caller waiting on a future nobody is
+/// driving (invariants.rs: `a_restart_racing_a_request_abandons_no_connect`).
+/// Older, the attempt is what the user is trying to escape — a handshake that
+/// has not answered in 30 s is not about to — so the restart cancels it and
+/// starts over, which is what a button labelled Restart has to mean.
+pub const RESTART_STALE_AFTER: Duration = Duration::from_secs(30);
+
+/// The two clocks above, held on the manager so a test can shorten them. The
+/// defaults are the constants; nothing in the app changes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Deadlines {
+    pub connect: Duration,
+    pub restart_stale_after: Duration,
+}
+
+impl Default for Deadlines {
+    fn default() -> Self {
+        Self {
+            connect: CONNECT_DEADLINE,
+            restart_stale_after: RESTART_STALE_AFTER,
+        }
+    }
+}
 
 /// Which agent a connection is to.
 ///
@@ -74,6 +113,9 @@ pub enum AgentConnectionEntry {
         connect_task: ConnectFuture,
         /// Kept beside the future so every eviction path can reach it.
         cancel: ConnectHandle,
+        /// When the attempt began, so a restart can tell a fresh attempt it
+        /// should join from a stale one it should replace.
+        started_at: Instant,
     },
     Connected(AgentConnectedState),
     Error { error: LoadError },
@@ -162,6 +204,7 @@ pub struct AgentManager {
     /// second registration silently evicts the first (ATL-230 finding 1).
     sessions: Mutex<HashMap<(Agent, acp::SessionId), SessionHandle>>,
     events: tokio::sync::broadcast::Sender<AgentManagerEvent>,
+    deadlines: Mutex<Deadlines>,
 }
 
 impl AgentManager {
@@ -180,6 +223,7 @@ impl AgentManager {
             entries: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             events,
+            deadlines: Mutex::new(Deadlines::default()),
         });
 
         let mut updates = this.catalog.updates();
@@ -198,6 +242,24 @@ impl AgentManager {
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<AgentManagerEvent> {
         self.events.subscribe()
+    }
+
+    /// Shorten the connect ceiling and the stale-restart threshold. Test-facing:
+    /// the defaults are minutes and seconds, and a test that waits them out
+    /// proves nothing a shorter one would not. Applies to attempts started
+    /// after the call.
+    pub fn set_deadlines(&self, deadlines: Deadlines) {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = deadlines;
+    }
+
+    fn deadlines(&self) -> Deadlines {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn entry(&self, key: &Agent) -> Option<Entry> {
@@ -258,9 +320,9 @@ impl AgentManager {
 
     /// Ported from `restart_connection` (`:127-141`).
     ///
-    /// A restart while a connect is already in flight is a no-op: that attempt
-    /// *is* the restart, and tearing it down would leave the caller waiting on a
-    /// future nobody is driving.
+    /// A restart while a young connect is already in flight is a no-op: that
+    /// attempt *is* the restart. One older than [`RESTART_STALE_AFTER`] is
+    /// cancelled and replaced — see `open_entry`.
     pub fn restart_connection(self: &Arc<Self>, key: Agent, server: Arc<dyn AgentServer>) -> Entry {
         self.open_entry(key, server, Reuse::Replace)
     }
@@ -372,14 +434,15 @@ impl AgentManager {
             let mut entries = self.lock_entries();
             match entries.get(&key) {
                 Some(existing) if reuse == Reuse::Existing => return existing.clone(),
-                // A restart while a connect is already in flight is a no-op:
+                // A restart while a *young* connect is in flight is a no-op:
                 // that attempt *is* the restart, and tearing it down would
                 // leave its callers waiting on a future nobody is driving.
-                Some(existing)
-                    if matches!(&*lock(existing), AgentConnectionEntry::Connecting { .. }) =>
-                {
-                    return existing.clone()
-                }
+                // Past `restart_stale_after` the attempt is the thing the
+                // user is trying to get out of, so it falls through to the
+                // replace path below: cancelled, its sessions forgotten, and
+                // a fresh one started. Its waiters are released with the
+                // cancellation error rather than left on the old future.
+                Some(existing) if self.is_young_connect(existing) => return existing.clone(),
                 _ => {}
             }
             let replaced = entries.remove(&key);
@@ -387,6 +450,7 @@ impl AgentManager {
             let entry: Entry = Arc::new(Mutex::new(AgentConnectionEntry::Connecting {
                 connect_task: connect_task.clone(),
                 cancel,
+                started_at: Instant::now(),
             }));
             entries.insert(key.clone(), entry.clone());
             (entry, connect_task, replaced)
@@ -405,6 +469,16 @@ impl AgentManager {
         self.watch_loading_status(key, &entry);
 
         entry
+    }
+
+    /// Whether `entry` is a connect attempt too recent for a restart to replace.
+    fn is_young_connect(&self, entry: &Entry) -> bool {
+        match &*lock(entry) {
+            AgentConnectionEntry::Connecting { started_at, .. } => {
+                started_at.elapsed() < self.deadlines().restart_stale_after
+            }
+            _ => false,
+        }
     }
 
     /// Which server backs this key.
@@ -456,6 +530,24 @@ impl AgentManager {
                     message: format!("`{}` is not installed", agent_label(key)).into(),
                 };
                 async move { Err(anyhow::Error::from(error)) }.boxed()
+            }
+        };
+
+        // The ceiling on the whole attempt — see `CONNECT_DEADLINE`. Expiry is
+        // an `Err` like any other, so `watch_connect_result` evicts the entry
+        // and releases every waiter, and dropping the future drops the child
+        // it had spawned.
+        let deadline = self.deadlines().connect;
+        let label: Arc<str> = agent_label(key).into();
+        let connect = async move {
+            match tokio::time::timeout(deadline, connect).await {
+                Ok(result) => result,
+                Err(_elapsed) => Err(anyhow::Error::from(LoadError::TimedOut {
+                    agent: label,
+                    phase: "connect".into(),
+                    after: deadline,
+                    stderr: None,
+                })),
             }
         };
 

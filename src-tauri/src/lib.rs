@@ -620,6 +620,8 @@ pub fn run() {
             commands::agents::agents_list_running,
             commands::agents::agents_spawn,
             commands::agents::agents_kill,
+            commands::agents::agents_kill_plugin,
+            commands::diagnostics::agents_start_diagnostics,
             commands::agents::agents_new_session,
             commands::agents::agents_load_session,
             commands::agents::agents_replay_transcript,

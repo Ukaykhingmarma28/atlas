@@ -12,7 +12,7 @@ import type {
   AgentType,
   PendingSend,
 } from "@/types/agent";
-import { CLAUDE_PERMISSION_MODES } from "@/types/agent";
+import { CLAUDE_PERMISSION_MODES, pluginIdForAgent } from "@/types/agent";
 import type { PendingPermission } from "@/types/acp";
 import type {
   AgentDelta,
@@ -321,6 +321,16 @@ interface ChatState {
    */
   drafts: Record<string, string>;
   activeSessionId: string | null;
+  /**
+   * The manager's live loading status per PLUGIN id ("Downloading Node.js…",
+   * "Installing @agentclientprotocol/codex-acp 1.11.0…") while that plugin's
+   * connect is in flight. Keyed by plugin, not tab: the status belongs to the
+   * one connection every tab on that agent is waiting for, and there is no
+   * session to key it by until the connect finishes. Rendered in place of the
+   * generic "Starting {agent}" label; an entry is removed when the manager
+   * sends `null`.
+   */
+  agentStartingStatus: Record<string, string>;
 }
 
 interface ChatActions {
@@ -558,6 +568,21 @@ interface ChatActions {
      *  doesn't linger and trick the user into clicking Allow on a
      *  request the agent already abandoned. */
     clearPermissionsForSession: (acpSessionId: string) => void;
+    /** Record (or, with `null`, clear) the manager's loading status for a
+     *  plugin — see `ChatState.agentStartingStatus`. */
+    setAgentStartingStatus: (pluginId: string, status: string | null) => void;
+    /**
+     * The connection for `pluginId` is gone (its child died, or its connect
+     * failed) while tabs on that agent were still waiting to be bound. Deltas
+     * route by `session_id`, and an unbound tab has none, so without this a
+     * tab sitting on "Starting {agent}" never learned the process it was
+     * waiting for had already exited. For every tab on that plugin that has no
+     * `acpSessionId` and is holding a first message or starting: the held
+     * message goes back to the queue chip, the status drops to idle, and the
+     * tab is flagged `disconnected` so the Restart banner (and the next send's
+     * rebind) take over. Returns nothing; safe to call for a plugin no tab is on.
+     */
+    failPendingBinds: (pluginId: string, reason?: string) => void;
   };
 }
 
@@ -711,6 +736,7 @@ export const useChatStore = createSelectors(
       queues: {},
       drafts: {},
       activeSessionId: null,
+      agentStartingStatus: {},
       actions: {
         // No explicit agent → resolve the priority default (Claude Code when
         // it's installed + authed, otherwise the native Atlas agent). Never
@@ -1185,7 +1211,10 @@ export const useChatStore = createSelectors(
           if (session.agentType) saveConfigOptionPref(session.agentType, configId, value);
           try {
             await agents.setConfigOption(
-              { agent_id: session.acpAgentId, session_id: session.acpSessionId },
+              {
+                agent_id: session.acpAgentId,
+                session_id: session.acpSessionId,
+              },
               configId,
               value,
             );
@@ -1577,6 +1606,8 @@ export const useChatStore = createSelectors(
             }
             session.acpAgentId = agentId;
             session.acpSessionId = acpSessionId;
+            // A bind that landed supersedes whatever the last one died of.
+            session.bindError = undefined;
             // Stamp the session's project root the moment it's bound (the agent
             // was created with this cwd). Without it `workingDirectory` stays ""
             // and the chat never lands in the workspace "Chats" list / running
@@ -1615,6 +1646,37 @@ export const useChatStore = createSelectors(
         applyAgentDelta: (env) =>
           set((s) => {
             applyDeltaToDraft(s, env);
+          }),
+        setAgentStartingStatus: (pluginId, status) =>
+          set((s) => {
+            if (status === null || status === "") {
+              if (pluginId in s.agentStartingStatus) delete s.agentStartingStatus[pluginId];
+              return;
+            }
+            if (s.agentStartingStatus[pluginId] !== status)
+              s.agentStartingStatus[pluginId] = status;
+          }),
+        failPendingBinds: (pluginId, reason) =>
+          set((s) => {
+            delete s.agentStartingStatus[pluginId];
+            for (const [tabId, session] of Object.entries(s.sessions)) {
+              if (session.acpSessionId) continue;
+              if (pluginIdForAgent(session.agentType) !== pluginId) continue;
+              const starting = !!session.pendingSend || session.status === "running";
+              if (!starting) continue;
+              const held = session.pendingSend;
+              if (held) {
+                session.pendingSend = undefined;
+                s.queues[tabId] = [...(s.queues[tabId] ?? []), held.content];
+              }
+              session.status = "idle";
+              session.stopping = undefined;
+              session.retryStatus = undefined;
+              session.inflightToolIds = undefined;
+              session.acpModesPending = false;
+              session.disconnected = true;
+              if (reason) session.bindError = reason;
+            }
           }),
       },
     })),

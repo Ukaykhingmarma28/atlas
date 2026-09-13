@@ -38,7 +38,7 @@ use atlas_acp_thread::{
     ElicitationEntryId, ElicitationStoreEvent, SelectedPermissionOutcome, TerminalAuthCommand,
 };
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
-use atlas_agent_manager::{Agent, AgentManager, ResumeMode};
+use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
 use atlas_agent_servers::{AcpConnectionDefaults, AgentServer, ConnectOptions};
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
@@ -251,6 +251,13 @@ fn elicitation_response(
         .map(Some)
         .map_err(|e| HostError::new(e.to_string(), ErrorClass::Fatal))
 }
+
+/// How long the boot backfill waits on one agent's `session/list` import,
+/// connect included. Longer than the transport's own `REQUEST_TIMEOUT` so a
+/// slow-but-answering agent is not cut off by the outer clock first; an agent
+/// that hits this is one whose connect is wedged, and it is tried again next
+/// launch rather than marked done.
+const BACKFILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 pub struct AgentHost {
     manager: Arc<AgentManager>,
@@ -480,6 +487,12 @@ impl AgentHost {
         // (ATL-227, ATL-228).
         self.manager.shutdown();
         lock(&self.sessions).clear();
+        // The projector holds each session's only strong thread handle, and
+        // the thread holds the connection `Arc`. Left in place it pinned every
+        // connection past both sweeps above, so no `Drop` ran and no child was
+        // killed at quit — the app-servers from a launch two days earlier
+        // (plan, diagnosis D). Cleared last: nothing may route to it after.
+        self.projector.shutdown();
     }
 
     // ---- identity --------------------------------------------------------
@@ -683,10 +696,26 @@ impl AgentHost {
     /// Drop an agent's connection. The next spawn starts a fresh one.
     pub fn kill(&self, agent_id: AgentId) -> Result<()> {
         let record = self.record_for(agent_id)?;
-        self.forget_request_elicitations(&ThreadAgentId::new(record.plugin_id.as_str()));
-        self.manager.drop_connection(&record.agent);
-        lock(&self.sessions).retain(|_, session| session.agent != record.agent);
+        self.kill_agent(&record.plugin_id, &record.agent);
         Ok(())
+    }
+
+    /// [`Self::kill`], keyed by plugin id rather than by spawn handle.
+    ///
+    /// The escape hatch for a tab that never got a handle: a connect that has
+    /// not answered has no `AgentInfo` to name it by, so the renderer's
+    /// "cancel" button only has the plugin id it asked for. Works whether the
+    /// connection is up, still connecting, or already gone.
+    pub fn kill_plugin(&self, plugin_id: &str) -> Result<()> {
+        let agent = self.agent_for(plugin_id)?;
+        self.kill_agent(plugin_id, &agent);
+        Ok(())
+    }
+
+    fn kill_agent(&self, plugin_id: &str, agent: &Agent) {
+        self.forget_request_elicitations(&ThreadAgentId::new(plugin_id));
+        self.manager.drop_connection(agent);
+        lock(&self.sessions).retain(|_, session| &session.agent != agent);
     }
 
     /// Drop the native agent's connection, if one is open.
@@ -1819,12 +1848,49 @@ impl AgentHost {
             if history.store().has_backfilled(&agent_id) {
                 continue;
             }
-            match self.import_from(&plugin_id).await {
-                Ok(rows) => tracing::info!(%plugin_id, rows, "backfilled history"),
-                Err(e) => tracing::warn!(error = %e.message, %plugin_id, "backfill found nothing"),
+            // An agent whose connect already failed this launch is not going
+            // to list anything; asking again only starts a second doomed
+            // attempt. Left unmarked, so it is tried on the next launch.
+            if self.connect_has_failed(&plugin_id) {
+                tracing::warn!(%plugin_id, "backfill skipped: the agent's connect failed");
+                continue;
+            }
+            // Bounded per agent. The import runs at boot, sequentially over
+            // every installed agent, and the user's first click joins whatever
+            // connect it started — so one agent that never answers used to
+            // hold every later one, and the user, behind it (diagnosis B).
+            match tokio::time::timeout(BACKFILL_TIMEOUT, self.import_from(&plugin_id)).await {
+                Ok(Ok(rows)) => tracing::info!(%plugin_id, rows, "backfilled history"),
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e.message, %plugin_id, "backfill found nothing")
+                }
+                // Not marked: a timeout says nothing about the agent's history,
+                // only about this launch, so the next one tries again.
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        %plugin_id,
+                        timeout_secs = BACKFILL_TIMEOUT.as_secs(),
+                        "backfill timed out; will retry next launch"
+                    );
+                    continue;
+                }
             }
             history.store().mark_backfilled(&agent_id);
         }
+    }
+
+    /// Whether the manager currently holds a failed connect for `plugin_id`.
+    ///
+    /// `Error` entries are evicted from the manager's table as they land, so
+    /// this is usually a brief window — but it is exactly the window the boot
+    /// backfill runs in, one agent after another.
+    fn connect_has_failed(&self, plugin_id: &str) -> bool {
+        let Ok(agent) = self.agent_for(plugin_id) else {
+            return false;
+        };
+        self.manager
+            .entry(&agent)
+            .is_some_and(|entry| matches!(&*lock(&entry), AgentConnectionEntry::Error { .. }))
     }
 
     /// Fetch one agent's sessions and write the new ones. Answers how many.

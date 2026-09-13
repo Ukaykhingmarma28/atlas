@@ -133,6 +133,15 @@ interface TranscriptProps {
    *  Claude Code" rather than "Thinking", which would claim a turn that has
    *  not been dispatched yet. */
   workingLabel?: string;
+  /** Offered under the working indicator once a start has stalled (30 s with
+   *  no session): restart the agent's process, or switch this tab to another
+   *  agent. Only meaningful with `workingLabel`; absent for a normal turn. */
+  onStallRestart?: () => void;
+  onStallSwitch?: () => void;
+  onStallCopyDiagnostics?: () => void;
+  /** Bumped on every restart so the indicator's elapsed clock (and its stall
+   *  state) start over with the new attempt. */
+  workingEpoch?: number;
 }
 
 /** Per (tab, session) scroll position, so switching away and back returns the
@@ -170,10 +179,79 @@ function saveScroll(cacheKey: string, saved: Saved): void {
  * the reader is actually asking. It occupies a fixed-height row so its arrival
  * and departure don't jolt the thread it sits under.
  */
-function WorkingIndicator({ label = "Thinking" }: { label?: string }) {
+function WorkingIndicator({
+  label = "Thinking",
+  onStallRestart,
+  onStallSwitch,
+  onStallCopyDiagnostics,
+}: {
+  label?: string;
+  onStallRestart?: () => void;
+  onStallSwitch?: () => void;
+  onStallCopyDiagnostics?: () => void;
+}) {
+  const stall =
+    onStallRestart || onStallSwitch ? (
+      <StallNotice
+        onRestart={onStallRestart}
+        onSwitch={onStallSwitch}
+        onCopyDiagnostics={onStallCopyDiagnostics}
+      />
+    ) : undefined;
   return (
     <div className="mx-auto w-full max-w-[760px] px-6 pt-2 pb-3">
-      <LoadingState label={label} />
+      <LoadingState label={label} stalledContent={stall} />
+    </div>
+  );
+}
+
+/**
+ * The persistent way out of a start that has stalled. Replaces a one-shot
+ * toast that said the same thing and then vanished, leaving the user with a
+ * "Starting Codex" that never changed. A first run legitimately takes minutes
+ * (Node download + `npm install`), so the copy says so; the two actions are
+ * the only ones that actually help — killing the wedged connect, or leaving
+ * the agent behind.
+ */
+function StallNotice({
+  onRestart,
+  onSwitch,
+  onCopyDiagnostics,
+}: {
+  onRestart?: () => void;
+  onSwitch?: () => void;
+  onCopyDiagnostics?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-[11px] leading-[16px] text-[var(--text-tertiary)]">
+      <span className="select-text">Still starting… this can take a few minutes on first run.</span>
+      {onRestart && (
+        <button
+          type="button"
+          onClick={onRestart}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Restart agent
+        </button>
+      )}
+      {onSwitch && (
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Switch agent
+        </button>
+      )}
+      {onCopyDiagnostics && (
+        <button
+          type="button"
+          onClick={onCopyDiagnostics}
+          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+        >
+          Copy diagnostics
+        </button>
+      )}
     </div>
   );
 }
@@ -188,6 +266,10 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     topInset = 0,
     onShowJumpChange,
     workingLabel,
+    onStallRestart,
+    onStallSwitch,
+    onStallCopyDiagnostics,
+    workingEpoch,
   },
   ref,
 ) {
@@ -820,7 +902,15 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             </div>
           )}
           {rowViews}
-          {working && <WorkingIndicator label={workingLabel} />}
+          {working && (
+            <WorkingIndicator
+              key={workingEpoch}
+              label={workingLabel}
+              onStallRestart={workingLabel ? onStallRestart : undefined}
+              onStallSwitch={workingLabel ? onStallSwitch : undefined}
+              onStallCopyDiagnostics={workingLabel ? onStallCopyDiagnostics : undefined}
+            />
+          )}
         </div>
       </div>
 
