@@ -483,7 +483,8 @@ impl AcpConnection {
         // flight, taking the sessions entry with it. Handing back a thread with
         // no live session would produce one that silently receives nothing.
         let attached = self.sessions.with_session(&session_id, |session| {
-            session.session_modes = response.modes.map(|modes| Arc::new(Mutex::new(modes)));
+            let modes = session_modes_of(response.modes, response.config_options.as_deref());
+            session.session_modes = modes.map(|modes| Arc::new(Mutex::new(modes)));
             session.config_options = response
                 .config_options
                 .map(|options| ConfigOptions::new(Arc::new(Mutex::new(options))));
@@ -859,13 +860,14 @@ impl AgentConnection for AcpConnection {
 
             let session_id = response.session_id.clone();
             let thread = self.new_thread(session_id.clone(), work_dirs, None);
+            let modes = session_modes_of(response.modes, response.config_options.as_deref());
 
             self.sessions.insert(
                 session_id.clone(),
                 AcpSession {
                     thread: Arc::downgrade(&thread),
                     cancel_signal: CancelSignal::new(),
-                    session_modes: response.modes.map(|modes| Arc::new(Mutex::new(modes))),
+                    session_modes: modes.map(|modes| Arc::new(Mutex::new(modes))),
                     config_options: response
                         .config_options
                         .map(|options| ConfigOptions::new(Arc::new(Mutex::new(options)))),
@@ -1342,6 +1344,73 @@ impl AgentSessionModes for AcpSessionModes {
         }
         .boxed()
     }
+}
+
+/// The session's modes, from whichever of the two wires the agent used.
+///
+/// ACP carries modes on a dedicated `modes` field of the `session/new` /
+/// `session/load` / `session/resume` response, and that is what Claude and
+/// Codex send. OpenCode sends none: its modes arrive ONLY as a `category:
+/// "mode"` select among the session config options, the same way every agent
+/// advertises its model picker. The two wires describe one setting, and the
+/// composer's mode pill reads the `modes` state, so an agent that used the
+/// other wire had a mode picker nowhere — the frontend hides the `mode` select
+/// from the generic knobs precisely because the pill is meant to own it.
+///
+/// The `modes` field wins when present. The select is consulted only in its
+/// absence, so an agent that sends both keeps its `modes` state untouched and
+/// nothing but the `mode` category is ever lifted into the pill.
+fn session_modes_of(
+    modes: Option<acp::SessionModeState>,
+    config_options: Option<&[acp::SessionConfigOption]>,
+) -> Option<acp::SessionModeState> {
+    modes.or_else(|| config_options.and_then(mode_select_of))
+}
+
+/// The `category: "mode"` select of a config-option list as a
+/// [`acp::SessionModeState`]: each choice is a mode, the current value is the
+/// current mode. Groups flatten, as in [`model_select_of`]. `None` when the
+/// agent expresses no such select, or it is not a select, or it has no choices.
+pub(crate) fn mode_select_of(
+    options: &[acp::SessionConfigOption],
+) -> Option<acp::SessionModeState> {
+    options.iter().find_map(|option| {
+        if !matches!(
+            option.category,
+            Some(acp::SessionConfigOptionCategory::Mode)
+        ) {
+            return None;
+        }
+        let acp::SessionConfigKind::Select(select) = &option.kind else {
+            return None;
+        };
+        let choices: Vec<&acp::SessionConfigSelectOption> = match &select.options {
+            acp::SessionConfigSelectOptions::Ungrouped(choices) => choices.iter().collect(),
+            acp::SessionConfigSelectOptions::Grouped(groups) => {
+                groups.iter().flat_map(|group| group.options.iter()).collect()
+            }
+            _ => return None,
+        };
+        if choices.is_empty() {
+            return None;
+        }
+        let available_modes = choices
+            .into_iter()
+            .map(|choice| {
+                let name = if choice.name.is_empty() {
+                    choice.value.0.as_ref().to_string()
+                } else {
+                    choice.name.clone()
+                };
+                acp::SessionMode::new(acp::SessionModeId::new(choice.value.0.clone()), name)
+                    .description(choice.description.clone())
+            })
+            .collect();
+        Some(acp::SessionModeState::new(
+            acp::SessionModeId::new(select.current_value.0.clone()),
+            available_modes,
+        ))
+    })
 }
 
 /// The model picker an agent advertises, projected out of its config options.
@@ -2125,5 +2194,77 @@ mod deadline_tests {
             error.to_string(),
             "codex-acp did not answer `initialize` within 60s"
         );
+    }
+}
+
+#[cfg(test)]
+mod mode_select_tests {
+    use super::*;
+
+    fn options(v: serde_json::Value) -> Vec<acp::SessionConfigOption> {
+        serde_json::from_value(v).expect("config options this schema understands")
+    }
+
+    /// OpenCode's shape: no `modes` on the session, one `category: "mode"`
+    /// select carrying build/plan. It becomes the pill's mode state.
+    #[test]
+    fn a_mode_select_becomes_session_modes_when_the_agent_sends_none() {
+        let opts = options(serde_json::json!([
+            { "id": "model", "name": "Model", "category": "model", "type": "select",
+              "currentValue": "anthropic/claude", "options": [ { "value": "anthropic/claude", "name": "Claude" } ] },
+            { "id": "mode", "name": "Session Mode", "category": "mode", "type": "select",
+              "currentValue": "plan",
+              "options": [
+                { "value": "build", "name": "Build", "description": "Edits files" },
+                { "value": "plan", "name": "Plan" }
+              ] },
+            { "id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+              "currentValue": "high", "options": [ { "value": "high", "name": "High" } ] }
+        ]));
+        let modes = session_modes_of(None, Some(&opts)).expect("modes from the select");
+        assert_eq!(modes.current_mode_id.0.as_ref(), "plan");
+        let ids: Vec<&str> = modes.available_modes.iter().map(|m| m.id.0.as_ref()).collect();
+        assert_eq!(ids, ["build", "plan"]);
+        assert_eq!(modes.available_modes[0].name, "Build");
+        assert_eq!(modes.available_modes[0].description.as_deref(), Some("Edits files"));
+        assert_eq!(modes.available_modes[1].description, None);
+    }
+
+    /// The dedicated `modes` wire wins: an agent that sends both keeps its own
+    /// state, and the select never reaches the pill.
+    #[test]
+    fn the_modes_field_is_preferred_over_the_select() {
+        let opts = options(serde_json::json!([
+            { "id": "mode", "name": "Mode", "category": "mode", "type": "select",
+              "currentValue": "b", "options": [ { "value": "b", "name": "B" } ] }
+        ]));
+        let own = acp::SessionModeState::new("default", vec![acp::SessionMode::new("default", "Default")]);
+        let modes = session_modes_of(Some(own), Some(&opts)).expect("the agent's own modes");
+        assert_eq!(modes.current_mode_id.0.as_ref(), "default");
+    }
+
+    /// Only the `mode` category is lifted. Model and effort selects, and a
+    /// mode-category option that is not a select, leave the pill empty.
+    #[test]
+    fn other_categories_and_non_selects_are_not_modes() {
+        let opts = options(serde_json::json!([
+            { "id": "model", "name": "Model", "category": "model", "type": "select",
+              "currentValue": "m", "options": [ { "value": "m", "name": "M" } ] },
+            { "id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+              "currentValue": "high", "options": [ { "value": "high", "name": "High" } ] },
+            { "id": "yolo", "name": "Yolo", "category": "mode", "type": "boolean", "currentValue": true }
+        ]));
+        assert!(session_modes_of(None, Some(&opts)).is_none());
+        assert!(session_modes_of(None, None).is_none());
+    }
+
+    /// A select with no choices is a dead control, not a mode list.
+    #[test]
+    fn an_empty_mode_select_is_not_modes() {
+        let opts = options(serde_json::json!([
+            { "id": "mode", "name": "Mode", "category": "mode", "type": "select",
+              "currentValue": "", "options": [] }
+        ]));
+        assert!(mode_select_of(&opts).is_none());
     }
 }
