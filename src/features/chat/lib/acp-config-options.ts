@@ -48,10 +48,10 @@ export type AcpConfigOption =
  *
  *  `model` now holds that bargain exactly — the filter and {@link modelSelectOf}
  *  test the same predicate, so an option is in the pill xor in the knobs.
- *  `mode` does NOT: the mode pill is fed by ACP's separate `modes` wire
- *  (`AgentSessionModes`), which never looks at config options, so an agent that
- *  expresses its modes ONLY as a `category: "mode"` select still falls through
- *  both. That is the same hole one category over, and it is not fixed here. */
+ *  `mode` holds it one layer down: the mode pill is fed by ACP's `modes`
+ *  state, and `session_modes_of` in `atlas-agent-servers` synthesises that
+ *  state from the `category: "mode"` select whenever an agent sends no `modes`
+ *  field (OpenCode). So a mode select hidden here always has the pill. */
 const OWNED_ELSEWHERE = new Set(["mode", "model"]);
 
 function str(v: unknown): string | null {

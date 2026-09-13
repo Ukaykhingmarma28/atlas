@@ -838,6 +838,25 @@ pub fn handle_session_notification(notification: acp::SessionNotification, ctx: 
             let options = update.config_options.clone();
             ctx.sessions
                 .with_session(&notification.session_id, |session| {
+                    // An agent whose modes live in a `category: "mode"` select
+                    // (OpenCode — see `session_modes_of`) reports a mode change
+                    // here, not as `current_mode_update`. Mirror it onto the
+                    // mode state the pill reads, but only to a mode that state
+                    // knows: the agent's own `modes` wire stays authoritative
+                    // for what is selectable.
+                    if let (Some(modes), Some(select)) = (
+                        &session.session_modes,
+                        crate::connection::mode_select_of(&options),
+                    ) {
+                        let mut modes = lock(modes);
+                        if modes
+                            .available_modes
+                            .iter()
+                            .any(|mode| mode.id == select.current_mode_id)
+                        {
+                            modes.current_mode_id = select.current_mode_id;
+                        }
+                    }
                     if let Some(config) = &session.config_options {
                         *lock(&config.config_options) = options;
                         config.notify();
