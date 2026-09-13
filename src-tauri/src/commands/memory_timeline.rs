@@ -8,7 +8,6 @@
 //! contains it, so shared history isn't duplicated across lanes.
 
 use std::collections::HashSet;
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;

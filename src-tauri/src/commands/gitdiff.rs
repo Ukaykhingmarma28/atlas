@@ -3,7 +3,6 @@
 //! editor gutter consume these.
 
 use atlas_gitdiff::{build_file_diff, line_status, FileDiff, LineStatus};
-use std::process::Command;
 
 /// Run `git diff` for one file and return the raw unified output. `staged`
 /// selects the index-vs-HEAD diff; otherwise it's worktree-vs-HEAD. `context`
