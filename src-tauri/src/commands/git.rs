@@ -24,14 +24,14 @@ use std::process::Command;
 /// Only for reads: a command that is SUPPOSED to write the index (`add`,
 /// `commit`, `checkout`) must take the lock, so it uses plain `Command`.
 fn git_read() -> Command {
-    let mut cmd = Command::new("git");
+    let mut cmd = atlas_process::command("git");
     cmd.arg("--no-optional-locks");
     cmd
 }
 
 /// Async twin of [`git_read`], for the parallel status refresh.
 fn git_read_async() -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("git");
+    let mut cmd = atlas_process::async_command("git");
     cmd.arg("--no-optional-locks");
     cmd
 }
@@ -644,7 +644,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn git(repo: &Path, args: &[&str]) {
-        let status = Command::new("git")
+        let status = atlas_process::command("git")
             .args(args)
             .current_dir(repo)
             .env("GIT_AUTHOR_NAME", "t")

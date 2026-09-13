@@ -157,7 +157,7 @@ impl NodeRuntime {
             "missing npm file"
         );
 
-        let mut command = tokio::process::Command::new(&node_binary);
+        let mut command = atlas_process::async_command(&node_binary);
         command.args(npm_command_args(&npm_file, node_dir, directory, subcommand, args));
         command.envs(npm_command_env(&node_binary));
         if let Some(directory) = directory {
@@ -296,7 +296,7 @@ async fn node_install_works(node_dir: &Path) -> bool {
     }
 
     let npm_file = node_dir.join(NPM_PATH);
-    let result = tokio::process::Command::new(&node_binary)
+    let result = atlas_process::async_command(&node_binary)
         .env(
             NODE_CA_CERTS_ENV_VAR,
             std::env::var(NODE_CA_CERTS_ENV_VAR).unwrap_or_default(),

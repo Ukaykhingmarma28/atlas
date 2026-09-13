@@ -8,6 +8,7 @@ description = "Git execution layer for Atlas: a single spawn chokepoint over the
 name = "atlas_git"
 
 [dependencies]
+atlas-process = { path = "../atlas-process" }
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 

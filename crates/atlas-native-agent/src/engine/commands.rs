@@ -146,7 +146,7 @@ pub fn available(skills: &[SkillRef]) -> Vec<acp::AvailableCommand> {
 /// the cap note says how to see the rest.
 pub fn diff_reply(cwd: &str) -> String {
     const CAP: usize = 40_000;
-    let output = std::process::Command::new("git")
+    let output = atlas_process::command("git")
         .args(["diff", "HEAD"])
         .current_dir(cwd)
         .output();

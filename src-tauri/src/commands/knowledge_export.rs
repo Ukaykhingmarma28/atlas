@@ -309,7 +309,7 @@ pub async fn knowledge_export_server(
         // Atlas build's incremental cache.
         let target_dir = std::env::temp_dir().join("atlas-kb-server-target");
 
-        let output = std::process::Command::new("cargo")
+        let output = atlas_process::command("cargo")
             .args([
                 "build",
                 "--release",

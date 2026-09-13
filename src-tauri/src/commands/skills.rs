@@ -2633,7 +2633,7 @@ fn now_unix_secs() -> u64 {
 /// HEAD commit SHA. Never prompts — auth failures fail fast.
 fn git_clone_shallow(owner: &str, repo: &str, dest: &Path) -> Result<String, String> {
     let url = format!("https://github.com/{owner}/{repo}.git");
-    let out = std::process::Command::new("git")
+    let out = atlas_process::command("git")
         .args(["clone", "--depth", "1", "--no-tags", "--"])
         .arg(&url)
         .arg(dest)
@@ -2647,7 +2647,7 @@ fn git_clone_shallow(owner: &str, repo: &str, dest: &Path) -> Result<String, Str
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let rev = std::process::Command::new("git")
+    let rev = atlas_process::command("git")
         .arg("-C")
         .arg(dest)
         .args(["rev-parse", "HEAD"])
@@ -2661,7 +2661,7 @@ fn git_clone_shallow(owner: &str, repo: &str, dest: &Path) -> Result<String, Str
 /// prompts. Used to detect whether an installed pack is behind its source.
 fn git_ls_remote_head(owner: &str, repo: &str) -> Result<String, String> {
     let url = format!("https://github.com/{owner}/{repo}.git");
-    let out = std::process::Command::new("git")
+    let out = atlas_process::command("git")
         .args(["ls-remote", "--quiet"])
         .arg(&url)
         .arg("HEAD")

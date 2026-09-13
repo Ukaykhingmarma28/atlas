@@ -29,6 +29,7 @@ default = []
 # there is nothing left to select and every build contains it.
 
 [dependencies]
+atlas-process = { path = "../crates/atlas-process" }
 # Devtools intentionally NOT enabled here. Release builds ship without
 # right-click → Inspect Element / Cmd+Option+I; `tauri dev` still auto-
 # enables devtools because the Tauri runtime turns them on for debug
