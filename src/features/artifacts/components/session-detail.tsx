@@ -54,7 +54,7 @@ import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
 import { CodeBlock, CopyButton, prettyJson } from "./code-block";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
-import { AgentGlyph } from "./session-list";
+import { AgentGlyph } from "./agent-glyph";
 
 /**
  * One Session, as the ordered record of what happened.

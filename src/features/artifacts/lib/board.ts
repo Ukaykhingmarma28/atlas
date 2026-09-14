@@ -1,10 +1,10 @@
 /**
  * Everything the Timeline derives from a board row, in one place.
  *
- * The list, the stats strip, the weekly chart and the calendar all read the same
+ * The sidebar, the stats strip and the weekly chart all read the same
  * `BoardSession[]`, and each one needs the same handful of facts about it — what
  * state a session is in, how long it ran, how many tokens it burned, which day
- * it belongs to. Deriving that four times is how the four views drift apart.
+ * it belongs to. Deriving that three times is how the views drift apart.
  *
  * Formatting lives here too, deliberately: the design specifies `1h 04m` and
  * `212.8K`, and those exact shapes are load-bearing for the fixed-width columns
@@ -193,29 +193,84 @@ function shortDate(date: Date): string {
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+/** Local Monday midnight of the week `d` falls in. */
+export function startOfWeek(d: Date): number {
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  // `getDay()` is Sunday-first; shift so a week runs Monday → Sunday, which is
+  // how a working week reads on a board about work.
+  const offset = (day.getDay() + 6) % 7;
+  day.setDate(day.getDate() - offset);
+  return day.getTime();
+}
+
+/** Local midnight on the first of the month `d` falls in. */
+export function startOfMonth(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
+
+/** How coarsely the nav groups its rows. */
+export type GroupPeriod = "day" | "week" | "month";
+
+const START_OF: Record<GroupPeriod, (d: Date) => number> = {
+  day: startOfDay,
+  week: startOfWeek,
+  month: startOfMonth,
+};
+
+/** `This week` / `Last week` / `Week of 27 Jul`. */
+function weekLabel(date: Date): string {
+  const weeks = Math.round((startOfWeek(new Date()) - startOfWeek(date)) / (7 * 86_400_000));
+  if (weeks === 0) return "This week";
+  if (weeks === 1) return "Last week";
+  return `Week of ${shortDate(date)}`;
+}
+
+/** `This month` / `Last month` / `July` / `July 2025`. */
+function monthLabel(date: Date): string {
+  const now = new Date();
+  const months = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
+  if (months === 0) return "This month";
+  if (months === 1) return "Last month";
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
+const LABEL_OF: Record<GroupPeriod, (d: Date) => string> = {
+  day: dayLabel,
+  week: weekLabel,
+  month: monthLabel,
+};
+
 /**
- * Sessions grouped by the local day they were last **active**.
- *
- * The board, the weekly chart and the calendar all need this and each built its
- * own copy of the loop; the calendar's keyed on a different field for a while
- * before anyone noticed. One function, one key.
+ * Sessions grouped by the local period they were last **active** in.
  *
  * That key is `lastActivityAt`, never `updatedAt`. `updatedAt` moves whenever
  * the row is rewritten, so a bulk import of a year of transcripts filed all of
  * them under Today — 106 sessions, in the report that prompted this.
  */
-export function bucketByDay(sessions: BoardSession[]): Map<number, BoardSession[]> {
-  const byDay = new Map<number, BoardSession[]>();
+export function bucketBy(
+  sessions: BoardSession[],
+  period: GroupPeriod,
+): Map<number, BoardSession[]> {
+  const startOf = START_OF[period];
+  const buckets = new Map<number, BoardSession[]>();
   for (const session of sessions) {
-    const key = startOfDay(new Date(session.lastActivityAt));
-    const bucket = byDay.get(key);
+    const key = startOf(new Date(session.lastActivityAt));
+    const bucket = buckets.get(key);
     if (bucket) bucket.push(session);
-    else byDay.set(key, [session]);
+    else buckets.set(key, [session]);
   }
-  return byDay;
+  return buckets;
 }
 
-interface DayBucket {
+/** {@link bucketBy} at the day grain. */
+export function bucketByDay(sessions: BoardSession[]): Map<number, BoardSession[]> {
+  return bucketBy(sessions, "day");
+}
+
+interface PeriodBucket {
   label: string;
   date: string;
   sessions: BoardSession[];
@@ -224,14 +279,18 @@ interface DayBucket {
 }
 
 /**
- * Group into day buckets, newest first.
+ * Group into buckets, newest first.
  *
  * The input is already newest-first from the store, so insertion order into the
  * Map preserves the grouping and no second sort is needed.
  */
-export function groupByDay(sessions: BoardSession[]): DayBucket[] {
-  return [...bucketByDay(sessions).entries()].map(([key, rows]) => ({
-    label: dayLabel(new Date(key)),
+export function groupSessions(
+  sessions: BoardSession[],
+  period: GroupPeriod = "day",
+): PeriodBucket[] {
+  const label = LABEL_OF[period];
+  return [...bucketBy(sessions, period).entries()].map(([key, rows]) => ({
+    label: label(new Date(key)),
     date: shortDate(new Date(key)),
     sessions: rows,
     meta: totals(rows),
@@ -249,38 +308,6 @@ function totals(rows: BoardSession[]): string {
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-/** One bar of the weekly-activity chart. */
-interface WeekDay {
-  /** Local midnight. */
-  key: number;
-  minutes: number;
-  /** `Jul 27` — the week-range endpoints. */
-  label: string;
-  /** `Wed Jul 29` — the hovered day, which needs the weekday to be readable. */
-  full: string;
-}
-
-/** The last seven days, oldest first, ending today. */
-export function lastSevenDays(sessions: BoardSession[]): WeekDay[] {
-  const today = startOfDay(new Date());
-  const byDay = bucketByDay(sessions);
-  return Array.from({ length: 7 }, (_, i) => {
-    const key = today - (6 - i) * 86_400_000;
-    const date = new Date(key);
-    const rows = byDay.get(key) ?? [];
-    return {
-      key,
-      minutes: Math.round(rows.reduce((a, s) => a + s.activeSeconds, 0) / 60),
-      label: shortDate(date),
-      full: date.toLocaleDateString(undefined, {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      }),
-    };
-  });
 }
 
 /** Which facet a filter option belongs to. */
