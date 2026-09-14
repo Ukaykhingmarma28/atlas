@@ -26,7 +26,7 @@ use semver::Version;
 use tokio::sync::watch;
 
 use crate::archive::{install_archive, registry_archive_kind_for_url};
-use crate::http::HttpClient;
+use crate::http::{get_body, HttpClient};
 
 const NODE_VERSION: &str = "v24.11.0";
 const NODE_CA_CERTS_ENV_VAR: &str = "NODE_EXTRA_CA_CERTS";
@@ -41,6 +41,11 @@ const NPM_TIMEOUT: Duration = Duration::from_secs(600);
 /// install lock. Past this, every agent waiting on Node fails with a clear
 /// error instead of queueing behind a stalled socket.
 const NODE_INSTALL_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// How long the `SHASUMS256.txt` fetch may take. Short: it is a few kilobytes
+/// from the same host the tarball comes from, so a slow one means the release
+/// server is unwell and the download after it would have failed anyway.
+const NODE_SHASUMS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What the managed user-level npmrc pins. `update-notifier=false` stops npm
 /// making a `GET registry.npmjs.org/npm` on every run just to advertise a
@@ -210,13 +215,17 @@ impl NodeRuntime {
             let _ = tokio::fs::remove_dir_all(containing_dir).await;
 
             let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
-            let url = format!(
-                "https://nodejs.org/dist/{NODE_VERSION}/node-{NODE_VERSION}-{os}-{arch}.{extension}"
-            );
+            let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
+            let url = format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}");
             tracing::info!(url, "downloading the managed Node.js runtime");
             if let Some(tx) = loading_status {
                 tx.send(Some("Downloading Node.js…".to_owned())).ok();
             }
+
+            // Before the bytes, the digest for them. This runtime is about to
+            // be executed as a child process on every npx agent, and unlike
+            // the registry it costs nothing to verify.
+            let digest = node_archive_digest(&**http, &file_name).await?;
 
             // The tarball's single top-level directory is the version directory,
             // so extracting it *into* the containing dir produces `node_dir`.
@@ -226,7 +235,7 @@ impl NodeRuntime {
             // A timeout leaves `install` as `None`, so the next caller retries.
             tokio::time::timeout(
                 NODE_INSTALL_TIMEOUT,
-                install_archive(&**http, &url, None, containing_dir, &kind),
+                install_archive(&**http, &url, Some(&digest), containing_dir, &kind),
             )
             .await
             .map_err(|_elapsed| {
@@ -556,9 +565,158 @@ pub async fn installed_package_version(node_modules_dir: &Path, name: &str) -> O
     Some(package_json.version.unwrap_or_default())
 }
 
+
+/// The SHA-256 nodejs.org publishes for `file_name`.
+///
+/// Required, not best-effort — which is the opposite of how the agent registry
+/// is treated, and deliberately so. Half the agent catalogue publishes no
+/// digest, and refusing those would remove real agents from Atlas. nodejs.org
+/// publishes `SHASUMS256.txt` beside every release without exception, so there
+/// is nothing to trade: if the runtime we are about to execute cannot be
+/// checked, it does not get installed.
+async fn node_archive_digest(http: &dyn HttpClient, file_name: &str) -> Result<String> {
+    let url = format!("https://nodejs.org/dist/{NODE_VERSION}/SHASUMS256.txt");
+    let (status, body) = get_body(http, &url, NODE_SHASUMS_TIMEOUT)
+        .await
+        .with_context(|| format!("fetching {url}"))?;
+
+    anyhow::ensure!(
+        (200..300).contains(&status),
+        "fetching {url} failed with status {status}",
+    );
+
+    let listing = String::from_utf8(body).with_context(|| format!("{url} is not UTF-8"))?;
+    digest_for(&listing, file_name)
+        .with_context(|| format!("{url} publishes no SHA-256 for {file_name}"))
+}
+
+/// Pull one file's digest out of a `SHASUMS256.txt` body.
+///
+/// Lines are `<64 hex><space><space><file name>`. Split on whitespace rather
+/// than a fixed column so a single-space or tab variant still reads, and strip
+/// the `*` some checksum writers prefix to mean "binary mode".
+fn digest_for(listing: &str, file_name: &str) -> Option<String> {
+    listing.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        let digest = fields.next()?;
+        let name = fields.next()?;
+        let matches = name.trim_start_matches('*') == file_name
+            && digest.len() == 64
+            && digest.bytes().all(|byte| byte.is_ascii_hexdigit());
+        matches.then(|| digest.to_ascii_lowercase())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fetching the digest is worth nothing unless it is handed to the
+    /// installer. Reverting `Some(&digest)` to `None` compiles and leaves the
+    /// parser tests green, so the call site needs its own pin — and it is
+    /// reachable because the checksum is compared before extraction, so no
+    /// runnable Node is required.
+    #[tokio::test]
+    async fn a_node_tarball_that_fails_its_checksum_is_not_installed() {
+        use crate::http::HttpResponse;
+        use futures::StreamExt as _;
+
+        struct StubHttp(HashMap<String, Vec<u8>>);
+
+        impl HttpClient for StubHttp {
+            fn get(&self, url: &str) -> futures::future::BoxFuture<'static, Result<HttpResponse>> {
+                let body = self.0.get(url).cloned();
+                Box::pin(async move {
+                    Ok(match body {
+                        Some(bytes) => HttpResponse {
+                            status: 200,
+                            body: futures::stream::once(async move { Ok(bytes) }).boxed(),
+                        },
+                        None => HttpResponse {
+                            status: 404,
+                            body: futures::stream::empty().boxed(),
+                        },
+                    })
+                })
+            }
+        }
+
+        let (os, arch) = node_platform().expect("a supported test platform");
+        let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
+        let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
+
+        // A well-formed listing that names the right file — with the digest of
+        // something else entirely.
+        let listing = format!(
+            "{}  {file_name}\n",
+            "1".repeat(64),
+        );
+
+        let mut routes = HashMap::new();
+        routes.insert(
+            format!("https://nodejs.org/dist/{NODE_VERSION}/SHASUMS256.txt"),
+            listing.into_bytes(),
+        );
+        routes.insert(
+            format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}"),
+            b"not a node runtime".to_vec(),
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let node = NodeRuntime::managed(dir.path(), Arc::new(StubHttp(routes)));
+
+        let error = format!("{:#}", node.ensure_installed(None).await.unwrap_err());
+        assert!(
+            error.contains("SHA-256 mismatch"),
+            "the published digest is fetched but not enforced: {error}"
+        );
+    }
+
+    /// The real file's shape: two spaces, digest first, many lines, and the
+    /// one we want is not the first.
+    const SHASUMS_SAMPLE: &str = "\
+0000000000000000000000000000000000000000000000000000000000000001  node-v24.11.0-linux-x64.tar.gz
+0000000000000000000000000000000000000000000000000000000000000002  node-v24.11.0-darwin-arm64.tar.gz
+0000000000000000000000000000000000000000000000000000000000000003  node-v24.11.0-win-x64.zip
+";
+
+    #[test]
+    fn reads_one_digest_out_of_a_shasums_listing() {
+        assert_eq!(
+            digest_for(SHASUMS_SAMPLE, "node-v24.11.0-darwin-arm64.tar.gz").as_deref(),
+            Some("0000000000000000000000000000000000000000000000000000000000000002"),
+        );
+    }
+
+    #[test]
+    fn a_file_the_listing_does_not_mention_has_no_digest() {
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-arm64.tar.gz").is_none());
+    }
+
+    /// A prefix match would hand back the wrong release's digest, and the
+    /// install would then fail for a reason that says nothing useful.
+    #[test]
+    fn a_similar_file_name_is_not_a_match() {
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-x64.tar").is_none());
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-x64.tar.gz.asc").is_none());
+    }
+
+    #[test]
+    fn tolerates_single_space_and_binary_mode_markers() {
+        let listing = "00000000000000000000000000000000000000000000000000000000000000ab *node-v24.11.0-linux-x64.tar.gz\n";
+        assert_eq!(
+            digest_for(listing, "node-v24.11.0-linux-x64.tar.gz").as_deref(),
+            Some("00000000000000000000000000000000000000000000000000000000000000ab"),
+        );
+    }
+
+    /// A line that is not a digest line must not be read as one — the GPG
+    /// signature block at the end of the real file is exactly this shape.
+    #[test]
+    fn ignores_lines_that_are_not_digests() {
+        let listing = "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\nnot-a-digest node-v24.11.0-linux-x64.tar.gz\n";
+        assert!(digest_for(listing, "node-v24.11.0-linux-x64.tar.gz").is_none());
+    }
 
     #[test]
     fn installed_version_is_a_ceiling_check() {

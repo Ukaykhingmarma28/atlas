@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use atlas_acp_thread::AgentId;
 use atlas_agent_servers::server::ExternalAgentServer;
+use semver::Version;
 use tokio::sync::watch;
 
 use crate::http::HttpClient;
@@ -109,6 +110,26 @@ impl AgentServerStore {
     /// catalogue to resolve them, so this refreshes it first — throttled, so
     /// calling this on every settings change costs nothing
     /// (`agent_server_store.rs:316-322`).
+    /// # This is last-writer-wins, and a lock here would not change that
+    ///
+    /// Reviewed as a potential lost-update bug and deliberately left alone.
+    /// The read-check-write below does span an await, so two callers can both
+    /// pass the equality check before either writes. But serialising this
+    /// function does not fix it: callers pass the **whole** map, computed from
+    /// a read that already happened somewhere else, so the later writer
+    /// overwrites the earlier one either way. An install racing an uninstall
+    /// collapses to whichever finished last, lock or no lock.
+    ///
+    /// The real fix is a delta-shaped API — `install(id)` / `uninstall(id)`
+    /// rather than `set_settings(whole_map)` — which is a change across every
+    /// Tauri command that writes the installed map, not a change here. Until
+    /// then the invariant belongs to the caller: **the installed map has one
+    /// writer**, and today `src-tauri`'s registry commands are it, because
+    /// Tauri runs them one at a time.
+    ///
+    /// Adding a mutex here would satisfy a reviewer without satisfying the
+    /// requirement, which is worse than the honest gap, because it would read
+    /// as solved.
     pub async fn set_settings(&self, settings: AllAgentServersSettings) {
         if self.state.lock().unwrap().settings == settings {
             return;
@@ -131,6 +152,16 @@ impl AgentServerStore {
     /// The catalogue changed — rebuild, because a registry entry's version,
     /// distribution or icon may have moved. This is the path Zed's version-bump
     /// notification runs through.
+    ///
+    /// Unconditional, unlike [`AgentServerStore::set_settings`] and
+    /// [`AgentServerStore::set_byok_env`], which both early-return when nothing
+    /// changed. That asymmetry is deliberate. Skipping the rebuild needs a way
+    /// to know the catalogue is unchanged, and the only cheap one is a
+    /// fingerprint over the entry fields — which would miss an entry whose
+    /// archive URL moved while its version stayed put, leaving a live server
+    /// object pointing at a URL the registry has retired. The cost of being
+    /// wrong there is a stale install; the cost of rebuilding is re-allocating
+    /// a few dozen small structs once an hour. Reviewed and left as-is.
     pub fn registry_updated(&self) {
         self.reregister();
     }
@@ -299,9 +330,10 @@ impl AgentServerStore {
                 external_agents.insert(id, entry);
             }
 
-            // A version that moved forward means the running connection is on
-            // the wrong binary; anything else is left alone. Ported from
-            // `agent_server_store.rs:441-467`.
+            // A version that moved *forward* means the running connection is
+            // on the wrong binary. Ported from
+            // `agent_server_store.rs:441-467`, which compares for inequality —
+            // the direction is Atlas's own, and `is_upgrade` says why.
             for (id, entry) in external_agents.iter() {
                 let (Some(previous), Some(current)) = (
                     previous_versions.get(id).cloned().flatten(),
@@ -309,7 +341,7 @@ impl AgentServerStore {
                 ) else {
                     continue;
                 };
-                if previous != current {
+                if is_upgrade(&previous, &current) {
                     if let Some(agent_channels) = channels.get(id) {
                         agent_channels
                             .new_version_available
@@ -387,4 +419,73 @@ impl AgentServerStore {
             default_mode: default_mode.map(str::to_owned),
         })
     }
+}
+
+/// Whether `current` is a version worth dropping the live connection for.
+///
+/// Nothing here is cosmetic. Emitting this notification is not a badge: the
+/// manager removes the connection entry, cancels any connect in flight and
+/// forgets that agent's sessions before it even fires
+/// (`atlas-agent-manager/src/manager.rs`), and the next use reinstalls
+/// whatever the registry now calls current. There is no confirmation step
+/// between a registry publish and that reinstall.
+///
+/// So a plain `previous != current` — which is what Zed does, and what this
+/// was — hands a third-party registry two things it should not have:
+///
+/// - **A downgrade.** Republishing an older version reads as an upgrade, and
+///   the older binary is installed with nothing to notice it.
+/// - **A re-tag.** `1.2.3` → `v1.2.3` and `2.0` → `2.0.0` are the same
+///   release written differently, and each would cost the user their session.
+///
+/// Versions that are not semver at all — `latest`, date stamps, build ids —
+/// keep the old behaviour, because for those there is no order to read and
+/// "it changed" is the only signal available.
+///
+/// One known gap, accepted: semver orders alphanumeric pre-release
+/// identifiers lexically, so `1.0.0-rc9` → `1.0.0-rc10` reads as a *decrease*
+/// and does not notify. That is semver behaving as specified — `rc.9` →
+/// `rc.10`, with the dot, compares numerically and works — and the cost is
+/// small, because this channel only tears down a live connection and the new
+/// version is picked up on the next start anyway.
+fn is_upgrade(previous: &str, current: &str) -> bool {
+    match (parse_version(previous), parse_version(current)) {
+        (Some(previous), Some(current)) => current > previous,
+        _ => normalized(previous) != normalized(current),
+    }
+}
+
+/// A leading `v` is decoration, not part of the version.
+fn normalized(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    trimmed.strip_prefix(['v', 'V']).unwrap_or(trimmed)
+}
+
+/// Parse a published version, tolerating the two shapes registries actually
+/// write that semver itself rejects: a `v` prefix, and a truncated `2` or
+/// `2.0` standing in for `2.0.0`.
+///
+/// Padding applies only when the whole string is digits and dots. Anything
+/// carrying a pre-release or build suffix goes to semver exactly as published,
+/// because that is where guessing would start changing meaning rather than
+/// spelling.
+fn parse_version(raw: &str) -> Option<Version> {
+    let trimmed = normalized(raw);
+
+    let bare_numeric = !trimmed.is_empty()
+        && trimmed
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+
+    let candidate = if bare_numeric {
+        match trimmed.matches('.').count() {
+            0 => format!("{trimmed}.0.0"),
+            1 => format!("{trimmed}.0"),
+            _ => trimmed.to_owned(),
+        }
+    } else {
+        trimmed.to_owned()
+    };
+
+    Version::parse(&candidate).ok()
 }
