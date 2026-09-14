@@ -1960,9 +1960,24 @@ impl atlas_native_agent::engine::auth::AtlasTokenSource for AccountTokenSource {
             state.core().mint_access_token().await.map_err(|err| {
                 // The engine's trait speaks `io::Error`, so the reason has to
                 // survive as text or the user is told only that auth failed.
-                // Signed-out is the common case and reads very differently from
-                // a rejected credential, so it keeps its own words.
-                std::io::Error::other(format!("Atlas account token unavailable: {err:?}"))
+                // Each verdict gets its own words: "not signed in" and "the
+                // network is down" call for different actions, and the
+                // Indeterminate one used to surface as a Debug dump
+                // (`Indeterminate { retry_after: None, reason: "error sending
+                // request" }`) — which is what a user with no DNS at launch
+                // read on 2026-09-14, behind a toast about the engine runtime.
+                use crate::auth::AuthFailure;
+                let text = match err {
+                    AuthFailure::NoCredential => "not signed in to Atlas".to_string(),
+                    AuthFailure::Rejected => {
+                        "the Atlas sign-in was rejected — sign in again".to_string()
+                    }
+                    AuthFailure::Denied => "the Atlas account may not use Atlas Agent".to_string(),
+                    AuthFailure::Indeterminate { reason, .. } => {
+                        format!("Atlas can't be reached ({reason})")
+                    }
+                };
+                std::io::Error::other(text)
             })
         })
     }

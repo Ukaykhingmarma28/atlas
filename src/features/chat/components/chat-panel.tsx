@@ -8,6 +8,7 @@ import { appendNextStepsDirective } from "../lib/next-steps";
 import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
 import { isDeadlineError, withDeadline } from "../lib/with-deadline";
+import { drainEdge } from "../lib/drain-gate";
 import { cycleChatAgent } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
@@ -970,9 +971,20 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     const curResuming = !!session?.resumePending;
     const prevResuming = prevResumingRef.current;
     prevResumingRef.current = curResuming;
-    const turnFinished = prev === "running" && cur !== "running";
-    const justBound = !prevAcp && !!curAcp;
-    const justResumed = prevResuming && !curResuming && !!curAcp;
+    // The gate lives in `drain-gate.ts` with its own test: a queue drains
+    // only into a BOUND session. The bind-failure branch above parks the held
+    // message back in the queue and drops the status to idle, and reading
+    // that edge as "turn finished" re-dispatched the message into the unbound
+    // tab — which re-held it, re-kicked the bind, and looped (491 connect
+    // attempts in a minute, a bubble and a toast per cycle) until Stop.
+    const { justBound, justResumed, drainQueue } = drainEdge({
+      prevStatus: prev,
+      curStatus: cur,
+      prevAcp,
+      curAcp,
+      prevResuming,
+      curResuming,
+    });
     if (justBound || justResumed) {
       // The first message held while the session was starting goes out
       // ahead of the queue — it was recorded in the transcript at send time,
@@ -989,7 +1001,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         return;
       }
     }
-    if (turnFinished || justBound || justResumed) {
+    if (drainQueue) {
       const next = useChatStore.getState().actions.shiftQueue(tabId);
       if (next && handleSendRef.current) {
         // Defer one microtask so the React commit completes first.

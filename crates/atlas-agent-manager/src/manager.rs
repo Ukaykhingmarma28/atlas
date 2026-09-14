@@ -564,7 +564,14 @@ impl AgentManager {
                 Ok(Ok(connection)) => Ok(AgentConnectedState { connection }),
                 Ok(Err(err)) => Err(match err.downcast::<LoadError>() {
                     Ok(load_error) => load_error,
-                    Err(err) => LoadError::Other(err.to_string().into()),
+                    // `{:#}`, not `to_string()`: an `anyhow` chain displays
+                    // only its outermost context by default, so a native
+                    // engine start that failed because the account token
+                    // could not be minted reached the user as the bare
+                    // "starting the in-process app-server runtime" — the
+                    // cause ("Atlas can't be reached") was the link that
+                    // got dropped (2026-09-14).
+                    Err(err) => LoadError::Other(format!("{err:#}").into()),
                 }),
                 Err(join) if join.is_cancelled() => Err(LoadError::Other(
                     "the agent was stopped while it was connecting".into(),

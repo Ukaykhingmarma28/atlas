@@ -802,6 +802,39 @@ async fn a_failed_entry_records_the_error_for_whoever_was_waiting() {
     assert!(matches!(error, LoadError::Exited { status: Some(2), .. }));
 }
 
+/// A connect that fails with an `anyhow` chain keeps its cause.
+///
+/// The native engine's start wraps its failures in a context string, and the
+/// manager used to flatten the chain with `to_string()` — which prints only
+/// the outermost link. A launch with no DNS therefore told the user "starting
+/// the in-process app-server runtime" and nothing about the account token it
+/// could not mint (2026-09-14). The whole chain has to reach the waiter.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chained_connect_failure_keeps_its_cause() {
+    let catalog = TestCatalog::new(&["claude-code"]);
+    let server = TestServer::with_behaviour(
+        "claude-code",
+        ConnectBehaviour::FailsChained {
+            cause: "Atlas can't be reached (error sending request)".into(),
+            context: "starting the in-process app-server runtime".into(),
+        },
+    );
+    let manager = manager(catalog, server.clone());
+    let key = custom("claude-code");
+
+    let entry = manager.request_connection(key.clone(), server.clone());
+    let error = settle(entry).await.expect_err("the attempt fails");
+    let text = error.to_string();
+    assert!(
+        text.contains("starting the in-process app-server runtime"),
+        "the context survives: {text}"
+    );
+    assert!(
+        text.contains("Atlas can't be reached"),
+        "the cause survives: {text}"
+    );
+}
+
 /// The `sessions` map is the state this crate added on top of Zed's store, and
 /// nothing observed it through a whole session lifecycle.
 #[tokio::test(flavor = "multi_thread")]

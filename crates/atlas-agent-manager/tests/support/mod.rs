@@ -212,6 +212,10 @@ pub enum ConnectBehaviour {
     Gated(Arc<Gate>),
     /// Fail without ever producing a connection.
     Fails(LoadError),
+    /// Fail with an `anyhow` chain rather than a typed `LoadError` — the
+    /// shape the native engine's start produces, where the cause sits
+    /// under a context string.
+    FailsChained { cause: String, context: String },
 }
 
 /// An agent server whose connect the test controls in time as well as outcome.
@@ -358,6 +362,10 @@ impl AgentServer for TestServer {
                 ConnectBehaviour::Fails(error) => {
                     probe.finish();
                     return Err(anyhow::Error::from(error));
+                }
+                ConnectBehaviour::FailsChained { cause, context } => {
+                    probe.finish();
+                    return Err(anyhow!(cause).context(context));
                 }
             }
             probe.finish();
