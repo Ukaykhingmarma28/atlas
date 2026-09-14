@@ -174,3 +174,5 @@ With the per-frame census both spawns on the tool-call path were caught this tim
 Engine log: `06:11:21 ToolCall: shell_command {"command": "git status --short"}` → `06:11:25 tool call completed`, `sandbox_policy=DangerFullAccess`. Twelve `conhost.exe` were created during the run — all hidden, the expected shape of `CREATE_NO_WINDOW` children — and no window of either console class appeared in 247 frames. `rec-atlas-agent-5/frames/00061_31.18s.png` is the same moment as run 3's frame 85: Atlas, no Terminal.
 
 Same prompt, same agent, same machine, same default terminal: before the gate 2/2 runs opened a window; after it 0/1. The remaining gates (§6, everything outside `core` and `shell-command`) are not on this path and were compile-checked and audit-checked; they ship in the MSI built after this probe.
+
+Run 6 (12:46 build, every gate in §6, `Atlas_0.3.2_x64_en-US.msi`): `frames=252 newWindows=0 newProcesses=23`, exit 0 — the parser at 25.12 s (ppid = atlas.exe) and the tool command at 28.73 s, both windowless. Score after the gate: 0 windows in 2 of 2 runs.
