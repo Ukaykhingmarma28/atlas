@@ -123,6 +123,8 @@ where
     }
     command.args(&args_vec);
     scrub_non_inheritable_env_vars(&mut command);
+    // Atlas: no console window for a child of the GUI host.
+    crate::no_console_window(&mut command);
     let output = command.output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

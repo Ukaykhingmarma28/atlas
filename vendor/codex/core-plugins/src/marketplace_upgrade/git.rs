@@ -169,6 +169,9 @@ fn run_git_command_with_timeout(
     context: &str,
     timeout: Duration,
 ) -> Result<Output, String> {
+    // Atlas: every git the plugin sync and marketplace run comes through
+    // here; a child of the GUI host must not open a console window.
+    codex_git_utils::no_console_window(command);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

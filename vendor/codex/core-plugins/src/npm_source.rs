@@ -88,6 +88,8 @@ fn pack_npm_package(
         |version| format!("{package}@{version}"),
     );
     let mut command = Command::new(npm_command);
+    // Atlas: no console window for a child of the GUI host.
+    codex_git_utils::no_console_window(&mut command);
     command
         .current_dir(destination)
         .arg("pack")

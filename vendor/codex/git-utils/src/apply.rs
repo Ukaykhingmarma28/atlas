@@ -132,6 +132,8 @@ fn resolve_git_root(cwd: &Path) -> io::Result<PathBuf> {
         .arg("--show-toplevel")
         .current_dir(cwd);
     scrub_non_inheritable_env_vars(&mut command);
+    // Atlas: no console window for a child of the GUI host.
+    crate::no_console_window(&mut command);
     let out = command.output()?;
     let code = out.status.code().unwrap_or(-1);
     if code != 0 {
@@ -162,6 +164,8 @@ fn run_git(cwd: &Path, git_cfg: &[String], args: &[String]) -> io::Result<(i32, 
         cmd.arg(a);
     }
     scrub_non_inheritable_env_vars(&mut cmd);
+    // Atlas: no console window for a child of the GUI host.
+    crate::no_console_window(&mut cmd);
     let out = cmd.current_dir(cwd).output()?;
     let code = out.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -343,6 +347,8 @@ pub fn stage_paths(git_root: &Path, diff: &str) -> io::Result<()> {
         cmd.arg(OsStr::new(p));
     }
     scrub_non_inheritable_env_vars(&mut cmd);
+    // Atlas: no console window for a child of the GUI host.
+    crate::no_console_window(&mut cmd);
     let out = cmd.current_dir(git_root).output()?;
     let _code = out.status.code().unwrap_or(-1);
     // We do not hard fail staging; best-effort is OK. Return Ok even on non-zero.
