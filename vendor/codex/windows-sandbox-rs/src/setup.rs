@@ -349,6 +349,8 @@ fn run_setup_refresh_payload(b64: &str, codex_home: &Path) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    // Atlas: CREATE_NO_WINDOW — a refresh spawned from the GUI host must not flash a console.
+    cmd.creation_flags(0x0800_0000);
     let cwd = std::env::current_dir().unwrap_or_else(|_| codex_home.to_path_buf());
     log_note(
         &format!(

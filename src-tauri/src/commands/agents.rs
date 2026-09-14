@@ -63,7 +63,6 @@ use agent_client_protocol::schema::v1 as acp;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as AsyncCommand;
 use uuid::Uuid;
 
 /// Bridge the ported stack's deltas to the Tauri host's outbound concerns.
@@ -1713,7 +1712,8 @@ pub async fn agents_run_auth_method(
         "running auth method `{method_id}` via `{command}` (args: {args:?}, run {run_id})"
     );
 
-    let mut cmd = AsyncCommand::new(&command);
+    // Windowless on Windows: a headless auth run must not flash a console.
+    let mut cmd = atlas_process::async_command(&command);
     cmd.args(&args);
     cmd.envs(spec.env.iter().cloned());
     // Closed deliberately, and this run is NOT the answer for a login that asks

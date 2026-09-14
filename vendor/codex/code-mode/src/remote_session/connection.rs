@@ -216,6 +216,9 @@ impl Connection {
         let mut command = Command::new(host_program);
         #[cfg(unix)]
         command.process_group(0);
+        // Atlas: CREATE_NO_WINDOW — the code-mode host is a piped child of the GUI host.
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

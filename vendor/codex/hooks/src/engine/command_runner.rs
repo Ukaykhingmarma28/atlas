@@ -386,6 +386,9 @@ fn build_command(
     } else {
         Command::new(&shell.program)
     };
+    // Atlas: CREATE_NO_WINDOW — hook commands are piped children of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     if shell.program.is_empty() {
         #[cfg(windows)]
         command.raw_arg(format!(r#""{command_line}""#));
@@ -416,6 +419,7 @@ fn default_shell_command() -> Command {
         let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
         let mut command = Command::new(comspec);
         command.arg("/C");
+        command.creation_flags(0x0800_0000); // Atlas: CREATE_NO_WINDOW
         command
     }
 

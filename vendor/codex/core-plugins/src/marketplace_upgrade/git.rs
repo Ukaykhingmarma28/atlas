@@ -139,6 +139,7 @@ fn git_command() -> Command {
         .args(["-c", codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG])
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0");
+    codex_git_utils::no_console_window(&mut command); // Atlas
     command
 }
 

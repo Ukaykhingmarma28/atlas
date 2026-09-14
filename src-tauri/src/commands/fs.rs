@@ -150,7 +150,7 @@ pub async fn capture_screenshot(
         let out = dir.join(format!("atlas_shot_{ts}.png"));
 
         // `-x` silences the shutter sound; `-t png` fixes the format.
-        let mut cmd = std::process::Command::new("/usr/sbin/screencapture");
+        let mut cmd = atlas_process::command("/usr/sbin/screencapture");
         if interactive {
             cmd.arg("-i");
         }

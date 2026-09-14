@@ -109,6 +109,9 @@ async fn run_provider_auth_command(config: &ModelProviderAuthInfo) -> io::Result
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // Atlas: CREATE_NO_WINDOW — the auth helper is a piped child of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
 
     let output = tokio::time::timeout(config.timeout(), command.output())
         .await

@@ -126,6 +126,13 @@ impl PowershellParserProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         codex_protocol::shell_environment::scrub_non_inheritable_env_vars(&mut command);
+        // Atlas: CREATE_NO_WINDOW — the parser is a long-lived piped child of
+        // the GUI host and must not open a console window.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            command.creation_flags(0x0800_0000);
+        }
         let mut child = command.spawn()?;
         let stdin = match take_child_stdin(&mut child) {
             Ok(stdin) => stdin,

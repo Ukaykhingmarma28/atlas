@@ -366,6 +366,9 @@ pub(crate) fn spawn_command(
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command.kill_on_drop(true);
+    // Atlas: CREATE_NO_WINDOW — the fs helper is a piped child of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     // macOS cannot receive passed fds with close-on-exec set atomically.
     #[cfg(target_os = "macos")]
     // SAFETY: Descriptor cleanup only uses fork-safe system calls.

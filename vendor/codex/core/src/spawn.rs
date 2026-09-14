@@ -70,6 +70,13 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
     let mut cmd = Command::new(&program);
     #[cfg(unix)]
     cmd.arg0(arg0.map_or_else(|| program.to_string_lossy().to_string(), String::from));
+    // Atlas: CREATE_NO_WINDOW. This is the shell tool's executor when it is
+    // not sandboxed — every `powershell.exe -EncodedCommand …` a turn runs
+    // comes through here with piped stdio. The engine runs inside a GUI
+    // process that has no console, so without this flag each tool call was
+    // handed a fresh console, which Windows Terminal put on screen.
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
     cmd.args(args);
     cmd.current_dir(cwd);
     if let Some(network) = network {
