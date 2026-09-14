@@ -2595,6 +2595,20 @@ impl PluginsManager {
         http_client_factory: HttpClientFactory,
         on_effective_plugins_changed: Option<EffectivePluginsChangedCallback>,
     ) {
+        // Atlas: opt-in. This clones openai/plugins from GitHub at every
+        // launch (falling back to an HTTP archive when that fails) — a network
+        // round-trip nobody asked for. Atlas sets `ATLAS_CURATED_PLUGIN_SYNC=1`
+        // from its "Sync the Atlas Agent's plugin catalogue" setting; unset,
+        // the engine keeps whatever snapshot it already has and does no
+        // network work here. Checked before the started-flag, so enabling the
+        // setting and restarting the agent runs the sync without a relaunch.
+        if !matches!(
+            std::env::var("ATLAS_CURATED_PLUGIN_SYNC").as_deref(),
+            Ok("1") | Ok("true")
+        ) {
+            tracing::info!("curated plugins sync skipped: ATLAS_CURATED_PLUGIN_SYNC is not set");
+            return;
+        }
         if CURATED_REPO_SYNC_STARTED.swap(true, Ordering::SeqCst) {
             return;
         }

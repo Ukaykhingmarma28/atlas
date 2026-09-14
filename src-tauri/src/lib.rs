@@ -168,6 +168,11 @@ pub fn run() {
                 loaded.settings_config_migrated = true;
             }
             let telemetry_enabled = migration.manager.effective().share_telemetry;
+            // The engine reads this gate on its first connect, which happens
+            // after setup — so it must be in the environment before then.
+            commands::atlas_config::apply_curated_plugin_sync_gate(
+                migration.manager.effective().curated_plugin_sync,
+            );
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             commands::atlas_config::start_watcher(app.handle(), atlas_config);

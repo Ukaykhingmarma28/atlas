@@ -151,6 +151,13 @@ pub struct AppSettings {
     /// Auto-update master switch. See `crate::commands::updater`.
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    /// Let the Atlas Agent's engine sync OpenAI's curated plugin catalogue
+    /// (github.com/openai/plugins) from GitHub when it starts. Off by default:
+    /// it is a network fetch at every launch, and it was failing with HTTP
+    /// 429. Reaches the in-process engine as `ATLAS_CURATED_PLUGIN_SYNC` —
+    /// see `commands::atlas_config::apply_curated_plugin_sync_gate`.
+    #[serde(default)]
+    pub curated_plugin_sync: bool,
     /// A version the user chose to "Ignore" in the update prompt. `None` =
     /// nothing ignored. Absent from the TOML file rather than written as a
     /// sentinel empty string — TOML has no native null, and an absent key is
@@ -223,6 +230,7 @@ impl Default for AppSettings {
             adaptive_suggestions: AdaptiveSuggestions::default(),
             git_blame_inline: true,
             auto_update: true,
+            curated_plugin_sync: false,
             updater_ignored_version: None,
             enter_to_send: true,
             terminal_notifications: true,
@@ -333,6 +341,12 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "autoUpdate",
         "# Check for a newer signed Atlas release on startup and prompt when one\n\
          # is available. (default: true)",
+    ),
+    (
+        "curatedPluginSync",
+        "# Let the Atlas Agent's engine fetch OpenAI's curated plugin catalogue\n\
+         # (github.com/openai/plugins) when it starts — a network request at\n\
+         # every launch. Applies the next time the agent starts. (default: false)",
     ),
     (
         "updaterIgnoredVersion",
@@ -639,6 +653,7 @@ pub struct SettingsPatch {
     pub adaptive_suggestions: Option<AdaptiveSuggestions>,
     pub git_blame_inline: Option<bool>,
     pub auto_update: Option<bool>,
+    pub curated_plugin_sync: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub updater_ignored_version: Option<Option<String>>,
     pub enter_to_send: Option<bool>,
@@ -687,6 +702,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.auto_update {
             settings.auto_update = v;
+        }
+        if let Some(v) = self.curated_plugin_sync {
+            settings.curated_plugin_sync = v;
         }
         if let Some(v) = &self.updater_ignored_version {
             settings.updater_ignored_version = v.clone();
@@ -737,6 +755,7 @@ impl SettingsPatch {
         set_bool!(link_telemetry_to_account, "linkTelemetryToAccount");
         set_bool!(git_blame_inline, "gitBlameInline");
         set_bool!(auto_update, "autoUpdate");
+        set_bool!(curated_plugin_sync, "curatedPluginSync");
         set_bool!(enter_to_send, "enterToSend");
         set_bool!(terminal_notifications, "terminalNotifications");
         set_bool!(terminal_notify_on_failure, "terminalNotifyOnFailure");
@@ -819,6 +838,7 @@ pub fn settings_from_legacy_json(raw: Option<&serde_json::Value>) -> AppSettings
     take_bool!(link_telemetry_to_account, "linkTelemetryToAccount");
     take_bool!(git_blame_inline, "gitBlameInline");
     take_bool!(auto_update, "autoUpdate");
+    take_bool!(curated_plugin_sync, "curatedPluginSync");
     take_bool!(enter_to_send, "enterToSend");
 
     if let Some(v) = raw.get("uiScale").and_then(serde_json::Value::as_f64) {
