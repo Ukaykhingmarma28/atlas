@@ -35,10 +35,6 @@ interface AiGrantState {
   probedOrgId: string | null;
   /** A re-check is in flight (the bar's Refresh). */
   checking: boolean;
-  /** The access request is in flight. */
-  requesting: boolean;
-  /** This org's ask has been recorded — reset when the org changes. */
-  requested: boolean;
   /** The bar has been dismissed for this org. Does NOT re-enable the
    *  composer: hiding the notice does not create a grant. */
   dismissed: boolean;
@@ -49,8 +45,6 @@ interface AiGrantState {
     /** Re-check on the user's command. Keeps the last known answer when the
      *  probe fails, so a dropped connection cannot read as "you have access". */
     refresh: () => Promise<boolean>;
-    /** Record the ask with the team (PostHog `ai_access_requested`). */
-    request: () => Promise<void>;
     dismiss: () => void;
     /** Drop every per-org bit. Called when the active org changes. */
     resetForOrg: () => void;
@@ -73,8 +67,6 @@ export const useAiGrantStore = createSelectors(
     entitlement: null,
     probedOrgId: null,
     checking: false,
-    requesting: false,
-    requested: false,
     dismissed: false,
     actions: {
       probe: () => {
@@ -106,21 +98,11 @@ export const useAiGrantStore = createSelectors(
         set({ checking: false });
         return result !== null;
       },
-      request: async () => {
-        set({ requesting: true });
-        try {
-          await invoke("native_agent_request_access");
-          set({ requested: true });
-        } finally {
-          set({ requesting: false });
-        }
-      },
       dismiss: () => set({ dismissed: true }),
       resetForOrg: () =>
         set({
           entitlement: null,
           probedOrgId: null,
-          requested: false,
           dismissed: false,
           checking: false,
         }),

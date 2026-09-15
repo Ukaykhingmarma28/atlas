@@ -13,9 +13,11 @@ import {
   Loader2,
   Users,
   Search,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { auth } from "@/features/auth/lib/auth-api";
@@ -184,6 +186,11 @@ export function OrgSwitcher() {
    *  call would 401 — so the credential has to be checked separately. */
   const isSyncedOrg = !!(active?.syncEnabled && active?.remoteId);
   const canManageMembers = isSyncedOrg && signedIn;
+  /** The id worth copying is the org's identity ON THE SERVER — the one the
+   *  gateway, support and every other machine know it by, and the same value
+   *  sent as the `atlas-org` header. A local org's `id` is meaningful only on
+   *  this Mac, so there is nothing to hand anyone until it is synced. */
+  const copyableOrgId = active?.remoteId && active?.syncEnabled ? active.remoteId : null;
 
   const beginRename = (id: string, currentName: string) => {
     setEditingId(id);
@@ -436,7 +443,7 @@ export function OrgSwitcher() {
                   setOpen(false);
                   setMembersOpen(true);
                 }}
-                className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="mx-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 <Users size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                 <span className="flex-1 text-left">Invite &amp; Manage members</span>
@@ -444,10 +451,37 @@ export function OrgSwitcher() {
             ) : (
               <div
                 title={isSyncedOrg ? "Sign in to manage members" : "Turn on sync to manage members"}
-                className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
+                className="mx-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
               >
                 <Users size={12} className="shrink-0" />
                 <span className="flex-1 text-left">Invite &amp; Manage members</span>
+              </div>
+            )}
+
+            {/* The ACTIVE org's server id, for support threads and anywhere a
+                teammate has to name this org precisely. Disabled rather than
+                hidden when the org is local: the row explains why the id the
+                user came looking for isn't there yet. */}
+            {copyableOrgId ? (
+              <DropdownMenu.Item
+                onSelect={async () => {
+                  setOpen(false);
+                  if (await copyText(copyableOrgId)) toast.success("Organisation ID copied");
+                  else toast.error("Could not copy the organisation ID");
+                }}
+                title={copyableOrgId}
+                className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                <Copy size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <span className="flex-1 text-left">Copy organisation ID</span>
+              </DropdownMenu.Item>
+            ) : (
+              <div
+                title="Turn on sync to give this organisation an ID"
+                className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
+              >
+                <Copy size={12} className="shrink-0" />
+                <span className="flex-1 text-left">Copy organisation ID</span>
               </div>
             )}
 
