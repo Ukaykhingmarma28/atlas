@@ -4,11 +4,15 @@ import { invoke } from "@tauri-apps/api/core";
  * Agent usage, read from Atlas's own record rather than from any agent CLI's
  * private storage.
  *
- * The three usage surfaces — the status-bar widget, the usage panel and Mission
- * Control — used to parse Claude's `~/.claude/projects` JSONL and price it with
- * a table hardcoded in Rust, which made all three Claude-only by construction.
- * They now read what Atlas recorded for **every** agent, priced from the
- * models.dev map Atlas already caches (ADR-0001, issue #17).
+ * The usage surfaces — the status-bar widget and Mission Control — used to
+ * parse Claude's `~/.claude/projects` JSONL and price it with a table
+ * hardcoded in Rust, which made them Claude-only by construction. They now
+ * read what Atlas recorded for **every** agent, priced from the models.dev map
+ * Atlas already caches (ADR-0001, issue #17).
+ *
+ * NOTE: the whole-project rollup (`agent_project_usage`) lost its last caller
+ * when the left panel's usage report was removed (2026-09-16). The Rust
+ * command is still registered.
  *
  * Two honest limits follow, and the UI says so where it shows them: only
  * sessions run through Atlas are counted, and a model missing from the price
@@ -39,26 +43,6 @@ export interface SessionUsage {
   /** When the session last did work, epoch milliseconds. */
   last_activity_ms: number | null;
   title: string;
-}
-
-export interface UsageTotals {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-  messages: number;
-  total_cost_usd: number;
-  session_count: number;
-}
-
-export interface ProjectUsage {
-  totals: UsageTotals;
-  sessions: SessionUsage[];
-}
-
-/** Usage for every session Atlas recorded in `projectPath`, costliest first. */
-export function getProjectUsage(projectPath: string): Promise<ProjectUsage> {
-  return invoke<ProjectUsage>("agent_project_usage", { projectPath });
 }
 
 /**

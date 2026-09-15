@@ -45,10 +45,6 @@ interface LayoutState {
     visible: boolean;
     width: number;
     activeSection: "files" | "knowledge";
-    usagePanelHeight: number;
-    /** Show the project "Usage" report accordion below the file tree.
-     *  Toggled by the chevron in its header. */
-    usagePanelVisible: boolean;
   };
   rightPanel: {
     visible: boolean;
@@ -133,7 +129,6 @@ interface LayoutActions {
     toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
     toggleBottomPanel: () => void;
     toggleChatSidebar: () => void;
-    toggleUsagePanel: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
     setKnowledgeSidebarWidth: (width: number) => void;
@@ -194,8 +189,6 @@ const initialState: LayoutState = {
     visible: true,
     width: 240,
     activeSection: "files",
-    usagePanelHeight: 220,
-    usagePanelVisible: false,
   },
   rightPanel: {
     visible: true,
@@ -444,10 +437,6 @@ export const useLayoutStore = createSelectors(
           toggleChatSidebar: () =>
             set((s) => {
               s.chatSidebar.visible = !s.chatSidebar.visible;
-            }),
-          toggleUsagePanel: () =>
-            set((s) => {
-              s.leftPanel.usagePanelVisible = !s.leftPanel.usagePanelVisible;
             }),
           toggleKnowledgeSidebar: () =>
             set((s) => {
