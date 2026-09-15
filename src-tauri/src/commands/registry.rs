@@ -66,14 +66,6 @@ struct InstallProgress {
     total: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InstallDone {
-    agent_id: String,
-    success: bool,
-    error: Option<String>,
-}
-
 fn entry_view(agent: &RegistryAgent, store: &AgentServerStore) -> RegistryEntryView {
     let metadata = agent.metadata();
     let installed = store.entry(agent.id()).is_some();
@@ -158,16 +150,6 @@ pub async fn acp_registry_install(agent_id: String, app: AppHandle) -> Result<()
     let host = app.state::<Arc<AgentHost>>().inner().clone();
     let result = install(&host, &app, &agent_id).await;
 
-    // Fires on every path so a listener that is not awaiting the invoke can
-    // still clear its pending state.
-    let _ = app.emit(
-        "atlas:registry-install:done",
-        InstallDone {
-            agent_id: agent_id.clone(),
-            success: result.is_ok(),
-            error: result.as_ref().err().cloned(),
-        },
-    );
     if result.is_ok() {
         // Seeds the per-agent download counts behind the marketplace's trend
         // charts. Opt-in gated by the client; the payload is a registry id,
@@ -224,14 +206,6 @@ pub async fn acp_registry_install_detected(
     let host = app.state::<Arc<AgentHost>>().inner().clone();
     let result = install_detected(&host, &app, &agent_id).await;
 
-    let _ = app.emit(
-        "atlas:registry-install:done",
-        InstallDone {
-            agent_id: agent_id.clone(),
-            success: result.is_ok(),
-            error: result.as_ref().err().cloned(),
-        },
-    );
     if result.is_ok() {
         app.state::<Arc<crate::telemetry::TelemetryClient>>().capture(
             "acp_agent_installed",

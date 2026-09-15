@@ -129,7 +129,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 | `atlas:threads-changed` | thread-metadata store changed; the sidebar's only refresh signal |
 | `atlas:capture-changed` | Timeline / checkpoint record updated |
 | `atlas:agent-elicitation`, `atlas:agent-elicitation-resolved` | agent-initiated prompts to the user |
-| `atlas:agent-catalog:changed`, `atlas:registry-install:progress` / `:done` | Marketplace catalog and install lifecycle |
+| `atlas:agent-catalog:changed`, `atlas:registry-install:progress` | Marketplace catalog and install progress |
 | `atlas:auth-run:progress` / `:done` | interactive agent sign-in run |
 | `atlas:modelchat` | model-chat streaming |
 | `atlas:browser-nav` | embedded-webview navigation state |

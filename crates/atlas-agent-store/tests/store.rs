@@ -488,6 +488,81 @@ async fn an_unchanged_version_notifies_nobody() {
     assert_eq!(new_version.borrow_and_update().as_deref(), Some("3.0.0"));
 }
 
+/// A registry that republishes an older version is not offering an upgrade.
+/// Honouring it would drop the live connection, forget the sessions, and
+/// reinstall the older binary with nothing standing in the way.
+#[tokio::test]
+async fn a_downgrade_notifies_nobody() {
+    let fixture = fixture(vec![npx_agent("test-agent", "2.0.0")]);
+    let id = AgentId::new("test-agent");
+
+    fixture
+        .store
+        .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+        .await;
+    let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+    fixture.registry.set_agents(vec![npx_agent("test-agent", "1.0.0")]);
+    fixture.store.registry_updated();
+    assert_eq!(*new_version.borrow_and_update(), None);
+
+    // …and the agent is not left deaf: a genuine bump past 2.0.0 still lands.
+    fixture.registry.set_agents(vec![npx_agent("test-agent", "3.0.0")]);
+    fixture.store.registry_updated();
+    assert_eq!(new_version.borrow_and_update().as_deref(), Some("3.0.0"));
+}
+
+/// `1.2.3` and `v1.2.3` are one release spelled two ways, and so are `2.0` and
+/// `2.0.0`. Either reading as a change costs the user their session.
+#[tokio::test]
+async fn a_cosmetic_retag_notifies_nobody() {
+    for (published, retagged) in [("1.2.3", "v1.2.3"), ("2.0", "2.0.0"), ("3.0.0", "3")] {
+        let fixture = fixture(vec![npx_agent("test-agent", published)]);
+        let id = AgentId::new("test-agent");
+
+        fixture
+            .store
+            .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+            .await;
+        let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+        fixture
+            .registry
+            .set_agents(vec![npx_agent("test-agent", retagged)]);
+        fixture.store.registry_updated();
+
+        assert_eq!(
+            *new_version.borrow_and_update(),
+            None,
+            "{published} -> {retagged} was treated as a new version"
+        );
+    }
+}
+
+/// Not every registry publishes semver. When neither side can be ordered there
+/// is no direction to read, so any change is still a change.
+#[tokio::test]
+async fn an_unorderable_version_change_still_notifies() {
+    let fixture = fixture(vec![npx_agent("test-agent", "latest")]);
+    let id = AgentId::new("test-agent");
+
+    fixture
+        .store
+        .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+        .await;
+    let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+    fixture
+        .registry
+        .set_agents(vec![npx_agent("test-agent", "nightly-2026-09-14")]);
+    fixture.store.registry_updated();
+
+    assert_eq!(
+        new_version.borrow_and_update().as_deref(),
+        Some("nightly-2026-09-14")
+    );
+}
+
 #[tokio::test]
 async fn agents_are_notified_independently() {
     let fixture = fixture(vec![

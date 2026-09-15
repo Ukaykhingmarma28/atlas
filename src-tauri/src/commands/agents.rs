@@ -710,7 +710,16 @@ pub fn install_manager(app: &AppHandle) {
         let host = host;
         tauri::async_runtime::spawn(async move {
             let installed = super::agent_host::load_installed(&data_dir);
-            let _ = registry.load_cached().await;
+            // Not fatal — an unreadable cache means "empty until the first
+            // refresh", which the refresh below fixes. Logged rather than
+            // discarded because the symptom it produces is "Registry
+            // unavailable" with no cause anywhere in a user's log bundle.
+            if let Err(error) = registry.load_cached().await {
+                tracing::warn!(
+                    error = %format!("{error:#}"),
+                    "could not load the cached agent registry",
+                );
+            }
             store.set_settings(installed).await;
             emit_catalog_changed(&app, "settings");
 
