@@ -98,12 +98,8 @@ const NODE_CENTRE = 16;
 /**
  * The reading measure. Prose past ~90 characters is measurably harder to scan.
  *
- * The horizontal padding is not decorative: the navigation rail is an absolute
- * overlay at `left: 0` about 40px wide including its fade, and it sits *over*
- * this column. At `px-8` the first character of every line was inside the rail's
- * gradient — legible, but reading as though the text had run into the furniture.
- * 56px clears the rail with room to spare on the left, and stays symmetric so
- * the column still reads as a measure rather than an indent.
+ * The 56px horizontal padding is symmetric on purpose, so the column reads as a
+ * measure rather than an indent.
  */
 const MEASURE = "mx-auto w-full max-w-[920px] px-14";
 
@@ -462,41 +458,6 @@ export function SessionDetail({
 
   return (
     <div className="relative flex h-full min-h-0">
-      {/* The navigation rail, matching the agent chat: one tick per prompt,
-       *  vertically centred, the active one widened. Two ticks is the floor —
-       *  a rail with one mark on it navigates nothing. */}
-      {tab === "activity" && anchors.length > 1 && (
-        <div className="pointer-events-none absolute left-0 top-1/2 z-[35] -translate-y-1/2">
-          <div className="pointer-events-none absolute inset-y-[-12px] left-0 w-10 bg-gradient-to-r from-[var(--bg-surface)] via-[var(--bg-surface)]/70 to-transparent" />
-          {/* Ticks only — no hover tooltip. The previews kept one mounted
-           *  `backdrop-filter` element PER PROMPT stacked over the scroller
-           *  (opacity-0 still composites), which is exactly the blur cost this
-           *  codebase keeps relearning. The tick jumps; the prompt itself is
-           *  one click away, and `aria-label` keeps the preview for assistive
-           *  tech where it costs nothing. */}
-          <div className="relative flex flex-col justify-center gap-1.5 py-2 pl-2 pr-4">
-            {anchors.map((anchor, i) => (
-              <button
-                key={anchor.id}
-                type="button"
-                aria-label={anchor.preview || "Jump to prompt"}
-                onClick={() => jumpToAnchor(anchor)}
-                className="group pointer-events-auto relative flex cursor-pointer items-center"
-              >
-                <span
-                  className={cn(
-                    "h-0.5 rounded-full transition-all duration-200 ease-out",
-                    i === activeAnchor
-                      ? "w-4 bg-[var(--accent-primary)]"
-                      : "w-2 bg-[var(--text-tertiary)]/40 group-hover:w-3 group-hover:bg-[var(--text-tertiary)]",
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -925,10 +886,11 @@ function groupEntries(entries: TimelineEntry[]): Group[] {
  * The rendered window of the timeline.
  *
  * Split out and memoised because the scroll loop publishes two pieces of state
- * — the fade's `more` and the rail's `activeAnchor` — and without this boundary
- * every tick of either re-rendered every row, every code block and every
- * markdown body in the window. Now a scroll that changes only where the reader
- * is re-renders the rail and the fade, and the list is skipped outright.
+ * — the fade's `more` and the jump button's `activeAnchor` — and without this
+ * boundary every tick of either re-rendered every row, every code block and
+ * every markdown body in the window. Now a scroll that changes only where the
+ * reader is re-renders the action bar and the fade, and the list is skipped
+ * outright.
  *
  * `landed` is the one prop that still moves per row, and it moves once per jump.
  */
