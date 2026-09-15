@@ -492,14 +492,23 @@ export function ArtifactsPanel() {
             
             30% of the way from the default border to the strong one — the
             hairline at `--border-default` disappeared against the card's own
-            ring at this length. */}
+            ring at this length.
+
+            `z-40` because it has to beat the pane's own overlays, not merely
+            the pane. The card below is `relative` with `z-index: auto`, so it
+            opens no stacking context and its children compete with this
+            element directly — at `z-20` the detail's bottom fade (also `z-20`,
+            and later in the DOM) painted its opaque end straight over the
+            divider's last ~128px, which read as the seam dissolving into the
+            nav. The fade belongs to one pane; the divider is the card's edge
+            and outranks everything inside it. */}
         {sidebarShown && (
           <div
             onMouseDown={startResize}
             role="separator"
             aria-orientation="vertical"
             className={cn(
-              "absolute top-0 z-20 w-px cursor-col-resize transition-colors",
+              "absolute top-0 z-40 w-px cursor-col-resize transition-colors",
               "after:absolute after:inset-y-0 after:-left-[3px] after:-right-[3px] after:content-['']",
               resizing && "bg-[var(--accent-primary)]",
             )}
