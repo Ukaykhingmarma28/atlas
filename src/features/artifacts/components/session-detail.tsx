@@ -48,7 +48,6 @@ import {
   tokenBreakdown,
   tokenLabel,
 } from "../lib/board";
-import { exportSession, type ExportFormat } from "../lib/export";
 import { observeSize } from "../lib/shared-resize-observer";
 import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
@@ -103,8 +102,6 @@ const NODE_CENTRE = 16;
  */
 const MEASURE = "mx-auto w-full max-w-[920px] px-14";
 
-type Tab = "activity" | "tools";
-
 interface Props {
   detail: Detail;
   /** Needed to fetch spilled payloads via `artifacts_payload`. */
@@ -123,7 +120,6 @@ export function SessionDetail({
   chatOpen,
   onToggleChat,
 }: Props) {
-  const [tab, setTab] = useState<Tab>("activity");
   const [filters, setFilters] = useState<TimelineFilters>(DEFAULT_FILTERS);
   /** Narrow tool calls to failed ones — the "which calls failed" question. */
   const [failedOnly, setFailedOnly] = useState(false);
@@ -216,18 +212,6 @@ export function SessionDetail({
       (entry) => passes(entry, filters, failedOnly, tools) && matches(entry, needle),
     );
   }, [entries, filters, failedOnly, tools, deferredSearch]);
-
-  /** Every tool call, unfiltered by kind — the Tool calls tab's own list. */
-  const allCalls = useMemo(
-    () =>
-      entries.filter(
-        (entry) =>
-          entry.kind === "tool_call" &&
-          (!failedOnly || entry.toolStatus === "failed") &&
-          (tools.size === 0 || tools.has(entry.toolName ?? "Other")),
-      ),
-    [entries, failedOnly, tools],
-  );
 
   /** Every Checkpoint, unfiltered — the jump list must reach a commit even when
    *  the current filter hides Checkpoints from the timeline. */
@@ -416,7 +400,6 @@ export function SessionDetail({
     const onJump = (e: Event) => {
       const detailPayload = (e as CustomEvent<JumpDetail>).detail;
       if (!detailPayload) return;
-      setTab("activity");
       if (detailPayload.entryId) {
         setPendingJump(detailPayload.entryId);
         return;
@@ -442,7 +425,6 @@ export function SessionDetail({
     );
     if (target) {
       honouredFocus.current = arrival;
-      setTab("activity");
       setPendingJump(target.id);
     }
   }, [focusCommitSha, detail.summary.id, detail.entries]);
@@ -463,48 +445,27 @@ export function SessionDetail({
         onScroll={onScroll}
         className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
       >
-        <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-7")}>
+        <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-14")}>
           <Masthead detail={detail} />
 
-          <div className="mt-5 flex items-center gap-1.5">
-            <TabButton
-              active={tab === "activity"}
-              count={detail.entries.length}
-              onClick={() => setTab("activity")}
-            >
-              Activity
-            </TabButton>
-            <TabButton
-              active={tab === "tools"}
-              count={s.toolCallCount}
-              onClick={() => setTab("tools")}
-            >
-              Tool calls
-            </TabButton>
-          </div>
-
-          {tab === "activity" ? (
-            groups.length === 0 ? (
-              <Empty detail={detail} failedOnly={failedOnly} failedCount={failedCount} />
-            ) : (
-              <div className="mt-6">
-                <Timeline
-                  groups={rendered}
-                  projectPath={projectPath}
-                  agent={s.agent}
-                  expandTools={expandTools}
-                  landed={landed}
-                  register={register}
-                />
-                {renderCount < groups.length && (
-                  <p className="py-6 text-center font-mono text-[11px] text-[var(--text-tertiary)]">
-                    {groups.length - renderCount} more…
-                  </p>
-                )}
-              </div>
-            )
+          {groups.length === 0 ? (
+            <Empty detail={detail} failedOnly={failedOnly} failedCount={failedCount} />
           ) : (
-            <CallTable calls={allCalls} projectPath={projectPath} />
+            <div className="mt-14">
+              <Timeline
+                groups={rendered}
+                projectPath={projectPath}
+                agent={s.agent}
+                expandTools={expandTools}
+                landed={landed}
+                register={register}
+              />
+              {renderCount < groups.length && (
+                <p className="py-6 text-center font-mono text-[11px] text-[var(--text-tertiary)]">
+                  {groups.length - renderCount} more…
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -619,7 +580,6 @@ export function SessionDetail({
             // measure, and landing behind it would mean the reader has to
             // dismiss it to see what they asked for.
             setFiltersOpen(false);
-            setTab("activity");
             setPendingJump(entryId);
           }}
           onClose={() => setFiltersOpen(false)}
@@ -631,7 +591,15 @@ export function SessionDetail({
 
 // ── Masthead ────────────────────────────────────────────────────────────────
 
-/** Title, identity chips, and the four numbers worth leading with. */
+/**
+ * Title, identity pills, and the four numbers worth leading with.
+ *
+ * The rhythm is deliberate and even: the same 22px sits between the title and
+ * the pills as between the pills and the grid, and the 56px above the title
+ * matches the 56px below the grid — so the header reads as one block with air
+ * around it rather than three rows that happen to be stacked. Export is not
+ * here; it lives in the header dock with the tab's other actions.
+ */
 function Masthead({ detail }: { detail: Detail }) {
   const s = detail.summary;
   const branch = s.branches[0];
@@ -639,44 +607,41 @@ function Masthead({ detail }: { detail: Detail }) {
 
   return (
     <>
-      <h1 className="text-[26px] font-semibold leading-[1.2] tracking-[-0.03em] text-[var(--text-primary)]">
+      <h1 className="text-[22px] font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--text-primary)]">
         {sessionTitle(s.title) ?? (
           <span className="text-[var(--text-tertiary)]">Untitled session</span>
         )}
       </h1>
 
-      <div className="mt-3 flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {s.agent && <AgentChip agent={s.agent} />}
-          {s.source === "external_jsonl" && (
-            <Chip>
-              <Download size={11} />
-              imported
-            </Chip>
-          )}
-          {branch && (
-            <Chip>
-              <GitCommitHorizontal size={11} />
-              {branch}
-            </Chip>
-          )}
-          <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
-            {timeAgo(s.lastActivityAt, { suffix: true })} · {formatDuration(s.activeSeconds)}
+      <div className="mt-[22px] flex min-w-0 flex-wrap items-center gap-2">
+        {s.agent && <AgentChip agent={s.agent} />}
+        {s.source === "external_jsonl" && (
+          <Chip>
+            <Download size={11} />
+            imported
+          </Chip>
+        )}
+        {branch && (
+          <Chip>
+            <GitCommitHorizontal size={11} />
+            {branch}
+          </Chip>
+        )}
+        <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
+          {timeAgo(s.lastActivityAt, { suffix: true })} · {formatDuration(s.activeSeconds)}
+        </span>
+        {s.needsAttention && (
+          <span
+            className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-[10.5px] text-[var(--status-warning)]"
+            title={s.attentionReason ?? undefined}
+          >
+            <TriangleAlert size={11} />
+            partial
           </span>
-          {s.needsAttention && (
-            <span
-              className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-[10.5px] text-[var(--status-warning)]"
-              title={s.attentionReason ?? undefined}
-            >
-              <TriangleAlert size={11} />
-              partial
-            </span>
-          )}
-        </div>
-        <ExportButton detail={detail} />
+        )}
       </div>
 
-      <div className="mt-5 grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]">
+      <div className="mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]">
         <Metric label="Active" value={formatDuration(s.activeSeconds)} sub={clock(s)} />
         <Metric
           label="Tokens"
@@ -702,80 +667,6 @@ function Masthead({ detail }: { detail: Detail }) {
         />
       </div>
     </>
-  );
-}
-
-/**
- * Take the Session out of Atlas.
- *
- * Two formats, because there are two reasons to want one — the machine-readable
- * record and the one you paste into a ticket — and the choice is one click deep
- * rather than a dialog, since neither is the obvious default.
- */
-function ExportButton({ detail }: { detail: Detail }) {
-  const [busy, setBusy] = useState<ExportFormat | null>(null);
-  const [open, setOpen] = useState(false);
-
-  const run = async (format: ExportFormat) => {
-    setOpen(false);
-    setBusy(format);
-    try {
-      await exportSession(detail, format);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Export session"
-          aria-label="Export session"
-          disabled={busy !== null}
-          className="ml-auto flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
-        >
-          {busy ? (
-            <Loader2 size={13} className="animate-spin" />
-          ) : (
-            <Download size={13} strokeWidth={1.7} />
-          )}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          className="z-[var(--z-max)] w-[184px] origin-[var(--radix-popover-content-transform-origin)] overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 p-1 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
-          <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-function ExportItem({
-  label,
-  hint,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-    >
-      {label}
-      <span className="flex-1" />
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{hint}</span>
-    </button>
   );
 }
 
@@ -1292,7 +1183,7 @@ const CALL_WINDOW = 120;
 /** How many more each click reveals. */
 const CALL_WINDOW_GROW = 400;
 
-/** The compact call table, shared by the inline group and the Tool calls tab. */
+/** The compact call table behind a group's "Show tool calls". */
 function CallTable({
   calls,
   projectPath,
@@ -2000,34 +1891,6 @@ function BarButton({
           {badge}
         </span>
       )}
-    </button>
-  );
-}
-
-function TabButton({
-  active,
-  count,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  count: number;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-7 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-[12.5px] font-medium tracking-[-0.01em] transition-colors",
-        active
-          ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-          : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
-      )}
-    >
-      {children}
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{count}</span>
     </button>
   );
 }
