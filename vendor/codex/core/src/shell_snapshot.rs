@@ -293,6 +293,10 @@ async fn run_script_with_timeout(
     handler.args(&args[1..]);
     handler.stdin(Stdio::null());
     handler.current_dir(cwd);
+    // Atlas: CREATE_NO_WINDOW — a shell run to snapshot its environment is a
+    // piped child of the GUI host and must not open a console window.
+    #[cfg(windows)]
+    handler.creation_flags(0x0800_0000);
     #[cfg(unix)]
     unsafe {
         handler.pre_exec(|| {

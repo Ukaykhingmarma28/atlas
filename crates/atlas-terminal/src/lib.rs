@@ -72,7 +72,11 @@ impl TerminalManager {
 
         let shell = detect_shell();
         let mut cmd = CommandBuilder::new(&shell);
-        cmd.arg("-l"); // login shell — sources the user's profile so PATH etc. are correct
+        // Login shell — sources the user's profile so PATH etc. are correct.
+        // PowerShell has no `-l`: it loads the user's profile by default.
+        if !cfg!(windows) {
+            cmd.arg("-l");
+        }
         if let Some(dir) = cwd {
             cmd.cwd(dir);
         }
@@ -349,6 +353,11 @@ pub fn cwd_of_pid(pid: u32) -> Option<String> {
 }
 
 fn detect_shell() -> String {
+    // No $SHELL on Windows (a Git Bash parent can leak a POSIX path into it).
+    // Windows PowerShell ships with every supported release.
+    if cfg!(windows) {
+        return "powershell.exe".to_string();
+    }
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
 }
 

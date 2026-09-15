@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+atlas-process = { path = "../atlas-process" }
 # Same exact pin as `atlas-acp-thread` and as Zed (`zed-ref/Cargo.toml:518`).
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 atlas-acp-thread = { path = "../atlas-acp-thread" }

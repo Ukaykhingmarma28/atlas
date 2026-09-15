@@ -159,7 +159,7 @@ impl AcpConnection {
         client_name: &'static str,
         client_version: String,
     ) -> Result<Self> {
-        let mut child_command = tokio::process::Command::new(&command.path);
+        let mut child_command = atlas_process::async_command(&command.path);
         child_command
             .args(&command.args)
             .stdin(Stdio::piped())

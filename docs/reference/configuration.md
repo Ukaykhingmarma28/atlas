@@ -160,6 +160,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `gitBlameInline` | boolean | `true` | — |
 | `autoUpdate` | boolean | `true` | — |
+| `curatedPluginSync` | boolean | `false` | — |
 | `updaterIgnoredVersion` | string, or absent | absent | — |
 | `enterToSend` | boolean | `true` | — |
 | `terminalNotifications` | boolean | `true` | — |

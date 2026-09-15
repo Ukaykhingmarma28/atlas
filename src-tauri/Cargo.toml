@@ -29,6 +29,7 @@ default = []
 # there is nothing left to select and every build contains it.
 
 [dependencies]
+atlas-process = { path = "../crates/atlas-process" }
 # Devtools intentionally NOT enabled here. Release builds ship without
 # right-click → Inspect Element / Cmd+Option+I; `tauri dev` still auto-
 # enables devtools because the Tauri runtime turns them on for debug
@@ -148,6 +149,10 @@ atlas-git = { path = "../crates/atlas-git" }
 # testable against a real database and a real git repository.
 atlas-checkpoint = { path = "../crates/atlas-checkpoint" }
 dirs = "6"
+# `canonicalize` without Windows' `\\?\` verbatim prefix, which would otherwise
+# leak into workspace paths, capture ids and asset scopes. Already in the
+# lockfile via the vendored Codex tree, so no new resolution.
+dunce = "1"
 sha2 = "0.10"
 # URL parsing for the embedded browser (`commands::browser`). Already in the
 # lockfile transitively via tauri/reqwest; declared here to name the type.

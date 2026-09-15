@@ -84,7 +84,7 @@ fn lock_ok<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// was renamed or removed) — an id is still needed to read back what was
 /// already stored under it.
 pub(crate) fn workspace_id_for(root: &std::path::Path) -> String {
-    std::fs::canonicalize(root)
+    dunce::canonicalize(root)
         .unwrap_or_else(|_| root.to_path_buf())
         .to_string_lossy()
         .to_string()
@@ -732,7 +732,7 @@ impl CaptureState {
             // `out_of_repo`, and its touch can never match a commit. Retry
             // against the canonicalised root before accepting that verdict.
             if path.out_of_repo {
-                if let Ok(real_root) = std::fs::canonicalize(workspace_root) {
+                if let Ok(real_root) = dunce::canonicalize(workspace_root) {
                     if real_root != workspace_root {
                         let retry = resolve_path(&raw, &real_root);
                         if !retry.out_of_repo {
@@ -1223,7 +1223,7 @@ pub async fn capture_git_init(
     app: AppHandle,
 ) -> Result<Option<atlas_checkpoint::Binding>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let status = std::process::Command::new("git")
+        let status = atlas_process::command("git")
             .arg("-C")
             .arg(&project_path)
             .arg("init")
@@ -3249,7 +3249,7 @@ mod diff_path_tests {
     fn repo(name: &str) -> std::path::PathBuf {
         let root = workspace(name);
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3360,7 +3360,7 @@ mod diff_path_tests {
         let state = CaptureState::new();
         let call = shell_call("call-1");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3399,7 +3399,7 @@ mod diff_path_tests {
         let state = CaptureState::new();
         let call = shell_call("call-1");
         let git = |args: &[&str]| {
-            let out = std::process::Command::new("git")
+            let out = atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3434,7 +3434,7 @@ mod diff_path_tests {
         // The command runs and commits before capture ever sights the call…
         std::fs::write(root.join("test.txt"), b"test file").expect("write");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3470,7 +3470,7 @@ mod diff_path_tests {
 
         std::fs::write(root.join("a.txt"), b"a").expect("write");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)

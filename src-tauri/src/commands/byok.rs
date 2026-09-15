@@ -199,7 +199,7 @@ fn shell_env_values() -> BTreeMap<String, String> {
         "printf 'ATLAS_ENV_PROBE\x1f'; printf '%s\x1f' {fmt}"
     );
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let child = std::process::Command::new(&shell)
+    let child = atlas_process::command(&shell)
         .args(["-lic", &script])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -214,7 +214,7 @@ fn shell_env_values() -> BTreeMap<String, String> {
     let out = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
         Ok(Ok(out)) if out.status.success() => out,
         _ => {
-            let _ = std::process::Command::new("kill").args(["-9", &pid.to_string()]).status();
+            let _ = atlas_process::command("kill").args(["-9", &pid.to_string()]).status();
             return BTreeMap::new();
         }
     };
@@ -661,7 +661,7 @@ fn probe_shell_vars(vars: &[&str]) -> BTreeMap<String, String> {
         "printf 'ATLAS_ENV_PROBE\x1f'; printf '%s\x1f' {fmt}"
     );
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let child = std::process::Command::new(&shell)
+    let child = atlas_process::command(&shell)
         .args(["-lic", &script])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -676,7 +676,7 @@ fn probe_shell_vars(vars: &[&str]) -> BTreeMap<String, String> {
     let out = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
         Ok(Ok(out)) if out.status.success() => out,
         _ => {
-            let _ = std::process::Command::new("kill").args(["-9", &pid.to_string()]).status();
+            let _ = atlas_process::command("kill").args(["-9", &pid.to_string()]).status();
             return BTreeMap::new();
         }
     };

@@ -280,6 +280,9 @@ pub fn command_from_argv(argv: &[String]) -> Option<Command> {
     }
     let mut command = Command::new(program);
     command.args(args);
+    // Atlas: CREATE_NO_WINDOW — hook commands are piped children of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     scrub_non_inheritable_env_vars(command.as_std_mut());
     Some(command)
 }

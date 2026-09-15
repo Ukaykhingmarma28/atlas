@@ -22,6 +22,10 @@ import {
   ArrowDownToLine,
   Loader2,
   Hammer,
+  Minus,
+  Square,
+  Copy,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TitlebarDock, type DockItem } from "./titlebar-dock";
@@ -38,6 +42,7 @@ import type { Binding, CaptureHealth } from "@/features/capture/types";
 import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
 import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
 import { isDev } from "@/lib/env";
+import { isMac, isWindows } from "@/lib/platform";
 
 function useTauriWindow() {
   const windowRef = useRef<TauriWindow | null>(null);
@@ -93,7 +98,8 @@ export function Titlebar() {
   // EXCEPT when the sidebar is DOCKED (pinned + open): the docked column then
   // sits under the lights and carries that gap itself, so the titlebar reclaims
   // the space. Fullscreen hides the lights entirely. (Unpinned overlay mode
-  // doesn't occupy flow width, so it never affects this.)
+  // doesn't occupy flow width, so it never affects this.) Only macOS has
+  // traffic lights on the left; Windows gets `WindowControls` on the right.
   const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
   const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
   const dockedSidebar = sidebarPinned && sidebarOpen;
@@ -128,17 +134,23 @@ export function Titlebar() {
   };
 
   // macOS double-click-to-zoom. Tauri's `toggleMaximize()` doesn't map to
-  // AppKit's zoom, so we call a native `performZoom:` command instead.
+  // AppKit's zoom, so we call a native `performZoom:` command instead. It does
+  // map to maximize on Windows, which is the convention there.
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!isTitlebarSurface(e.target)) return;
-    void invoke("window_zoom").catch(() => {});
+    if (isMac) void invoke("window_zoom").catch(() => {});
+    else void windowRef.current?.toggleMaximize();
   };
 
   return (
     <div
       onMouseDown={handleDrag}
       onDoubleClick={handleDoubleClick}
-      className={`relative z-50 flex h-[30px] select-none items-center pr-3 bg-[var(--bg-base)] border-b border-border-default ${isFullscreen || dockedSidebar ? "pl-3" : "pl-[72px]"}`}
+      className={cn(
+        "relative z-50 flex h-[30px] select-none items-center bg-[var(--bg-base)] border-b border-border-default",
+        isWindows ? "pr-0" : "pr-3",
+        isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
+      )}
     >
       <div className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5">
         <WorkspaceToggle />
@@ -165,6 +177,74 @@ export function Titlebar() {
           <AccountButton />
         </div>
       )}
+
+      {isWindows && <WindowControls />}
+    </div>
+  );
+}
+
+/**
+ * Minimize / maximize / close. Windows only: the window there is undecorated
+ * (`src-tauri/tauri.windows.conf.json`), so this titlebar is the only chrome,
+ * whereas macOS keeps its native traffic lights in the overlay title bar.
+ */
+function WindowControls() {
+  const windowRef = useRef<TauriWindow | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        windowRef.current = win;
+        setIsMaximized(await win.isMaximized());
+        unlisten = await win.onResized(async () => {
+          setIsMaximized(await win.isMaximized());
+        });
+      } catch {
+        // not in Tauri context
+      }
+    })();
+
+    return () => unlisten?.();
+  }, []);
+
+  const button =
+    "flex h-[29px] w-[46px] items-center justify-center text-[#999] transition-colors duration-100";
+
+  return (
+    <div className="ml-2 flex h-[29px] items-center self-start">
+      <button
+        onClick={() => void windowRef.current?.minimize()}
+        className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+        title="Minimize"
+        aria-label="Minimize"
+      >
+        <Minus size={14} strokeWidth={1.25} />
+      </button>
+      <button
+        onClick={() => void windowRef.current?.toggleMaximize()}
+        className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+        title={isMaximized ? "Restore" : "Maximize"}
+        aria-label={isMaximized ? "Restore" : "Maximize"}
+      >
+        {isMaximized ? (
+          <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
+        ) : (
+          <Square size={11} strokeWidth={1.25} />
+        )}
+      </button>
+      <button
+        onClick={() => void windowRef.current?.close()}
+        className={cn(button, "hover:bg-[#c42b1c] hover:text-white")}
+        title="Close"
+        aria-label="Close"
+      >
+        <X size={15} strokeWidth={1.25} />
+      </button>
     </div>
   );
 }

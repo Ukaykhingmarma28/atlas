@@ -47,7 +47,8 @@ fn spawn_git_command(command: &mut Command) -> Option<(Child, KillGitProcessTree
         Ok((child, job)) => (child, Some(job)),
         Err(_) => {
             // A failed contained spawn leaves CREATE_SUSPENDED on the command.
-            command.creation_flags(0);
+            // Atlas: keep the child windowless on this path too.
+            command.creation_flags(crate::CREATE_NO_WINDOW);
             (command.spawn().ok()?, None)
         }
     };

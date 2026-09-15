@@ -119,6 +119,8 @@ fn run_git(args: &[&str], cwd: Option<&Path>) -> Result<(), MarketplaceAddError>
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    // Atlas: no console window for a child of the GUI host.
+    codex_git_utils::no_console_window(&mut command);
 
     let output = command.output().map_err(|err| {
         MarketplaceAddError::Internal(format!("failed to run git {}: {err}", args.join(" ")))

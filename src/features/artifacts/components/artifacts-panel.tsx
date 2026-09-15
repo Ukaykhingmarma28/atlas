@@ -20,6 +20,7 @@ import {
   facetMatches,
   facets,
   sessionState,
+  sessionTitle,
   NO_FACETS,
   type Facet,
   type FacetKey,
@@ -29,6 +30,7 @@ import {
 import { clearDetailCache, readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
 import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock";
 import { CheckpointsPicker } from "./checkpoints-picker";
+import { ExportButton } from "./export-button";
 import { SessionChatPanel } from "./session-chat-panel";
 import { SessionDetail } from "./session-detail";
 import { TimelineInbox } from "./timeline-inbox";
@@ -492,14 +494,23 @@ export function ArtifactsPanel() {
             
             30% of the way from the default border to the strong one — the
             hairline at `--border-default` disappeared against the card's own
-            ring at this length. */}
+            ring at this length.
+
+            `z-40` because it has to beat the pane's own overlays, not merely
+            the pane. The card below is `relative` with `z-index: auto`, so it
+            opens no stacking context and its children compete with this
+            element directly — at `z-20` the detail's bottom fade (also `z-20`,
+            and later in the DOM) painted its opaque end straight over the
+            divider's last ~128px, which read as the seam dissolving into the
+            nav. The fade belongs to one pane; the divider is the card's edge
+            and outranks everything inside it. */}
         {sidebarShown && (
           <div
             onMouseDown={startResize}
             role="separator"
             aria-orientation="vertical"
             className={cn(
-              "absolute top-0 z-20 w-px cursor-col-resize transition-colors",
+              "absolute top-0 z-40 w-px cursor-col-resize transition-colors",
               "after:absolute after:inset-y-0 after:-left-[3px] after:-right-[3px] after:content-['']",
               resizing && "bg-[var(--accent-primary)]",
             )}
@@ -549,6 +560,7 @@ export function ArtifactsPanel() {
                 </DockButton>
                 <Breadcrumb
                   sessionId={open.sessionId}
+                  title={detail?.summary.title ?? null}
                   projectPath={open.projectPath}
                   onBack={() => openSession(null)}
                 />
@@ -561,9 +573,10 @@ export function ArtifactsPanel() {
             )}
 
             <div className="ml-auto flex shrink-0 items-center">
-              {/* One dock, three actions: jump to a commit, scope the board,
-                  re-read it. */}
+              {/* One dock: act on the open Session, jump to a commit, scope
+                  the board, re-read it. */}
               <HeaderDock>
+                {open && detail && <ExportButton detail={detail} />}
                 <CheckpointsPicker
                   projects={projectFilter ? [projectFilter] : projectPaths}
                   onOpen={(row) =>
@@ -742,17 +755,26 @@ function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) =
  * Organisation, so it is on the tooltip rather than spending a third of a 32px
  * bar saying a folder name you already know.
  */
+/**
+ * `Sessions / <title>` — the way Linear heads an issue with its identifier and
+ * name. The title is what a reader recognises; the id is what a bug report
+ * needs, so it stays one click away (copy) and in the crumb's tooltip. The
+ * 7-char hash only shows while the detail is still loading and there is no
+ * title to put there yet.
+ */
 function Breadcrumb({
   sessionId,
+  title,
   projectPath,
   onBack,
 }: {
   sessionId: string;
+  title: string | null;
   projectPath: string;
   onBack: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const short = sessionId.slice(-7);
+  const label = sessionTitle(title) ?? sessionId.slice(-7);
 
   // Held in a ref so an unmount mid-flash cannot fire `setCopied` on a dead
   // component, and so a second click restarts the window rather than stacking.
@@ -762,7 +784,7 @@ function Breadcrumb({
   return (
     <span
       title={projectPath}
-      className="flex min-w-0 items-center gap-1 font-mono text-[11px] text-[var(--text-tertiary)]"
+      className="flex min-w-0 items-center gap-1 text-[12px] text-[var(--text-tertiary)]"
     >
       <button
         type="button"
@@ -783,9 +805,9 @@ function Breadcrumb({
           flash.current = setTimeout(() => setCopied(false), 1200);
         }}
         title={`Copy ${sessionId}`}
-        className="cursor-pointer truncate rounded px-1 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
-        {copied ? "copied" : short}
+        {copied ? "copied" : label}
       </button>
     </span>
   );

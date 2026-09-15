@@ -705,6 +705,7 @@ dependencies = [
  "atlas-gitdiff",
  "atlas-memory",
  "atlas-native-agent",
+ "atlas-process",
  "atlas-terminal",
  "atlas-thread-metadata",
  "base64 0.21.7",
@@ -712,6 +713,7 @@ dependencies = [
  "dashmap",
  "dirs",
  "dotenvy",
+ "dunce",
  "futures",
  "ignore",
  "mimalloc",
@@ -805,6 +807,7 @@ dependencies = [
  "agent-client-protocol",
  "anyhow",
  "atlas-acp-thread",
+ "atlas-process",
  "atlas-terminal",
  "chrono",
  "futures",
@@ -824,6 +827,7 @@ dependencies = [
  "anyhow",
  "atlas-acp-thread",
  "atlas-agent-servers",
+ "atlas-process",
  "bzip2 0.4.4",
  "flate2",
  "futures",
@@ -879,6 +883,7 @@ dependencies = [
 name = "atlas-checkpoint"
 version = "0.1.0"
 dependencies = [
+ "atlas-process",
  "atlas-redact",
  "chrono",
  "reqwest 0.12.28",
@@ -941,6 +946,7 @@ dependencies = [
 name = "atlas-git"
 version = "0.1.0"
 dependencies = [
+ "atlas-process",
  "regex",
  "serde",
 ]
@@ -983,6 +989,7 @@ dependencies = [
  "atlas-acp-thread",
  "atlas-agent-servers",
  "atlas-agent-transcript",
+ "atlas-process",
  "atlas-thread-metadata",
  "base64 0.22.1",
  "codex-api",
@@ -1014,6 +1021,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-process"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "atlas-redact"
 version = "0.1.0"
 dependencies = [
@@ -1026,6 +1040,7 @@ name = "atlas-terminal"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "atlas-process",
  "libc",
  "portable-pty 0.8.1",
  "serde",

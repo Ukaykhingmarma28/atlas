@@ -21,6 +21,7 @@ name = "engine_gateway_turn"
 path = "tests/engine_gateway_turn.rs"
 
 [dependencies]
+atlas-process = { path = "../atlas-process" }
 # The seam. Same exact pin as every other crate in the ported stack
 # (`zed-ref/Cargo.toml:518`).
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }

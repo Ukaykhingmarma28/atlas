@@ -126,7 +126,7 @@ impl GitCommand {
     }
 
     fn command(&self) -> Command {
-        let mut cmd = Command::new("git");
+        let mut cmd = atlas_process::command("git");
         if self.read_only {
             cmd.arg("--no-optional-locks");
         }

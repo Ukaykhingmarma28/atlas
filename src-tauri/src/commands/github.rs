@@ -166,7 +166,7 @@ pub async fn clone_github_repo(
     let dest_str = dest.to_string_lossy().to_string();
     tokio::task::spawn_blocking(move || {
         let url = format!("https://github.com/{owner}/{repo}.git");
-        let output = std::process::Command::new("git")
+        let output = atlas_process::command("git")
             // `--` so nothing after it can ever parse as a flag, and no
             // terminal prompt — an auth failure fails fast instead of
             // wedging a hidden child process.

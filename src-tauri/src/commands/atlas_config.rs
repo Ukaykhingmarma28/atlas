@@ -130,6 +130,25 @@ pub fn notify_settings_changed(app: &AppHandle, settings: &AppSettings, generati
     //    signed in left PostHog attributing events to the account until the
     //    next sign-out, which is the opposite of what the toggle says.
     crate::commands::auth::resync_telemetry_identity(app, settings.link_telemetry_to_account);
+    // 4. re-apply the Atlas Agent's plugin-catalogue sync gate. The engine
+    //    reads it when the sync would start (its first connect), so it has
+    //    to be current before that — this covers every commit path, and
+    //    `lib.rs` applies it once at boot.
+    apply_curated_plugin_sync_gate(settings.curated_plugin_sync);
+}
+
+/// The gate for the vendored engine's curated-plugin sync
+/// (`codex-core-plugins`, `start_curated_repo_sync`): a `git fetch` of
+/// github.com/openai/plugins at every launch, opt-in from Atlas via
+/// `curatedPluginSync`. The engine runs in this process and reads the
+/// variable itself, so the setting is carried as process environment rather
+/// than threaded through the engine's config.
+pub fn apply_curated_plugin_sync_gate(enabled: bool) {
+    if enabled {
+        std::env::set_var("ATLAS_CURATED_PLUGIN_SYNC", "1");
+    } else {
+        std::env::remove_var("ATLAS_CURATED_PLUGIN_SYNC");
+    }
 }
 
 fn emit_error(app: &AppHandle, error: &ConfigError) {

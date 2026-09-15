@@ -378,7 +378,8 @@ async fn a_registry_binary_agent_reports_a_bad_checksum_rather_than_running() {
     );
 }
 
-/// Install progress reaches the UI's watcher while the download runs.
+/// Install progress reaches the UI's watcher while the download runs, and is
+/// cleared once it is over — a status left behind reads "Installing …" forever.
 #[tokio::test]
 async fn installing_reports_progress_on_the_loading_channel() {
     let contents = b"the agent";
@@ -394,18 +395,51 @@ async fn installing_reports_progress_on_the_loading_channel() {
     let mut loading = fixture.store.watch_loading_status(&id).unwrap();
     assert_eq!(*loading.borrow_and_update(), None);
 
-    fixture
+    let mut command = fixture
         .store
         .agent_server(&id)
         .unwrap()
-        .get_command(vec![], HashMap::new())
-        .await
-        .unwrap();
+        .get_command(vec![], HashMap::new());
 
+    tokio::select! {
+        biased;
+        changed = loading.changed() => changed.unwrap(),
+        _ = &mut command => panic!("the install finished without reporting progress"),
+    }
     assert_eq!(
         loading.borrow_and_update().as_deref(),
         Some("Installing 2.1.0…")
     );
+
+    command.await.unwrap();
+    assert_eq!(*loading.borrow_and_update(), None);
+}
+
+/// A failed install clears its progress too. It used to leave the status set,
+/// so the tab kept reading "Installing …" after the error.
+#[tokio::test]
+async fn a_failed_install_clears_its_progress() {
+    let http = FakeHttp::new().with(ARCHIVE_URL, 200, b"the agent".to_vec());
+    let wrong_digest = Some("00".repeat(32));
+    let fixture = fixture_with_http(vec![binary_agent("some-cli", "2.1.0", wrong_digest)], http);
+
+    fixture
+        .store
+        .set_settings(settings(&[("some-cli", AgentServerSettings::registry())]))
+        .await;
+
+    let id = AgentId::new("some-cli");
+    let mut loading = fixture.store.watch_loading_status(&id).unwrap();
+
+    let result = fixture
+        .store
+        .agent_server(&id)
+        .unwrap()
+        .get_command(vec![], HashMap::new())
+        .await;
+
+    assert!(result.is_err(), "a checksum mismatch must fail the install");
+    assert_eq!(*loading.borrow_and_update(), None);
 }
 
 // ------------------------------------------------- version-bump notification
@@ -452,6 +486,81 @@ async fn an_unchanged_version_notifies_nobody() {
     fixture.registry.set_agents(vec![npx_agent("test-agent", "3.0.0")]);
     fixture.store.registry_updated();
     assert_eq!(new_version.borrow_and_update().as_deref(), Some("3.0.0"));
+}
+
+/// A registry that republishes an older version is not offering an upgrade.
+/// Honouring it would drop the live connection, forget the sessions, and
+/// reinstall the older binary with nothing standing in the way.
+#[tokio::test]
+async fn a_downgrade_notifies_nobody() {
+    let fixture = fixture(vec![npx_agent("test-agent", "2.0.0")]);
+    let id = AgentId::new("test-agent");
+
+    fixture
+        .store
+        .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+        .await;
+    let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+    fixture.registry.set_agents(vec![npx_agent("test-agent", "1.0.0")]);
+    fixture.store.registry_updated();
+    assert_eq!(*new_version.borrow_and_update(), None);
+
+    // …and the agent is not left deaf: a genuine bump past 2.0.0 still lands.
+    fixture.registry.set_agents(vec![npx_agent("test-agent", "3.0.0")]);
+    fixture.store.registry_updated();
+    assert_eq!(new_version.borrow_and_update().as_deref(), Some("3.0.0"));
+}
+
+/// `1.2.3` and `v1.2.3` are one release spelled two ways, and so are `2.0` and
+/// `2.0.0`. Either reading as a change costs the user their session.
+#[tokio::test]
+async fn a_cosmetic_retag_notifies_nobody() {
+    for (published, retagged) in [("1.2.3", "v1.2.3"), ("2.0", "2.0.0"), ("3.0.0", "3")] {
+        let fixture = fixture(vec![npx_agent("test-agent", published)]);
+        let id = AgentId::new("test-agent");
+
+        fixture
+            .store
+            .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+            .await;
+        let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+        fixture
+            .registry
+            .set_agents(vec![npx_agent("test-agent", retagged)]);
+        fixture.store.registry_updated();
+
+        assert_eq!(
+            *new_version.borrow_and_update(),
+            None,
+            "{published} -> {retagged} was treated as a new version"
+        );
+    }
+}
+
+/// Not every registry publishes semver. When neither side can be ordered there
+/// is no direction to read, so any change is still a change.
+#[tokio::test]
+async fn an_unorderable_version_change_still_notifies() {
+    let fixture = fixture(vec![npx_agent("test-agent", "latest")]);
+    let id = AgentId::new("test-agent");
+
+    fixture
+        .store
+        .set_settings(settings(&[("test-agent", AgentServerSettings::registry())]))
+        .await;
+    let mut new_version = fixture.store.watch_new_version(&id).unwrap();
+
+    fixture
+        .registry
+        .set_agents(vec![npx_agent("test-agent", "nightly-2026-09-14")]);
+    fixture.store.registry_updated();
+
+    assert_eq!(
+        new_version.borrow_and_update().as_deref(),
+        Some("nightly-2026-09-14")
+    );
 }
 
 #[tokio::test]

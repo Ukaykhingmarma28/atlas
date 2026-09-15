@@ -58,6 +58,10 @@ export interface AppSettings {
   /** Auto-update master switch. ON (default) → every startup checks PostHog
    *  remote config and prompts when a newer signed DMG is available. */
   autoUpdate: boolean;
+  /** Let the Atlas Agent's engine sync OpenAI's curated plugin catalogue
+   *  (github.com/openai/plugins) when it starts. OFF by default — it is a
+   *  network fetch at every launch. Applies the next time the agent starts. */
+  curatedPluginSync: boolean;
   /** A version the user chose to "Ignore" in the update prompt; the startup
    *  check won't re-prompt for exactly this version. */
   updaterIgnoredVersion: string | null;
@@ -118,6 +122,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   adaptiveSuggestions: "agent",
   gitBlameInline: true,
   autoUpdate: true,
+  curatedPluginSync: false,
   updaterIgnoredVersion: null,
   enterToSend: true,
   terminalNotifications: true,

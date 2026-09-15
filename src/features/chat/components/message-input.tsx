@@ -68,6 +68,7 @@ import { ComposerOptionsPill } from "./composer-options-pill";
 import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
 import { AiGrantBar } from "./ai-grant-bar";
+import { RemovedAgentBar } from "./removed-agent-bar";
 import { useAiGrantProbe, useNoAiGrant } from "../stores/ai-grant-store";
 import {
   QUALITY_LADDER,
@@ -1858,6 +1859,10 @@ export function MessageInput({
             other agents do not use the Atlas gateway, so an org with no grant
             is not their problem and a bar over a working composer is noise. */}
         {agentType === "cersei" && <AiGrantBar />}
+
+        {/* The tab's agent was uninstalled — same strip, same reason: the
+            input below cannot send until the chat is switched. */}
+        <RemovedAgentBar tabId={tabId} />
 
         {/* Live plan docked on top of the input bar (JetBrains-Air style). */}
 

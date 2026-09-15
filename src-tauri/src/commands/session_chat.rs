@@ -36,7 +36,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
@@ -522,7 +521,7 @@ fn git_show_commit(root: &Path, sha: &str) -> Option<String> {
 }
 
 fn run_git(root: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").current_dir(root).args(args).output().ok()?;
+    let out = atlas_process::command("git").current_dir(root).args(args).output().ok()?;
     if !out.status.success() {
         return None;
     }

@@ -72,7 +72,8 @@ async fn ripgrep_rollout_paths(
         return Ok(Some(HashSet::new()));
     }
 
-    let output = match Command::new(rg_command)
+    let mut command = Command::new(rg_command);
+    command
         .arg("-l")
         .arg("--fixed-strings")
         .arg("--ignore-case")
@@ -82,10 +83,11 @@ async fn ripgrep_rollout_paths(
         .arg("--")
         .arg(search_term)
         .arg(root)
-        .stdin(Stdio::null())
-        .output()
-        .await
-    {
+        .stdin(Stdio::null());
+    // Atlas: CREATE_NO_WINDOW — rg is a piped child of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+    let output = match command.output().await {
         Ok(output) => output,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             return Ok(None);

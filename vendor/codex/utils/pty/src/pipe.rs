@@ -167,6 +167,12 @@ async fn spawn_process_with_stdin_mode(
     }
     #[cfg(not(unix))]
     let _ = arg0;
+    // Atlas: CREATE_NO_WINDOW. This is the piped (non-PTY) transport, and a
+    // piped child of the GUI host must not open a console window of its own.
+    // The PTY transport in `pty.rs` is a different function and keeps its
+    // pseudoconsole; this flag must never reach it.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     command.current_dir(cwd);
     command.env_clear();
     for (key, value) in env {

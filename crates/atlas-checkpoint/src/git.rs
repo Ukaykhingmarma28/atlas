@@ -11,7 +11,6 @@
 //! no config is touched. The repository is observed and never modified.
 
 use std::path::Path;
-use std::process::Command;
 
 /// Where a path stood in a commit, relative to its first parent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,7 +102,7 @@ impl std::error::Error for GitError {}
 type Result<T> = std::result::Result<T, GitError>;
 
 fn run(repo: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(args)
@@ -132,7 +131,7 @@ struct RunStatus {
 }
 
 fn run_status(repo: &Path, args: &[&str]) -> Result<RunStatus> {
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(args)
@@ -584,7 +583,7 @@ fn parse_name_status(out: &str) -> Vec<ChangedPath> {
 /// match what the agent wrote? Returns `None` when the path is absent from the
 /// commit (a deletion).
 pub fn blob_at(repo: &Path, sha: &str, path: &str) -> Option<Vec<u8>> {
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(["cat-file", "blob", &format!("{sha}:{path}")])
@@ -665,7 +664,7 @@ fn head_tracked_set(repo: &Path) -> Option<std::sync::Arc<std::collections::Hash
     }
     // `-z`: raw NUL-separated paths (default output quotes special chars,
     // which would break membership tests against the sampler's plain paths).
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(["ls-tree", "-r", "-z", "--name-only", "HEAD"])
@@ -703,7 +702,7 @@ fn head_tracked_set(repo: &Path) -> Option<std::sync::Arc<std::collections::Hash
 /// for the same content: the agent wrote CRLF, the blob stores LF. Comparing
 /// against the checkout form closes that gap without weakening the rule.
 pub fn blob_at_filtered(repo: &Path, sha: &str, path: &str) -> Option<Vec<u8>> {
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(["cat-file", "--filters", &format!("{sha}:{path}")])
@@ -750,7 +749,7 @@ pub fn patch_id(repo: &Path, sha: &str) -> Option<String> {
         return None;
     }
 
-    let mut child = Command::new("git")
+    let mut child = atlas_process::command("git")
         .arg("-C")
         .arg(repo)
         .args(["patch-id", "--stable"])
@@ -799,7 +798,7 @@ mod tests {
         }
 
         pub fn git(&self, args: &[&str]) -> String {
-            let output = Command::new("git")
+            let output = atlas_process::command("git")
                 .arg("-C")
                 .arg(self.path())
                 .args(args)

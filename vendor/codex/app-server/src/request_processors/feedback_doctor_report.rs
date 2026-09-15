@@ -45,6 +45,9 @@ pub(crate) async fn doctor_feedback_report(config: &Config) -> Option<DoctorFeed
     command.arg("doctor").arg("--json");
     command.stdin(Stdio::null());
     command.kill_on_drop(/*kill_on_drop*/ true);
+    // Atlas: CREATE_NO_WINDOW — output is captured; no console needed.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     let output = match timeout(DOCTOR_FEEDBACK_REPORT_TIMEOUT, command.output()).await {
         Ok(Ok(output)) => output,
         Ok(Err(err)) => {

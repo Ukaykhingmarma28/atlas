@@ -8,7 +8,6 @@
 //! contains it, so shared history isn't duplicated across lanes.
 
 use std::collections::HashSet;
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -229,7 +228,7 @@ fn build_git(path: &str) -> Result<(Vec<TimelineBranch>, Vec<TimelineCommit>), S
     let current = refs.head_ref;
 
     // Local branches with their tip commit time (unix seconds), for ordering.
-    let out = Command::new("git")
+    let out = atlas_process::command("git")
         .args([
             "for-each-ref",
             "--format=%(refname:short)\x1f%(committerdate:unix)",
@@ -276,7 +275,7 @@ fn build_git(path: &str) -> Result<(Vec<TimelineBranch>, Vec<TimelineCommit>), S
             is_current: current.as_deref() == Some(name.as_str()),
         });
 
-        let log = Command::new("git")
+        let log = atlas_process::command("git")
             .args([
                 "log",
                 &format!("-{PER_BRANCH_LIMIT}"),

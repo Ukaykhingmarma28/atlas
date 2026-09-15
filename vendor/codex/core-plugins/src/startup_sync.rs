@@ -690,6 +690,10 @@ fn git_command(git_binary: &Path) -> Command {
     for name in REPOSITORY_LOCAL_GIT_ENVIRONMENT_VARIABLES {
         command.env_remove(name);
     }
+    // Atlas: every git the startup sync runs (fetch, reset, clean, rev-parse)
+    // is built here. A child of the GUI host must not open a console window —
+    // these two spawns at every launch were the last ones still doing so.
+    codex_git_utils::no_console_window(&mut command);
     command
 }
 

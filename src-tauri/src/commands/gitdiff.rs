@@ -3,7 +3,6 @@
 //! editor gutter consume these.
 
 use atlas_gitdiff::{build_file_diff, line_status, FileDiff, LineStatus};
-use std::process::Command;
 
 /// Run `git diff` for one file and return the raw unified output. `staged`
 /// selects the index-vs-HEAD diff; otherwise it's worktree-vs-HEAD. `context`
@@ -22,7 +21,7 @@ fn run_git_diff(
     // diffs the commit against its parent (and against the empty tree for the
     // root commit), so it works uniformly.
     if let Some(sha) = commit {
-        let output = Command::new("git")
+        let output = atlas_process::command("git")
             .args(["show", "--no-color", &ctx, "--format=", sha, "--", file])
             .current_dir(path)
             .output()
@@ -36,7 +35,7 @@ fn run_git_diff(
     args.push("--");
     args.push(file);
 
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .args(&args)
         .current_dir(path)
         .output()
@@ -63,7 +62,7 @@ fn run_git_diff(
         // uncommitted here", and falling back to the staged diff would make the
         // editor gutter mark lines the user already staged and moved on from.
         if !staged && !exists_in_head(path, file) {
-            let cached = Command::new("git")
+            let cached = atlas_process::command("git")
                 .args(["diff", "--no-color", &ctx, "--cached", "--", file])
                 .current_dir(path)
                 .output()
@@ -79,7 +78,7 @@ fn run_git_diff(
     // Untracked / brand-new file — diff against /dev/null so it shows as fully
     // added. `--no-index` exits non-zero by design, so ignore status; take stdout.
     let nul = devnull();
-    let no_index = Command::new("git")
+    let no_index = atlas_process::command("git")
         .args(["diff", "--no-color", &ctx, "--no-index", "--", nul, file])
         .current_dir(path)
         .output()
@@ -90,7 +89,7 @@ fn run_git_diff(
 /// Whether `file` is tracked by git (in the index). `git ls-files
 /// --error-unmatch` exits 0 only for tracked paths.
 fn is_tracked(path: &str, file: &str) -> bool {
-    Command::new("git")
+    atlas_process::command("git")
         .args(["ls-files", "--error-unmatch", "--", file])
         .current_dir(path)
         .output()
@@ -101,7 +100,7 @@ fn is_tracked(path: &str, file: &str) -> bool {
 /// Whether `file` exists in the HEAD commit. Distinguishes "tracked and
 /// unchanged" from "newly created and staged", which `is_tracked` cannot.
 fn exists_in_head(path: &str, file: &str) -> bool {
-    Command::new("git")
+    atlas_process::command("git")
         .args(["cat-file", "-e", &format!("HEAD:{file}")])
         .current_dir(path)
         .output()
@@ -201,7 +200,7 @@ fn run_text_diff(old_text: &str, new_text: &str, file: &str) -> Result<String, S
 
     // `--no-index` exits 1 when the files differ, which is the normal case here,
     // so the status is ignored and stdout taken as-is.
-    let output = Command::new("git")
+    let output = atlas_process::command("git")
         .args([
             "diff",
             "--no-color",
@@ -234,7 +233,7 @@ pub async fn git_commit_changed_files(
     sha: String,
 ) -> Result<Vec<CommitFile>, String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("git")
+        let output = atlas_process::command("git")
             .args(["show", "--no-color", "--name-status", "--format=", &sha])
             .current_dir(&path)
             .output()

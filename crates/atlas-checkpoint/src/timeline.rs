@@ -81,6 +81,11 @@ pub struct SessionSummary {
     /// Input + output. Zero for an agent that reports no split — see
     /// `context_used`.
     pub total_tokens: i64,
+    /// The two halves of `total_tokens`, carried separately because they are
+    /// priced separately: for Opus 5 an output token costs five times an input
+    /// one, so a viewer handed only the sum cannot estimate a cost at all.
+    pub input_tokens: i64,
+    pub output_tokens: i64,
     /// Cache writes and cache reads, carried beside the split rather than
     /// inside it. They are real spend and were being dropped on the floor, but
     /// folding them into `total_tokens` would make "in + out" mean something
@@ -357,6 +362,8 @@ fn summarize(
         deletions: checkpoints.iter().map(|c| c.deletions).sum(),
         files_touched: files.len() as i64,
         total_tokens: (totals.input_tokens + totals.output_tokens) as i64,
+        input_tokens: totals.input_tokens as i64,
+        output_tokens: totals.output_tokens as i64,
         cache_creation_tokens: totals.cache_creation_tokens as i64,
         cache_read_tokens: totals.cache_read_tokens as i64,
         context_used: totals.context_used.map(|n| n as i64),

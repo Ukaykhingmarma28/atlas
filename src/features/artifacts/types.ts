@@ -43,6 +43,10 @@ export interface SessionSummary {
   filesTouched: number;
   /** Input + output. `0` for an agent that reports no split — see `contextUsed`. */
   totalTokens: number;
+  /** The halves of `totalTokens`, kept apart because they are priced apart —
+   *  an Opus output token costs five times an input one. */
+  inputTokens: number;
+  outputTokens: number;
   /** Cache writes and cache reads. Real spend, carried beside the split rather
    *  than inside it — for a cache-heavy agent they dwarf both. */
   cacheCreationTokens: number;
