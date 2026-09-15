@@ -1479,6 +1479,44 @@ pub async fn artifacts_session(
     .map_err(|e| e.to_string())?
 }
 
+/// One Session's summary row, looked up by the AGENT's own session id.
+///
+/// The composer's Usage popup has the ACP session id (it is the JSONL stem and
+/// the protocol id both) and nothing else; the store keys rows by its own id
+/// with the agent's under `native_session_id`, per source. `None` when capture
+/// is off for the project or the session was never recorded — the popup then
+/// simply has no "session" section, rather than a row of zeroes.
+#[tauri::command]
+pub async fn capture_session_summary(
+    project_path: String,
+    session_id: String,
+) -> Result<Option<atlas_checkpoint::SessionSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(store) = open_reader(&project_path)? else {
+            return Ok(None);
+        };
+        let workspace_id = workspace_id_for(Path::new(&project_path));
+        // An in-app session is recorded under exactly one of these two sources;
+        // the on-disk JSONL import of the same session is deliberately a
+        // separate row and is not what a live composer is asking about.
+        let mut row_id = None;
+        for source in [Source::Acp, Source::Cersei] {
+            row_id = store
+                .session_id_for(&workspace_id, source, &session_id)
+                .map_err(|e| e.to_string())?;
+            if row_id.is_some() {
+                break;
+            }
+        }
+        let Some(row_id) = row_id else {
+            return Ok(None);
+        };
+        atlas_checkpoint::session_summary(&store, &row_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// One row on the Timeline board, tagged with the project it came from.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]

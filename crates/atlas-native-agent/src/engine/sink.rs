@@ -21,6 +21,8 @@ use std::sync::Weak;
 use agent_client_protocol::schema::v1 as acp;
 use atlas_acp_thread::AcpThread;
 use atlas_acp_thread::AcpThreadHandle;
+use atlas_acp_thread::RateLimitWindow;
+use atlas_acp_thread::RateLimits;
 use atlas_acp_thread::RetryStatus;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
@@ -101,6 +103,12 @@ impl EngineSessions {
         self.lock()
             .get(session_id)
             .and_then(|s| s.thread.upgrade())
+    }
+
+    /// Every live thread, for the account-level notifications that name no
+    /// session. Dropped threads are skipped, not reaped — `insert` reaps.
+    pub fn threads(&self) -> Vec<AcpThreadHandle> {
+        self.lock().values().filter_map(|s| s.thread.upgrade()).collect()
     }
 
     pub fn cwd(&self, session_id: &acp::SessionId) -> Option<String> {
@@ -543,6 +551,9 @@ pub fn apply_notification(
                 input_tokens: clamp(total.input_tokens),
                 output_tokens: clamp(total.output_tokens),
                 max_output_tokens: None,
+                cache_read_tokens: clamp(total.cached_input_tokens),
+                cache_write_tokens: clamp(total.cache_write_input_tokens),
+                reasoning_tokens: clamp(total.reasoning_output_tokens),
             }));
         }
 
@@ -587,6 +598,30 @@ pub fn apply_notification(
                 target: "atlas_native_agent::engine",
                 "the engine reported a terminal error: {}", params.error.message,
             );
+        }
+
+        // The account's quota windows. Account-level — the notification names
+        // no thread — so the same snapshot lands on every live session; one
+        // opened later learns it from the engine's next report (it repeats
+        // the snapshot every turn). The projector dedupes.
+        ServerNotification::AccountRateLimitsUpdated(params) => {
+            let snapshot = &params.rate_limits;
+            let window = |w: &codex_app_server_protocol::RateLimitWindow| RateLimitWindow {
+                used_percent: w.used_percent.clamp(0, 100) as u8,
+                window_minutes: w.window_duration_mins,
+                resets_at: w.resets_at,
+            };
+            let limits = RateLimits {
+                primary: snapshot.primary.as_ref().map(window),
+                secondary: snapshot.secondary.as_ref().map(window),
+                plan_type: snapshot
+                    .plan_type
+                    .as_ref()
+                    .map(|p| format!("{p:?}").to_lowercase()),
+            };
+            for thread in sessions.threads() {
+                lock(&thread).update_rate_limits(Some(limits.clone()));
+            }
         }
 
         other => {

@@ -1017,7 +1017,17 @@ impl AgentManager {
         // running.
         match result {
             Ok(response) => {
-                lock_thread(&handle.thread).end_turn_unless_superseded(turn, response.stop_reason);
+                let mut thread = lock_thread(&handle.thread);
+                // The turn's token split rides on the response (claude-agent-acp
+                // fills it; codex-acp does not). Folded in BEFORE the turn closes
+                // so the UsageUpdated delta lands ahead of TurnFinished — the
+                // renderer snapshots per-turn usage at turn end, and capture
+                // flushes the turn there too. Superseded or not, the tokens
+                // were spent, so this is unconditional.
+                if let Some(usage) = response.usage.as_ref() {
+                    thread.accumulate_turn_usage(usage);
+                }
+                thread.end_turn_unless_superseded(turn, response.stop_reason);
                 Ok(response.stop_reason)
             }
             Err(err) => {

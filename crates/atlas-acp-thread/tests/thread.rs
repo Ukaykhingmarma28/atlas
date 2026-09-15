@@ -742,6 +742,38 @@ async fn token_usage_warns_at_the_threshold_and_never_without_a_maximum() {
     assert_eq!(exceeded.ratio(), TokenUsageRatio::Exceeded);
 }
 
+#[tokio::test]
+async fn end_of_turn_usage_accumulates_and_leaves_the_gauge_alone() {
+    // `PromptResponse.usage` is per turn (claude-agent-acp resets its tally
+    // when a turn activates), so two turns ADD. The context gauge arrives
+    // through `usage_update` and must survive untouched.
+    let (mut thread, _events, _connection) = new_thread();
+    thread.update_token_usage(Some(TokenUsage {
+        max_tokens: 200_000,
+        used_tokens: 50_000,
+        ..Default::default()
+    }));
+
+    let turn = |input: u64, output: u64, read: u64, write: u64, thought: u64| {
+        let mut usage = acp::Usage::new(input + output, input, output);
+        usage.cached_read_tokens = Some(read);
+        usage.cached_write_tokens = Some(write);
+        usage.thought_tokens = Some(thought);
+        usage
+    };
+    thread.accumulate_turn_usage(&turn(100, 20, 500, 30, 7));
+    thread.accumulate_turn_usage(&turn(50, 10, 400, 0, 0));
+
+    let usage = thread.token_usage().expect("usage must exist after a turn");
+    assert_eq!(usage.input_tokens, 150);
+    assert_eq!(usage.output_tokens, 30);
+    assert_eq!(usage.cache_read_tokens, 900);
+    assert_eq!(usage.cache_write_tokens, 30);
+    assert_eq!(usage.reasoning_tokens, 7);
+    assert_eq!(usage.max_tokens, 200_000);
+    assert_eq!(usage.used_tokens, 50_000);
+}
+
 /// A permission request whose `tool_call` is a BARE update — id only, nothing
 /// announced beforehand. The protocol makes every field but the id optional on
 /// an update, and some adapters ask permission without a prior `tool_call`

@@ -70,6 +70,7 @@ pub fn affects_thread_metadata(event: &AcpThreadEvent) -> bool {
         AcpThreadEvent::StatusChanged
         | AcpThreadEvent::PromptUpdated
         | AcpThreadEvent::TokenUsageUpdated
+        | AcpThreadEvent::RateLimitsUpdated
         | AcpThreadEvent::EntryUpdated(_)
         | AcpThreadEvent::EntriesRemoved(_)
         | AcpThreadEvent::Retry(_)

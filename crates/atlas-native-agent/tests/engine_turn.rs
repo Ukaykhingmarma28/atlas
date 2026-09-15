@@ -413,6 +413,9 @@ async fn token_usage_reaches_the_thread_the_app_reads() {
         .expect("a turn that reported usage must leave it on the thread");
     assert_eq!(usage.input_tokens, 100);
     assert_eq!(usage.output_tokens, 42);
+    // The cached share of the prompt is real spend at a different price; it
+    // rides along rather than being folded into `input_tokens` or dropped.
+    assert_eq!(usage.cache_read_tokens, 40);
 }
 
 #[tokio::test]

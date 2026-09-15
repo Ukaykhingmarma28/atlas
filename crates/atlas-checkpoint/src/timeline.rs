@@ -287,6 +287,29 @@ pub fn sessions(store: &Store, workspace_id: &str) -> Result<Vec<SessionSummary>
     Ok(out)
 }
 
+/// One Session's summary row, by store id.
+///
+/// The composer's Usage popup asks for exactly one row while a session is
+/// live; the board's one-`GROUP BY`-per-table shape would read the whole
+/// Workspace to answer it. Five point queries over covering indexes instead.
+pub fn session_summary(store: &Store, session_id: &str) -> Result<Option<SessionSummary>> {
+    let Some(session) = store.session(session_id)? else {
+        return Ok(None);
+    };
+    let checkpoints = store.checkpoints_for_session(session_id)?;
+    let message_count = store.message_count(session_id)?;
+    let tool_call_count = store.tool_call_count(session_id)?;
+    let turns = store.turn_active_seconds_for(session_id, TURN_CAP_SECONDS)?;
+    let message_seconds = store.message_active_seconds_for(session_id, IDLE_CAP_SECONDS)?;
+    Ok(Some(summarize(
+        &session,
+        &checkpoints,
+        message_count,
+        tool_call_count,
+        active_seconds(Some(turns), message_seconds),
+    )))
+}
+
 /// A gap longer than this between two messages is a developer who walked away.
 pub const IDLE_CAP_SECONDS: i64 = 300;
 /// A turn that "ran" longer than this did not run: its completion event arrived

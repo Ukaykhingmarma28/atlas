@@ -1063,6 +1063,9 @@
 /* Respect the OS "reduce motion" setting — hold the caret steady and
    neutralize our entrance/blink animations (keep their end state). */
 @media (prefers-reduced-motion: reduce) {
+  .atlas-usage-in {
+    animation: none;
+  }
   .atlas-stream-caret {
     animation: none;
   }
@@ -2009,6 +2012,26 @@
     transform: none;
   }
 }
+/* The Usage popup's sections arrive one after another — a one-shot rise-in
+   keyed on `--i` (the section's index). `both` is deliberate here, unlike the
+   frosted panels: a delayed section must start invisible, and the panel this
+   plays inside is opaque (no backdrop-filter), so an animation that ends at
+   `transform: none` leaves nothing behind that matters. */
+@keyframes atlas-usage-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.atlas-usage-in {
+  animation: atlas-usage-in 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
 .atlas-pill-swap {
   animation: atlas-pill-swap 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }

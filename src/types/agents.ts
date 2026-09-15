@@ -63,12 +63,25 @@ export interface SessionMessage {
   timestamp: string;
 }
 
+/** One rolling quota window from the native engine's account report. */
+export interface RateLimitWindow {
+  /** 0–100. */
+  used_percent: number;
+  window_minutes: number | null;
+  /** Epoch seconds. */
+  resets_at: number | null;
+}
+
 export interface Usage {
   input_tokens: number;
   output_tokens: number;
   cache_creation_tokens: number;
   cache_read_tokens: number;
-  /** Estimated cumulative cost in USD (native agent; 0 when unknown). */
+  /** Reasoning / thinking output, when the agent reports it apart from
+   *  `output_tokens` (the native engine does). Informational. */
+  reasoning_tokens?: number;
+  /** Cumulative cost in USD as the AGENT reported it; 0 when it reported none
+   *  (every ACP adapter today) — the renderer estimates from pricing then. */
   cost?: number;
 }
 
@@ -275,6 +288,16 @@ export type AgentDelta =
       agent_id: AgentId;
       session_id: AcpSessionId;
       saved_tokens: number;
+    }
+  | {
+      /** The account's quota windows (native engine only; account-level, so
+       *  every live native session hears the same snapshot). */
+      kind: "rate_limits";
+      agent_id: AgentId;
+      session_id: AcpSessionId;
+      primary: RateLimitWindow | null;
+      secondary: RateLimitWindow | null;
+      plan_type: string | null;
     }
   | {
       kind: "permission_request";

@@ -516,10 +516,14 @@ async fn context_usage_and_the_token_split_are_separate_deltas() {
     harness.expect(1);
     assert_eq!(harness.recorder.kinds(), ["context_usage"]);
 
-    // The native agent reports a real input/output split.
+    // The native agent reports a real input/output split, cache halves and
+    // reasoning included — none of it is flattened to zero on the way out.
     lock(&harness.thread).update_token_usage(Some(atlas_acp_thread::TokenUsage {
         input_tokens: 11,
         output_tokens: 7,
+        cache_read_tokens: 5,
+        cache_write_tokens: 3,
+        reasoning_tokens: 2,
         ..Default::default()
     }));
     harness.expect(2);
@@ -527,9 +531,59 @@ async fn context_usage_and_the_token_split_are_separate_deltas() {
         SessionDelta::UsageUpdated { usage } => {
             assert_eq!(usage.input_tokens, 11);
             assert_eq!(usage.output_tokens, 7);
+            assert_eq!(usage.cache_read_tokens, 5);
+            assert_eq!(usage.cache_creation_tokens, 3);
+            assert_eq!(usage.reasoning_tokens, 2);
         }
         other => panic!("expected a usage split, got {other:?}"),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limits_are_announced_once_per_change() {
+    // The engine repeats the account snapshot every turn; the wire hears it
+    // when it changes.
+    let harness = Harness::start();
+    let limits = atlas_acp_thread::RateLimits {
+        primary: Some(atlas_acp_thread::RateLimitWindow {
+            used_percent: 40,
+            window_minutes: Some(300),
+            resets_at: Some(1_800_000_000),
+        }),
+        secondary: None,
+        plan_type: Some("plus".into()),
+    };
+    lock(&harness.thread).update_rate_limits(Some(limits.clone()));
+    harness.expect(1);
+    match &harness.recorder.deltas()[0] {
+        SessionDelta::RateLimits { primary, plan_type, .. } => {
+            assert_eq!(primary.as_ref().map(|w| w.used_percent), Some(40));
+            assert_eq!(plan_type.as_deref(), Some("plus"));
+        }
+        other => panic!("expected rate limits, got {other:?}"),
+    }
+
+    lock(&harness.thread).update_rate_limits(Some(limits.clone()));
+    assert_eq!(harness.recorder.kinds().len(), 1, "an unchanged snapshot is silence");
+
+    let mut moved = limits;
+    moved.primary.as_mut().expect("primary").used_percent = 55;
+    lock(&harness.thread).update_rate_limits(Some(moved));
+    harness.expect(2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cache_only_turn_still_counts_as_a_split() {
+    // A cached-prompt turn can have zero fresh input and zero output — the
+    // cache reads are the whole spend. It must not be mistaken for "no
+    // split reported".
+    let harness = Harness::start();
+    lock(&harness.thread).update_token_usage(Some(atlas_acp_thread::TokenUsage {
+        cache_read_tokens: 900,
+        ..Default::default()
+    }));
+    harness.expect(1);
+    assert_eq!(harness.recorder.kinds(), ["usage_updated"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -96,44 +96,6 @@ pub(crate) struct DayUsage {
     pub messages: u64,
 }
 
-// ── Commands ──────────────────────────────────────────────────────────────
-
-/// Usage for one live session, keyed by the agent's own session id.
-///
-/// Returns `None` rather than zeroes when the session was never recorded, so
-/// the status bar can fall back to its live per-turn counters instead of
-/// showing a confident zero.
-#[tauri::command]
-pub async fn agent_session_usage(
-    project_path: String,
-    session_id: String,
-    app: AppHandle,
-) -> Result<Option<SessionUsage>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let prices = read_prices(&app);
-        Ok(project_usage(&project_path, &prices)?
-            .sessions
-            .into_iter()
-            .find(|s| s.session_id == session_id))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Usage for every session Atlas recorded in one project, costliest first.
-#[tauri::command]
-pub async fn agent_project_usage(
-    project_path: String,
-    app: AppHandle,
-) -> Result<ProjectUsage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let prices = read_prices(&app);
-        project_usage(&project_path, &prices)
-    })
-        .await
-        .map_err(|e| e.to_string())?
-}
-
 // ── The read, and the arithmetic on top of it ─────────────────────────────
 
 /// The price map Atlas already caches from models.dev. Empty when it has never

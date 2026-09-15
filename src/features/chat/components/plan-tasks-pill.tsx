@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo } from "react";
 import { ChevronUp, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "../stores/chat-store";
 import { isBusyAgentStatus } from "@/types/agent";
+import { ComposerDropup, useComposerDropup } from "./composer-dropup";
 
 /**
  * The live plan as a composer-footer pill + its own morphing dropup panel —
@@ -114,43 +115,9 @@ function StepIcon({ status, active }: { status: string; active: boolean }) {
 export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: string }) {
   const plan = useChatStore((s) => s.sessions[tabId]?.livePlan);
   const status = useChatStore((s) => s.sessions[tabId]?.status);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [panelHeight, setPanelHeight] = useState(0);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const onOther = (e: Event) => {
-      if ((e as CustomEvent<string>).detail !== "plan") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("atlas:composer-menu-open", onOther);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("atlas:composer-menu-open", onOther);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    // Only while open: a closed panel's height is pinned at 0, so observing
-    // its content just re-measures under every plan-update delta for nothing.
-    if (!open) return;
-    const el = contentRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setPanelHeight(el.offsetHeight));
-    ro.observe(el);
-    setPanelHeight(el.offsetHeight);
-    return () => ro.disconnect();
-  }, [open, plan?.length]);
+  const { open, toggle, ref, contentRef, panelHeight } = useComposerDropup("plan", {
+    measureKey: plan?.length,
+  });
 
   // Live-only, mirroring the dock this replaces (see module docs).
   if (!plan || plan.length === 0) return null;
@@ -160,18 +127,10 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
 
   return (
     <div ref={ref} className="relative">
-      {/* Morphing panel — right-anchored dropup. */}
-      <div
-        aria-hidden={!open}
-        className="absolute bottom-full right-0 z-50 mb-1.5 w-[320px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
-        style={{
-          height: open ? panelHeight : 0,
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none",
-          transition: "height 260ms cubic-bezier(0.32,0.72,0,1), opacity 180ms ease-out",
-        }}
-      >
-        <div ref={contentRef}>
+      {/* Morphing panel — right-anchored dropup, shared with the options and
+          usage pills. */}
+      <ComposerDropup open={open} panelHeight={panelHeight} contentRef={contentRef} width={320}>
+        <>
           <div className="flex h-9 items-center gap-2 px-3">
             <ListTodo size={13} className="shrink-0 text-[var(--text-secondary)]" />
             <span className="flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">
@@ -202,19 +161,12 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        </>
+      </ComposerDropup>
 
       {/* The footer pill: arc progress + count. */}
       <button
-        onClick={() => {
-          setOpen((o) => {
-            if (!o) {
-              window.dispatchEvent(new CustomEvent("atlas:composer-menu-open", { detail: "plan" }));
-            }
-            return !o;
-          });
-        }}
+        onClick={toggle}
         className={cn(
           "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-[10px] font-medium leading-none transition-colors cursor-pointer",
           open

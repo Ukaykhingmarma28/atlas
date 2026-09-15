@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use atlas_agent_wire::{
+use atlas_agent_wire::{RateLimitWindow, 
     AgentId, Message, MessageMode, MessageRole, PlanEntry, SessionDelta, SessionDeltaEnvelope,
     SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
 };
@@ -51,6 +51,7 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
         ("context_usage", &["used", "size", "cost"]),
         ("compaction", &["active"]),
         ("compression_saved", &["saved_tokens"]),
+        ("rate_limits", &["primary", "secondary", "plan_type"]),
         ("permission_request", &["request_id", "tool_call", "options"]),
         ("permission_resolved", &["request_id"]),
         ("turn_finished", &["stop_reason", "turn_seq"]),
@@ -173,6 +174,7 @@ fn samples() -> Vec<SessionDelta> {
                 output_tokens: 20,
                 cache_creation_tokens: 1,
                 cache_read_tokens: 2,
+                reasoning_tokens: 3,
                 cost: 0.5,
             },
         },
@@ -196,6 +198,15 @@ fn samples() -> Vec<SessionDelta> {
         },
         SessionDelta::Compaction { active: true },
         SessionDelta::CompressionSaved { saved_tokens: 42 },
+        SessionDelta::RateLimits {
+            primary: Some(RateLimitWindow {
+                used_percent: 40,
+                window_minutes: Some(300),
+                resets_at: Some(1_800_000_000),
+            }),
+            secondary: None,
+            plan_type: Some("plus".into()),
+        },
         SessionDelta::PermissionRequest {
             request_id,
             tool_call: serde_json::json!({ "toolCallId": "call-1" }),

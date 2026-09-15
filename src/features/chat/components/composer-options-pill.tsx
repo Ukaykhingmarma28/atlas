@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Loader2, SlidersHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useChatStore } from "../stores/chat-store";
 import { parseConfigOptions } from "../lib/acp-config-options";
 import { loadCachedAcpConfigOptions } from "../lib/acp-config-options-cache";
+import { ComposerDropup, composerPillClass, useComposerDropup } from "./composer-dropup";
 
 /**
  * The agent-options pill — the knobs an agent advertises beyond mode and model
@@ -72,73 +73,18 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
   /** The three things the pill can be. Drives the swap animation's key. */
   const state = loading ? "loading" : hasOptions ? "options" : "default";
 
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [panelHeight, setPanelHeight] = useState(0);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const onOther = (e: Event) => {
-      if ((e as CustomEvent<string>).detail !== "options") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("atlas:composer-menu-open", onOther);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("atlas:composer-menu-open", onOther);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    // Only while open: a closed panel's height is pinned at 0, so observing its
-    // content just re-measures under every delta for nothing (plan pill's rule).
-    if (!open) return;
-    const el = contentRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setPanelHeight(el.offsetHeight));
-    ro.observe(el);
-    setPanelHeight(el.offsetHeight);
-    return () => ro.disconnect();
-  }, [open, configOptions.length]);
-
-  // A loading pill has nothing to open yet; close if it got there while open.
-  useEffect(() => {
-    if (loading && open) setOpen(false);
-  }, [loading, open]);
-
-  const toggle = () => {
-    if (loading) return;
-    setOpen((cur) => {
-      if (cur) return false;
-      // Mutual exclusion with the + menu, the groups menu and the plan pill.
-      window.dispatchEvent(new CustomEvent("atlas:composer-menu-open", { detail: "options" }));
-      return true;
-    });
-  };
+  // A loading pill has nothing to open yet; the hook closes it if it got there.
+  const { open, toggle, close, ref, contentRef, panelHeight } = useComposerDropup("options", {
+    disabled: loading,
+    measureKey: configOptions.length,
+  });
 
   return (
     <div ref={ref} className="relative">
-      {/* Morphing panel — right-anchored dropup, matching the plan pill's. */}
-      <div
-        aria-hidden={!open}
-        className="absolute bottom-full right-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
-        style={{
-          height: open ? panelHeight : 0,
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none",
-          transition: "height 260ms cubic-bezier(0.32,0.72,0,1), opacity 180ms ease-out",
-        }}
-      >
-        <div ref={contentRef}>
+      {/* Morphing panel — right-anchored dropup, shared with the plan and
+          usage pills. */}
+      <ComposerDropup open={open} panelHeight={panelHeight} contentRef={contentRef}>
+        <>
           {hasOptions ? (
             // Capped: the panel is bottom-anchored and grows upward, so an
             // uncapped knob list (an agent may advertise a select with dozens of
@@ -150,7 +96,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                     <button
                       onClick={() => {
                         void setAcpConfigOption(tabId, opt.id, !opt.value);
-                        setOpen(false);
+                        close();
                       }}
                       className="flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer hover:bg-[var(--bg-hover)]"
                     >
@@ -180,7 +126,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                             key={c.id}
                             onClick={() => {
                               void setAcpConfigOption(tabId, opt.id, c.id);
-                              setOpen(false);
+                              close();
                             }}
                             className={cn(
                               "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
@@ -216,22 +162,14 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
               </p>
             </div>
           )}
-        </div>
-      </div>
+        </>
+      </ComposerDropup>
 
       <button
         onClick={toggle}
         disabled={loading}
         aria-busy={loading}
-        className={cn(
-          "flex h-6.5 items-center rounded-full border px-1.5 text-[10px] font-medium leading-none transition-colors",
-          open
-            ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
-          loading
-            ? "cursor-default"
-            : "cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-        )}
+        className={composerPillClass(open, { disabled: loading })}
         title={
           loading
             ? "Loading the options this agent offers…"
