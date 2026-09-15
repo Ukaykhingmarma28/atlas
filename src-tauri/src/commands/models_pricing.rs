@@ -15,10 +15,23 @@ use tauri::{AppHandle, Emitter, Manager};
 const CATALOG_URL: &str = "https://models.dev/api.json";
 
 /// Normalized per-model price, USD per 1M tokens.
+///
+/// Cache rates are carried because for an agent like Claude Code they ARE the
+/// bill: a session of this project's own transcripts runs ~99.5% cache tokens,
+/// so a cost computed from input and output alone reads as roughly zero. They
+/// default to 0.0 rather than `Option`, so a provider that publishes no cache
+/// price simply contributes nothing — and so a cache file written before this
+/// field existed still deserializes (its 0.0s then differ from the fetched
+/// catalogue, which is what triggers the rewrite that fills them in).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelPrice {
     pub input: f64,
     pub output: f64,
+    #[serde(default)]
+    pub cache_read: f64,
+    #[serde(default)]
+    pub cache_write: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -54,7 +67,12 @@ fn write_cache(app: &AppHandle, c: &PricingCache) -> Result<(), String> {
 }
 
 /// Parse models.dev `api.json` (`{ "<provider>": { "models": { "<model>": {
-/// "cost": { "input", "output" } } } } }`) into a normalized price map.
+/// "cost": { "input", "output", "cache_read", "cache_write" } } } } }`) into a
+/// normalized price map.
+///
+/// `input` and `output` are required — an entry without them is not a price.
+/// The two cache rates are optional and default to zero, because only some
+/// providers publish them (Anthropic does; several others do not).
 fn parse_catalog(v: &serde_json::Value) -> BTreeMap<String, ModelPrice> {
     let mut out = BTreeMap::new();
     let Some(providers) = v.as_object() else {
@@ -68,8 +86,16 @@ fn parse_catalog(v: &serde_json::Value) -> BTreeMap<String, ModelPrice> {
             let cost = mval.get("cost");
             let input = cost.and_then(|c| c.get("input")).and_then(serde_json::Value::as_f64);
             let output = cost.and_then(|c| c.get("output")).and_then(serde_json::Value::as_f64);
+            let rate = |key: &str| {
+                cost.and_then(|c| c.get(key)).and_then(serde_json::Value::as_f64).unwrap_or(0.0)
+            };
             if let (Some(input), Some(output)) = (input, output) {
-                let price = ModelPrice { input, output };
+                let price = ModelPrice {
+                    input,
+                    output,
+                    cache_read: rate("cache_read"),
+                    cache_write: rate("cache_write"),
+                };
                 out.insert(format!("{pid}/{mid}"), price.clone());
                 // Bare model id as a fallback key (first provider wins).
                 out.entry(mid.clone()).or_insert(price);

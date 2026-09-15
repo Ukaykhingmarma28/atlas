@@ -267,11 +267,20 @@ pub async fn acp_registry_uninstall(
     });
 
     if purge_cache {
-        let dir = atlas_agent_store::registry_dir(&app_data_dir(&app))
-            .join(atlas_agent_store::sanitize_path_component(&agent_id));
-        if let Err(e) = std::fs::remove_dir_all(&dir) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(target: "atlas::agents", "purging {}: {e}", dir.display());
+        // Archive agents live at `registry/<id>`, npx agents at
+        // `registry/npx/<id>`. Purging only the first left a broken
+        // `node_modules` (npm silently missing a platform package) in place,
+        // and the reinstall re-adopted it.
+        let registry_dir = atlas_agent_store::registry_dir(&app_data_dir(&app));
+        let dirs = [
+            registry_dir.join(atlas_agent_store::sanitize_path_component(&agent_id)),
+            atlas_agent_store::npx_install_dir(&registry_dir, &agent_id),
+        ];
+        for dir in dirs {
+            if let Err(e) = std::fs::remove_dir_all(&dir) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(target: "atlas::agents", "purging {}: {e}", dir.display());
+                }
             }
         }
     }

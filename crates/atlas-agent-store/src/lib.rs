@@ -139,6 +139,7 @@ pub mod archive;
 pub mod detection;
 pub mod http;
 pub mod node;
+pub mod npm_tree;
 pub mod registry;
 pub mod servers;
 pub mod settings;
@@ -147,12 +148,13 @@ pub mod store;
 pub use archive::sanitize_path_component;
 pub use detection::{detect_on_path, DetectedAgent};
 pub use http::{HttpClient, HttpResponse, ReqwestClient};
-pub use node::NodeRuntime;
+pub use node::{npm_platform, NodeRuntime};
+pub use npm_tree::{install_state, platform_optionals, InstallState, NpmPlatform, OptionalEntry};
 pub use registry::{
     AgentRegistryStore, RegistryAgent, RegistryAgentMetadata, RegistryBinaryAgent,
     RegistryNpxAgent, RegistryTargetConfig, REGISTRY_URL,
 };
-pub use servers::{InheritedProjectEnvironment, ProjectEnvironment};
+pub use servers::{npx_install_dir, InheritedProjectEnvironment, ProjectEnvironment};
 pub use settings::{AgentServerSettings, AllAgentServersSettings};
 pub use store::{AgentServerStore, ExternalAgentEntry, ExternalAgentSource};
 

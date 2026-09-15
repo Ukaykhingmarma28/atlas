@@ -30,7 +30,14 @@ import {
 import { AtlasIcon } from "@/components/atlas-icon";
 import { extractInjectedContext, type InjectedBlock } from "@/features/chat/lib/atlas-context";
 import { CachedMarkdown } from "@/lib/markdown-cache";
+import { fmtCost } from "@/features/monitor/lib/usage-format";
 import { timeAgo } from "@/lib/time-ago";
+import {
+  costOf,
+  priceForModel,
+  useModelPricingStore,
+  type TokenSpend,
+} from "@/features/settings/stores/model-pricing-store";
 import { cn } from "@/lib/utils";
 
 import {
@@ -605,6 +612,35 @@ function Masthead({ detail }: { detail: Detail }) {
   const branch = s.branches[0];
   const tokens = tokenLabel(s);
 
+  // Pricing is cached by Rust and refreshed in the background; a consumer has
+  // to ask for it once. Cheap and idempotent — `load` is stable and the store
+  // is shared, so opening ten Sessions reads the cache once.
+  const prices = useModelPricingStore.use.prices();
+  const { load: loadPrices } = useModelPricingStore.use.actions();
+  useEffect(() => {
+    void loadPrices();
+  }, [loadPrices]);
+
+  const spend: TokenSpend = {
+    input: s.inputTokens,
+    output: s.outputTokens,
+    cacheWrite: s.cacheCreationTokens,
+    cacheRead: s.cacheReadTokens,
+  };
+  const spent = spend.input + spend.output + spend.cacheWrite + spend.cacheRead;
+  const cost = spent > 0 ? costOf(spend, priceForModel(prices, s.model)) : null;
+
+  /**
+   * Why the missing cells are drawn rather than dropped.
+   *
+   * Every live ACP session reports context occupancy and nothing else — no
+   * split, no cache figures — so two of the four cells have nothing to say.
+   * Rendering the grid two-wide for those was worse than the hole it avoided:
+   * two cells stretched across the measure read as a layout that had broken,
+   * and the row changed shape between Sessions. They keep their place, say
+   * what is missing, and the grid is the same object every time.
+   */
+
   return (
     <>
       <h1 className="text-[22px] font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--text-primary)]">
@@ -641,62 +677,176 @@ function Masthead({ detail }: { detail: Detail }) {
         )}
       </div>
 
-      <div className="mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]">
+      <div
+        className={cn(
+          "mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]",
+          "[&>*+*]:border-l [&>*+*]:border-[var(--border-default)]",
+        )}
+      >
         <Metric label="Active" value={formatDuration(s.activeSeconds)} sub={clock(s)} />
         <Metric
           label="Tokens"
           value={tokens ?? "—"}
           sub={tokenBreakdown(s) ?? (s.contextUsed != null ? "context window" : "not reported")}
-          divided
         />
-        <Metric
-          label="Turns"
-          value={String(detail.counts.prompts + detail.counts.responses)}
-          sub={`${detail.counts.prompts} prompt${detail.counts.prompts === 1 ? "" : "s"}`}
-          divided
-        />
-        <Metric
-          label="Tool calls"
-          value={String(s.toolCallCount)}
-          sub={
-            detail.counts.checkpoints > 0
-              ? `${detail.counts.checkpoints} checkpoint${detail.counts.checkpoints === 1 ? "" : "s"}`
-              : "no commits linked"
-          }
-          divided
-        />
+        <TokenMix spend={spend} total={spent} />
+        {cost == null ? (
+          <Metric
+            label="Est. cost"
+            value="—"
+            sub={spent > 0 ? "no price for this model" : "no token split"}
+            absent
+          />
+        ) : (
+          <Metric
+            label="Est. cost"
+            value={costLabel(cost)}
+            sub={prettyModel(s.model) ?? "unknown model"}
+          />
+        )}
       </div>
     </>
   );
 }
 
+/** One cell of the grid. The dividers are the grid's, not the cell's. */
+function Cell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 bg-[var(--bg-raised)] px-3.5 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * `absent` is the placeholder state: the figure is not merely zero, it was
+ * never reported. It dims the value to the caption's own weight so the cell
+ * reads as a held place rather than a number worth looking at.
+ */
 function Metric({
   label,
   value,
   sub,
-  divided,
+  absent,
 }: {
   label: string;
   value: string;
   sub: string;
-  divided?: boolean;
+  absent?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "min-w-0 bg-[var(--bg-raised)] px-3.5 py-3",
-        divided && "border-l border-[var(--border-default)]",
-      )}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
-        {label}
-      </p>
-      <p className="mt-1.5 truncate font-mono text-[17px] font-medium tracking-[-0.02em] text-[var(--text-primary)]">
+    <Cell label={label}>
+      <p
+        className={cn(
+          "mt-1.5 truncate font-mono text-[17px] font-medium tracking-[-0.02em]",
+          absent ? "text-[var(--text-ghost)]" : "text-[var(--text-primary)]",
+        )}
+      >
         {value}
       </p>
       <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">{sub}</p>
-    </div>
+    </Cell>
   );
+}
+
+/**
+ * Where the tokens went, as one stacked bar.
+ *
+ * Monochrome, like every other mark in this view: four classes on a white
+ * opacity ladder rather than four hues, because the cell sits inside a header
+ * that is already carrying a title and a row of chips and colour here would
+ * outrank all of it. The ladder runs cheap-to-dear — cache reads are the
+ * faintest, output the brightest — so the bright end is also the expensive end.
+ * Its floor is 0.22 rather than lower: the cheap end is usually ~99% of the
+ * bar, and below that it stopped reading as a filled bar at all.
+ *
+ * Fixed order rather than sorted by size: a bar that reorders itself between
+ * Sessions cannot be compared across them at a glance.
+ *
+ * Segments are NOT given a minimum width. A session of this project runs about
+ * 99.5% cache, and padding the two-token input slice up to a visible sliver
+ * would draw a bar that disagrees with its own caption.
+ *
+ * With nothing to draw it draws the empty track, which is the honest shape of
+ * "no split was reported" — a gauge at zero rather than a gap in the row.
+ */
+function TokenMix({ spend, total }: { spend: TokenSpend; total: number }) {
+  if (total <= 0) {
+    return (
+      <Cell label="Token mix">
+        <div className="mt-3.5 h-1.5 w-full rounded-full bg-[var(--bg-hover)]" />
+        <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">
+          not reported
+        </p>
+      </Cell>
+    );
+  }
+
+  const segments = [
+    { label: "cache read", short: "read", value: spend.cacheRead, tint: 0.22 },
+    { label: "cache write", short: "write", value: spend.cacheWrite, tint: 0.4 },
+    { label: "input", short: "in", value: spend.input, tint: 0.66 },
+    { label: "output", short: "out", value: spend.output, tint: 0.95 },
+  ].filter((segment) => segment.value > 0);
+
+  // The caption names the two that actually account for the bar; the tooltip
+  // carries the exact counts, which is the only place four numbers fit.
+  //
+  // Short names in the caption, full ones in the tooltip: `cache read 99% ·
+  // cache write 1%` is 31 monospace characters and the cell is about 28 wide,
+  // so the second figure — the one that makes the first mean something — was
+  // the part that got clipped.
+  const ranked = [...segments].sort((a, b) => b.value - a.value);
+  const caption = ranked
+    .slice(0, 2)
+    .map((segment) => `${segment.short} ${share(segment.value, total)}`)
+    .join(" · ");
+  const exact = segments
+    .map((segment) => `${segment.label}: ${segment.value.toLocaleString()}`)
+    .join("\n");
+
+  return (
+    <Cell label="Token mix">
+      <div
+        title={exact}
+        className="mt-3.5 flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-hover)]"
+      >
+        {segments.map((segment) => (
+          <div
+            key={segment.label}
+            style={{
+              width: `${(segment.value / total) * 100}%`,
+              background: `rgba(255,255,255,${segment.tint})`,
+            }}
+          />
+        ))}
+      </div>
+      <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]" title={exact}>
+        {caption}
+      </p>
+    </Cell>
+  );
+}
+
+/** `78%`, or `<1%` for a slice that rounds away to nothing. */
+function share(value: number, total: number): string {
+  const pct = (value / total) * 100;
+  if (pct >= 1) return `${Math.round(pct)}%`;
+  return pct > 0 ? "<1%" : "0%";
+}
+
+/**
+ * `$4.12`, or `<$0.01`.
+ *
+ * Two decimals is the unit people think in, but a short Session can genuinely
+ * cost a fraction of a cent and rendering that as `$0.00` reads as "free"
+ * rather than "very cheap".
+ */
+function costLabel(cost: number): string {
+  return cost >= 0.01 ? fmtCost(cost) : "<$0.01";
 }
 
 function Chip({ children }: { children: ReactNode }) {

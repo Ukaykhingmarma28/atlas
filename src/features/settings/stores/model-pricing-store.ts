@@ -13,6 +13,9 @@ import { createSelectors } from "@/lib/create-selectors";
 export interface ModelPrice {
   input: number;
   output: number;
+  /** Zero when the provider publishes no cache rate — not every one does. */
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 interface ModelPricingState {
@@ -69,7 +72,73 @@ export function priceFor(
   provider: string,
   model: string,
 ): ModelPrice | null {
-  return prices[`${provider}/${model}`] ?? prices[model] ?? null;
+  return prices[`${provider}/${model}`] ?? priceForModel(prices, model);
+}
+
+/**
+ * Look up a price from a recorded model id alone, with no provider to help.
+ *
+ * Mirrors the Rust `price_for` (`src-tauri/src/commands/usage.rs`) and adds one
+ * shape it does not need: Atlas records context-window variants as
+ * `claude-opus-5[1m]`, and the bracket has to come off before the id matches
+ * anything models.dev publishes.
+ *
+ * A miss returns null rather than a guess. A session then shows its tokens
+ * with no cost, which is the honest reading of "we do not know this model".
+ */
+export function priceForModel(
+  prices: Record<string, ModelPrice>,
+  model: string | null | undefined,
+): ModelPrice | null {
+  const raw = model?.trim();
+  if (!raw) return null;
+  for (const key of candidateKeys(raw)) {
+    const price = prices[key];
+    if (price) return price;
+  }
+  return null;
+}
+
+/** `anthropic/claude-opus-5[1m]-20250514` → every id that might be the key. */
+function candidateKeys(model: string): string[] {
+  const keys = new Set<string>();
+  const add = (id: string) => {
+    keys.add(id);
+    // A provider prefix, then a dated release — `claude-opus-4-20250514` is
+    // the same model models.dev lists as `claude-opus-4`.
+    const bare = id.slice(id.lastIndexOf("/") + 1);
+    keys.add(bare);
+    keys.add(bare.replace(/-\d{8}$/, ""));
+  };
+  add(model);
+  add(model.replace(/\[.*?\]/g, ""));
+  return Array.from(keys);
+}
+
+/** Tokens a session spent, by class — the shape [[costOf]] prices. */
+export interface TokenSpend {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+/**
+ * What those tokens cost, in USD.
+ *
+ * The frontend mirror of Rust's `cost_usd`, and it has to price all four
+ * classes for the same reason: a Claude Code session is ~99.5% cache traffic,
+ * so charging input and output alone reports approximately nothing.
+ */
+export function costOf(spend: TokenSpend, price: ModelPrice | null): number | null {
+  if (!price) return null;
+  return (
+    (spend.input * price.input +
+      spend.output * price.output +
+      spend.cacheWrite * price.cacheWrite +
+      spend.cacheRead * price.cacheRead) /
+    1_000_000
+  );
 }
 
 /** Compact display: `$3 / $15` (input / output per 1M tokens). */

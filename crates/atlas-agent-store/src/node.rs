@@ -31,11 +31,26 @@ use crate::http::{get_body, HttpClient};
 const NODE_VERSION: &str = "v24.11.0";
 const NODE_CA_CERTS_ENV_VAR: &str = "NODE_EXTRA_CA_CERTS";
 
-/// How long one `npm <subcommand>` may run before it is killed. npm's own
-/// fetch timeouts (see [`npm_command_args`]) bound each registry request; this
-/// bounds the whole invocation, so a 290 MB install on a slow link still fits
-/// but a wedged one cannot hold a "Starting …" bubble forever.
+/// How long one `npm <subcommand>` other than `install` may run before it is
+/// killed. npm's own fetch timeout (see [`npm_command_args`]) is an *idle*
+/// timeout per socket, so it never bounds a slow-but-flowing download; this
+/// does, so a wedged run cannot hold a "Starting …" bubble forever.
 const NPM_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The same deadline for `npm install`. Codex alone is a 220 MB platform
+/// tarball plus ~70 MB more; at ten minutes anything under ~500 KB/s was
+/// killed mid-extract, and the half-written tree it left behind looked
+/// installed (see [`crate::npm_tree`]). Thirty minutes is ~160 KB/s.
+const NPM_INSTALL_TIMEOUT: Duration = Duration::from_secs(1800);
+
+/// A subcommand's deadline.
+fn npm_timeout(subcommand: &str) -> Duration {
+    if subcommand == "install" {
+        NPM_INSTALL_TIMEOUT
+    } else {
+        NPM_TIMEOUT
+    }
+}
 
 /// How long the Node tarball download + extract may take while holding the
 /// install lock. Past this, every agent waiting on Node fails with a clear
@@ -165,6 +180,9 @@ impl NodeRuntime {
         let mut command = atlas_process::async_command(&node_binary);
         command.args(npm_command_args(&npm_file, node_dir, directory, subcommand, args));
         command.envs(npm_command_env(&node_binary));
+        for key in inherited_npm_config_keys(std::env::vars_os().map(|(key, _)| key)) {
+            command.env_remove(key);
+        }
         if let Some(directory) = directory {
             command.current_dir(directory);
         }
@@ -172,11 +190,12 @@ impl NodeRuntime {
         // or the next attempt races an orphan over the same `node_modules`.
         command.kill_on_drop(true);
 
-        match tokio::time::timeout(NPM_TIMEOUT, command.output()).await {
+        let timeout = npm_timeout(subcommand);
+        match tokio::time::timeout(timeout, command.output()).await {
             Ok(output) => Ok(output?),
             Err(_elapsed) => Err(NpmTimedOut {
                 subcommand: subcommand.to_owned(),
-                timeout: NPM_TIMEOUT,
+                timeout,
             }
             .into()),
         }
@@ -270,7 +289,7 @@ impl NodeRuntime {
     }
 }
 
-/// `npm <subcommand>` outlived [`NPM_TIMEOUT`] and was killed.
+/// `npm <subcommand>` outlived its deadline ([`npm_timeout`]) and was killed.
 ///
 /// Its own type so [`NodeRuntime::run_npm_subcommand`] can tell it apart from
 /// a spawn failure and skip the retry.
@@ -354,18 +373,47 @@ fn node_platform() -> Result<(&'static str, &'static str)> {
     Ok((os, arch))
 }
 
+/// The platform npm gates `os`/`cpu` on — `process.platform`/`process.arch` of
+/// the managed Node, which is the Atlas build's own arch (an x64 build under
+/// Rosetta gets an x64 Node and resolves x64 packages, consistently).
+pub fn npm_platform() -> Option<crate::npm_tree::NpmPlatform> {
+    let (os, cpu) = node_platform().ok()?;
+    let os = if os == "win" { "win32" } else { os };
+    Some(crate::npm_tree::NpmPlatform { os, cpu })
+}
+
+/// The inherited environment keys npm must not see.
+///
+/// `--userconfig`/`--globalconfig` only blank the npmrc *files*; `@npmcli/config`
+/// still reads every `npm_config_*` variable, and `NODE_ENV=production` flips
+/// `omit` to `dev`. A stray `npm_config_omit=optional` or `npm_config_arch`
+/// from the user's shell would silently drop the platform package an agent
+/// exists to ship.
+fn inherited_npm_config_keys(
+    keys: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Vec<std::ffi::OsString> {
+    keys.into_iter()
+        .filter(|key| {
+            let key = key.to_string_lossy();
+            key.to_ascii_lowercase().starts_with("npm_config_") || key == "NODE_ENV"
+        })
+        .collect()
+}
+
 /// The fetch policy every managed npm run gets. Zed's
-/// (`node_runtime.rs:1140-1150`) is `--fetch-timeout 5000` with retries of
-/// 2000/5000 ms, tuned for a language server; an ACP agent install can be
-/// 290 MB, so the per-request timeout is a minute and the retry ceiling ten
-/// seconds. `--prefer-offline` makes a warm cache skip the registry entirely,
-/// and audit/fund are two more round-trips that answer nothing we act on.
+/// (`node_runtime.rs:1124-1158`) plus bounded network waits: the Codex
+/// platform tarball alone is 220 MB. Note `fetch-timeout` is npm's per-socket
+/// *idle* timeout (`@npmcli/agent` maps it to `timeouts.idle`), not a transfer
+/// cap — it ends a stalled socket, never a slow download; the whole-invocation
+/// deadline is [`npm_timeout`]. `--prefer-offline` makes a warm cache skip the
+/// registry entirely, and audit/fund are two more round-trips that answer
+/// nothing we act on.
 const NPM_FETCH_ARGS: &[&str] = &[
     "--no-audit",
     "--no-fund",
     "--prefer-offline",
     "--fetch-timeout",
-    "60000",
+    "300000",
     "--fetch-retries",
     "2",
     "--fetch-retry-mintimeout",
@@ -765,11 +813,36 @@ mod tests {
             npm.display()
         )), "got {joined}");
         assert!(joined.contains(
-            "--no-audit --no-fund --prefer-offline --fetch-timeout 60000 --fetch-retries 2 \
+            "--no-audit --no-fund --prefer-offline --fetch-timeout 300000 --fetch-retries 2 \
              --fetch-retry-mintimeout 2000 --fetch-retry-maxtimeout 10000"
         ), "got {joined}");
         // The caller's own args come last.
         assert_eq!(&args[args.len() - 2..], ["codex-acp@0.0.0 - 1.0.0", "--save-exact"]);
+    }
+
+    #[test]
+    fn inherited_npm_config_and_node_env_are_stripped_case_insensitively() {
+        let keys = ["npm_config_omit", "NPM_CONFIG_ARCH", "NODE_ENV", "HOME", "PATH", "node_env"]
+            .map(std::ffi::OsString::from);
+        let stripped = inherited_npm_config_keys(keys);
+        assert_eq!(
+            stripped,
+            ["npm_config_omit", "NPM_CONFIG_ARCH", "NODE_ENV"].map(std::ffi::OsString::from)
+        );
+    }
+
+    #[test]
+    fn install_gets_the_long_deadline_and_everything_else_the_short_one() {
+        assert_eq!(npm_timeout("install"), NPM_INSTALL_TIMEOUT);
+        assert_eq!(npm_timeout("view"), NPM_TIMEOUT);
+        assert!(NPM_INSTALL_TIMEOUT > NPM_TIMEOUT);
+    }
+
+    #[test]
+    fn npm_platform_uses_node_names() {
+        let platform = npm_platform().expect("supported host");
+        assert!(["darwin", "linux", "win32"].contains(&platform.os));
+        assert!(["x64", "arm64"].contains(&platform.cpu));
     }
 
     #[test]

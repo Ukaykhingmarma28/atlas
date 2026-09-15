@@ -53,6 +53,37 @@ fn gather(plugin_id: &str, data_dir: &Path) -> String {
         }
         let node_modules = install_dir.join("node_modules");
         out.push_str(&format!("node_modules present: {}\n", node_modules.is_dir()));
+        out.push_str(&format!(
+            "package-lock.json present: {}\n",
+            install_dir.join("package-lock.json").is_file()
+        ));
+        out.push_str(&format!(
+            "node_modules/.package-lock.json present: {}\n",
+            node_modules.join(".package-lock.json").is_file()
+        ));
+        // The platform packages npm was supposed to land. A `Missing optional
+        // dependency` crash shows up here as `present: false` or
+        // `inert: true` on the entry for this os/arch.
+        match atlas_agent_store::npm_platform() {
+            Some(platform) => {
+                let state = block_on(atlas_agent_store::install_state(&install_dir, platform));
+                out.push_str(&format!(
+                    "install state for {}/{}: {}\n",
+                    platform.os,
+                    platform.cpu,
+                    state.reinstall_reason().unwrap_or_else(|| "complete".to_owned())
+                ));
+                for entry in
+                    block_on(atlas_agent_store::platform_optionals(&install_dir, platform))
+                {
+                    out.push_str(&format!(
+                        "  {}: present={} inert={}\n",
+                        entry.key, entry.present, entry.inert
+                    ));
+                }
+            }
+            None => out.push_str("install state: unsupported host platform\n"),
+        }
     } else {
         out.push_str("(missing — the package has never been installed)\n");
     }
@@ -82,6 +113,22 @@ fn gather(plugin_id: &str, data_dir: &Path) -> String {
         Some(path) => {
             out.push_str(&format!("{}\n", path.display()));
             out.push_str(&tail(&path, NPM_TAIL_LINES, |line| !line.contains(" silly ")));
+            // `failed optional dependency` is npm's only trace of a dropped
+            // platform package, logged at verbose and easily outside the
+            // tail — list every occurrence on its own.
+            let dropped = std::fs::read_to_string(&path)
+                .map(|s| {
+                    s.lines()
+                        .filter(|l| l.contains("failed optional dependency"))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if !dropped.is_empty() {
+                out.push_str("\n## optional dependencies npm dropped (this log)\n");
+                out.push_str(&dropped.join("\n"));
+                out.push('\n');
+            }
         }
         None => out.push_str("(none)\n"),
     }
@@ -104,6 +151,16 @@ fn gather(plugin_id: &str, data_dir: &Path) -> String {
     }
 
     out
+}
+
+/// `gather` runs on a blocking thread; the store's tree checks are async
+/// (tokio fs), so drive them on a throwaway current-thread runtime.
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("current-thread runtime")
+        .block_on(future)
 }
 
 fn newest_file(dir: &Path) -> Option<PathBuf> {
