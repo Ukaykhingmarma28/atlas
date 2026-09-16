@@ -1,4 +1,4 @@
-// Rewind / pin / resend / copy, under a user message.
+// Retry / pin / edit / copy, under a user message.
 //
 // The "Show more" toggle is NOT here — it lives in flow above this bar
 // (`ExpandToggle` in `transcript-rows.tsx`) because it is the only signal that
@@ -66,7 +66,7 @@
 // when it changes under the pointer); the copied state rides on the icon.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Forward, Pin, RotateCcw } from "lucide-react";
+import { Check, Copy, Pencil, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -171,14 +171,16 @@ export function UserRowActions({
 
   const onRetry = useCallback(() => void retryLastTurn(tabId), [tabId]);
 
-  // Resend is NOT retry. Retry rewinds the turn off the agent and re-runs it
-  // (destructive, native-agent-only); resend leaves the thread alone and asks
-  // the same question again as a new turn, which every agent can do. It goes
-  // through the panel's `atlas:chat-send` seam rather than calling the agent
-  // directly so it inherits the composer's whole send path — binding waits,
-  // the queued-send chip while a turn is live, logging.
-  const onResend = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("atlas:chat-send", { detail: { text, tabId } }));
+  // Edit is NOT retry. Retry rewinds the turn off the agent and re-runs it
+  // (destructive, native-agent-only). ACP has no verb to forget or rewrite a
+  // turn (see `retry-gate.ts`), so editing in place is impossible there; the
+  // honest version every agent supports is to load the prompt back into the
+  // composer and let it go out as a NEW turn, the old exchange left intact.
+  // Sending unchanged is one Enter away, which is what the old blind "Send
+  // this prompt again" button did. The composer owns the draft, so this goes
+  // through its tab-scoped `atlas:chat-prefill` seam.
+  const onEdit = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text, tabId } }));
   }, [text, tabId]);
 
   const onPin = useCallback(() => {
@@ -219,15 +221,15 @@ export function UserRowActions({
       )}
     >
       {canRetry && (
-        <ActionButton label="Retry this message" onClick={onRetry}>
-          <RotateCcw size={12} />
+        <ActionButton label="Retry (replaces this response)" onClick={onRetry}>
+          <RefreshCw size={12} />
         </ActionButton>
       )}
       <ActionButton label="Pin message" onClick={onPin} active={pinned}>
         <Pin size={12} fill={pinned ? "currentColor" : "none"} />
       </ActionButton>
-      <ActionButton label="Send this prompt again" onClick={onResend}>
-        <Forward size={12} />
+      <ActionButton label="Edit and send as new message" onClick={onEdit}>
+        <Pencil size={12} />
       </ActionButton>
       <ActionButton label="Copy message" onClick={onCopy}>
         {copied ? <Check size={12} /> : <Copy size={12} />}

@@ -423,8 +423,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       setValue: (text) => {
         const v = viewRef.current;
         if (!v) return;
+        // Caret to the end: a replaced value is one the user is about to
+        // continue or edit, and CodeMirror would otherwise map it to 0.
         v.dispatch({
           changes: { from: 0, to: v.state.doc.length, insert: text },
+          selection: { anchor: text.length },
         });
       },
       clear: () => {

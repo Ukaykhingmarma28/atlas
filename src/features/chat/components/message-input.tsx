@@ -1657,19 +1657,38 @@ export function MessageInput({
     return () => window.removeEventListener("atlas:chat-reply", handler);
   }, []);
 
-  // Prefill the composer with raw text (empty-state prompt chips). Unlike
-  // "reply" this replaces the value verbatim (no quote block) and focuses.
+  // Prefill the composer with raw text (empty-state prompt chips, a user row's
+  // "Edit as new message"). Unlike "reply" this replaces the value verbatim (no
+  // quote block) and focuses. Tab-scoped like `atlas:chat-send`: a tabId-less
+  // event still reaches every mounted composer.
+  //
+  // Replacing is destructive, so a non-empty draft that differs from the new
+  // text is offered back through an Undo toast rather than silently dropped.
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ text: string }>).detail;
+      const detail = (e as CustomEvent<{ text: string; tabId?: string }>).detail;
       if (!detail?.text) return;
+      if (detail.tabId != null && detail.tabId !== tabId) return;
+      const previous = inputRef.current?.getValue() ?? valueRef.current;
       inputRef.current?.setValue(detail.text);
       setValue(detail.text);
       requestAnimationFrame(() => inputRef.current?.focus());
+      if (previous.trim() && previous !== detail.text) {
+        toast("Replaced your draft", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              inputRef.current?.setValue(previous);
+              setValue(previous);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            },
+          },
+        });
+      }
     };
     window.addEventListener("atlas:chat-prefill", handler);
     return () => window.removeEventListener("atlas:chat-prefill", handler);
-  }, []);
+  }, [tabId, setValue]);
 
   // Focus the composer on demand. The sidebar "+ new chat" button fires this
   // when it reuses an already-empty tab: no remount happens in that case, so
