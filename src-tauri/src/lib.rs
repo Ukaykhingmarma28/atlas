@@ -553,6 +553,10 @@ pub fn run() {
             commands::github::list_cloned_repos,
             commands::github::read_repo_readme,
             commands::github::delete_cloned_repo,
+            commands::github::list_remote_branches,
+            commands::github::switch_cloned_repo_branch,
+            commands::github::update_cloned_repo,
+            commands::github::fetch_cloned_repo_meta,
             // Legacy Claude-CLI subprocess commands (claude_run/stream/stop/check/version)
             // were replaced by ACP. Session-history readers below are still in use.
             commands::gitdiff::git_diff_structured,

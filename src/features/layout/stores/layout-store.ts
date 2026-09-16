@@ -63,10 +63,6 @@ interface LayoutState {
     sidebarWidth: number;
     inspectorWidth: number;
   };
-  bottomPanel: {
-    visible: boolean;
-    height: number;
-  };
   chatSidebar: {
     visible: boolean;
     width: number;
@@ -95,7 +91,7 @@ interface LayoutState {
   /** Which workspace the singular mirror currently represents. */
   currentViewWsId: string | null;
   /** Mirror of the FOCUSED column's active tab — kept in sync so the many
-   *  existing readers (status bar, persistence, etc.) don't need to know about
+   *  existing readers (persistence, the title bar, etc.) don't need to know about
    *  split columns. */
   activeTabId: string | null;
   // ── Split view ──────────────────────────────────────────────────────────
@@ -127,7 +123,6 @@ interface LayoutActions {
     /** Shared implementation: a key that owns a mode either closes the slot
      *  (it already holds that mode) or claims it. */
     toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
-    toggleBottomPanel: () => void;
     toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
@@ -141,7 +136,7 @@ interface LayoutActions {
     setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
     setRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     /** Make the right panel visible AND switch it to `section` (e.g. open the
-     *  Source Control pane from the status bar). */
+     *  Source Control pane from a notification). */
     revealRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
@@ -201,10 +196,6 @@ const initialState: LayoutState = {
     showInspector: true,
     sidebarWidth: 240,
     inspectorWidth: 280,
-  },
-  bottomPanel: {
-    visible: true,
-    height: 32,
   },
   chatSidebar: {
     visible: true,
@@ -429,10 +420,6 @@ export const useLayoutStore = createSelectors(
               }
               s.rightPanel.visible = true;
               s.rightPanel.mode = "chat";
-            }),
-          toggleBottomPanel: () =>
-            set((s) => {
-              s.bottomPanel.visible = !s.bottomPanel.visible;
             }),
           toggleChatSidebar: () =>
             set((s) => {
@@ -804,12 +791,9 @@ export const useLayoutStore = createSelectors(
               // validate actives/focus.
               reconcileGroups(s);
 
-              // Panels — left/right are explicitly controlled by templates;
-              // bottom (status bar) is only touched when a template opts in.
+              // Panels — left/right are explicitly controlled by templates.
               s.leftPanel.visible = !!template.panels.left;
               s.rightPanel.visible = !!template.panels.right;
-              if (template.panels.bottom !== undefined)
-                s.bottomPanel.visible = template.panels.bottom;
               if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
               // A template naming a section means it wants source control in
               // the slot; leaving chat there would silently ignore the request.
@@ -963,7 +947,6 @@ export const useLayoutStore = createSelectors(
           leftPanel: s.leftPanel,
           rightPanel: s.rightPanel,
           knowledgePanel: s.knowledgePanel,
-          bottomPanel: s.bottomPanel,
           chatSidebar: s.chatSidebar,
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
@@ -1006,7 +989,6 @@ export const useLayoutStore = createSelectors(
             leftPanel,
             rightPanel,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
-            bottomPanel: { ...current.bottomPanel, ...p.bottomPanel },
             chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },
             bashPanel: { ...current.bashPanel, ...p.bashPanel },
             plansPanel: { ...current.plansPanel, ...p.plansPanel },

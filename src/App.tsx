@@ -468,7 +468,6 @@ export function App() {
     toggleLeftPanel,
     toggleRightPanel,
     toggleRightChatPanel,
-    toggleBottomPanel,
     toggleChatSidebar,
     toggleTabBar,
     addTab,
@@ -1302,7 +1301,6 @@ export function App() {
     // opening a second panel, and pressing it again closes the slot.
     "panels.teamChat": toggleRightChatPanel,
     "panels.terminal": toggleTerminal,
-    "panels.bottom": toggleBottomPanel,
     "panels.agentSidebar": toggleChatSidebar,
     // ⌥J — open the Knowledge Base, or jump to it if already open, WITHIN
     // the focused split column.

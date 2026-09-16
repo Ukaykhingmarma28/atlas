@@ -79,6 +79,7 @@ import {
 } from "../lib/image-policy";
 import { ComposerAddMenu } from "./composer-add-menu";
 import type { GithubRepo } from "@/features/github/types";
+import { metaFromSearch } from "@/features/github/types";
 import { imageMimeFromPath } from "@/lib/byok/model-capabilities";
 import type { ImageAttachment } from "@/types/agents";
 import type {
@@ -1387,6 +1388,7 @@ export function MessageInput({
         projectPath: proj,
         cloneUrl: repo.clone_url,
         repoName: repo.full_name.replace(/\//g, "-"),
+        meta: metaFromSearch(repo),
       });
       const folderName = dest.split("/").pop() || repo.full_name.replace(/\//g, "-");
       const mention: MentionRepo = {
