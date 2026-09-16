@@ -227,6 +227,26 @@ fn no_trailing_stderr_when_the_last_thing_was_traffic() {
     assert_eq!(log.trailing_stderr(), None);
 }
 
+/// An outbound request may be recorded after an agent writes its startup
+/// failure but before the exit watcher observes the child. That request must
+/// not erase the diagnostic carried by the `Exited` error.
+#[test]
+fn exit_stderr_keeps_a_reason_before_our_final_request() {
+    let log = AcpDebugLog::new();
+
+    log.record_line(AcpDebugMessageDirection::Stderr, "cannot find module acp");
+    log.record_line(
+        AcpDebugMessageDirection::Outgoing,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    assert_eq!(
+        log.exit_stderr().as_deref(),
+        Some("cannot find module acp"),
+        "our request cannot overwrite the agent's final diagnostic"
+    );
+}
+
 #[test]
 fn a_batched_line_records_every_message_in_it() {
     let log = AcpDebugLog::new();

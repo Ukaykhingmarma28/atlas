@@ -148,6 +148,7 @@ jobs:
             clippy: true
           - crate: atlas-agent-manager
             clippy: true
+          - crate: atlas-process
           - crate: atlas-agent-servers
             clippy: true
           - crate: atlas-agent-transcript

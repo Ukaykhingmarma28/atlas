@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 //! Builds a redacted doctor report attachment for feedback uploads.
 //!
 //! Feedback upload should never depend on doctor succeeding. This module runs

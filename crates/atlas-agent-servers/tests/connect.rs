@@ -179,7 +179,7 @@ async fn an_agent_that_exits_immediately_reports_its_exit_status() {
 async fn a_dying_agent_reports_what_it_said_on_stderr() {
     let error = connect(command(
         "/bin/sh",
-        &["-c", "echo 'cannot find module acp' >&2; sleep 0.2; exit 1"],
+        &["-c", "echo 'cannot find module acp' >&2; exit 1"],
     ))
     .await
     .expect_err("expected the connect to fail");

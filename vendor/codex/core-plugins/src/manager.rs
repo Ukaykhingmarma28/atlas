@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use super::LoadedPlugin;
 use super::PluginLoadOutcome;
 use crate::app_mcp_routing::apply_app_mcp_routing_policy;

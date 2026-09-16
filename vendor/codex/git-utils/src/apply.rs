@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 //! Helpers for applying unified diffs using the system `git` binary.
 //!
 //! The entry point is [`apply_git_patch`], which writes a diff to a temporary

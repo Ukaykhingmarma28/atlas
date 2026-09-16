@@ -32,6 +32,9 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VENDOR = path.join(REPO_ROOT, "vendor", "codex");
+const TAURI_DIR = path.join(REPO_ROOT, "src-tauri");
+const BUNDLED_CODEX_LICENSE = "licenses/OpenAI-Codex-LICENSE.txt";
+const BUNDLED_CODEX_NOTICE = "licenses/OpenAI-Codex-NOTICE.txt";
 
 /** The marker every modified vendored file carries. Grep-able on purpose. */
 const CHANGE_NOTICE = "Modified by Atlas";
@@ -121,9 +124,20 @@ describe("§4(a) and §4(d) — the licence and NOTICE reach recipients", () => 
     expect(resources, "bundle.resources missing").toBeDefined();
 
     const entries = Array.isArray(resources) ? resources : Object.keys(resources);
-    const joined = entries.join("\n");
-    expect(joined, "vendored LICENSE not bundled").toMatch(/vendor\/codex\/LICENSE/);
-    expect(joined, "vendored NOTICE not bundled").toMatch(/vendor\/codex\/NOTICE/);
+    expect(entries, "vendored LICENSE not bundled").toContain(BUNDLED_CODEX_LICENSE);
+    expect(entries, "vendored NOTICE not bundled").toContain(BUNDLED_CODEX_NOTICE);
+  });
+
+  it("bundles byte-identical copies of the vendored LICENSE and NOTICE", () => {
+    // Windows WiX cannot bundle two source files named LICENSE. The bundle
+    // therefore ships explicitly named copies; keep the legal texts tied to
+    // the canonical vendored files rather than merely checking their paths.
+    expect(read(path.join(TAURI_DIR, BUNDLED_CODEX_LICENSE))).toBe(
+      read(path.join(VENDOR, "LICENSE")),
+    );
+    expect(read(path.join(TAURI_DIR, BUNDLED_CODEX_NOTICE))).toBe(
+      read(path.join(VENDOR, "NOTICE")),
+    );
   });
 
   it("bundles paths that actually exist", () => {
@@ -135,7 +149,7 @@ describe("§4(a) and §4(d) — the licence and NOTICE reach recipients", () => 
     for (const src of sources) {
       if (src.includes("*")) continue; // globs are the bundler's business
       expect(
-        existsSync(path.resolve(REPO_ROOT, "src-tauri", src)),
+        existsSync(path.resolve(TAURI_DIR, src)),
         `bundle resource does not exist: ${src}`,
       ).toBe(true);
     }

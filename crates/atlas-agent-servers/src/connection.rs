@@ -54,9 +54,10 @@ const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
 /// report. Generous: a cold `node` start on a slow disk is seconds, not a
 /// minute, so expiry means the agent is not going to answer.
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
-/// How long the exit path lets the stderr reader catch up before it builds
-/// the `Exited` error out of what was recorded.
-const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(100);
+/// Maximum time the exit path waits for the stderr reader to reach EOF before
+/// it builds the `Exited` error out of what was recorded. The reader normally
+/// completes immediately; the bound covers descendants which retain stderr.
+const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(1);
 
 /// How long a one-shot RPC on the connect/bind path may take: `session/new`,
 /// `session/load`, `session/resume`, `authenticate`, `session/list`.
@@ -210,6 +211,7 @@ impl AcpConnection {
         );
         let transport = Lines::new(outgoing, incoming);
 
+        let (stderr_drained_tx, stderr_drained_rx) = tokio::sync::oneshot::channel();
         let stderr_task = tokio::spawn({
             let debug_log = debug_log.clone();
             async move {
@@ -220,6 +222,7 @@ impl AcpConnection {
                     tracing::warn!("agent stderr: {trimmed}");
                     debug_log.record_line(AcpDebugMessageDirection::Stderr, trimmed);
                 }
+                let _ = stderr_drained_tx.send(());
             }
         });
 
@@ -245,7 +248,11 @@ impl AcpConnection {
         // the select, the select drops `status_fut`, and `status_fut` drops
         // the child, whose `Drop` kills the whole process group. Nothing else
         // needs to reach in.
-        let mut status_fut = Box::pin(wait_for_exit(child, debug_log.clone()));
+        let mut status_fut = Box::pin(wait_for_exit(
+            child,
+            debug_log.clone(),
+            stderr_drained_rx,
+        ));
         let connection_rx = Box::pin(async move {
             connection_rx
                 .await
@@ -604,19 +611,24 @@ pub(crate) async fn with_request_deadline<T>(
 }
 
 /// Waits for the child and turns its exit into a `LoadError` carrying the
-/// trailing stderr. The child is returned so the caller keeps owning it — and
+/// exit stderr. The child is returned so the caller keeps owning it — and
 /// so that dropping it, whenever that happens, kills whatever it left behind.
-async fn wait_for_exit(mut child: AgentChild, debug_log: AcpDebugLog) -> (LoadError, AgentChild) {
+async fn wait_for_exit(
+    mut child: AgentChild,
+    debug_log: AcpDebugLog,
+    stderr_drained: tokio::sync::oneshot::Receiver<()>,
+) -> (LoadError, AgentChild) {
     let status = child.wait().await;
     // The stderr reader is a separate task; under load it can still be a poll
     // behind the exit status, and the last line it has not recorded yet is
-    // usually the one that says why the agent died. The pipe is closed now,
-    // so this is a bounded wait for the reader to catch up, not for the agent.
-    tokio::time::sleep(STDERR_DRAIN_GRACE).await;
+    // usually the one that says why the agent died. Wait for its EOF signal,
+    // rather than merely sleeping, while bounding the case where a descendant
+    // inherited the pipe and keeps it open.
+    let _ = tokio::time::timeout(STDERR_DRAIN_GRACE, stderr_drained).await;
     let error = LoadError::Exited {
         status: status.ok().and_then(|status| status.code()),
         stderr: debug_log
-            .trailing_stderr()
+            .exit_stderr()
             .map(Arc::from)
             .unwrap_or_else(|| Arc::from("")),
     };
