@@ -27,7 +27,7 @@ import { AddProjectMenu } from "@/features/workspaces/components/add-project-men
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { CreateOrgDialog } from "./create-org-dialog";
 import { MembersModal } from "./members-modal";
-import type { Organisation } from "../types";
+import { isSyncedOrg, type Organisation } from "../types";
 
 /** Two-letter avatar seed from an org name. */
 function initials(name: string): string {
@@ -142,7 +142,7 @@ export function OrgSwitcher() {
    *    is worse than the rare stale case.
    */
   const orgAccess = (org: Organisation): { ok: true } | { ok: false; reason: string } => {
-    if (!(org.syncEnabled && org.remoteId)) return { ok: true };
+    if (!isSyncedOrg(org)) return { ok: true };
     if (!signedIn) return { ok: false, reason: "Sign in to open this synced organisation" };
     if (myOrgIds && !myOrgIds.has(org.remoteId)) {
       return { ok: false, reason: "This account isn't a member of this organisation" };
@@ -184,13 +184,13 @@ export function OrgSwitcher() {
    *  actually exists server-side, AND a live credential to talk to it with.
    *  Signing out does not un-sync an org — you stay in it, and every member
    *  call would 401 — so the credential has to be checked separately. */
-  const isSyncedOrg = !!(active?.syncEnabled && active?.remoteId);
-  const canManageMembers = isSyncedOrg && signedIn;
+  const activeIsSynced = !!active && isSyncedOrg(active);
+  const canManageMembers = activeIsSynced && signedIn;
   /** The id worth copying is the org's identity ON THE SERVER — the one the
    *  gateway, support and every other machine know it by, and the same value
    *  sent as the `atlas-org` header. A local org's `id` is meaningful only on
    *  this Mac, so there is nothing to hand anyone until it is synced. */
-  const copyableOrgId = active?.remoteId && active?.syncEnabled ? active.remoteId : null;
+  const copyableOrgId = active && isSyncedOrg(active) ? active.remoteId : null;
 
   const beginRename = (id: string, currentName: string) => {
     setEditingId(id);
@@ -378,8 +378,12 @@ export function OrgSwitcher() {
                     <span className="flex-1 text-left truncate">{org.name}</span>
                     {/* A locked org offers no row actions — you can't manage an
                         org this account has no access to. */}
-                    {/* Rename (pencil) — appears on hover; doesn't switch/close. */}
-                    {access.ok && (
+                    {/* Rename (pencil) — appears on hover; doesn't switch/close.
+                        Local-only orgs only: a synced org's name is owned by the
+                        server and re-applied on every auth refresh, so a local
+                        rename would silently revert. There is no org-update
+                        route in the client to write it through with. */}
+                    {access.ok && !isSyncedOrg(org) && (
                       <button
                         title="Rename organisation"
                         onClick={(e) => {
@@ -450,7 +454,9 @@ export function OrgSwitcher() {
               </DropdownMenu.Item>
             ) : (
               <div
-                title={isSyncedOrg ? "Sign in to manage members" : "Turn on sync to manage members"}
+                title={
+                  activeIsSynced ? "Sign in to manage members" : "Turn on sync to manage members"
+                }
                 className="mx-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
               >
                 <Users size={12} className="shrink-0" />
@@ -498,7 +504,7 @@ export function OrgSwitcher() {
                 <Loader2 size={12} className="shrink-0 animate-spin text-[var(--text-tertiary)]" />
                 <span className="flex-1 text-left truncate">Syncing {active.name}…</span>
               </div>
-            ) : active.syncEnabled && active.remoteId ? (
+            ) : isSyncedOrg(active) ? (
               <div
                 title="This organisation is synced with your Atlas account"
                 className="mx-1 my-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] select-none"

@@ -72,6 +72,14 @@ export interface Invitation {
  * disambiguate against the current local org set — the auth branch reconciles
  * against the server on link.
  */
+/** A synced org: linked to a server row AND opted into sync. The server owns
+ *  its name and membership; a local-only org (either flag off) is the user's. */
+export function isSyncedOrg<T extends Pick<Organisation, "syncEnabled" | "remoteId">>(
+  org: T,
+): org is T & { syncEnabled: true; remoteId: string } {
+  return !!(org.syncEnabled && org.remoteId);
+}
+
 export function slugify(name: string): string {
   const base = name
     .toLowerCase()

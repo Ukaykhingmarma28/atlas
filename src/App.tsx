@@ -90,15 +90,22 @@ import {
 } from "@/features/updater/lib/updater-api";
 import { Toaster, toast } from "sonner";
 import {
+  auth,
   listenAuthChanged,
   listenAuthError,
   listenAuthSignedOut,
 } from "@/features/auth/lib/auth-api";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
+import { createWakeRefresher } from "@/features/auth/lib/refresh-on-wake";
 import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { ConnectDialog } from "@/features/auth/components/connect-dialog";
 import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/ui-scale";
 import { useModelsStore } from "@/features/settings/stores/models-store";
+
+/** Minimum gap between two wake-triggered account re-pulls. Long enough that a
+ *  burst of focus edges (Space switches) costs one pull; short enough that a
+ *  rename made on the web is visible the next time the user comes back. */
+const AUTH_WAKE_REFRESH_MS = 5 * 60_000;
 
 // Interface-zoom helpers (⌘+/⌘-/⌘0). They read + write the persisted
 // `uiScale` setting; `updateSettings` applies it to the native WebView zoom.
@@ -232,7 +239,8 @@ export function App() {
     const offs: Array<Promise<() => void>> = [
       listenAuthChanged((snapshot) => {
         a.setSnapshot(snapshot);
-        // Add-only merge of the server's org list into the local switcher.
+        // Merge the server's org list into the local switcher (adds new ones,
+        // takes renamed names onto linked ones, never removes).
         // Guarded on `orgs !== null` (three-state): `null` is "not known yet"
         // (offline), not "no orgs", and must never touch the local list.
         if (snapshot.status === "signed-in" && snapshot.orgs) {
@@ -246,7 +254,18 @@ export function App() {
       listenAuthSignedOut((e) => toast.error(e.message)),
     ];
     void a.hydrate();
+    // Re-pull on wake so an org renamed on the web shows up when the user
+    // comes back to Atlas, not at the next relaunch. `atlas:window-active` is
+    // the focus rising edge / page-visible signal from `window-focus.ts`, and
+    // the first input after 30 s idle (below) — all throttled by one gate.
+    const refreshOnWake = createWakeRefresher({
+      refresh: auth.refresh,
+      isSignedIn: () => useAuthStore.getState().snapshot.status === "signed-in",
+      minIntervalMs: AUTH_WAKE_REFRESH_MS,
+    });
+    window.addEventListener("atlas:window-active", refreshOnWake);
     return () => {
+      window.removeEventListener("atlas:window-active", refreshOnWake);
       for (const p of offs) void p.then((off) => off());
     };
   }, []);
