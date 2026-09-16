@@ -65,9 +65,9 @@ import {
 /**
  * How many rows are added each time the window grows.
  *
- * Sized in ROWS, not turns: a tool-heavy turn is a dozen 24px markers, so 40
- * rows is a couple of turns — enough to stay ahead of the reader, small enough
- * that mounting them (and parsing whatever markdown they carry) is not a hitch.
+ * Sized in ROWS, not turns: each collapsed tool sequence counts as one row,
+ * while an opened sequence bounds its own height. Forty rows stay ahead of the
+ * reader without mounting the full history at once.
  * Bursting 80 at once was visibly worse even after the blank was fixed.
  */
 const WINDOW_CHUNK = 40;
@@ -330,13 +330,13 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const canRetry = useChatStore((s) => sessionCanRetry(s.sessions[tabId], supportsRewind));
 
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  /** Turns whose tool-call block the reader has opened. */
+  /** Tool sequences the reader has opened. */
   const [expandedTurns, setExpandedTurns] = useState<ReadonlySet<string>>(() => new Set());
-  const toggleTurn = useCallback((turnId: string) => {
+  const toggleTurn = useCallback((groupId: string) => {
     setExpandedTurns((prev) => {
       const next = new Set(prev);
-      if (next.has(turnId)) next.delete(turnId);
-      else next.add(turnId);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
       return next;
     });
   }, []);
@@ -843,10 +843,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       visible.map((row, i) => (
         // `group` is the hover scope for the user row's action bar
         // (`user-row-actions.tsx`), which is hidden until the row is hovered.
-        // It is the only `group-hover:` selector in the thread, and it is not
-        // free — see the fling hover-suspension in `use-transcript-scroll.ts`,
-        // which exists specifically to stop it firing for every row that
-        // passes under a resting pointer mid-scroll. Don't add a second one.
+        // The fling hover-suspension in `use-transcript-scroll.ts` keeps hover
+        // styles from firing as rows pass under a resting pointer mid-scroll.
         <div key={row.id} className="atlas-row group" data-row-id={row.id}>
           <RowView
             row={row}
@@ -1011,7 +1009,7 @@ function RowView({
     case RowKind.Marker:
       return <MarkerRowView row={row} tabId={tabId} />;
     case RowKind.MarkerGroup:
-      return <MarkerGroupRowView row={row} onExpandTurn={onExpandTurn} />;
+      return <MarkerGroupRowView row={row} tabId={tabId} onExpandTurn={onExpandTurn} />;
     case RowKind.Separator:
       return <SeparatorRowView row={row} />;
     case RowKind.TurnFooter:

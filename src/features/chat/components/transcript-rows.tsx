@@ -8,22 +8,30 @@
 //     that is what keeps a turn's cost bounded no matter what the agent did.
 //  2. The only things with colour are diff counts, the running-state glyph, and
 //     the turn footer's primary action. Everything else is foreground/muted
-//     grey. Per-tool icon colours are the "moving blocks" problem in a new
-//     costume — resist them.
+//     grey. Per-tool icon SHAPES are fine and are what the marker rows use —
+//     per-tool icon COLOURS are the "moving blocks" problem in a new costume,
+//     and are the thing to resist.
 //  3. Rows never subscribe to the chat store or the detail-panel store. Data
 //     arrives as props; actions are fired imperatively via `getState()`.
 
 import { memo, useCallback, useState } from "react";
 import {
-  Check,
-  X,
-  Circle,
   ChevronRight,
   Paperclip,
   Brain,
   Bookmark,
   Code2,
   ChevronDown,
+  SquareTerminal,
+  BookOpen,
+  PencilLine,
+  Search,
+  Globe,
+  Trash2,
+  ArrowRightLeft,
+  FolderOpen,
+  FileText,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CachedMarkdown } from "@/lib/markdown-cache";
@@ -40,6 +48,7 @@ import type {
   SeparatorRow,
   TurnFooterRow,
   MarkerState,
+  MarkerTool,
 } from "../lib/turn-rows";
 import { userRowMessageId } from "../lib/turn-rows";
 import { M } from "../lib/row-metrics";
@@ -296,34 +305,64 @@ export const ThinkingRowView = memo(function ThinkingRowView({
 
 // ── Marker ─────────────────────────────────────────────────────────────────
 
-function StateGlyph({ state }: { state: MarkerState }) {
-  if (state === "failed") return <X size={11} className="text-[var(--status-error)]" />;
-  if (state === "done") return <Check size={11} className="text-[var(--text-tertiary)]" />;
-  if (state === "running")
-    return (
-      <Circle
-        size={9}
-        className="atlas-marker-running fill-[var(--accent-primary)] text-[var(--accent-primary)]"
-      />
-    );
-  return <Circle size={9} className="text-[var(--text-tertiary)]" />;
+/** Icon key → glyph. Exhaustive over `MarkerTool` by construction, so adding a
+ *  key to the union is a type error here until it has a glyph. */
+const TOOL_ICONS: Record<MarkerTool, typeof Wrench> = {
+  run: SquareTerminal,
+  read: BookOpen,
+  edit: PencilLine,
+  search: Search,
+  list: FolderOpen,
+  fetch: Globe,
+  think: Brain,
+  delete: Trash2,
+  move: ArrowRightLeft,
+  file: FileText,
+  tool: Wrench,
+};
+
+/**
+ * The leading glyph: what the call *did*, not that it finished.
+ *
+ * A completed tool call used to get a tick, which meant a tool-heavy turn was a
+ * column of identical ticks carrying no information — every row in a settled
+ * turn is done. The shape now says "ran a command" / "read a file" / "searched",
+ * which is the thing a reader scans for, and state rides along in colour
+ * instead: failure tints the action glyph red, and a running call tints it and
+ * shimmers with the row. The action shape remains identifiable in every state.
+ *
+ * Note which colours exist here and which do not. Failed and running are tinted
+ * because house rule 2 sanctions exactly those; the icon is otherwise the same
+ * muted grey as the text, and per-TOOL colour stays out — it would put a
+ * different hue on every row of a busy turn, which is the thing rule 2 forbids.
+ */
+function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) {
+  const Icon = TOOL_ICONS[tool];
+  return (
+    <Icon
+      size={15}
+      className={cn(
+        state === "failed" && "text-[var(--status-error)]",
+        state === "running" && "text-[var(--accent-primary)]",
+      )}
+    />
+  );
 }
 
 /**
  * One tool call: a single muted line, and nothing else.
  *
- * Deliberately NOT expandable. An inline disclosure per marker meant a
- * tool-heavy turn carried dozens of collapsed panels, each one more layout the
- * scroller had to reason about — and expanding one changed the height of the
- * document under the reader. Detail belongs in the side panel, which is what
- * the trailing chevron opens. One row, one height, forever.
+ * The group expands, while each action stays one line. Clicking an action with
+ * output or a diff opens its detail view.
  */
 export const MarkerRowView = memo(function MarkerRowView({
   row,
   tabId,
+  embedded = false,
 }: {
   row: MarkerRow;
   tabId: string;
+  embedded?: boolean;
 }) {
   const clickable = row.opens !== "none";
   const onClick = useCallback(() => {
@@ -336,86 +375,93 @@ export const MarkerRowView = memo(function MarkerRowView({
     }
   }, [row.opens, row.path, row.toolCallId, tabId]);
 
-  return (
-    <Column>
-      <div
-        onClick={clickable ? onClick : undefined}
-        className={cn(
-          "atlas-marker text-[11px] text-[var(--text-tertiary)]",
-          clickable && "cursor-pointer hover:text-[var(--text-secondary)]",
-          row.state === "running" && "atlas-marker-running",
-        )}
-        title={clickable ? `${row.verb} ${row.detail} — open in side panel` : undefined}
-      >
-        <span className="flex w-3 shrink-0 justify-center">
-          <StateGlyph state={row.state} />
+  const line = (
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={clickable ? onClick : undefined}
+      className={cn(
+        "atlas-marker w-full min-w-0 text-left text-[13px] text-[var(--text-secondary)]",
+        clickable && "cursor-pointer hover:text-[var(--text-primary)]",
+        row.state === "running" && "atlas-marker-running",
+      )}
+      title={
+        clickable ? `${row.cmd ?? `${row.verb} ${row.detail}`} — open in side panel` : undefined
+      }
+    >
+      <span className="flex w-5 shrink-0 justify-center">
+        <MarkerGlyph state={row.state} tool={row.tool} />
+      </span>
+      <span className="shrink-0">{row.verb}</span>
+      {row.detail && <span className="min-w-0 truncate font-mono">{row.detail}</span>}
+      {(row.added > 0 || row.removed > 0) && (
+        <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
+          {row.added > 0 && <span className="text-[var(--diff-added-text)]">+{row.added}</span>}
+          {row.removed > 0 && (
+            <span className="ml-1 text-[var(--status-error)]">−{row.removed}</span>
+          )}
         </span>
-        <span className="shrink-0">{row.verb}</span>
-        {row.detail && (
-          <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-tertiary)]/85">
-            {row.detail}
-          </span>
-        )}
-        {(row.added > 0 || row.removed > 0) && (
-          <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
-            {row.added > 0 && <span className="text-[var(--diff-added-text)]">+{row.added}</span>}
-            {row.removed > 0 && (
-              <span className="ml-1 text-[var(--status-error)]">−{row.removed}</span>
-            )}
-          </span>
-        )}
-        {clickable && (
-          <ChevronRight
-            size={11}
-            className={cn("shrink-0", !row.added && !row.removed && "ml-auto")}
-          />
-        )}
-      </div>
-    </Column>
+      )}
+    </button>
   );
+  return embedded ? line : <Column>{line}</Column>;
 });
 
 /**
- * The folded tool-call block — the Session timeline's "Show tool calls" applied
- * to a turn. Two lines: a summary of what happened, and the disclosure.
+ * A folded sequence of consecutive tool calls, kept between the prose around it.
+ *
+ * `Tool calls · 6s · 8 calls` over a separate "Show tool calls" button became a
+ * single sentence you click — "Read files, ran commands" — matching the Codex
+ * desktop app. The wall time and the call/edit counts went with the old header;
+ * the turn footer below already carries "N files changed +x −y", so the only
+ * thing actually lost is the duration.
+ *
+ * The chevron appears on hover and stays visible when open. The action list is
+ * height-bounded so a long run does not take over the transcript.
  */
 export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   row,
+  tabId,
   onExpandTurn,
 }: {
   row: MarkerGroupRow;
+  tabId: string;
   onExpandTurn: (turnId: string) => void;
 }) {
   return (
     <Column className="py-3">
-      <div className="flex items-baseline gap-2 text-[11px]">
-        <span className="font-medium text-[var(--text-secondary)]">Tool calls</span>
-        {row.duration && (
-          <span className="font-mono text-[10px] text-[var(--text-tertiary)]">{row.duration}</span>
-        )}
-        <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-          {row.count} {row.count === 1 ? "call" : "calls"}
+      <button
+        type="button"
+        aria-expanded={row.open}
+        aria-controls={`${row.id}:actions`}
+        onClick={() => onExpandTurn(row.id)}
+        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      >
+        <span className="flex w-5 shrink-0 justify-center">
+          <MarkerGlyph state="done" tool={row.liveTool ?? row.tool} />
         </span>
-        {row.modified > 0 && (
-          <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-            {row.modified} modified
-          </span>
-        )}
-        {row.added > 0 && (
-          <span className="font-mono text-[10px] text-[var(--diff-added-text)]">+{row.added}</span>
-        )}
-      </div>
-      {/* While the turn runs the markers below are live progress, so there is
-          nothing to disclose — the control only appears once they fold. */}
-      {!row.running && (
-        <button
-          type="button"
-          onClick={() => onExpandTurn(row.turnId)}
-          className="mt-0.5 flex cursor-pointer items-center gap-1 text-[11px] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
+        <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
+          {row.running ? row.liveLabel : row.summary}
+        </span>
+        <ChevronRight
+          size={14}
+          className={cn(
+            "shrink-0",
+            row.open
+              ? "rotate-90 opacity-100"
+              : "opacity-0 group-hover/tool-summary:opacity-100 group-focus-visible/tool-summary:opacity-100",
+          )}
+        />
+      </button>
+      {row.open && (
+        <div
+          id={`${row.id}:actions`}
+          className="max-h-[240px] overflow-y-auto overscroll-contain pr-1"
         >
-          {row.open ? "Hide tool calls" : "Show tool calls"}
-          <ChevronRight size={11} className={cn("transition-transform", row.open && "rotate-90")} />
-        </button>
+          {row.markers.map((marker) => (
+            <MarkerRowView key={marker.id} row={marker} tabId={tabId} embedded />
+          ))}
+        </div>
       )}
     </Column>
   );
