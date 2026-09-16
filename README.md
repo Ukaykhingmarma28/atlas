@@ -20,7 +20,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/pacifio/atlas/ci.yml?branch=main&label=CI)](https://github.com/pacifio/atlas/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pacifio/atlas?include_prereleases&label=release)](https://github.com/pacifio/atlas/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-black)](#download)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-black)](#download)
 [![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/GmnFggaPfP)
 
 <sub>[Download](#download) · [Docs](https://docs.tryatlas.cc/) · [Website](https://www.tryatlas.cc/) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/pacifio/atlas/issues)</sub>
@@ -44,10 +44,10 @@ Run Claude Code, Codex, Atlas's own agent, or anything from the ACP registry sid
 
 ## Download
 
-Grab the latest `.dmg` from [tryatlas.cc](https://www.tryatlas.cc/) or the [releases page](https://github.com/pacifio/atlas/releases).
+Grab the latest build from [tryatlas.cc](https://www.tryatlas.cc/) or the [releases page](https://github.com/pacifio/atlas/releases) — a `.dmg` for macOS (Apple Silicon or Intel), an `.msi` for Windows.
 
 > [!NOTE]
-> macOS is the supported platform. Linux and Windows build from the same Tauri codebase but are untested — see [Build from source](#build-from-source).
+> macOS 13+ and Windows 10+ (x64) are the supported platforms. Linux builds from the same Tauri codebase but is untested — see [Build from source](#build-from-source).
 
 <!-- #todo homebrew tap so this becomes `brew install atlas` -->
 
@@ -150,7 +150,7 @@ Works with no account and no network.
 
 To use the Claude Code agent, install the `claude` CLI and put it on your `PATH`. Atlas's native agent needs no external CLI.
 
-Requires **[Bun](https://bun.sh/)**, **Rust** (stable, via [rustup](https://rustup.rs/)), and **Xcode Command Line Tools**.
+Requires **[Bun](https://bun.sh/)** and **Rust** (stable, via [rustup](https://rustup.rs/)), plus **Xcode Command Line Tools** on macOS or the **MSVC build tools** (Visual Studio Build Tools with the C++ workload) on Windows.
 
 <details>
 <summary>Linux system dependencies (GTK 3, WebKit2GTK 4.1, GLib headers)</summary>
@@ -186,8 +186,9 @@ The first Rust compile takes a few minutes; after that it is seconds. Use `bun r
 Production builds:
 
 ```bash
-bun run build:app       # .app bundle
-bun run build:app:dmg   # .app + .dmg installer
+bun run build:app       # macOS .app bundle
+bun run build:app:dmg   # macOS .app + .dmg installer
+bun run build:app:win   # Windows .msi installer
 ```
 
 ## Contributing
