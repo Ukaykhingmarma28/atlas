@@ -76,12 +76,23 @@ That's enough to build and run Atlas. If you're planning to submit a change and 
 Other commands you'll use:
 
 ```bash
-bun run dev             # Vite only, no Tauri shell — fast for pure UI work, but invoke() calls fail
+bun run dev             # Vite only, in your browser, on a fake backend — see "UI work in the browser"
 bun run format          # oxfmt --write on src/
 bun run lint            # oxlint on src/
 ```
 
 A husky pre-commit hook runs `lint-staged` (oxfmt + oxlint on staged files) plus `bun run typecheck`, so most formatting/lint issues are caught before they ever reach CI (see Verification below).
+
+### UI work in the browser
+
+`bun run dev` runs the whole app at `localhost:1420` in a normal browser. No Rust is running: a dev-only fake backend in `src/dev/mock-backend/` answers every `invoke()` and `listen()` with made-up data. You get instant hot reload, and a coding agent can open the page and check its own work.
+
+- **Pick a state** with `?scenario=<name>`, e.g. `?scenario=git-conflict` or `?scenario=chat-tools`. The list is in `scenarios/index.ts`. Without one you get a workspace with ordinary data.
+- **Need a state that doesn't exist yet?** Add a scenario file with fake answers for the commands that screen calls. Don't set up a real repo or start a real agent session just to see a screen.
+- **Blank or broken panel?** Check the badge in the bottom-right corner. It lists commands nothing answered yet (they return `null`). Add an answer to `scenarios/base.ts` or to your scenario.
+- **Type your fakes** with the frontend's own API types, so `bun run typecheck` catches it when Rust changes a return shape.
+
+The fake backend is never part of a build, and it switches itself off inside the Tauri window. It can't fake the Browser tab, drag-and-drop from Finder or native window controls, and Chrome doesn't render exactly like the app's WebKit view. Check your change in `bun run dev:app` before opening the PR.
 
 If you're working on the **Claude Code** agent specifically, you also need the `claude` CLI on your `PATH`. The native Atlas agent needs nothing extra.
 

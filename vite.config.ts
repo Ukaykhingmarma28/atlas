@@ -1,12 +1,28 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Dev-only fake backend (`src/dev/mock-backend/`). Injected as its own module
+// script ahead of `main.tsx`, so it is installed before any app module calls
+// `invoke()`. `apply: "serve"` keeps it out of every build; inside the Tauri
+// window it sees `isTauri` and does nothing.
+const mockBackend: Plugin = {
+  name: "atlas-mock-backend",
+  apply: "serve",
+  transformIndexHtml: () => [
+    {
+      tag: "script",
+      attrs: { type: "module", src: "/src/dev/mock-backend/install.ts" },
+      injectTo: "head",
+    },
+  ],
+};
+
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), mockBackend],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
