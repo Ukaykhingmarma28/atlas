@@ -19,7 +19,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pacifio/atlas/ci.yml?branch=main&label=CI)](https://github.com/pacifio/atlas/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pacifio/atlas?include_prereleases&label=release)](https://github.com/pacifio/atlas/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-black)](#download)
 [![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/GmnFggaPfP)
 
@@ -215,14 +215,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). One thing catches people out:
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 <sub>
 
-[Website](https://www.tryatlas.cc/) · [Docs](https://docs.tryatlas.cc/) · [Discord](https://discord.gg/GmnFggaPfP) · [Telemetry](TELEMETRY.md) · [MIT](LICENSE)
+[Website](https://www.tryatlas.cc/) · [Docs](https://docs.tryatlas.cc/) · [Discord](https://discord.gg/GmnFggaPfP) · [Telemetry](TELEMETRY.md) · [Apache 2.0](LICENSE)
 
 </sub>
 </div>
