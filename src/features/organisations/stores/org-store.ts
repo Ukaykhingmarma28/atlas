@@ -5,7 +5,7 @@ import { scheduleAppStateSave } from "@/features/project/stores/project-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
 import type { Organisation } from "../types";
-import { slugify } from "../types";
+import { isSyncedOrg, slugify } from "../types";
 import { syncOrgTelemetry } from "../lib/org-telemetry";
 import { auth, type AccountOrg } from "@/features/auth/lib/auth-api";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
@@ -152,8 +152,9 @@ interface OrgState {
     setActiveOrganisation: (id: string) => void;
 
     // --- Server sync (ATL-36) ---------------------------------------------
-    /** Add-only merge of the server's org list into the local one: link/add
-     *  every server org not already linked locally, keeping local-only orgs.
+    /** Merge the server's org list into the local one: link/add every server
+     *  org not already linked locally, take the server's *name* onto rows that
+     *  are, and keep local-only orgs. Never removes anything.
      *  Fired on every signed-in snapshot whose `orgs` is known (not `null`). */
     mergeServerOrgs: (serverOrgs: AccountOrg[]) => void;
     /** Opt into cloud sync for an org ("Turn on sync"): create it server-side
@@ -351,7 +352,24 @@ export const useOrgStore = createSelectors(
         let changed = false;
 
         for (const s of serverOrgs) {
-          if (linked.has(s.id)) continue; // add-only: already linked, leave it
+          if (linked.has(s.id)) {
+            // Already linked: the server owns a synced org's name, so a rename
+            // made on the web is taken here. This used to be a bare `continue`
+            // (add-only), which copied the name exactly once — at first link —
+            // and left every surface reading this store stale across refreshes
+            // and relaunches. Only the name is reconciled: the slug is a local
+            // handle that is kept stable (workspaces key off it), and the
+            // colour/active-workspace fields are local-only by design. The
+            // server's name is applied even if it collides with a local-only
+            // org's (`nameTaken` is a rule for local edits, not for the truth).
+            // At most one row matches: `collapseDuplicateRemotes` ran above.
+            const idx = next.findIndex((o) => o.remoteId === s.id);
+            if (idx !== -1 && next[idx].name !== s.name) {
+              next = next.map((o, i) => (i === idx ? { ...o, name: s.name } : o));
+              changed = true;
+            }
+            continue;
+          }
 
           // Adopt a same-named, still-local org rather than duplicating it —
           // covers an org created offline that later arrives from the server.
@@ -403,7 +421,7 @@ export const useOrgStore = createSelectors(
       enableSync: async (id) => {
         const org = get().organisations.find((o) => o.id === id);
         if (!org) return;
-        if (org.remoteId && org.syncEnabled) return; // already linked
+        if (isSyncedOrg(org)) return; // already linked
 
         // No credential → send them through sign-in; syncing needs one, and the
         // sign-in that follows re-merges the server list anyway.
