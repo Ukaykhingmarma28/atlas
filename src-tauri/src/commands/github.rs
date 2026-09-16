@@ -1,4 +1,5 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -16,6 +17,57 @@ pub struct GithubRepo {
     pub updated_at: String,
 }
 
+/// What the search result knew about the repo at clone time — kept so the
+/// cloned list can show it without another API call. Lives in
+/// `<project>/.atlas/repo-meta.json`, a sibling of `repos/`, never inside
+/// the clone (an untracked file there dirties the clone's own git tree).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RepoMeta {
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub stars: u32,
+    #[serde(default)]
+    pub forks: u32,
+    #[serde(default)]
+    pub html_url: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+fn meta_path(project_path: &str) -> std::path::PathBuf {
+    Path::new(project_path).join(".atlas").join("repo-meta.json")
+}
+
+fn read_meta(project_path: &str) -> BTreeMap<String, RepoMeta> {
+    fs::read_to_string(meta_path(project_path))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_meta(project_path: &str, repo_name: &str, meta: &RepoMeta) -> Result<(), String> {
+    let mut all = read_meta(project_path);
+    all.insert(repo_name.to_string(), meta.clone());
+    let path = meta_path(project_path);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+fn forget_meta(project_path: &str, repo_name: &str) {
+    let mut all = read_meta(project_path);
+    if all.remove(repo_name).is_some() {
+        if let Ok(json) = serde_json::to_string_pretty(&all) {
+            let _ = fs::write(meta_path(project_path), json);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ClonedRepo {
     /// On-disk directory name (`owner-repo`). Used for every filesystem op
@@ -27,6 +79,86 @@ pub struct ClonedRepo {
     pub display_name: String,
     pub path: String,
     pub has_readme: bool,
+    /// The checked-out branch, read from `.git/HEAD` (no process spawn).
+    /// `None` for a detached HEAD or an unreadable clone.
+    pub branch: Option<String>,
+    /// Cached at clone time (or backfilled on demand); `None` until then.
+    pub meta: Option<RepoMeta>,
+}
+
+/// The branch `.git/HEAD` points at, or `None` when detached.
+fn branch_from_head(head: &str) -> Option<String> {
+    head.trim()
+        .strip_prefix("ref: refs/heads/")
+        .filter(|b| !b.is_empty())
+        .map(str::to_string)
+}
+
+fn read_head_branch(repo_dir: &Path) -> Option<String> {
+    fs::read_to_string(repo_dir.join(".git").join("HEAD"))
+        .ok()
+        .and_then(|head| branch_from_head(&head))
+}
+
+/// A branch name safe to hand to git as an argument and a refspec: no
+/// leading `-` (a flag), no `..`, no `@{`, no whitespace or control chars,
+/// and only the characters a GitHub branch can actually carry. Stricter than
+/// `git check-ref-format`, which is fine — the list this is picked from came
+/// from `ls-remote` a moment earlier.
+fn safe_branch(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && !name.starts_with('-')
+        && !name.starts_with('/')
+        && !name.ends_with('/')
+        && !name.ends_with(".lock")
+        && !name.contains("..")
+        && !name.contains("@{")
+        && !name.contains("//")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+}
+
+/// `<project>/.atlas/repos/<repo_name>`, or an error when the name could
+/// climb out of it. Every command that touches a clone starts here.
+fn cloned_repo_dir(project_path: &str, repo_name: &str) -> Result<std::path::PathBuf, String> {
+    if !safe_segment(repo_name) {
+        return Err("invalid repository name".to_string());
+    }
+    let dir = Path::new(project_path)
+        .join(".atlas")
+        .join("repos")
+        .join(repo_name);
+    if !dir.join(".git").exists() {
+        return Err(format!("'{repo_name}' is not a cloned repository"));
+    }
+    Ok(dir)
+}
+
+/// Run git inside a clone with prompts off, returning stdout or stderr.
+///
+/// These clones are reference material, never a working tree the developer
+/// edits, so nothing here writes anywhere but `.git` — no state files, no
+/// `.atlas` folder inside the clone (that used to leave every clone's tree
+/// dirty with an untracked directory).
+fn git_in(repo_dir: &Path, args: &[&str]) -> Result<String, String> {
+    let output = atlas_process::command("git")
+        .current_dir(repo_dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_LFS_SKIP_SMUDGE", "1")
+        .output()
+        .map_err(|e| format!("git failed to start: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("git {} failed", args.first().copied().unwrap_or(""))
+        } else {
+            stderr
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Best-effort `owner/repo` for a cloned repo. Reads the `origin` remote URL
@@ -146,6 +278,7 @@ pub async fn clone_github_repo(
     project_path: String,
     clone_url: String,
     repo_name: String,
+    meta: Option<RepoMeta>,
 ) -> Result<String, String> {
     let (owner, repo) = parse_github_https(&clone_url)?;
     // `repo_name` becomes a path segment under .atlas/repos — hold it to the
@@ -166,7 +299,7 @@ pub async fn clone_github_repo(
     let dest_str = dest.to_string_lossy().to_string();
     tokio::task::spawn_blocking(move || {
         let url = format!("https://github.com/{owner}/{repo}.git");
-        let output = std::process::Command::new("git")
+        let output = atlas_process::command("git")
             // `--` so nothing after it can ever parse as a flag, and no
             // terminal prompt — an auth failure fails fast instead of
             // wedging a hidden child process.
@@ -181,6 +314,11 @@ pub async fn clone_github_repo(
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).to_string());
         }
+        // The search result already knew the description, stars and
+        // language; keep them so the list never has to ask GitHub again.
+        if let Some(meta) = meta {
+            write_meta(&project_path, &repo_name, &meta)?;
+        }
         Ok(dest_str)
     }).await.map_err(|e| e.to_string())?
 }
@@ -194,6 +332,7 @@ pub async fn list_cloned_repos(project_path: String) -> Result<Vec<ClonedRepo>, 
         if !repos_dir.exists() {
             return Ok(vec![]);
         }
+        let metas = read_meta(&project_path);
         let mut repos = Vec::new();
         let read = fs::read_dir(&repos_dir).map_err(|e| e.to_string())?;
         for entry in read.flatten() {
@@ -206,14 +345,24 @@ pub async fn list_cloned_repos(project_path: String) -> Result<Vec<ClonedRepo>, 
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            // Only git clones are repos. A stray directory under `repos/` (a
+            // cache folder something once wrote there) is not one, and
+            // listing it as a repo offered Fetch and Delete on nothing.
+            if !path.join(".git").exists() {
+                continue;
+            }
             let has_readme =
                 path.join("README.md").exists() || path.join("readme.md").exists();
             let display_name = derive_display_name(&path, &name);
+            let branch = read_head_branch(&path);
+            let meta = metas.get(&name).cloned();
             repos.push(ClonedRepo {
                 name,
                 display_name,
                 path: path.to_string_lossy().to_string(),
                 has_readme,
+                branch,
+                meta,
             });
         }
         repos.sort_by(|a, b| a.name.cmp(&b.name));
@@ -273,10 +422,136 @@ pub async fn delete_cloned_repo(
         if repo_dir.exists() {
             fs::remove_dir_all(&repo_dir).map_err(|e| e.to_string())?;
         }
+        forget_meta(&project_path, &repo_name);
         Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Every branch on `origin`, from `ls-remote` — the clone is `--depth 1` and
+/// single-branch, so its own refs know nothing beyond the branch it was
+/// cloned on. Network, hence `spawn_blocking`.
+#[tauri::command]
+pub async fn list_remote_branches(
+    project_path: String,
+    repo_name: String,
+) -> Result<Vec<String>, String> {
+    let repo_dir = cloned_repo_dir(&project_path, &repo_name)?;
+    tokio::task::spawn_blocking(move || {
+        let out = git_in(&repo_dir, &["ls-remote", "--heads", "--quiet", "origin"])?;
+        let mut branches: Vec<String> = out
+            .lines()
+            .filter_map(|line| line.split_whitespace().nth(1))
+            .filter_map(|r| r.strip_prefix("refs/heads/"))
+            .map(str::to_string)
+            .collect();
+        branches.sort_unstable();
+        branches.dedup();
+        Ok(branches)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Check out another remote branch, shallowly: fetch just that branch's tip
+/// and point a local branch of the same name at it. The clone stays
+/// single-commit-deep and gains nothing but the one new ref.
+#[tauri::command]
+pub async fn switch_cloned_repo_branch(
+    project_path: String,
+    repo_name: String,
+    branch: String,
+) -> Result<String, String> {
+    let repo_dir = cloned_repo_dir(&project_path, &repo_name)?;
+    if !safe_branch(&branch) {
+        return Err("invalid branch name".to_string());
+    }
+    tokio::task::spawn_blocking(move || {
+        git_in(
+            &repo_dir,
+            &["fetch", "--depth", "1", "--no-tags", "--", "origin", &branch],
+        )?;
+        // `-B` rather than `-b`: switching back to a branch visited before
+        // must re-point it at what was just fetched, not fail on "exists".
+        git_in(&repo_dir, &["checkout", "-B", &branch, "FETCH_HEAD"])?;
+        Ok(branch)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Bring the checked-out branch up to the remote's tip.
+///
+/// A reference clone has no local work to preserve, so this is fetch +
+/// `reset --hard` to what was fetched — a force-push upstream cannot wedge
+/// it the way `pull --ff-only` would. Untracked files are left alone.
+#[tauri::command]
+pub async fn update_cloned_repo(project_path: String, repo_name: String) -> Result<String, String> {
+    let repo_dir = cloned_repo_dir(&project_path, &repo_name)?;
+    let Some(branch) = read_head_branch(&repo_dir) else {
+        return Err("the clone is not on a branch — pick one first".to_string());
+    };
+    if !safe_branch(&branch) {
+        return Err("invalid branch name".to_string());
+    }
+    tokio::task::spawn_blocking(move || {
+        git_in(
+            &repo_dir,
+            &["fetch", "--depth", "1", "--no-tags", "--", "origin", &branch],
+        )?;
+        git_in(&repo_dir, &["reset", "--hard", "FETCH_HEAD"])?;
+        Ok(branch)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Fetch and cache the metadata for a clone made before Atlas kept any —
+/// one `GET /repos/{owner}/{repo}`. The panel asks for the rows that have
+/// none, once; from then on the cache answers.
+#[tauri::command]
+pub async fn fetch_cloned_repo_meta(
+    project_path: String,
+    repo_name: String,
+) -> Result<RepoMeta, String> {
+    let repo_dir = cloned_repo_dir(&project_path, &repo_name)?;
+    let display = derive_display_name(&repo_dir, &repo_name);
+    let (owner, repo) = display
+        .split_once('/')
+        .ok_or_else(|| "cannot tell which GitHub repository this is".to_string())?;
+    if !safe_segment(owner) || !safe_segment(repo) {
+        return Err("cannot tell which GitHub repository this is".to_string());
+    }
+    let url = format!("https://api.github.com/repos/{owner}/{repo}");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("Atlas-IDE")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub answered {}", resp.status()));
+    }
+    let item: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let str_of = |k: &str| item.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let meta = RepoMeta {
+        description: str_of("description"),
+        language: str_of("language"),
+        stars: item.get("stargazers_count").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32,
+        forks: item.get("forks_count").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32,
+        html_url: str_of("html_url"),
+        updated_at: str_of("updated_at"),
+    };
+    let (pp, rn, m) = (project_path, repo_name, meta.clone());
+    tokio::task::spawn_blocking(move || write_meta(&pp, &rn, &m))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(meta)
 }
 
 fn urlencoded(s: &str) -> String {
@@ -298,6 +573,34 @@ mod clone_guard_tests {
         assert!(parse_github_https("https://github.com/-flag/repo").is_err());
         assert!(parse_github_https("https://github.com/a/b/c").is_err());
         assert!(parse_github_https("https://evil.com/a/b").is_err());
+    }
+
+    #[test]
+    fn a_branch_name_is_a_ref_not_a_flag() {
+        assert!(safe_branch("main"));
+        assert!(safe_branch("feature/usage-pill"));
+        assert!(safe_branch("release-1.2.x"));
+        assert!(!safe_branch(""));
+        assert!(!safe_branch("-D"));
+        assert!(!safe_branch("--upload-pack=touch /tmp/pwn"));
+        assert!(!safe_branch("a..b"));
+        assert!(!safe_branch("a@{1}"));
+        assert!(!safe_branch("has space"));
+        assert!(!safe_branch("/leading"));
+        assert!(!safe_branch("trailing/"));
+        assert!(!safe_branch("x.lock"));
+    }
+
+    #[test]
+    fn head_names_the_branch_or_nothing() {
+        assert_eq!(branch_from_head("ref: refs/heads/main\n"), Some("main".into()));
+        assert_eq!(
+            branch_from_head("ref: refs/heads/feature/x"),
+            Some("feature/x".into())
+        );
+        // Detached HEAD is a bare sha.
+        assert_eq!(branch_from_head("0123456789abcdef0123456789abcdef01234567\n"), None);
+        assert_eq!(branch_from_head("ref: refs/heads/"), None);
     }
 
     #[test]

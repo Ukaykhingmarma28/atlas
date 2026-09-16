@@ -20,9 +20,12 @@
 //!   one token total per session, not per message, so a session's usage lands
 //!   on the day it was last active — the same attribution the Codex column
 //!   already used.
-//! * **Cache tokens are not priced.** models.dev publishes input and output
-//!   prices only. Cache reads and writes are still counted and shown; they just
-//!   do not move the dollar figure.
+//! * **Cache tokens are priced when the provider publishes a rate.**
+//!   models.dev carries `cost.cache_read` / `cost.cache_write` for the
+//!   providers that have them (Anthropic does). This matters more than it
+//!   sounds: a Claude Code session is overwhelmingly cache traffic, so pricing
+//!   input and output alone reported roughly $0. A provider with no published
+//!   cache rate charges nothing for cache, as before.
 //! * A session whose model Atlas never recorded, or whose model is absent from
 //!   the price map, contributes tokens and no cost. That is a gap in the price
 //!   map, and inventing a fallback price would hide it.
@@ -91,44 +94,6 @@ pub(crate) struct DayUsage {
     pub output_tokens: u64,
     pub cost_usd: f64,
     pub messages: u64,
-}
-
-// ── Commands ──────────────────────────────────────────────────────────────
-
-/// Usage for one live session, keyed by the agent's own session id.
-///
-/// Returns `None` rather than zeroes when the session was never recorded, so
-/// the status bar can fall back to its live per-turn counters instead of
-/// showing a confident zero.
-#[tauri::command]
-pub async fn agent_session_usage(
-    project_path: String,
-    session_id: String,
-    app: AppHandle,
-) -> Result<Option<SessionUsage>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let prices = read_prices(&app);
-        Ok(project_usage(&project_path, &prices)?
-            .sessions
-            .into_iter()
-            .find(|s| s.session_id == session_id))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Usage for every session Atlas recorded in one project, costliest first.
-#[tauri::command]
-pub async fn agent_project_usage(
-    project_path: String,
-    app: AppHandle,
-) -> Result<ProjectUsage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let prices = read_prices(&app);
-        project_usage(&project_path, &prices)
-    })
-        .await
-        .map_err(|e| e.to_string())?
 }
 
 // ── The read, and the arithmetic on top of it ─────────────────────────────
@@ -249,13 +214,21 @@ fn tokens(session: &SessionUsage) -> u64 {
 
 /// What a session cost, from the cached models.dev prices (USD per 1M tokens).
 ///
-/// Cache tokens are excluded because models.dev does not publish a price for
-/// them; they are counted and shown, but never charged for here.
+/// Every token class is charged at its own rate. Cache used to be excluded on
+/// the grounds that models.dev published no price for it — it does, and for a
+/// cache-heavy agent cache IS the bill: sessions captured from this project
+/// run ~99.5% cache tokens, which charged at zero made the figure read $0.00.
+///
+/// A provider that publishes no cache rate leaves both at 0.0, which is the
+/// old behaviour for precisely the models it was ever right for.
 pub(crate) fn cost_usd(totals: &TokenTotals, price: Option<&ModelPrice>) -> f64 {
     let Some(price) = price else {
         return 0.0;
     };
-    (totals.input_tokens as f64 * price.input + totals.output_tokens as f64 * price.output)
+    (totals.input_tokens as f64 * price.input
+        + totals.output_tokens as f64 * price.output
+        + totals.cache_creation_tokens as f64 * price.cache_write
+        + totals.cache_read_tokens as f64 * price.cache_read)
         / 1_000_000.0
 }
 
@@ -314,7 +287,12 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     fn price(input: f64, output: f64) -> ModelPrice {
-        ModelPrice { input, output }
+        ModelPrice { input, output, cache_read: 0.0, cache_write: 0.0 }
+    }
+
+    /// A model whose provider publishes cache rates, the way Anthropic does.
+    fn cached_price(input: f64, output: f64, read: f64, write: f64) -> ModelPrice {
+        ModelPrice { input, output, cache_read: read, cache_write: write }
     }
 
     fn prices() -> BTreeMap<String, ModelPrice> {
@@ -322,6 +300,7 @@ mod tests {
             ("anthropic/claude-opus-4".to_string(), price(15.0, 75.0)),
             ("claude-opus-4".to_string(), price(15.0, 75.0)),
             ("gpt-5".to_string(), price(1.25, 10.0)),
+            ("claude-opus-5".to_string(), cached_price(5.0, 25.0, 0.5, 6.25)),
         ])
     }
 
@@ -381,8 +360,25 @@ mod tests {
         assert_eq!(cost_usd(&totals(9_000_000, 9_000_000), None), 0.0);
     }
 
+    /// The case the old formula got wrong. A cache-heavy session priced on
+    /// input and output alone reported $0.00 — which is the number a Claude
+    /// Code transcript actually produced before cache rates were carried.
     #[test]
-    fn cache_tokens_are_counted_but_not_charged_for() {
+    fn cache_tokens_are_charged_when_the_provider_publishes_a_rate() {
+        let prices = prices();
+        let heavy = TokenTotals {
+            cache_creation_tokens: 1_000_000,
+            cache_read_tokens: 1_000_000,
+            ..totals(0, 0)
+        };
+        let cost = cost_usd(&heavy, price_for(Some("claude-opus-5"), &prices));
+        assert!((cost - 6.75).abs() < 1e-9, "got {cost}");
+    }
+
+    /// And the case it got right, which has to keep working: no published rate
+    /// means no charge, not an invented one.
+    #[test]
+    fn cache_tokens_cost_nothing_when_the_provider_publishes_no_rate() {
         let prices = prices();
         let heavy = TokenTotals {
             cache_creation_tokens: 5_000_000,

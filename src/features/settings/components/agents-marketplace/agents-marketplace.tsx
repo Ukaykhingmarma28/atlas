@@ -31,6 +31,7 @@ import {
   useAgentRegistryStore,
 } from "@/features/agents/stores/agent-registry-store";
 import type { AgentCatalogEntry } from "@/types/agent-catalog";
+import { useRemoveAgentConfirmStore } from "@/features/agents/lib/remove-agent-confirm";
 import { downloadTrend, fmtDownloads } from "@/features/agents/lib/download-trends";
 import { TrendSparkline } from "@/components/trend-sparkline";
 
@@ -550,9 +551,14 @@ function CardAction({
     return (
       <button
         onClick={() => {
-          if (confirm(`Remove ${entry.name}? Chat history from this agent is kept.`)) {
-            onUninstall(entry);
-          }
+          // Not `window.confirm`: WebView2 answers it `true` with no dialog,
+          // so on Windows Remove fired unconfirmed.
+          void useRemoveAgentConfirmStore
+            .getState()
+            .actions.ask({ name: entry.name })
+            .then((ok) => {
+              if (ok) onUninstall(entry);
+            });
         }}
         className="h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
       >

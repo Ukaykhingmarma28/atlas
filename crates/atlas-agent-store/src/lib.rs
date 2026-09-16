@@ -72,6 +72,51 @@
 //!   the response straight into the extractor when the registry published no
 //!   checksum. Staging first costs a temp file and buys one code path for both
 //!   cases; the checksum path had to buffer anyway.
+//! - **The registry index is parsed entry by entry, not all at once.** Zed
+//!   deserializes `agents` as `Vec<RegistryEntry>`, so one publisher omitting
+//!   one required field fails the whole document. That parser is not wrong;
+//!   its blast radius is what differs. Zed degrades to a builtin agent list
+//!   and a featured-agents page, and Atlas LOCKED the decision to ship
+//!   neither — so here the same failure removes every route to an external
+//!   agent. Entries that do not parse are dropped and logged; the document
+//!   itself is still strict. See `registry::entries_that_parse`.
+//!
+//! # Trust model
+//!
+//! The ACP registry is **third-party data**, not a trusted channel. It is
+//! fetched over TLS from a CDN Atlas does not run, and it describes assets on
+//! hosts Atlas does not run either, published by dozens of unrelated authors.
+//! A compromised or malicious entry is in scope; what follows is what that
+//! buys an attacker, and what it does not.
+//!
+//! - **Checksums are best-effort, and that is a known gap.** The registry's
+//!   own `sha256` wins; failing that, GitHub's recorded digest for the release
+//!   asset. Roughly half the live catalogue publishes neither, and refusing
+//!   those would remove real agents (Cursor, Antigravity, Cortex, Devin) from
+//!   Atlas entirely. So an unverified install stays possible, and the
+//!   marketplace marks it — the badge is the mitigation, not the checksum.
+//!   Note a digest only proves the bytes are the ones the registry named: a
+//!   hostile entry publishes the digest of its own payload and passes.
+//! - **The managed Node runtime is the exception, and is verified.**
+//!   nodejs.org publishes `SHASUMS256.txt` beside every release, so there is
+//!   nothing to trade off. A runtime whose digest cannot be fetched is not
+//!   installed. See `node::node_archive_digest`. Note what that buys and what
+//!   it does not: the digest travels the same TLS connection as the tarball,
+//!   so it catches a corrupted download or a swapped mirror, not a compromised
+//!   nodejs.org and not somebody who already holds the TLS path. Detached
+//!   signatures would be the answer to those, and this is not that.
+//! - **Install cost is bounded regardless of trust.** A checksum says nothing
+//!   about size, so the download, the expansion and the entry count each have
+//!   a ceiling — see [`archive::InstallLimits`]. These are ceilings no real
+//!   agent approaches; tripping one means the archive is wrong.
+//! - **Extracted files are masked, not trusted.** Archive permission bits are
+//!   attacker-controlled. Everything extracted is masked to `0o755`, which
+//!   drops setuid, setgid, sticky and group/other write. Neither archive crate
+//!   does this on its own, and what each one does has changed under us before,
+//!   so it is pinned by tests rather than assumed.
+//! - **Path containment is inherited, not implemented.** Neither zip-slip nor
+//!   tar traversal is reachable, but that is a property of `zip` and `tar`,
+//!   not of this crate. A dependency bump could remove it silently.
 //!
 //! # Where BYOK env lands
 //!
@@ -94,6 +139,7 @@ pub mod archive;
 pub mod detection;
 pub mod http;
 pub mod node;
+pub mod npm_tree;
 pub mod registry;
 pub mod servers;
 pub mod settings;
@@ -102,12 +148,13 @@ pub mod store;
 pub use archive::sanitize_path_component;
 pub use detection::{detect_on_path, DetectedAgent};
 pub use http::{HttpClient, HttpResponse, ReqwestClient};
-pub use node::NodeRuntime;
+pub use node::{npm_platform, NodeRuntime};
+pub use npm_tree::{install_state, platform_optionals, InstallState, NpmPlatform, OptionalEntry};
 pub use registry::{
     AgentRegistryStore, RegistryAgent, RegistryAgentMetadata, RegistryBinaryAgent,
     RegistryNpxAgent, RegistryTargetConfig, REGISTRY_URL,
 };
-pub use servers::{InheritedProjectEnvironment, ProjectEnvironment};
+pub use servers::{npx_install_dir, InheritedProjectEnvironment, ProjectEnvironment};
 pub use settings::{AgentServerSettings, AllAgentServersSettings};
 pub use store::{AgentServerStore, ExternalAgentEntry, ExternalAgentSource};
 

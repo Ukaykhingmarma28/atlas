@@ -9,8 +9,8 @@ export interface LayoutTemplate {
   id: string;
   name: string;
   description: string;
-  /** Side/bottom panel visibility (omitted = hidden). */
-  panels: { left?: boolean; right?: boolean; bottom?: boolean };
+  /** Side panel visibility (omitted = hidden). */
+  panels: { left?: boolean; right?: boolean };
   leftSection?: LeftSection;
   rightSection?: RightSection;
   /** Split columns, left→right (1–3). Each cell is the tab type that fills it. */

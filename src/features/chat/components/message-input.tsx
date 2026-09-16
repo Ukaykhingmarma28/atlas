@@ -65,9 +65,11 @@ import { commandRequiresArgs } from "./slash-command-picker";
 import { PlanTasksPill } from "./plan-tasks-pill";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import { ComposerOptionsPill } from "./composer-options-pill";
+import { UsagePill } from "./usage-pill";
 import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
 import { AiGrantBar } from "./ai-grant-bar";
+import { RemovedAgentBar } from "./removed-agent-bar";
 import { useAiGrantProbe, useNoAiGrant } from "../stores/ai-grant-store";
 import {
   QUALITY_LADDER,
@@ -77,6 +79,7 @@ import {
 } from "../lib/image-policy";
 import { ComposerAddMenu } from "./composer-add-menu";
 import type { GithubRepo } from "@/features/github/types";
+import { metaFromSearch } from "@/features/github/types";
 import { imageMimeFromPath } from "@/lib/byok/model-capabilities";
 import type { ImageAttachment } from "@/types/agents";
 import type {
@@ -324,40 +327,6 @@ function EffortPill({ tabId }: { tabId: string }) {
       />
       {active ? `Think: ${effort}` : "Think"}
     </button>
-  );
-}
-
-/** Compact tokens-used + cost pill for the native agent, plus a "compacting…"
- *  state while the context window is being summarized. Hidden until the first
- *  `usage_updated` delta lands. Narrow selectors so it only re-renders on its
- *  own session's usage/compaction changes. */
-function CerseiUsagePill({ tabId }: { tabId: string }) {
-  const usage = useChatStore((s) => s.sessions[tabId]?.usage);
-  const compacting = useChatStore((s) => s.sessions[tabId]?.compacting ?? false);
-  if (compacting) {
-    return (
-      <span
-        className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--accent-primary)] select-none"
-        title="Compacting the context window to stay within the model's limit"
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)] animate-pulse" />
-        Compacting…
-      </span>
-    );
-  }
-  if (!usage) return null;
-  const total = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
-  if (total === 0) return null;
-  const tokens = total >= 1000 ? `${(total / 1000).toFixed(1)}K` : `${total}`;
-  const cost =
-    usage.cost && usage.cost > 0 ? ` · $${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}` : "";
-  return (
-    <span
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] select-none tabular-nums"
-      title={`${total.toLocaleString()} tokens (${usage.input_tokens?.toLocaleString()} in / ${usage.output_tokens?.toLocaleString()} out)${cost ? ` · est. $${usage.cost?.toFixed(4)}` : ""}`}
-    >
-      {tokens} tok{cost}
-    </span>
   );
 }
 
@@ -1419,6 +1388,7 @@ export function MessageInput({
         projectPath: proj,
         cloneUrl: repo.clone_url,
         repoName: repo.full_name.replace(/\//g, "-"),
+        meta: metaFromSearch(repo),
       });
       const folderName = dest.split("/").pop() || repo.full_name.replace(/\//g, "-");
       const mention: MentionRepo = {
@@ -1859,6 +1829,10 @@ export function MessageInput({
             is not their problem and a bar over a working composer is noise. */}
         {agentType === "cersei" && <AiGrantBar />}
 
+        {/* The tab's agent was uninstalled — same strip, same reason: the
+            input below cannot send until the chat is switched. */}
+        <RemovedAgentBar tabId={tabId} />
+
         {/* Live plan docked on top of the input bar (JetBrains-Air style). */}
 
         <div
@@ -2082,14 +2056,15 @@ export function MessageInput({
                   published catalogue. */}
               {agentType === "cersei" && <EffortPill tabId={tabId} />}
               {agentType === "cersei" && <CerseiMemoryPill />}
-              {agentType === "cersei" && <CerseiUsagePill tabId={tabId} />}
             </div>
-            {/* Right side, in this order: the agent's own knobs, then the live
+            {/* Right side, in this order: the session's usage, the agent's own
+                knobs, then the live
                 implementation-plan pill hard against the right edge (arc
                 progress + count; opens its own morphing task-list panel, and
                 replaces the PlanDock strip that used to sit above the
                 composer). Both are right-anchored dropups. */}
             <div className="flex items-center gap-1">
+              <UsagePill tabId={tabId} />
               <ComposerOptionsPill tabId={tabId} />
               <PlanTasksPill tabId={tabId} />
             </div>

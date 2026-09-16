@@ -139,6 +139,7 @@ fn git_command() -> Command {
         .args(["-c", codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG])
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0");
+    codex_git_utils::no_console_window(&mut command); // Atlas
     command
 }
 
@@ -169,6 +170,9 @@ fn run_git_command_with_timeout(
     context: &str,
     timeout: Duration,
 ) -> Result<Output, String> {
+    // Atlas: every git the plugin sync and marketplace run comes through
+    // here; a child of the GUI host must not open a console window.
+    codex_git_utils::no_console_window(command);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

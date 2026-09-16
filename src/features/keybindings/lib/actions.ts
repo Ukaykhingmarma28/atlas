@@ -169,13 +169,6 @@ export const ACTIONS = [
     defaults: ["cmd+j"],
   },
   {
-    id: "panels.bottom",
-    title: "Toggle status bar",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+alt+b"],
-  },
-  {
     id: "panels.agentSidebar",
     title: "Toggle agent sidebar",
     category: "Panels",

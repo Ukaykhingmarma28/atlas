@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { shortPath, tildePath } from "./paths";
+import { basename, shortPath, tildePath } from "./paths";
+
+describe("basename", () => {
+  it.each([
+    ["a POSIX path", "/Users/alice/projects/atlas", "atlas"],
+    ["a Windows path", "C:\\Users\\alice\\projects\\atlas", "atlas"],
+    ["a mixed-separator path", "C:/Users/alice\\atlas", "atlas"],
+    ["a trailing separator", "C:\\Users\\alice\\atlas\\", "atlas"],
+    ["a bare name", "atlas", "atlas"],
+  ])("returns the last segment of %s", (_label, input, expected) => {
+    expect(basename(input)).toBe(expected);
+  });
+
+  it.each([["/"], ["C:\\"]])("returns the root %s rather than an empty name", (root) => {
+    expect(basename(root)).not.toBe("");
+  });
+});
 
 describe("tildePath", () => {
   it.each([

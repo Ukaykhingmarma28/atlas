@@ -430,7 +430,7 @@ impl AgentManager {
     /// and neither can reach back into the manager. The `emit` and `watch_*`
     /// calls stay outside it — they spawn tasks that take the same lock.
     fn open_entry(self: &Arc<Self>, key: Agent, server: Arc<dyn AgentServer>, reuse: Reuse) -> Entry {
-        let (entry, connect_task, replaced) = {
+        let (entry, connect_task, replaced, statuses) = {
             let mut entries = self.lock_entries();
             match entries.get(&key) {
                 Some(existing) if reuse == Reuse::Existing => return existing.clone(),
@@ -446,6 +446,12 @@ impl AgentManager {
                 _ => {}
             }
             let replaced = entries.remove(&key);
+            // Subscribe BEFORE the attempt starts. A `watch` receiver treats the
+            // value already in the channel as seen, so a status the connect sent
+            // before a later subscribe — "Downloading Node.js…", the first thing
+            // a fresh machine does — never fired `changed()`, and the tab read a
+            // bare "Starting …" through the whole download.
+            let statuses = self.loading_status_receiver(&key);
             let (connect_task, cancel) = self.start_connection(&key, server);
             let entry: Entry = Arc::new(Mutex::new(AgentConnectionEntry::Connecting {
                 connect_task: connect_task.clone(),
@@ -453,7 +459,7 @@ impl AgentManager {
                 started_at: Instant::now(),
             }));
             entries.insert(key.clone(), entry.clone());
-            (entry, connect_task, replaced)
+            (entry, connect_task, replaced, statuses)
         };
 
         if let Some(replaced) = replaced {
@@ -466,7 +472,7 @@ impl AgentManager {
 
         self.watch_connect_result(key.clone(), &entry, connect_task);
         self.watch_new_version(key.clone(), &entry);
-        self.watch_loading_status(key, &entry);
+        self.watch_loading_status(key, &entry, statuses);
 
         entry
     }
@@ -558,7 +564,14 @@ impl AgentManager {
                 Ok(Ok(connection)) => Ok(AgentConnectedState { connection }),
                 Ok(Err(err)) => Err(match err.downcast::<LoadError>() {
                     Ok(load_error) => load_error,
-                    Err(err) => LoadError::Other(err.to_string().into()),
+                    // `{:#}`, not `to_string()`: an `anyhow` chain displays
+                    // only its outermost context by default, so a native
+                    // engine start that failed because the account token
+                    // could not be minted reached the user as the bare
+                    // "starting the in-process app-server runtime" — the
+                    // cause ("Atlas can't be reached") was the link that
+                    // got dropped (2026-09-14).
+                    Err(err) => LoadError::Other(format!("{err:#}").into()),
                 }),
                 Err(join) if join.is_cancelled() => Err(LoadError::Other(
                     "the agent was stopped while it was connecting".into(),
@@ -669,12 +682,26 @@ impl AgentManager {
         });
     }
 
-    /// Ported from the loading-status watcher (`:240-263`).
-    fn watch_loading_status(self: &Arc<Self>, key: Agent, entry: &Entry) {
-        let Agent::Custom { id } = &key else {
-            return;
+    /// The install-progress channel for `key`, if it has one. Taken before the
+    /// connect starts — see `open_entry`.
+    fn loading_status_receiver(
+        &self,
+        key: &Agent,
+    ) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
+        let Agent::Custom { id } = key else {
+            return None;
         };
-        let Some(mut statuses) = self.catalog.watch_loading_status(id) else {
+        self.catalog.watch_loading_status(id)
+    }
+
+    /// Ported from the loading-status watcher (`:240-263`).
+    fn watch_loading_status(
+        self: &Arc<Self>,
+        key: Agent,
+        entry: &Entry,
+        statuses: Option<tokio::sync::watch::Receiver<Option<String>>>,
+    ) {
+        let Some(mut statuses) = statuses else {
             return;
         };
         let this = Arc::downgrade(self);
@@ -685,10 +712,19 @@ impl AgentManager {
                 let Some(this) = this.upgrade() else {
                     return;
                 };
-                let Some(entry) = entry.upgrade() else {
-                    return;
-                };
-                if !this.is_current(&key, &entry) {
+                let current = entry
+                    .upgrade()
+                    .is_some_and(|entry| this.is_current(&key, &entry));
+                if !current {
+                    // A failed connect is evicted as it resolves, which can beat
+                    // its own final clear here. A clear is always safe to deliver,
+                    // and dropping it left "Installing …" on screen for good.
+                    if status.is_none() {
+                        this.emit(AgentManagerEvent::LoadingStatusChanged {
+                            agent: key.clone(),
+                            status,
+                        });
+                    }
                     return;
                 }
                 this.emit(AgentManagerEvent::LoadingStatusChanged {
@@ -981,7 +1017,17 @@ impl AgentManager {
         // running.
         match result {
             Ok(response) => {
-                lock_thread(&handle.thread).end_turn_unless_superseded(turn, response.stop_reason);
+                let mut thread = lock_thread(&handle.thread);
+                // The turn's token split rides on the response (claude-agent-acp
+                // fills it; codex-acp does not). Folded in BEFORE the turn closes
+                // so the UsageUpdated delta lands ahead of TurnFinished — the
+                // renderer snapshots per-turn usage at turn end, and capture
+                // flushes the turn there too. Superseded or not, the tokens
+                // were spent, so this is unconditional.
+                if let Some(usage) = response.usage.as_ref() {
+                    thread.accumulate_turn_usage(usage);
+                }
+                thread.end_turn_unless_superseded(turn, response.stop_reason);
                 Ok(response.stop_reason)
             }
             Err(err) => {

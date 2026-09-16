@@ -213,7 +213,9 @@ pub(crate) async fn run_command(
             Ok(child) => Ok(child),
             Err(_) => {
                 process_tree_job = None;
-                command.creation_flags(0);
+                // Atlas: CREATE_NO_WINDOW — a hook's stdio is piped, and a
+                // child of the GUI host must not open a console of its own.
+                command.creation_flags(0x0800_0000);
                 command.spawn()
             }
         },
@@ -332,12 +334,18 @@ impl Drop for ProcessTreeGuard {
             if let Some(job) = self.job.as_ref() {
                 let _ = job.terminate();
             } else {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/PID", &process_id.to_string(), "/T", "/F"])
+                let mut kill = std::process::Command::new("taskkill");
+                kill.args(["/PID", &process_id.to_string(), "/T", "/F"])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
+                    .stderr(Stdio::null());
+                // Atlas: CREATE_NO_WINDOW — killing a hook must not flash a
+                // console of its own on the user's screen.
+                {
+                    use std::os::windows::process::CommandExt as _;
+                    kill.creation_flags(0x0800_0000);
+                }
+                let _ = kill.spawn();
             }
         }
     }
@@ -378,6 +386,9 @@ fn build_command(
     } else {
         Command::new(&shell.program)
     };
+    // Atlas: CREATE_NO_WINDOW — hook commands are piped children of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     if shell.program.is_empty() {
         #[cfg(windows)]
         command.raw_arg(format!(r#""{command_line}""#));
@@ -408,6 +419,7 @@ fn default_shell_command() -> Command {
         let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
         let mut command = Command::new(comspec);
         command.arg("/C");
+        command.creation_flags(0x0800_0000); // Atlas: CREATE_NO_WINDOW
         command
     }
 

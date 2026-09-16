@@ -45,10 +45,6 @@ interface LayoutState {
     visible: boolean;
     width: number;
     activeSection: "files" | "knowledge";
-    usagePanelHeight: number;
-    /** Show the project "Usage" report accordion below the file tree.
-     *  Toggled by the chevron in its header. */
-    usagePanelVisible: boolean;
   };
   rightPanel: {
     visible: boolean;
@@ -67,10 +63,6 @@ interface LayoutState {
     sidebarWidth: number;
     inspectorWidth: number;
   };
-  bottomPanel: {
-    visible: boolean;
-    height: number;
-  };
   chatSidebar: {
     visible: boolean;
     width: number;
@@ -80,6 +72,13 @@ interface LayoutState {
   };
   plansPanel: {
     width: number;
+  };
+  /** The Timeline tab's split: the session nav on the left, the open Session
+   *  on the right. `showSidebar` only applies while a Session is open — with
+   *  nothing open the nav is the whole point and is always drawn. */
+  timelinePanel: {
+    showSidebar: boolean;
+    sidebarWidth: number;
   };
   tabs: Tab[];
   /** Per-workspace saved view (tabs + split layout + history). The singular
@@ -92,7 +91,7 @@ interface LayoutState {
   /** Which workspace the singular mirror currently represents. */
   currentViewWsId: string | null;
   /** Mirror of the FOCUSED column's active tab — kept in sync so the many
-   *  existing readers (status bar, persistence, etc.) don't need to know about
+   *  existing readers (persistence, the title bar, etc.) don't need to know about
    *  split columns. */
   activeTabId: string | null;
   // ── Split view ──────────────────────────────────────────────────────────
@@ -124,9 +123,7 @@ interface LayoutActions {
     /** Shared implementation: a key that owns a mode either closes the slot
      *  (it already holds that mode) or claims it. */
     toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
-    toggleBottomPanel: () => void;
     toggleChatSidebar: () => void;
-    toggleUsagePanel: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
     setKnowledgeSidebarWidth: (width: number) => void;
@@ -134,10 +131,12 @@ interface LayoutActions {
     setChatSidebarWidth: (width: number) => void;
     setBashPanelWidth: (width: number) => void;
     setPlansPanelWidth: (width: number) => void;
+    toggleTimelineSidebar: () => void;
+    setTimelineSidebarWidth: (width: number) => void;
     setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
     setRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     /** Make the right panel visible AND switch it to `section` (e.g. open the
-     *  Source Control pane from the status bar). */
+     *  Source Control pane from a notification). */
     revealRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
@@ -185,8 +184,6 @@ const initialState: LayoutState = {
     visible: true,
     width: 240,
     activeSection: "files",
-    usagePanelHeight: 220,
-    usagePanelVisible: false,
   },
   rightPanel: {
     visible: true,
@@ -200,10 +197,6 @@ const initialState: LayoutState = {
     sidebarWidth: 240,
     inspectorWidth: 280,
   },
-  bottomPanel: {
-    visible: true,
-    height: 32,
-  },
   chatSidebar: {
     visible: true,
     width: 220,
@@ -213,6 +206,10 @@ const initialState: LayoutState = {
   },
   plansPanel: {
     width: 380,
+  },
+  timelinePanel: {
+    showSidebar: true,
+    sidebarWidth: 300,
   },
   tabs: [
     {
@@ -424,17 +421,9 @@ export const useLayoutStore = createSelectors(
               s.rightPanel.visible = true;
               s.rightPanel.mode = "chat";
             }),
-          toggleBottomPanel: () =>
-            set((s) => {
-              s.bottomPanel.visible = !s.bottomPanel.visible;
-            }),
           toggleChatSidebar: () =>
             set((s) => {
               s.chatSidebar.visible = !s.chatSidebar.visible;
-            }),
-          toggleUsagePanel: () =>
-            set((s) => {
-              s.leftPanel.usagePanelVisible = !s.leftPanel.usagePanelVisible;
             }),
           toggleKnowledgeSidebar: () =>
             set((s) => {
@@ -443,6 +432,14 @@ export const useLayoutStore = createSelectors(
           toggleKnowledgeInspector: () =>
             set((s) => {
               s.knowledgePanel.showInspector = !s.knowledgePanel.showInspector;
+            }),
+          toggleTimelineSidebar: () =>
+            set((s) => {
+              s.timelinePanel.showSidebar = !s.timelinePanel.showSidebar;
+            }),
+          setTimelineSidebarWidth: (width) =>
+            set((s) => {
+              s.timelinePanel.sidebarWidth = Math.max(220, Math.min(width, 480));
             }),
           setKnowledgeSidebarWidth: (width) =>
             set((s) => {
@@ -794,12 +791,9 @@ export const useLayoutStore = createSelectors(
               // validate actives/focus.
               reconcileGroups(s);
 
-              // Panels — left/right are explicitly controlled by templates;
-              // bottom (status bar) is only touched when a template opts in.
+              // Panels — left/right are explicitly controlled by templates.
               s.leftPanel.visible = !!template.panels.left;
               s.rightPanel.visible = !!template.panels.right;
-              if (template.panels.bottom !== undefined)
-                s.bottomPanel.visible = template.panels.bottom;
               if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
               // A template naming a section means it wants source control in
               // the slot; leaving chat there would silently ignore the request.
@@ -953,10 +947,10 @@ export const useLayoutStore = createSelectors(
           leftPanel: s.leftPanel,
           rightPanel: s.rightPanel,
           knowledgePanel: s.knowledgePanel,
-          bottomPanel: s.bottomPanel,
           chatSidebar: s.chatSidebar,
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
+          timelinePanel: s.timelinePanel,
           tabBarVisible: s.tabBarVisible,
         }),
         // One-level-deep merge so persisted slices overlay the defaults
@@ -995,7 +989,6 @@ export const useLayoutStore = createSelectors(
             leftPanel,
             rightPanel,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
-            bottomPanel: { ...current.bottomPanel, ...p.bottomPanel },
             chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },
             bashPanel: { ...current.bashPanel, ...p.bashPanel },
             plansPanel: { ...current.plansPanel, ...p.plansPanel },

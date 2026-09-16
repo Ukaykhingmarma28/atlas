@@ -439,6 +439,22 @@ impl EngineConnection {
             "native agent: model catalogue resolved",
         );
 
+        // Mint the account token BEFORE the engine exists. The engine installs
+        // the provider eagerly (`AuthManager::install_external_auth` resolves
+        // it on the spot), so a mint that fails — no network at launch, most
+        // often — failed inside the runtime start and reached the user as
+        // "starting the in-process app-server runtime" with the cause cut
+        // off. Resolving here says what actually went wrong, in the words
+        // the catalogue path already uses, and costs nothing on success: the
+        // token is cached on the provider, so the engine's own resolve is a
+        // cache hit.
+        if let Some(auth) = external_auth.as_ref() {
+            if let Err(err) = auth.resolve().await {
+                return Err(anyhow!(
+                    "Atlas Agent can't sign in to the gateway ({err}). Check your connection and try again."
+                ));
+            }
+        }
         let (runtime, client) = start_engine(&settings, external_auth, response.as_ref()).await?;
         let max_retries = settings.stream_max_retries;
         let requests = client.request_handle();

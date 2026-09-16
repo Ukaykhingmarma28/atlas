@@ -150,7 +150,7 @@ pub async fn capture_screenshot(
         let out = dir.join(format!("atlas_shot_{ts}.png"));
 
         // `-x` silences the shutter sound; `-t png` fixes the format.
-        let mut cmd = std::process::Command::new("/usr/sbin/screencapture");
+        let mut cmd = atlas_process::command("/usr/sbin/screencapture");
         if interactive {
             cmd.arg("-i");
         }
@@ -240,8 +240,7 @@ pub fn asset_allow_dir(
     if !requested.is_absolute() {
         return Err("asset grant must be an absolute path".into());
     }
-    let canonical = requested
-        .canonicalize()
+    let canonical = dunce::canonicalize(requested)
         .map_err(|e| format!("cannot grant a directory that does not resolve: {e}"))?;
 
     let workspace_roots: Vec<std::path::PathBuf> = {
@@ -272,7 +271,7 @@ fn asset_grant_allowed(
     home: Option<&std::path::Path>,
 ) -> bool {
     let under_workspace = workspace_roots.iter().any(|root| {
-        let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        let root = dunce::canonicalize(root).unwrap_or_else(|_| root.clone());
         canonical.starts_with(&root)
     });
     if under_workspace {

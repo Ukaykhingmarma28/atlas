@@ -206,6 +206,22 @@ function revertRefusedMode(
  *  explicit so the chat panel pushes it to the agent at session create (after
  *  revalidating against the advertised modes); no pick means "defer to the
  *  agent's own configured default" — never an Atlas-side override. */
+/**
+ * Drop everything the Usage pill reads. Usage belongs to ONE backend session:
+ * the moment a tab stops pointing at that session — a "New Chat" reset in
+ * place, an agent switch, a rebind to a different session — the numbers must
+ * go with it, or the next session wears the previous one's context gauge,
+ * token split and cost until its own first turn overwrites them.
+ */
+function forgetSessionUsage(sess: ChatSession): void {
+  sess.usage = undefined;
+  sess.contextUsage = undefined;
+  sess.lastUsageSnapshot = undefined;
+  sess.pendingSavedTokens = undefined;
+  sess.compacting = undefined;
+  sess.rateLimits = undefined;
+}
+
 function applyPersistedModePref(sess: ChatSession, agentType: AgentType): void {
   const pref = loadLastModePref(agentType);
   if (agentType === "claude-code") {
@@ -583,6 +599,16 @@ interface ChatActions {
      * rebind) take over. Returns nothing; safe to call for a plugin no tab is on.
      */
     failPendingBinds: (pluginId: string, reason?: string) => void;
+    /**
+     * The agent behind `pluginId` was uninstalled, bound tabs included. The
+     * backend dropped its connection without a delta (there is no session to
+     * route one by), so this records what one would have: every tab on that
+     * plugin drops to idle, a held first message goes back to the queue, and
+     * the tab is flagged disconnected with `reason` so the banner can offer a
+     * switch instead of a restart that cannot succeed. Untouched tabs are the
+     * caller's to re-point (`removed-agents.ts`).
+     */
+    noteAgentRemoved: (pluginId: string, reason: string) => void;
   };
 }
 
@@ -817,6 +843,12 @@ export const useChatStore = createSelectors(
             sess.acpSessionId = undefined;
             sess.acpCurrentMode = undefined;
             sess.acpCurrentModel = undefined;
+            // The old agent's consumption is not the new one's either.
+            forgetSessionUsage(sess);
+            // A dead or removed PREVIOUS agent is not this one's state: the
+            // banner that offered "Switch agent" must not outlive the switch.
+            sess.disconnected = undefined;
+            sess.bindError = undefined;
             // The provider only applies to the native agent; clear it so the
             // composer re-defaults from BYOK keys if cersei is chosen.
             sess.cerseiProvider = undefined;
@@ -1045,6 +1077,7 @@ export const useChatStore = createSelectors(
               session.inflightToolIds = undefined;
               session.acpAgentId = undefined;
               session.acpSessionId = undefined;
+              forgetSessionUsage(session);
               session.title = "New Chat";
               session.firstUserContent = undefined;
               session.userMessageCount = 0;
@@ -1603,6 +1636,10 @@ export const useChatStore = createSelectors(
               session.currentTurnSeq = 0;
               session.livePlan = undefined;
               session.turnScratch = undefined;
+              // Usage is per backend session; a different one starts from
+              // nothing (its cached context gauge is restored by
+              // `replaceMessages`, keyed on the new id).
+              forgetSessionUsage(session);
             }
             session.acpAgentId = agentId;
             session.acpSessionId = acpSessionId;
@@ -1676,6 +1713,25 @@ export const useChatStore = createSelectors(
               session.acpModesPending = false;
               session.disconnected = true;
               if (reason) session.bindError = reason;
+            }
+          }),
+        noteAgentRemoved: (pluginId, reason) =>
+          set((s) => {
+            delete s.agentStartingStatus[pluginId];
+            for (const [tabId, session] of Object.entries(s.sessions)) {
+              if (pluginIdForAgent(session.agentType) !== pluginId) continue;
+              const held = session.pendingSend;
+              if (held) {
+                session.pendingSend = undefined;
+                s.queues[tabId] = [...(s.queues[tabId] ?? []), held.content];
+              }
+              session.status = "idle";
+              session.stopping = undefined;
+              session.retryStatus = undefined;
+              session.inflightToolIds = undefined;
+              session.acpModesPending = false;
+              session.disconnected = true;
+              session.bindError = reason;
             }
           }),
       },
@@ -2326,6 +2382,14 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
     case "compression_saved": {
       // Stashed until turn_finished folds it into the message's usage footer.
       session.pendingSavedTokens = env.saved_tokens;
+      return;
+    }
+    case "rate_limits": {
+      session.rateLimits = {
+        primary: env.primary,
+        secondary: env.secondary,
+        planType: env.plan_type,
+      };
       return;
     }
     case "model_changed": {

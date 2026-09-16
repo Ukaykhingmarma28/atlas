@@ -1,0 +1,11 @@
+[package]
+name = "atlas-process"
+version = "0.1.0"
+edition = "2021"
+description = "Child-process spawning helpers shared by every crate that runs git, node or an agent"
+
+[lib]
+name = "atlas_process"
+
+[dependencies]
+tokio = { workspace = true, features = ["process"] }

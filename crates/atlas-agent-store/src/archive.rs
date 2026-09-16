@@ -262,15 +262,34 @@ pub fn versioned_archive_cache_dir(
     ))
 }
 
-// The `v_` prefix here must stay in sync with `versioned_archive_cache_dir`,
-// so we only ever remove directories that we created ourselves.
+// Both prefixes must stay in sync with their creators —
+// `versioned_archive_cache_dir` and `install_archive`'s staging directory — so
+// the GC only ever removes directories that we created ourselves.
+//
+// The staging prefix is here rather than inlined at its one use because that
+// is the whole bug it fixes: a staging directory is created by this crate, in
+// the directory this GC scans, and was skipped by a filter whose stated
+// purpose is to remove exactly what this crate created.
 const VERSIONED_ARCHIVE_CACHE_DIR_PREFIX: &str = "v_";
+const STAGING_DIR_PREFIX: &str = ".tmp-agent-download-";
 
-/// Delete the install directories of versions we no longer run.
+/// Whether `name` is a directory this crate made, and may therefore collect.
+fn is_ours(name: &str) -> bool {
+    name.starts_with(VERSIONED_ARCHIVE_CACHE_DIR_PREFIX) || name.starts_with(STAGING_DIR_PREFIX)
+}
+
+/// Delete the install directories of versions we no longer run, and the
+/// staging directories of downloads that never finished.
 ///
 /// Ported from `agent_server_store.rs:1055-1115`, including the mtime rule:
 /// only directories *older* than the current one are removed, so a concurrent
 /// extraction of a different version that finished after we looked survives.
+///
+/// Staging directories are collected under the same rule, and are here at all
+/// because `TempDir`'s `Drop` covers every exit except the ones that matter —
+/// SIGKILL, a force-quit, power loss. A download killed that way leaves however
+/// much of the archive had arrived, under a dotted name the user will never
+/// see, in the directory this function already walks.
 pub async fn remove_stale_versioned_archive_cache_dirs(
     base_dir: &Path,
     current_version_dir: &Path,
@@ -293,11 +312,7 @@ pub async fn remove_stale_versioned_archive_cache_dirs(
         .with_context(|| format!("reading entry in {base_dir:?}"))?
     {
         let entry_name = entry.file_name();
-        if entry_name == current_dir_name
-            || !entry_name
-                .to_string_lossy()
-                .starts_with(VERSIONED_ARCHIVE_CACHE_DIR_PREFIX)
-        {
+        if entry_name == current_dir_name || !is_ours(&entry_name.to_string_lossy()) {
             continue;
         }
 
@@ -330,6 +345,52 @@ async fn modified_at(path: &Path) -> Result<SystemTime> {
     Ok(tokio::fs::metadata(path).await?.modified()?)
 }
 
+/// What an install is allowed to cost, before it is allowed to cost it.
+///
+/// The registry is third-party data (`lib.rs`, "Trust model"), so an entry can
+/// name an asset that is enormous, or one that is small and expands to
+/// something enormous. Neither is caught by the checksum — a hostile entry
+/// publishes the digest of its own bad bytes and passes.
+///
+/// These are ceilings, not budgets: no real agent is near them, so tripping one
+/// means the archive is wrong rather than merely large. Tuned so the largest
+/// thing Atlas legitimately installs (the managed Node runtime, and the
+/// hundred-megabyte vendor agents) clears them by more than an order of
+/// magnitude.
+///
+/// Deliberately *not* a compression-ratio guard. A ratio test is the part of
+/// this most likely to reject something real — an archive of mostly-zero
+/// padding or plain text compresses far past any threshold worth setting — and
+/// the absolute uncompressed ceiling already bounds the damage a bomb can do.
+#[derive(Debug, Clone, Copy)]
+pub struct InstallLimits {
+    /// Bytes accepted off the wire before the download is abandoned.
+    pub max_download_bytes: u64,
+    /// Bytes an archive may expand to on disk.
+    pub max_uncompressed_bytes: u64,
+    /// Entries a zip may declare. Tar is a stream and cannot be counted
+    /// without consuming it, so tar is bounded by bytes alone.
+    pub max_entries: usize,
+}
+
+impl Default for InstallLimits {
+    fn default() -> Self {
+        Self {
+            max_download_bytes: 2 * 1024 * 1024 * 1024,
+            max_uncompressed_bytes: 4 * 1024 * 1024 * 1024,
+            max_entries: 100_000,
+        }
+    }
+}
+
+/// Permission bits an extracted file is allowed to keep.
+///
+/// Strips setuid, setgid and sticky, and group/other write. Neither archive
+/// crate does this for us: tar masks to `0o777` (so suid goes but `0o777`
+/// stays), and zip applies `external_attributes >> 16` verbatim, suid included.
+#[cfg(unix)]
+const EXTRACTED_MODE_MASK: u32 = 0o755;
+
 /// Download `url` into `destination_dir`, verifying `digest` if we have one.
 ///
 /// The whole download lands in a staging directory beside the destination and
@@ -348,6 +409,29 @@ pub async fn install_archive(
     destination_dir: &Path,
     kind: &RegistryArchiveKind,
 ) -> Result<()> {
+    install_archive_with_limits(
+        http,
+        url,
+        digest,
+        destination_dir,
+        kind,
+        InstallLimits::default(),
+    )
+    .await
+}
+
+/// [`install_archive`], with the ceilings spelled out.
+///
+/// Exists so a test can drive the real install path against limits small enough
+/// to reach. Production callers take [`InstallLimits::default`].
+pub async fn install_archive_with_limits(
+    http: &dyn HttpClient,
+    url: &str,
+    digest: Option<&str>,
+    destination_dir: &Path,
+    kind: &RegistryArchiveKind,
+    limits: InstallLimits,
+) -> Result<()> {
     let parent = destination_dir
         .parent()
         .context("destination path has no parent")?;
@@ -356,7 +440,7 @@ pub async fn install_archive(
         .with_context(|| format!("creating {parent:?}"))?;
 
     let staging = tempfile::Builder::new()
-        .prefix(".tmp-agent-download-")
+        .prefix(STAGING_DIR_PREFIX)
         .tempdir_in(parent)
         .with_context(|| format!("creating staging directory in {parent:?}"))?;
 
@@ -364,7 +448,7 @@ pub async fn install_archive(
     let extracted = staging.path().join("extracted");
     tokio::fs::create_dir_all(&extracted).await?;
 
-    let actual_digest = download_to_file(http, url, &payload).await?;
+    let actual_digest = download_to_file(http, url, &payload, limits.max_download_bytes).await?;
     if let Some(expected) = digest {
         anyhow::ensure!(
             actual_digest.eq_ignore_ascii_case(expected),
@@ -376,7 +460,7 @@ pub async fn install_archive(
         RegistryArchiveKind::Archive(asset_kind) => {
             let (payload, destination, asset_kind) =
                 (payload.clone(), extracted.clone(), *asset_kind);
-            tokio::task::spawn_blocking(move || extract(&payload, &destination, asset_kind))
+            tokio::task::spawn_blocking(move || extract(&payload, &destination, asset_kind, limits))
                 .await
                 .context("extraction task panicked")?
                 .with_context(|| format!("extracting {url} into {extracted:?}"))?;
@@ -402,7 +486,16 @@ pub async fn install_archive(
 }
 
 /// Stream a URL to a file, returning the hex SHA-256 of what was written.
-async fn download_to_file(http: &dyn HttpClient, url: &str, destination: &Path) -> Result<String> {
+///
+/// Stops at `max_bytes`. The cap is on what actually arrives, not on
+/// `Content-Length`: a header is a claim by the same server that sends the
+/// body, so trusting it to decide whether to read the body is circular.
+async fn download_to_file(
+    http: &dyn HttpClient,
+    url: &str,
+    destination: &Path,
+    max_bytes: u64,
+) -> Result<String> {
     let response = http
         .get(url)
         .await
@@ -419,8 +512,14 @@ async fn download_to_file(http: &dyn HttpClient, url: &str, destination: &Path) 
         .with_context(|| format!("creating {destination:?}"))?;
     let mut hasher = Sha256::new();
 
+    let mut received: u64 = 0;
     while let Some(chunk) = body.next().await {
         let chunk = chunk.with_context(|| format!("reading {url}"))?;
+        received = received.saturating_add(chunk.len() as u64);
+        anyhow::ensure!(
+            received <= max_bytes,
+            "download of {url} passed {max_bytes} bytes and was abandoned",
+        );
         hasher.update(&chunk);
         file.write_all(&chunk)
             .await
@@ -431,29 +530,241 @@ async fn download_to_file(http: &dyn HttpClient, url: &str, destination: &Path) 
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn extract(payload: &Path, destination: &Path, kind: AssetKind) -> Result<()> {
+fn extract(
+    payload: &Path,
+    destination: &Path,
+    kind: AssetKind,
+    limits: InstallLimits,
+) -> Result<()> {
     let file = std::fs::File::open(payload)?;
     match kind {
         AssetKind::Zip => {
-            zip::ZipArchive::new(file)?.extract(destination)?;
+            let mut archive = zip::ZipArchive::new(file)?;
+            // A zip carries its own directory, so the cost is knowable before
+            // a single byte is written. Tar cannot do this — see `unpack_tar`.
+            check_zip_budget(&mut archive, limits)?;
+            archive.extract(destination)?;
         }
         AssetKind::TarGz => {
-            unpack_tar(flate2::read::GzDecoder::new(file), destination)?;
+            unpack_tar(flate2::read::GzDecoder::new(file), destination, limits)?;
         }
         AssetKind::TarBz2 => {
-            unpack_tar(bzip2::read::BzDecoder::new(file), destination)?;
+            unpack_tar(bzip2::read::BzDecoder::new(file), destination, limits)?;
+        }
+    }
+    // Both extractors are done writing by here, so one pass fixes both formats
+    // and does not depend on which bits either crate chose to honour.
+    harden_extracted_tree(destination)?;
+    Ok(())
+}
+
+/// Refuse a zip that expands past what we accept, before it costs any disk.
+///
+/// Measured, not read. The central directory carries an `uncompressed_size`
+/// per entry, and it is tempting to sum those — but it is a claim by the
+/// archive, and `ZipArchive::extract` never checks it against what the
+/// decompressor actually produces (`zip-8.6.0/src/read.rs` bounds the *input*
+/// by `compressed_size` and then `io::copy`s until the stream ends). Rewriting
+/// four bytes of the central directory leaves the payload and its CRC intact
+/// and walks straight through a ceiling that trusted that field. So this
+/// decompresses each entry into a counter and believes the bytes.
+///
+/// That is a second decompression pass. At the size a real agent archive has
+/// — around 100 MB against a 4 GiB ceiling — it is noise, and it buys keeping
+/// `ZipArchive::extract` for the extraction itself, which is where the
+/// zip-slip and symlink containment this crate inherits actually lives.
+fn check_zip_budget<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    limits: InstallLimits,
+) -> Result<()> {
+    anyhow::ensure!(
+        archive.len() <= limits.max_entries,
+        "archive declares {} entries, past the {} this installer accepts",
+        archive.len(),
+        limits.max_entries,
+    );
+
+    let mut budget = ByteBudget {
+        remaining: limits.max_uncompressed_bytes,
+        overdrawn: false,
+    };
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .with_context(|| format!("reading zip entry {index}"))?;
+        let copied = std::io::copy(&mut entry, &mut budget);
+        drop(entry);
+
+        if let Err(error) = copied {
+            // Tell a bomb apart from a corrupt stream: only the budget sets
+            // `overdrawn`, so anything else is a genuine read failure and
+            // deserves to say so.
+            anyhow::ensure!(
+                !budget.overdrawn,
+                "archive expands to more than {} bytes, and was refused",
+                limits.max_uncompressed_bytes,
+            );
+            return Err(anyhow::Error::new(error)
+                .context(format!("reading zip entry {index} of {}", archive.len())));
         }
     }
     Ok(())
 }
 
-fn unpack_tar(reader: impl std::io::Read, destination: &Path) -> Result<()> {
-    let mut archive = tar::Archive::new(reader);
+/// A sink that counts down, and fails the write that would overdraw it.
+struct ByteBudget {
+    remaining: u64,
+    overdrawn: bool,
+}
+
+impl std::io::Write for ByteBudget {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.remaining.checked_sub(buf.len() as u64) {
+            Some(left) => {
+                self.remaining = left;
+                Ok(buf.len())
+            }
+            None => {
+                self.overdrawn = true;
+                Err(std::io::Error::other("expansion budget exhausted"))
+            }
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn unpack_tar(reader: impl std::io::Read, destination: &Path, limits: InstallLimits) -> Result<()> {
+    // A tar is a stream with no index, so unlike zip nothing can be checked up
+    // front — both bounds fire mid-extraction. Bytes are bounded by wrapping
+    // the decoder; entries are counted as they go, because bytes alone do not
+    // bound them: a tar of empty files costs about 4.7 wire-bytes per inode,
+    // so the byte ceiling on its own still permits millions of them.
+    let mut archive = tar::Archive::new(LimitedReader::new(
+        reader,
+        limits.max_uncompressed_bytes,
+    ));
     // Zed turns mtime preservation off (`github_download.rs:288-292`): it is
     // irrelevant to a downloaded archive, and some filesystems error when asked
     // to apply it after extraction.
     archive.set_preserve_mtime(false);
-    archive.unpack(destination)?;
+
+    std::fs::create_dir_all(destination)
+        .with_context(|| format!("creating {destination:?}"))?;
+
+    let mut seen = 0usize;
+    for entry in archive.entries().context("reading the tar index")? {
+        let mut entry = entry.context("reading a tar entry")?;
+
+        seen += 1;
+        anyhow::ensure!(
+            seen <= limits.max_entries,
+            "archive holds more than {} entries, and was refused",
+            limits.max_entries,
+        );
+
+        // `unpack_in` rather than a write of our own: it is what performs
+        // tar's path containment — the `..` rejection, the absolute-path
+        // strip, and the symlink and hardlink checks against the destination.
+        // That guarantee belongs to the `tar` crate, and doing the write here
+        // would quietly move it onto us.
+        entry
+            .unpack_in(destination)
+            .context("unpacking a tar entry")?;
+    }
+    Ok(())
+}
+
+/// Fails the read once more than `limit` bytes have come through.
+struct LimitedReader<R> {
+    inner: R,
+    limit: u64,
+    read_so_far: u64,
+}
+
+impl<R> LimitedReader<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            limit,
+            read_so_far: 0,
+        }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.read_so_far = self.read_so_far.saturating_add(read as u64);
+        // Strictly greater: an archive whose size is exactly the limit is
+        // within it, and must not be failed on its last byte.
+        if self.read_so_far > self.limit {
+            return Err(std::io::Error::other(format!(
+                "archive expands to more than {} bytes, and was refused",
+                self.limit
+            )));
+        }
+        Ok(read)
+    }
+}
+
+/// Mask every extracted file down to [`EXTRACTED_MODE_MASK`].
+///
+/// Runs after extraction rather than per entry because that is the one place
+/// both formats have finished writing, so the result does not depend on which
+/// bits `tar` and `zip` each decided to honour — a property that has changed
+/// under them before and is pinned by tests rather than assumed.
+///
+/// Symlinks are skipped, not masked: `set_permissions` follows the link, so
+/// chmod-ing one would change whatever it points at, which for an archive that
+/// ships a link to somewhere outside the tree is exactly the write we are
+/// trying to prevent.
+#[cfg(unix)]
+fn harden_extracted_tree(root: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        // Widen the directory to traversable before reading it. An archive may
+        // ship a directory with no owner-execute bit, which would otherwise
+        // make its own contents unreachable to this walk.
+        let mode = std::fs::metadata(&dir)
+            .with_context(|| format!("reading mode of {dir:?}"))?
+            .permissions()
+            .mode();
+        std::fs::set_permissions(
+            &dir,
+            std::fs::Permissions::from_mode((mode & EXTRACTED_MODE_MASK) | 0o700),
+        )
+        .with_context(|| format!("hardening {dir:?}"))?;
+
+        for entry in std::fs::read_dir(&dir).with_context(|| format!("reading {dir:?}"))? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let mode = entry.metadata()?.permissions().mode();
+            std::fs::set_permissions(
+                &path,
+                std::fs::Permissions::from_mode(mode & EXTRACTED_MODE_MASK),
+            )
+            .with_context(|| format!("hardening {path:?}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn harden_extracted_tree(_root: &Path) -> Result<()> {
     Ok(())
 }
 

@@ -35,8 +35,9 @@ use crate::archive::{
 use crate::http::HttpClient;
 use crate::node::{
     bounded_npm_package_spec, installed_package_version, installed_version_satisfies,
-    npm_command_env, read_package_executable, NodeRuntime,
+    npm_command_env, npm_platform, read_package_executable, NodeRuntime,
 };
+use crate::npm_tree::{install_state, InstallState, NpmPlatform};
 use crate::registry::{current_platform_key, RegistryTargetConfig};
 
 /// The environment an agent inherits from the project it is opened in.
@@ -164,82 +165,97 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
         let loading_status = self.loading_status.clone();
 
         Box::pin(async move {
-            tokio::fs::create_dir_all(&installation_dir)
-                .await
-                .with_context(|| format!("creating {installation_dir:?}"))?;
+            let result = async {
+                tokio::fs::create_dir_all(&installation_dir)
+                    .await
+                    .with_context(|| format!("creating {installation_dir:?}"))?;
 
-            let platform_key = current_platform_key().context("unsupported platform")?;
-            let target = targets.get(platform_key).with_context(|| {
-                let mut available = targets.keys().cloned().collect::<Vec<_>>();
-                available.sort();
-                format!(
-                    "no target specified for platform '{platform_key}'. Available platforms: {}",
-                    available.join(", ")
-                )
-            })?;
+                let platform_key = current_platform_key().context("unsupported platform")?;
+                let target = targets.get(platform_key).with_context(|| {
+                    let mut available = targets.keys().cloned().collect::<Vec<_>>();
+                    available.sort();
+                    format!(
+                        "no target specified for platform '{platform_key}'. Available platforms: {}",
+                        available.join(", ")
+                    )
+                })?;
 
-            let env = layered_env(
-                project_env.await,
-                &target.env,
-                extra_env,
-                &byok_env,
-                &settings_env,
-            );
+                let env = layered_env(
+                    project_env.await,
+                    &target.env,
+                    extra_env,
+                    &byok_env,
+                    &settings_env,
+                );
 
-            let archive_url = &target.archive;
-            let version_dir = versioned_archive_cache_dir(
-                &installation_dir,
-                Some(&version),
-                archive_url,
-                target.sha256.as_deref(),
-            );
+                let archive_url = &target.archive;
+                let version_dir = versioned_archive_cache_dir(
+                    &installation_dir,
+                    Some(&version),
+                    archive_url,
+                    target.sha256.as_deref(),
+                );
 
-            if !is_dir(&version_dir).await {
-                if let Some(tx) = &loading_status {
-                    tx.send(Some(format!("Installing {version}…"))).ok();
-                }
-
-                // The registry's own checksum wins; failing that, GitHub's
-                // recorded digest for the release asset. Both absent means an
-                // unverified install, which is what Zed does too.
-                let sha256 = match &target.sha256 {
-                    Some(sha256) => Some(sha256.clone()),
-                    None => match github_release_archive_from_url(archive_url) {
-                        Some(release) => github_release_digest(&*http, &release).await,
-                        None => None,
-                    },
-                };
-
-                let kind = registry_archive_kind_for_url(archive_url)?;
-                install_archive(&*http, archive_url, sha256.as_deref(), &version_dir, &kind).await?;
-            }
-
-            let cmd_path = resolve_target_cmd(&node, &target.cmd, &version_dir).await?;
-
-            // Detached, as in Zed: the previous version's directory is dead
-            // weight, not a correctness problem, and removing it should never
-            // delay the agent starting.
-            tokio::spawn({
-                let installation_dir = installation_dir.clone();
-                let version_dir = version_dir.clone();
-                async move {
-                    if let Err(error) =
-                        remove_stale_versioned_archive_cache_dirs(&installation_dir, &version_dir)
-                            .await
-                    {
-                        tracing::warn!(error = %format!("{error:#}"), "archive cache GC failed");
+                if !is_dir(&version_dir).await {
+                    if let Some(tx) = &loading_status {
+                        tx.send(Some(format!("Installing {version}…"))).ok();
                     }
+
+                    // The registry's own checksum wins; failing that, GitHub's
+                    // recorded digest for the release asset. Both absent means an
+                    // unverified install, which is what Zed does too.
+                    let sha256 = match &target.sha256 {
+                        Some(sha256) => Some(sha256.clone()),
+                        None => match github_release_archive_from_url(archive_url) {
+                            Some(release) => github_release_digest(&*http, &release).await,
+                            None => None,
+                        },
+                    };
+
+                    let kind = registry_archive_kind_for_url(archive_url)?;
+                    install_archive(&*http, archive_url, sha256.as_deref(), &version_dir, &kind)
+                        .await?;
                 }
-            });
 
-            let mut args = target.args.clone();
-            args.extend(extra_args);
+                let cmd_path = resolve_target_cmd(&node, &target.cmd, &version_dir).await?;
 
-            Ok(AgentServerCommand {
-                path: cmd_path,
-                args,
-                env: Some(env),
-            })
+                // Detached, as in Zed: the previous version's directory is dead
+                // weight, not a correctness problem, and removing it should never
+                // delay the agent starting.
+                tokio::spawn({
+                    let installation_dir = installation_dir.clone();
+                    let version_dir = version_dir.clone();
+                    async move {
+                        if let Err(error) = remove_stale_versioned_archive_cache_dirs(
+                            &installation_dir,
+                            &version_dir,
+                        )
+                        .await
+                        {
+                            tracing::warn!(error = %format!("{error:#}"), "archive cache GC failed");
+                        }
+                    }
+                });
+
+                let mut args = target.args.clone();
+                args.extend(extra_args);
+
+                Ok(AgentServerCommand {
+                    path: cmd_path,
+                    args,
+                    env: Some(env),
+                })
+            }
+            .await;
+
+            // Ready or failed, the "Installing …" text must not outlive the
+            // attempt — the same contract as the npx target below. Without
+            // it a finished or failed archive install left the tab reading
+            // "Installing <version>…" for good.
+            if let Some(tx) = &loading_status {
+                tx.send(None).ok();
+            }
+            result
         })
     }
 }
@@ -259,16 +275,7 @@ async fn resolve_target_cmd(
         return node.binary_path().await;
     }
 
-    anyhow::ensure!(
-        !cmd.contains(".."),
-        "command path cannot contain '..': {cmd}"
-    );
-    let relative = cmd
-        .strip_prefix("./")
-        .or_else(|| cmd.strip_prefix(".\\"))
-        .with_context(|| format!("command must be relative (start with './'): {cmd}"))?;
-
-    let cmd_path = version_dir.join(relative);
+    let cmd_path = version_dir.join(relative_target_cmd(cmd)?);
     anyhow::ensure!(
         tokio::fs::metadata(&cmd_path)
             .await
@@ -278,6 +285,23 @@ async fn resolve_target_cmd(
         cmd_path.display()
     );
     Ok(cmd_path)
+}
+
+/// The archive-relative part of a registry target's `cmd`.
+///
+/// Some registry targets name the binary bare (`amp-acp.exe` on Windows)
+/// instead of `./amp-acp.exe`. A bare file name can only mean the archive
+/// root, so it is exactly as contained as `./`; anything carrying a separator
+/// or a drive still has to spell the `./` out.
+fn relative_target_cmd(cmd: &str) -> Result<&str> {
+    anyhow::ensure!(
+        !cmd.contains(".."),
+        "command path cannot contain '..': {cmd}"
+    );
+    cmd.strip_prefix("./")
+        .or_else(|| cmd.strip_prefix(".\\"))
+        .or_else(|| (!cmd.is_empty() && !cmd.contains(['/', '\\', ':'])).then_some(cmd))
+        .with_context(|| format!("command must be relative (start with './'): {cmd}"))
 }
 
 // ------------------------------------------------------- registry: npx target
@@ -321,6 +345,14 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                 tokio::fs::create_dir_all(&install_dir)
                     .await
                     .with_context(|| format!("creating {install_dir:?}"))?;
+                // npm keys its hidden lockfile by path relative to the
+                // *real* prefix; hand it a symlinked one (a relocated
+                // `~/Library`, `/tmp` on macOS) and every entry comes back as
+                // `../../real/path/node_modules/…`, which nothing below can
+                // match against the tree. Resolve once, up front.
+                let install_dir = tokio::fs::canonicalize(&install_dir)
+                    .await
+                    .with_context(|| format!("resolving {install_dir:?}"))?;
 
                 // Node first, and through the status-aware path: this is the
                 // one step that can take minutes on a fresh machine, and every
@@ -337,8 +369,13 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                 // Install only when the copy on disk cannot serve the spec. Zed
                 // runs `npm install` on every connect; that made each agent
                 // start a registry round-trip, and a registry that does not
-                // answer made it a hang. Now it is a per-version cost.
-                if let Some(reason) = install_needed(&install_dir, package_name, &package).await {
+                // answer made it a hang. Now it is a per-version cost — and a
+                // per-repair cost: a tree npm left without its platform
+                // package (see `npm_tree`) counts as not serving the spec.
+                let platform = npm_platform();
+                if let Some(reason) =
+                    install_needed(&install_dir, package_name, &package, platform).await
+                {
                     tracing::info!(
                         package = %package_spec,
                         %reason,
@@ -348,12 +385,8 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                         tx.send(Some(format!("Installing {package_name} {version}…")))
                             .ok();
                     }
-                    node.run_npm_subcommand(
-                        Some(&install_dir),
-                        "install",
-                        &[package_spec.as_str(), "--save-exact"],
-                    )
-                    .await?;
+                    install_package(&node, &install_dir, package_name, &package_spec, platform)
+                        .await?;
                     write_wanted_spec(&install_dir, &package).await;
                 } else {
                     tracing::info!(
@@ -397,6 +430,94 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
     }
 }
 
+/// `npm install` into a clean `install_dir`, verified against the platform
+/// package(s) the hidden lockfile says this host needs, with one retry.
+///
+/// Clean, because npm records a failed optional dependency as `ideallyInert`
+/// in `node_modules/.package-lock.json` and trusts that on the next run: an
+/// install over the old tree would skip exactly the package we are here to
+/// fetch. Wiping is cheap — `--prefer-offline` still serves every tarball npm
+/// did cache — and makes the outcome independent of what was on disk before.
+///
+/// Verified, because npm exits 0 when an optional dependency fails. The retry
+/// is `--prefer-online` so a tarball the cache never saw is fetched fresh. A
+/// second gap is an error naming the package; the sidecar is not written, and
+/// the tree is wiped so the next connect re-detects rather than spawning into
+/// `Missing optional dependency …`.
+async fn install_package(
+    node: &NodeRuntime,
+    install_dir: &std::path::Path,
+    package_name: &str,
+    package_spec: &str,
+    platform: Option<NpmPlatform>,
+) -> Result<()> {
+    wipe_install_tree(install_dir).await?;
+    node.run_npm_subcommand(Some(install_dir), "install", &[package_spec, "--save-exact"])
+        .await?;
+    let Some(platform) = platform else { return Ok(()) };
+
+    let state = install_state(install_dir, platform).await;
+    let InstallState::MissingOptional(gaps) = state else {
+        return match state.reinstall_reason() {
+            None => Ok(()),
+            Some(reason) => Err(anyhow::anyhow!(
+                "npm install of {package_name} finished but left no usable tree ({reason})"
+            )),
+        };
+    };
+
+    tracing::warn!(
+        package = package_name,
+        gaps = %gaps.join(", "),
+        "npm install exited 0 without the platform package(s); retrying with a clean tree"
+    );
+    wipe_install_tree(install_dir).await?;
+    node.run_npm_subcommand(
+        Some(install_dir),
+        "install",
+        &[package_spec, "--save-exact", "--prefer-online"],
+    )
+    .await?;
+
+    match install_state(install_dir, platform).await {
+        InstallState::Complete => Ok(()),
+        state => {
+            let gaps = match &state {
+                InstallState::MissingOptional(gaps) => gaps.join(", "),
+                other => other.reinstall_reason().unwrap_or_default(),
+            };
+            // Leave nothing that looks installed: the next connect must land
+            // here again, not in the agent's own crash.
+            let _ = wipe_install_tree(install_dir).await;
+            Err(anyhow::anyhow!(
+                "npm installed {package_name} but could not fetch its platform package(s) for \
+                 {}/{}: {gaps}. npm treats these as optional and reports success anyway; the \
+                 install was discarded. Check the network (the package is a large download) \
+                 and try again, or uninstall the agent with \"purge cache\" and reinstall.",
+                platform.os,
+                platform.cpu,
+            ))
+        }
+    }
+}
+
+/// Remove `node_modules` and `package-lock.json` so the next `npm install`
+/// resolves from scratch.
+async fn wipe_install_tree(install_dir: &std::path::Path) -> Result<()> {
+    for name in ["node_modules", "package-lock.json"] {
+        let path = install_dir.join(name);
+        let result = match tokio::fs::metadata(&path).await {
+            Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&path).await,
+            Ok(_) => tokio::fs::remove_file(&path).await,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => Err(e),
+        };
+        result.with_context(|| format!("removing {}", path.display()))?;
+        tracing::info!(path = %path.display(), "removed stale install tree before npm install");
+    }
+    Ok(())
+}
+
 /// The sidecar recording which package spec the install directory was last
 /// installed against.
 ///
@@ -434,10 +555,17 @@ async fn write_wanted_spec(install_dir: &std::path::Path, package_spec: &str) {
 /// before the sidecar existed — is adopted: the sidecar is written with the
 /// current spec and the install is skipped, so existing users stay offline and
 /// upgrades kick in at the next ceiling change.
+///
+/// Adoption and the skip both require the tree to be *complete* for
+/// `platform` ([`install_state`]): the top-level package having a version and
+/// a `bin` says nothing about whether npm managed to land the optional
+/// platform package underneath it, and once it has not, npm will not retry on
+/// its own. A `platform` of `None` (unsupported host) skips that check.
 async fn install_needed(
     install_dir: &std::path::Path,
     package_name: &str,
     package_spec: &str,
+    platform: Option<NpmPlatform>,
 ) -> Option<String> {
     let node_modules = install_dir.join("node_modules");
     let Some(installed) = installed_package_version(&node_modules, package_name).await else {
@@ -454,6 +582,11 @@ async fn install_needed(
     {
         return Some("installed package declares no usable executable".to_owned());
     }
+    if let Some(platform) = platform {
+        if let Some(reason) = install_state(install_dir, platform).await.reinstall_reason() {
+            return Some(reason);
+        }
+    }
     match read_wanted_spec(install_dir).await {
         Some(previous) if previous == package_spec => None,
         Some(previous) => Some(format!(
@@ -468,7 +601,7 @@ async fn install_needed(
 
 /// `<external-agents>/registry/npx/<id>` — one install directory per agent, so
 /// two agents depending on different versions of the same package cannot fight.
-pub(crate) fn npx_install_dir(registry_dir: &std::path::Path, id: &str) -> PathBuf {
+pub fn npx_install_dir(registry_dir: &std::path::Path, id: &str) -> PathBuf {
     registry_dir.join("npx").join(sanitize_path_component(id))
 }
 
@@ -485,16 +618,69 @@ mod tests {
 
     const PACKAGE: &str = "@scope/agent";
 
-    /// An install dir whose `node_modules/@scope/agent` is at `version`.
+    #[test]
+    fn target_cmd_accepts_dot_relative_paths_and_bare_names() {
+        assert_eq!(relative_target_cmd("./bin/agent").unwrap(), "bin/agent");
+        assert_eq!(
+            relative_target_cmd("./dist-package\\cursor-agent.cmd").unwrap(),
+            "dist-package\\cursor-agent.cmd"
+        );
+        assert_eq!(relative_target_cmd(".\\agent.exe").unwrap(), "agent.exe");
+        assert_eq!(relative_target_cmd("amp-acp.exe").unwrap(), "amp-acp.exe");
+    }
+
+    #[test]
+    fn target_cmd_refuses_anything_that_could_leave_the_archive() {
+        for cmd in [
+            "",
+            "/usr/bin/agent",
+            "C:\\agent.exe",
+            "C:agent.exe",
+            "bin/agent",
+            "./../agent",
+            "..\\agent.exe",
+        ] {
+            assert!(relative_target_cmd(cmd).is_err(), "accepted {cmd:?}");
+        }
+    }
+
+    const PLATFORM: Option<NpmPlatform> = Some(NpmPlatform {
+        os: "darwin",
+        cpu: "arm64",
+    });
+
+    /// A hidden lockfile with one optional platform package for darwin/arm64
+    /// and one inert foreign variant — the shape npm leaves after a good
+    /// install of a Codex-like package.
+    const HIDDEN_LOCKFILE: &str = r#"{ "lockfileVersion": 3, "packages": {
+        "": {},
+        "node_modules/@scope/agent": { "version": "1.11.0" },
+        "node_modules/@scope/agent-darwin-arm64": { "optional": true, "os": ["darwin"], "cpu": ["arm64"] },
+        "node_modules/@scope/agent-linux-x64": { "optional": true, "ideallyInert": true, "os": ["linux"], "cpu": ["x64"] }
+    } }"#;
+
+    /// An install dir whose `node_modules/@scope/agent` is at `version`, with
+    /// a complete tree for [`PLATFORM`].
     fn installed(version: &str) -> tempfile::TempDir {
+        let dir = installed_without_platform_package(version);
+        let platform_dir = dir.path().join("node_modules/@scope/agent-darwin-arm64");
+        std::fs::create_dir_all(&platform_dir).unwrap();
+        std::fs::write(platform_dir.join("package.json"), r#"{"name":"@scope/agent"}"#).unwrap();
+        dir
+    }
+
+    /// The same, but npm never landed the platform package.
+    fn installed_without_platform_package(version: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        let package_dir = dir.path().join("node_modules").join(PACKAGE);
+        let node_modules = dir.path().join("node_modules");
+        let package_dir = node_modules.join(PACKAGE);
         std::fs::create_dir_all(&package_dir).unwrap();
         std::fs::write(
             package_dir.join("package.json"),
             format!(r#"{{"version": "{version}", "bin": "cli.js"}}"#),
         )
         .unwrap();
+        std::fs::write(node_modules.join(".package-lock.json"), HIDDEN_LOCKFILE).unwrap();
         dir
     }
 
@@ -508,7 +694,7 @@ mod tests {
         assert_eq!(sidecar(&dir), None);
 
         assert_eq!(
-            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0").await,
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM).await,
             None
         );
         assert_eq!(sidecar(&dir).as_deref(), Some("@scope/agent@1.11.0\n"));
@@ -521,7 +707,7 @@ mod tests {
 
         // 1.11.0 <= 1.12.0, so the ceiling alone would skip; the sidecar says
         // the registry moved on.
-        let reason = install_needed(dir.path(), PACKAGE, "@scope/agent@1.12.0")
+        let reason = install_needed(dir.path(), PACKAGE, "@scope/agent@1.12.0", PLATFORM)
             .await
             .expect("a differing sidecar must force an install");
         assert_eq!(
@@ -538,7 +724,7 @@ mod tests {
         write_wanted_spec(dir.path(), "@scope/agent@1.11.0").await;
 
         assert_eq!(
-            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0").await,
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM).await,
             None
         );
     }
@@ -547,7 +733,7 @@ mod tests {
     async fn a_missing_or_out_of_range_install_is_reported_before_the_sidecar() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0")
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM)
                 .await
                 .as_deref(),
             Some("package.json missing or unparsable")
@@ -555,9 +741,66 @@ mod tests {
         assert_eq!(sidecar(&dir), None, "nothing is adopted without an install");
 
         let dir = installed("2.0.0");
-        assert!(install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0")
+        assert!(install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM)
             .await
             .is_some_and(|reason| reason.contains("outside the ceiling")));
         assert_eq!(sidecar(&dir), None);
+    }
+
+    #[tokio::test]
+    async fn a_missing_platform_package_forces_a_reinstall_and_is_not_adopted() {
+        // The user's exact state: top-level package fine, sidecar absent
+        // (or equal), npm silently dropped the optional platform package.
+        let dir = installed_without_platform_package("1.11.0");
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM)
+                .await
+                .as_deref(),
+            Some("platform package(s) missing or inert: node_modules/@scope/agent-darwin-arm64")
+        );
+        assert_eq!(sidecar(&dir), None, "a broken tree must not be adopted");
+
+        write_wanted_spec(dir.path(), "@scope/agent@1.11.0").await;
+        assert!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM)
+                .await
+                .is_some(),
+            "an equal sidecar must not mask a missing platform package"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_incomplete_tree_without_hidden_lockfile_is_reinstalled() {
+        let dir = installed("1.11.0");
+        std::fs::remove_file(dir.path().join("node_modules/.package-lock.json")).unwrap();
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", PLATFORM)
+                .await
+                .as_deref(),
+            Some("install incomplete: node_modules has no .package-lock.json")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unsupported_host_skips_the_platform_check() {
+        let dir = installed_without_platform_package("1.11.0");
+        assert_eq!(
+            install_needed(dir.path(), PACKAGE, "@scope/agent@1.11.0", None).await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn wiping_removes_node_modules_and_the_lockfile_but_keeps_the_sidecar() {
+        let dir = installed("1.11.0");
+        std::fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
+        write_wanted_spec(dir.path(), "@scope/agent@1.11.0").await;
+
+        wipe_install_tree(dir.path()).await.unwrap();
+        assert!(!dir.path().join("node_modules").exists());
+        assert!(!dir.path().join("package-lock.json").exists());
+        assert!(sidecar(&dir).is_some());
+        // Idempotent on an already-clean dir.
+        wipe_install_tree(dir.path()).await.unwrap();
     }
 }

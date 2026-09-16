@@ -12,6 +12,8 @@
  * key token — e.g. `cmd+shift+b`, `alt+;`, `cmd+alt+space`, `shift+tab`.
  */
 
+import { isWindows } from "@/lib/platform";
+
 export interface Combo {
   /** `KeyboardEvent.code` value, e.g. "KeyB", "Digit1", "BracketLeft", "Space". */
   code: string;
@@ -215,9 +217,19 @@ function matchCode(e: KeyboardEvent, code: string): boolean {
   return false;
 }
 
-/** Keycaps for display — modifiers in the macOS order ⌃ ⌥ ⇧ ⌘, then the key. */
+/** Keycaps for display — modifiers in the macOS order ⌃ ⌥ ⇧ ⌘, then the key.
+ *  Windows spells them out in its own Ctrl, Alt, Shift order, and a `cmd`
+ *  combo reads as Ctrl there because that is what `matchesCombo` accepts. */
 export function displayKeys(c: Combo): string[] {
   const keys: string[] = [];
+  if (isWindows) {
+    if (c.ctrl) keys.push("Ctrl");
+    if (c.meta) keys.push(c.ctrl ? "Win" : "Ctrl");
+    if (c.alt) keys.push("Alt");
+    if (c.shift) keys.push("Shift");
+    keys.push(displayKey(c));
+    return keys;
+  }
   if (c.ctrl) keys.push("⌃");
   if (c.alt) keys.push("⌥");
   if (c.shift) keys.push("⇧");
@@ -237,9 +249,9 @@ function displayKey(c: Combo): string {
   return token.length === 1 ? token : token.charAt(0).toUpperCase() + token.slice(1);
 }
 
-/** Compact single-string label ("⌘⇧B") for `title=` tooltips. */
+/** Compact single-string label ("⌘⇧B", "Ctrl+Shift+B") for `title=` tooltips. */
 export function displayLabel(c: Combo): string {
-  return displayKeys(c).join("");
+  return displayKeys(c).join(isWindows ? "+" : "");
 }
 
 /** Split a legacy glyph string ("⌘⇧F", "⌥Space") into keycaps: every modifier

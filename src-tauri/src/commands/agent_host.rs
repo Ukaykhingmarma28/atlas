@@ -1121,10 +1121,9 @@ impl AgentHost {
             .map(|usage| Usage {
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
-                // The ported thread carries no cache split — ACP's usage report
-                // has none, and only the native agent ever populated these.
-                cache_creation_tokens: 0,
-                cache_read_tokens: 0,
+                cache_creation_tokens: usage.cache_write_tokens,
+                cache_read_tokens: usage.cache_read_tokens,
+                reasoning_tokens: usage.reasoning_tokens,
                 cost: thread.cost().map(|cost| cost.amount).unwrap_or(0.0),
             })
             .unwrap_or_default();

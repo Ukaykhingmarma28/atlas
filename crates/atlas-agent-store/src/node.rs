@@ -26,21 +26,41 @@ use semver::Version;
 use tokio::sync::watch;
 
 use crate::archive::{install_archive, registry_archive_kind_for_url};
-use crate::http::HttpClient;
+use crate::http::{get_body, HttpClient};
 
 const NODE_VERSION: &str = "v24.11.0";
 const NODE_CA_CERTS_ENV_VAR: &str = "NODE_EXTRA_CA_CERTS";
 
-/// How long one `npm <subcommand>` may run before it is killed. npm's own
-/// fetch timeouts (see [`npm_command_args`]) bound each registry request; this
-/// bounds the whole invocation, so a 290 MB install on a slow link still fits
-/// but a wedged one cannot hold a "Starting …" bubble forever.
+/// How long one `npm <subcommand>` other than `install` may run before it is
+/// killed. npm's own fetch timeout (see [`npm_command_args`]) is an *idle*
+/// timeout per socket, so it never bounds a slow-but-flowing download; this
+/// does, so a wedged run cannot hold a "Starting …" bubble forever.
 const NPM_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The same deadline for `npm install`. Codex alone is a 220 MB platform
+/// tarball plus ~70 MB more; at ten minutes anything under ~500 KB/s was
+/// killed mid-extract, and the half-written tree it left behind looked
+/// installed (see [`crate::npm_tree`]). Thirty minutes is ~160 KB/s.
+const NPM_INSTALL_TIMEOUT: Duration = Duration::from_secs(1800);
+
+/// A subcommand's deadline.
+fn npm_timeout(subcommand: &str) -> Duration {
+    if subcommand == "install" {
+        NPM_INSTALL_TIMEOUT
+    } else {
+        NPM_TIMEOUT
+    }
+}
 
 /// How long the Node tarball download + extract may take while holding the
 /// install lock. Past this, every agent waiting on Node fails with a clear
 /// error instead of queueing behind a stalled socket.
 const NODE_INSTALL_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// How long the `SHASUMS256.txt` fetch may take. Short: it is a few kilobytes
+/// from the same host the tarball comes from, so a slow one means the release
+/// server is unwell and the download after it would have failed anyway.
+const NODE_SHASUMS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What the managed user-level npmrc pins. `update-notifier=false` stops npm
 /// making a `GET registry.npmjs.org/npm` on every run just to advertise a
@@ -157,9 +177,12 @@ impl NodeRuntime {
             "missing npm file"
         );
 
-        let mut command = tokio::process::Command::new(&node_binary);
+        let mut command = atlas_process::async_command(&node_binary);
         command.args(npm_command_args(&npm_file, node_dir, directory, subcommand, args));
         command.envs(npm_command_env(&node_binary));
+        for key in inherited_npm_config_keys(std::env::vars_os().map(|(key, _)| key)) {
+            command.env_remove(key);
+        }
         if let Some(directory) = directory {
             command.current_dir(directory);
         }
@@ -167,11 +190,12 @@ impl NodeRuntime {
         // or the next attempt races an orphan over the same `node_modules`.
         command.kill_on_drop(true);
 
-        match tokio::time::timeout(NPM_TIMEOUT, command.output()).await {
+        let timeout = npm_timeout(subcommand);
+        match tokio::time::timeout(timeout, command.output()).await {
             Ok(output) => Ok(output?),
             Err(_elapsed) => Err(NpmTimedOut {
                 subcommand: subcommand.to_owned(),
-                timeout: NPM_TIMEOUT,
+                timeout,
             }
             .into()),
         }
@@ -210,13 +234,17 @@ impl NodeRuntime {
             let _ = tokio::fs::remove_dir_all(containing_dir).await;
 
             let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
-            let url = format!(
-                "https://nodejs.org/dist/{NODE_VERSION}/node-{NODE_VERSION}-{os}-{arch}.{extension}"
-            );
+            let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
+            let url = format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}");
             tracing::info!(url, "downloading the managed Node.js runtime");
             if let Some(tx) = loading_status {
                 tx.send(Some("Downloading Node.js…".to_owned())).ok();
             }
+
+            // Before the bytes, the digest for them. This runtime is about to
+            // be executed as a child process on every npx agent, and unlike
+            // the registry it costs nothing to verify.
+            let digest = node_archive_digest(&**http, &file_name).await?;
 
             // The tarball's single top-level directory is the version directory,
             // so extracting it *into* the containing dir produces `node_dir`.
@@ -226,7 +254,7 @@ impl NodeRuntime {
             // A timeout leaves `install` as `None`, so the next caller retries.
             tokio::time::timeout(
                 NODE_INSTALL_TIMEOUT,
-                install_archive(&**http, &url, None, containing_dir, &kind),
+                install_archive(&**http, &url, Some(&digest), containing_dir, &kind),
             )
             .await
             .map_err(|_elapsed| {
@@ -261,7 +289,7 @@ impl NodeRuntime {
     }
 }
 
-/// `npm <subcommand>` outlived [`NPM_TIMEOUT`] and was killed.
+/// `npm <subcommand>` outlived its deadline ([`npm_timeout`]) and was killed.
 ///
 /// Its own type so [`NodeRuntime::run_npm_subcommand`] can tell it apart from
 /// a spawn failure and skip the retry.
@@ -296,7 +324,7 @@ async fn node_install_works(node_dir: &Path) -> bool {
     }
 
     let npm_file = node_dir.join(NPM_PATH);
-    let result = tokio::process::Command::new(&node_binary)
+    let result = atlas_process::async_command(&node_binary)
         .env(
             NODE_CA_CERTS_ENV_VAR,
             std::env::var(NODE_CA_CERTS_ENV_VAR).unwrap_or_default(),
@@ -345,18 +373,47 @@ fn node_platform() -> Result<(&'static str, &'static str)> {
     Ok((os, arch))
 }
 
+/// The platform npm gates `os`/`cpu` on — `process.platform`/`process.arch` of
+/// the managed Node, which is the Atlas build's own arch (an x64 build under
+/// Rosetta gets an x64 Node and resolves x64 packages, consistently).
+pub fn npm_platform() -> Option<crate::npm_tree::NpmPlatform> {
+    let (os, cpu) = node_platform().ok()?;
+    let os = if os == "win" { "win32" } else { os };
+    Some(crate::npm_tree::NpmPlatform { os, cpu })
+}
+
+/// The inherited environment keys npm must not see.
+///
+/// `--userconfig`/`--globalconfig` only blank the npmrc *files*; `@npmcli/config`
+/// still reads every `npm_config_*` variable, and `NODE_ENV=production` flips
+/// `omit` to `dev`. A stray `npm_config_omit=optional` or `npm_config_arch`
+/// from the user's shell would silently drop the platform package an agent
+/// exists to ship.
+fn inherited_npm_config_keys(
+    keys: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Vec<std::ffi::OsString> {
+    keys.into_iter()
+        .filter(|key| {
+            let key = key.to_string_lossy();
+            key.to_ascii_lowercase().starts_with("npm_config_") || key == "NODE_ENV"
+        })
+        .collect()
+}
+
 /// The fetch policy every managed npm run gets. Zed's
-/// (`node_runtime.rs:1140-1150`) is `--fetch-timeout 5000` with retries of
-/// 2000/5000 ms, tuned for a language server; an ACP agent install can be
-/// 290 MB, so the per-request timeout is a minute and the retry ceiling ten
-/// seconds. `--prefer-offline` makes a warm cache skip the registry entirely,
-/// and audit/fund are two more round-trips that answer nothing we act on.
+/// (`node_runtime.rs:1124-1158`) plus bounded network waits: the Codex
+/// platform tarball alone is 220 MB. Note `fetch-timeout` is npm's per-socket
+/// *idle* timeout (`@npmcli/agent` maps it to `timeouts.idle`), not a transfer
+/// cap — it ends a stalled socket, never a slow download; the whole-invocation
+/// deadline is [`npm_timeout`]. `--prefer-offline` makes a warm cache skip the
+/// registry entirely, and audit/fund are two more round-trips that answer
+/// nothing we act on.
 const NPM_FETCH_ARGS: &[&str] = &[
     "--no-audit",
     "--no-fund",
     "--prefer-offline",
     "--fetch-timeout",
-    "60000",
+    "300000",
     "--fetch-retries",
     "2",
     "--fetch-retry-mintimeout",
@@ -556,9 +613,158 @@ pub async fn installed_package_version(node_modules_dir: &Path, name: &str) -> O
     Some(package_json.version.unwrap_or_default())
 }
 
+
+/// The SHA-256 nodejs.org publishes for `file_name`.
+///
+/// Required, not best-effort — which is the opposite of how the agent registry
+/// is treated, and deliberately so. Half the agent catalogue publishes no
+/// digest, and refusing those would remove real agents from Atlas. nodejs.org
+/// publishes `SHASUMS256.txt` beside every release without exception, so there
+/// is nothing to trade: if the runtime we are about to execute cannot be
+/// checked, it does not get installed.
+async fn node_archive_digest(http: &dyn HttpClient, file_name: &str) -> Result<String> {
+    let url = format!("https://nodejs.org/dist/{NODE_VERSION}/SHASUMS256.txt");
+    let (status, body) = get_body(http, &url, NODE_SHASUMS_TIMEOUT)
+        .await
+        .with_context(|| format!("fetching {url}"))?;
+
+    anyhow::ensure!(
+        (200..300).contains(&status),
+        "fetching {url} failed with status {status}",
+    );
+
+    let listing = String::from_utf8(body).with_context(|| format!("{url} is not UTF-8"))?;
+    digest_for(&listing, file_name)
+        .with_context(|| format!("{url} publishes no SHA-256 for {file_name}"))
+}
+
+/// Pull one file's digest out of a `SHASUMS256.txt` body.
+///
+/// Lines are `<64 hex><space><space><file name>`. Split on whitespace rather
+/// than a fixed column so a single-space or tab variant still reads, and strip
+/// the `*` some checksum writers prefix to mean "binary mode".
+fn digest_for(listing: &str, file_name: &str) -> Option<String> {
+    listing.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        let digest = fields.next()?;
+        let name = fields.next()?;
+        let matches = name.trim_start_matches('*') == file_name
+            && digest.len() == 64
+            && digest.bytes().all(|byte| byte.is_ascii_hexdigit());
+        matches.then(|| digest.to_ascii_lowercase())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fetching the digest is worth nothing unless it is handed to the
+    /// installer. Reverting `Some(&digest)` to `None` compiles and leaves the
+    /// parser tests green, so the call site needs its own pin — and it is
+    /// reachable because the checksum is compared before extraction, so no
+    /// runnable Node is required.
+    #[tokio::test]
+    async fn a_node_tarball_that_fails_its_checksum_is_not_installed() {
+        use crate::http::HttpResponse;
+        use futures::StreamExt as _;
+
+        struct StubHttp(HashMap<String, Vec<u8>>);
+
+        impl HttpClient for StubHttp {
+            fn get(&self, url: &str) -> futures::future::BoxFuture<'static, Result<HttpResponse>> {
+                let body = self.0.get(url).cloned();
+                Box::pin(async move {
+                    Ok(match body {
+                        Some(bytes) => HttpResponse {
+                            status: 200,
+                            body: futures::stream::once(async move { Ok(bytes) }).boxed(),
+                        },
+                        None => HttpResponse {
+                            status: 404,
+                            body: futures::stream::empty().boxed(),
+                        },
+                    })
+                })
+            }
+        }
+
+        let (os, arch) = node_platform().expect("a supported test platform");
+        let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
+        let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
+
+        // A well-formed listing that names the right file — with the digest of
+        // something else entirely.
+        let listing = format!(
+            "{}  {file_name}\n",
+            "1".repeat(64),
+        );
+
+        let mut routes = HashMap::new();
+        routes.insert(
+            format!("https://nodejs.org/dist/{NODE_VERSION}/SHASUMS256.txt"),
+            listing.into_bytes(),
+        );
+        routes.insert(
+            format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}"),
+            b"not a node runtime".to_vec(),
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let node = NodeRuntime::managed(dir.path(), Arc::new(StubHttp(routes)));
+
+        let error = format!("{:#}", node.ensure_installed(None).await.unwrap_err());
+        assert!(
+            error.contains("SHA-256 mismatch"),
+            "the published digest is fetched but not enforced: {error}"
+        );
+    }
+
+    /// The real file's shape: two spaces, digest first, many lines, and the
+    /// one we want is not the first.
+    const SHASUMS_SAMPLE: &str = "\
+0000000000000000000000000000000000000000000000000000000000000001  node-v24.11.0-linux-x64.tar.gz
+0000000000000000000000000000000000000000000000000000000000000002  node-v24.11.0-darwin-arm64.tar.gz
+0000000000000000000000000000000000000000000000000000000000000003  node-v24.11.0-win-x64.zip
+";
+
+    #[test]
+    fn reads_one_digest_out_of_a_shasums_listing() {
+        assert_eq!(
+            digest_for(SHASUMS_SAMPLE, "node-v24.11.0-darwin-arm64.tar.gz").as_deref(),
+            Some("0000000000000000000000000000000000000000000000000000000000000002"),
+        );
+    }
+
+    #[test]
+    fn a_file_the_listing_does_not_mention_has_no_digest() {
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-arm64.tar.gz").is_none());
+    }
+
+    /// A prefix match would hand back the wrong release's digest, and the
+    /// install would then fail for a reason that says nothing useful.
+    #[test]
+    fn a_similar_file_name_is_not_a_match() {
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-x64.tar").is_none());
+        assert!(digest_for(SHASUMS_SAMPLE, "node-v24.11.0-linux-x64.tar.gz.asc").is_none());
+    }
+
+    #[test]
+    fn tolerates_single_space_and_binary_mode_markers() {
+        let listing = "00000000000000000000000000000000000000000000000000000000000000ab *node-v24.11.0-linux-x64.tar.gz\n";
+        assert_eq!(
+            digest_for(listing, "node-v24.11.0-linux-x64.tar.gz").as_deref(),
+            Some("00000000000000000000000000000000000000000000000000000000000000ab"),
+        );
+    }
+
+    /// A line that is not a digest line must not be read as one — the GPG
+    /// signature block at the end of the real file is exactly this shape.
+    #[test]
+    fn ignores_lines_that_are_not_digests() {
+        let listing = "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\nnot-a-digest node-v24.11.0-linux-x64.tar.gz\n";
+        assert!(digest_for(listing, "node-v24.11.0-linux-x64.tar.gz").is_none());
+    }
 
     #[test]
     fn installed_version_is_a_ceiling_check() {
@@ -607,11 +813,36 @@ mod tests {
             npm.display()
         )), "got {joined}");
         assert!(joined.contains(
-            "--no-audit --no-fund --prefer-offline --fetch-timeout 60000 --fetch-retries 2 \
+            "--no-audit --no-fund --prefer-offline --fetch-timeout 300000 --fetch-retries 2 \
              --fetch-retry-mintimeout 2000 --fetch-retry-maxtimeout 10000"
         ), "got {joined}");
         // The caller's own args come last.
         assert_eq!(&args[args.len() - 2..], ["codex-acp@0.0.0 - 1.0.0", "--save-exact"]);
+    }
+
+    #[test]
+    fn inherited_npm_config_and_node_env_are_stripped_case_insensitively() {
+        let keys = ["npm_config_omit", "NPM_CONFIG_ARCH", "NODE_ENV", "HOME", "PATH", "node_env"]
+            .map(std::ffi::OsString::from);
+        let stripped = inherited_npm_config_keys(keys);
+        assert_eq!(
+            stripped,
+            ["npm_config_omit", "NPM_CONFIG_ARCH", "NODE_ENV"].map(std::ffi::OsString::from)
+        );
+    }
+
+    #[test]
+    fn install_gets_the_long_deadline_and_everything_else_the_short_one() {
+        assert_eq!(npm_timeout("install"), NPM_INSTALL_TIMEOUT);
+        assert_eq!(npm_timeout("view"), NPM_TIMEOUT);
+        assert!(NPM_INSTALL_TIMEOUT > NPM_TIMEOUT);
+    }
+
+    #[test]
+    fn npm_platform_uses_node_names() {
+        let platform = npm_platform().expect("supported host");
+        assert!(["darwin", "linux", "win32"].contains(&platform.os));
+        assert!(["x64", "arm64"].contains(&platform.cpu));
     }
 
     #[test]

@@ -3,7 +3,8 @@
 //!
 //! Downloading Node is not tested here — it is a 50 MB network fetch, and the
 //! part of it worth pinning (that a broken install is detected and replaced)
-//! needs a real Node to be meaningful.
+//! needs a real Node to be meaningful. The one exception is the checksum gate,
+//! which is reachable because it fails before any tarball is fetched.
 
 use std::path::Path;
 
@@ -11,6 +12,9 @@ use atlas_agent_store::node::{
     bounded_npm_package_spec, npm_command_env, read_package_executable,
 };
 use atlas_agent_store::NodeRuntime;
+
+mod fake_http;
+use fake_http::FakeHttp;
 
 /// A ceiling, not a pin — see the function's docs for why.
 #[test]
@@ -114,5 +118,24 @@ async fn an_unavailable_runtime_says_so() {
     assert!(
         error.to_string().contains("disabled in this test"),
         "unexpected error: {error:#}"
+    );
+}
+
+/// The managed runtime is executed as a child process by every npx agent, and
+/// nodejs.org publishes a digest for it. An install that cannot reach that
+/// digest must fail rather than fall through unverified — the gate is ahead of
+/// the download, so this is reachable without a 50 MB fetch.
+#[tokio::test]
+async fn refuses_to_install_node_without_a_published_checksum() {
+    let dir = tempfile::tempdir().unwrap();
+    // Answers nothing, so SHASUMS256.txt comes back 404.
+    let node = NodeRuntime::managed(dir.path(), FakeHttp::new());
+
+    let error = node.ensure_installed(None).await.unwrap_err();
+    let error = format!("{error:#}");
+
+    assert!(
+        error.contains("SHASUMS256.txt"),
+        "the checksum gate is not on the install path: {error}"
     );
 }

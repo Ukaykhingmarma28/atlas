@@ -11,8 +11,8 @@ pub mod types;
 pub use delta::{DeltaSink, Emitter, SessionDelta, SessionDeltaEnvelope};
 pub use error::{classify_message, ErrorClass};
 pub use types::{
-    extract_content_blocks, Message, MessageMode, MessageRole, PlanEntry, SessionStatus, ToolCall,
-    ToolCallStatus, ToolContentBlock, Usage,
+    extract_content_blocks, Message, MessageMode, MessageRole, PlanEntry, RateLimitWindow,
+    SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
 };
 
 use serde::{Deserialize, Serialize};

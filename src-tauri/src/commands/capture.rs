@@ -84,7 +84,7 @@ fn lock_ok<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// was renamed or removed) — an id is still needed to read back what was
 /// already stored under it.
 pub(crate) fn workspace_id_for(root: &std::path::Path) -> String {
-    std::fs::canonicalize(root)
+    dunce::canonicalize(root)
         .unwrap_or_else(|_| root.to_path_buf())
         .to_string_lossy()
         .to_string()
@@ -732,7 +732,7 @@ impl CaptureState {
             // `out_of_repo`, and its touch can never match a commit. Retry
             // against the canonicalised root before accepting that verdict.
             if path.out_of_repo {
-                if let Ok(real_root) = std::fs::canonicalize(workspace_root) {
+                if let Ok(real_root) = dunce::canonicalize(workspace_root) {
                     if real_root != workspace_root {
                         let retry = resolve_path(&raw, &real_root);
                         if !retry.out_of_repo {
@@ -1223,7 +1223,7 @@ pub async fn capture_git_init(
     app: AppHandle,
 ) -> Result<Option<atlas_checkpoint::Binding>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let status = std::process::Command::new("git")
+        let status = atlas_process::command("git")
             .arg("-C")
             .arg(&project_path)
             .arg("init")
@@ -1474,6 +1474,44 @@ pub async fn artifacts_session(
 
         atlas_checkpoint::session_detail(&store, &session_id, |sha| subjects.get(sha).cloned())
             .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// One Session's summary row, looked up by the AGENT's own session id.
+///
+/// The composer's Usage popup has the ACP session id (it is the JSONL stem and
+/// the protocol id both) and nothing else; the store keys rows by its own id
+/// with the agent's under `native_session_id`, per source. `None` when capture
+/// is off for the project or the session was never recorded — the popup then
+/// simply has no "session" section, rather than a row of zeroes.
+#[tauri::command]
+pub async fn capture_session_summary(
+    project_path: String,
+    session_id: String,
+) -> Result<Option<atlas_checkpoint::SessionSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(store) = open_reader(&project_path)? else {
+            return Ok(None);
+        };
+        let workspace_id = workspace_id_for(Path::new(&project_path));
+        // An in-app session is recorded under exactly one of these two sources;
+        // the on-disk JSONL import of the same session is deliberately a
+        // separate row and is not what a live composer is asking about.
+        let mut row_id = None;
+        for source in [Source::Acp, Source::Cersei] {
+            row_id = store
+                .session_id_for(&workspace_id, source, &session_id)
+                .map_err(|e| e.to_string())?;
+            if row_id.is_some() {
+                break;
+            }
+        }
+        let Some(row_id) = row_id else {
+            return Ok(None);
+        };
+        atlas_checkpoint::session_summary(&store, &row_id).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3249,7 +3287,7 @@ mod diff_path_tests {
     fn repo(name: &str) -> std::path::PathBuf {
         let root = workspace(name);
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3360,7 +3398,7 @@ mod diff_path_tests {
         let state = CaptureState::new();
         let call = shell_call("call-1");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3399,7 +3437,7 @@ mod diff_path_tests {
         let state = CaptureState::new();
         let call = shell_call("call-1");
         let git = |args: &[&str]| {
-            let out = std::process::Command::new("git")
+            let out = atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3434,7 +3472,7 @@ mod diff_path_tests {
         // The command runs and commits before capture ever sights the call…
         std::fs::write(root.join("test.txt"), b"test file").expect("write");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)
@@ -3470,7 +3508,7 @@ mod diff_path_tests {
 
         std::fs::write(root.join("a.txt"), b"a").expect("write");
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            atlas_process::command("git")
                 .arg("-C")
                 .arg(&root)
                 .args(args)

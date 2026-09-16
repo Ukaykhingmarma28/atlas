@@ -30,7 +30,14 @@ import {
 import { AtlasIcon } from "@/components/atlas-icon";
 import { extractInjectedContext, type InjectedBlock } from "@/features/chat/lib/atlas-context";
 import { CachedMarkdown } from "@/lib/markdown-cache";
+import { fmtCost } from "@/features/monitor/lib/usage-format";
 import { timeAgo } from "@/lib/time-ago";
+import {
+  costOf,
+  priceForModel,
+  useModelPricingStore,
+  type TokenSpend,
+} from "@/features/settings/stores/model-pricing-store";
 import { cn } from "@/lib/utils";
 
 import {
@@ -48,13 +55,12 @@ import {
   tokenBreakdown,
   tokenLabel,
 } from "../lib/board";
-import { exportSession, type ExportFormat } from "../lib/export";
 import { observeSize } from "../lib/shared-resize-observer";
 import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
 import { CodeBlock, CopyButton, prettyJson } from "./code-block";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
-import { AgentGlyph } from "./session-list";
+import { AgentGlyph } from "./agent-glyph";
 
 /**
  * One Session, as the ordered record of what happened.
@@ -98,16 +104,10 @@ const NODE_CENTRE = 16;
 /**
  * The reading measure. Prose past ~90 characters is measurably harder to scan.
  *
- * The horizontal padding is not decorative: the navigation rail is an absolute
- * overlay at `left: 0` about 40px wide including its fade, and it sits *over*
- * this column. At `px-8` the first character of every line was inside the rail's
- * gradient — legible, but reading as though the text had run into the furniture.
- * 56px clears the rail with room to spare on the left, and stays symmetric so
- * the column still reads as a measure rather than an indent.
+ * The 56px horizontal padding is symmetric on purpose, so the column reads as a
+ * measure rather than an indent.
  */
 const MEASURE = "mx-auto w-full max-w-[920px] px-14";
-
-type Tab = "activity" | "tools";
 
 interface Props {
   detail: Detail;
@@ -127,7 +127,6 @@ export function SessionDetail({
   chatOpen,
   onToggleChat,
 }: Props) {
-  const [tab, setTab] = useState<Tab>("activity");
   const [filters, setFilters] = useState<TimelineFilters>(DEFAULT_FILTERS);
   /** Narrow tool calls to failed ones — the "which calls failed" question. */
   const [failedOnly, setFailedOnly] = useState(false);
@@ -220,18 +219,6 @@ export function SessionDetail({
       (entry) => passes(entry, filters, failedOnly, tools) && matches(entry, needle),
     );
   }, [entries, filters, failedOnly, tools, deferredSearch]);
-
-  /** Every tool call, unfiltered by kind — the Tool calls tab's own list. */
-  const allCalls = useMemo(
-    () =>
-      entries.filter(
-        (entry) =>
-          entry.kind === "tool_call" &&
-          (!failedOnly || entry.toolStatus === "failed") &&
-          (tools.size === 0 || tools.has(entry.toolName ?? "Other")),
-      ),
-    [entries, failedOnly, tools],
-  );
 
   /** Every Checkpoint, unfiltered — the jump list must reach a commit even when
    *  the current filter hides Checkpoints from the timeline. */
@@ -420,7 +407,6 @@ export function SessionDetail({
     const onJump = (e: Event) => {
       const detailPayload = (e as CustomEvent<JumpDetail>).detail;
       if (!detailPayload) return;
-      setTab("activity");
       if (detailPayload.entryId) {
         setPendingJump(detailPayload.entryId);
         return;
@@ -446,7 +432,6 @@ export function SessionDetail({
     );
     if (target) {
       honouredFocus.current = arrival;
-      setTab("activity");
       setPendingJump(target.id);
     }
   }, [focusCommitSha, detail.summary.id, detail.entries]);
@@ -462,88 +447,32 @@ export function SessionDetail({
 
   return (
     <div className="relative flex h-full min-h-0">
-      {/* The navigation rail, matching the agent chat: one tick per prompt,
-       *  vertically centred, the active one widened. Two ticks is the floor —
-       *  a rail with one mark on it navigates nothing. */}
-      {tab === "activity" && anchors.length > 1 && (
-        <div className="pointer-events-none absolute left-0 top-1/2 z-[35] -translate-y-1/2">
-          <div className="pointer-events-none absolute inset-y-[-12px] left-0 w-10 bg-gradient-to-r from-[var(--bg-surface)] via-[var(--bg-surface)]/70 to-transparent" />
-          {/* Ticks only — no hover tooltip. The previews kept one mounted
-           *  `backdrop-filter` element PER PROMPT stacked over the scroller
-           *  (opacity-0 still composites), which is exactly the blur cost this
-           *  codebase keeps relearning. The tick jumps; the prompt itself is
-           *  one click away, and `aria-label` keeps the preview for assistive
-           *  tech where it costs nothing. */}
-          <div className="relative flex flex-col justify-center gap-1.5 py-2 pl-2 pr-4">
-            {anchors.map((anchor, i) => (
-              <button
-                key={anchor.id}
-                type="button"
-                aria-label={anchor.preview || "Jump to prompt"}
-                onClick={() => jumpToAnchor(anchor)}
-                className="group pointer-events-auto relative flex cursor-pointer items-center"
-              >
-                <span
-                  className={cn(
-                    "h-0.5 rounded-full transition-all duration-200 ease-out",
-                    i === activeAnchor
-                      ? "w-4 bg-[var(--accent-primary)]"
-                      : "w-2 bg-[var(--text-tertiary)]/40 group-hover:w-3 group-hover:bg-[var(--text-tertiary)]",
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div
         ref={scrollRef}
         onScroll={onScroll}
         className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
       >
-        <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-7")}>
+        <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-14")}>
           <Masthead detail={detail} />
 
-          <div className="mt-5 flex items-center gap-1.5">
-            <TabButton
-              active={tab === "activity"}
-              count={detail.entries.length}
-              onClick={() => setTab("activity")}
-            >
-              Activity
-            </TabButton>
-            <TabButton
-              active={tab === "tools"}
-              count={s.toolCallCount}
-              onClick={() => setTab("tools")}
-            >
-              Tool calls
-            </TabButton>
-          </div>
-
-          {tab === "activity" ? (
-            groups.length === 0 ? (
-              <Empty detail={detail} failedOnly={failedOnly} failedCount={failedCount} />
-            ) : (
-              <div className="mt-6">
-                <Timeline
-                  groups={rendered}
-                  projectPath={projectPath}
-                  agent={s.agent}
-                  expandTools={expandTools}
-                  landed={landed}
-                  register={register}
-                />
-                {renderCount < groups.length && (
-                  <p className="py-6 text-center font-mono text-[11px] text-[var(--text-tertiary)]">
-                    {groups.length - renderCount} more…
-                  </p>
-                )}
-              </div>
-            )
+          {groups.length === 0 ? (
+            <Empty detail={detail} failedOnly={failedOnly} failedCount={failedCount} />
           ) : (
-            <CallTable calls={allCalls} projectPath={projectPath} />
+            <div className="mt-14">
+              <Timeline
+                groups={rendered}
+                projectPath={projectPath}
+                agent={s.agent}
+                expandTools={expandTools}
+                landed={landed}
+                register={register}
+              />
+              {renderCount < groups.length && (
+                <p className="py-6 text-center font-mono text-[11px] text-[var(--text-tertiary)]">
+                  {groups.length - renderCount} more…
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -658,7 +587,6 @@ export function SessionDetail({
             // measure, and landing behind it would mean the reader has to
             // dismiss it to see what they asked for.
             setFiltersOpen(false);
-            setTab("activity");
             setPendingJump(entryId);
           }}
           onClose={() => setFiltersOpen(false)}
@@ -670,181 +598,255 @@ export function SessionDetail({
 
 // ── Masthead ────────────────────────────────────────────────────────────────
 
-/** Title, identity chips, and the four numbers worth leading with. */
+/**
+ * Title, identity pills, and the four numbers worth leading with.
+ *
+ * The rhythm is deliberate and even: the same 22px sits between the title and
+ * the pills as between the pills and the grid, and the 56px above the title
+ * matches the 56px below the grid — so the header reads as one block with air
+ * around it rather than three rows that happen to be stacked. Export is not
+ * here; it lives in the header dock with the tab's other actions.
+ */
 function Masthead({ detail }: { detail: Detail }) {
   const s = detail.summary;
   const branch = s.branches[0];
   const tokens = tokenLabel(s);
 
+  // Pricing is cached by Rust and refreshed in the background; a consumer has
+  // to ask for it once. Cheap and idempotent — `load` is stable and the store
+  // is shared, so opening ten Sessions reads the cache once.
+  const prices = useModelPricingStore.use.prices();
+  const { load: loadPrices } = useModelPricingStore.use.actions();
+  useEffect(() => {
+    void loadPrices();
+  }, [loadPrices]);
+
+  const spend: TokenSpend = {
+    input: s.inputTokens,
+    output: s.outputTokens,
+    cacheWrite: s.cacheCreationTokens,
+    cacheRead: s.cacheReadTokens,
+  };
+  const spent = spend.input + spend.output + spend.cacheWrite + spend.cacheRead;
+  const cost = spent > 0 ? costOf(spend, priceForModel(prices, s.model)) : null;
+
+  /**
+   * Why the missing cells are drawn rather than dropped.
+   *
+   * Every live ACP session reports context occupancy and nothing else — no
+   * split, no cache figures — so two of the four cells have nothing to say.
+   * Rendering the grid two-wide for those was worse than the hole it avoided:
+   * two cells stretched across the measure read as a layout that had broken,
+   * and the row changed shape between Sessions. They keep their place, say
+   * what is missing, and the grid is the same object every time.
+   */
+
   return (
     <>
-      <h1 className="text-[26px] font-semibold leading-[1.2] tracking-[-0.03em] text-[var(--text-primary)]">
+      <h1 className="text-[22px] font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--text-primary)]">
         {sessionTitle(s.title) ?? (
           <span className="text-[var(--text-tertiary)]">Untitled session</span>
         )}
       </h1>
 
-      <div className="mt-3 flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {s.agent && <AgentChip agent={s.agent} />}
-          {s.source === "external_jsonl" && (
-            <Chip>
-              <Download size={11} />
-              imported
-            </Chip>
-          )}
-          {branch && (
-            <Chip>
-              <GitCommitHorizontal size={11} />
-              {branch}
-            </Chip>
-          )}
-          <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
-            {timeAgo(s.lastActivityAt, { suffix: true })} · {formatDuration(s.activeSeconds)}
+      <div className="mt-[22px] flex min-w-0 flex-wrap items-center gap-2">
+        {s.agent && <AgentChip agent={s.agent} />}
+        {s.source === "external_jsonl" && (
+          <Chip>
+            <Download size={11} />
+            imported
+          </Chip>
+        )}
+        {branch && (
+          <Chip>
+            <GitCommitHorizontal size={11} />
+            {branch}
+          </Chip>
+        )}
+        <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
+          {timeAgo(s.lastActivityAt, { suffix: true })} · {formatDuration(s.activeSeconds)}
+        </span>
+        {s.needsAttention && (
+          <span
+            className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-[10.5px] text-[var(--status-warning)]"
+            title={s.attentionReason ?? undefined}
+          >
+            <TriangleAlert size={11} />
+            partial
           </span>
-          {s.needsAttention && (
-            <span
-              className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-[10.5px] text-[var(--status-warning)]"
-              title={s.attentionReason ?? undefined}
-            >
-              <TriangleAlert size={11} />
-              partial
-            </span>
-          )}
-        </div>
-        <ExportButton detail={detail} />
+        )}
       </div>
 
-      <div className="mt-5 grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]">
+      <div
+        className={cn(
+          "mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]",
+          "[&>*+*]:border-l [&>*+*]:border-[var(--border-default)]",
+        )}
+      >
         <Metric label="Active" value={formatDuration(s.activeSeconds)} sub={clock(s)} />
         <Metric
           label="Tokens"
           value={tokens ?? "—"}
           sub={tokenBreakdown(s) ?? (s.contextUsed != null ? "context window" : "not reported")}
-          divided
         />
-        <Metric
-          label="Turns"
-          value={String(detail.counts.prompts + detail.counts.responses)}
-          sub={`${detail.counts.prompts} prompt${detail.counts.prompts === 1 ? "" : "s"}`}
-          divided
-        />
-        <Metric
-          label="Tool calls"
-          value={String(s.toolCallCount)}
-          sub={
-            detail.counts.checkpoints > 0
-              ? `${detail.counts.checkpoints} checkpoint${detail.counts.checkpoints === 1 ? "" : "s"}`
-              : "no commits linked"
-          }
-          divided
-        />
+        <TokenMix spend={spend} total={spent} />
+        {cost == null ? (
+          <Metric
+            label="Est. cost"
+            value="—"
+            sub={spent > 0 ? "no price for this model" : "no token split"}
+            absent
+          />
+        ) : (
+          <Metric
+            label="Est. cost"
+            value={costLabel(cost)}
+            sub={prettyModel(s.model) ?? "unknown model"}
+          />
+        )}
       </div>
     </>
   );
 }
 
+/** One cell of the grid. The dividers are the grid's, not the cell's. */
+function Cell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 bg-[var(--bg-raised)] px-3.5 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 /**
- * Take the Session out of Atlas.
- *
- * Two formats, because there are two reasons to want one — the machine-readable
- * record and the one you paste into a ticket — and the choice is one click deep
- * rather than a dialog, since neither is the obvious default.
+ * `absent` is the placeholder state: the figure is not merely zero, it was
+ * never reported. It dims the value to the caption's own weight so the cell
+ * reads as a held place rather than a number worth looking at.
  */
-function ExportButton({ detail }: { detail: Detail }) {
-  const [busy, setBusy] = useState<ExportFormat | null>(null);
-  const [open, setOpen] = useState(false);
-
-  const run = async (format: ExportFormat) => {
-    setOpen(false);
-    setBusy(format);
-    try {
-      await exportSession(detail, format);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Export session"
-          aria-label="Export session"
-          disabled={busy !== null}
-          className="ml-auto flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
-        >
-          {busy ? (
-            <Loader2 size={13} className="animate-spin" />
-          ) : (
-            <Download size={13} strokeWidth={1.7} />
-          )}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          className="z-[var(--z-max)] w-[184px] origin-[var(--radix-popover-content-transform-origin)] overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 p-1 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
-          <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-function ExportItem({
-  label,
-  hint,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-    >
-      {label}
-      <span className="flex-1" />
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{hint}</span>
-    </button>
-  );
-}
-
 function Metric({
   label,
   value,
   sub,
-  divided,
+  absent,
 }: {
   label: string;
   value: string;
   sub: string;
-  divided?: boolean;
+  absent?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "min-w-0 bg-[var(--bg-raised)] px-3.5 py-3",
-        divided && "border-l border-[var(--border-default)]",
-      )}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
-        {label}
-      </p>
-      <p className="mt-1.5 truncate font-mono text-[17px] font-medium tracking-[-0.02em] text-[var(--text-primary)]">
+    <Cell label={label}>
+      <p
+        className={cn(
+          "mt-1.5 truncate font-mono text-[17px] font-medium tracking-[-0.02em]",
+          absent ? "text-[var(--text-ghost)]" : "text-[var(--text-primary)]",
+        )}
+      >
         {value}
       </p>
       <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">{sub}</p>
-    </div>
+    </Cell>
   );
+}
+
+/**
+ * Where the tokens went, as one stacked bar.
+ *
+ * Monochrome, like every other mark in this view: four classes on a white
+ * opacity ladder rather than four hues, because the cell sits inside a header
+ * that is already carrying a title and a row of chips and colour here would
+ * outrank all of it. The ladder runs cheap-to-dear — cache reads are the
+ * faintest, output the brightest — so the bright end is also the expensive end.
+ * Its floor is 0.22 rather than lower: the cheap end is usually ~99% of the
+ * bar, and below that it stopped reading as a filled bar at all.
+ *
+ * Fixed order rather than sorted by size: a bar that reorders itself between
+ * Sessions cannot be compared across them at a glance.
+ *
+ * Segments are NOT given a minimum width. A session of this project runs about
+ * 99.5% cache, and padding the two-token input slice up to a visible sliver
+ * would draw a bar that disagrees with its own caption.
+ *
+ * With nothing to draw it draws the empty track, which is the honest shape of
+ * "no split was reported" — a gauge at zero rather than a gap in the row.
+ */
+function TokenMix({ spend, total }: { spend: TokenSpend; total: number }) {
+  if (total <= 0) {
+    return (
+      <Cell label="Token mix">
+        <div className="mt-3.5 h-1.5 w-full rounded-full bg-[var(--bg-hover)]" />
+        <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">
+          not reported
+        </p>
+      </Cell>
+    );
+  }
+
+  const segments = [
+    { label: "cache read", short: "read", value: spend.cacheRead, tint: 0.22 },
+    { label: "cache write", short: "write", value: spend.cacheWrite, tint: 0.4 },
+    { label: "input", short: "in", value: spend.input, tint: 0.66 },
+    { label: "output", short: "out", value: spend.output, tint: 0.95 },
+  ].filter((segment) => segment.value > 0);
+
+  // The caption names the two that actually account for the bar; the tooltip
+  // carries the exact counts, which is the only place four numbers fit.
+  //
+  // Short names in the caption, full ones in the tooltip: `cache read 99% ·
+  // cache write 1%` is 31 monospace characters and the cell is about 28 wide,
+  // so the second figure — the one that makes the first mean something — was
+  // the part that got clipped.
+  const ranked = [...segments].sort((a, b) => b.value - a.value);
+  const caption = ranked
+    .slice(0, 2)
+    .map((segment) => `${segment.short} ${share(segment.value, total)}`)
+    .join(" · ");
+  const exact = segments
+    .map((segment) => `${segment.label}: ${segment.value.toLocaleString()}`)
+    .join("\n");
+
+  return (
+    <Cell label="Token mix">
+      <div
+        title={exact}
+        className="mt-3.5 flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-hover)]"
+      >
+        {segments.map((segment) => (
+          <div
+            key={segment.label}
+            style={{
+              width: `${(segment.value / total) * 100}%`,
+              background: `rgba(255,255,255,${segment.tint})`,
+            }}
+          />
+        ))}
+      </div>
+      <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]" title={exact}>
+        {caption}
+      </p>
+    </Cell>
+  );
+}
+
+/** `78%`, or `<1%` for a slice that rounds away to nothing. */
+function share(value: number, total: number): string {
+  const pct = (value / total) * 100;
+  if (pct >= 1) return `${Math.round(pct)}%`;
+  return pct > 0 ? "<1%" : "0%";
+}
+
+/**
+ * `$4.12`, or `<$0.01`.
+ *
+ * Two decimals is the unit people think in, but a short Session can genuinely
+ * cost a fraction of a cent and rendering that as `$0.00` reads as "free"
+ * rather than "very cheap".
+ */
+function costLabel(cost: number): string {
+  return cost >= 0.01 ? fmtCost(cost) : "<$0.01";
 }
 
 function Chip({ children }: { children: ReactNode }) {
@@ -925,10 +927,11 @@ function groupEntries(entries: TimelineEntry[]): Group[] {
  * The rendered window of the timeline.
  *
  * Split out and memoised because the scroll loop publishes two pieces of state
- * — the fade's `more` and the rail's `activeAnchor` — and without this boundary
- * every tick of either re-rendered every row, every code block and every
- * markdown body in the window. Now a scroll that changes only where the reader
- * is re-renders the rail and the fade, and the list is skipped outright.
+ * — the fade's `more` and the jump button's `activeAnchor` — and without this
+ * boundary every tick of either re-rendered every row, every code block and
+ * every markdown body in the window. Now a scroll that changes only where the
+ * reader is re-renders the action bar and the fade, and the list is skipped
+ * outright.
  *
  * `landed` is the one prop that still moves per row, and it moves once per jump.
  */
@@ -1330,7 +1333,7 @@ const CALL_WINDOW = 120;
 /** How many more each click reveals. */
 const CALL_WINDOW_GROW = 400;
 
-/** The compact call table, shared by the inline group and the Tool calls tab. */
+/** The compact call table behind a group's "Show tool calls". */
 function CallTable({
   calls,
   projectPath,
@@ -2038,34 +2041,6 @@ function BarButton({
           {badge}
         </span>
       )}
-    </button>
-  );
-}
-
-function TabButton({
-  active,
-  count,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  count: number;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-7 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-[12.5px] font-medium tracking-[-0.01em] transition-colors",
-        active
-          ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-          : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
-      )}
-    >
-      {children}
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{count}</span>
     </button>
   );
 }

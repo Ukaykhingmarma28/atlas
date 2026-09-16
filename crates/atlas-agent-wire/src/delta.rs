@@ -16,7 +16,7 @@ use atlas_bus::EventBus;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::types::{Message, PlanEntry, SessionStatus, ToolCall, Usage};
+use crate::types::{RateLimitWindow, Message, PlanEntry, SessionStatus, ToolCall, Usage};
 use crate::AgentId;
 
 /// One change to one session. Tagged on the wire by `kind`.
@@ -137,6 +137,15 @@ pub enum SessionDelta {
     /// Approx tokens RTK compression saved on this turn (native agent).
     CompressionSaved {
         saved_tokens: u64,
+    },
+    /// The account's rolling quota windows, as the native engine reports them
+    /// (`account/rateLimits/updated`). Account-level rather than per session:
+    /// the same snapshot lands on every live native session. Absent windows
+    /// are `None`, never zero.
+    RateLimits {
+        primary: Option<RateLimitWindow>,
+        secondary: Option<RateLimitWindow>,
+        plan_type: Option<String>,
     },
     /// Agent requested permission for a tool call. The UI's permission inbox
     /// owns this — `respond_permission` resolves it back through atlas-acp.

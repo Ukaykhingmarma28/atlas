@@ -6,7 +6,6 @@ import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store"
 import { WorkspaceSidebar } from "@/features/workspaces/components/workspace-sidebar";
 import { useWorkspaceGitPrefetch } from "@/features/workspaces/lib/use-workspace-prefetch";
 import { Titlebar } from "@/components/titlebar";
-import { StatusBar } from "@/components/status-bar";
 import { cn } from "@/lib/utils";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
@@ -22,7 +21,6 @@ const MAIN_LAYOUT_ID = "atlas-main-layout";
 export function AppLayout() {
   const leftPanel = useLayoutStore.use.leftPanel();
   const rightPanel = useLayoutStore.use.rightPanel();
-  const bottomPanel = useLayoutStore.use.bottomPanel();
   const currentProject = useProjectStore.use.currentProject();
   const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
   const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
@@ -71,7 +69,6 @@ export function AppLayout() {
   // Source control needs a project; team chat is org-scoped and is reachable
   // with no project open, so the slot stays available in chat mode.
   const showRight = rightPanel.visible && (!!currentProject || rightPanel.mode === "chat");
-  const showStatus = bottomPanel.visible;
   const isLinux =
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 
@@ -169,8 +166,6 @@ export function AppLayout() {
             )}
           </Group>
         </div>
-
-        {showStatus && <StatusBar />}
       </div>
 
       {/* OVERLAY mode only (unpinned). When docked, the sidebar is the in-flow

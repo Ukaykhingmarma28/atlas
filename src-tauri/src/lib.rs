@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod logging;
+#[cfg(target_os = "macos")]
 mod menu;
 mod state;
 mod telemetry;
@@ -98,17 +99,22 @@ pub fn run() {
         }
     }));
 
+    // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
+    // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
+    // the tab instead of tearing down the window. See `menu.rs`.
+    //
+    // macOS only. Elsewhere a menu is a Win32/GTK menu bar drawn inside the
+    // window under Atlas's own titlebar, and the key-equivalent fallthrough it
+    // exists to catch is AppKit behaviour.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::build).on_menu_event(|app, event| {
+        if event.id() == menu::CLOSE_TAB_ID {
+            use tauri::Emitter;
+            let _ = app.emit("atlas:close-active-tab", ());
+        }
+    });
+
     builder
-        // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
-        // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
-        // the tab instead of tearing down the window. See `menu.rs`.
-        .menu(menu::build)
-        .on_menu_event(|app, event| {
-            if event.id() == menu::CLOSE_TAB_ID {
-                use tauri::Emitter;
-                let _ = app.emit("atlas:close-active-tab", ());
-            }
-        })
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 // Opaque dark window background. Fills the brief gap between
@@ -162,6 +168,11 @@ pub fn run() {
                 loaded.settings_config_migrated = true;
             }
             let telemetry_enabled = migration.manager.effective().share_telemetry;
+            // The engine reads this gate on its first connect, which happens
+            // after setup — so it must be in the environment before then.
+            commands::atlas_config::apply_curated_plugin_sync_gate(
+                migration.manager.effective().curated_plugin_sync,
+            );
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             commands::atlas_config::start_watcher(app.handle(), atlas_config);
@@ -342,7 +353,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::agent_entitlement::native_agent_entitlement,
             commands::agent_entitlement::native_agent_refresh_models,
-            commands::agent_entitlement::native_agent_request_access,
             commands::auth::auth_snapshot,
             commands::auth::auth_sign_in,
             commands::auth::auth_cancel_sign_in,
@@ -455,8 +465,7 @@ pub fn run() {
             commands::git::git_diff_all,
             commands::git::git_workspace_summary,
             commands::mission_control::mission_control_usage,
-            commands::usage::agent_session_usage,
-            commands::usage::agent_project_usage,
+            commands::capture::capture_session_summary,
             commands::mission_control::mission_control_export_markdown,
             commands::mission_control::mission_control_write_file,
             commands::git::git_diff_file,
@@ -544,6 +553,10 @@ pub fn run() {
             commands::github::list_cloned_repos,
             commands::github::read_repo_readme,
             commands::github::delete_cloned_repo,
+            commands::github::list_remote_branches,
+            commands::github::switch_cloned_repo_branch,
+            commands::github::update_cloned_repo,
+            commands::github::fetch_cloned_repo_meta,
             // Legacy Claude-CLI subprocess commands (claude_run/stream/stop/check/version)
             // were replaced by ACP. Session-history readers below are still in use.
             commands::gitdiff::git_diff_structured,

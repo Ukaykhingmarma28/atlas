@@ -48,3 +48,18 @@ pub use info::recent_commits;
 pub use info::resolve_root_git_project_for_trust;
 pub use platform::create_symlink;
 pub use status::get_has_changes_in_repo;
+
+/// Atlas: Windows `CREATE_NO_WINDOW`. A child of the GUI host whose stdio is
+/// piped must not be given a console window of its own; without this every
+/// `git` the engine ran flashed one on the user's screen.
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Atlas: apply [`CREATE_NO_WINDOW`] to a `std` command. No-op off Windows.
+pub fn no_console_window(command: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}

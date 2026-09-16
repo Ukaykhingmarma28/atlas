@@ -21,6 +21,11 @@ pub struct FakeHttp {
     /// Held before every response, so a test can keep a fetch in flight long
     /// enough for a second caller to arrive while it is still running.
     delay: Mutex<Option<std::time::Duration>>,
+    /// Split every body into chunks of this size. A real server streams, and a
+    /// single-chunk fake cannot tell a cumulative byte counter apart from a
+    /// per-chunk one — which is the difference between a download cap that
+    /// holds and one a slow drip walks straight through.
+    chunk_size: Mutex<Option<usize>>,
 }
 
 impl FakeHttp {
@@ -33,6 +38,12 @@ impl FakeHttp {
             .lock()
             .unwrap()
             .insert(url.to_string(), (status, body.into()));
+        self.clone()
+    }
+
+    /// Deliver every body in `size`-byte chunks instead of one piece.
+    pub fn chunked(self: &Arc<Self>, size: usize) -> Arc<Self> {
+        *self.chunk_size.lock().unwrap() = Some(size.max(1));
         self.clone()
     }
 
@@ -67,13 +78,20 @@ impl HttpClient for FakeHttp {
             .cloned()
             .unwrap_or((404, b"not found".to_vec()));
         let delay = *self.delay.lock().unwrap();
+        let chunk_size = *self.chunk_size.lock().unwrap();
         Box::pin(async move {
             if let Some(delay) = delay {
                 tokio::time::sleep(delay).await;
             }
+            let chunks: Vec<Vec<u8>> = match chunk_size {
+                Some(size) if !body.is_empty() => {
+                    body.chunks(size).map(<[u8]>::to_vec).collect()
+                }
+                _ => vec![body],
+            };
             Ok(HttpResponse {
                 status,
-                body: futures::stream::once(async move { Ok(body) }).boxed(),
+                body: futures::stream::iter(chunks.into_iter().map(Ok)).boxed(),
             })
         })
     }

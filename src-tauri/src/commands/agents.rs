@@ -63,7 +63,6 @@ use agent_client_protocol::schema::v1 as acp;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as AsyncCommand;
 use uuid::Uuid;
 
 /// Bridge the ported stack's deltas to the Tauri host's outbound concerns.
@@ -711,7 +710,16 @@ pub fn install_manager(app: &AppHandle) {
         let host = host;
         tauri::async_runtime::spawn(async move {
             let installed = super::agent_host::load_installed(&data_dir);
-            let _ = registry.load_cached().await;
+            // Not fatal — an unreadable cache means "empty until the first
+            // refresh", which the refresh below fixes. Logged rather than
+            // discarded because the symptom it produces is "Registry
+            // unavailable" with no cause anywhere in a user's log bundle.
+            if let Err(error) = registry.load_cached().await {
+                tracing::warn!(
+                    error = %format!("{error:#}"),
+                    "could not load the cached agent registry",
+                );
+            }
             store.set_settings(installed).await;
             emit_catalog_changed(&app, "settings");
 
@@ -1713,7 +1721,8 @@ pub async fn agents_run_auth_method(
         "running auth method `{method_id}` via `{command}` (args: {args:?}, run {run_id})"
     );
 
-    let mut cmd = AsyncCommand::new(&command);
+    // Windowless on Windows: a headless auth run must not flash a console.
+    let mut cmd = atlas_process::async_command(&command);
     cmd.args(&args);
     cmd.envs(spec.env.iter().cloned());
     // Closed deliberately, and this run is NOT the answer for a login that asks
@@ -1960,9 +1969,24 @@ impl atlas_native_agent::engine::auth::AtlasTokenSource for AccountTokenSource {
             state.core().mint_access_token().await.map_err(|err| {
                 // The engine's trait speaks `io::Error`, so the reason has to
                 // survive as text or the user is told only that auth failed.
-                // Signed-out is the common case and reads very differently from
-                // a rejected credential, so it keeps its own words.
-                std::io::Error::other(format!("Atlas account token unavailable: {err:?}"))
+                // Each verdict gets its own words: "not signed in" and "the
+                // network is down" call for different actions, and the
+                // Indeterminate one used to surface as a Debug dump
+                // (`Indeterminate { retry_after: None, reason: "error sending
+                // request" }`) — which is what a user with no DNS at launch
+                // read on 2026-09-14, behind a toast about the engine runtime.
+                use crate::auth::AuthFailure;
+                let text = match err {
+                    AuthFailure::NoCredential => "not signed in to Atlas".to_string(),
+                    AuthFailure::Rejected => {
+                        "the Atlas sign-in was rejected — sign in again".to_string()
+                    }
+                    AuthFailure::Denied => "the Atlas account may not use Atlas Agent".to_string(),
+                    AuthFailure::Indeterminate { reason, .. } => {
+                        format!("Atlas can't be reached ({reason})")
+                    }
+                };
+                std::io::Error::other(text)
             })
         })
     }

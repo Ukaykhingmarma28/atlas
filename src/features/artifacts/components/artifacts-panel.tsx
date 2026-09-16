@@ -2,17 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import {
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronUp,
-  Filter,
-  ListTree,
-  RefreshCw,
-} from "lucide-react";
+import { Check, Filter, PanelLeft, RefreshCw, Search, X } from "lucide-react";
 
-import { AtlasIcon } from "@/components/atlas-icon";
+import { copyText } from "@/lib/clipboard";
+
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
 import { BranchLine, GitDot, NumStatPill } from "@/features/workspaces/components/git-summary";
@@ -26,19 +20,22 @@ import {
   facetMatches,
   facets,
   sessionState,
+  sessionTitle,
   NO_FACETS,
   type Facet,
   type FacetKey,
   type FacetSelection,
+  type GroupPeriod,
 } from "../lib/board";
 import { clearDetailCache, readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
-import { CalendarView } from "./calendar-view";
-import { Divider, Segment, SegmentButton, SEGMENT_ACTIVE, SEGMENT_TRIGGER } from "./segment";
+import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock";
 import { CheckpointsPicker } from "./checkpoints-picker";
+import { ExportButton } from "./export-button";
 import { SessionChatPanel } from "./session-chat-panel";
 import { SessionDetail } from "./session-detail";
-import { SessionList } from "./session-list";
-import { SessionStats, STATS_HEIGHT } from "./session-stats";
+import { TimelineInbox } from "./timeline-inbox";
+import { TimelineResults } from "./timeline-results";
+import { TimelineSidebar } from "./timeline-sidebar";
 
 /**
  * Is this re-read structurally the same Session we already have?
@@ -76,6 +73,60 @@ function sameBoard(a: BoardSession[], b: BoardSession[]): boolean {
 /** The chat half of the split. Wide enough for a code block in an answer. */
 const CHAT_WIDTH = 420;
 
+/**
+ * The card's inset from the tab's edges, in px.
+ *
+ * Measured against the workspace rail's card rather than chosen: side by side
+ * with the switcher, 6px read as a visibly wider gutter on the Timeline. The
+ * divider and the header row are both positioned against this constant, so the
+ * three cannot drift apart.
+ */
+const CARD_INSET = 4;
+
+/** The nav's grain, in the order a day rolls up. */
+const PERIODS: { value: GroupPeriod; label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+];
+
+/**
+ * The grain control: one round-ended track, the active grain a filled pill
+ * inside it.
+ *
+ * Not the icon dock's shape, deliberately. The dock's members are *actions* and
+ * any of them can fire; these three are *states* and exactly one is true, which
+ * is what the sliding pill says at a glance.
+ */
+function PeriodPill({
+  period,
+  onChange,
+}: {
+  period: GroupPeriod;
+  onChange: (next: GroupPeriod) => void;
+}) {
+  return (
+    <div className="flex h-7 shrink-0 items-center rounded-full border border-[var(--border-default)] p-0.5">
+      {PERIODS.map((p) => (
+        <button
+          key={p.value}
+          type="button"
+          aria-pressed={period === p.value}
+          onClick={() => onChange(p.value)}
+          className={cn(
+            "flex h-full cursor-pointer items-center rounded-full px-2 text-[11px] leading-none outline-none transition-colors",
+            period === p.value
+              ? "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+          )}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Mirrors `BOARD_LIMIT` in `capture.rs` — how many rows one board read returns. */
 const BOARD_LIMIT = 500;
 
@@ -84,7 +135,11 @@ const BOARD_LIMIT = 500;
  * and the timeline of any one of them.
  *
  * List and detail live in one tab rather than two, because they are one task:
- * find the Session, read the Session.
+ * find the Session, read the Session. They sit side by side — the session nav
+ * on the left, the open Session on the right — so opening one never loses your
+ * place in the list. The nav collapses while a Session is open (the header's
+ * maximise), and with nothing open the right pane is an inbox: the stats strip
+ * over a prompt to pick a row.
  *
  * Correctness decisions that are easy to lose in a refactor:
  *
@@ -139,12 +194,17 @@ export function ArtifactsPanel() {
    *  project filter, a search is a thing you are doing right now, and finding it
    *  still applied after a tab switch would read as an empty board. */
   const [query, setQuery] = useState("");
-  /** Which axis the board is drawn on. */
-  const [view, setView] = useState<"timeline" | "calendar">("timeline");
-  /** The stats strip is 118px over a board you have already narrowed, so it is
-   *  collapsible — and it opens by default, because a summary nobody knows is
-   *  there is a summary nobody reads. */
-  const [statsOpen, setStatsOpen] = useState(true);
+  /** How coarsely the nav groups rows — the header's Day / Week / Month. */
+  const [period, setPeriod] = useState<GroupPeriod>("day");
+  /** The nav's width and whether it is shown beside an open Session. In the
+   *  layout store, persisted: a sidebar you dragged narrower or tucked away
+   *  should stay that way across launches, like every other pane. */
+  const showSidebar = useLayoutStore((s) => s.timelinePanel.showSidebar);
+  const sidebarWidth = useLayoutStore((s) => s.timelinePanel.sidebarWidth);
+  const { toggleTimelineSidebar, setTimelineSidebarWidth } = useLayoutStore.use.actions();
+  /** With nothing open the nav IS the view, so the collapse flag only applies
+   *  once a Session is on the right. */
+  const sidebarShown = !open || showSidebar;
   /** Agent / model / branch narrowing, on top of the project filter. Project
    *  stays in the store because it also narrows the *query* sent to Rust; these
    *  three only narrow what is already on screen. */
@@ -154,6 +214,32 @@ export function ArtifactsPanel() {
    *  Local, and reset when the Session changes: a chat about the Session you
    *  just left is not a chat about the one you just opened. */
   const [chatOpen, setChatOpen] = useState(false);
+
+  /** True while the divider is being dragged — keeps it lit past the pointer. */
+  const [resizing, setResizing] = useState(false);
+
+  // Drag-resize: mousedown, then listen on the window until release.
+  const startResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = sidebarWidth;
+      setResizing(true);
+      const onMove = (ev: MouseEvent) => setTimelineSidebarWidth(startW + ev.clientX - startX);
+      const onUp = () => {
+        setResizing(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [sidebarWidth, setTimelineSidebarWidth],
+  );
 
   /** Monotonic read sequence — only the newest read may write list state. */
   const listSeq = useRef(0);
@@ -327,289 +413,403 @@ export function ArtifactsPanel() {
   // moment you type, and the menu stops being a way to find anything.
   const facetGroups = useMemo(() => facets(sessions), [sessions]);
 
-  /** Search + facets. One list, shared by the board, the calendar and the stats
-   *  strip — a summary that ignores the filter above it is unreadable. */
+  /** Search + facets. One list, shared by the nav and the stats strip — a
+   *  summary that ignores the filter above it is unreadable. */
+  /**
+   * The rows the NAV draws: facets only, never the search.
+   *
+   * Scope and search are different kinds of narrowing. A facet (or the project
+   * filter, which narrows the read itself) is a standing decision about which
+   * sessions you are working with, so the nav honours it. A query is a question
+   * you are asking right now, and the answer to it is the table on the right —
+   * if the nav emptied out to match, the one list that could show you where a
+   * result SITS in your history would be gone exactly when you needed it.
+   */
+  const scoped = useMemo(
+    () => sessions.filter((s) => facetMatches(s, selection)),
+    [sessions, selection],
+  );
+
+  /** The rows the RESULTS table draws: scope, then the search on top. */
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return sessions.filter((s) => {
-      if (!facetMatches(s, selection)) return false;
-      if (!needle) return true;
+    if (!needle) return scoped;
+    return scoped.filter((s) =>
       // Title, project, agent, model and branch — the five things someone
       // would type. Message bodies are deliberately not searched: full-text
       // over every Session is a different feature with an index behind it, and
       // pretending to offer it here returns nothing for the queries it invites.
-      return [s.title, s.projectName, s.agent, s.model, ...s.branches]
+      [s.title, s.projectName, s.agent, s.model, ...s.branches]
         .filter(Boolean)
-        .some((field) => field!.toLowerCase().includes(needle));
-    });
-  }, [sessions, query, selection]);
+        .some((field) => field!.toLowerCase().includes(needle)),
+    );
+  }, [scoped, query]);
 
   const narrowed = query.trim().length > 0 || activeFacetCount(selection) > 0;
 
+  const filterMenu = (
+    <BoardFilter
+      projects={filterable}
+      projectFilter={projectFilter}
+      onProjectFilter={setProjectFilter}
+      facets={facetGroups}
+      selection={selection}
+      onSelect={(key, value) =>
+        setSelection((prev) => ({ ...prev, [key]: prev[key] === value ? null : value }))
+      }
+      onClear={() => {
+        setSelection(NO_FACETS);
+        setProjectFilter(null);
+      }}
+    />
+  );
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-surface)]">
-      {/* 32px and `px-3`, matching the Console dashboard header — this used to
-          be 38px, which made the Timeline the one tab whose header did not line
-          up with the tab strip above it. */}
-      <header className="flex h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
-        {open ? (
-          <button
-            type="button"
-            onClick={() => openSession(null)}
-            className="-ml-1.5 flex h-[22px] cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
-          >
-            <ChevronLeft size={13} className="text-[var(--text-tertiary)]" />
-            Timeline
-          </button>
-        ) : null}
-
-        {/* The breadcrumb: which project, which session. A Session id is
-            meaningless prose but a perfectly good *address*, and the board spans
-            every project in the Organisation — so without the project name the
-            open Session does not say where it came from. */}
-        {open && (
-          <>
-            <span aria-hidden className="h-3 w-px shrink-0 bg-[var(--border-default)]" />
-            <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-tertiary)]">
-              {open.projectPath.split("/").pop()}
-              <span className="text-[var(--text-ghost)]"> / </span>
-              sessions
-              <span className="text-[var(--text-ghost)]"> / </span>
-              <span className="text-[var(--text-secondary)]">{open.sessionId.slice(-7)}</span>
-            </span>
-          </>
-        )}
-
-        {!open && (
-          // The header IS the search field. The Atlas mark sits where a search
-          // glyph would, and the input carries no border, background or padding
-          // of its own — so the bar reads as one surface rather than a control
-          // parked inside a title bar. The title is gone with it: a placeholder
-          // that says "Search sessions" already names the tab, and the tab strip
-          // above says it again.
-          <>
-            <AtlasIcon size={14} className="shrink-0 rounded-[3px]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search sessions, projects, models…"
-              spellCheck={false}
-              aria-label="Search sessions"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-            />
-          </>
-        )}
-
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {!open && query.trim().length > 0 && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="flex h-5 cursor-pointer items-center rounded-[3px] border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            >
-              Clear
-            </button>
-          )}
-
-          {!open && (
-            <>
-              {/* View + stats in one segment: all three change what the board
-               *shows*, and grouping them says that without a label. */}
-              <Segment>
-                <SegmentButton
-                  active={view === "timeline"}
-                  label="Timeline"
-                  onClick={() => setView("timeline")}
-                >
-                  <ListTree size={13} />
-                </SegmentButton>
-                <SegmentButton
-                  active={view === "calendar"}
-                  label="Calendar"
-                  onClick={() => setView("calendar")}
-                  divided
-                >
-                  <CalendarDays size={13} />
-                </SegmentButton>
-                <SegmentButton
-                  active={statsOpen}
-                  label={statsOpen ? "Hide stats" : "Show stats"}
-                  onClick={() => setStatsOpen((v) => !v)}
-                  divided
-                >
-                  <ChevronUp
-                    size={13}
-                    className={cn("transition-transform", !statsOpen && "rotate-180")}
-                  />
-                </SegmentButton>
-              </Segment>
-
-              <Divider />
-            </>
-          )}
-
-          {/* Scope: which rows the board is drawn from. Both open a menu over
-              the same set of sessions, so they share a segment. */}
-          <Segment>
-            {/* Jump straight to a commit, without having to remember which
-             *  Session produced it first. Reads the same project set as the
-             *  board, so a project filter narrows both. */}
-            <CheckpointsPicker
-              projects={projectFilter ? [projectFilter] : projectPaths}
-              onOpen={(row) =>
-                openSession({
-                  sessionId: row.sessionId,
-                  projectPath: row.projectPath,
-                  commitSha: row.commitSha,
-                })
-              }
-            />
-            {!open && (
-              <BoardFilter
-                projects={filterable}
-                projectFilter={projectFilter}
-                onProjectFilter={setProjectFilter}
-                facets={facetGroups}
-                selection={selection}
-                onSelect={(key, value) =>
-                  setSelection((prev) => ({ ...prev, [key]: prev[key] === value ? null : value }))
-                }
-                onClear={() => {
-                  setSelection(NO_FACETS);
-                  setProjectFilter(null);
-                }}
-              />
-            )}
-          </Segment>
-
-          <Divider />
-
-          {/* Alone after the last divider: refresh acts on the data rather than
-              on what is shown, which is a different kind of thing from
-              everything to its left. */}
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            aria-label="Reload timeline"
-            title="Reload timeline"
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
-          </button>
-        </div>
-      </header>
-
+    // The tab is chrome; the two scrollers are content sitting in it. That is
+    // the whole reason for the colour step and the rounded tops — a header that
+    // shares its background with the list under it needs a rule to separate
+    // them, and a curve says it better than a line.
+    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-elevated-2)]">
       {error && (
         <p className="shrink-0 bg-[var(--status-error-muted)] px-4 py-1.5 text-[11px] text-[var(--status-error)]">
           {error}
         </p>
       )}
 
-      <div className="min-h-0 flex-1">
-        {open ? (
-          detail === undefined ? (
-            <Centered>Reading the session…</Centered>
-          ) : detail === null ? (
-            <NotFound onBack={() => openSession(null)} />
-          ) : (
-            // Two panes, animated. The chat's *width* is what transitions —
-            // sliding an overlay in would leave the detail at full width behind
-            // it, and the point of the split is that the record stays readable
-            // beside the answer about it.
-            <div className="flex h-full min-h-0">
-              <div className="min-w-0 flex-1">
-                <SessionDetail
-                  detail={detail}
-                  projectPath={open.projectPath}
-                  focusCommitSha={open.commitSha}
-                  chatOpen={chatOpen}
-                  onToggleChat={() => setChatOpen((v) => !v)}
-                />
-              </div>
-              <aside
-                className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border-default)]"
-                style={{ width: chatOpen ? CHAT_WIDTH : 0 }}
-                aria-hidden={!chatOpen}
+      {/* Chrome, then one card.
+       *
+       * The two headers share a row above it and the two panes share the card
+       * below it — the same recipe as the workspace rail and team chat: a
+       * near-black surface inset on the sides and bottom, its edge carried by a
+       * hairline ring with a soft shadow behind it. One card rather than two
+       * keeps the earlier rule intact for free: only the OUTER corners are
+       * round, so the nav and the pane still meet at a straight seam. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* The divider runs the FULL height of the tab, header included, and it
+            is the resize handle. Inside the card it stopped at the header and
+            read as a seam between two boxes rather than as the edge between two
+            panes. Absolute, so the header row and the card need no knowledge of
+            it: its x is the card's inset plus the nav's width, both of which
+            are known here.
+            
+            30% of the way from the default border to the strong one — the
+            hairline at `--border-default` disappeared against the card's own
+            ring at this length.
+
+            `z-40` because it has to beat the pane's own overlays, not merely
+            the pane. The card below is `relative` with `z-index: auto`, so it
+            opens no stacking context and its children compete with this
+            element directly — at `z-20` the detail's bottom fade (also `z-20`,
+            and later in the DOM) painted its opaque end straight over the
+            divider's last ~128px, which read as the seam dissolving into the
+            nav. The fade belongs to one pane; the divider is the card's edge
+            and outranks everything inside it. */}
+        {sidebarShown && (
+          <div
+            onMouseDown={startResize}
+            role="separator"
+            aria-orientation="vertical"
+            className={cn(
+              "absolute top-0 z-40 w-px cursor-col-resize transition-colors",
+              "after:absolute after:inset-y-0 after:-left-[3px] after:-right-[3px] after:content-['']",
+              resizing && "bg-[var(--accent-primary)]",
+            )}
+            style={{
+              bottom: CARD_INSET,
+              left: CARD_INSET + sidebarWidth,
+              background: resizing
+                ? undefined
+                : "color-mix(in srgb, var(--border-strong) 30%, var(--border-default))",
+            }}
+          />
+        )}
+
+        <div className="flex h-[32px] shrink-0 items-center" style={{ paddingInline: CARD_INSET }}>
+          {sidebarShown && (
+            <>
+              {/* Aligned to the card's columns below: same width, and a 1px
+                  spacer standing in for the divider. */}
+              <div
+                className="flex h-full shrink-0 items-center gap-2 px-1.5"
+                style={{ width: sidebarWidth }}
               >
-                {/* Fixed inner width so the content does not reflow through the
-                 *  animation — a chat that re-wraps every frame while opening
-                 *  reads as a glitch, not a transition. */}
-                <div style={{ width: CHAT_WIDTH }} className="h-full">
-                  {chatOpen && (
-                    <SessionChatPanel
+                <span className="flex-1 truncate text-[12px] font-semibold text-[var(--text-primary)]">
+                  Timeline
+                </span>
+                {/* Grain. It changes what the rows under it are grouped INTO,
+                    which is the one control that belongs to the list itself;
+                    scope and the rest live in the pane header's dock. */}
+                <PeriodPill period={period} onChange={setPeriod} />
+              </div>
+              <div aria-hidden className="w-px shrink-0" />
+            </>
+          )}
+
+          <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5">
+            {open ? (
+              <>
+                {/* Maximise: tuck the nav away so the Session has the whole
+                    tab. The same control brings it back — one button, one
+                    place, whichever state you are in. */}
+                <DockButton
+                  label={showSidebar ? "Maximise session" : "Show timeline"}
+                  active={!showSidebar}
+                  onClick={toggleTimelineSidebar}
+                >
+                  <PanelLeft size={13} />
+                </DockButton>
+                <Breadcrumb
+                  sessionId={open.sessionId}
+                  title={detail?.summary.title ?? null}
+                  projectPath={open.projectPath}
+                  onBack={() => openSession(null)}
+                />
+              </>
+            ) : (
+              // With no Session open this half of the bar is empty, and search
+              // is the thing you came to do — so it takes the space rather than
+              // hiding behind the nav's floating control.
+              <BoardSearch query={query} onQuery={setQuery} />
+            )}
+
+            <div className="ml-auto flex shrink-0 items-center">
+              {/* One dock: act on the open Session, jump to a commit, scope
+                  the board, re-read it. */}
+              <HeaderDock>
+                {open && detail && <ExportButton detail={detail} />}
+                <CheckpointsPicker
+                  projects={projectFilter ? [projectFilter] : projectPaths}
+                  onOpen={(row) =>
+                    openSession({
+                      sessionId: row.sessionId,
+                      projectPath: row.projectPath,
+                      commitSha: row.commitSha,
+                    })
+                  }
+                />
+                {filterMenu}
+                <DockButton label="Reload timeline" onClick={() => void refresh()}>
+                  <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
+                </DockButton>
+              </HeaderDock>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="relative flex min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--bg-base)]"
+          style={{
+            marginInline: CARD_INSET,
+            marginBottom: CARD_INSET,
+            // On a near-black panel a shadow has almost nothing to darken, so
+            // the ring carries the edge and the shadow only lifts the card.
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
+          }}
+        >
+          {/* The nav. Mounted only when shown, and its width is set directly —
+              no transition. An animated width made the drag handle feel like it
+              was towing the panel: every mousemove started a 340ms ease the
+              next mousemove restarted, so the edge lagged the cursor the whole
+              way. Collapsing loses its slide with it, which is the trade: a
+              resize that tracks the pointer matters more than an entrance. */}
+          {sidebarShown && (
+            <aside
+              className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
+              style={{ width: sidebarWidth }}
+            >
+              {/* The nav owns its own scroller — it is virtualized, and the
+                  virtualizer needs the scrolling element to be the one it
+                  measures. */}
+              <TimelineSidebar
+                sessions={scoped}
+                loading={!loaded}
+                filtered={activeFacetCount(selection) > 0 || projectFilter !== null}
+                openId={open?.sessionId ?? null}
+                period={period}
+                onOpen={onOpenRow}
+              />
+              {/* Say what is being left out. A nav that silently stops at the
+               *  newest few hundred reads as "this is everything". */}
+              {capped && (
+                <p className="shrink-0 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[11px] leading-snug text-[var(--text-tertiary)]">
+                  Showing the newest {BOARD_LIMIT} sessions — filter by project for a full history.
+                </p>
+              )}
+            </aside>
+          )}
+
+          <main className="min-w-0 flex-1 bg-[var(--bg-surface)]">
+            {open ? (
+              detail === undefined ? (
+                <Centered>Reading the session…</Centered>
+              ) : detail === null ? (
+                <NotFound onBack={() => openSession(null)} />
+              ) : (
+                // Two panes, animated. The chat's *width* is what transitions —
+                // sliding an overlay in would leave the detail at full width
+                // behind it, and the point of the split is that the record
+                // stays readable beside the answer about it.
+                <div className="flex h-full min-h-0">
+                  <div className="min-w-0 flex-1">
+                    <SessionDetail
                       detail={detail}
                       projectPath={open.projectPath}
-                      onClose={() => setChatOpen(false)}
+                      focusCommitSha={open.commitSha}
+                      chatOpen={chatOpen}
+                      onToggleChat={() => setChatOpen((v) => !v)}
                     />
-                  )}
+                  </div>
+                  <aside
+                    className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border-default)]"
+                    style={{ width: chatOpen ? CHAT_WIDTH : 0 }}
+                    aria-hidden={!chatOpen}
+                  >
+                    {/* Fixed inner width so the content does not reflow through
+                     *  the animation — a chat that re-wraps every frame while
+                     *  opening reads as a glitch, not a transition. */}
+                    <div style={{ width: CHAT_WIDTH }} className="h-full">
+                      {chatOpen && (
+                        <SessionChatPanel
+                          detail={detail}
+                          projectPath={open.projectPath}
+                          onClose={() => setChatOpen(false)}
+                        />
+                      )}
+                    </div>
+                  </aside>
                 </div>
-              </aside>
-            </div>
-          )
-        ) : loaded && sessions.length === 0 ? (
-          <NotEnabled />
-        ) : (
-          <div className="flex h-full min-h-0 flex-col">
-            {/* Animated rather than mounted/unmounted: an unmount has no exit,
-                so collapsing would snap shut while expanding eased open. The
-                height carries the house decelerating curve and the body carries
-                the overshoot — see `.atlas-rail` for why they differ. */}
-            <div
-              className="atlas-rail shrink-0 overflow-hidden"
-              style={{ height: statsOpen && loaded ? STATS_HEIGHT : 0 }}
-              aria-hidden={!statsOpen}
-            >
-              <div
-                className={cn(
-                  "atlas-rail-body",
-                  statsOpen ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0",
-                )}
-              >
-                {loaded && <SessionStats sessions={visible} />}
-              </div>
-            </div>
-            {/* `hide-scrollbar`: the board is a continuous rail from the first
-                session to the last, and a scrollbar gutter cutting down beside
-                it breaks that line — the same reason every other panel in the
-                app hides its bars. Scrolling itself is unaffected. */}
-            {/* The calendar branch is `overflow-hidden`, NOT `flex`. As a flex
-                container this box made the calendar a flex ITEM, which sizes to
-                its content on the main axis — so the month grid stopped
-                wherever its widest cell ended and left the rest of the panel
-                black. A block parent lets the grid fill the width, and the
-                calendar scrolls its own body. */}
-            <div
-              className={cn(
-                "min-h-0 flex-1",
-                view === "calendar" ? "overflow-hidden" : "hide-scrollbar overflow-y-auto",
-              )}
-            >
-              {view === "calendar" ? (
-                <CalendarView
-                  sessions={visible}
-                  onOpen={(sessionId, projectPath) => openSession({ sessionId, projectPath })}
-                />
-              ) : (
-                <SessionList
-                  sessions={visible}
-                  loading={!loaded}
-                  filtered={narrowed}
-                  onOpen={onOpenRow}
-                />
-              )}
-            </div>
-            {/* Say what is being left out. A board that silently stops at the
-             *  newest few hundred reads as "this is everything". */}
-            {capped && (
-              <p className="shrink-0 border-t border-[var(--border-subtle)] px-4 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-                Showing the newest {BOARD_LIMIT} sessions — filter by project to see a
-                project&apos;s full history.
-              </p>
+              )
+            ) : loaded && sessions.length === 0 ? (
+              <NotEnabled />
+            ) : narrowed ? (
+              // Narrowed, so the question changed: not "which session next" but
+              // "which of these", and that is a table's job rather than a list
+              // of titles.
+              <TimelineResults
+                sessions={visible}
+                query={query}
+                selection={selection}
+                projectFilter={projectFilter}
+                projectName={filterable.find((p) => p.path === projectFilter)?.name ?? null}
+                onClearQuery={() => setQuery("")}
+                onClearFacet={(key) => setSelection((prev) => ({ ...prev, [key]: null }))}
+                onClearProject={() => setProjectFilter(null)}
+                onOpen={onOpenRow}
+              />
+            ) : (
+              <TimelineInbox sessions={visible} onOpen={onOpenRow} />
             )}
-          </div>
-        )}
+          </main>
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The board search, in the pane header's left half.
+ *
+ * A rounded field rather than the bare input the nav header carried: with a
+ * Session open this same space holds the breadcrumb, and a control that only
+ * sometimes exists needs an edge of its own or the bar looks broken when it
+ * appears.
+ */
+function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
+  return (
+    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-strong)]">
+      <Search size={13} strokeWidth={1.6} className="block shrink-0 text-[var(--text-tertiary)]" />
+      <input
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onQuery("");
+        }}
+        placeholder="Search sessions…"
+        spellCheck={false}
+        aria-label="Search sessions"
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11.5px] leading-none text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+      />
+      {query && (
+        <button
+          type="button"
+          onClick={() => onQuery("")}
+          aria-label="Clear search"
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which Session is open — `Sessions / 611dd09`.
+ *
+ * Two crumbs, both live. **Sessions** is the way back to the empty pane, which
+ * is the only "up" this tab has. The **id** copies itself: a Session id is
+ * meaningless prose but a perfectly good address, and the reason to look at one
+ * is almost always to paste it somewhere else.
+ *
+ * The project is not a crumb — the board spans every project in the
+ * Organisation, so it is on the tooltip rather than spending a third of a 32px
+ * bar saying a folder name you already know.
+ */
+/**
+ * `Sessions / <title>` — the way Linear heads an issue with its identifier and
+ * name. The title is what a reader recognises; the id is what a bug report
+ * needs, so it stays one click away (copy) and in the crumb's tooltip. The
+ * 7-char hash only shows while the detail is still loading and there is no
+ * title to put there yet.
+ */
+function Breadcrumb({
+  sessionId,
+  title,
+  projectPath,
+  onBack,
+}: {
+  sessionId: string;
+  title: string | null;
+  projectPath: string;
+  onBack: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const label = sessionTitle(title) ?? sessionId.slice(-7);
+
+  // Held in a ref so an unmount mid-flash cannot fire `setCopied` on a dead
+  // component, and so a second click restarts the window rather than stacking.
+  const flash = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => (flash.current ? clearTimeout(flash.current) : undefined), []);
+
+  return (
+    <span
+      title={projectPath}
+      className="flex min-w-0 items-center gap-1 text-[12px] text-[var(--text-tertiary)]"
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        Sessions
+      </button>
+      <span aria-hidden className="text-[var(--text-ghost)]">
+        /
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          void copyText(sessionId);
+          setCopied(true);
+          if (flash.current) clearTimeout(flash.current);
+          flash.current = setTimeout(() => setCopied(false), 1200);
+        }}
+        title={`Copy ${sessionId}`}
+        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        {copied ? "copied" : label}
+      </button>
+    </span>
   );
 }
 
@@ -675,11 +875,7 @@ function BoardFilter({
           type="button"
           aria-label={active ? `${active} filters active` : "Filter sessions"}
           title={active ? `${active} filter${active === 1 ? "" : "s"} active` : "Filter sessions"}
-          className={cn(
-            SEGMENT_TRIGGER,
-            "relative border-l border-[var(--border-default)]",
-            active && SEGMENT_ACTIVE,
-          )}
+          className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
         >
           <Filter size={13} />
           {/* A filter that is ON has to say so from the collapsed state — the

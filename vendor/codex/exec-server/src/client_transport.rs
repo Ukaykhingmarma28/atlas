@@ -448,6 +448,9 @@ fn stdio_command_process(stdio_command: &StdioExecServerCommand) -> Command {
     }
     #[cfg(unix)]
     command.process_group(0);
+    // Atlas: CREATE_NO_WINDOW — the exec server is a piped child of the GUI host.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     command
 }
 

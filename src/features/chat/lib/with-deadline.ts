@@ -49,12 +49,26 @@ export function describeMs(ms: number): string {
  * `session/new` in 3 minutes" — so the report says WHICH step hung. The timer
  * is cleared as soon as the promise settles either way, so a fast hop leaves
  * nothing behind.
+ *
+ * `stillWorking`, when given, is asked each time the deadline passes: while it
+ * answers true the hop is visibly making progress (an install reporting
+ * status), so the deadline re-arms for another `ms` instead of rejecting.
  */
-export function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+export function withDeadline<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  stillWorking?: () => boolean,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new DeadlineError(`${label} in ${describeMs(ms)}`));
-    }, ms);
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      timer = setTimeout(() => {
+        if (stillWorking?.()) arm();
+        else reject(new DeadlineError(`${label} in ${describeMs(ms)}`));
+      }, ms);
+    };
+    arm();
     promise.then(
       (value) => {
         clearTimeout(timer);

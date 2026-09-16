@@ -198,7 +198,21 @@ pub struct Usage {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
+    /// Reasoning / thinking output, for agents that report it apart from
+    /// `output_tokens`. Informational; nothing prices it separately yet.
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     /// Estimated cumulative cost in USD (native agent; 0 when unknown).
     #[serde(default)]
     pub cost: f64,
+}
+
+/// One rolling quota window, as the native engine's account report gives it.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RateLimitWindow {
+    /// 0–100.
+    pub used_percent: u8,
+    pub window_minutes: Option<i64>,
+    /// Epoch seconds.
+    pub resets_at: Option<i64>,
 }

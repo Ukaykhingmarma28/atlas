@@ -8,6 +8,7 @@ import { appendNextStepsDirective } from "../lib/next-steps";
 import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
 import { isDeadlineError, withDeadline } from "../lib/with-deadline";
+import { drainEdge } from "../lib/drain-gate";
 import { cycleChatAgent } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
@@ -18,12 +19,14 @@ import {
   agentTypeFromPluginId,
   pluginIdForAgent,
   CLAUDE_PERMISSION_MODES,
+  NATIVE_AGENT_ID,
 } from "@/types/agent";
 import {
   agentMeta,
   catalogEntry as agentCatalogEntry,
   installedExternals,
 } from "@/features/agents/lib/agent-meta";
+import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
 import { bindFailureAction, errInfo, promptSignIn } from "../lib/agent-signin";
 import { toast } from "sonner";
 
@@ -383,6 +386,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             ensureAgent(pluginId),
             BIND_DEADLINE_MS,
             `${label} has not finished connecting`,
+            // A first run downloads Node and `npm install`s the adapter, which
+            // can outlast the deadline on a slow disk or connection (Defender
+            // scanning node_modules on Windows). While the manager still reports
+            // install progress the connect is alive: killing it restarts the
+            // install from scratch, forever. The backend's own connect ceiling
+            // still ends a real hang.
+            () => !!useChatStore.getState().agentStartingStatus[pluginId],
           ),
           label,
           tabId,
@@ -571,6 +581,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           useChatStore.getState().actions.setAcpModesPending(tabId, false);
           const at = useChatStore.getState().sessions[tabId]?.agentType;
           const key = `${tabId}:${pluginIdForAgent(at)}`;
+          // The attempt is over, so is its "Installing …" text. A connect that
+          // was killed (deadline, Stop) is aborted mid-install and never sends
+          // the backend's own clear, which left the label stuck.
+          useChatStore.getState().actions.setAgentStartingStatus(pluginIdForAgent(at), null);
           // The log panel gets every failure, deduped or not: the dedupe below
           // is about not re-toasting, and a failure that reaches neither the
           // toast nor the log is one nobody can diagnose.
@@ -957,9 +971,20 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     const curResuming = !!session?.resumePending;
     const prevResuming = prevResumingRef.current;
     prevResumingRef.current = curResuming;
-    const turnFinished = prev === "running" && cur !== "running";
-    const justBound = !prevAcp && !!curAcp;
-    const justResumed = prevResuming && !curResuming && !!curAcp;
+    // The gate lives in `drain-gate.ts` with its own test: a queue drains
+    // only into a BOUND session. The bind-failure branch above parks the held
+    // message back in the queue and drops the status to idle, and reading
+    // that edge as "turn finished" re-dispatched the message into the unbound
+    // tab — which re-held it, re-kicked the bind, and looped (491 connect
+    // attempts in a minute, a bubble and a toast per cycle) until Stop.
+    const { justBound, justResumed, drainQueue } = drainEdge({
+      prevStatus: prev,
+      curStatus: cur,
+      prevAcp,
+      curAcp,
+      prevResuming,
+      curResuming,
+    });
     if (justBound || justResumed) {
       // The first message held while the session was starting goes out
       // ahead of the queue — it was recorded in the transcript at send time,
@@ -976,7 +1001,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         return;
       }
     }
-    if (turnFinished || justBound || justResumed) {
+    if (drainQueue) {
       const next = useChatStore.getState().actions.shiftQueue(tabId);
       if (next && handleSendRef.current) {
         // Defer one microtask so the React commit completes first.
@@ -1439,12 +1464,28 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
 });
 
 /** Shown when the session's agent process died: one explicit affordance to
- *  respawn + resume. Sending a message does the same thing implicitly. */
+ *  respawn + resume. Sending a message does the same thing implicitly.
+ *
+ *  An agent that was UNINSTALLED is the one case a restart cannot fix. That
+ *  state is not this banner's: `RemovedAgentBar` (tucked into the composer,
+ *  rendered from `message-input.tsx`) takes it, and offers a switch. */
 function DisconnectedBanner({ tabId }: { tabId: string }) {
   const disconnected = useChatStore((s) => !!s.sessions[tabId]?.disconnected);
   const bindError = useChatStore((s) => s.sessions[tabId]?.bindError);
+  const agentType = useChatStore((s) => s.sessions[tabId]?.agentType);
+  // Re-render on install/uninstall: reinstalling the agent turns this back
+  // into an ordinary restart.
+  useAgentRegistryStore((s) => s.signature);
   const [restarting, setRestarting] = useState(false);
   if (!disconnected) return null;
+  // By plugin id, not `meta.external`: a `claude*` registry agent wears
+  // first-party branding (`external: false`) while still being uninstallable.
+  const pluginId = pluginIdForAgent(agentType);
+  const removed =
+    pluginId !== pluginIdForAgent(NATIVE_AGENT_ID) &&
+    useAgentRegistryStore.getState().catalog.length > 0 &&
+    !agentCatalogEntry(pluginId)?.installed;
+  if (removed) return null;
   return (
     <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[12px]">
       <span className="select-text text-[var(--text-secondary)]">

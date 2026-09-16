@@ -14,6 +14,7 @@ use winapi::um::jobapi2::SetInformationJobObject;
 use winapi::um::jobapi2::TerminateJobObject;
 use winapi::um::processthreadsapi::OpenProcess;
 use winapi::um::processthreadsapi::TerminateProcess;
+use winapi::um::winbase::CREATE_NO_WINDOW;
 use winapi::um::winbase::CREATE_SUSPENDED;
 use winapi::um::winnt::HANDLE;
 use winapi::um::winnt::JOB_OBJECT_LIMIT_BREAKAWAY_OK;
@@ -122,8 +123,16 @@ impl JobObject {
     }
 
     /// Prevents a child from running before it can be assigned to this job.
+    ///
+    /// Atlas: also `CREATE_NO_WINDOW`. Every caller of this path (git, hook
+    /// commands, MCP servers) pipes the child's stdio; inside a GUI host such
+    /// a child would otherwise be given a console window of its own, and the
+    /// plugin sync at startup put two on the user's screen. The PTY spawn
+    /// does not come through here — a pseudoconsole must not carry this flag.
     pub fn prepare_suspended_spawn(&self, command: &mut Command) {
-        command.creation_flags(CREATE_SUSPENDED).kill_on_drop(true);
+        command
+            .creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW)
+            .kill_on_drop(true);
     }
 
     /// Assigns and resumes a suspended child, returning whether assignment succeeded.

@@ -693,6 +693,15 @@ function UpdatesSettings() {
         />
       </SettingRow>
       <SettingRow
+        label="Sync the Atlas Agent's plugin catalogue"
+        description="Let the agent engine fetch OpenAI's curated plugin catalogue (github.com/openai/plugins) when it starts. Off by default — it is a network request at every launch. Applies the next time the agent starts."
+      >
+        <Toggle
+          checked={settings.curatedPluginSync}
+          onChange={(next) => updateSettings({ curatedPluginSync: next })}
+        />
+      </SettingRow>
+      <SettingRow
         label={ready ? `Update ready${version ? ` (${version})` : ""}` : "Check for updates"}
         description={
           ready

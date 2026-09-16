@@ -4,15 +4,14 @@ import { GithubIcon } from "@/components/github-icon";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useFeedbackStore } from "../stores/feedback-store";
 import { CATEGORIES } from "../lib/feedback-api";
 import { DISCORD_URL, issueUrl, openExternal } from "../lib/feedback-links";
 
-/** Status bar is `h-7` (28px); sit 8px above it, or 12px off the edge when it's
- *  hidden. The one magic number here — there is no CSS var for the bar height. */
-const BAR_OFFSET = 36;
+/** Inset from the window's bottom-right corner. The status bar the panel
+ *  used to sit above is gone (2026-09-16); the feedback entry is now the
+ *  workspace sidebar's menu and Settings. */
 const EDGE_OFFSET = 12;
 
 /**
@@ -39,7 +38,6 @@ export function FeedbackPanel() {
 
   const snapshot = useAuthStore.use.snapshot();
   const settings = useProjectStore.use.settings();
-  const barVisible = useLayoutStore.use.bottomPanel().visible;
 
   const user = snapshot.status === "signed-in" ? snapshot.user : null;
   const signedIn = !!user;
@@ -113,7 +111,7 @@ export function FeedbackPanel() {
       )}
       style={{
         zIndex: "var(--z-max)" as unknown as number,
-        bottom: barVisible ? BAR_OFFSET : EDGE_OFFSET,
+        bottom: EDGE_OFFSET,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
         // No `will-change` — it would isolate the layer and kill the blur.
       }}

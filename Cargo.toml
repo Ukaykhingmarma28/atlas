@@ -39,6 +39,7 @@ members = [
   "crates/atlas-gitdiff",
   "crates/atlas-memory",
   "crates/atlas-native-agent",
+  "crates/atlas-process",
   "crates/atlas-redact",
   "crates/atlas-terminal",
   "crates/atlas-thread-metadata",
@@ -781,6 +782,8 @@ opt-level = 1
 [profile.dev.package.atlas-memory]
 opt-level = 1
 [profile.dev.package.atlas-native-agent]
+opt-level = 1
+[profile.dev.package.atlas-process]
 opt-level = 1
 [profile.dev.package.atlas-redact]
 opt-level = 1

@@ -17,7 +17,7 @@
 <meta name="twitter:title" content="Atlas — Every coding agent, one workspace, your whole team" />
 <meta name="twitter:description" content="Install any coding agent, run them across projects, capture every session, chat with your team. Native macOS." />
 <meta name="twitter:image" content="/og-image.png" />
-<meta name="twitter:site" content="@antarys_ai" />
+<meta name="twitter:site" content="@tryatlas_cc" />
 
 <link rel="icon" type="image/svg+xml" href="/icon-sm.svg" />
 <link rel="apple-touch-icon" href="/icon-sm.svg" />
@@ -104,6 +104,19 @@
   }
   .nav-link svg { width: 13px; height: 13px; }
   .nav-link:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+  /* Live stargazer count. Hidden until the GitHub API answers, so a rate-limited
+     or offline visitor sees a plain "Star" link instead of an empty chip. */
+  .nav-star-count {
+    display: inline-flex; align-items: center;
+    height: 17px; padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.07);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-star-count[hidden] { display: none; }
   .nav-cta-btn {
     display: inline-flex; align-items: center; gap: 6px;
     height: 30px; padding: 0 14px;
@@ -115,6 +128,21 @@
   }
   .nav-cta-btn:hover { background: #fff; }
   .nav-cta-btn svg { width: 13px; height: 13px; }
+  /* Windows sits beside the Mac split button: same pill, outlined so the
+     white Mac half stays the primary action. */
+  .nav-win-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 14px;
+    background: transparent; color: var(--text-primary);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-size: 13px; font-weight: 500;
+    margin-left: 6px;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .nav-win-btn:hover { background: var(--bg-raised); border-color: #4d4d4d; }
+  .nav-win-btn svg { width: 11px; height: 11px; }
+  .btn-win svg { width: 12px; height: 12px; }
 
   /* Tooltip on nav-link */
   .nav-link[data-tooltip] { position: relative; }
@@ -185,12 +213,14 @@
   /* ============================================================
      DOWNLOAD SPLIT BUTTON
      ------------------------------------------------------------
-     One control, two jobs: the wide half downloads the default
-     build (Apple Silicon), the narrow half opens a picker for the
-     other architecture. Shipping two dmgs without this would mean
-     either two equal buttons — which asks every visitor a question
-     most of them do not need to answer — or a single link that is
-     silently wrong for Intel users.
+     One control, two jobs: the wide half downloads the default Mac
+     build (Apple Silicon), the narrow half opens a picker for Intel.
+     Shipping both dmgs without this would mean either two equal
+     buttons — which asks every visitor a question most of them do
+     not need to answer — or a single link that is silently wrong
+     for Intel users. Windows is a sibling button, not a menu item:
+     it is a different OS, not a different architecture, so the
+     visitor already knows which one they want.
      ============================================================ */
   .dl { position: relative; display: inline-flex; }
   .dl-main,
@@ -1968,13 +1998,6 @@
     font-weight: 500;
     letter-spacing: -0.005em;
   }
-  .footer-address {
-    color: var(--text-tertiary);
-    font-size: 12px;
-    font-family: var(--font-mono);
-    letter-spacing: -0.005em;
-    line-height: 1.2;
-  }
   .footer-links {
     margin-left: auto;
     display: flex; align-items: center; gap: 12px;
@@ -2022,6 +2045,8 @@
     .hero { padding: 110px 0 40px; }
     .product-frame-outer { padding: 0 12px; }
     .nav-pill .nav-link:not(:first-of-type) { display: none; }
+    .nav-win-label { display: none; }
+    .nav-win-btn { padding: 0 9px; }
     .roadmap-item { grid-template-columns: 20px 1fr; }
     .roadmap-badge { grid-column: 2 / 3; justify-self: start; margin-top: 4px; }
   }
@@ -2515,10 +2540,6 @@
       <img src="icon-sm.svg" alt="" aria-hidden="true" />
       Atlas
     </a>
-    <a href="#product" class="nav-link">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
-      Product
-    </a>
     <a href="https://docs.tryatlas.cc/" class="nav-link" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       Docs
@@ -2526,24 +2547,29 @@
     <a href="https://github.com/pacifio/atlas" class="nav-link" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
       Star
+      <span class="nav-star-count" data-star-count hidden></span>
     </a>
     <a href="https://discord.gg/GmnFggaPfP" class="nav-link" target="_blank" rel="noopener">
       <svg viewBox="0 0 127.14 96.36" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/></svg>
       Discord
     </a>
     <div class="dl dl-sm" data-dl>
-      <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">
+      <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">
         <svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
-        Download
+        Mac
       </a>
-      <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a Mac build">
+      <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a build">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div class="dl-menu" data-dl-menu role="menu">
-        <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">For Apple ARM</a>
-        <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_x86_64.dmg">For Intel Macs</a>
+        <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">For Apple ARM</a>
+        <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x86_64.dmg">For Intel Macs</a>
       </div>
     </div>
+    <a class="nav-win-btn" aria-label="Download for Windows" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x64_en-US.msi">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F25022" d="M0 0h11.377v11.372H0Z"/><path fill="#7FBA00" d="M12.623 0H24v11.372H12.623Z"/><path fill="#00A4EF" d="M0 12.623h11.377V24H0Z"/><path fill="#FFB900" d="M12.623 12.623H24V24H12.623Z"/></svg>
+      <span class="nav-win-label">Windows</span>
+    </a>
   </div>
 </nav>
 
@@ -2563,18 +2589,22 @@
     <p class="hero-sub">Source control for agents. Use multiple coding agents, track their changes and query them in one place.</p>
     <div class="hero-cta">
       <div class="dl dl-lg" data-dl>
-        <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">
+        <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">
           <svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
           Download for Mac
         </a>
-        <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a Mac build">
+        <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a build">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
         <div class="dl-menu" data-dl-menu role="menu">
-          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">For Apple ARM</a>
-          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_x86_64.dmg">For Intel Macs</a>
+          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">For Apple ARM</a>
+          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x86_64.dmg">For Intel Macs</a>
         </div>
       </div>
+      <a class="btn btn-secondary btn-lg btn-win" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x64_en-US.msi">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F25022" d="M0 0h11.377v11.372H0Z"/><path fill="#7FBA00" d="M12.623 0H24v11.372H12.623Z"/><path fill="#00A4EF" d="M0 12.623h11.377V24H0Z"/><path fill="#FFB900" d="M12.623 12.623H24V24H12.623Z"/></svg>
+        Download for Windows
+      </a>
       <a href="https://github.com/pacifio/atlas" target="_blank" rel="noopener" class="btn btn-secondary btn-lg">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.36-3.88-1.36-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.5 3.18-1.18 3.18-1.18.62 1.58.23 2.75.11 3.04.73.81 1.18 1.84 1.18 3.1 0 4.43-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56C20.21 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
         Star on GitHub
@@ -4211,26 +4241,30 @@
 <section class="cta-section" id="download">
   <div class="wrap-tight">
     <h2 class="cta-title">Make agents part of the team.</h2>
-    <p class="cta-sub">Free during the alpha. Bring your own keys. Native binary for Apple Silicon and Intel, no Electron. The Atlas account is optional — nothing is gated behind it.</p>
+    <p class="cta-sub">Free during the alpha. Bring your own keys. Native binary for Apple Silicon, Intel and Windows, no Electron. The Atlas account is optional — nothing is gated behind it.</p>
     <div class="cta-row">
       <div class="dl dl-lg" data-dl>
-        <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">
+        <a class="dl-main" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">
           <svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
           Download for Mac
         </a>
-        <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a Mac build">
+        <button class="dl-toggle" type="button" data-dl-toggle aria-haspopup="true" aria-expanded="false" aria-label="Choose a build">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
         <div class="dl-menu" data-dl-menu role="menu">
-          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_aarch64.dmg">For Apple ARM</a>
-          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.1/Atlas_0.3.1_x86_64.dmg">For Intel Macs</a>
+          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_aarch64.dmg">For Apple ARM</a>
+          <a class="dl-item" role="menuitem" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x86_64.dmg">For Intel Macs</a>
         </div>
       </div>
+      <a class="btn btn-secondary btn-lg btn-win" href="https://github.com/pacifio/atlas/releases/download/alpha-0.3.2/Atlas_0.3.2_x64_en-US.msi">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F25022" d="M0 0h11.377v11.372H0Z"/><path fill="#7FBA00" d="M12.623 0H24v11.372H12.623Z"/><path fill="#00A4EF" d="M0 12.623h11.377V24H0Z"/><path fill="#FFB900" d="M12.623 12.623H24V24H12.623Z"/></svg>
+        Download for Windows
+      </a>
       <a href="https://github.com/pacifio/atlas" target="_blank" rel="noopener" class="btn btn-secondary btn-lg">
         Read the source
       </a>
     </div>
-    <div class="cta-tiny">v0.3.1 · macOS 13+ · Apple Silicon &amp; Intel · alpha</div>
+    <div class="cta-tiny">v0.3.2 · macOS 13+ (Apple Silicon &amp; Intel) · Windows 10+ (x64) · alpha</div>
   </div>
 </section>
 
@@ -4244,14 +4278,13 @@
           <span class="footer-sep">|</span>
           <span class="footer-co">Atlas</span>
         </div>
-        <div class="footer-address">1111B S Governors Ave #39146 Dover, DE 19904</div>
       </div>
       <div class="footer-links">
         <a href="https://github.com/pacifio/atlas" target="_blank" rel="noopener">Github</a>
         <span class="footer-sep">|</span>
-        <a href="https://x.com/antarys_ai" target="_blank" rel="noopener" aria-label="X (Twitter)">X</a>
+        <a href="https://x.com/tryatlas_cc" target="_blank" rel="noopener" aria-label="X (Twitter)">X</a>
         <span class="footer-sep">|</span>
-        <a href="https://www.linkedin.com/company/107506241/" target="_blank" rel="noopener" aria-label="LinkedIn">LinkedIn</a>
+        <a href="https://discord.gg/GmnFggaPfP" target="_blank" rel="noopener" aria-label="Discord">Discord</a>
       </div>
     </div>
   </div>
@@ -4284,6 +4317,38 @@
       dl.querySelector('[data-dl-toggle]').setAttribute('aria-expanded', 'false');
     });
   });
+
+  // Stargazer count in the nav. Cached for six hours in localStorage because the
+  // unauthenticated GitHub API allows 60 requests an hour per IP; every failure
+  // path is silent and simply leaves the chip hidden.
+  (async () => {
+    const els = document.querySelectorAll('[data-star-count]');
+    if (!els.length) return;
+    const KEY = 'atlas.stars';
+    const TTL = 6 * 60 * 60 * 1000;
+    const fmt = (n) => (n < 1000 ? String(n)
+      : (n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '') + 'k');
+    const paint = (n) => els.forEach((el) => { el.textContent = fmt(n); el.hidden = false; });
+
+    try {
+      const hit = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (hit && typeof hit.n === 'number') {
+        paint(hit.n);
+        if (Date.now() - hit.t < TTL) return;
+      }
+    } catch (_) {}
+
+    try {
+      const res = await fetch('https://api.github.com/repos/pacifio/atlas', {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!res.ok) return;
+      const n = (await res.json()).stargazers_count;
+      if (typeof n !== 'number') return;
+      paint(n);
+      try { localStorage.setItem(KEY, JSON.stringify({ n, t: Date.now() })); } catch (_) {}
+    } catch (_) {}
+  })();
 </script>
 
 <script>

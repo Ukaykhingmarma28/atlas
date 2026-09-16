@@ -81,6 +81,11 @@ pub struct SessionSummary {
     /// Input + output. Zero for an agent that reports no split — see
     /// `context_used`.
     pub total_tokens: i64,
+    /// The two halves of `total_tokens`, carried separately because they are
+    /// priced separately: for Opus 5 an output token costs five times an input
+    /// one, so a viewer handed only the sum cannot estimate a cost at all.
+    pub input_tokens: i64,
+    pub output_tokens: i64,
     /// Cache writes and cache reads, carried beside the split rather than
     /// inside it. They are real spend and were being dropped on the floor, but
     /// folding them into `total_tokens` would make "in + out" mean something
@@ -282,6 +287,29 @@ pub fn sessions(store: &Store, workspace_id: &str) -> Result<Vec<SessionSummary>
     Ok(out)
 }
 
+/// One Session's summary row, by store id.
+///
+/// The composer's Usage popup asks for exactly one row while a session is
+/// live; the board's one-`GROUP BY`-per-table shape would read the whole
+/// Workspace to answer it. Five point queries over covering indexes instead.
+pub fn session_summary(store: &Store, session_id: &str) -> Result<Option<SessionSummary>> {
+    let Some(session) = store.session(session_id)? else {
+        return Ok(None);
+    };
+    let checkpoints = store.checkpoints_for_session(session_id)?;
+    let message_count = store.message_count(session_id)?;
+    let tool_call_count = store.tool_call_count(session_id)?;
+    let turns = store.turn_active_seconds_for(session_id, TURN_CAP_SECONDS)?;
+    let message_seconds = store.message_active_seconds_for(session_id, IDLE_CAP_SECONDS)?;
+    Ok(Some(summarize(
+        &session,
+        &checkpoints,
+        message_count,
+        tool_call_count,
+        active_seconds(Some(turns), message_seconds),
+    )))
+}
+
 /// A gap longer than this between two messages is a developer who walked away.
 pub const IDLE_CAP_SECONDS: i64 = 300;
 /// A turn that "ran" longer than this did not run: its completion event arrived
@@ -357,6 +385,8 @@ fn summarize(
         deletions: checkpoints.iter().map(|c| c.deletions).sum(),
         files_touched: files.len() as i64,
         total_tokens: (totals.input_tokens + totals.output_tokens) as i64,
+        input_tokens: totals.input_tokens as i64,
+        output_tokens: totals.output_tokens as i64,
         cache_creation_tokens: totals.cache_creation_tokens as i64,
         cache_read_tokens: totals.cache_read_tokens as i64,
         context_used: totals.context_used.map(|n| n as i64),

@@ -7,6 +7,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(
 const toastError = vi.fn();
 vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a) } }));
 
+const openUrl = vi.fn(async (_url: string) => {});
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: (u: string) => openUrl(u) }));
+
 let signedIn = true;
 let orgs: { id: string; name: string }[] | null = [{ id: "org_1", name: "Acme" }];
 let activeOrgId: string | null = "org_1";
@@ -60,8 +63,6 @@ function seed(entitlement: Entitlement | null) {
   useAiGrantStore.setState({
     entitlement,
     checking: false,
-    requesting: false,
-    requested: false,
     dismissed: false,
   });
 }
@@ -70,6 +71,8 @@ describe("the no-grant setup state (bar 14)", () => {
   beforeEach(() => {
     invoke.mockReset();
     toastError.mockReset();
+    openUrl.mockReset();
+    openUrl.mockResolvedValue(undefined);
     signedIn = true;
     orgs = [{ id: "org_1", name: "Acme" }];
     activeOrgId = "org_1";
@@ -142,26 +145,27 @@ describe("the no-grant setup state (bar 14)", () => {
     expect(screen.queryByTestId("ai-grant-bar")).not.toBeNull();
   });
 
-  it("records the ask once and then says so", async () => {
+  it("sends Request to the credits page rather than to analytics", async () => {
+    // It used to fire a PostHog `ai_access_requested` event — an ask that
+    // landed where the user's own team could never see it.
     seed(NO_GRANT);
-    invoke.mockResolvedValue(null);
     render(<AiGrantBar />);
     await userEvent.click(screen.getByText("Request"));
-    await screen.findByText("Requested");
-    expect(invoke).toHaveBeenCalledWith("native_agent_request_access");
-    // Re-asking would just double-count the same organisation.
-    expect((screen.getByText("Requested").closest("button") as HTMLButtonElement).disabled).toBe(
-      true,
+    await waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://credits.tryatlas.cc/"));
+    expect(invoke).not.toHaveBeenCalledWith("native_agent_request_access");
+    // Nothing was recorded, so the bar has no "done" state to fall into: the
+    // button stays live for a second try.
+    expect((screen.getByText("Request").closest("button") as HTMLButtonElement).disabled).toBe(
+      false,
     );
   });
 
-  it("surfaces a failed request instead of showing a false tick", async () => {
+  it("says so when the browser could not be opened", async () => {
     seed(NO_GRANT);
-    invoke.mockRejectedValue(new Error("Telemetry is not configured in this build."));
+    openUrl.mockRejectedValue(new Error("no handler"));
     render(<AiGrantBar />);
     await userEvent.click(screen.getByText("Request"));
     await waitFor(() => expect(toastError).toHaveBeenCalled());
-    expect(screen.queryByText("Requested")).toBeNull();
   });
 
   it("can be dismissed without pretending the grant appeared", async () => {
@@ -253,12 +257,11 @@ describe("the grant store's composer lock", () => {
 
   it("forgets everything about the outgoing org", () => {
     seed(NO_GRANT);
-    useAiGrantStore.setState({ requested: true, dismissed: true });
+    useAiGrantStore.setState({ dismissed: true });
     useAiGrantStore.getState().actions.resetForOrg();
     const s = useAiGrantStore.getState();
     // org1's refusal says nothing about org2, and neither does org1's dismissal.
     expect(s.entitlement).toBeNull();
-    expect(s.requested).toBe(false);
     expect(s.dismissed).toBe(false);
   });
 

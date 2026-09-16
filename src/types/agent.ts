@@ -280,8 +280,10 @@ export interface ChatSession {
   /** BYOK provider id backing the native Cersei agent's model selection
    *  (e.g. "anthropic", "openai"). Unused by the ACP agents. */
   cerseiProvider?: string;
-  /** Cumulative token/cost usage for the session (native agent surfaces it via
-   *  `usage_updated` deltas; drives the composer's token/cost pill). */
+  /** Cumulative token split for the session, from `usage_updated` deltas.
+   *  The native engine reports it as a running total; an ACP agent's
+   *  end-of-turn usage is folded into the same counters in Rust. Drives the
+   *  composer's Usage pill. */
   usage?: import("./agents").Usage;
   /** Latest ACP context-window gauge (Claude Code / Codex) from `context_usage`
    *  deltas — `used`/`size` tokens + cost. Snapshotted onto the trailing
@@ -289,6 +291,13 @@ export interface ChatSession {
   contextUsage?: { used: number; size: number; cost: number };
   /** True while the native agent is compacting its context window. */
   compacting?: boolean;
+  /** The account quota the native engine reports (`rate_limits` deltas).
+   *  Absent for every ACP agent. */
+  rateLimits?: {
+    primary: import("./agents").RateLimitWindow | null;
+    secondary: import("./agents").RateLimitWindow | null;
+    planType: string | null;
+  };
   /** Reasoning-effort level for the native agent ("" / low / medium / high /
    *  max). Only meaningful for Anthropic models (maps to a thinking budget). */
   cerseiEffort?: string;

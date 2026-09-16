@@ -172,6 +172,60 @@ async fn a_body_that_is_not_a_registry_is_an_error() {
     assert!(store.agents().is_empty());
 }
 
+/// One publisher's mistake is not everyone's outage. The index carries agents
+/// from dozens of unrelated authors, so a required field missing from one of
+/// them must cost exactly that one.
+#[tokio::test]
+async fn a_malformed_entry_does_not_take_the_others_with_it() {
+    let index = r#"{
+      "version": "1",
+      "agents": [
+        {
+          "id": "good-one",
+          "name": "Good One",
+          "version": "1.0.0",
+          "description": "an agent",
+          "distribution": { "npx": { "package": "good-one" } }
+        },
+        {
+          "id": "no-description",
+          "name": "Missing A Field",
+          "version": "1.0.0",
+          "distribution": { "npx": { "package": "no-description" } }
+        },
+        {
+          "id": "good-two",
+          "name": "Good Two",
+          "version": "2.0.0",
+          "description": "another agent",
+          "distribution": { "npx": { "package": "good-two" } }
+        }
+      ]
+    }"#;
+
+    let (store, _http, _dir) = store_serving(index);
+    store.refresh().await.unwrap();
+
+    let mut ids = store
+        .agents()
+        .iter()
+        .map(|agent| agent.metadata().id.to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+    assert_eq!(ids, vec!["good-one", "good-two"]);
+}
+
+/// The leniency is per entry, not per document: `agents` must still be there
+/// and must still be an array, or the body is not a registry at all.
+#[tokio::test]
+async fn an_index_with_no_agents_array_is_still_an_error() {
+    let (store, _http, _dir) = store_serving(r#"{ "version": "1" }"#);
+    assert!(store.refresh().await.is_err());
+
+    let (store, _http, _dir) = store_serving(r#"{ "version": "1", "agents": "nope" }"#);
+    assert!(store.refresh().await.is_err());
+}
+
 /// The throttle is what makes it safe to call `refresh_if_stale` on every
 /// settings change.
 #[tokio::test]

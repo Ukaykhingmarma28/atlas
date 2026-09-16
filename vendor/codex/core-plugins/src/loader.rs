@@ -1771,6 +1771,8 @@ fn run_git_output(args: &[&str], cwd: Option<&Path>) -> Result<String, String> {
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    // Atlas: no console window for a child of the GUI host.
+    codex_git_utils::no_console_window(&mut command);
 
     let output = command
         .output()

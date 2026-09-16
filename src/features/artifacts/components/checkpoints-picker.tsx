@@ -21,7 +21,7 @@ import { GitBranch, GitCommitHorizontal, Loader2, Unlink } from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
 
-import { SEGMENT_TRIGGER } from "./segment";
+import { DOCK_TRIGGER } from "./header-dock";
 
 import type { BoardCheckpoint } from "../types";
 
@@ -85,7 +85,7 @@ export function CheckpointsPicker({
           type="button"
           aria-label="Recent checkpoints"
           title="Recent checkpoints"
-          className={SEGMENT_TRIGGER}
+          className={DOCK_TRIGGER}
         >
           <GitCommitHorizontal size={13} />
         </button>

@@ -10,7 +10,8 @@ use atlas_acp_thread::{
 };
 use atlas_agent_servers::ThreadEventSink;
 use atlas_agent_wire::{
-    AgentId, DeltaSink, Emitter, SessionDelta, SessionDeltaEnvelope, SessionStatus, ToolCall, Usage,
+    AgentId, DeltaSink, Emitter, RateLimitWindow, SessionDelta, SessionDeltaEnvelope,
+    SessionStatus, ToolCall, Usage,
 };
 use uuid::Uuid;
 
@@ -552,6 +553,8 @@ struct SessionProjection {
     status: Option<SessionStatus>,
     /// The plan as last announced, so an unchanged one is not re-sent.
     plan: Option<serde_json::Value>,
+    /// The quota as last announced — the engine repeats it every turn.
+    rate_limits: Option<serde_json::Value>,
     /// Permission prompts announced on the wire, so an answer can be routed
     /// back and a resolution can name the same request.
     open_permissions: HashMap<acp::ToolCallId, Uuid>,
@@ -571,6 +574,7 @@ impl SessionProjection {
             entries: Vec::new(),
             status: None,
             plan: None,
+            rate_limits: None,
             open_permissions: HashMap::new(),
             new_permissions: Vec::new(),
             announced_elicitations: Vec::new(),
@@ -668,6 +672,7 @@ impl SessionProjection {
                     .unwrap_or_default()
             }
             AcpThreadEvent::TokenUsageUpdated => self.usage_deltas(),
+            AcpThreadEvent::RateLimitsUpdated => self.rate_limit_deltas(),
             AcpThreadEvent::Retry(status) => vec![SessionDelta::RetryStatus {
                 attempt: status.attempt as u32,
                 max_attempts: status.max_attempts as u32,
@@ -1085,6 +1090,30 @@ impl SessionProjection {
         vec![SessionDelta::PlanUpdated { plan }]
     }
 
+    /// The account quota, once per change — the engine re-announces it on
+    /// every turn, and an unchanged snapshot is noise on the wire.
+    fn rate_limit_deltas(&mut self) -> Vec<SessionDelta> {
+        let limits = lock_thread(&self.thread).rate_limits().cloned();
+        let Some(limits) = limits else {
+            return Vec::new();
+        };
+        let fingerprint = serde_json::to_value(&limits).unwrap_or(serde_json::Value::Null);
+        if self.rate_limits == Some(fingerprint.clone()) {
+            return Vec::new();
+        }
+        self.rate_limits = Some(fingerprint);
+        let window = |w: &atlas_acp_thread::RateLimitWindow| RateLimitWindow {
+            used_percent: w.used_percent,
+            window_minutes: w.window_minutes,
+            resets_at: w.resets_at,
+        };
+        vec![SessionDelta::RateLimits {
+            primary: limits.primary.as_ref().map(window),
+            secondary: limits.secondary.as_ref().map(window),
+            plan_type: limits.plan_type,
+        }]
+    }
+
     fn usage_deltas(&self) -> Vec<SessionDelta> {
         let thread = lock_thread(&self.thread);
         let usage = thread.token_usage().cloned();
@@ -1095,16 +1124,23 @@ impl SessionProjection {
             return Vec::new();
         };
         let mut deltas = Vec::new();
-        // The per-turn input/output split — only an agent that reports one has
+        // The cumulative token split — only an agent that reports one has
         // non-zero values here, which is the distinction the Timeline draws
-        // between a real token split and a context gauge.
-        if usage.input_tokens > 0 || usage.output_tokens > 0 {
+        // between a real token split and a context gauge. The native engine
+        // reports it as a running total; an ACP agent's end-of-turn usage is
+        // folded into the same counters by `accumulate_turn_usage`.
+        let has_split = usage.input_tokens > 0
+            || usage.output_tokens > 0
+            || usage.cache_read_tokens > 0
+            || usage.cache_write_tokens > 0;
+        if has_split {
             deltas.push(SessionDelta::UsageUpdated {
                 usage: Usage {
                     input_tokens: usage.input_tokens,
                     output_tokens: usage.output_tokens,
-                    cache_creation_tokens: 0,
-                    cache_read_tokens: 0,
+                    cache_creation_tokens: usage.cache_write_tokens,
+                    cache_read_tokens: usage.cache_read_tokens,
+                    reasoning_tokens: usage.reasoning_tokens,
                     cost,
                 },
             });

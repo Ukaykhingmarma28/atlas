@@ -51,11 +51,14 @@ import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { jumpToSession } from "@/features/chat/lib/tab-workspace";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
+import { isWindows } from "@/lib/platform";
+import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
   startCatalogListener,
 } from "@/features/agents/stores/agent-registry-store";
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
+import { watchRemovedAgents } from "@/features/chat/lib/removed-agents";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
 import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
 import { primeNativeNotificationPermission, sendNativeNotification } from "@/lib/native-notify";
@@ -68,6 +71,7 @@ import { FeedbackPanel } from "@/features/feedback/components/feedback-panel";
 import { UpdateAvailableModal } from "@/features/updater/components/update-available-modal";
 import { LoadingOrganisationOverlay } from "@/features/organisations/components/loading-organisation-overlay";
 import { StopAgentsDialog } from "@/features/workspaces/components/stop-agents-dialog";
+import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
   isOrgReconciled,
@@ -135,6 +139,9 @@ export function App() {
     // …and stay current: discovery finishes after boot, and installs /
     // acquisitions / settings toggles all change how an agent launches.
     startCatalogListener();
+    // An uninstall drops the agent's connection with no delta to any tab on
+    // it; the catalog shrinking is what settles those tabs.
+    return watchRemovedAgents();
   }, []);
 
   // Refresh the `atlas` CLI helper at `~/.local/bin/atlas` on every
@@ -142,8 +149,10 @@ export function App() {
   // replaced with the current version. Failures are non-fatal — the
   // app still works without the helper, the user just can't type
   // `atlas ./` in their terminal until they hit the install button
-  // in Settings → General.
+  // in Settings → General. Not on Windows: the helper is a bash script
+  // (see `commands::cli::cli_install_helper`).
   useEffect(() => {
+    if (isWindows) return;
     void invoke("cli_install_helper").catch((e) => {
       console.warn("atlas CLI helper refresh failed:", e);
     });
@@ -459,7 +468,6 @@ export function App() {
     toggleLeftPanel,
     toggleRightPanel,
     toggleRightChatPanel,
-    toggleBottomPanel,
     toggleChatSidebar,
     toggleTabBar,
     addTab,
@@ -888,7 +896,7 @@ export function App() {
         useRecentChatsStore.getState().actions.record({
           tabId,
           projectPath: path,
-          projectName: path.split("/").pop() || path,
+          projectName: basename(path),
           // Strip any Atlas-injected memory scaffolding the title may carry
           // (resumed sessions); a dirty fragment cleans to "" → fall back.
           title: stripInjectedContext(s.title) || "Chat",
@@ -1293,7 +1301,6 @@ export function App() {
     // opening a second panel, and pressing it again closes the slot.
     "panels.teamChat": toggleRightChatPanel,
     "panels.terminal": toggleTerminal,
-    "panels.bottom": toggleBottomPanel,
     "panels.agentSidebar": toggleChatSidebar,
     // ⌥J — open the Knowledge Base, or jump to it if already open, WITHIN
     // the focused split column.
@@ -1422,6 +1429,7 @@ export function App() {
       <ConnectDialog />
       <LoadingOrganisationOverlay />
       <StopAgentsDialog />
+      <RemoveAgentDialog />
       <BrowserOverlayWatcher />
       <Toaster
         position="bottom-right"

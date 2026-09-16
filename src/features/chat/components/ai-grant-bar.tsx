@@ -1,10 +1,12 @@
 import { useCallback, useState } from "react";
-import { Check, Cloud, RotateCw, X } from "lucide-react";
+import { Cloud, MoveUpRight, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai-grant-store";
+import { COMPOSER_STRIP, COMPOSER_STRIP_ACTION } from "./composer-strip";
 
 /**
  * The native agent's no-grant setup state (spec D15a, acceptance bar item 14).
@@ -27,21 +29,13 @@ import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai
  * The org NAME is right there in the auth snapshot.
  */
 
-/**
- * The tucked strip, same construction as the artifacts composer's checkpoint
- * scope picker: inset by `mx-2` so the composer's box reads as the wider
- * element, `rounded-t-2xl` to match the agent composer's rounding, and
- * `-mb-3.5` against `pb-5` so the composer overlaps its lower half. `z-0`
- * keeps it behind — the composer carries `relative z-30`.
- */
-const STRIP =
-  "atlas-pill-in relative z-0 mx-2 -mb-3.5 flex items-center justify-between gap-3 " +
-  "rounded-t-2xl bg-[var(--bg-tertiary)] px-3.5 pt-1.5 pb-5 text-[11px]";
+// The strip itself lives in `composer-strip.ts`, shared with every other
+// notice that tucks into the composer (`removed-agent-bar.tsx`).
+const STRIP = COMPOSER_STRIP;
+const ACTION = COMPOSER_STRIP_ACTION;
 
-const ACTION =
-  "flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors " +
-  "text-[var(--text-secondary)] hover:bg-white/[0.05] hover:text-[var(--text-primary)] " +
-  "disabled:cursor-default disabled:text-[var(--text-tertiary)]/40 disabled:hover:bg-transparent";
+/** Where "Request" goes. The one place that can actually issue a grant. */
+const GRANT_REQUEST_URL = "https://credits.tryatlas.cc/";
 
 export function AiGrantBar() {
   const snapshot = useAuthStore((s) => s.snapshot);
@@ -58,10 +52,8 @@ export function AiGrantBar() {
 
   const entitlement = useAiGrantStore.use.entitlement();
   const checking = useAiGrantStore.use.checking();
-  const requesting = useAiGrantStore.use.requesting();
-  const requested = useAiGrantStore.use.requested();
   const dismissed = useAiGrantStore.use.dismissed();
-  const { refresh, request, dismiss } = useAiGrantStore.use.actions();
+  const { refresh, dismiss } = useAiGrantStore.use.actions();
   // The switcher's "Turn on sync for {org}…" item, offered here as well so the
   // one action that unlocks the agent is beside the notice that names it.
   const enableSync = useOrgStore((s) => s.actions.enableSync);
@@ -90,13 +82,14 @@ export function AiGrantBar() {
     if (!(await refresh())) toast.error("Could not reach the gateway.");
   }, [refresh]);
 
-  const onRequest = useCallback(async () => {
-    try {
-      await request();
-    } catch (e) {
-      toast.error(String(e));
-    }
-  }, [request]);
+  // Requesting a grant is a page on the web, not a signal Atlas can send: the
+  // gateway has no access-request endpoint, and the PostHog `ai_access_requested`
+  // event this button used to fire told the user's own team nothing — it landed
+  // in Atlas's analytics, where nobody could act on it. Open the credits page
+  // and let the user ask somewhere that answers.
+  const onRequest = useCallback(() => {
+    void openUrl(GRANT_REQUEST_URL).catch((e) => toast.error(String(e)));
+  }, []);
 
   if (dismissed) return null;
 
@@ -174,17 +167,12 @@ export function AiGrantBar() {
 
         <button
           type="button"
-          onClick={() => void onRequest()}
-          disabled={requesting || requested}
-          title={
-            requested
-              ? "Your request has been recorded"
-              : "Tell Atlas your organisation needs AI access"
-          }
-          className={cn(ACTION, requesting || requested ? "cursor-default" : "cursor-pointer")}
+          onClick={onRequest}
+          title="Request AI credits for your organisation"
+          className={cn(ACTION, "cursor-pointer")}
         >
-          {requested ? <Check size={11} /> : null}
-          {requested ? "Requested" : requesting ? "Requesting…" : "Request"}
+          <MoveUpRight size={11} />
+          Request
         </button>
 
         <button

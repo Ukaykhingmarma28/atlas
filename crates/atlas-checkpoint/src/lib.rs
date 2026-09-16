@@ -88,7 +88,8 @@ pub use sync::{
     MatchReason, Preselection, RemoteWorkspace, SlugAvailability, SyncConfig,
 };
 pub use timeline::{
-    detail as session_detail, recent_checkpoints, sessions as session_summaries, CheckpointRow,
+    detail as session_detail, recent_checkpoints, session_summary, sessions as session_summaries,
+    CheckpointRow,
     EntryCounts, EntryKind, SessionDetail, SessionSummary, TimelineEntry, ToolTally,
 };
 pub use tools::{canonical_name, ResolvedPath, ToolName};

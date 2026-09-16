@@ -161,13 +161,31 @@ impl AgentRegistryStore {
     /// Load whatever the last successful fetch wrote. A missing or corrupt
     /// cache just means "empty until the first refresh" — never an error the
     /// caller has to handle at startup.
+    ///
+    /// The corrupt half of that promise used to be a lie: a truncated file
+    /// returned `Err`. It reached nobody, because the only production caller
+    /// discards the result — which is the other half of the problem, since a
+    /// corrupt cache was then invisible in a log bundle and the "Registry
+    /// unavailable" it produced was undiagnosable. Both halves are fixed here:
+    /// the promise is kept, and the reason is logged.
     pub async fn load_cached(&self) -> Result<()> {
         let cache_path = registry_cache_path(&self.data_dir);
         let Ok(bytes) = tokio::fs::read(&cache_path).await else {
             return Ok(());
         };
-        let index: RegistryIndex =
-            serde_json::from_slice(&bytes).context("parsing cached registry")?;
+
+        let index: RegistryIndex = match serde_json::from_slice(&bytes) {
+            Ok(index) => index,
+            Err(error) => {
+                tracing::warn!(
+                    path = %cache_path.display(),
+                    error = %error,
+                    "discarding an unreadable registry cache; the next refresh rewrites it",
+                );
+                return Ok(());
+            }
+        };
+
         let agents = self.build_registry_agents(index, &bytes, false).await?;
         self.state.lock().unwrap().agents = agents;
         Ok(())
@@ -316,7 +334,7 @@ impl AgentRegistryStore {
         tokio::fs::create_dir_all(&cache_dir).await?;
 
         if update_cache {
-            tokio::fs::write(cache_dir.join("registry.json"), raw_body).await?;
+            write_atomically(&cache_dir.join("registry.json"), raw_body).await?;
         }
 
         let icons_dir = cache_dir.join("icons");
@@ -522,7 +540,55 @@ fn registry_cache_path(data_dir: &Path) -> PathBuf {
 pub(crate) struct RegistryIndex {
     #[serde(rename = "version")]
     _version: String,
+    #[serde(deserialize_with = "entries_that_parse")]
     agents: Vec<RegistryEntry>,
+}
+
+/// Keep the entries we can read; drop and log the ones we cannot.
+///
+/// The index is third-party data: 39 agents from 39 authors, none of whom
+/// Atlas controls, and growing. Parsed as `Vec<RegistryEntry>` the whole
+/// document is one failure domain, so one publisher omitting one required
+/// field takes the catalogue with it.
+///
+/// This is a deliberate divergence from Zed, whose parser is byte-identical
+/// and is *not* wrong — see the note in `lib.rs`. Zed survives a failed parse
+/// because it ships a builtin agent list and a featured-agents page. Atlas
+/// LOCKED the decision to ship neither, so here the registry is the only route
+/// to an external agent and the same failure removes all of them.
+///
+/// The top level stays strict on purpose: a body that is not a registry, or
+/// one with no `agents` array, is still an error. Only the elements are
+/// forgiving, and only individually.
+fn entries_that_parse<'de, D>(deserializer: D) -> Result<Vec<RegistryEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    let mut kept = Vec::with_capacity(raw.len());
+
+    for value in raw {
+        // Read the id before parsing, so a dropped entry can be named even
+        // when the field that failed is a different one.
+        let id = value
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("<no id>")
+            .to_owned();
+
+        match serde_json::from_value::<RegistryEntry>(value) {
+            Ok(entry) => kept.push(entry),
+            Err(error) => {
+                tracing::warn!(
+                    agent = %id,
+                    error = %error,
+                    "dropping an ACP registry entry that does not parse",
+                );
+            }
+        }
+    }
+
+    Ok(kept)
 }
 
 #[derive(Deserialize)]
@@ -567,4 +633,30 @@ struct RegistryNpxDistribution {
     args: Vec<String>,
     #[serde(default)]
     env: HashMap<String, String>,
+}
+
+/// Write `bytes` to `path` as one step, or not at all.
+///
+/// A plain `write` is a truncate followed by a stream of writes, so a crash in
+/// between leaves a file that exists, is the right name, and is half a
+/// document. That is precisely the corrupt cache `load_cached` has to tolerate
+/// — and tolerating it is second best to not producing it.
+async fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().context("cache path has no parent")?;
+    let temporary = parent.join(format!(
+        ".{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("cache"),
+    ));
+
+    tokio::fs::write(&temporary, bytes)
+        .await
+        .with_context(|| format!("writing {temporary:?}"))?;
+    // Rename within one directory is atomic on every filesystem Atlas runs on,
+    // which is what makes the reader see one version or the other, never half.
+    tokio::fs::rename(&temporary, path)
+        .await
+        .with_context(|| format!("renaming {temporary:?} to {path:?}"))?;
+    Ok(())
 }

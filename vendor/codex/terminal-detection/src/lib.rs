@@ -458,11 +458,22 @@ fn tmux_client_info() -> TmuxClientInfo {
     TmuxClientInfo { termtype, termname }
 }
 
+/// Atlas: CREATE_NO_WINDOW — a probe run from the GUI host must not open a
+/// console window; its output is captured.
+fn quiet(command: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
 fn tmux_display_message(format: &str) -> Option<String> {
-    let output = std::process::Command::new("tmux")
-        .args(["display-message", "-p", format])
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new("tmux");
+    command.args(["display-message", "-p", format]);
+    quiet(&mut command);
+    let output = command.output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -475,10 +486,10 @@ fn tmux_display_message(format: &str) -> Option<String> {
 fn zellij_version_from_command() -> Option<String> {
     // Best-effort fallback: missing or broken zellij binaries should not affect
     // terminal detection.
-    let output = std::process::Command::new("zellij")
-        .arg("--version")
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new("zellij");
+    command.arg("--version");
+    quiet(&mut command);
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }

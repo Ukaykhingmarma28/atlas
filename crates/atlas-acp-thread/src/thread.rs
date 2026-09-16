@@ -739,12 +739,41 @@ pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub max_output_tokens: Option<u64>,
+    /// Prompt tokens served from the provider's cache. Priced separately from
+    /// `input_tokens` (an order of magnitude cheaper), so kept apart.
+    #[serde(default)]
+    pub cache_read_tokens: u64,
+    /// Prompt tokens written INTO the cache. Priced above a plain input token.
+    #[serde(default)]
+    pub cache_write_tokens: u64,
+    /// Reasoning / thinking output, when the agent reports it separately.
+    #[serde(default)]
+    pub reasoning_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionCost {
     pub amount: f64,
     pub currency: Arc<str>,
+}
+
+/// One rolling quota window from an account-level rate-limit report.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RateLimitWindow {
+    /// 0–100.
+    pub used_percent: u8,
+    pub window_minutes: Option<i64>,
+    /// Epoch seconds.
+    pub resets_at: Option<i64>,
+}
+
+/// The account's quota, as the native engine reports it. Account-level: the
+/// same snapshot is applied to every live thread the engine hosts.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RateLimits {
+    pub primary: Option<RateLimitWindow>,
+    pub secondary: Option<RateLimitWindow>,
+    pub plan_type: Option<String>,
 }
 
 pub const TOKEN_USAGE_WARNING_THRESHOLD: f32 = 0.8;
@@ -843,6 +872,7 @@ pub enum AcpThreadEvent {
     NewEntry,
     TitleUpdated,
     TokenUsageUpdated,
+    RateLimitsUpdated,
     EntryUpdated(usize),
     EntriesRemoved(Range<usize>),
     /// Carries the options so the projection is a function of the EVENT, not
@@ -909,6 +939,7 @@ pub struct AcpThread {
     connection: Arc<dyn AgentConnection>,
     token_usage: Option<TokenUsage>,
     cost: Option<SessionCost>,
+    rate_limits: Option<RateLimits>,
     prompt_capabilities: acp::PromptCapabilities,
     available_commands: Vec<acp::AvailableCommand>,
     terminals: TerminalRegistry,
@@ -938,6 +969,7 @@ impl AcpThread {
             connection,
             token_usage: None,
             cost: None,
+            rate_limits: None,
             prompt_capabilities: acp::PromptCapabilities::default(),
             available_commands: Vec::new(),
             terminals: TerminalRegistry::new(),
@@ -1029,6 +1061,10 @@ impl AcpThread {
 
     pub fn cost(&self) -> Option<&SessionCost> {
         self.cost.as_ref()
+    }
+
+    pub fn rate_limits(&self) -> Option<&RateLimits> {
+        self.rate_limits.as_ref()
     }
 
     pub fn available_commands(&self) -> &[acp::AvailableCommand] {
@@ -1710,6 +1746,28 @@ impl AcpThread {
         self.emit(AcpThreadEvent::TokenUsageUpdated);
     }
 
+    /// Fold one turn's end-of-turn split into the running counters.
+    ///
+    /// `PromptResponse.usage` is what an ACP agent reports when a turn ends,
+    /// and it is PER TURN — claude-agent-acp resets its tally when a turn
+    /// activates and hands back what that turn spent — so it is added, never
+    /// assigned. `max_tokens` / `used_tokens` are the context gauge, which
+    /// arrives separately through `usage_update` and is left alone here.
+    ///
+    /// This is the only way an ACP agent's real input/output/cache split
+    /// reaches Atlas: the mid-turn `usage_update` carries occupancy, not
+    /// consumption. Before this the split was dropped with the response and
+    /// every ACP session read as zero tokens spent.
+    pub fn accumulate_turn_usage(&mut self, turn: &acp::Usage) {
+        let usage = self.token_usage.get_or_insert_with(Default::default);
+        usage.input_tokens += turn.input_tokens;
+        usage.output_tokens += turn.output_tokens;
+        usage.cache_read_tokens += turn.cached_read_tokens.unwrap_or(0);
+        usage.cache_write_tokens += turn.cached_write_tokens.unwrap_or(0);
+        usage.reasoning_tokens += turn.thought_tokens.unwrap_or(0);
+        self.emit(AcpThreadEvent::TokenUsageUpdated);
+    }
+
     /// Set the session's running cost.
     ///
     /// A `session/update` carries cost alongside context size, so an ACP agent
@@ -1719,6 +1777,13 @@ impl AcpThread {
     pub fn update_cost(&mut self, cost: Option<SessionCost>) {
         self.cost = cost;
         self.emit(AcpThreadEvent::TokenUsageUpdated);
+    }
+
+    /// Set the account quota this thread's agent is drawing on. Only the
+    /// native engine reports one; an ACP agent never calls this.
+    pub fn update_rate_limits(&mut self, limits: Option<RateLimits>) {
+        self.rate_limits = limits;
+        self.emit(AcpThreadEvent::RateLimitsUpdated);
     }
 
     /// Open a context-compaction entry, or move an open one to a new status.
