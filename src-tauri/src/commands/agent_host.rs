@@ -2040,8 +2040,13 @@ fn snapshot_of(thread: &AcpThreadHandle) -> ThreadSnapshot {
         is_draft: thread.is_draft(),
         // The agent's title when it has produced one, else what the user
         // opened with. A row the user cannot recognise is a row they cannot
-        // use, and agents title threads late or not at all.
-        title: thread.title().cloned().or_else(|| thread.fallback_title()),
+        // use, and agents title threads late or not at all. The message on
+        // record carries the memory blocks `agents_send` prepended, and those
+        // are not what the user opened with.
+        title: thread
+            .title()
+            .cloned()
+            .or_else(|| thread.fallback_title(atlas_agent_transcript::strip_injected_context)),
         work_dirs: thread.work_dirs().to_vec(),
     }
 }
@@ -2133,12 +2138,27 @@ fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
         thread_id: thread.thread_id.to_key_string(),
         session_id: thread.session_id.as_ref().map(std::string::ToString::to_string),
         agent_id: thread.agent_id.to_string(),
-        title: thread.display_title().to_string(),
+        title: display_title(thread),
         updated_at: thread.updated_at.to_rfc3339(),
         created_at: thread.created_at.map(|at| at.to_rfc3339()),
         archived: thread.archived,
         project_name: project_name(thread.main_worktree_paths()),
         folder_paths: paths_of(thread.folder_paths()),
+    }
+}
+
+/// The row's title with any Atlas memory block taken out.
+///
+/// Rows recorded before `snapshot_of` cleaned its fallback were named after the
+/// block's opening marker (`--- SHARED MEMORY ---`), and the store kept only
+/// that line. Such a title cleans to nothing, which is the default title; the
+/// real name replaces it the next time the conversation is live.
+fn display_title(thread: &ThreadMetadata) -> String {
+    let title = atlas_agent_transcript::strip_injected_context(&thread.display_title());
+    if title.is_empty() {
+        atlas_thread_metadata::DEFAULT_THREAD_TITLE.to_string()
+    } else {
+        title
     }
 }
 
@@ -3193,6 +3213,52 @@ mod tests {
         .expect("Zed's shape");
         assert_eq!(settings.0.len(), 2);
         assert!(settings.has_registry_agents());
+    }
+
+    /// The first message on record, as `agents_send` delivers it: Atlas's
+    /// memory blocks, then what the user typed.
+    const MEMORY_PREFIXED: &str = "--- SHARED MEMORY ---\n\
+        - the sidebar is virtualised\n\
+        --- END SHARED MEMORY ---\n\n\
+        --- RELEVANT PROJECT MEMORY ---\n\
+        notes\n\
+        --- END RELEVANT PROJECT MEMORY ---\n\n\
+        fix the sidebar scrolling bug\nit jumps on resize";
+
+    /// An agent that never titles its threads — the native agent — used to
+    /// have every one named `--- SHARED MEMORY ---`, the first line of the
+    /// memory Atlas prepends. The name is the user's first line.
+    #[test]
+    fn an_untitled_thread_is_named_after_the_user_not_the_injected_memory() {
+        let connection = Arc::new(RebindingNative { fresh_id: "s" });
+        let thread = connection.thread(acp::SessionId::new("s"), Vec::new());
+        lock_thread(&thread).push_user_content_block(
+            None,
+            acp::ContentBlock::Text(acp::TextContent::new(MEMORY_PREFIXED)),
+        );
+
+        assert_eq!(
+            snapshot_of(&thread).title.as_deref(),
+            Some("fix the sidebar scrolling bug")
+        );
+    }
+
+    /// Rows recorded before the fix kept only the marker line. They read as
+    /// the default title rather than as scaffolding, and a clean title is left
+    /// alone.
+    #[test]
+    fn a_row_named_after_injected_memory_reads_as_the_default_title() {
+        let mut row = ThreadMetadata::new(
+            ThreadId::new(),
+            ThreadAgentId::new(CERSEI_AGENT_ID),
+            PathList::default(),
+        );
+
+        row.title = Some("--- SHARED MEMORY ---".into());
+        assert_eq!(thread_row(&row).title, atlas_thread_metadata::DEFAULT_THREAD_TITLE);
+
+        row.title = Some("Origin dropdown cleanup".into());
+        assert_eq!(thread_row(&row).title, "Origin dropdown cleanup");
     }
 }
 

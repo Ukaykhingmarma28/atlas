@@ -1010,11 +1010,18 @@ impl AcpThread {
     /// this the moment it arrives — but a history row reading "New Thread"
     /// forever, because the agent never got around to naming it, is a row the
     /// user cannot pick out of a list.
-    pub fn fallback_title(&self) -> Option<Arc<str>> {
+    ///
+    /// `clean` runs over the message before its first line is taken. The text
+    /// recorded here is what the agent was sent, and a host that prefixes its
+    /// own context to the user's words (Atlas prepends memory blocks) would
+    /// otherwise have the thread named after that prefix. The prefix format is
+    /// the host's, so the host supplies the cleaning.
+    pub fn fallback_title(&self, clean: impl FnOnce(&str) -> String) -> Option<Arc<str>> {
         let first = self.entries.iter().find_map(|entry| match entry {
             AgentThreadEntry::UserMessage(message) => Some(message.content.to_text()),
             _ => None,
         })?;
+        let first = clean(first);
         let line = first.trim().lines().next()?.trim();
         if line.is_empty() {
             return None;

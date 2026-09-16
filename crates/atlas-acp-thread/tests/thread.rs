@@ -209,6 +209,24 @@ async fn an_echoed_user_chunk_is_not_rendered_twice() {
     assert_eq!(user_messages(&thread), vec!["hello"]);
 }
 
+/// Atlas-specific: the fallback title is the first line of the first user
+/// message *after* the host's cleaning, so a prefix the host added never
+/// becomes the name.
+#[tokio::test]
+async fn the_fallback_title_is_taken_after_the_hosts_cleaning() {
+    let (mut thread, _events, _conn) = new_thread();
+    assert_eq!(thread.fallback_title(str::to_string), None);
+
+    thread.push_user_content_block(None, text_block("[host context]\n\nrename the parser\nplease"));
+
+    let strip = |text: &str| text.replace("[host context]", "");
+    assert_eq!(thread.fallback_title(strip).as_deref(), Some("rename the parser"));
+    assert_eq!(thread.fallback_title(str::to_string).as_deref(), Some("[host context]"));
+
+    // Cleaning that leaves nothing is no title, not an empty one.
+    assert_eq!(thread.fallback_title(|_| String::new()), None);
+}
+
 /// Adapted from `test_assistant_chunks_use_protocol_message_id_boundaries`.
 #[tokio::test]
 async fn assistant_chunks_split_on_a_changed_protocol_message_id() {
