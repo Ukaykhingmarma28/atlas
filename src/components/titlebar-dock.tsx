@@ -45,6 +45,9 @@ interface Geometry extends SlideGeometry {
   /** False for the first reveal: it must materialise in place, not fly in
    *  from wherever the previous hover left the strip. */
   animate: boolean;
+  /** Viewport y the strip is pinned to — the pill's bottom edge. See the
+   *  anchor's comment for why this is measured rather than `top: 100%`. */
+  top: number;
 }
 
 /** Keeps the tooltip inside the window. The dock sits at the right edge, so a
@@ -70,6 +73,9 @@ export function TitlebarDock({
      translated, so its `left` already contains the previous offset and each
      hover would compound the error. This wrapper never moves. */
   const anchor = useRef<HTMLDivElement>(null);
+  /* The pill, for the anchor's `top` — the anchor is fixed to the viewport and
+     so cannot get it from `top: 100%` any more. */
+  const pill = useRef<HTMLDivElement>(null);
 
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [visible, setVisibleState] = useState(false);
@@ -97,7 +103,8 @@ export function TitlebarDock({
       const button = buttons.current[index]?.getBoundingClientRect();
       const active = labels.current[index]?.getBoundingClientRect();
       const parent = anchor.current?.getBoundingClientRect();
-      if (!button || !active || !parent) return;
+      const host = pill.current?.getBoundingClientRect();
+      if (!button || !active || !parent || !host) return;
 
       // Widths are read fresh rather than cached: the labels are laid out once
       // and never change, but a font swap or a UI-scale change would move them
@@ -118,7 +125,7 @@ export function TitlebarDock({
 
       clearTimeout(openTimer.current);
       const travelling = visibleRef.current;
-      setGeometry({ ...slide, animate: travelling });
+      setGeometry({ ...slide, animate: travelling, top: host.bottom });
       if (travelling || isTooltipWarm()) setVisible(true);
       else openTimer.current = setTimeout(() => setVisible(true), TOOLTIP_OPEN_DELAY);
     },
@@ -135,6 +142,7 @@ export function TitlebarDock({
   return (
     <div className={cn("relative", className)} onMouseLeave={onLeave}>
       <div
+        ref={pill}
         className={cn(
           "flex h-6 items-center gap-1 rounded-full px-1 py-0.5",
           "border border-white/[0.07] bg-[#121212]",
@@ -179,8 +187,31 @@ export function TitlebarDock({
       </div>
 
       {/* Not a child of the pill: the pill would have to clip its overflow to
-          keep its round corners, and that would cut the tooltip off. */}
-      <div ref={anchor} className="pointer-events-none absolute left-0 top-full z-[60] pt-1.5">
+          keep its round corners, and that would cut the tooltip off.
+
+          FIXED, not absolute, and this is load-bearing. The strip is ONE row
+          holding every label — `w-max`, ~414px — and it is mounted all the time,
+          clipped down to the active label by `clip-path`, which is a paint
+          effect and does not shrink the layout box. Anchored to the pill at the
+          right end of the title bar, that box ran ~320px past the window, and
+          because `#root` is `overflow: hidden` the browser treated that as
+          320px of scrollable overflow it was allowed to scroll into view. Any
+          programmatic reveal (`focus()`, `scrollIntoView()`) then slid the ENTIRE
+          app shell left by up to 320px — nav clipped, first column of Settings
+          off-screen — with no scrollbar to put it back. A fixed box is laid out
+          against the viewport and is never part of an ancestor's scrollable
+          overflow, so the extent it would need simply does not exist. Same
+          reason `HintGroup` portals its identical strip to `body` as `fixed`.
+
+          The price is that `top: 100%` no longer reaches the pill, so the pill's
+          bottom edge is measured on hover instead (`geometry.top`). Keep both
+          `left-0` and `stripLeft` reading this element's own rect: the slide
+          arithmetic is relative to wherever the untranslated strip starts. */}
+      <div
+        ref={anchor}
+        className="pointer-events-none fixed left-0 z-[60] pt-1.5"
+        style={{ top: geometry?.top ?? 0 }}
+      >
         <div
           className={cn(
             "flex w-max",
