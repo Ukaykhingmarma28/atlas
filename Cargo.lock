@@ -964,6 +964,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-icon-theme"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "atlas-memory"
 version = "0.1.0"
 dependencies = [
