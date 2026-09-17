@@ -400,3 +400,51 @@ that picked it. Where this reverses an earlier recommendation, it says so.
 ACP agents gain a pull path (the MCP tools). Every agent gains an explicit
 write path (`memory_remember`). Records gain provenance, confidence and
 `last_used`. Injected context stops leaking into agents' private memory.
+
+## 12. Round-3 decisions (the questions round 2 unblocked)
+
+Same method: chosen from Atlas evidence, no capability lost.
+
+### 12.1 Facts found for this round
+
+| Fact | Where | Consequence |
+|------|-------|-------------|
+| `SessionEnd` exists as an event kind but is **never recorded** in production; the only occurrence is a unit test. `SessionStart` is implicit in `register_session` (owner binding) | `shared_memory.rs:57-58,756`, `agents.rs:1363` | "tracks session end" is aspiration, not behaviour. Round 3 defines and records it. |
+| The Memory ▸ Shared store refreshes only on demand (`refresh()`); no Tauri event exists for memory changes (the only memory-family event is `atlas:models-changed`) | `src/features/memory/stores/shared-memory-store.ts:32,63` | Tool writes from agents would be invisible until a manual refresh. |
+| `agent_capabilities` is held by the ACP connection but not plumbed to `atlas-agent-manager` or the Tauri layer | `crates/atlas-agent-servers/src/connection.rs:116,378`; no hits in `atlas-agent-manager`/`src-tauri` | The HTTP-capability gate needs a small plumbing ticket first. |
+| No helper resolves the git common dir anywhere in Atlas; `atlas-checkpoint` has a generic `run(repo, args)` git helper; the thread-metadata store already models `main_worktree_paths` | `crates/atlas-checkpoint/src/git.rs:220-226`, `crates/atlas-thread-metadata/src/db.rs:40-42` | Repo scope is one new helper; worktree awareness has precedent. |
+| `.atlas/` is gitignored | `.gitignore:26` | The store is machine-local by default, like Claude's auto-memory. |
+| First-send budget today: pack ≤ 8000 chars, 400/entry, handoff ≤ 8 turns × 800 chars; per-turn RAG ≤ 1400 chars, 320/doc | `memory_pack.rs:30-39`, `memory_retrieve.rs:29-31` | The new index inherits these ceilings so first-send cost does not grow. |
+| The one-time import pattern with a marker file already exists | `crates/atlas-memory/src/shared_import.rs:18-37` | Migration reuses it. |
+
+### 12.2 Answers
+
+| # | Decision | Evidence / reason |
+|---|----------|-------------------|
+| R1 record store | SQLite `memory.sqlite` at `<scope root>/.atlas/memory/`, WAL, opened by the backend only. Tables: `entries(id, kind, key, content, source, agent, session, confidence, created_at, updated_at, last_used_at, uses, content_hash)`, `events(seq, ts, kind, key, agent, session, payload)` (keeps the events list/append/query API byte-compatible), `sessions(session_id, agent, started_at, ended_at)`. Vectors stay in the HNSW keyed by entry id. | thread-metadata WAL precedent; five existing commands keep their response shapes |
+| R2 scope root | Parent of `git rev-parse --git-common-dir` (the main worktree), else the launch directory. New helper beside the existing git runner. Existing per-worktree `.atlas/memory` dirs are migrated into the main worktree's on first open. | `.gitignore:26`, `git.rs:220-226`, thread-metadata worktree columns |
+| R3 index ranking | Working memory first (plan, then files changed newest-first). Durable entries scored `recency(half-life 14 d) + ln(1+uses) + confidence`, grouped by kind with today's caps as display limits. Whole block ≤ 200 lines and ≤ 8000 chars. | reuses `PACK_MAX_CHARS`; caps preserved as limits |
+| R4 RAG floor | Skip per-turn retrieval when the prompt has fewer than three words or is a continuation phrase ("continue", "ok", "yes", "go on", "next"). | live sample: "continue" retrieved noise |
+| R5 session end | Defined as `agents_drop_session` or agent process exit. Record `SessionEnd`, set `sessions.ended_at`, enqueue the end-of-session extraction. | never recorded today; round 2 Q23 depends on it |
+| R6 UI refresh | The in-process server and every writer emit `atlas:memory-changed { scopeRoot, kinds }`; the Shared store subscribes and re-pulls. Manual refresh stays. | store is pull-only today |
+| R7 capability plumbing | Expose `agent_capabilities` through `atlas-agent-manager` to the Tauri layer. On `session/new`, include the memory server only when `mcpCapabilities.http` is true. Log the decision per agent so the first runtime check answers which adapters qualify. | capabilities stored but unplumbed |
+| R8 server identity | One server per app on `127.0.0.1:0`; one bearer token per (session, scope) minted at `session/new`, passed in the MCP `headers` array for ACP and in the fork's StreamableHttp header field. Token revoked on session end. | ACP http entry carries `headers`; fork supports StreamableHttp |
+| R9 migration | On first open per scope: `events.jsonl` → `events` + folded `entries`; `extracted/*.md` → `entries` (category → kind: decision→Decision, failure→Failure, architecture→Architecture, everything else→Fact); legacy `memory-index` dropped. Marker file gates re-runs; old files kept one release. | `shared_import.rs` pattern |
+| R10 Claude import mapping | Frontmatter `type` → kind: `feedback`→Fact, `reference`→Fact, `user`→Fact, `project`→Decision when the body states a choice, else Fact. Confidence 0.7, source `import:claude`. Preview lists each mapped line before write. | Claude docs define the four types |
+| R11 extractor output | The extraction prompt asks directly for the four durable kinds plus a 0–1 confidence; no intermediate category table. | avoids the lossy category→type mapping the graph path had (`extract.rs:14-17`) |
+| R12 tests | Keep the existing shape tests on `memory_get_state`/`memory_list_events`. Add: rmcp in-process client tests for the four tools; a strip-at-reader test that feeds a Claude memory file containing an `<atlas-memory>` block and asserts nothing is embedded; a scope test with two worktrees resolving to one store. | contract preservation is the constraint |
+
+### 12.3 Ticket order (blocking edges)
+
+1. **Loop fix** — `<atlas-memory>` tag on every injected block; strip in `read_claude` and the transcript reader. No dependencies. Ships alone.
+2. **Capability plumbing** — expose `agent_capabilities`; log `mcpCapabilities.http` per agent at runtime. No dependencies.
+3. **Record store + migration** — SQLite behind the five existing commands; `sessions` table; `SessionEnd` recorded. Blocks 4, 6, 7, 9, 10.
+4. **In-process MCP server** — rmcp over axum, four tools, token minting, `atlas:memory-changed`. Blocks 5.
+5. **Wiring** — ACP `session/new` gated on (2); native `mcp_servers.atlas_memory` override; delete the dynamic tool. Needs 2, 4.
+6. **Session-start block** — index ranking, RAG floor, pack + handoff inside the tag. Needs 3.
+7. **Extractor** — gateway mode + BYOK mode, direct four-kind output, end-of-session trigger; delete `memory_compile`. Needs 3.
+8. **Handoff via capture** — agent-neutral recent-session tail. Needs 3.
+9. **Memory panel** — provenance, edit, forget, live refresh. Needs 3, 4.
+10. **Import** — Claude auto-memory, previewed. Needs 3, 9.
+11. **Global promotion remap** — Fact rule over the record table; delete graph/consolidate/dream. Needs 3, 7.
+12. **Deletions** — legacy index, stub reader, dead commands. Needs 5, 7, 11.
