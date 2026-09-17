@@ -18,6 +18,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
+import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
 import { ChatPanel } from "@/features/chat/components/chat-panel";
@@ -126,7 +127,10 @@ import {
 } from "lucide-react";
 import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
 
-const tabIcons: Record<TabType, React.ElementType> = {
+// Typed as the icon-theme fallback rather than `React.ElementType`: these are
+// what a tab falls back to when the icon theme has nothing for it, and
+// `ElementType` also admits raw tag names, which a fallback cannot be.
+const tabIcons: Record<TabType, FallbackIcon> = {
   chat: AtlasIcon,
   canvas: Map,
   browser: Globe,
@@ -427,6 +431,9 @@ const TabColumn = memo(function TabColumn({
           <div className="flex items-stretch min-w-0 flex-1 overflow-x-auto hide-scrollbar">
             {tabs.map((tab) => {
               const Icon = tabIcons[tab.type as TabType] ?? MessageSquare;
+              // A tab opened from a path carries it in `data.filePath`, so the
+              // strip shows the same icon the tree row it came from does.
+              const tabFilePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
               const isActive = tab.id === activeId;
               const isRunning = runningTabIds.has(tab.id);
               return (
@@ -449,6 +456,8 @@ const TabColumn = memo(function TabColumn({
                 >
                   {isRunning ? (
                     <Loader2 size={12} className="animate-spin text-primary shrink-0" />
+                  ) : tabFilePath ? (
+                    <FileIcon path={tabFilePath} size={12} fallback={Icon} />
                   ) : (
                     <Icon
                       size={12}
@@ -786,6 +795,7 @@ function ProjectlessCenter() {
 
         {allowed.map((tab) => {
           const Icon = tabIcons[tab.type] ?? MessageSquare;
+          const tabFilePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
           const isActive = tab.id === active?.id;
           return (
             <div
@@ -811,10 +821,17 @@ function ProjectlessCenter() {
                   : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
               )}
             >
-              <Icon
-                size={12}
-                className={cn("shrink-0", isActive ? "text-text-secondary" : "text-text-tertiary")}
-              />
+              {tabFilePath ? (
+                <FileIcon path={tabFilePath} size={12} fallback={Icon} />
+              ) : (
+                <Icon
+                  size={12}
+                  className={cn(
+                    "shrink-0",
+                    isActive ? "text-text-secondary" : "text-text-tertiary",
+                  )}
+                />
+              )}
               <span className="max-w-[140px] truncate leading-normal">{tab.title}</span>
               {tab.closable && (
                 <Hint label="Close tab">

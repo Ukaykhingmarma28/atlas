@@ -90,6 +90,7 @@ import {
   listenUpdateChecking,
 } from "@/features/updater/lib/updater-api";
 import { Toaster, toast } from "sonner";
+import { IconThemeFonts } from "@/features/icon-theme/components/file-icon";
 import {
   auth,
   listenAuthChanged,
@@ -1451,6 +1452,9 @@ export function App() {
       <StopAgentsDialog />
       <RemoveAgentDialog />
       <BrowserOverlayWatcher />
+      {/* Renders nothing at all until a glyph-based icon theme is in use, and
+          so costs an SVG theme (including the bundled default) nothing. */}
+      <IconThemeFonts />
       <Toaster
         position="bottom-right"
         toastOptions={{
