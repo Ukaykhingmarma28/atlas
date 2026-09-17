@@ -11,6 +11,19 @@ import {
 } from "../lib/theme-api";
 import type { ThemeOverride } from "../resolve-theme";
 
+/** The id every install ships with, and the last thing `apply` tries. */
+const FALLBACK_THEME = "atlas";
+
+/** `getTheme`, reduced to "the theme, or nothing". Never throws. */
+async function loadTheme(id: string): Promise<Theme | null> {
+  try {
+    return await getTheme(id);
+  } catch (error) {
+    console.warn(`Theme "${id}" could not be loaded`, error);
+    return null;
+  }
+}
+
 interface ThemeState {
   themes: ThemeSummary[];
   loaded: Record<string, Theme>;
@@ -39,13 +52,20 @@ const baseStore = create<ThemeState>()((set, get) => ({
     apply: async (id, mode, themeOverrides = {}) => {
       let theme = get().loaded[id];
       if (!theme) {
-        try {
-          theme = await getTheme(id);
-        } catch (error) {
-          console.warn(`Theme "${id}" is unavailable; falling back to Atlas`, error);
-          theme = await getTheme("atlas");
+        // Both loads are guarded. The fallback used to sit bare inside the
+        // catch, so whatever made the chosen theme unavailable — an offline
+        // backend, a catalog that would not build — threw a SECOND time out of
+        // the handler that existed to survive the first, rejecting the promise
+        // no caller awaits and leaving the app on the compiled-in `tokens.css`
+        // defaults with nothing said. Failing to theme is not a reason to fail.
+        const loaded =
+          (await loadTheme(id)) ?? (id === FALLBACK_THEME ? null : await loadTheme(FALLBACK_THEME));
+        if (!loaded) {
+          set({ error: `No theme could be loaded (tried "${id}" and "${FALLBACK_THEME}")` });
+          return;
         }
-        set((state) => ({ loaded: { ...state.loaded, [theme.id]: theme } }));
+        theme = loaded;
+        set((state) => ({ loaded: { ...state.loaded, [loaded.id]: loaded } }));
       }
       applyTheme(theme, mode, themeOverrides);
     },

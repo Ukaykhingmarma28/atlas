@@ -264,9 +264,31 @@ pub fn user_theme_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|dir| dir.join("atlas").join("themes"))
 }
 
-pub fn load_user_themes_from(dir: &Path) -> Result<Vec<Theme>, ThemeError> {
+/// The themes on offer, plus whatever went wrong getting there.
+///
+/// One unreadable file in `~/.config/atlas/themes/` USED TO take the whole
+/// catalog down: the loader collected into `Result`, so the first bad file
+/// short-circuited `all_themes()` and even the `include_str!` built-ins never
+/// reached the picker. A theme author with a half-typed TOML open in an editor
+/// — exactly the person the hot-reload watcher exists for — lost every theme
+/// in the app until they fixed it. A bad file is now skipped and reported as an
+/// ordinary [`ThemeWarning`], the same shape an unknown theme key produces.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ThemeCatalog {
+    /// Every loadable theme, sorted by id; `true` marks a built-in.
+    pub themes: Vec<(Theme, bool)>,
+    /// One entry per user theme file that could not be loaded, keyed by file
+    /// name. Empty on a healthy install.
+    pub warnings: Vec<ThemeWarning>,
+}
+
+/// User themes in `dir`, with the unloadable files reported rather than fatal.
+///
+/// Only a failure to *list* the directory is still an error: that is the whole
+/// source being unavailable, not one file in it being wrong.
+pub fn load_user_themes_from(dir: &Path) -> Result<(Vec<Theme>, Vec<ThemeWarning>), ThemeError> {
     if !dir.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut paths = fs::read_dir(dir)
         .map_err(|source| ThemeError::Read { path: dir.to_path_buf(), source })?
@@ -275,28 +297,47 @@ pub fn load_user_themes_from(dir: &Path) -> Result<Vec<Theme>, ThemeError> {
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml"))
         .collect::<Vec<_>>();
     paths.sort();
-    paths.iter().map(|path| load_theme_file(path)).collect()
+    let mut themes = Vec::with_capacity(paths.len());
+    let mut warnings = Vec::new();
+    for path in &paths {
+        match load_theme_file(path) {
+            Ok(theme) => themes.push(theme),
+            Err(error) => warnings.push(ThemeWarning {
+                key: path
+                    .file_name()
+                    .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned()),
+                message: error.to_string(),
+            }),
+        }
+    }
+    Ok((themes, warnings))
 }
 
-pub fn all_themes() -> Result<Vec<(Theme, bool)>, ThemeError> {
+pub fn all_themes() -> Result<ThemeCatalog, ThemeError> {
     let mut by_id = built_in_themes()?
         .into_iter()
         .map(|theme| (theme.id.clone(), (theme, true)))
         .collect::<BTreeMap<_, _>>();
+    let mut warnings = Vec::new();
     if let Some(dir) = user_theme_dir() {
-        for theme in load_user_themes_from(&dir)? {
+        let (themes, failures) = load_user_themes_from(&dir)?;
+        for theme in themes {
             by_id.insert(theme.id.clone(), (theme, false));
         }
+        warnings = failures;
     }
-    Ok(by_id.into_values().collect())
+    Ok(ThemeCatalog { themes: by_id.into_values().collect(), warnings })
 }
 
 pub fn list_themes() -> Result<Vec<ThemeSummary>, ThemeError> {
-    all_themes().map(|themes| themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect())
+    all_themes().map(|catalog| {
+        catalog.themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect()
+    })
 }
 
 pub fn get_theme(id: &str) -> Result<Theme, ThemeError> {
     all_themes()?
+        .themes
         .into_iter()
         .map(|(theme, _)| theme)
         .find(|theme| theme.id == id)
@@ -608,6 +649,39 @@ mod tests {
         for color in ["red", "#12", "rgb()", "oklch(nope 1 2)"] {
             assert!(!is_css_color(color), "{color}");
         }
+    }
+
+    /// A theme author edits one file at a time. Before this, the first
+    /// unparseable file in the directory short-circuited the whole catalog and
+    /// took the built-ins with it — the picker went empty and the app had no
+    /// theme to fall back to.
+    #[test]
+    fn one_bad_user_theme_is_skipped_and_the_rest_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        // Sorted first, so a short-circuit would drop both good files.
+        fs::write(dir.path().join("0-broken.toml"), "schema = 1\nid = \"broken\"\n").unwrap();
+        fs::write(dir.path().join("1-not-toml.toml"), "}{ this is not toml").unwrap();
+        fs::write(
+            dir.path().join("2-good.toml"),
+            minimal_theme("").replace("id = \"test\"", "id = \"good\""),
+        )
+        .unwrap();
+        fs::write(dir.path().join("ignored.txt"), "not a theme").unwrap();
+
+        let (themes, warnings) = load_user_themes_from(dir.path()).unwrap();
+
+        assert_eq!(themes.iter().map(|theme| theme.id.as_str()).collect::<Vec<_>>(), ["good"]);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert_eq!(warnings[0].key, "0-broken.toml");
+        assert_eq!(warnings[1].key, "1-not-toml.toml");
+        assert!(warnings.iter().all(|warning| !warning.message.is_empty()));
+    }
+
+    #[test]
+    fn a_missing_user_theme_dir_is_not_a_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (themes, warnings) = load_user_themes_from(&dir.path().join("nope")).unwrap();
+        assert!(themes.is_empty() && warnings.is_empty());
     }
 
     #[test]

@@ -17,10 +17,22 @@ struct ThemesChangedEvent {
 
 #[tauri::command]
 pub async fn list_themes() -> Result<Vec<ThemeSummary>, String> {
-    tokio::task::spawn_blocking(atlas_theme::list_themes)
+    let catalog = tokio::task::spawn_blocking(atlas_theme::all_themes)
         .await
         .map_err(|error| format!("theme list task failed: {error}"))?
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    // A file in `~/.config/atlas/themes/` that could not be loaded no longer
+    // takes the catalog down with it, so the only trace left is this line —
+    // which is what a theme author mid-edit goes looking for.
+    for warning in &catalog.warnings {
+        tracing::warn!(
+            target: "atlas::themes",
+            file = %warning.key,
+            "skipped an unloadable user theme: {}",
+            warning.message,
+        );
+    }
+    Ok(catalog.themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect())
 }
 
 #[tauri::command]
