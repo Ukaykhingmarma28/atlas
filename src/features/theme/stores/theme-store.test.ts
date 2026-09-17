@@ -24,7 +24,21 @@ const ATLAS = { schema: 1, id: "atlas", name: "Atlas", author: "a", license: "MI
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useThemeStore.setState({ themes: [], loaded: {}, loading: false, error: null });
+  useThemeStore.setState({ themes: [], skipped: [], loaded: {}, loading: false, error: null });
+});
+
+describe("theme store load()", () => {
+  /** A file Rust could not parse is skipped so the rest of the catalog
+   *  survives. That used to end at a `tracing::warn!`, where the person who
+   *  can fix the file will never see it. */
+  it("keeps the files that could not be loaded, for the picker to show", async () => {
+    const skipped = [{ key: "half-written.toml", message: "invalid TOML in half-written.toml" }];
+    listThemes.mockResolvedValue({ themes: [], warnings: skipped });
+
+    await useThemeStore.getState().actions.load();
+
+    expect(useThemeStore.getState().skipped).toEqual(skipped);
+  });
 });
 
 describe("theme store apply()", () => {
@@ -70,7 +84,7 @@ describe("re-applying the active theme", () => {
 
   it("repaints when the theme catalog changes underneath it", async () => {
     getTheme.mockResolvedValue(ATLAS);
-    listThemes.mockResolvedValue([]);
+    listThemes.mockResolvedValue({ themes: [], warnings: [] });
     await useThemeStore.getState().actions.apply("atlas", "dark", { base: { background: "#000" } });
     expect(applyTheme).toHaveBeenCalledTimes(1);
 

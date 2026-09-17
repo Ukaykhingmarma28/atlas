@@ -8,6 +8,7 @@ import {
   type Theme,
   type ThemeMode,
   type ThemeSummary,
+  type ThemeWarning,
 } from "../lib/theme-api";
 import type { ThemeOverride } from "../resolve-theme";
 
@@ -26,6 +27,9 @@ async function loadTheme(id: string): Promise<Theme | null> {
 
 interface ThemeState {
   themes: ThemeSummary[];
+  /** User theme files that could not be loaded at all, so the picker can say
+   *  which file and why. Empty on a healthy install. */
+  skipped: ThemeWarning[];
   loaded: Record<string, Theme>;
   loading: boolean;
   error: string | null;
@@ -47,6 +51,7 @@ let lastRequest: { id: string; mode: ThemeMode; themeOverrides: ThemeOverride } 
 
 const baseStore = create<ThemeState>()((set, get) => ({
   themes: [],
+  skipped: [],
   loaded: {},
   loading: false,
   error: null,
@@ -54,7 +59,8 @@ const baseStore = create<ThemeState>()((set, get) => ({
     load: async () => {
       set({ loading: true, error: null });
       try {
-        set({ themes: await listThemes(), loading: false });
+        const catalog = await listThemes();
+        set({ themes: catalog.themes, skipped: catalog.warnings, loading: false });
       } catch (error) {
         set({ loading: false, error: String(error) });
       }

@@ -143,6 +143,19 @@ pub struct ThemeWarning {
     pub message: String,
 }
 
+/// What the picker needs to draw itself: the themes on offer, and the user
+/// theme files that never made it that far.
+///
+/// [`ThemeCatalog::warnings`] used to stop at a `tracing::warn!` line. A
+/// skipped file is the one failure the *user* can fix, and they are not
+/// reading the log — so it travels to the UI with the list it is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeCatalogSummary {
+    pub themes: Vec<ThemeSummary>,
+    pub warnings: Vec<ThemeWarning>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeSummary {
@@ -329,9 +342,14 @@ pub fn all_themes() -> Result<ThemeCatalog, ThemeError> {
     Ok(ThemeCatalog { themes: by_id.into_values().collect(), warnings })
 }
 
-pub fn list_themes() -> Result<Vec<ThemeSummary>, ThemeError> {
-    all_themes().map(|catalog| {
-        catalog.themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect()
+pub fn list_themes() -> Result<ThemeCatalogSummary, ThemeError> {
+    all_themes().map(|catalog| ThemeCatalogSummary {
+        themes: catalog
+            .themes
+            .into_iter()
+            .map(|(theme, built_in)| theme.summary(built_in))
+            .collect(),
+        warnings: catalog.warnings,
     })
 }
 

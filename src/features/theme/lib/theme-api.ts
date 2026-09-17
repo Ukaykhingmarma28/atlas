@@ -40,9 +40,17 @@ export interface ThemeSummary {
   warnings: ThemeWarning[];
 }
 
+/** The picker's whole view of disk: what loaded, and what did not. */
+export interface ThemeCatalogSummary {
+  themes: ThemeSummary[];
+  /** One entry per user theme file that could not be loaded at all, keyed by
+   *  file name. Empty on a healthy install. */
+  warnings: ThemeWarning[];
+}
+
 export const THEMES_CHANGED_EVENT = "atlas:themes-changed";
 
-export function listThemes(): Promise<ThemeSummary[]> {
+export function listThemes(): Promise<ThemeCatalogSummary> {
   return invoke("list_themes");
 }
 
