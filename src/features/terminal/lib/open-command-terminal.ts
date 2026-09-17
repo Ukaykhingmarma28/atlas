@@ -1,6 +1,6 @@
 // Open a terminal tab that runs a command.
 //
-// Zed hands an agent's terminal-auth command to the project terminal
+// Zed hands an agent's terminal-auth command to the workspace terminal
 // (`SpawnInTerminal`, `use_new_terminal: true`) rather than spawning it itself,
 // and that is the mechanism ported here. The reason is stdin: a login CLI that
 // asks a question — a provider picker, a device-code confirmation, a y/n —

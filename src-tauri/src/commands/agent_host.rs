@@ -1930,7 +1930,7 @@ impl AgentHost {
         let Some(list) = connection.session_list() else {
             return Ok(None);
         };
-        // No cwd filter. Zed scopes its import to a project because its
+        // No cwd filter. Zed scopes its import to a workspace because its
         // connections are per-project; Atlas has one connection per agent and
         // an app-level store whose rows carry their own paths, so "everything
         // this agent knows" is both simpler and more useful.

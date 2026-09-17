@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
  * purge), shrink ALLOWED_CERSEI_MANIFESTS in the same commit — this test
  * failing on that day is it working, not breaking.
  *
- * The root `Cargo.toml` is walked too. Since the repo became a cargo project
+ * The root `Cargo.toml` is walked too. Since the repo became a cargo workspace
  * (#38) that is where the vendored SDK actually enters the graph, via
  * `[patch.crates-io]`; a guard that never read it would report containment
  * while the root still patched `cersei-*`.

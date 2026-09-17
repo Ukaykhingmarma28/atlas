@@ -1806,7 +1806,7 @@
    docked rail is opaque over the base; the floating one is translucent and
    sits on the overlay wrapper's own backdrop blur (blur + fill must share one
    element or WKWebView has nothing to sample). */
-.atlas-workspace-rail {
+.atlas-project-rail {
   background:
     linear-gradient(
       180deg,
@@ -1818,7 +1818,7 @@
     #0b0b0b;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.034);
 }
-.atlas-workspace-rail--glass {
+.atlas-project-rail--glass {
   background:
     linear-gradient(
       180deg,

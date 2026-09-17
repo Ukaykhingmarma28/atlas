@@ -520,9 +520,9 @@ function liveTimeline(seed: Seed): TimelineEntry[] {
       at: t(31),
       turnSeq: 8,
       toolName: "bash",
-      toolTitle: "cargo check --project",
+      toolTitle: "cargo check --workspace",
       toolStatus: "failed",
-      arguments: JSON.stringify({ command: "cargo check --project" }, null, 2),
+      arguments: JSON.stringify({ command: "cargo check --workspace" }, null, 2),
       result:
         "error[E0308]: mismatched types\n  --> src-tauri/src/commands/capture.rs:1551:9\n   |\n   = note: expected `Vec<BoardSession>`, found `Option<_>`",
       resultRef: "blob-cargo-log",
@@ -874,7 +874,7 @@ const threads = new Map<string, SessionChatThreadWire[]>([
             sources: [
               {
                 kind: "tool_call",
-                label: "cargo check --project",
+                label: "cargo check --workspace",
                 entryId: `${LIVE_ID}-e31`,
                 commitSha: null,
               },
@@ -908,7 +908,7 @@ const ANSWER = [
   "   sites inherit it.",
   "2. The first Checkpoint (`4f21a90`) carries that work: 96 insertions across",
   "   three files.",
-  "3. `cargo check --project` then failed on the board command:",
+  "3. `cargo check --workspace` then failed on the board command:",
   "",
   "```rust",
   "// src-tauri/src/commands/capture.rs:1551",

@@ -78,7 +78,7 @@ function cargoMajor(version: string): string {
   return a === "0" ? `0.${b}` : a;
 }
 
-/** Manifests Atlas owns: the project root, every crate, and the app. */
+/** Manifests Atlas owns: the workspace root, every crate, and the app. */
 function ownedManifests(): string[] {
   const crates = path.join(REPO_ROOT, "crates");
   return [

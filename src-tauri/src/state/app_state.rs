@@ -93,7 +93,7 @@ pub struct ProjectGroup {
     pub org_id: Option<String>,
 }
 
-/// A top-level tenant that owns a set of projects (the Linear "project
+/// A top-level tenant that owns a set of projects (the Linear "workspace
 /// picker" model). Exactly one org is active per window. Local-only until the
 /// user opts into sync per org (Chrome-profile model). The shape is a superset
 /// of the server `organization` row so cloud sync is a thin adapter:
