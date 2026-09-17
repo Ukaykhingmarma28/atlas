@@ -16,7 +16,24 @@ use thiserror::Error;
 pub const THEME_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_THEME_ID: &str = "atlas";
 
+/// Generated from `crates/atlas-theme/keys.toml` by `bun run theme:keys`.
+/// One key per line: the role name, a tab, and the one-line description that
+/// becomes the author's hover text in the JSON Schema.
 const THEME_KEYS: &str = include_str!("../theme-keys.txt");
+
+/// Every theme key with its description, in registry order.
+fn theme_key_docs() -> impl Iterator<Item = (&'static str, &'static str)> {
+    THEME_KEYS
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.split_once('\t').unwrap_or((line, "")))
+}
+
+/// Every theme key Atlas knows, in registry order.
+pub fn theme_keys() -> impl Iterator<Item = &'static str> {
+    theme_key_docs().map(|(key, _)| key)
+}
 
 const BASE_TOKENS: &[&str] = &[
     "background",
@@ -361,8 +378,40 @@ where
     Ok(watcher)
 }
 
+/// The schema authors get through the `#:schema` comment at the top of a theme.
+///
+/// `schemars` describes the struct, which types `keys` as an open map of
+/// strings — so it validates nothing and a misspelled key is silent until the
+/// colour does not appear. The `keys` property is therefore replaced here with
+/// the closed set from `theme-keys.txt`: a TOML editor then completes key names
+/// and underlines a typo, with the description on hover.
+///
+/// `additionalProperties: false` is stricter than the loader, which keeps an
+/// unknown key as a warning for forward compatibility. That is deliberate — the
+/// editor should flag a key this build has never heard of.
 pub fn json_schema() -> serde_json::Value {
-    serde_json::to_value(schema_for!(Theme)).expect("Theme JSON schema serializes")
+    let mut schema = serde_json::to_value(schema_for!(Theme)).expect("Theme JSON schema serializes");
+    let keys = schema
+        .pointer_mut("/definitions/ThemeVariant/properties/keys")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("ThemeVariant has a keys property");
+    keys.insert("additionalProperties".to_string(), serde_json::Value::Bool(false));
+    keys.insert(
+        "properties".to_string(),
+        theme_key_docs()
+            .map(|(key, description)| {
+                // `$ref` beside other keywords is ignored under draft-07, so the
+                // description rides an `allOf` wrapper to survive validation.
+                let value = serde_json::json!({
+                    "allOf": [{ "$ref": "#/definitions/ThemeKeyValue" }],
+                    "description": description,
+                });
+                (key.to_string(), value)
+            })
+            .collect::<serde_json::Map<_, _>>()
+            .into(),
+    );
+    schema
 }
 
 fn parse_variant(value: toml::Value, origin: &str, appearance: &str) -> Result<ThemeVariant, ThemeError> {
@@ -515,7 +564,7 @@ fn validate_variant(
 }
 
 fn collect_warnings(theme: &mut Theme) {
-    let known = THEME_KEYS.lines().collect::<BTreeSet<_>>();
+    let known = theme_keys().collect::<BTreeSet<_>>();
     for (appearance, variant) in [("dark", theme.dark.as_ref()), ("light", theme.light.as_ref())] {
         if let Some(variant) = variant {
             for key in variant.keys.keys().filter(|key| !known.contains(key.as_str())) {
@@ -682,6 +731,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (themes, warnings) = load_user_themes_from(&dir.path().join("nope")).unwrap();
         assert!(themes.is_empty() && warnings.is_empty());
+    }
+
+    /// `theme-keys.txt` is generated; a hand-edit that drops the tab or the
+    /// description would silently empty the hovers in the schema.
+    #[test]
+    fn every_theme_key_carries_a_description() {
+        let docs = theme_key_docs().collect::<Vec<_>>();
+        assert!(docs.len() > 100, "{} keys", docs.len());
+        for (key, description) in &docs {
+            assert!(!key.is_empty() && !key.contains(' '), "key {key:?}");
+            assert!(description.ends_with('.'), "{key} description: {description:?}");
+        }
+        assert_eq!(docs.iter().map(|(key, _)| *key).collect::<BTreeSet<_>>().len(), docs.len());
+    }
+
+    /// The point of the generated enum: an author's typo is an editor error
+    /// rather than a colour that silently never appears.
+    #[test]
+    fn schema_closes_the_key_set() {
+        let schema = json_schema();
+        let keys = schema.pointer("/definitions/ThemeVariant/properties/keys").unwrap();
+        assert_eq!(keys["additionalProperties"], serde_json::Value::Bool(false));
+        let properties = keys["properties"].as_object().unwrap();
+        assert_eq!(properties.len(), theme_keys().count());
+        let sample = &properties["terminal.ansi.red"];
+        assert_eq!(sample["allOf"][0]["$ref"], "#/definitions/ThemeKeyValue");
+        assert!(sample["description"].as_str().unwrap().contains("ANSI red"));
+        assert!(!properties.contains_key("terminal.ansi.reddd"));
     }
 
     #[test]

@@ -1,0 +1,1318 @@
+# The theme-key registry — the one hand-edited source for every Atlas theme key.
+#
+# GENERATED FROM THIS FILE (never edit those by hand; run `bun run theme:keys`):
+#
+#   src/features/theme/theme-key-registry.ts   the TS registry the resolver reads
+#   crates/atlas-theme/theme-keys.txt          the key list + descriptions Rust reads
+#   crates/atlas-theme/schema/theme-v1.json    the `keys` property, so `#:schema`
+#                                              gives authors completion and flags a typo
+#   docs/reference/theme-keys.md               the generated part of the reference
+#
+# `bun run theme:keys:check` (and `bun run test`) fail when any of them is stale.
+#
+# ── An entry ──────────────────────────────────────────────────────────────────
+#
+#   name         the dotted role name an author writes under `[dark.keys]`.
+#   group        heading this key sits under in the generated outputs. Keys of a
+#                group must be contiguous.
+#   description  one line, what this key colours. Shown on hover in a TOML editor.
+#   palette      first derivation source: one of the eight palette hues.
+#   base         second derivation source: a shadcn base token.
+#   op/amount    the transform applied to whichever source was chosen. Omit for a
+#                plain alias.
+#   dark/light   the Atlas default for each appearance, used when a theme sets
+#                neither the key nor any source it derives from.
+#   note         optional prose, carried into the generated TS as a comment.
+#
+# Resolution order, implemented once in `resolve-theme.ts`: an explicit `keys`
+# value in the theme wins; then `palette`; then `base`; then the appearance
+# default. `op` is applied to whichever of those three was used — never to an
+# explicit value, which is taken exactly as written.
+#
+# ── The operation vocabulary (closed; adding one means editing the resolver) ──
+#
+#   alpha              replace the colour's alpha channel with `amount`.
+#   lighten            mix `amount` of white into the colour.
+#   toward_background  mix `amount` of `base.background` into the colour. Keeps a
+#                      muted role muted on a light theme, where lightening would
+#                      wash it out.
+#
+# Deleting a key, renaming one, or changing what it derives from is an edit to
+# this file and nothing else.
+
+version = 1
+
+
+# The groups, in order. Every key names one, and a group's keys are contiguous.
+[[group]]
+name = "Borders"
+description = "Separators and control outlines."
+
+[[group]]
+name = "Elements and overlays"
+description = "Hover/selected/pressed overlays, and the raised-surface edge."
+
+[[group]]
+name = "Text"
+description = "Prose roles that are not a base token."
+
+[[group]]
+name = "Status"
+description = "Success / warning / error / info, plus two categorical hues."
+
+[[group]]
+name = "Selection"
+description = "Document text selection."
+
+[[group]]
+name = "Terminal"
+description = "The PTY surface and the 16 ANSI colours."
+
+[[group]]
+name = "Syntax"
+description = "CodeMirror and Markdown highlighting."
+
+[[group]]
+name = "Editor"
+description = "The code editor's own chrome."
+
+[[group]]
+name = "Chrome surfaces"
+description = "Scrollbars, tabs, panels — the app frame."
+
+[[group]]
+name = "Diff"
+description = "Added / removed / modified regions, inline and side-by-side."
+
+[[group]]
+name = "Team chat"
+description = "The comms panel."
+
+[[group]]
+name = "Agents and indicators"
+description = "Per-agent identity chips and small live indicators."
+
+
+# ── Borders ───────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "border.default"
+group = "Borders"
+description = "Default separator and control border."
+base = "border"
+dark = "#1e1e1e"
+light = "#d8d3cc"
+
+[[key]]
+name = "border.subtle"
+group = "Borders"
+description = "Low-emphasis separator."
+base = "sidebar-border"
+dark = "#141414"
+light = "#ebe5de"
+
+[[key]]
+name = "border.strong"
+group = "Borders"
+description = "High-emphasis border."
+base = "ring"
+dark = "#3d3d3d"
+light = "#b8b1aa"
+
+[[key]]
+name = "border.focus"
+group = "Borders"
+description = "Focused-control border."
+base = "ring"
+dark = "#3d3d3d"
+light = "#907aa9"
+
+[[key]]
+name = "border.variant"
+group = "Borders"
+description = "Alternate low-emphasis border."
+base = "sidebar-border"
+dark = "#141414"
+light = "#ebe5de"
+
+
+# ── Elements and overlays ─────────────────────────────────────────────────────
+
+[[key]]
+name = "element.hover"
+group = "Elements and overlays"
+description = "Hover overlay for ordinary elements."
+base = "foreground"
+op = "alpha"
+amount = 0.04
+dark = "rgba(255,255,255,0.04)"
+light = "rgba(0,0,0,0.04)"
+
+[[key]]
+name = "element.selected"
+group = "Elements and overlays"
+description = "Selected overlay for ordinary elements."
+base = "foreground"
+op = "alpha"
+amount = 0.06
+dark = "rgba(255,255,255,0.06)"
+light = "rgba(0,0,0,0.06)"
+
+[[key]]
+name = "element.active"
+group = "Elements and overlays"
+description = "Pressed overlay for ordinary elements."
+base = "foreground"
+op = "alpha"
+amount = 0.08
+dark = "rgba(255,255,255,0.08)"
+light = "rgba(0,0,0,0.08)"
+
+[[key]]
+name = "element.highlight"
+group = "Elements and overlays"
+description = "Top-edge highlight on a raised surface."
+base = "foreground"
+op = "alpha"
+amount = 0.06
+dark = "rgba(255,255,255,0.06)"
+light = "rgba(0,0,0,0.06)"
+note = """
+The 1px top edge on raised glass — `inset-highlight` in globals.css. It is
+the theme's own foreground at 6%, so a light variant gets a dark edge
+instead of the white-on-white one a hardcoded highlight would give it.
+"""
+
+[[key]]
+name = "element.primary_hover"
+group = "Elements and overlays"
+description = "Hovered primary-brand fill."
+base = "primary"
+op = "lighten"
+amount = 0.15
+dark = "#cccccc"
+light = "#a290b5"
+
+[[key]]
+name = "element.primary_muted"
+group = "Elements and overlays"
+description = "Muted primary-brand fill."
+base = "primary"
+op = "alpha"
+amount = 0.06
+dark = "rgba(255,255,255,0.06)"
+light = "rgba(144,122,169,0.08)"
+
+[[key]]
+name = "ghost_element.hover"
+group = "Elements and overlays"
+description = "Hover overlay for ghost controls."
+base = "foreground"
+op = "alpha"
+amount = 0.03
+dark = "rgba(255,255,255,0.03)"
+light = "rgba(0,0,0,0.03)"
+
+[[key]]
+name = "ghost_element.selected"
+group = "Elements and overlays"
+description = "Selected overlay for ghost controls."
+base = "foreground"
+op = "alpha"
+amount = 0.05
+dark = "rgba(255,255,255,0.05)"
+light = "rgba(0,0,0,0.05)"
+
+[[key]]
+name = "ghost_element.active"
+group = "Elements and overlays"
+description = "Pressed overlay for ghost controls."
+base = "foreground"
+op = "alpha"
+amount = 0.07
+dark = "rgba(255,255,255,0.07)"
+light = "rgba(0,0,0,0.07)"
+
+
+# ── Text ──────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "text.muted"
+group = "Text"
+description = "Muted prose and metadata."
+base = "muted-foreground"
+dark = "#585858"
+light = "#797593"
+
+[[key]]
+name = "text.placeholder"
+group = "Text"
+description = "Input placeholder text."
+base = "muted-foreground"
+op = "toward_background"
+amount = 0.12
+dark = "#777777"
+light = "#9893a5"
+
+[[key]]
+name = "text.disabled"
+group = "Text"
+description = "Disabled and unavailable text."
+base = "muted-foreground"
+op = "toward_background"
+amount = 0.35
+dark = "#333333"
+light = "#b8b1aa"
+
+[[key]]
+name = "text.accent"
+group = "Text"
+description = "Rare text-only signature accent."
+palette = "yellow"
+base = "primary"
+dark = "#ffff00"
+light = "#907aa9"
+
+
+# ── Status ────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "status.success.foreground"
+group = "Status"
+description = "Success status foreground."
+palette = "green"
+dark = "#4d4d4d"
+light = "#286983"
+
+[[key]]
+name = "status.success.background"
+group = "Status"
+description = "Success status background."
+palette = "green"
+op = "alpha"
+amount = 0.12
+dark = "rgba(77,77,77,0.12)"
+light = "rgba(40,105,131,0.12)"
+
+[[key]]
+name = "status.warning.foreground"
+group = "Status"
+description = "Warning status foreground."
+palette = "yellow"
+dark = "#cd9731"
+light = "#ea9d34"
+
+[[key]]
+name = "status.warning.background"
+group = "Status"
+description = "Warning status background."
+palette = "yellow"
+op = "alpha"
+amount = 0.12
+dark = "rgba(205,151,49,0.12)"
+light = "rgba(234,157,52,0.12)"
+
+[[key]]
+name = "status.error.foreground"
+group = "Status"
+description = "Error status foreground."
+palette = "red"
+base = "destructive"
+dark = "#f44747"
+light = "#b4637a"
+
+[[key]]
+name = "status.error.background"
+group = "Status"
+description = "Error status background."
+palette = "red"
+base = "destructive"
+op = "alpha"
+amount = 0.12
+dark = "rgba(244,71,71,0.12)"
+light = "rgba(180,99,122,0.12)"
+
+[[key]]
+name = "status.info.foreground"
+group = "Status"
+description = "Informational status foreground."
+palette = "blue"
+dark = "#6796e6"
+light = "#56949f"
+
+[[key]]
+name = "status.info.background"
+group = "Status"
+description = "Informational status background."
+palette = "blue"
+op = "alpha"
+amount = 0.12
+dark = "rgba(103,150,230,0.12)"
+light = "rgba(86,148,159,0.12)"
+
+[[key]]
+name = "status.purple.foreground"
+group = "Status"
+description = "Purple categorical status."
+palette = "purple"
+dark = "#999999"
+light = "#907aa9"
+
+[[key]]
+name = "status.orange.foreground"
+group = "Status"
+description = "Orange categorical status."
+palette = "orange"
+dark = "#cd9731"
+light = "#d7827e"
+
+
+# ── Selection ─────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "selection.background"
+group = "Selection"
+description = "Document text selection."
+base = "primary"
+op = "alpha"
+amount = 0.18
+dark = "rgba(255,255,255,0.18)"
+light = "rgba(144,122,169,0.18)"
+
+
+# ── Terminal ──────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "terminal.foreground"
+group = "Terminal"
+description = "Terminal default foreground."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "terminal.background"
+group = "Terminal"
+description = "Terminal background."
+base = "background"
+dark = "#000000"
+light = "#faf4ed"
+
+[[key]]
+name = "terminal.cursor"
+group = "Terminal"
+description = "Terminal cursor."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "terminal.selection"
+group = "Terminal"
+description = "Terminal selection."
+base = "primary"
+op = "alpha"
+amount = 0.3
+dark = "rgba(255,255,255,0.3)"
+light = "rgba(144,122,169,0.3)"
+
+[[key]]
+name = "terminal.ansi.black"
+group = "Terminal"
+description = "ANSI black."
+base = "background"
+op = "lighten"
+amount = 0.12
+dark = "#1e1e1e"
+light = "#575279"
+
+[[key]]
+name = "terminal.ansi.red"
+group = "Terminal"
+description = "ANSI red."
+palette = "red"
+dark = "#f44747"
+light = "#b4637a"
+
+[[key]]
+name = "terminal.ansi.green"
+group = "Terminal"
+description = "ANSI green."
+palette = "green"
+dark = "#98c379"
+light = "#286983"
+
+[[key]]
+name = "terminal.ansi.yellow"
+group = "Terminal"
+description = "ANSI yellow."
+palette = "yellow"
+dark = "#e5c07b"
+light = "#ea9d34"
+
+[[key]]
+name = "terminal.ansi.blue"
+group = "Terminal"
+description = "ANSI blue."
+palette = "blue"
+dark = "#61afef"
+light = "#56949f"
+
+[[key]]
+name = "terminal.ansi.magenta"
+group = "Terminal"
+description = "ANSI magenta."
+palette = "purple"
+dark = "#c678dd"
+light = "#907aa9"
+
+[[key]]
+name = "terminal.ansi.cyan"
+group = "Terminal"
+description = "ANSI cyan."
+palette = "cyan"
+dark = "#56b6c2"
+light = "#d7827e"
+
+[[key]]
+name = "terminal.ansi.white"
+group = "Terminal"
+description = "ANSI white."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "terminal.ansi.bright_black"
+group = "Terminal"
+description = "ANSI bright black."
+base = "muted-foreground"
+dark = "#666666"
+light = "#9893a5"
+
+[[key]]
+name = "terminal.ansi.bright_red"
+group = "Terminal"
+description = "ANSI bright red."
+palette = "red"
+op = "lighten"
+amount = 0.15
+dark = "#ff6b6b"
+light = "#c97991"
+
+[[key]]
+name = "terminal.ansi.bright_green"
+group = "Terminal"
+description = "ANSI bright green."
+palette = "green"
+op = "lighten"
+amount = 0.15
+dark = "#b2d89a"
+light = "#4d8399"
+
+[[key]]
+name = "terminal.ansi.bright_yellow"
+group = "Terminal"
+description = "ANSI bright yellow."
+palette = "yellow"
+op = "lighten"
+amount = 0.15
+dark = "#f2d28c"
+light = "#edae52"
+
+[[key]]
+name = "terminal.ansi.bright_blue"
+group = "Terminal"
+description = "ANSI bright blue."
+palette = "blue"
+op = "lighten"
+amount = 0.15
+dark = "#82c0f3"
+light = "#73a5ae"
+
+[[key]]
+name = "terminal.ansi.bright_magenta"
+group = "Terminal"
+description = "ANSI bright magenta."
+palette = "purple"
+op = "lighten"
+amount = 0.15
+dark = "#d493e5"
+light = "#a290b5"
+
+[[key]]
+name = "terminal.ansi.bright_cyan"
+group = "Terminal"
+description = "ANSI bright cyan."
+palette = "cyan"
+op = "lighten"
+amount = 0.15
+dark = "#78c7d0"
+light = "#dd9794"
+
+[[key]]
+name = "terminal.ansi.bright_white"
+group = "Terminal"
+description = "ANSI bright white."
+base = "foreground"
+op = "lighten"
+amount = 0.18
+dark = "#ffffff"
+light = "#464261"
+
+
+# ── Syntax ────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "syntax.comment"
+group = "Syntax"
+description = "Comments and prose quotes."
+base = "muted-foreground"
+dark = "#8f8f8f"
+light = "#9893a5"
+
+[[key]]
+name = "syntax.keyword"
+group = "Syntax"
+description = "Keywords and control flow."
+palette = "purple"
+dark = "#c9a2f5"
+light = "#286983"
+
+[[key]]
+name = "syntax.string"
+group = "Syntax"
+description = "Strings."
+palette = "green"
+dark = "#9ecf8a"
+light = "#ea9d34"
+
+[[key]]
+name = "syntax.number"
+group = "Syntax"
+description = "Numbers."
+palette = "orange"
+dark = "#e0b070"
+light = "#ea9d34"
+
+[[key]]
+name = "syntax.type"
+group = "Syntax"
+description = "Types, classes, and namespaces."
+palette = "cyan"
+dark = "#7fd1e8"
+light = "#56949f"
+
+[[key]]
+name = "syntax.function"
+group = "Syntax"
+description = "Functions and headings."
+palette = "blue"
+base = "primary"
+dark = "#ffff00"
+light = "#286983"
+
+[[key]]
+name = "syntax.variable"
+group = "Syntax"
+description = "Variables."
+base = "foreground"
+dark = "#eaeaea"
+light = "#575279"
+
+[[key]]
+name = "syntax.operator"
+group = "Syntax"
+description = "Operators."
+palette = "cyan"
+dark = "#9a9a9a"
+light = "#797593"
+
+[[key]]
+name = "syntax.tag"
+group = "Syntax"
+description = "Markup tags."
+palette = "red"
+dark = "#7fd1e8"
+light = "#b4637a"
+
+[[key]]
+name = "syntax.attribute"
+group = "Syntax"
+description = "Markup attributes."
+palette = "yellow"
+dark = "#d9b47a"
+light = "#907aa9"
+
+[[key]]
+name = "syntax.constant"
+group = "Syntax"
+description = "Constants and atoms."
+palette = "orange"
+dark = "#e0b070"
+light = "#d7827e"
+
+[[key]]
+name = "syntax.regexp"
+group = "Syntax"
+description = "Regular expressions."
+palette = "red"
+dark = "#e59a72"
+light = "#b4637a"
+
+[[key]]
+name = "syntax.escape"
+group = "Syntax"
+description = "Escape sequences."
+palette = "pink"
+dark = "#e59a72"
+light = "#d7827e"
+
+[[key]]
+name = "syntax.definition"
+group = "Syntax"
+description = "Definitions and strong prose."
+base = "foreground"
+dark = "#ffffff"
+light = "#464261"
+
+[[key]]
+name = "syntax.property"
+group = "Syntax"
+description = "Properties and object keys."
+palette = "cyan"
+dark = "#c8c8c8"
+light = "#56949f"
+
+[[key]]
+name = "syntax.boolean"
+group = "Syntax"
+description = "Booleans."
+palette = "orange"
+dark = "#e0b070"
+light = "#d7827e"
+
+[[key]]
+name = "syntax.null"
+group = "Syntax"
+description = "Null-like literals."
+palette = "orange"
+dark = "#e0b070"
+light = "#d7827e"
+
+[[key]]
+name = "syntax.meta"
+group = "Syntax"
+description = "Pragmas and metadata."
+palette = "yellow"
+dark = "#d9b47a"
+light = "#907aa9"
+
+[[key]]
+name = "syntax.builtin"
+group = "Syntax"
+description = "Built-in symbols."
+palette = "red"
+dark = "#e59a72"
+light = "#b4637a"
+
+[[key]]
+name = "syntax.punctuation"
+group = "Syntax"
+description = "Punctuation."
+base = "muted-foreground"
+dark = "#9a9a9a"
+light = "#797593"
+
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "editor.background"
+group = "Editor"
+description = "Code editor background."
+base = "background"
+dark = "#000000"
+light = "#faf4ed"
+
+[[key]]
+name = "editor.foreground"
+group = "Editor"
+description = "Code editor foreground."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "editor.caret"
+group = "Editor"
+description = "Code editor caret."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "editor.gutter.background"
+group = "Editor"
+description = "Code editor gutter background."
+base = "background"
+dark = "#000000"
+light = "#faf4ed"
+
+[[key]]
+name = "editor.gutter.foreground"
+group = "Editor"
+description = "Code editor line numbers."
+base = "muted-foreground"
+dark = "#666666"
+light = "#9893a5"
+
+[[key]]
+name = "editor.active_line.background"
+group = "Editor"
+description = "Active editor line."
+base = "foreground"
+op = "alpha"
+amount = 0.04
+dark = "rgba(255,255,255,0.04)"
+light = "rgba(0,0,0,0.04)"
+
+[[key]]
+name = "editor.active_line.gutter_foreground"
+group = "Editor"
+description = "Active line number."
+base = "foreground"
+dark = "#d4d4d4"
+light = "#575279"
+
+[[key]]
+name = "editor.selection.background"
+group = "Editor"
+description = "Editor selection."
+base = "primary"
+op = "alpha"
+amount = 0.24
+dark = "#303030"
+light = "#dfdad9"
+
+[[key]]
+name = "editor.match_bracket.background"
+group = "Editor"
+description = "Matching bracket background."
+base = "accent"
+dark = "#2d2d2d"
+light = "#dfdad9"
+
+[[key]]
+name = "editor.match_bracket.border"
+group = "Editor"
+description = "Matching bracket outline."
+base = "ring"
+dark = "#3d3d3d"
+light = "#907aa9"
+
+[[key]]
+name = "editor.fold.background"
+group = "Editor"
+description = "Fold placeholder background."
+base = "secondary"
+dark = "#1a1a1a"
+light = "#f2e9e1"
+
+[[key]]
+name = "editor.fold.border"
+group = "Editor"
+description = "Fold placeholder border."
+base = "border"
+dark = "#2a2a2a"
+light = "#cecacd"
+
+[[key]]
+name = "editor.fold.foreground"
+group = "Editor"
+description = "Fold placeholder foreground."
+base = "muted-foreground"
+dark = "#8a8a8a"
+light = "#797593"
+
+
+# ── Chrome surfaces ───────────────────────────────────────────────────────────
+
+[[key]]
+name = "scrollbar.track.background"
+group = "Chrome surfaces"
+description = "Scrollbar track."
+base = "background"
+dark = "#000000"
+light = "#faf4ed"
+
+[[key]]
+name = "scrollbar.thumb.background"
+group = "Chrome surfaces"
+description = "Scrollbar thumb."
+base = "foreground"
+op = "alpha"
+amount = 0.16
+dark = "rgba(255,255,255,0.16)"
+light = "rgba(0,0,0,0.16)"
+
+[[key]]
+name = "scrollbar.thumb.hover"
+group = "Chrome surfaces"
+description = "Hovered scrollbar thumb."
+base = "foreground"
+op = "alpha"
+amount = 0.26
+dark = "rgba(255,255,255,0.26)"
+light = "rgba(0,0,0,0.26)"
+
+[[key]]
+name = "tab.active.background"
+group = "Chrome surfaces"
+description = "Active tab background."
+base = "accent"
+dark = "#171717"
+light = "#f2e9e1"
+
+[[key]]
+name = "tab.inactive.background"
+group = "Chrome surfaces"
+description = "Inactive tab background."
+base = "sidebar"
+dark = "#0a0a0a"
+light = "#fffaf3"
+
+[[key]]
+name = "tab.active.border"
+group = "Chrome surfaces"
+description = "Active tab indicator."
+base = "primary"
+dark = "#ffffff"
+light = "#907aa9"
+
+[[key]]
+name = "panel.rail.background"
+group = "Chrome surfaces"
+description = "Project rail background."
+base = "sidebar"
+dark = "#0f0f0f"
+light = "#fffaf3"
+
+[[key]]
+name = "panel.background"
+group = "Chrome surfaces"
+description = "Panel background."
+base = "sidebar"
+dark = "#060706"
+light = "#fffaf3"
+
+[[key]]
+name = "panel.elevated.background"
+group = "Chrome surfaces"
+description = "Elevated panel background."
+base = "card"
+dark = "#0d0e0d"
+light = "#f2e9e1"
+
+[[key]]
+name = "panel.overlay.background"
+group = "Chrome surfaces"
+description = "Panel overlay background."
+base = "popover"
+dark = "#1c1c1c"
+light = "#f2e9e1"
+
+[[key]]
+name = "panel.input.background"
+group = "Chrome surfaces"
+description = "Panel input background."
+base = "background"
+dark = "#0a0a0a"
+light = "#fffaf3"
+
+
+# ── Diff ──────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "diff.added.background"
+group = "Diff"
+description = "Added diff region."
+palette = "green"
+op = "alpha"
+amount = 0.08
+dark = "rgba(77,77,77,0.08)"
+light = "rgba(40,105,131,0.08)"
+
+[[key]]
+name = "diff.added.text"
+group = "Diff"
+description = "Added diff text."
+palette = "green"
+dark = "#3fb950"
+light = "#286983"
+
+[[key]]
+name = "diff.removed.background"
+group = "Diff"
+description = "Removed diff region."
+palette = "red"
+op = "alpha"
+amount = 0.08
+dark = "rgba(119,119,119,0.08)"
+light = "rgba(180,99,122,0.08)"
+
+[[key]]
+name = "diff.removed.text"
+group = "Diff"
+description = "Removed diff text."
+palette = "red"
+dark = "#777777"
+light = "#b4637a"
+
+[[key]]
+name = "diff.modified.background"
+group = "Diff"
+description = "Modified diff region."
+palette = "blue"
+op = "alpha"
+amount = 0.08
+dark = "rgba(192,192,192,0.08)"
+light = "rgba(86,148,159,0.08)"
+
+[[key]]
+name = "diff.add_line.background"
+group = "Diff"
+description = "Added line background."
+palette = "green"
+op = "alpha"
+amount = 0.13
+dark = "#0d2211"
+light = "rgba(40,105,131,0.13)"
+
+[[key]]
+name = "diff.remove_line.background"
+group = "Diff"
+description = "Removed line background."
+palette = "red"
+op = "alpha"
+amount = 0.13
+dark = "#220d0d"
+light = "rgba(180,99,122,0.13)"
+
+[[key]]
+name = "diff.context.background"
+group = "Diff"
+description = "Unchanged diff context."
+base = "background"
+dark = "#0a0a0a"
+light = "#faf4ed"
+
+[[key]]
+name = "diff.add_side.background"
+group = "Diff"
+description = "Side-by-side addition."
+palette = "green"
+op = "alpha"
+amount = 0.13
+dark = "rgba(34,197,94,0.13)"
+light = "rgba(40,105,131,0.13)"
+
+[[key]]
+name = "diff.remove_side.background"
+group = "Diff"
+description = "Side-by-side removal."
+palette = "red"
+op = "alpha"
+amount = 0.13
+dark = "rgba(244,63,63,0.13)"
+light = "rgba(180,99,122,0.13)"
+
+[[key]]
+name = "diff.emphasis_added.background"
+group = "Diff"
+description = "Intraline addition."
+palette = "green"
+op = "alpha"
+amount = 0.34
+dark = "rgba(52,211,153,0.34)"
+light = "rgba(40,105,131,0.34)"
+
+[[key]]
+name = "diff.emphasis_removed.background"
+group = "Diff"
+description = "Intraline removal."
+palette = "red"
+op = "alpha"
+amount = 0.34
+dark = "rgba(244,63,63,0.34)"
+light = "rgba(180,99,122,0.34)"
+
+
+# ── Team chat ─────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "comms.outer.background"
+group = "Team chat"
+description = "Team chat outer surface."
+base = "sidebar"
+dark = "#0f0f0f"
+light = "#fffaf3"
+
+[[key]]
+name = "comms.surface.background"
+group = "Team chat"
+description = "Team chat transcript surface."
+base = "background"
+dark = "#000000"
+light = "#faf4ed"
+
+[[key]]
+name = "comms.mention.background"
+group = "Team chat"
+description = "Current-user mention background."
+base = "foreground"
+op = "alpha"
+amount = 0.16
+dark = "rgba(255,255,255,0.16)"
+light = "rgba(0,0,0,0.1)"
+
+[[key]]
+name = "comms.mention.foreground"
+group = "Team chat"
+description = "Current-user mention text."
+base = "foreground"
+dark = "#ffffff"
+light = "#575279"
+
+[[key]]
+name = "comms.other_mention.background"
+group = "Team chat"
+description = "Other-user mention background."
+base = "foreground"
+op = "alpha"
+amount = 0.08
+dark = "rgba(255,255,255,0.08)"
+light = "rgba(0,0,0,0.06)"
+
+[[key]]
+name = "comms.other_mention.foreground"
+group = "Team chat"
+description = "Other-user mention text."
+base = "muted-foreground"
+dark = "#cfcfcf"
+light = "#797593"
+
+[[key]]
+name = "comms.unread.foreground"
+group = "Team chat"
+description = "Unread and presence indicator."
+palette = "green"
+dark = "#b8b8b8"
+light = "#286983"
+
+[[key]]
+name = "comms.unread_strong.foreground"
+group = "Team chat"
+description = "Strong unread indicator."
+palette = "green"
+op = "toward_background"
+amount = 0.2
+dark = "#8a8a8a"
+light = "#286983"
+
+
+# ── Agents and indicators ─────────────────────────────────────────────────────
+
+[[key]]
+name = "agent.claude.foreground"
+group = "Agents and indicators"
+description = "Claude identity chip."
+palette = "orange"
+dark = "#c98263"
+light = "#b4637a"
+
+[[key]]
+name = "agent.claude.background"
+group = "Agents and indicators"
+description = "Claude identity background."
+palette = "orange"
+op = "alpha"
+amount = 0.1
+dark = "rgba(201,130,99,0.1)"
+light = "rgba(180,99,122,0.1)"
+
+[[key]]
+name = "agent.gpt.foreground"
+group = "Agents and indicators"
+description = "GPT identity chip."
+palette = "green"
+dark = "#5fb39a"
+light = "#286983"
+
+[[key]]
+name = "agent.gpt.background"
+group = "Agents and indicators"
+description = "GPT identity background."
+palette = "green"
+op = "alpha"
+amount = 0.1
+dark = "rgba(95,179,154,0.1)"
+light = "rgba(40,105,131,0.1)"
+
+[[key]]
+name = "agent.gemini.foreground"
+group = "Agents and indicators"
+description = "Gemini identity chip."
+palette = "blue"
+dark = "#7aa7e8"
+light = "#56949f"
+
+[[key]]
+name = "agent.gemini.background"
+group = "Agents and indicators"
+description = "Gemini identity background."
+palette = "blue"
+op = "alpha"
+amount = 0.1
+dark = "rgba(122,167,232,0.1)"
+light = "rgba(86,148,159,0.1)"
+
+[[key]]
+name = "agent.local.foreground"
+group = "Agents and indicators"
+description = "Local-agent identity chip."
+palette = "purple"
+dark = "#b8a3df"
+light = "#907aa9"
+
+[[key]]
+name = "agent.local.background"
+group = "Agents and indicators"
+description = "Local-agent identity background."
+palette = "purple"
+op = "alpha"
+amount = 0.1
+dark = "rgba(184,163,223,0.1)"
+light = "rgba(144,122,169,0.1)"
+
+[[key]]
+name = "agent.cursor.foreground"
+group = "Agents and indicators"
+description = "Cursor identity chip."
+palette = "yellow"
+dark = "#d9b56e"
+light = "#ea9d34"
+
+[[key]]
+name = "agent.cursor.background"
+group = "Agents and indicators"
+description = "Cursor identity background."
+palette = "yellow"
+op = "alpha"
+amount = 0.1
+dark = "rgba(217,181,110,0.1)"
+light = "rgba(234,157,52,0.1)"
+
+[[key]]
+name = "agent.amp.foreground"
+group = "Agents and indicators"
+description = "Amp identity chip."
+palette = "pink"
+dark = "#d68aae"
+light = "#d7827e"
+
+[[key]]
+name = "agent.amp.background"
+group = "Agents and indicators"
+description = "Amp identity background."
+palette = "pink"
+op = "alpha"
+amount = 0.1
+dark = "rgba(214,138,174,0.1)"
+light = "rgba(215,130,126,0.1)"
+
+[[key]]
+name = "agent.codex.foreground"
+group = "Agents and indicators"
+description = "Codex identity chip."
+palette = "green"
+dark = "#10a37f"
+light = "#286983"
+
+[[key]]
+name = "agent.codex.background"
+group = "Agents and indicators"
+description = "Codex identity background."
+palette = "green"
+op = "alpha"
+amount = 0.1
+dark = "rgba(16,163,127,0.1)"
+light = "rgba(40,105,131,0.1)"
+
+[[key]]
+name = "agent.opencode.foreground"
+group = "Agents and indicators"
+description = "OpenCode identity chip."
+base = "muted-foreground"
+dark = "#9ca3af"
+light = "#797593"
+
+[[key]]
+name = "agent.opencode.background"
+group = "Agents and indicators"
+description = "OpenCode identity background."
+base = "muted-foreground"
+op = "alpha"
+amount = 0.1
+dark = "rgba(156,163,175,0.1)"
+light = "rgba(121,117,147,0.1)"
+
+[[key]]
+name = "agent.kilo.foreground"
+group = "Agents and indicators"
+description = "Kilo identity chip."
+palette = "yellow"
+dark = "#f0c53d"
+light = "#ea9d34"
+
+[[key]]
+name = "agent.kilo.background"
+group = "Agents and indicators"
+description = "Kilo identity background."
+palette = "yellow"
+op = "alpha"
+amount = 0.1
+dark = "rgba(240,197,61,0.1)"
+light = "rgba(234,157,52,0.1)"
+
+[[key]]
+name = "stat.added"
+group = "Agents and indicators"
+description = "Added-line statistic."
+palette = "green"
+dark = "#3fb950"
+light = "#286983"
+
+[[key]]
+name = "stat.removed"
+group = "Agents and indicators"
+description = "Removed-line statistic."
+palette = "red"
+dark = "#f85149"
+light = "#b4637a"
+
+[[key]]
+name = "capture.live"
+group = "Agents and indicators"
+description = "Active capture indicator."
+palette = "green"
+dark = "#3fb950"
+light = "#286983"
+
+[[key]]
+name = "atlas.ants"
+group = "Agents and indicators"
+description = "Animated marching-ants stroke."
+base = "primary"
+dark = "#ffffff"
+light = "#907aa9"
