@@ -9,6 +9,56 @@ import { IconButton } from "@/ui/icon-button";
 import { Icon, ICON_SIZES, type IconSize } from "@/ui/icon";
 import { Input } from "@/ui/input";
 import { Kbd, KbdCombo } from "@/ui/kbd";
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/ui/popover";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   BASE_COLOR_TOKENS,
@@ -631,6 +681,296 @@ function PrimitiveSection() {
   );
 }
 
+// ── overlays (decision 16 · the Base UI primitives) ─────────────────────────
+
+const SIDES = ["top", "right", "bottom", "left"] as const;
+
+/**
+ * The five Base UI primitives, every variant and state on one page.
+ *
+ * They are here rather than in `PrimitiveSection` because each one has to be
+ * *opened* to be judged: a screenshot of a closed menu says nothing about its
+ * entrance, its placement or its focus behaviour. The dialog below deliberately
+ * contains a dropdown menu — `z-popover` (200) sits above `z-modal` (110) so a
+ * menu inside a dialog escapes it, and this is the one place that ordering is
+ * visible without clicking through the real app.
+ */
+function OverlaySection() {
+  const [checked, setChecked] = useState(true);
+  const [ctxChecked, setCtxChecked] = useState(false);
+  const [density, setDensity] = useState("comfortable");
+
+  return (
+    <>
+      <Section
+        title="Tooltip"
+        decision="decision 16 · src/ui/tooltip.tsx"
+        note="Timing lives in tooltip-timing.ts, not in Base UI: 300ms before the first one, then instant (and with no entrance) until 300ms has passed with none open. Hover one, then the next, to see the warm path."
+      >
+        <Row name="Hint">
+          <div className="flex flex-wrap items-center gap-2">
+            <Hint label="Refresh">
+              <IconButton icon={Settings} label="Refresh" />
+            </Hint>
+            <Hint label="Copy" shortcut={<KbdCombo combo="⌘C" />}>
+              <IconButton icon={Copy} label="Copy" />
+            </Hint>
+            <Hint label="Delete — the control is disabled, so the trigger is a wrapper">
+              <IconButton icon={Trash2} label="Delete" disabled />
+            </Hint>
+          </div>
+        </Row>
+        <Row name="side">
+          <div className="flex flex-wrap items-center gap-2">
+            {SIDES.map((side) => (
+              <Hint key={side} label={`side="${side}"`} side={side} sideOffset={6}>
+                <Button variant="outline" size="sm">
+                  {side}
+                </Button>
+              </Hint>
+            ))}
+          </div>
+        </Row>
+        <Row name="composed">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="secondary" size="sm">
+                  Tooltip / Trigger / Content
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom" sideOffset={6}>
+              Rich content, and a <Kbd>⏎</Kbd> inside it
+            </TooltipContent>
+          </Tooltip>
+        </Row>
+      </Section>
+
+      <Section
+        title="Popover"
+        decision="decision 16 · src/ui/popover.tsx"
+        note="Portal > Positioner > Popup. side/align/sideOffset/alignOffset are declared on PopoverContent and forwarded to the Positioner — left in ...props they would land on the Popup and positioning would break with no type error."
+      >
+        <Row name="default">
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline">Open popover</Button>} />
+            <PopoverContent>
+              <PopoverHeader>
+                <PopoverTitle>Popover title</PopoverTitle>
+                <PopoverDescription>
+                  Anchored content that is not a list of commands.
+                </PopoverDescription>
+              </PopoverHeader>
+              <div className="flex items-center gap-2 pt-1">
+                <Input size="sm" placeholder="Something to type in" />
+                <PopoverClose render={<Button size="sm">Done</Button>} />
+              </div>
+            </PopoverContent>
+          </Popover>
+        </Row>
+        <Row name="side">
+          <div className="flex flex-wrap items-center gap-2">
+            {SIDES.map((side) => (
+              <Popover key={side}>
+                <PopoverTrigger
+                  render={
+                    <Button variant="ghost" size="sm">
+                      {side}
+                    </Button>
+                  }
+                />
+                <PopoverContent side={side} className="w-56">
+                  <PopoverTitle>side=&quot;{side}&quot;</PopoverTitle>
+                  <PopoverDescription>
+                    It flips when it would leave the viewport.
+                  </PopoverDescription>
+                </PopoverContent>
+              </Popover>
+            ))}
+          </div>
+        </Row>
+      </Section>
+
+      <Section
+        title="DropdownMenu"
+        decision="decision 16 · src/ui/dropdown-menu.tsx"
+        note="Base UI has no DropdownMenu — a trigger-anchored menu IS Menu, and the wrapper renames it back. Items take onClick, not onSelect: onSelect stays a valid DOM prop on the div Base UI renders, so it compiles and never fires."
+      >
+        <Row name="every part">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline">Open menu</Button>} />
+            <DropdownMenuContent>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Group label</DropdownMenuLabel>
+                <DropdownMenuItem>
+                  <Icon icon={Plus} size="sm" />
+                  Item with an icon
+                  <DropdownMenuShortcut>⌘N</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem inset>Inset item</DropdownMenuItem>
+                <DropdownMenuItem disabled>Disabled item</DropdownMenuItem>
+                <DropdownMenuItem variant="destructive">
+                  <Icon icon={Trash2} size="sm" />
+                  Destructive item
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={checked}
+                onCheckedChange={setChecked}
+                closeOnClick={false}
+              >
+                Checkbox item
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={density} onValueChange={(v) => setDensity(String(v))}>
+                <DropdownMenuRadioItem value="comfortable" closeOnClick={false}>
+                  Comfortable
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="compact" closeOnClick={false}>
+                  Compact
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Submenu</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem>Nested one</DropdownMenuItem>
+                  <DropdownMenuItem>Nested two</DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </Row>
+        <Row name="state" value={`checked=${checked} · density=${density}`}>
+          <span className="caption">
+            Checkbox and radio items keep the menu open: Base UI defaults
+            <code className="code"> closeOnClick </code>
+            to false on both, where Radix closed on select.
+          </span>
+        </Row>
+      </Section>
+
+      <Section
+        title="ContextMenu"
+        decision="decision 16 · src/ui/context-menu.tsx"
+        note="The same list, opened by right-click at the pointer. The Positioner anchors to the pointer, so it takes no side/align of its own — only the submenu does."
+      >
+        <Row name="right-click target">
+          <ContextMenu>
+            <ContextMenuTrigger
+              render={
+                <div className="flex h-24 w-full max-w-md items-center justify-center rounded-md border border-dashed border-border-default bg-bg-surface">
+                  <span className="caption">Right-click anywhere in here</span>
+                </div>
+              }
+            />
+            <ContextMenuContent>
+              <ContextMenuGroup>
+                <ContextMenuLabel>Group label</ContextMenuLabel>
+                <ContextMenuItem>
+                  <Icon icon={Copy} size="sm" />
+                  Copy
+                  <ContextMenuShortcut>⌘C</ContextMenuShortcut>
+                </ContextMenuItem>
+                <ContextMenuItem inset>Inset item</ContextMenuItem>
+                <ContextMenuItem disabled>Disabled item</ContextMenuItem>
+              </ContextMenuGroup>
+              <ContextMenuSeparator />
+              <ContextMenuCheckboxItem
+                checked={ctxChecked}
+                onCheckedChange={setCtxChecked}
+                closeOnClick={false}
+              >
+                Checkbox item
+              </ContextMenuCheckboxItem>
+              <ContextMenuSeparator />
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Submenu</ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  <ContextMenuItem>Nested one</ContextMenuItem>
+                  <ContextMenuItem>Nested two</ContextMenuItem>
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            </ContextMenuContent>
+          </ContextMenu>
+        </Row>
+      </Section>
+
+      <Section
+        title="Dialog"
+        decision="decision 16 · src/ui/dialog.tsx"
+        note="A centred modal has no Positioner — the Popup places itself. The scrim is z-overlay (100) and the dialog z-modal (110); the menu inside the second one is z-popover (200), which is why it draws on top instead of behind."
+      >
+        <Row name="default">
+          <div className="flex flex-wrap items-center gap-2">
+            <Dialog>
+              <DialogTrigger render={<Button>Open dialog</Button>} />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Dialog title</DialogTitle>
+                  <DialogDescription>
+                    Escape closes it, focus is trapped inside it, and focus returns to the trigger
+                    on close.
+                  </DialogDescription>
+                </DialogHeader>
+                <Input placeholder="First tabbable element — Base UI focuses it on open" />
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline">Cancel</Button>} />
+                  <DialogClose render={<Button>Save</Button>} />
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger render={<Button variant="outline">Dialog with a menu</Button>} />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Menu inside a dialog</DialogTitle>
+                  <DialogDescription>
+                    z-popover sits above z-modal on purpose. If this menu ever draws behind the
+                    dialog, the layer ordering has regressed.
+                  </DialogDescription>
+                </DialogHeader>
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="secondary">Open menu</Button>} />
+                  <DropdownMenuContent>
+                    <DropdownMenuItem>
+                      <Icon icon={Search} size="sm" />
+                      It has to draw on top
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <Icon icon={ChevronRight} size="sm" />
+                      …and close before the dialog does
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline">Close</Button>} />
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger render={<Button variant="ghost">No close button</Button>} />
+              <DialogContent showCloseButton={false}>
+                <DialogHeader>
+                  <DialogTitle>showCloseButton={"{false}"}</DialogTitle>
+                  <DialogDescription>Escape and the scrim are the only ways out.</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose render={<Button>Done</Button>} />
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </Row>
+      </Section>
+    </>
+  );
+}
+
 // ── page ────────────────────────────────────────────────────────────────────
 
 const MODES: ThemeMode[] = ["system", "dark", "light"];
@@ -711,6 +1051,7 @@ export function DesignSystemGallery() {
       <IconSection />
       <StateSection />
       <PrimitiveSection />
+      <OverlaySection />
       <ColourSections />
     </div>
   );
