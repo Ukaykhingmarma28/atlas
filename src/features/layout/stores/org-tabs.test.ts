@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ORG_SCOPED_TYPES, PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
+import { ORG_SCOPED_TYPES, PROJECTLESS_TYPES, migrateTabType, type TabType } from "@/lib/constants";
 
 /**
  * Org-scoped tabs must never reach the per-project editor state.
@@ -50,6 +50,17 @@ describe("org-scoped tab persistence", () => {
   it("settings is projectless but NOT org-scoped — it survives a switch", () => {
     expect(PROJECTLESS_TYPES.has("settings")).toBe(true);
     expect(ORG_SCOPED_TYPES.has("settings")).toBe(false);
+  });
+
+  it("usage is org-scoped: it closes on switch and never persists per project", () => {
+    expect(ORG_SCOPED_TYPES.has("usage")).toBe(true);
+    expect(persistable([{ type: "usage", closable: true }])).toEqual([]);
+  });
+
+  it("a persisted Console tab migrates to usage before the org-scoped guard drops it", () => {
+    const type = migrateTabType("mission-control");
+    expect(type).toBe("usage");
+    expect(restorable([{ type: type! }])).toEqual([]);
   });
 
   it("every org-scoped type is also projectless (they open with no project)", () => {

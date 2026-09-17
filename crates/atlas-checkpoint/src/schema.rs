@@ -16,26 +16,19 @@ use rusqlite::Connection;
 use crate::error::{Error, Result};
 
 /// Bump when adding a migration, and add the matching arm in [`migrate`].
-// NOTE: the next migration must use version 10 — 9 existed briefly in
-// unreleased 0.3.0-x dev builds (one additive nullable column) and was
-// withdrawn; `migrate` folds such stores back to 8. Reusing 9 would make a
-// real migration indistinguishable from the withdrawn one.
-pub const SCHEMA_VERSION: i64 = 9;
+///
+/// A note on 9: it existed twice. Unreleased 0.3.0-x dev builds stamped 9 for
+/// one additive nullable column (`import_progress.resume_state`, an
+/// import-resume cache that moved to a sidecar file), and that number was
+/// withdrawn; the real V9 (`file_touch.sketch_after`) then reused it. A store
+/// stamped 9 may therefore be either shape, which is why `migrate` re-runs V9
+/// tolerantly on a 9 rather than trusting the stamp — see the comment there.
+pub const SCHEMA_VERSION: i64 = 10;
 
 pub fn migrate(conn: &Connection) -> Result<()> {
     // Fast path, outside any transaction: the overwhelmingly common case is a
     // database already at the current version.
     let found: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    // Withdrawn dev-only schema 9 (unreleased 0.3.0-x: an additive nullable
-    // `import_progress.resume_state` column for an import-resume CACHE). It
-    // locked every older build out of the store — which read as total data
-    // loss in the Timeline — for something that never deserved a schema gate;
-    // the cache moved to a sidecar file. Fold such stores back to 8; the
-    // orphan column is harmless and stays.
-    if found == 9 {
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        return Ok(());
-    }
     if found > SCHEMA_VERSION {
         return Err(Error::SchemaTooNew {
             found,
@@ -89,9 +82,19 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             // repair statements that are all safe to re-run.
             apply_tolerant(conn, V8)?;
         }
-        if found < 9 {
-            // One ALTER TABLE; tolerant for the same reason as V7/V8.
+        if found <= 9 {
+            // One ALTER TABLE; tolerant for the same reason as V7/V8 — and
+            // `<=` rather than `<` on purpose. A store stamped 9 may be the
+            // withdrawn dev-only 9 (an orphan `import_progress.resume_state`
+            // column and NO `file_touch.sketch_after`), which an earlier build
+            // re-stamped as the real 9 without ever running this migration.
+            // Re-running it is what repairs those stores: the tolerant apply
+            // skips the column where it already exists and adds it where it
+            // does not. The orphan column is harmless and stays.
             apply_tolerant(conn, V9)?;
+        }
+        if found < 10 {
+            conn.execute_batch(V10)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(())
@@ -214,6 +217,52 @@ const V9: &str = r#"
 -- existing rows. A NULL sketch falls back to the exact-hash comparison, so old
 -- Sessions behave exactly as they did before this migration.
 ALTER TABLE file_touch ADD COLUMN sketch_after TEXT;
+"#;
+
+const V10: &str = r#"
+-- The per-turn usage ledger.
+--
+-- `agent_session.token_totals` is ONE cumulative figure per Session, so a
+-- Session that ran for a week could only ever be dated to the day it was last
+-- active. This table records what each turn ADDED: the difference between two
+-- consecutive cumulative reports, attributed to the turn that was open when
+-- the report arrived. One row per (Session, turn), summed in place, because a
+-- cumulative report lands several times within one turn (after every model
+-- call) and each of those is a further increment to the same turn.
+--
+-- `usage_cursor` is the last cumulative figure the ledger has seen, per
+-- Session. It is kept apart from `token_totals` on purpose: the importer
+-- overwrites `token_totals` wholesale (`replace_usage_totals`) with what it
+-- parsed out of the transcript, and a live delta computed against THAT figure
+-- would be garbage. The cursor only ever moves when a live report arrives.
+--
+-- Reasoning tokens are carried but never priced or added to a total -- every
+-- provider that reports them already counts them inside output_tokens.
+CREATE TABLE IF NOT EXISTS usage_delta (
+    session_id            TEXT NOT NULL REFERENCES agent_session(id) ON DELETE CASCADE,
+    turn_seq              INTEGER NOT NULL,
+    model                 TEXT,
+    recorded_at           TEXT NOT NULL,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, turn_seq)
+);
+
+CREATE TABLE IF NOT EXISTS usage_cursor (
+    session_id            TEXT PRIMARY KEY REFERENCES agent_session(id) ON DELETE CASCADE,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens      INTEGER NOT NULL DEFAULT 0
+);
+
+-- The dashboard's "ledger since" figure, and any date-ranged read.
+CREATE INDEX IF NOT EXISTS idx_usage_delta_recorded
+    ON usage_delta (recorded_at);
 "#;
 
 const V1: &str = r#"
@@ -600,32 +649,100 @@ pub const REQUIRED_INDEXES: &[&str] = &[
     "idx_file_touch_unconsumed",
     "idx_session_activity",
     "idx_message_activity",
+    "idx_usage_delta_recorded",
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The withdrawn dev-only schema 9 (see the note on `SCHEMA_VERSION`) must
-    /// fold back to 8 instead of tripping the too-new gate — it briefly locked
-    /// every older build out of the store, which read as total capture loss.
+    fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let names: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        names.iter().any(|n| n == column)
+    }
+
+    fn has_table(conn: &Connection, table: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+            > 0
+    }
+
+    /// A store stamped with the withdrawn dev-only 9 (see the note on
+    /// `SCHEMA_VERSION`) has the orphan `import_progress.resume_state` column
+    /// and never ran the real V9. It must reach the current version with BOTH
+    /// the real V9 column and the V10 tables, and must not trip the too-new
+    /// gate — that gate once locked every older build out of the store, which
+    /// read as total capture loss.
     #[test]
-    fn a_store_stamped_with_the_withdrawn_schema_9_folds_back_to_8() {
+    fn a_store_stamped_with_the_withdrawn_schema_9_is_repaired_to_the_current_version() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap(); // fresh store at the current version
-        conn.execute_batch("ALTER TABLE import_progress ADD COLUMN resume_state TEXT")
-            .unwrap();
+        if !has_column(&conn, "import_progress", "resume_state") {
+            conn.execute_batch("ALTER TABLE import_progress ADD COLUMN resume_state TEXT")
+                .unwrap();
+        }
+        // Simulate the withdrawn shape as closely as an in-memory store can:
+        // drop the real V9 column and the V10 tables, then stamp 9.
+        conn.execute_batch("ALTER TABLE file_touch DROP COLUMN sketch_after").unwrap();
+        conn.execute_batch("DROP TABLE usage_delta; DROP TABLE usage_cursor;").unwrap();
         conn.pragma_update(None, "user_version", 9).unwrap();
+        assert!(!has_column(&conn, "file_touch", "sketch_after"));
 
         migrate(&conn).expect("the withdrawn version must not read as too-new");
         let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+        assert!(has_column(&conn, "file_touch", "sketch_after"), "the real V9 ran");
+        assert!(has_table(&conn, "usage_delta"), "V10 ran");
+        assert!(has_table(&conn, "usage_cursor"), "V10 ran");
+
+        // Running again on a genuine current-version store is a no-op.
+        migrate(&conn).unwrap();
 
         // A genuinely newer store still refuses.
-        conn.pragma_update(None, "user_version", 10).unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
         assert!(matches!(
             migrate(&conn),
-            Err(Error::SchemaTooNew { found: 10, .. })
+            Err(Error::SchemaTooNew { found, .. }) if found == SCHEMA_VERSION + 1
         ));
+    }
+
+    #[test]
+    fn a_fresh_store_has_the_ledger_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        assert!(has_table(&conn, "usage_delta"));
+        assert!(has_table(&conn, "usage_cursor"));
+        for column in [
+            "session_id",
+            "turn_seq",
+            "model",
+            "recorded_at",
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_tokens",
+            "cache_read_tokens",
+            "reasoning_tokens",
+        ] {
+            assert!(has_column(&conn, "usage_delta", column), "{column}");
+        }
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_usage_delta_recorded'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
     }
 }

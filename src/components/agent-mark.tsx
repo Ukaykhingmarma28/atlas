@@ -13,8 +13,10 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
  */
 function AgentGlyph({ agentType, size }: { agentType: AgentType; size: "sm" | "lg" }) {
   const cls = size === "lg" ? "size-[18px]" : "size-3.5";
-  if (agentType === "claude-acp") return <AgentIcons.Claude className={cls} />;
-  if (agentType === "codex-acp") return <AgentIcons.Codex className={cls} />;
+  if (agentType === "claude-acp" || agentType === "claude-code")
+    return <AgentIcons.Claude className={cls} />;
+  if (agentType === "codex-acp" || agentType === "codex")
+    return <AgentIcons.Codex className={cls} />;
   if (agentType === "opencode") return <AgentIcons.OpenCode className={cls} />;
   if (agentType === "cursor") return <AgentIcons.Cursor className={cls} />;
   if (agentType === "kilo") return <AgentIcons.Kilo className={cls} />;
@@ -22,7 +24,10 @@ function AgentGlyph({ agentType, size }: { agentType: AgentType; size: "sm" | "l
   if (agentType === "cersei") return <AtlasIcon size={size === "lg" ? 18 : 14} />;
   const meta = agentMeta(agentType);
   const px = size === "lg" ? 18 : 14;
-  if (meta.firstPartyIcon) return <AgentGlyph agentType={meta.firstPartyIcon} size={size} />;
+  // Only recurse when the lookup resolved to a DIFFERENT id: `agentMeta("claude-code")`
+  // answers `firstPartyIcon: "claude-code"`, and recursing on the same id was unbounded.
+  if (meta.firstPartyIcon && meta.firstPartyIcon !== agentType)
+    return <AgentGlyph agentType={meta.firstPartyIcon} size={size} />;
   if (meta.iconDataUrl) return <ExternalAgentIcon dataUrl={meta.iconDataUrl} size={px} />;
   return <AgentMonogram label={meta.label} size={px} />;
 }

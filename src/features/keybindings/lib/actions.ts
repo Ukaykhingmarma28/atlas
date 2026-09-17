@@ -132,6 +132,7 @@ export const ACTIONS = [
     when: "global",
     defaults: ["cmd+alt+l"],
   },
+  { id: "usage.open", title: "Open Usage", category: "Navigation", when: "global", defaults: [] },
   {
     id: "hintNav.toggle",
     title: "Hint navigation",

@@ -360,14 +360,29 @@ impl<'a> Capture<'a> {
         })
     }
 
-    /// Record token totals for a Session.
+    /// Record a cumulative usage report for a Session, against the turn it
+    /// arrived in.
     ///
     /// Note the caller is responsible for not passing a context-window gauge as
     /// an input/output split — [`TokenTotals`] has separate fields for exactly
     /// that reason. Only the native agent reports a real split; for ACP agents
     /// the accurate figures are backfilled from the agent's own transcript.
-    pub fn record_usage(&mut self, session_id: &str, totals: &TokenTotals) -> Result<()> {
-        self.store.set_token_totals(session_id, totals)
+    ///
+    /// `totals` is the agent's running total, not an increment: the store
+    /// works out what this report added since the last one and writes that to
+    /// the per-turn ledger (see `Store::record_usage_delta`). `model` is the
+    /// model this turn ran on when the caller knows it; `None` falls back to
+    /// the Session's model.
+    pub fn record_usage(
+        &mut self,
+        session_id: &str,
+        turn_seq: i64,
+        model: Option<&str>,
+        totals: &TokenTotals,
+    ) -> Result<()> {
+        self.store
+            .record_usage_delta(session_id, turn_seq, model, totals)
+            .map(|_| ())
     }
 
     /// Scrub, flagging the Session and failing closed if scrubbing did not

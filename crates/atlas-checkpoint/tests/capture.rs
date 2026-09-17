@@ -99,6 +99,8 @@ fn the_session_row_carries_its_identifying_facts() {
     capture
         .record_usage(
             &session_id,
+            1,
+            None,
             &TokenTotals { input_tokens: 1200, output_tokens: 340, ..Default::default() },
         )
         .unwrap();
@@ -757,4 +759,183 @@ fn capture_adds_no_perceptible_latency_to_a_turn() {
         per_turn.as_millis() < 50,
         "{per_turn:?} per turn is enough to be felt at the end of a turn"
     );
+}
+
+// ── The per-turn usage ledger ───────────────────────────────────────────────
+
+fn usage(input: u64, output: u64) -> TokenTotals {
+    TokenTotals { input_tokens: input, output_tokens: output, ..Default::default() }
+}
+
+fn ledger_sum(rows: &[atlas_checkpoint::UsageDeltaRow]) -> [u64; 5] {
+    rows.iter().fold([0u64; 5], |mut acc, row| {
+        for (a, b) in acc.iter_mut().zip(row.totals.split()) {
+            *a += b;
+        }
+        acc
+    })
+}
+
+#[test]
+fn cumulative_reports_ledger_one_row_per_turn_and_sum_to_the_session_totals() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture
+        .record_prompt(&key("s"), "go", 1, Some("claude-code"), Some("opus-5"), None)
+        .unwrap();
+
+    // Turn 1 reports twice (two model calls), turn 2 once — all cumulative.
+    capture.record_usage(&session_id, 1, None, &usage(100, 10)).unwrap();
+    capture.record_usage(&session_id, 1, None, &usage(250, 30)).unwrap();
+    capture.record_usage(&session_id, 2, None, &usage(400, 50)).unwrap();
+
+    let rows = store.usage_deltas_for_workspace(WORKSPACE).unwrap();
+    assert_eq!(rows.len(), 2, "one row per turn, not per report");
+    assert_eq!(rows[0].turn_seq, 1);
+    assert_eq!(rows[0].totals.split(), [250, 30, 0, 0, 0], "turn 1 summed in place");
+    assert_eq!(rows[1].turn_seq, 2);
+    assert_eq!(rows[1].totals.split(), [150, 20, 0, 0, 0]);
+    assert_eq!(rows[0].session_id, session_id);
+
+    let session = store.session(&session_id).unwrap().unwrap();
+    assert_eq!(session.token_totals.split(), [400, 50, 0, 0, 0]);
+    assert_eq!(ledger_sum(&rows), session.token_totals.split(), "Σ ledger == totals");
+}
+
+#[test]
+fn a_lower_report_grows_the_totals_instead_of_shrinking_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture.record_prompt(&key("s"), "go", 1, None, None, None).unwrap();
+
+    capture.record_usage(&session_id, 1, None, &usage(400, 50)).unwrap();
+    // The counter restarted — a resumed conversation reporting from zero.
+    capture.record_usage(&session_id, 2, None, &usage(120, 5)).unwrap();
+
+    let session = store.session(&session_id).unwrap().unwrap();
+    assert_eq!(session.token_totals.input_tokens, 520);
+    assert_eq!(session.token_totals.output_tokens, 55);
+    let rows = store.usage_deltas_for_workspace(WORKSPACE).unwrap();
+    assert_eq!(rows[1].totals.split(), [120, 5, 0, 0, 0]);
+}
+
+#[test]
+fn a_gauge_only_report_writes_no_ledger_row_but_keeps_the_gauge() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture.record_prompt(&key("s"), "go", 1, None, None, None).unwrap();
+
+    capture.record_usage(&session_id, 1, None, &usage(100, 10)).unwrap();
+    capture
+        .record_usage(
+            &session_id,
+            1,
+            None,
+            &TokenTotals { context_used: Some(8_000), context_size: Some(200_000), ..Default::default() },
+        )
+        .unwrap();
+
+    let rows = store.usage_deltas_for_workspace(WORKSPACE).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].totals.split(), [100, 10, 0, 0, 0], "the gauge added nothing");
+    let session = store.session(&session_id).unwrap().unwrap();
+    assert_eq!(session.token_totals.split(), [100, 10, 0, 0, 0], "split untouched");
+    assert_eq!(session.token_totals.context_used, Some(8_000));
+    assert_eq!(session.token_totals.context_size, Some(200_000));
+    assert!(store.ledger_since().unwrap().is_some());
+}
+
+#[test]
+fn an_importer_overwrite_between_live_reports_does_not_disturb_the_live_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let session_id = {
+        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let id = capture.record_prompt(&key("s"), "go", 1, None, None, None).unwrap();
+        capture.record_usage(&id, 1, None, &usage(100, 10)).unwrap();
+        id
+    };
+    // The importer re-parsed the transcript and replaced the total wholesale.
+    store.replace_usage_totals(&session_id, &usage(5_000, 500)).unwrap();
+    {
+        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        capture.record_usage(&session_id, 2, None, &usage(150, 20)).unwrap();
+    }
+
+    let rows = store.usage_deltas_for_workspace(WORKSPACE).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].totals.split(), [50, 10, 0, 0, 0], "delta against the LIVE cursor");
+    let session = store.session(&session_id).unwrap().unwrap();
+    assert_eq!(session.token_totals.input_tokens, 5_050);
+    assert_eq!(session.token_totals.output_tokens, 510);
+}
+
+#[test]
+fn the_ledger_records_the_turns_model_and_falls_back_to_the_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture
+        .record_prompt(&key("s"), "go", 1, Some("claude-code"), Some("opus-5"), None)
+        .unwrap();
+
+    capture.record_usage(&session_id, 1, None, &usage(100, 10)).unwrap();
+    capture.record_usage(&session_id, 2, Some("sonnet-5"), &usage(200, 20)).unwrap();
+
+    let rows = store.usage_deltas_for_workspace(WORKSPACE).unwrap();
+    assert_eq!(rows[0].model.as_deref(), Some("opus-5"), "None falls back to the Session's model");
+    assert_eq!(rows[1].model.as_deref(), Some("sonnet-5"));
+}
+
+#[test]
+fn ledger_since_is_none_until_the_first_ledgered_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    assert_eq!(store.ledger_since().unwrap(), None);
+
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture.record_prompt(&key("s"), "go", 1, None, None, None).unwrap();
+    let before = chrono::Utc::now();
+    capture.record_usage(&session_id, 1, None, &usage(1, 1)).unwrap();
+
+    let since = store.ledger_since().unwrap().expect("a ledger row exists now");
+    assert!(since >= before - chrono::Duration::seconds(1));
+    assert!(since <= chrono::Utc::now() + chrono::Duration::seconds(1));
+}
+
+#[test]
+fn turn_message_counts_group_by_turn_with_the_earliest_stamp() {
+    use chrono::{TimeZone, Utc};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store_in(dir.path());
+    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let session_id = capture.record_prompt(&key("s"), "go", 1, None, None, None).unwrap();
+
+    let t1a = Utc.with_ymd_and_hms(2026, 8, 20, 9, 0, 0).unwrap();
+    let t1b = Utc.with_ymd_and_hms(2026, 8, 20, 9, 5, 0).unwrap();
+    let t2 = Utc.with_ymd_and_hms(2026, 8, 21, 9, 0, 0).unwrap();
+    for (turn, stamp, body) in [(1, t1b, "later"), (1, t1a, "earlier"), (2, t2, "next day")] {
+        capture
+            .record_turn(
+                &session_id,
+                TurnContent { created_at: Some(stamp), ..assistant(turn, body) },
+            )
+            .unwrap();
+    }
+
+    let mut turns = store.turn_message_counts(WORKSPACE).unwrap();
+    turns.sort_by_key(|t| t.turn_seq);
+    assert_eq!(turns.len(), 2);
+    assert_eq!(turns[0].session_id, session_id);
+    assert_eq!(turns[0].turn_seq, 1);
+    // The prompt on turn 1 plus the two assistant rows.
+    assert_eq!(turns[0].messages, 3);
+    assert!(turns[0].first_at <= t1a, "earliest stamp on the turn, not the latest");
+    assert_eq!(turns[1].turn_seq, 2);
+    assert_eq!(turns[1].messages, 1);
+    assert_eq!(turns[1].first_at, t2);
 }

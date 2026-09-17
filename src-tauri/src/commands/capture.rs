@@ -2577,7 +2577,14 @@ fn process_job(
             None => Ok(()),
         },
         Job::Usage { totals, .. } => match session_ids.get(&binding.native_session_id) {
-            Some(session_id) => capture.record_usage(session_id, &totals),
+            // Against the turn the send path stamped on the binding, so the
+            // ledger dates usage by the turn it happened in.
+            Some(session_id) => capture.record_usage(
+                session_id,
+                binding.turn_seq,
+                binding.model.as_deref(),
+                &totals,
+            ),
             None => Ok(()),
         },
     };
@@ -3151,6 +3158,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for CaptureMiddleware {
                         output_tokens: usage.output_tokens,
                         cache_creation_tokens: usage.cache_creation_tokens,
                         cache_read_tokens: usage.cache_read_tokens,
+                        reasoning_tokens: usage.reasoning_tokens,
                         ..Default::default()
                     },
                 });

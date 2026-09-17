@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import {
+  Bar,
+  CAPTION,
+  Card,
+  EstTag,
+  StatusPill,
+  VALUE,
+  useCountUp,
+  useMounted,
+} from "@/components/usage-primitives";
 import { fmtCost, fmtTokens } from "@/features/monitor/lib/usage-format";
 import type { MetricRow, RateLimitWindow, SessionUsageView } from "../lib/session-usage";
 import { TickMeter } from "./usage-meter";
@@ -18,87 +28,6 @@ import { TickMeter } from "./usage-meter";
  * animation (`atlas-usage-in`) that replays on each open because the
  * sections mount fresh; the count-up and the bars settle inside 220 ms.
  */
-
-const prefersReducedMotion = () =>
-  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/** Eases a number to `target` over `ms`, rAF-driven. Snaps under reduced motion. */
-function useCountUp(target: number, ms = 220): number {
-  const [value, setValue] = useState(() => (prefersReducedMotion() ? target : 0));
-  const from = useRef(value);
-  useEffect(() => {
-    if (prefersReducedMotion()) {
-      setValue(target);
-      return;
-    }
-    const start = performance.now();
-    const begin = from.current;
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / ms);
-      const eased = 1 - (1 - t) * (1 - t) * (1 - t);
-      const v = begin + (target - begin) * eased;
-      setValue(v);
-      from.current = v;
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, ms]);
-  return value;
-}
-
-/** True after mount — bars transition from 0 on first paint. */
-function useMounted(): boolean {
-  const [mounted, setMounted] = useState(prefersReducedMotion());
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  return mounted;
-}
-
-const CAPTION = "text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
-const VALUE = "text-[11px] tabular-nums text-[var(--text-primary)]";
-
-function Card({
-  index,
-  section,
-  children,
-}: {
-  index: number;
-  section: string;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      data-section={section}
-      className="atlas-usage-in rounded-lg border border-white/[0.06] bg-[var(--bg-elevated-2)] px-2.5 py-2"
-      style={{ "--i": index } as CSSProperties}
-    >
-      {children}
-    </section>
-  );
-}
-
-function StatusPill({ status }: { status: "ok" | "warn" | "full" }) {
-  const tone =
-    status === "full"
-      ? "border-[var(--status-error)]/40 text-[var(--status-error)]"
-      : status === "warn"
-        ? "border-[var(--status-warning)]/40 text-[var(--status-warning)]"
-        : "border-white/[0.08] text-[var(--text-secondary)]";
-  return (
-    <span
-      className={cn(
-        "inline-flex h-4 items-center rounded-full border px-1.5 text-[9px] font-medium uppercase tracking-wider",
-        tone,
-      )}
-    >
-      {status === "full" ? "Full" : status === "warn" ? "Warn" : "OK"}
-    </span>
-  );
-}
 
 function Headline({ view }: { view: SessionUsageView }) {
   const h = view.headline;
@@ -156,29 +85,6 @@ function Headline({ view }: { view: SessionUsageView }) {
   );
 }
 
-function Bar({
-  frac,
-  mounted,
-  color = "var(--text-secondary)",
-}: {
-  frac: number;
-  mounted: boolean;
-  color?: string;
-}) {
-  return (
-    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-white/[0.06]">
-      <span
-        className="block h-full rounded-full"
-        style={{
-          width: `${mounted ? Math.max(2, frac * 100) : 0}%`,
-          background: color,
-          transition: "width 220ms cubic-bezier(0.32,0.72,0,1)",
-        }}
-      />
-    </span>
-  );
-}
-
 function TokenRows({ rows, index }: { rows: MetricRow[]; index: number }) {
   const mounted = useMounted();
   return (
@@ -210,11 +116,7 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
           <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
             {fmtCost(cost.total)}
           </span>
-          {cost.estimated ? (
-            <span className="rounded-full border border-white/[0.08] px-1 text-[8px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
-              est.
-            </span>
-          ) : null}
+          {cost.estimated ? <EstTag /> : null}
         </span>
       </div>
       {cost.rows.length ? (

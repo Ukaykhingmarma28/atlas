@@ -24,6 +24,8 @@ import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-s
 import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
 import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
+import type { UsageDashboard } from "@/features/usage/types";
+import { fixture as usageFixture } from "@/features/usage/lib/__fixtures__/dashboard";
 import type { MockHandlers } from "../types";
 import { agentHandlers } from "../fake-agent";
 import { appState, listDir, MOCK_WORKSPACE } from "../workspace";
@@ -117,6 +119,8 @@ export const baseHandlers: MockHandlers = {
   threads_projects: (): ThreadProject[] => [],
   capture_activate: nothing,
   capture_binding: nothing,
+  // The Usage tab: 60 days of deterministic fixture data across four projects.
+  usage_dashboard: (): UsageDashboard => usageFixture(60),
   capture_health: (): CaptureHealth => ({
     state: "off",
     summary: "",

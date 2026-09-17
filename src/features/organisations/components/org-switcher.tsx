@@ -251,7 +251,7 @@ export function OrgSwitcher() {
         {/* Quick actions — the org row has spare width to its right, so the two
          *  things you reach for constantly (add a project, search everything)
          *  live here as icons instead of eating two full rows in the header
-         *  list below. Console moved up to the titlebar band with the rest of
+         *  list below. Usage moved up to the titlebar band with the rest of
          *  the rail chrome; Settings is reachable from the account menu and
          *  the command palette, so it no longer spends a slot here. */}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">

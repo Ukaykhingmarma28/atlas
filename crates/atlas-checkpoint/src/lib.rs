@@ -79,7 +79,7 @@ pub use health::{evaluate as evaluate_health, CaptureHealth, HealthState, HostSi
 pub use import::{import_all, preview as import_preview, ImportOutcome, ImportPreview, TranscriptSource};
 pub use model::{
     AgentEdit, Binding, Checkpoint, LinkState, WorkspaceDetection, FileTouch, Message, Mode, Role, Session, Source, SyncState, TokenTotals, ToolCall,
-    ToolStatus, TurnState, WorkspaceMode,
+    ToolStatus, TurnMessages, TurnState, UsageDeltaRow, WorkspaceMode,
 };
 pub use schema::{REQUIRED_INDEXES, SCHEMA_VERSION};
 pub use store::{CheckpointInput, MessageInput, Store};
