@@ -27,6 +27,7 @@ import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
 import { fsHandlers, listDir } from "../fixtures/files";
+import { settingsHandlers } from "../fixtures/settings";
 import { appState, MOCK_WORKSPACE } from "../workspace";
 
 const nothing = () => null;
@@ -189,6 +190,7 @@ export const baseHandlers: MockHandlers = {
 
   // ── files ───────────────────────────────────────────────────────────────
   ...fsHandlers,
+  ...settingsHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
