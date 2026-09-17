@@ -1025,12 +1025,12 @@ fn theme_override_item(theme_override: &ThemeOverride) -> toml_edit::Item {
         for (key, value) in &theme_override.keys {
             keys[key] = match value {
                 atlas_theme::ThemeKeyValue::Color(color) => toml_edit::value(color.as_str()),
+                // A styled override is `{ color = "…" }` and nothing more —
+                // `font_style` is rejected at load, so it can never be here to
+                // write back out.
                 atlas_theme::ThemeKeyValue::Styled(style) => {
                     let mut inline = toml_edit::InlineTable::new();
                     inline.insert("color", toml_edit::Value::from(style.color.as_str()));
-                    if let Some(font_style) = &style.font_style {
-                        inline.insert("font_style", toml_edit::Value::from(font_style.as_str()));
-                    }
                     toml_edit::value(inline)
                 }
             };
