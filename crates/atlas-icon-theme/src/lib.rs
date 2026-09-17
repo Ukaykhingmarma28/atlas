@@ -121,9 +121,52 @@ pub struct LoadedIconTheme {
     source: Source,
 }
 
-/// `~/.config/atlas/icon-themes`, the sibling of `~/.config/atlas/themes`.
+/// `~/.config/atlas/icon-themes` (or `$XDG_CONFIG_HOME/atlas/icon-themes`),
+/// the sibling of `~/.config/atlas/themes`.
+///
+/// No migration reads or moves an old `~/Library/Application Support/atlas/
+/// icon-themes` (the path a `dirs::config_dir()` bug used to resolve here on
+/// macOS): this crate has never shipped past a version branch — `git
+/// merge-base --is-ancestor main HEAD` on the branch that fixed this holds,
+/// and `crates/atlas-icon-theme` does not exist on `main` at all yet — so
+/// there is no installed build that could have written an icon theme there.
+/// A migration would add a permanent code path and test surface to guard
+/// against a location no released Atlas ever used.
 pub fn user_icon_theme_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|dir| dir.join("atlas").join("icon-themes"))
+    config_root().map(|dir| dir.join("icon-themes"))
+}
+
+/// `~/.config/atlas/` — the same root `src-tauri/src/state/atlas_config.rs`
+/// resolves for `config.toml`, **not** `dirs::config_dir()` (which on macOS is
+/// `~/Library/Application Support`). `atlas-icon-theme` sits below `src-tauri`
+/// in the dependency graph — the app crate depends on this one, not the other
+/// way round — so it cannot call that function directly without a cycle.
+///
+/// This is a deliberate, minimal copy of its logic (XDG override, `.config`
+/// fallback), not an independent decision about where config lives — the same
+/// copy `atlas-theme` carries for its own `user_theme_dir()`. Keep all three
+/// in sync by hand: the `config_root` tests below run the exact fixtures
+/// `atlas_config.rs`'s own `config_root_from` tests use (same inputs, same
+/// expected paths), so an edit to any one of them that changes the resolved
+/// path breaks a test right next to the copy that drifted.
+fn config_root() -> Option<PathBuf> {
+    let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let home = dirs::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+    config_root_from(xdg.as_deref(), home.as_deref())
+}
+
+/// The decision itself, taking its inputs rather than reading the
+/// environment, so it can be tested without racing every other test in the
+/// process over `set_var` — mirrors `config_root_from` in `atlas_config.rs`
+/// (and its copy in `atlas-theme`) exactly, including the same
+/// relative-XDG and no-home edge cases.
+fn config_root_from(xdg: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(xdg) = xdg {
+        if xdg.is_absolute() {
+            return Some(xdg.join("atlas"));
+        }
+    }
+    home.map(|home| home.join(".config").join("atlas"))
 }
 
 fn minimal_summary() -> IconThemeSummary {
@@ -823,5 +866,57 @@ mod tests {
         assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
         assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    // ── config_root (must track `config_root` in `atlas_config.rs` and
+    //    `atlas-theme`; #64 follow-up) ──
+
+    /// The bug this whole fix exists for: `dirs::config_dir()` resolves to
+    /// `~/Library/Application Support` on macOS, which contradicts every
+    /// other place Atlas resolves its config root and this crate's own doc
+    /// comments. Pin the resolved *icon-theme* directory under
+    /// `~/.config/atlas` and assert "Application Support" and "Library"
+    /// never appear in it.
+    #[test]
+    fn user_icon_theme_dir_lives_under_dot_config_atlas_not_application_support() {
+        let home = PathBuf::from("/Users/someone");
+        let root = config_root_from(None, Some(&home)).expect("a home resolves a root");
+        let icon_themes = root.join("icon-themes");
+
+        assert_eq!(icon_themes, PathBuf::from("/Users/someone/.config/atlas/icon-themes"));
+        assert!(!icon_themes.to_string_lossy().contains("Application Support"));
+        assert!(!icon_themes.to_string_lossy().contains("Library"));
+    }
+
+    /// Same fixtures as `atlas_config.rs`'s `an_absolute_xdg_config_home_wins`
+    /// (and `atlas-theme`'s copy of the same test) — all three resolvers must
+    /// agree on every input, and this is the input that most needs to be
+    /// right, since it's how a user relocates config for every tool they run.
+    #[test]
+    fn an_absolute_xdg_config_home_wins() {
+        let xdg = PathBuf::from("/elsewhere/cfg");
+        let home = PathBuf::from("/Users/someone");
+
+        let root = config_root_from(Some(&xdg), Some(&home)).unwrap();
+
+        assert_eq!(root, PathBuf::from("/elsewhere/cfg/atlas"));
+    }
+
+    /// A relative `$XDG_CONFIG_HOME` is ignored rather than resolved against
+    /// the cwd, matching `atlas_config.rs`'s `config_root_from` exactly.
+    #[test]
+    fn a_relative_xdg_config_home_is_ignored() {
+        let xdg = PathBuf::from("relative/cfg");
+        let home = PathBuf::from("/Users/someone");
+
+        let root = config_root_from(Some(&xdg), Some(&home)).unwrap();
+
+        assert_eq!(root, PathBuf::from("/Users/someone/.config/atlas"));
+    }
+
+    #[test]
+    fn no_home_and_no_xdg_resolves_nothing() {
+        assert_eq!(config_root_from(None, None), None);
+        assert_eq!(config_root_from(Some(&PathBuf::from("rel")), None), None);
     }
 }
