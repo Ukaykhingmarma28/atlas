@@ -53,7 +53,18 @@ export function appState(overrides: Partial<AppStateWire> = {}): AppStateWire {
     workspaces: ALL_WORKSPACES,
     groups: [],
     activeWorkspaceId: MOCK_WORKSPACE.id,
-    organisations: [{ id: MOCK_ORG_ID, name: "Acme", slug: "acme", syncEnabled: false }],
+    // Sync is ON, and the org carries a `remoteId`: `CommsPanel` renders
+    // "not connected" for a local-only org, so a local org would hide the
+    // whole team-chat surface behind a placeholder no fixture can fill.
+    organisations: [
+      {
+        id: MOCK_ORG_ID,
+        name: "Acme",
+        slug: "acme",
+        syncEnabled: true,
+        remoteId: MOCK_ORG_ID,
+      },
+    ],
     activeOrganisationId: MOCK_ORG_ID,
     configStatus: { status: "ok" },
     configGeneration: 1,
