@@ -16,8 +16,8 @@ import { Hint } from "@/ui/tooltip";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
-import { useLayoutStore, type Tab, type WorkspaceView } from "../stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
 import { ChatPanel } from "@/features/chat/components/chat-panel";
@@ -172,7 +172,7 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set([
 
 // Of the persistent types, these are the ones that keep BURNING CPU/GPU while
 // hidden — a PTY draining output, a live web embed, a Pixi/WebGL graph ticking,
-// a PDF worker. Those get unmounted for background workspaces (idle heat is the
+// a PDF worker. Those get unmounted for background projects (idle heat is the
 // bigger cost than their rebuild). The rest are inert-but-expensive-to-rebuild
 // (chat's transcript window + load path, knowledge's tree walk, settings' form
 // drafts) and stay mounted everywhere: hiding them saves nothing per frame and
@@ -195,24 +195,24 @@ export function CenterPanel() {
   const currentProject = useAppStore.use.currentProject();
   // Render ONLY the bounded HOT set, not the full project registry — keeps
   // memory/DOM bounded at 100+ projects (Chrome tab-discard model). Resolve ids
-  // to workspaces, preserving registry order for stable React keys.
-  const workspacesAll = useWorkspaceStore.use.workspaces();
-  const mountedWorkspaceIds = useWorkspaceStore.use.mountedWorkspaceIds();
-  const workspaces = useMemo(() => {
-    const mounted = new Set(mountedWorkspaceIds);
-    return workspacesAll.filter((w) => mounted.has(w.id));
-  }, [workspacesAll, mountedWorkspaceIds]);
-  const activeWorkspaceId = useWorkspaceStore.use.activeWorkspaceId();
+  // to projects, preserving registry order for stable React keys.
+  const projectsAll = useProjectStore.use.projects();
+  const mountedProjectIds = useProjectStore.use.mountedProjectIds();
+  const projects = useMemo(() => {
+    const mounted = new Set(mountedProjectIds);
+    return projectsAll.filter((w) => mounted.has(w.id));
+  }, [projectsAll, mountedProjectIds]);
+  const activeProjectId = useProjectStore.use.activeProjectId();
   const viewsByWs = useLayoutStore.use.viewsByWs();
 
-  // Live mirror of the ACTIVE workspace's view.
+  // Live mirror of the ACTIVE project's view.
   const tabs = useLayoutStore.use.tabs();
   const groupOrder = useLayoutStore.use.groupOrder();
   const activeByGroup = useLayoutStore.use.activeByGroup();
   const focusedGroupId = useLayoutStore.use.focusedGroupId();
   const tabHistory = useLayoutStore.use.tabHistory();
   const tabHistoryIndex = useLayoutStore.use.tabHistoryIndex();
-  const mirrorView: WorkspaceView = useMemo(
+  const mirrorView: ProjectView = useMemo(
     () => ({
       tabs,
       groupOrder,
@@ -239,12 +239,12 @@ export function CenterPanel() {
 
   if (!currentProject) return <ProjectlessCenter />;
 
-  // Render every mounted workspace's shell in a stable container (key=ws.id),
-  // only the active one visible. Background workspaces keep the INERT expensive
+  // Render every mounted project's shell in a stable container (key=ws.id),
+  // only the active one visible. Background projects keep the INERT expensive
   // subtrees mounted (editor/chat/knowledge/settings) so switching back is
   // instant, but drop the ones that keep working while hidden — terminals,
   // browser embeds, Pixi graphs, PDFs — which were burning CPU/GPU in
-  // workspaces the user couldn't even see. A workspace with no view yet (never
+  // projects the user couldn't even see. A project with no view yet (never
   // visited this session) renders nothing until its first cold load.
   return (
     // `data-atlas-center-panel`: the anchor for overlays that should centre on
@@ -252,8 +252,8 @@ export function CenterPanel() {
     // left-1/2` pill drifts off-centre by half the width of whichever side
     // panel is open.
     <div data-atlas-center-panel className="h-full w-full bg-bg-surface relative">
-      {workspaces.map((ws) => {
-        const isActive = ws.id === activeWorkspaceId;
+      {projects.map((ws) => {
+        const isActive = ws.id === activeProjectId;
         const view = isActive ? mirrorView : viewsByWs[ws.id];
         if (!view) return null;
         return (
@@ -262,8 +262,8 @@ export function CenterPanel() {
             className="absolute inset-0"
             style={{ display: isActive ? "block" : "none" }}
           >
-            <WorkspaceColumns
-              workspaceId={ws.id}
+            <ProjectColumns
+              projectId={ws.id}
               view={view}
               isActive={isActive}
               runningTabIds={runningTabIds}
@@ -275,18 +275,18 @@ export function CenterPanel() {
   );
 }
 
-// Memoized so a workspace switch re-renders only the ≤2 columns whose props
-// actually change, not every mounted workspace's whole subtree (the O(N×tabs)
+// Memoized so a project switch re-renders only the ≤2 columns whose props
+// actually change, not every mounted project's whole subtree (the O(N×tabs)
 // re-render that makes even warm switches feel slow). `view` is a stable
-// reference for uninvolved workspaces; `runningTabIds` is shallow-stable.
-const WorkspaceColumns = memo(function WorkspaceColumns({
-  workspaceId,
+// reference for uninvolved projects; `runningTabIds` is shallow-stable.
+const ProjectColumns = memo(function ProjectColumns({
+  projectId,
   view,
   isActive,
   runningTabIds,
 }: {
-  workspaceId: string;
-  view: WorkspaceView;
+  projectId: string;
+  view: ProjectView;
   isActive: boolean;
   runningTabIds: Set<string>;
 }) {
@@ -294,7 +294,7 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
   // Same storage id as before the v4 upgrade, so saved split widths carry over.
   // v4 dropped `autoSaveId` in favour of this hook; the Group takes the stored
   // layout as `defaultLayout` and writes back through `onLayoutChanged`.
-  const layoutId = `atlas-center-split-${workspaceId}`;
+  const layoutId = `atlas-center-split-${projectId}`;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: layoutId });
   return (
     <Group
@@ -319,7 +319,7 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
               isActive={isActive}
               runningTabIds={runningTabIds}
               soloColumn={solo}
-              workspaceId={workspaceId}
+              projectId={projectId}
             />
           </Panel>
         </Fragment>
@@ -334,14 +334,14 @@ const TabColumn = memo(function TabColumn({
   isActive,
   runningTabIds,
   soloColumn,
-  workspaceId,
+  projectId,
 }: {
   groupId: string;
-  view: WorkspaceView;
+  view: ProjectView;
   isActive: boolean;
   runningTabIds: Set<string>;
   soloColumn?: boolean;
-  workspaceId: string;
+  projectId: string;
 }) {
   const splitNewHint = useActionShortcut("split.new")?.label;
   const splitCloseHint = useActionShortcut("split.close")?.label;
@@ -538,7 +538,7 @@ const TabColumn = memo(function TabColumn({
         groupId={groupId}
         view={view}
         isActive={isActive}
-        workspaceId={workspaceId}
+        projectId={projectId}
       />
     </div>
   );
@@ -548,13 +548,13 @@ const TabContentContainer = memo(function TabContentContainer({
   groupId,
   view,
   isActive,
-  workspaceId,
+  projectId,
 }: {
   groupId: string;
-  view: WorkspaceView;
+  view: ProjectView;
   isActive: boolean;
   /** Handed to terminal tabs so they can record their owner. */
-  workspaceId: string;
+  projectId: string;
 }) {
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
   const { setActiveTab } = useLayoutStore.use.actions();
@@ -581,8 +581,8 @@ const TabContentContainer = memo(function TabContentContainer({
   }, []);
 
   // If this column's active id is stale (closed tab, etc.) snap to its first.
-  // Only for the ACTIVE workspace — `setActiveTab` mutates the live (active)
-  // store, so a background workspace must not fire it.
+  // Only for the ACTIVE project — `setActiveTab` mutates the live (active)
+  // store, so a background project must not fire it.
   useEffect(() => {
     if (isActive && !activeTab && tabs.length > 0) setActiveTab(tabs[0].id);
   }, [isActive, activeTab, tabs, setActiveTab]);
@@ -591,7 +591,7 @@ const TabContentContainer = memo(function TabContentContainer({
   // below) — but only once this column has been active for an idle slice.
   // Flipping every mounted chat from `display:none` to laid-out costs one
   // layout per thread, and doing that on app boot or in the same frame as a
-  // workspace switch (background workspaces are `display:none`) would move
+  // project switch (background projects are `display:none`) would move
   // the stall we are removing onto those paths instead.
   const [warmReady, setWarmReady] = useState(false);
   useEffect(() => {
@@ -640,10 +640,10 @@ const TabContentContainer = memo(function TabContentContainer({
   }
 
   // Persist expensive tabs across tab switches within this column. For a
-  // BACKGROUND workspace we additionally drop the types that keep working while
+  // BACKGROUND project we additionally drop the types that keep working while
   // hidden (see IDLE_EXPENSIVE_TYPES) — off-screen terminals/browser embeds/
   // graphs were a major source of idle heat. Chat/knowledge/settings stay
-  // mounted even in background workspaces: unmounting chat re-ran the whole
+  // mounted even in background projects: unmounting chat re-ran the whole
   // transcript-load path (window fill, markdown settle, anchor) on every
   // switch back, and settings lost its form drafts.
   //
@@ -723,7 +723,7 @@ const TabContentContainer = memo(function TabContentContainer({
               ) : tab.type === "settings" ? (
                 <SettingsPanel initialSection={tab.data.section as string | undefined} />
               ) : (
-                <TerminalPanel tabId={tab.id} workspaceId={workspaceId} />
+                <TerminalPanel tabId={tab.id} projectId={projectId} />
               )}
             </div>
           );

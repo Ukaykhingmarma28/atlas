@@ -260,7 +260,7 @@ export const useLogStore = createSelectors(
           if (get().loadedOrg === orgId) return;
           set((s) => {
             // Drop the outgoing org's entries. An org switch tears down its
-            // whole workspace set, so leaving its activity in the console would
+            // whole project set, so leaving its activity in the console would
             // show work from projects that are no longer even mounted.
             s.buffer = orgId ? s.buffer.filter((e) => e.orgId === orgId) : [];
             s.pinned = [];

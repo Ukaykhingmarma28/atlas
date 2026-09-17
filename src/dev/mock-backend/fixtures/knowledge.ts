@@ -32,7 +32,7 @@ import type {
 } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
 import type { MockHandlers } from "../types";
-import { MOCK_WORKSPACE } from "../workspace";
+import { MOCK_PROJECT } from "../project";
 
 const F = "```";
 
@@ -219,7 +219,7 @@ Core tables. Every table has \`id uuid\`, \`created_at\` and \`updated_at\`.
 | --- | --- | --- |
 | \`orgs\` | A paying customer | \`plan\`, \`billing_email\` |
 | \`users\` | A person | \`email\`, \`org_id\` |
-| \`projects\` | A workspace inside an org | \`org_id\`, \`archived_at\` |
+| \`projects\` | A project inside an org | \`org_id\`, \`archived_at\` |
 | \`api_keys\` | Machine access | \`hashed_key\`, \`last_used_at\` |
 
 ${F}sql
@@ -476,7 +476,7 @@ export interface KbServerExport {
 
 // ── state ─────────────────────────────────────────────────────────────────
 
-const PROJECT = MOCK_WORKSPACE.path;
+const PROJECT = MOCK_PROJECT.path;
 const KB_DIR = `${PROJECT}/.atlas/knowledge`;
 
 interface Note {

@@ -5,15 +5,15 @@
  * PTY, its byte channel, the block parser, the interactive xterm surface — is
  * owned here, in a module-level registry keyed by the layout terminal id. React
  * components ATTACH a view to a session and detach again; nothing about a
- * remount, a column move, a pane split or a workspace switch touches the shell.
+ * remount, a column move, a pane split or a project switch touches the shell.
  *
  * What this buys, concretely:
- *  - a build running in workspace A keeps running while you look at B (the
+ *  - a build running in project A keeps running while you look at B (the
  *    panel unmounts; the session does not);
  *  - closing a split column or moving a tab no longer respawns its shells;
  *  - StrictMode's mount → unmount → mount no longer creates two PTYs;
  *  - a HIDDEN session (inactive tab, inactive terminal in a pane, background
- *    workspace) does no React work at all: the parser keeps the block model
+ *    project) does no React work at all: the parser keeps the block model
  *    correct, `busy` keeps flowing to the tab strip, and the view is rebuilt
  *    once when it becomes visible again.
  *
@@ -26,7 +26,7 @@
  *
  * Lifetime: `terminalSessions.bindToStore()` closes a session the moment its
  * terminal id disappears from `useTerminalStore` — the one seam that covers
- * every close path (terminal, pane, tab, workspace discard).
+ * every close path (terminal, pane, tab, project discard).
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -315,7 +315,7 @@ export class TerminalSession {
     // A command the opener queued for this terminal — an agent's login, today.
     // Written into the shell rather than exec'd, so it runs with a real tty and
     // a login that asks a question can be answered. Taken ONCE per session, so
-    // neither a remount nor a workspace round trip re-runs it.
+    // neither a remount nor a project round trip re-runs it.
     this.queuedCommand = useTerminalStore.getState().actions.takePendingCommand(this.key) ?? null;
     if (this.queuedCommand !== null) {
       // A shell with no OSC 133 integration never reports a prompt, so the wait
@@ -806,7 +806,7 @@ export const terminalSessions = {
   },
   /**
    * Close every session whose terminal has left the store. One subscription
-   * covers every close path — terminal, pane, tab, workspace discard.
+   * covers every close path — terminal, pane, tab, project discard.
    */
   bindToStore(): () => void {
     if (reg.storeBound) return () => {};

@@ -33,9 +33,9 @@ terminalSessions.bindToStore();
 
 interface TerminalPanelProps {
   tabId: string;
-  /** The workspace this tab belongs to — recorded so a notification can route
-   *  back to it after its workspace has gone to the background. */
-  workspaceId?: string;
+  /** The project this tab belongs to — recorded so a notification can route
+   *  back to it after its project has gone to the background. */
+  projectId?: string;
 }
 
 /**
@@ -51,7 +51,7 @@ interface TerminalPanelProps {
  * So the geometry can be what the DOM says it is, and the ResizeObservers,
  * double-rAF retries and stale-rect guards are gone with it.
  */
-export function TerminalPanel({ tabId, workspaceId }: TerminalPanelProps) {
+export function TerminalPanel({ tabId, projectId }: TerminalPanelProps) {
   const tab = useTerminalStore((s) => s.tabs[tabId]);
   const {
     initTab,
@@ -63,13 +63,13 @@ export function TerminalPanel({ tabId, workspaceId }: TerminalPanelProps) {
     toggleZoom,
   } = useTerminalStore.use.actions();
   // Is this tab the one showing in its column? Mounted already implies the
-  // active workspace (background workspaces unmount terminal panels); this is
+  // active project (background projects unmount terminal panels); this is
   // what tells a hidden tab's terminals to stop rendering.
   const panelVisible = useIsTabVisible(tabId);
 
   useEffect(() => {
-    initTab(tabId, workspaceId);
-  }, [tabId, tab, initTab, workspaceId]);
+    initTab(tabId, projectId);
+  }, [tabId, tab, initTab, projectId]);
 
   const activePane = useCallback((): PaneNode | null => {
     const t = useTerminalStore.getState().tabs[tabId];

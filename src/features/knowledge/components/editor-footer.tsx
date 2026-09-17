@@ -13,7 +13,7 @@ interface EditorFooterProps {
 
 const READ_WPM = 240;
 
-type ExportKey = "note-md" | "note-html" | "workspace-md" | "workspace-html" | "server";
+type ExportKey = "note-md" | "note-html" | "project-md" | "project-html" | "server";
 
 export function EditorFooter({ wordCount, charCount, projectPath, entryId }: EditorFooterProps) {
   const readMinutes = Math.max(1, Math.round(wordCount / READ_WPM));
@@ -94,8 +94,8 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       });
     });
 
-  const handleExportWorkspaceMd = () =>
-    run("workspace-md", async () => {
+  const handleExportProjectMd = () =>
+    run("project-md", async () => {
       const target = await pickSavePath("knowledge.md", "md");
       if (!target) return;
       await invoke("knowledge_export_workspace_md", {
@@ -104,8 +104,8 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       });
     });
 
-  const handleExportWorkspaceHtml = () =>
-    run("workspace-html", async () => {
+  const handleExportProjectHtml = () =>
+    run("project-html", async () => {
       const target = await pickDirectory("knowledge-site");
       if (!target) return;
       await invoke("knowledge_export_workspace_html", {
@@ -209,13 +209,13 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
             <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
             <ExportMenuItem
               icon={FileText}
-              label="Export workspace as .md"
-              onSelect={handleExportWorkspaceMd}
+              label="Export project as .md"
+              onSelect={handleExportProjectMd}
             />
             <ExportMenuItem
               icon={Globe}
-              label="Export workspace as .html"
-              onSelect={handleExportWorkspaceHtml}
+              label="Export project as .html"
+              onSelect={handleExportProjectHtml}
             />
             <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
             <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />

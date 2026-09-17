@@ -22,7 +22,9 @@ export interface ChatConversation {
   /** Channels only; DMs are titled from their members. */
   name: string | null;
   visibility: ConversationVisibility;
-  /** Atlas-specific: a channel can be tagged to workspaces. */
+  /** Atlas-specific: a channel can be tagged to projects. */
+  /** The Atlas server's own field name for the projects a channel is scoped
+   *  to. Wire key, not a concept. */
   workspace_ref_ids: string[];
   created_by: string;
   created_at: number;

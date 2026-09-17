@@ -101,7 +101,7 @@ import { SessionSidebar } from "./session-sidebar";
 import { ChatHeader } from "./chat-header";
 import { openNewAgentChat } from "../lib/open-agent-session";
 import { forkSessionToNewTab } from "../lib/fork-session";
-import { workspacePathForTab } from "../lib/tab-workspace";
+import { projectPathForTab } from "../lib/tab-project";
 import { useQueryClient } from "@tanstack/react-query";
 import { prefetchTextDiff } from "@/features/git/lib/git-diff-api";
 import { OPEN_TURN_DIFF_EVENT, type TurnDiffRequest } from "../lib/open-turn-diff";
@@ -170,12 +170,12 @@ async function rebindDisconnectedSession(tabId: string): Promise<boolean> {
   const pluginId = pluginIdForAgent(sess.agentType);
   try {
     const agent = await ensureAgent(pluginId);
-    // The session's own binding first, then the TAB's workspace. `currentProject`
-    // is the active workspace's — wrong for a background workspace's chat panel,
-    // which stays mounted and can rebind while another workspace is in front.
+    // The session's own binding first, then the TAB's project. `currentProject`
+    // is the active project's — wrong for a background project's chat panel,
+    // which stays mounted and can rebind while another project is in front.
     const cwd =
       sess.workingDirectory ||
-      workspacePathForTab(tabId) ||
+      projectPathForTab(tabId) ||
       useAppStore.getState().currentProject?.path ||
       "/";
     let key: SessionKey;
@@ -399,13 +399,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           tabId,
         );
         if (stale()) return;
-        // Resolve cwd from THIS tab's workspace, not the global currentProject:
-        // background workspaces keep their chat panels mounted, so a bind that
-        // fires after a workspace switch (failed-bind retry, agent change)
+        // Resolve cwd from THIS tab's project, not the global currentProject:
+        // background projects keep their chat panels mounted, so a bind that
+        // fires after a project switch (failed-bind retry, agent change)
         // would otherwise create the session against the WRONG repo — and a
-        // "/" fallback would dodge the running-workspace eviction guard.
-        const cwd =
-          workspacePathForTab(tabId) ?? useAppStore.getState().currentProject?.path ?? "/";
+        // "/" fallback would dodge the running-project eviction guard.
+        const cwd = projectPathForTab(tabId) ?? useAppStore.getState().currentProject?.path ?? "/";
         const init = await watchStall(
           withDeadline(
             agents.newSession(agent.agent_id, cwd),

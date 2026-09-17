@@ -51,7 +51,7 @@ import type {
   SpaceSummary,
 } from "@/features/spaces/lib/spaces-api";
 import type { MockHandlers } from "../types";
-import { abs, MOCK_ORG_ID, MOCK_WORKSPACE } from "../workspace";
+import { abs, MOCK_ORG_ID, MOCK_PROJECT } from "../project";
 import { mockAssetUrl } from "./files";
 
 /**
@@ -228,7 +228,7 @@ function seedCanvas(): CanvasFile {
 
 /** Per-project canvas JSON. Writes land here, so a node dragged on one tab is
  *  still where it was left after a tab switch (which re-reads the file). */
-const canvasFiles = new Map<string, string>([[MOCK_WORKSPACE.path, JSON.stringify(seedCanvas())]]);
+const canvasFiles = new Map<string, string>([[MOCK_PROJECT.path, JSON.stringify(seedCanvas())]]);
 
 // ── the realtime Space ────────────────────────────────────────────────────
 
@@ -473,7 +473,7 @@ export const spacesHandlers: MockHandlers = {
   load_canvas: ({ projectPath }): string =>
     canvasFiles.get(String(projectPath)) ??
     // What Rust returns when the file does not exist yet: a v2 empty board the
-    // store migrates to v4. Another workspace's canvas really is empty.
+    // store migrates to v4. Another project's canvas really is empty.
     '{"version":2,"viewport":{"x":0,"y":0,"zoom":1},"nodes":[],"edges":[]}',
   save_canvas: ({ projectPath, payload }): null => {
     canvasFiles.set(String(projectPath), String(payload));

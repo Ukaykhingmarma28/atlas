@@ -4,7 +4,7 @@ import { FileTree } from "@/features/explorer/components/file-tree";
  * Left panel (Cmd+B) — a pure, performative FILE TREE. The old section
  * switcher (Files / Knowledge / Analysis / Explore) was removed: analysis +
  * explore (project symbol analysis) are gone entirely, and knowledge lives in
- * its own KB tab. `FileTree` renders its own header (workspace name on the
+ * its own KB tab. `FileTree` renders its own header (project name on the
  * left, expand/collapse-all + open-folder on the right).
  *
  * A collapsible project "Usage" report used to be docked at the bottom (a

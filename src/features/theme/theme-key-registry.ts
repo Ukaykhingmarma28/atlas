@@ -637,7 +637,7 @@ export const THEME_KEY_REGISTRY = [
     base: "sidebar",
     dark: "#0f0f0f",
     light: "#fffaf3",
-    description: "Workspace rail background.",
+    description: "Project rail background.",
   }),
   define("panel.background", {
     base: "sidebar",

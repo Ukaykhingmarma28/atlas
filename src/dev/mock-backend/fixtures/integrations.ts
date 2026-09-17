@@ -33,7 +33,7 @@ import type {
 import type { ClonedRepo, GithubRepo, RepoMeta } from "@/features/github/types";
 import type { PdfAnnotation } from "@/features/pdf/stores/pdf-annotation-store";
 import type { MockHandlers } from "../types";
-import { abs, MOCK_ORG_ID } from "../workspace";
+import { abs, MOCK_ORG_ID } from "../project";
 
 /**
  * Fail a command the way Rust fails it.
@@ -69,9 +69,9 @@ const iso = (offsetDays: number) => new Date(NOW + offsetDays * DAY).toISOString
 const SECOND_ORG_ID = "org-northwind";
 
 /**
- * The account's view of the workspace's own org.
+ * The account's view of the project's own org.
  *
- * `id` matches `workspace.ts`'s `organisations[0].remoteId` and the name
+ * `id` matches `project.ts`'s `organisations[0].remoteId` and the name
  * matches its `name`, **on purpose and in that order of importance**:
  * `members-modal` keys its entire roster off `org.remoteId`, so an id that
  * disagrees opens the modal onto an empty table that looks like a UI bug. The
@@ -262,7 +262,7 @@ function invites(orgId: string): OrgInvitation[] {
   return list;
 }
 
-/** Handles the server already owns. `acme` is the workspace's own org, so the
+/** Handles the server already owns. `acme` is the project's own org, so the
  *  create dialog's "taken" state is one keystroke away; anything not listed
  *  comes back free. */
 const TAKEN_SLUGS = new Set(["acme", "northwind-labs", "atlas", "support"]);

@@ -8,9 +8,9 @@ import { copyText } from "@/lib/clipboard";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
-import { BranchLine, GitDot, NumStatPill } from "@/features/workspaces/components/git-summary";
-import { useWorkspaceGitStore } from "@/features/workspaces/stores/workspace-git-store";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+import { BranchLine, GitDot, NumStatPill } from "@/features/projects/components/git-summary";
+import { useProjectGitStore } from "@/features/projects/stores/project-git-store";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -78,7 +78,7 @@ const CHAT_WIDTH = 420;
 /**
  * The card's inset from the tab's edges, in px.
  *
- * Measured against the workspace rail's card rather than chosen: side by side
+ * Measured against the project rail's card rather than chosen: side by side
  * with the switcher, 6px read as a visibly wider gutter on the Timeline. The
  * divider and the header row are both positioned against this constant, so the
  * three cannot drift apart.
@@ -147,12 +147,12 @@ const BOARD_LIMIT = 500;
  *
  * * **Reads are sequenced, not cancelled.** `invoke` has no abort, so every
  *   read carries a sequence number and only the newest may write state. A slow
- *   read for Workspace A landing after a switch to B must not overwrite B's
+ *   read for Project A landing after a switch to B must not overwrite B's
  *   sessions with A's.
  * * **`detail` is tri-state.** `undefined` = a read is in flight, `null` = the
  *   store answered and the Session does not exist. The first version collapsed
  *   the two and left a permanent spinner on any null result.
- * * **Everything resets on a Workspace switch** — open Session included. The
+ * * **Everything resets on a Project switch** — open Session included. The
  *   old Session id means nothing in the new store.
  * * **Refresh is event-driven first** (`atlas:git-changed`, which the watcher
  *   emits on every repo move), with a 15 s poll as the fallback for capture
@@ -164,9 +164,9 @@ export function ArtifactsPanel() {
   // Every project in the active Organisation, not just the open one: the board
   // answers "what has been happening in our code", which does not stop at the
   // folder that happens to be focused.
-  const projects = useActiveOrgWorkspaces();
+  const projects = useActiveOrgProjects();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
-  // A stable key, so the read effect does not re-fire on unrelated workspace
+  // A stable key, so the read effect does not re-fire on unrelated project
   // mutations (a rename, a pin) that leave the set of paths unchanged.
   const projectPaths = useMemo(() => projects.map((w) => w.path).sort(), [projects]);
   // Joined only for a cheap dependency comparison — never split back
@@ -250,7 +250,7 @@ export function ArtifactsPanel() {
 
   // The read cache holds timelines from the *previous* set of projects. Nothing
   // reads it across a switch — the open Session is dropped too — but a stale
-  // Workspace's entries surviving in memory is exactly the leak this subsystem
+  // Project's entries surviving in memory is exactly the leak this subsystem
   // is careful about everywhere else.
   useEffect(() => clearDetailCache, [activeOrganisationId]);
 
@@ -327,7 +327,7 @@ export function ArtifactsPanel() {
 
   // Opening a Session reads its full timeline; the list row does not carry it.
   // The read goes to the store of the project the row came from, which is not
-  // necessarily the Workspace currently open.
+  // necessarily the Project currently open.
   const readDetail = useCallback(
     (showLoading: boolean) => {
       if (!open) return;
@@ -481,7 +481,7 @@ export function ArtifactsPanel() {
       {/* Chrome, then one card.
        *
        * The two headers share a row above it and the two panes share the card
-       * below it — the same recipe as the workspace rail and team chat: a
+       * below it — the same recipe as the project rail and team chat: a
        * near-black surface inset on the sides and bottom, its edge carried by a
        * hairline ring with a soft shadow behind it. One card rather than two
        * keeps the earlier rule intact for free: only the OUTER corners are
@@ -829,7 +829,7 @@ function Breadcrumb({
  * every option reads "0" the moment you type is a menu that cannot be used to
  * find anything.
  *
- * The PROJECT group carries the git detail the workspace sidebar shows — a dot
+ * The PROJECT group carries the git detail the project sidebar shows — a dot
  * for working-tree state and the current branch — because that is what tells two
  * projects called `api` and `api-v2` apart. The other groups are plain values,
  * and searching only filters projects, which is the only list long enough to
@@ -853,8 +853,8 @@ function BoardFilter({
   onClear: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const summaries = useWorkspaceGitStore.use.summaries();
-  const { ensure } = useWorkspaceGitStore.use.actions();
+  const summaries = useProjectGitStore.use.summaries();
+  const { ensure } = useProjectGitStore.use.actions();
 
   const active = activeFacetCount(selection) + (projectFilter ? 1 : 0);
   const q = query.trim().toLowerCase();
@@ -1038,7 +1038,7 @@ function Option({
  * The first thing a new user sees.
  *
  * Not an error, and not three alarms — capture being off is the default state of
- * every Workspace, and the only useful thing to say about it is what turning it
+ * every Project, and the only useful thing to say about it is what turning it
  * on would give you.
  */
 function NotEnabled() {
@@ -1061,7 +1061,7 @@ function NotEnabled() {
 }
 
 /** The store answered: this Session does not exist (deleted, or another
- *  Workspace's id). Distinct from loading — a spinner here never resolves. */
+ *  Project's id). Distinct from loading — a spinner here never resolves. */
 function NotFound({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">

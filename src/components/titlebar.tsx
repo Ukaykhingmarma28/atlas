@@ -3,7 +3,7 @@ import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcu
 import * as Popover from "@radix-ui/react-popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import {
   useNotificationsStore,
   hasUnread,
@@ -40,8 +40,8 @@ import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { CapturePopover } from "@/features/capture/components/capture-popover";
 import { StatusDot } from "@/features/capture/components/capture-status";
 import type { Binding, CaptureHealth } from "@/features/capture/types";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
+import { activeProjectId } from "@/features/projects/lib/active-project";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { isDev } from "@/lib/env";
 import { isMac, isWindows } from "@/lib/platform";
 
@@ -74,24 +74,24 @@ function useTauriWindow() {
 
 export function Titlebar() {
   const currentProject = useAppStore.use.currentProject();
-  // The label name is read from the WORKSPACE store (matched by path), not from
+  // The label name is read from the PROJECT store (matched by path), not from
   // `currentProject.name`. `currentProject` only re-syncs after a slow Rust
-  // AppState round-trip, so a workspace rename took ~3-4s to show here; the
-  // workspace store mutates synchronously on rename, so this updates instantly.
-  const workspaces = useWorkspaceStore.use.workspaces();
+  // AppState round-trip, so a project rename took ~3-4s to show here; the
+  // project store mutates synchronously on rename, so this updates instantly.
+  const projects = useProjectStore.use.projects();
   // Owning organisation, for the `org / project` pill. Read live so an org
   // switch or rename re-labels immediately.
   const organisations = useOrgStore.use.organisations();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const orgName = organisations.find((o) => o.id === activeOrganisationId)?.name ?? null;
-  // Same path can be a workspace in several orgs — prefer the ACTIVE org's
+  // Same path can be a project in several orgs — prefer the ACTIVE org's
   // twin so a rename in another org never re-labels this titlebar.
   const displayName =
     (currentProject
-      ? workspaces.find((w) => w.path === currentProject.path && w.orgId === activeOrganisationId)
+      ? projects.find((w) => w.path === currentProject.path && w.orgId === activeOrganisationId)
           ?.name
       : undefined) ??
-    (currentProject ? workspaces.find((w) => w.path === currentProject.path)?.name : undefined) ??
+    (currentProject ? projects.find((w) => w.path === currentProject.path)?.name : undefined) ??
     currentProject?.name ??
     "Atlas";
   const { windowRef, isFullscreen } = useTauriWindow();
@@ -101,8 +101,8 @@ export function Titlebar() {
   // the space. Fullscreen hides the lights entirely. (Unpinned overlay mode
   // doesn't occupy flow width, so it never affects this.) Only macOS has
   // traffic lights on the left; Windows gets `WindowControls` on the right.
-  const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
-  const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
+  const sidebarPinned = useProjectStore.use.sidebarPinned();
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
   const dockedSidebar = sidebarPinned && sidebarOpen;
 
   const isTitlebarSurface = (target: EventTarget | null) => {
@@ -155,10 +155,10 @@ export function Titlebar() {
     >
       <div className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5">
         <HintGroup>
-          <WorkspaceToggle />
+          <ProjectToggle />
           {currentProject && <LeftPanelToggle />}
         </HintGroup>
-        {/* `org / project` pill — click to copy the workspace path. */}
+        {/* `org / project` pill — click to copy the project path. */}
         <ProjectLabel name={displayName} orgName={orgName} path={currentProject?.path} />
       </div>
 
@@ -277,7 +277,7 @@ function ActionDock() {
 /**
  * The titlebar project label — `org / project`, with the capture dot.
  *
- * Clicking it opens capture setup. It used to copy the workspace path and show
+ * Clicking it opens capture setup. It used to copy the project path and show
  * a hover tooltip of that path; both are gone, because the click now opens a
  * panel and a tooltip that fires every time you approach that panel is noise in
  * front of it. It stays a <button> (not a span) so the titlebar's
@@ -308,7 +308,7 @@ function ProjectLabel({
       .catch(() => setBinding(null));
     void invoke<CaptureHealth>("capture_health", {
       projectPath: path,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     })
       .then(setHealth)
       .catch(() => setHealth(null));
@@ -446,24 +446,24 @@ function DevModePill() {
   );
 }
 
-function WorkspaceToggle() {
+function ProjectToggle() {
   const hint = useActionShortcut("workspace.toggleSidebar")?.label;
   const suffix = hint ? ` (${hint})` : "";
-  const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
-  const { toggleSidebar } = useWorkspaceStore.use.actions();
-  // Badge counts only the active org's workspaces (matches what the sidebar
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
+  const { toggleSidebar } = useProjectStore.use.actions();
+  // Badge counts only the active org's projects (matches what the sidebar
   // it toggles will actually show).
-  const count = useActiveOrgWorkspaces().length;
+  const count = useActiveOrgProjects().length;
 
   return (
-    <HintItem label={sidebarOpen ? `Hide workspaces${suffix}` : `Show workspaces${suffix}`}>
+    <HintItem label={sidebarOpen ? `Hide projects${suffix}` : `Show projects${suffix}`}>
       <button
         onClick={toggleSidebar}
         className={cn(
           "relative flex items-center justify-center w-6 h-6 rounded hover:bg-[#ffffff08] transition-all duration-150",
           sidebarOpen ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
         )}
-        aria-label={sidebarOpen ? "Hide workspaces" : "Show workspaces"}
+        aria-label={sidebarOpen ? "Hide projects" : "Show projects"}
       >
         <Layers size={14} />
         {count > 1 && (
@@ -594,7 +594,7 @@ function useNotificationItem(): DockItem {
   // Scoped to the active organisation: another org's unread items are its own.
   const unread = useNotificationsStore((s) => hasUnread(s.items, activeOrgId));
   const hasError = useNotificationsStore((s) => hasUnread(s.items, activeOrgId, isErrorKind));
-  // LIVE attention state: any session (any workspace) blocked on a permission
+  // LIVE attention state: any session (any project) blocked on a permission
   // decision, or any terminal waiting on input. Derived from live stores
   // rather than unread flags so it shows even after the panel was opened, and
   // clears itself the moment the prompt is answered.

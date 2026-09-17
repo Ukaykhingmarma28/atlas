@@ -12,11 +12,11 @@
 export type Role = "admin" | "product_owner" | "developer" | "member";
 
 /**
- * A top-level tenant that owns a set of workspaces. Exactly one org is active
+ * A top-level tenant that owns a set of projects. Exactly one org is active
  * per window. Local-only until the user opts into sync per org.
  *
  * Server-mapped fields: `id` (sync key), `name`, `slug` (unique + required),
- * `logo`. Local-only fields: `activeWorkspaceId`, `syncEnabled`, `color`, and
+ * `logo`. Local-only fields: `activeProjectId`, `syncEnabled`, `color`, and
  * `remoteId` (the server `organization.id` once linked).
  */
 export interface Organisation {
@@ -28,9 +28,9 @@ export interface Organisation {
   logo?: string;
   /** ISO-8601 creation timestamp. */
   createdAt?: string;
-  /** Per-org memory of the last active workspace (restore target on switch).
-   *  Local-only — the server has no active-workspace concept. */
-  activeWorkspaceId?: string;
+  /** Per-org memory of the last active project (restore target on switch).
+   *  Local-only — the server has no active-project concept. */
+  activeProjectId?: string;
   /** Opt-in cloud sync (Chrome-profile model). `false` = local-only. */
   syncEnabled: boolean;
   /** Server `organization.id` once linked via "Turn on sync". Reconciliation

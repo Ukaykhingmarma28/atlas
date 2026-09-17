@@ -390,7 +390,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const [startIndex, setStartIndex] = useState(() => Math.max(0, rows.length - WINDOW_INITIAL));
 
   // A projection that SHRINKS — "New chat" resetting the session in place, a
-  // workspace switch dropping history, a role filter — leaves `startIndex`
+  // project switch dropping history, a role filter — leaves `startIndex`
   // pointing into a thread that no longer exists. Every other writer only ever
   // moves the start DOWN (growth, jump-to-message) or sets it to this floor, so
   // a start above the floor is unreachable except by a shrink: that is the
@@ -732,7 +732,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   // Persist position on unmount so reopening returns the reader. A tab switch
   // no longer unmounts (the panel stays mounted and laid out behind the active
   // tab, keeping `scrollTop` in the DOM); this covers closing the tab or the
-  // workspace and coming back.
+  // project and coming back.
   useEffect(() => {
     return () => {
       const el = scrollRef.current;

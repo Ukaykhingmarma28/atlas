@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useWorkspaceGitStore, type GitSummary } from "../stores/workspace-git-store";
+import { useProjectGitStore, type GitSummary } from "../stores/project-git-store";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -42,7 +42,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { GithubIcon } from "@/components/github-icon";
 import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
-import { useWorkspaceStore, type Workspace, type WorkspaceGroup } from "../stores/workspace-store";
+import { useProjectStore, type Project, type ProjectGroup } from "../stores/project-store";
 import { useRunningChatKeys } from "../lib/agent-activity";
 import { openAgentSession, openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
@@ -51,7 +51,7 @@ import { AgentIcons } from "@/components/agent-icons";
 import { useRecentChatsStore, type RecentChat } from "../stores/recent-chats-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgWorkspaces, useActiveOrgGroups } from "../lib/org-scope";
+import { useActiveOrgProjects, useActiveOrgGroups } from "../lib/org-scope";
 import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
 import { MembersModal } from "@/features/organisations/components/members-modal";
 import { CaptureControl } from "@/features/capture/components/capture-control";
@@ -84,37 +84,37 @@ const SECTION_H = HEADER_H + 10;
 // Memoised: every git-summary resolution replaces the summaries map and
 // re-rendered EVERY visible row (each carrying a Radix dropdown tree). Props
 // are memo-friendly by construction — `ws` objects are only remapped on
-// workspace mutations, `summary` changes only for its own path, `groups` is
+// project mutations, `summary` changes only for its own path, `groups` is
 // store-stable — so a background summary refresh now re-renders one row.
-const WorkspaceRow = memo(function WorkspaceRow({
+const ProjectRow = memo(function ProjectRow({
   ws,
   active,
   summary,
   groups,
   indented,
 }: {
-  ws: Workspace;
+  ws: Project;
   active: boolean;
   summary?: GitSummary;
-  groups: WorkspaceGroup[];
+  groups: ProjectGroup[];
   indented?: boolean;
 }) {
   const {
     switchTo,
-    closeWorkspace,
+    closeProject,
     pin,
     unpin,
     setGroup,
     addGroup,
     rename,
-    beginRenameWorkspace,
-    endRenameWorkspace,
-  } = useWorkspaceStore.use.actions();
+    beginRenameProject,
+    endRenameProject,
+  } = useProjectStore.use.actions();
   // Inline-rename lives in the store (like group rename) so it survives the
-  // virtualized row remounting. The name shown is the user-chosen workspace
+  // virtualized row remounting. The name shown is the user-chosen project
   // label (defaults to the directory name) — renaming only relabels the row,
   // it never touches the on-disk path.
-  const editing = useWorkspaceStore.use.editingWorkspaceId() === ws.id;
+  const editing = useProjectStore.use.editingProjectId() === ws.id;
   const [nameDraft, setNameDraft] = useState(ws.name);
   const nameInputRef = useRef<HTMLInputElement>(null);
   // Seed the field AND focus it whenever we enter edit mode. `autoFocus` alone
@@ -139,7 +139,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
   const commitRename = () => {
     const n = nameDraft.trim();
     if (n) rename(ws.id, n);
-    endRenameWorkspace();
+    endRenameProject();
   };
   return (
     <div
@@ -177,7 +177,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Enter") commitRename();
-              if (e.key === "Escape") endRenameWorkspace();
+              if (e.key === "Escape") endRenameProject();
             }}
             className="block w-full bg-transparent outline-none text-[12px] leading-tight text-[var(--text-primary)]"
           />
@@ -185,7 +185,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
           <span
             onDoubleClick={(e) => {
               e.stopPropagation();
-              beginRenameWorkspace(ws.id);
+              beginRenameProject(ws.id);
             }}
             className={cn(
               "block truncate text-[12px] leading-tight",
@@ -256,7 +256,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
                   className="z-[var(--z-max)] min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
                 >
                   <DropdownMenu.Item
-                    onSelect={() => beginRenameWorkspace(ws.id)}
+                    onSelect={() => beginRenameProject(ws.id)}
                     className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
                   >
                     <Pencil size={11} /> Rename
@@ -313,7 +313,7 @@ const WorkspaceRow = memo(function WorkspaceRow({
                   </DropdownMenu.Sub>
                   <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
                   <DropdownMenu.Item
-                    onSelect={() => void closeWorkspace(ws.id)}
+                    onSelect={() => void closeProject(ws.id)}
                     className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
                   >
                     <X size={11} /> Remove from list
@@ -333,16 +333,16 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
   collapsed,
   onToggle,
 }: {
-  group: WorkspaceGroup;
+  group: ProjectGroup;
   collapsed: boolean;
   /** Takes the group id — one stable callback for every group row. */
   onToggle: (id: string) => void;
 }) {
   const { pinGroup, unpinGroup, removeGroup, renameGroup, beginRenameGroup, endRenameGroup } =
-    useWorkspaceStore.use.actions();
+    useProjectStore.use.actions();
   // Editing lives in the store (not local state) so it survives the virtualized
   // row remounting, and so a freshly-created group opens straight into rename.
-  const editing = useWorkspaceStore.use.editingGroupId() === group.id;
+  const editing = useProjectStore.use.editingGroupId() === group.id;
   const [name, setName] = useState(group.name);
   // Seed the field each time we enter edit mode.
   useEffect(() => {
@@ -626,24 +626,24 @@ const ChatRow = memo(function ChatRow({
 
 type Row =
   | { kind: "section"; id: string; label: string; key: string }
-  | { kind: "group"; group: WorkspaceGroup; count: number; key: string }
-  | { kind: "ws"; ws: Workspace; indented: boolean; key: string }
+  | { kind: "group"; group: ProjectGroup; count: number; key: string }
+  | { kind: "ws"; ws: Project; indented: boolean; key: string }
   | { kind: "recent"; name: string; path: string; key: string }
   | { kind: "chat"; chat: RecentChat; key: string };
 
-export function WorkspaceSidebar() {
-  const allWorkspaces = useWorkspaceStore.use.workspaces();
-  // The sidebar shows only the ACTIVE org's workspaces/groups (strict filter —
+export function ProjectSidebar() {
+  const allProjects = useProjectStore.use.projects();
+  // The sidebar shows only the ACTIVE org's projects/groups (strict filter —
   // see org-scope.ts for why there is no null-orgId fallback).
-  const workspaces = useActiveOrgWorkspaces();
+  const projects = useActiveOrgProjects();
   const groups = useActiveOrgGroups();
-  const activeWorkspaceId = useWorkspaceStore.use.activeWorkspaceId();
-  const optimisticActiveId = useWorkspaceStore.use.optimisticActiveId();
-  // Highlight the clicked workspace INSTANTLY (optimistic), falling back to the
+  const activeProjectId = useProjectStore.use.activeProjectId();
+  const optimisticActiveId = useProjectStore.use.optimisticActiveId();
+  // Highlight the clicked project INSTANTLY (optimistic), falling back to the
   // real active id once the switch settles.
-  const displayActiveId = optimisticActiveId ?? activeWorkspaceId;
-  const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
-  const { addWorkspace, toggleSidebarPinned } = useWorkspaceStore.use.actions();
+  const displayActiveId = optimisticActiveId ?? activeProjectId;
+  const sidebarPinned = useProjectStore.use.sidebarPinned();
+  const { addProject, toggleSidebarPinned } = useProjectStore.use.actions();
   const { addTab, toggleRightPanelMode } = useLayoutStore.use.actions();
   // Which occupant the right slot shows, or null when closed — drives the
   // active state of the Chat / Source control items.
@@ -717,8 +717,8 @@ export function WorkspaceSidebar() {
   const toggle = useCallback((id: string) => setCollapsed((c) => ({ ...c, [id]: !c[id] })), []);
 
   // Pinned + Projects (STATIC registry order — clicking never reorders).
-  const pinned = useMemo(() => workspaces.filter((w) => w.pinned), [workspaces]);
-  const projects = useMemo(() => workspaces.filter((w) => !w.pinned), [workspaces]);
+  const pinned = useMemo(() => projects.filter((w) => w.pinned), [projects]);
+  const unpinned = useMemo(() => projects.filter((w) => !w.pinned), [projects]);
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.order - b.order),
     [groups],
@@ -726,7 +726,7 @@ export function WorkspaceSidebar() {
 
   // Recent projects = picker recents NOT already in the registry. Excludes
   // projects open in ANY org (recents are global) so nothing double-lists.
-  const openPaths = useMemo(() => new Set(allWorkspaces.map((w) => w.path)), [allWorkspaces]);
+  const openPaths = useMemo(() => new Set(allProjects.map((w) => w.path)), [allProjects]);
   const recents = useMemo(
     () => recentProjects.filter((r) => !openPaths.has(r.path)),
     [recentProjects, openPaths],
@@ -734,13 +734,13 @@ export function WorkspaceSidebar() {
 
   // Chats are recorded globally (no orgId), so scope the sidebar list to the
   // active org by keeping only chats whose project belongs to an active-org
-  // workspace. `workspaces` is already org-filtered above; a project path maps
-  // to exactly one workspace (addWorkspace dedupes by path), so this is
+  // project. `projects` is already org-filtered above; a project path maps
+  // to exactly one project (addProject dedupes by path), so this is
   // unambiguous. Chats for projects not open in this org are hidden.
-  const orgWorkspacePaths = useMemo(() => new Set(workspaces.map((w) => w.path)), [workspaces]);
+  const orgProjectPaths = useMemo(() => new Set(projects.map((w) => w.path)), [projects]);
   const orgRecentChats = useMemo(
-    () => recentChats.filter((c) => orgWorkspacePaths.has(c.projectPath)),
-    [recentChats, orgWorkspacePaths],
+    () => recentChats.filter((c) => orgProjectPaths.has(c.projectPath)),
+    [recentChats, orgProjectPaths],
   );
 
   // Section ids that currently exist (for collapse-all + the toggle button).
@@ -774,7 +774,7 @@ export function WorkspaceSidebar() {
       key: "s:projects",
     });
     if (!collapsed["sec:projects"]) {
-      const inGroup = (gid: string) => projects.filter((w) => w.groupId === gid);
+      const inGroup = (gid: string) => unpinned.filter((w) => w.groupId === gid);
       for (const g of sortedGroups) {
         const members = inGroup(g.id);
         out.push({
@@ -786,7 +786,7 @@ export function WorkspaceSidebar() {
         if (!collapsed[g.id])
           for (const ws of members) out.push({ kind: "ws", ws, indented: true, key: ws.id });
       }
-      for (const ws of projects.filter((w) => !w.groupId))
+      for (const ws of unpinned.filter((w) => !w.groupId))
         out.push({ kind: "ws", ws, indented: false, key: ws.id });
     }
     if (recents.length) {
@@ -822,7 +822,7 @@ export function WorkspaceSidebar() {
         for (const c of ordered) out.push({ kind: "chat", chat: c, key: `c:${c.tabId}` });
     }
     return out;
-  }, [pinned, projects, sortedGroups, collapsed, recents, orgRecentChats, isChatRunning]);
+  }, [pinned, unpinned, sortedGroups, collapsed, recents, orgRecentChats, isChatRunning]);
 
   // Collapse-all / expand-all: collapses every section + group, or expands all.
   const allCollapsibleIds = useMemo(
@@ -837,14 +837,14 @@ export function WorkspaceSidebar() {
   };
 
   // ── Git summaries ────────────────────────────────────────────────────
-  // Cached at module scope (`workspace-git-store`) so opening / closing the
+  // Cached at module scope (`project-git-store`) so opening / closing the
   // switcher renders instantly from cache and NEVER recalculates. First sight
   // fetches; a global git-changed listener silently refreshes in the
   // background. WHICH paths get fetched is the list's business (it knows what
   // is on screen), so the map is all this level needs.
-  const summaries = useWorkspaceGitStore.use.summaries();
+  const summaries = useProjectGitStore.use.summaries();
 
-  const openRecent = useCallback((path: string) => void addWorkspace(path), [addWorkspace]);
+  const openRecent = useCallback((path: string) => void addProject(path), [addProject]);
 
   const clearSection = useCallback(
     (id: string) => {
@@ -855,7 +855,7 @@ export function WorkspaceSidebar() {
       if (id === "sec:chats") {
         // Read the list at click time rather than closing over it — the
         // callback has to stay stable, and the store is the truth anyway.
-        const paths = new Set(useWorkspaceStore.getState().workspaces.map((w) => w.path));
+        const paths = new Set(useProjectStore.getState().projects.map((w) => w.path));
         for (const c of useRecentChatsStore.getState().items) {
           if (paths.has(c.projectPath)) removeChat(c.tabId);
         }
@@ -866,16 +866,16 @@ export function WorkspaceSidebar() {
 
   const openChat = useCallback(
     async (chat: RecentChat) => {
-      // 1. Focus the chat's project workspace (register it if new). Prefer
-      //    the ACTIVE org's row — the same path can be a workspace in several
+      // 1. Focus the chat's project (register it if new). Prefer
+      //    the ACTIVE org's row — the same path can be a project in several
       //    orgs, and switching to another org's twin would silently jump the
-      //    user across organisations. addWorkspace registers an org-scoped
+      //    user across organisations. addProject registers an org-scoped
       //    row when this org has none.
-      const st = useWorkspaceStore.getState();
+      const st = useProjectStore.getState();
       const orgId = useOrgStore.getState().activeOrganisationId;
-      const ws = st.workspaces.find((w) => w.path === chat.projectPath && w.orgId === orgId);
+      const ws = st.projects.find((w) => w.path === chat.projectPath && w.orgId === orgId);
       if (ws) await st.actions.switchTo(ws.id);
-      else await addWorkspace(chat.projectPath);
+      else await addProject(chat.projectPath);
       // 2. Open THIS session (by acp session id — not the tab id, which is reused
       //    across many sessions). openAgentSession focuses it if already open,
       //    else loads it into the agent chat.
@@ -886,7 +886,7 @@ export function WorkspaceSidebar() {
         agentType: chat.agentType,
       });
     },
-    [addWorkspace],
+    [addProject],
   );
 
   return (
@@ -1149,7 +1149,7 @@ function NavItem({
 
 // ── The scrolling list ─────────────────────────────────────────────────────
 //
-// Split out of `WorkspaceSidebar` for one reason: a virtualizer re-renders its
+// Split out of `ProjectSidebar` for one reason: a virtualizer re-renders its
 // OWNER on every scroll event. With the hook at the top of the rail, a fling
 // re-ran fifteen store selectors, the org row, the whole navigation and every
 // visible row wrapper per frame, all to produce identical output. Down here the
@@ -1168,7 +1168,7 @@ const VIRTUALIZE_ABOVE = 120;
 interface RailRowCtx {
   collapsed: Record<string, boolean>;
   summaries: Record<string, GitSummary>;
-  groups: WorkspaceGroup[];
+  groups: ProjectGroup[];
   activeId: string | null;
   runningKeys: Set<string>;
   onToggle: (id: string) => void;
@@ -1203,7 +1203,7 @@ function renderRailRow(row: Row, ctx: RailRowCtx) {
       );
     case "ws":
       return (
-        <WorkspaceRow
+        <ProjectRow
           ws={row.ws}
           active={row.ws.id === ctx.activeId}
           summary={ctx.summaries[row.ws.path]}
@@ -1240,7 +1240,7 @@ function renderRailRow(row: Row, ctx: RailRowCtx) {
  * an array identity does.
  */
 function useEnsureSummaries(pathsKey: string) {
-  const { ensure } = useWorkspaceGitStore.use.actions();
+  const { ensure } = useProjectGitStore.use.actions();
   useEffect(() => {
     if (!pathsKey) return;
     const paths = pathsKey.split("\n");

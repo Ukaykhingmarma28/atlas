@@ -208,7 +208,7 @@ describe("the grant store's composer lock", () => {
   });
 
   it("asks the gateway once however many composers are mounted", async () => {
-    // Split view and background workspaces each mount their own composer. One
+    // Split view and background projects each mount their own composer. One
     // probe per org, not one per tab — and no tab's reset may wipe the answer
     // another just fetched.
     useAiGrantStore.setState({ probedOrgId: null });

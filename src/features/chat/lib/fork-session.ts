@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { agents } from "./agents-api";
 import { errInfo } from "./agent-signin";
 import { openAgentSession } from "./open-agent-session";
-import { workspacePathForTab } from "./tab-workspace";
+import { projectPathForTab } from "./tab-project";
 import { useChatStore } from "../stores/chat-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 
@@ -31,10 +31,10 @@ export function forkSessionToNewTab(tabId: string): void {
         acpSessionId: forked,
         title: `${sess.title ?? "Session"} (branch)`,
         // A branch belongs to the SOURCE session's project, not to whichever
-        // workspace happens to be active when the fork is triggered.
+        // project happens to be active when the fork is triggered.
         cwd:
           sess.workingDirectory ||
-          workspacePathForTab(tabId) ||
+          projectPathForTab(tabId) ||
           useAppStore.getState().currentProject?.path ||
           "",
         agentType: sess.agentType,

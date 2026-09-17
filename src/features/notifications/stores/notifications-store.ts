@@ -31,10 +31,10 @@ export interface AppNotification {
   tabId?: string;
   /** Terminal source: the layout terminal id inside `tabId`. */
   terminalId?: string;
-  /** Owning workspace and organisation. Items are kept for every org and
+  /** Owning project and organisation. Items are kept for every org and
    *  FILTERED by the active one at render (`visibleItems`); an untagged item
    *  is visible everywhere. */
-  workspaceId?: string;
+  projectId?: string;
   orgId?: string;
   read: boolean;
 }

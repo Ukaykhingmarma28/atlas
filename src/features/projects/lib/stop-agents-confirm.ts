@@ -5,7 +5,7 @@ import { agents } from "@/features/chat/lib/agents-api";
 import { isBusyAgentStatus, type ChatSession } from "@/types/agent";
 
 /**
- * Confirm-before-killing-agents flow, shared by the org switcher and workspace
+ * Confirm-before-killing-agents flow, shared by the org switcher and project
  * close. Destructive context switches must never silently stop running agents
  * (the whole product is many agents working concurrently) — so callers ask the
  * user first, and on confirm CANCEL the live turns before tearing sessions
@@ -17,7 +17,7 @@ import { isBusyAgentStatus, type ChatSession } from "@/types/agent";
 export interface StopAgentsPrompt {
   /** Number of running/waiting sessions the action would stop. */
   count: number;
-  /** e.g. "Switching organisations" / "Closing this workspace". */
+  /** e.g. "Switching organisations" / "Closing this project". */
   actionLabel: string;
   /** Confirm button, e.g. "Stop agents & switch". */
   confirmLabel: string;
@@ -53,7 +53,7 @@ const useStopAgentsConfirmStoreBase = create<StopAgentsConfirmState>((set, get) 
 export const useStopAgentsConfirmStore = createSelectors(useStopAgentsConfirmStoreBase);
 
 /** Busy (running or permission-waiting) sessions, optionally scoped to one
- *  workspace path. */
+ *  project path. */
 export function busySessions(path?: string): ChatSession[] {
   return Object.values(useChatStore.getState().sessions).filter(
     (s) => isBusyAgentStatus(s.status) && (!path || s.workingDirectory === path),

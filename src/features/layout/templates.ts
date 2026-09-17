@@ -4,7 +4,7 @@ type LeftSection = "files" | "knowledge";
 type RightSection = "changes" | "github" | "git-graph";
 
 /** A predefined panel/split/tab arrangement applied via the layout switcher
- *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE workspace. */
+ *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE project. */
 export interface LayoutTemplate {
   id: string;
   name: string;

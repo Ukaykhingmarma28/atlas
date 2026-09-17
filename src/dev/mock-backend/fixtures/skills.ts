@@ -48,10 +48,10 @@ import type {
 } from "@/features/skills/lib/types";
 import type { AgentCatalog, AgentCatalogEntry } from "@/types/agent-catalog";
 import type { MockHandlers } from "../types";
-import { MOCK_WORKSPACE } from "../workspace";
+import { MOCK_PROJECT } from "../project";
 
 const HOME = "/Users/dev";
-const PROJECT = MOCK_WORKSPACE.path;
+const PROJECT = MOCK_PROJECT.path;
 /** Fixed "now", so install dates and refresh times never move between reloads. */
 const NOW = Date.parse("2026-09-18T11:30:00Z");
 

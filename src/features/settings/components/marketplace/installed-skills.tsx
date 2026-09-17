@@ -281,7 +281,7 @@ export function InstalledSkills({
   if (projectMissing) {
     return (
       <div className="grid h-full place-items-center px-6 text-center text-[11px] text-text-tertiary">
-        Open a project to manage workspace skills.
+        Open a project to manage project skills.
       </div>
     );
   }

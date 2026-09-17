@@ -18,7 +18,7 @@ import type {
   ProjectMetrics,
 } from "@/features/mission-control/types";
 import type { MockHandlers } from "../types";
-import { ALL_WORKSPACES, MOCK_ORG_ID, MOCK_WORKSPACE } from "../workspace";
+import { ALL_PROJECTS, MOCK_ORG_ID, MOCK_PROJECT } from "../project";
 
 const DAY = 86_400_000;
 /** Fixed "now" so the seeded series is stable between reloads. */
@@ -67,7 +67,7 @@ const SEEDS: Seed[] = [
   ["knowledge", "link", "Theme token audit → Diff view colours"],
   ["canvas", "export", "architecture.svg", { nodes: 24 }],
   ["github", "clone", "acme/design-tokens", { sizeMb: 12.4 }],
-  ["project", "open", "acme-app", { path: MOCK_WORKSPACE.path }],
+  ["project", "open", "acme-app", { path: MOCK_PROJECT.path }],
   ["system", "index", "Codebase index rebuilt — 1,284 files", { durationMs: 8_120 }],
   ["system", "update", "Checked for updates — already on the latest build"],
   ["atlas", "settings", "Theme changed to Atlas Dark", { theme: "atlas-dark" }],
@@ -86,8 +86,8 @@ function seedEntries(): LogEntry[] {
       kind,
       summary,
       orgId: MOCK_ORG_ID,
-      projectPath: MOCK_WORKSPACE.path,
-      projectName: MOCK_WORKSPACE.name,
+      projectPath: MOCK_PROJECT.path,
+      projectName: MOCK_PROJECT.name,
       ...(payload ? { payload } : {}),
     } satisfies LogEntry;
   });
@@ -100,7 +100,7 @@ const SEEDED = seedEntries().reverse();
 
 const projectLogs = new Map<string, string>([
   [
-    MOCK_WORKSPACE.path,
+    MOCK_PROJECT.path,
     // A truncated last line: the reader skips malformed JSON, and a log that
     // was being appended to when the app died really does look like this.
     toJsonl(SEEDED) + '{"id":"seed_trunc","timestamp":"2026-09-18T11:3',
@@ -120,9 +120,9 @@ function wobble(seed: number): number {
 }
 
 const PER_PROJECT_WEIGHT: Record<string, number> = {
-  [MOCK_WORKSPACE.path]: 1,
-  [ALL_WORKSPACES[1].path]: 0.42,
-  [ALL_WORKSPACES[2].path]: 0.08,
+  [MOCK_PROJECT.path]: 1,
+  [ALL_PROJECTS[1].path]: 0.42,
+  [ALL_PROJECTS[2].path]: 0.08,
 };
 
 function dailySeries(paths: string[]): DailyBucket[] {
@@ -177,10 +177,10 @@ function foldProject(path: string, buckets: DailyBucket[]): ProjectMetrics {
       sessions: 0,
     },
   );
-  const workspace = ALL_WORKSPACES.find((candidate) => candidate.path === path);
+  const project = ALL_PROJECTS.find((candidate) => candidate.path === path);
   return {
     projectPath: path,
-    projectName: workspace?.name ?? path.split("/").pop() ?? path,
+    projectName: project?.name ?? path.split("/").pop() ?? path,
     agents,
     firstActivityMs: mine.length ? Date.parse(`${mine[0].date}T09:00:00Z`) : null,
     lastActivityMs: mine.length ? Date.parse(`${mine[mine.length - 1].date}T18:00:00Z`) : null,
@@ -263,6 +263,6 @@ export const logHandlers: MockHandlers = {
 
   mission_control_usage: ({ projectPaths }): MissionControlUsage => {
     const paths = Array.isArray(projectPaths) ? (projectPaths as string[]) : [];
-    return usage(paths.length ? paths : ALL_WORKSPACES.map((workspace) => workspace.path));
+    return usage(paths.length ? paths : ALL_PROJECTS.map((project) => project.path));
   },
 };

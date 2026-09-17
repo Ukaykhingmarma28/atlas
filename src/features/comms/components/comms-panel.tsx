@@ -204,7 +204,7 @@ export function CommsPanel() {
           ))}
         </div>
 
-        {/* The workspace sidebar's add-project button, verbatim. */}
+        {/* The project sidebar's add-project button, verbatim. */}
         <div className="flex shrink-0 items-center pr-1.5">
           <Hint label="New tab">
             <button

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
-import { activeOrgWorkspacesSnapshot } from "@/features/workspaces/lib/org-scope";
+import { activeOrgProjectsSnapshot } from "@/features/projects/lib/org-scope";
 import type { MissionControlUsage, TimeRange } from "../types";
 
 /**
@@ -34,7 +34,7 @@ export const useMissionControlStore = createSelectors(
         try {
           // Only the ACTIVE org's projects — Mission Control must not
           // aggregate usage across organisations.
-          const projectPaths = activeOrgWorkspacesSnapshot().map((w) => w.path);
+          const projectPaths = activeOrgProjectsSnapshot().map((w) => w.path);
           const data = await invoke<MissionControlUsage>("mission_control_usage", {
             projectPaths,
           });

@@ -22,7 +22,7 @@ import { useOrgStore } from "@/features/organisations/stores/org-store";
 import type { Organisation } from "@/features/organisations/types";
 import { cn } from "@/lib/utils";
 
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 import { CaptureDot } from "./capture-status";
 
@@ -34,7 +34,7 @@ import type {
   ImportPreview,
   PromotionPreview,
   SlugAvailability,
-  WorkspaceMode,
+  ProjectMode,
 } from "../types";
 
 /**
@@ -55,7 +55,7 @@ import type {
  * Ordering inside the Cloud confirm matters and is not obvious:
  * `capture_register_cloud` requires an existing binding, so Confirm runs
  * enable-Local → register → import-confirm. Running enable *before* the
- * disclosure would leave a bound Workspace behind a Cancel, which is exactly
+ * disclosure would leave a bound Project behind a Cancel, which is exactly
  * what "Cancel = nothing happens" forbids.
  *
  * **Cloud follows the active Organisation, and only that one.** Capture is
@@ -70,10 +70,10 @@ import type {
  * Cloud capture is switched off in the client.
  *
  * The ingest service (`ingest.tryatlas.cc`) currently answers **405 method not
- * allowed to every GET** — `GET /workspaces` and `GET /workspaces/slug-available`
+ * allowed to every GET** — `GET /projects` and `GET /projects/slug-available`
  * are not deployed, only the POST routes are. So Connect could never list
  * anything ("Could not reach the server"), the Slug check could only ever say
- * "couldn't check", and Create-Cloud would bind a Workspace whose drain has
+ * "couldn't check", and Create-Cloud would bind a Project whose drain has
  * nowhere to read back from. None of that is a client fault and none of it is
  * fixable here.
  *
@@ -137,7 +137,7 @@ type View =
       slug: string;
       preview: ImportPreview;
     }
-  /** Bound Cloud Workspace whose history import awaits approval. */
+  /** Bound Cloud Project whose history import awaits approval. */
   | { kind: "import-confirm"; preview: ImportPreview }
   /** Local→Cloud promotion: pick the destination. */
   | { kind: "promote-form" }
@@ -234,7 +234,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
     } finally {
       // Always re-read, success or not: a multi-step action (Cloud confirm,
       // Connect) can fail after its first mutation landed, and showing the
-      // pre-action state over a Workspace that changed is a lie. `load` never
+      // pre-action state over a Project that changed is a lie. `load` never
       // clears `error` on success, so the failure stays visible.
       await load();
       onChanged();
@@ -330,7 +330,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "cloud-confirm" && (
           <DisclosureStep
-            title="Share this Workspace's history?"
+            title="Share this Project's history?"
             lines={disclosureLines(view.preview)}
             confirmLabel="Share and enable Cloud"
             busy={busy}
@@ -355,7 +355,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "import-confirm" && (
           <DisclosureStep
-            title="Import this Workspace's history?"
+            title="Import this Project's history?"
             lines={disclosureLines(view.preview)}
             confirmLabel="Import and share"
             busy={busy}
@@ -393,7 +393,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "promote-confirm" && (
           <DisclosureStep
-            title="Publish this Workspace to your Organisation?"
+            title="Publish this Project to your Organisation?"
             lines={[
               `${view.preview.sessionCount} session${view.preview.sessionCount === 1 ? "" : "s"}`,
               dateRange(view.preview.earliest, view.preview.latest),
@@ -522,7 +522,7 @@ function HealthDetail({
     try {
       await invoke<CaptureHealth>("capture_retry_watcher", {
         projectPath,
-        workspaceId: activeWorkspaceId(),
+        workspaceId: activeProjectId(),
       });
       onRetried();
     } catch {
@@ -796,7 +796,7 @@ function BoundState({
         />
       )}
 
-      {/* A Cloud Workspace whose bulk import was never approved imports
+      {/* A Cloud Project whose bulk import was never approved imports
        *  nothing, forever, on purpose. Say so where it can be resolved. */}
       {binding.mode === "cloud" && !binding.importApproved && (
         <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-white/[0.10] px-2.5 py-1.5">
@@ -833,7 +833,7 @@ function BoundState({
       )}
 
       <div className="flex items-center gap-2 pt-1">
-        {/* Where this Workspace's Sessions live. A label, not a control — the
+        {/* Where this Project's Sessions live. A label, not a control — the
          *  way to change it is the Sync button beside it. */}
         <span className="mr-auto flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)]">
           {binding.mode === "cloud" ? <Cloud size={11} /> : <Laptop size={11} />}
@@ -919,7 +919,7 @@ function UnboundState({
   onCloudEnable: (orgId: string, slug: string) => void;
 }) {
   const [tab, setTab] = useState<"create" | "connect">("create");
-  const [mode, setMode] = useState<WorkspaceMode>("local");
+  const [mode, setMode] = useState<ProjectMode>("local");
   const [orgId, setOrgId] = useState<string>(cloudOrgs[0]?.remoteId ?? "");
   const [slug, setSlug] = useState("");
   const [slugDirty, setSlugDirty] = useState(false);
@@ -955,7 +955,7 @@ function UnboundState({
       importPreview != null);
 
   // Connect is a purely server-backed flow — there is nothing it can show
-  // without the Organisation's Workspace list, so it is disabled rather than
+  // without the Organisation's Project list, so it is disabled rather than
   // opened onto an error.
   const connectDisabled = !!cloudReason;
   const activeTab = connectDisabled ? "create" : tab;
@@ -1031,7 +1031,7 @@ function UnboundState({
           {mode === "cloud" && importPreview === null && (
             <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5">
               <span className="text-[11px] text-[var(--status-warning)]">
-                Couldn't read this Workspace's history.
+                Couldn't read this Project's history.
               </span>
               <button
                 type="button"
@@ -1044,7 +1044,7 @@ function UnboundState({
             </div>
           )}
 
-          {/* Create only. The Connect tab is a list of existing Workspaces —
+          {/* Create only. The Connect tab is a list of existing Projects —
            *  someone there has already been sold on the Timeline. */}
           <TimelinePreview />
 
@@ -1266,7 +1266,7 @@ function SlugStatus({ state }: { state: SlugState }) {
 }
 
 /**
- * Connect this repository to a Workspace the Organisation already has.
+ * Connect this repository to a Project the Organisation already has.
  *
  * Pre-selection is the server's judgement, not this component's: one confident
  * match arrives pre-picked, several matches arrive with **nothing** selected —
@@ -1323,14 +1323,14 @@ function ConnectTab({
     );
   }
 
-  const workspace = options?.workspaces.find((w) => w.id === selected);
+  const project = options?.workspaces.find((w) => w.id === selected);
 
   return (
     <div className="space-y-2">
       {options === undefined ? (
         <p className="flex items-center gap-1.5 py-2 text-[11px] text-[var(--text-tertiary)]">
           <Loader2 size={11} className="animate-spin" />
-          Fetching this Organisation's Workspaces…
+          Fetching this Organisation's Projects…
         </p>
       ) : options === null ? (
         <p className="rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5 text-[11px] text-[var(--status-warning)]">
@@ -1338,7 +1338,7 @@ function ConnectTab({
         </p>
       ) : options.workspaces.length === 0 ? (
         <p className={cn(GROUP, "text-[11px] text-[var(--text-tertiary)]")}>
-          This Organisation has no Workspaces yet. Create one from the Create tab instead.
+          This Organisation has no Projects yet. Create one from the Create tab instead.
         </p>
       ) : (
         <>
@@ -1349,7 +1349,7 @@ function ConnectTab({
           )}
           <div
             role="radiogroup"
-            aria-label="Workspace to connect to"
+            aria-label="Project to connect to"
             className="max-h-[180px] space-y-0.5 overflow-y-auto"
           >
             {options.workspaces.map((remote) => (
@@ -1393,17 +1393,17 @@ function ConnectTab({
         <GhostButton label="Cancel" onClick={onCancel} disabled={busy} />
         <PrimaryButton
           busy={busy}
-          disabled={!workspace}
+          disabled={!project}
           onClick={() => {
-            if (!workspace) return;
+            if (!project) return;
             void run(async () => {
               // Connect needs a binding row to attach the Cloud identity to.
               await invoke("capture_enable", { projectPath, mode: "local" });
               await invoke("capture_connect", {
                 projectPath,
                 orgId,
-                slug: workspace.slug,
-                workspaceId: workspace.id,
+                slug: project.slug,
+                workspaceId: project.id,
               });
             });
           }}

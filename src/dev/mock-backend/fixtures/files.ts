@@ -23,7 +23,7 @@ import type {
 } from "@/features/file-picker/lib/file-picker-api";
 import type { RecentFile } from "@/features/chat/stores/recent-files-store";
 import type { MockHandlers } from "../types";
-import { abs, MOCK_WORKSPACE } from "../workspace";
+import { abs, MOCK_PROJECT } from "../project";
 
 /** One file in the fake tree. Binary files carry base64 instead of text. */
 interface MockFile {
@@ -552,7 +552,7 @@ const LOGO_PNG_BASE64 =
 const SPEC_PDF_BASE64 =
   "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUiA1IDAgUl0gL0NvdW50IDIgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA3IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1OTYgPj4Kc3RyZWFtCkJUIC9GMSAyMiBUZiA3MiA3MjAgVGQgKEFjbWUgZGVzaWduIHRva2VucykgVGogRVQKQlQgL0YxIDExIFRmIDcyIDY5MCBUZCAoSW50ZXJuYWwgc3BlY2lmaWNhdGlvbiAtIHJldmlzaW9uIDQpIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2NTAgVGQgKEV2ZXJ5IGNvbG91ciBpbiB0aGUgYWRtaW4gYXBwIHJlc29sdmVzIHRvIGEgdG9rZW4gZGVjbGFyZWQgaW4pIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2MzQgVGQgKHNyYy9zdHlsZXMvdG9rZW5zLmNzcy4gTm8gaGV4IGxpdGVyYWwgbWF5IGFwcGVhciBpbiBKU1guKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjAyIFRkICgxLiBCYXNlIHRva2VucyBjYXJyeSB0aGUgcmF3IHJhbXAuKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNTg2IFRkICgyLiBTZW1hbnRpYyB0b2tlbnMgbmFtZSBhIHJvbGUsIG5ldmVyIGEgY29sb3VyLikgVGogRVQKQlQgL0YxIDExIFRmIDcyIDU3MCBUZCAoMy4gRGFyayBtb2RlIHJlZGVmaW5lcyB0aGUgYmFzZSwgbmV2ZXIgdGhlIHNlbWFudGljcy4pIFRqIEVUCjAuNDMgMC42MSAxIHJnIDcyIDUyMCAyMDAgMjQgcmUgZgowLjY5IDAuNDggMSByZyAyODggNTIwIDIwMCAyNCByZSBmCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDcgMCBSID4+ID4+IC9Db250ZW50cyA2IDAgUiA+PgplbmRvYmoKNiAwIG9iago8PCAvTGVuZ3RoIDM5NyA+PgpzdHJlYW0KQlQgL0YxIDIyIFRmIDcyIDcyMCBUZCAoT3BlbiBxdWVzdGlvbnMpIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2ODYgVGQgKEFDTUUtMTE4NCBtb3ZlcyAvdXNlcnMgdG8gL3YyL3VzZXJzLiBUaGUgdG9rZW4gcmFtcCkgVGogRVQKQlQgL0YxIDExIFRmIDcyIDY3MCBUZCAocmVnZW5lcmF0aW9uIGxhbmRzIGluIHRoZSBzYW1lIHJlbGVhc2UuKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjM4IFRkIChIaWdobGlnaHRpbmcgdGhpcyBwYXJhZ3JhcGggaXMgdGhlIGZhc3Rlc3Qgd2F5IHRvIHNlZSB3aGV0aGVyKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjIyIFRkIChhbiBhbm5vdGF0aW9uIHN1cnZpdmVzIGEgcGFnZSByb3RhdGUuKSBUaiBFVAowLjk1IDAuMzMgMC4zNSByZyA3MiA1NjAgNDE2IDIgcmUgZgplbmRzdHJlYW0KZW5kb2JqCjcgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nID4+CmVuZG9iagp4cmVmCjAgOAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTIxIDAwMDAwIG4gCjAwMDAwMDAyNDcgMDAwMDAgbiAKMDAwMDAwMDg5NCAwMDAwMCBuIAowMDAwMDAxMDIwIDAwMDAwIG4gCjAwMDAwMDE0NjggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA4IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgoxNTY1CiUlRU9GCg==";
 
-/** Working-tree content, keyed by path relative to the workspace root. */
+/** Working-tree content, keyed by path relative to the project root. */
 const SEED: Record<string, MockFile> = {
   "src/lib/api.ts": { text: API_TS, mtimeMs: T0 },
   "src/lib/utils.ts": { text: UTILS_TS, mtimeMs: T0 - 86_400_000 },
@@ -603,9 +603,9 @@ const files = new Map<string, MockFile>(
  */
 const emptyDirs = new Set<string>();
 
-const ROOT = MOCK_WORKSPACE.path;
+const ROOT = MOCK_PROJECT.path;
 
-/** Path relative to the workspace root, or the path itself when it is outside. */
+/** Path relative to the project root, or the path itself when it is outside. */
 function relOf(absPath: string): string {
   return absPath.startsWith(`${ROOT}/`) ? absPath.slice(ROOT.length + 1) : absPath;
 }
@@ -637,13 +637,13 @@ function subtree(absPath: string): string[] {
   return [...files.keys()].filter((key) => key === absPath || key.startsWith(prefix));
 }
 
-/** Working-tree text of a seeded file, by workspace-relative path. */
+/** Working-tree text of a seeded file, by project-relative path. */
 export function fileText(rel: string): string {
   return files.get(abs(rel))?.text ?? "";
 }
 
 /**
- * Every file path in the tree as it stands now, relative to the workspace root
+ * Every file path in the tree as it stands now, relative to the project root
  * — the live map, not `SEED`, so a file created from the explorer is findable
  * in Cmd+P and a deleted one stops being offered.
  */
@@ -663,11 +663,11 @@ function byteLength(file: MockFile): number {
 /**
  * `read_directory` over the fake tree: one level of the seeded file map, with
  * the directories that contain those files synthesised. Paths outside the
- * workspace root list as empty rather than throwing — the sidebar asks about
- * every workspace it knows, and only this one has files.
+ * project root list as empty rather than throwing — the sidebar asks about
+ * every project it knows, and only this one has files.
  */
 export function listDir(absPath: string): FileEntry[] {
-  const root = MOCK_WORKSPACE.path;
+  const root = MOCK_PROJECT.path;
   if (absPath !== root && !absPath.startsWith(`${root}/`)) return [];
   // Rust refuses a path that is not a directory outright, and the explorer's
   // collision probe leans on that failing rather than returning nothing.
@@ -875,10 +875,12 @@ const SEARCH_SKIPPED = new Set(["node_modules", "target", "dist", "build", "__py
  * throws the return value away, so this event is the only thing that keeps the
  * `@` picker from offering a path that was just renamed.
  */
-function emitRecentFilesChanged(workspaceId: string): void {
-  void emit("atlas:recent-files-changed", { workspaceId, project: ROOT, items: recents }).catch(
-    () => {},
-  );
+function emitRecentFilesChanged(projectId: string): void {
+  void emit("atlas:recent-files-changed", {
+    workspaceId: projectId,
+    project: ROOT,
+    items: recents,
+  }).catch(() => {});
 }
 
 let recents: RecentFile[] = [
@@ -894,7 +896,7 @@ export const fsHandlers: MockHandlers = {
   fileindex_status: (): FileIndexStatus => ({
     indexed: true,
     count: mockFilePaths().length,
-    root: MOCK_WORKSPACE.path,
+    root: MOCK_PROJECT.path,
   }),
   fileindex_search: ({ query, limit }): FileMatch[] =>
     mockFilePaths()
@@ -924,18 +926,18 @@ export const fsHandlers: MockHandlers = {
   // Re-points the queue after a rename so the `@` picker stops offering a path
   // that no longer exists. The caller discards the return value, so — like Rust
   // — the updated list only reaches the store through the change event.
-  recent_files_rename: ({ oldPath, newPath, workspaceId }): RecentFile[] => {
-    // Rust takes `workspace_id: String`, so Tauri rejects a call that omits it
+  recent_files_rename: ({ oldPath, newPath, workspaceId: projectId }): RecentFile[] => {
+    // Rust takes `project_id: String`, so Tauri rejects a call that omits it
     // before the command body ever runs. `file-tree.tsx`'s drag-move does omit
     // it; faking a success there would hide that.
-    if (workspaceId === undefined) {
+    if (projectId === undefined) {
       throw new Error(
         "invalid args `workspaceId` for command `recent_files_rename`: command recent_files_rename missing required key workspaceId",
       );
     }
-    // An unknown workspace has no queue registered: Rust returns an empty list
+    // An unknown project has no queue registered: Rust returns an empty list
     // and emits nothing.
-    if (String(workspaceId) !== MOCK_WORKSPACE.id) return [];
+    if (String(projectId) !== MOCK_PROJECT.id) return [];
 
     const from = String(oldPath);
     const to = String(newPath);
@@ -946,7 +948,7 @@ export const fsHandlers: MockHandlers = {
       const moved = to + entry.absPath.slice(from.length);
       return { ...entry, absPath: moved, rel: relOf(moved) };
     });
-    emitRecentFilesChanged(String(workspaceId));
+    emitRecentFilesChanged(String(projectId));
     return recents;
   },
 

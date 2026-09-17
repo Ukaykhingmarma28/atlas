@@ -1,8 +1,8 @@
 import { logEvent } from "@/features/log/lib/log";
 import { useLogStore } from "@/features/log/stores/log-store";
-import { flushAll } from "@/features/workspaces/lib/flush-registry";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { resetGitSummariesForOrgSwitch } from "@/features/workspaces/stores/workspace-git-store";
+import { flushAll } from "@/features/projects/lib/flush-registry";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { resetGitSummariesForOrgSwitch } from "@/features/projects/stores/project-git-store";
 import { commsActions } from "@/features/comms/stores/comms-store";
 import { comms } from "@/features/comms/lib/comms-api";
 import { markOrgReconciled } from "./org-reconciliation";
@@ -23,7 +23,7 @@ import {
   busySessions,
   cancelBusySessions,
   useStopAgentsConfirmStore,
-} from "@/features/workspaces/lib/stop-agents-confirm";
+} from "@/features/projects/lib/stop-agents-confirm";
 
 /** Minimum time the "Loading Organisation…" overlay stays up, so a fast switch
  *  doesn't flash it. */
@@ -34,11 +34,11 @@ let switchingOrg = false;
 
 /**
  * Switch the active Organisation. Tears down the OUTGOING org's entire mounted
- * workspace set (RAM freed, Rust watchers stopped), then brings the INCOMING
- * org's last-active (or most-recent) workspace online — the same cold-load path
+ * project set (RAM freed, Rust watchers stopped), then brings the INCOMING
+ * org's last-active (or most-recent) project online — the same cold-load path
  * as boot hydration — behind a full-app "Loading Organisation…" overlay.
  *
- * Mirrors the workspace `switchTo` contract: the active workspace is flushed
+ * Mirrors the project `switchTo` contract: the active project is flushed
  * (awaited) before teardown so no unsaved KB/editor state is stranded.
  */
 export async function switchOrg(id: string): Promise<void> {
@@ -90,22 +90,22 @@ export async function switchOrg(id: string): Promise<void> {
       useSpacesStore.getState().actions.clearAll();
     }
 
-    const wsActions = useWorkspaceStore.getState().actions;
+    const wsActions = useProjectStore.getState().actions;
     const projectActions = useAppStore.getState().actions;
-    const outgoingActiveWs = useWorkspaceStore.getState().activeWorkspaceId;
+    const outgoingActiveWs = useProjectStore.getState().activeProjectId;
     const outgoingPath = useAppStore.getState().currentProject?.path ?? null;
 
-    // 1) Remember the outgoing org's active workspace so switching back
+    // 1) Remember the outgoing org's active project so switching back
     //    restores the user where they left off.
     if (activeOrganisationId) {
-      orgActions.setActiveWorkspaceForOrg(activeOrganisationId, outgoingActiveWs);
+      orgActions.setActiveProjectForOrg(activeOrganisationId, outgoingActiveWs);
     }
 
-    // 2) Flush the active workspace's unsaved state (KB buffer, editor tabs)
+    // 2) Flush the active project's unsaved state (KB buffer, editor tabs)
     //    BEFORE teardown — awaited, exactly like `switchTo`. Then persist the
-    //    workspace list + org active-ws pointers to disk.
+    //    project list + org active-ws pointers to disk.
     if (outgoingActiveWs) {
-      await flushAll({ workspaceId: outgoingActiveWs, path: outgoingPath });
+      await flushAll({ projectId: outgoingActiveWs, path: outgoingPath });
     }
     await flushAppStateSave();
 
@@ -114,7 +114,7 @@ export async function switchOrg(id: string): Promise<void> {
     //    keep editing files headless after the teardown.
     await cancelBusySessions();
 
-    //    Tear down the whole outgoing hot set + clear the active workspace.
+    //    Tear down the whole outgoing hot set + clear the active project.
     //    Setting the project to null fires the App-level Rust lifecycle
     //    effects' null-branch (file index / git watch / recent files / mention
     //    cache all close), stopping the old org's watchers.
@@ -179,10 +179,10 @@ export async function switchOrg(id: string): Promise<void> {
     //    global after an org switch.
     void useLogStore.getState().actions.setOrg(id);
 
-    // 5) Resolve the incoming org's target workspace and bring it online via
+    // 5) Resolve the incoming org's target project and bring it online via
     //    the normal cold-load path. `switchTo` runs `loadProjectStores` + the
-    //    App Rust-lifecycle effects for the new active workspace.
-    const targetWsId = resolveTargetWorkspace(id, target.activeWorkspaceId);
+    //    App Rust-lifecycle effects for the new active project.
+    const targetWsId = resolveTargetProject(id, target.activeProjectId);
     if (targetWsId) {
       await wsActions.switchTo(targetWsId);
     } else {
@@ -195,7 +195,7 @@ export async function switchOrg(id: string): Promise<void> {
       source: "project",
       kind: "org-switch",
       summary: target.name,
-      payload: { orgId: id, workspaceId: targetWsId ?? null },
+      payload: { orgId: id, projectId: targetWsId ?? null },
     });
   } finally {
     // Keep the overlay up for a minimum time so it never flashes.
@@ -210,9 +210,9 @@ export async function switchOrg(id: string): Promise<void> {
 
 /**
  * Delete an organisation and every piece of app-state scoped to it (its
- * workspace/group references + recent chats for those projects). Refuses to
+ * project/group references + recent chats for those projects). Refuses to
  * delete the only remaining org. If the target is the active org, switches to
- * another org FIRST (tearing down its workspace set behind the loading overlay)
+ * another org FIRST (tearing down its project set behind the loading overlay)
  * so nothing dangles, then purges. Returns whether it deleted.
  *
  * Note: the user's actual project files + on-disk `.atlas/` data are NOT
@@ -245,7 +245,7 @@ export async function deleteOrgAndData(id: string): Promise<boolean> {
     }
   }
 
-  // `id` is now guaranteed inactive (its workspaces are cold) → pure purge.
+  // `id` is now guaranteed inactive (its projects are cold) → pure purge.
   const ok = useOrgStore.getState().actions.deleteOrg(id);
   if (ok) {
     logEvent({ source: "project", kind: "org-delete", summary: id });
@@ -254,13 +254,13 @@ export async function deleteOrgAndData(id: string): Promise<boolean> {
 }
 
 /**
- * Pick the workspace to open when entering an org: its remembered
- * `activeWorkspaceId` if it still exists, else the most-recently-active
- * workspace in that org, else none (empty org).
+ * Pick the project to open when entering an org: its remembered
+ * `activeProjectId` if it still exists, else the most-recently-active
+ * project in that org, else none (empty org).
  */
-function resolveTargetWorkspace(orgId: string, savedActiveWs: string | undefined): string | null {
-  const { workspaces } = useWorkspaceStore.getState();
-  const inOrg = workspaces.filter((w) => w.orgId === orgId);
+function resolveTargetProject(orgId: string, savedActiveWs: string | undefined): string | null {
+  const { projects } = useProjectStore.getState();
+  const inOrg = projects.filter((w) => w.orgId === orgId);
   if (savedActiveWs && inOrg.some((w) => w.id === savedActiveWs)) {
     return savedActiveWs;
   }

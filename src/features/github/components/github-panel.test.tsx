@@ -58,7 +58,7 @@ function repo(overrides: Partial<GithubRepo> = {}): GithubRepo {
   return {
     name: "atlas",
     full_name: "ahammadnafiz/atlas",
-    description: "An agentic desktop workspace",
+    description: "An agentic desktop project",
     html_url: "https://github.com/ahammadnafiz/atlas",
     clone_url: "https://github.com/ahammadnafiz/atlas.git",
     language: "Rust",
@@ -233,7 +233,7 @@ describe("cloning", () => {
         // What the search knew, so the cloned list can show it without
         // asking GitHub again.
         meta: {
-          description: "An agentic desktop workspace",
+          description: "An agentic desktop project",
           language: "Rust",
           stars: 1234,
           forks: 56,

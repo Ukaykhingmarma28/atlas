@@ -14,8 +14,8 @@ import {
 } from "../stores/knowledge-links-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { registerFlush } from "@/features/workspaces/lib/flush-registry";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { registerFlush } from "@/features/projects/lib/flush-registry";
 import {
   TiptapEditor,
   type TiptapEditorHandle,
@@ -178,11 +178,11 @@ export function KnowledgePanel() {
 
   const flushAndSave = useCallback(async () => {
     if (!currentProject || !editorRef.current) return;
-    // Capture the (workspace path, note id) this content belongs to BEFORE the
-    // async flush. The KB panel is resident across workspace switches, so a
+    // Capture the (project path, note id) this content belongs to BEFORE the
+    // async flush. The KB panel is resident across project switches, so a
     // switch (or note change) can land mid-flush; binding the triple here and
-    // re-checking it after lets us abort rather than write one workspace's
-    // content into another's file (the cross-workspace data-loss bug).
+    // re-checking it after lets us abort rather than write one project's
+    // content into another's file (the cross-project data-loss bug).
     const proj = currentProject.path;
     const id = useKnowledgeStore.getState().activeEntryId;
     if (!id) return;
@@ -194,7 +194,7 @@ export function KnowledgePanel() {
     if (!editorRef.current.isDirty()) return;
     const md = await editorRef.current.flush();
     if (md === null) return;
-    // Workspace switched or the active note changed while flushing → abort.
+    // Project switched or the active note changed while flushing → abort.
     const live = useAppStore.getState().currentProject;
     if (!live || live.path !== proj) return;
     if (useKnowledgeStore.getState().activeEntryId !== id) return;
@@ -207,11 +207,11 @@ export function KnowledgePanel() {
     void invalidateLinks();
   }, [currentProject, setEditContent, saveEntry, invalidateLinks]);
 
-  // Coordinate with workspace switching: the switch awaits `flushAll()` BEFORE
-  // it snapshots/swaps the active workspace, so register a flush that writes the
-  // editor's current buffer to the OUTGOING workspace (`ctx.path`) — not the
+  // Coordinate with project switching: the switch awaits `flushAll()` BEFORE
+  // it snapshots/swaps the active project, so register a flush that writes the
+  // editor's current buffer to the OUTGOING project (`ctx.path`) — not the
   // resident React `currentProject`, which may already have flipped. This is
-  // what guarantees a note saved in workspace A is persisted to A's file before
+  // what guarantees a note saved in project A is persisted to A's file before
   // we leave it, closing the window where a stale save could clobber it.
   useEffect(() => {
     return registerFlush("knowledge", async (ctx) => {
@@ -228,7 +228,7 @@ export function KnowledgePanel() {
   // away from the KB tab) so unsaved edits are never stranded. These are
   // boundary flushes, not a timer — autosave was removed (it caused stale,
   // racey writes); saves happen on Cmd+S, note switch, blur, unmount, and
-  // workspace switch, each gated on the editor's live dirty ref.
+  // project switch, each gated on the editor's live dirty ref.
   useEffect(() => {
     const onBlur = () => void flushAndSave();
     window.addEventListener("blur", onBlur);
@@ -1032,10 +1032,10 @@ function RepoTopbar({
 }
 
 function RepoEmpty({ path }: { path: string }) {
-  // Open this repo as a workspace in the current window (Atlas is
+  // Open this repo as a project in the current window (Atlas is
   // single-window now — was: spawn a new native window).
   const open = () => {
-    void useWorkspaceStore.getState().actions.addWorkspace(path);
+    void useProjectStore.getState().actions.addProject(path);
   };
   return (
     <div className="h-full flex flex-col items-center justify-center gap-3 text-text-tertiary">

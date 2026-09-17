@@ -2,7 +2,7 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { AtlasIcon } from "@/components/atlas-icon";
 
 /**
- * The Timeline entry point: one row in the Workspace switcher panel.
+ * The Timeline entry point: one row in the Project switcher panel.
  *
  * Deliberately inert. It used to carry a capture-state dot and a
  * stopped/review warning, which meant polling `capture_binding` and
@@ -27,7 +27,7 @@ export function CaptureControl() {
 
   return (
     // Styled as one row of the rail's fixed navigation (see `NavItem` in
-    // workspace-sidebar.tsx) — same height, gaps and weights, so the five
+    // project-sidebar.tsx) — same height, gaps and weights, so the five
     // rows read as one list.
     <button
       type="button"

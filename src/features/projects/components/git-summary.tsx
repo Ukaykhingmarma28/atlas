@@ -1,7 +1,7 @@
 /**
  * The three marks that describe a project's working tree.
  *
- * They belong together and belong here: the workspace sidebar and the Timeline's
+ * They belong together and belong here: the project sidebar and the Timeline's
  * project picker both answer the same question — *which* of these projects is
  * the one I was working in — and a bare list of names cannot, once two of them
  * are called `api` and `api-v2`. The dot, the branch and the +N/−M are what tell
@@ -17,7 +17,7 @@ import { GitBranch } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-import type { GitSummary } from "../stores/workspace-git-store";
+import type { GitSummary } from "../stores/project-git-store";
 
 /** Working-tree state at a glance: green clean, amber dirty, grey non-repo. */
 export function GitDot({ summary, className }: { summary?: GitSummary; className?: string }) {

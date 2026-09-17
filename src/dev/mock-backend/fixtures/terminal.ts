@@ -34,7 +34,7 @@
 
 import type { Channel } from "@tauri-apps/api/core";
 import type { MockHandlers } from "../types";
-import { MOCK_WORKSPACE } from "../workspace";
+import { MOCK_PROJECT } from "../project";
 import { fileText, listDir, mockFilePaths } from "./files";
 
 /**
@@ -140,14 +140,14 @@ function finish(s: FakeSession, code: number): void {
 
 /** Absolute paths of every seeded file — the shell and the file tree cannot
  *  disagree about what exists, because there is only one list. */
-const absPaths = () => mockFilePaths().map((rel) => `${MOCK_WORKSPACE.path}/${rel}`);
+const absPaths = () => mockFilePaths().map((rel) => `${MOCK_PROJECT.path}/${rel}`);
 
 function absDirs(): string[] {
-  const dirs = new Set<string>([MOCK_WORKSPACE.path]);
+  const dirs = new Set<string>([MOCK_PROJECT.path]);
   for (const rel of mockFilePaths()) {
     const parts = rel.split("/").slice(0, -1);
     for (let i = 1; i <= parts.length; i++) {
-      dirs.add(`${MOCK_WORKSPACE.path}/${parts.slice(0, i).join("/")}`);
+      dirs.add(`${MOCK_PROJECT.path}/${parts.slice(0, i).join("/")}`);
     }
   }
   return [...dirs];
@@ -316,7 +316,7 @@ async function playTest(s: FakeSession, run: Running): Promise<void> {
     ],
     [
       140,
-      `   ${paint(C.red, "→ expected the empty-plan guard to return null when the workspace has no pricing rows at all, and instead the table threw while reading `plans` off an undefined response")}\r\n\r\n`,
+      `   ${paint(C.red, "→ expected the empty-plan guard to return null when the project has no pricing rows at all, and instead the table threw while reading `plans` off an undefined response")}\r\n\r\n`,
     ],
   ];
   for (const [delay, text] of rows) {
@@ -405,7 +405,7 @@ function run(s: FakeSession, command: string): void {
       finish(s, 0);
       return;
     case "cd": {
-      const target = rest[0] ? resolveAgainst(s.cwd, rest[0]) : MOCK_WORKSPACE.path;
+      const target = rest[0] ? resolveAgainst(s.cwd, rest[0]) : MOCK_PROJECT.path;
       if (!absDirs().includes(target)) {
         write(s, paint(C.red, `cd: no such file or directory: ${rest[0]}`) + "\r\n");
         finish(s, 1);
@@ -417,8 +417,8 @@ function run(s: FakeSession, command: string): void {
     }
     case "cat": {
       const path = rest[0] ? resolvePath(s.cwd, rest[0]) : null;
-      const rel = path?.startsWith(`${MOCK_WORKSPACE.path}/`)
-        ? path.slice(MOCK_WORKSPACE.path.length + 1)
+      const rel = path?.startsWith(`${MOCK_PROJECT.path}/`)
+        ? path.slice(MOCK_PROJECT.path.length + 1)
         : null;
       const text = rel ? fileText(rel) : "";
       if (!text) {
@@ -587,7 +587,7 @@ export const terminalHandlers: MockHandlers = {
     const id = `pty-${++nextId}`;
     const session: FakeSession = {
       id,
-      cwd: String(cwd ?? MOCK_WORKSPACE.path),
+      cwd: String(cwd ?? MOCK_PROJECT.path),
       cols: Number(cols ?? 80),
       rows: Number(rows ?? 24),
       channel: onOutput,
@@ -668,7 +668,7 @@ export const terminalHandlers: MockHandlers = {
     const at = raw.lastIndexOf("/");
     const dirPart = at === -1 ? "" : raw.slice(0, at + 1);
     const prefix = (at === -1 ? raw : raw.slice(at + 1)).toLowerCase();
-    const dir = resolveAgainst(String(cwd ?? MOCK_WORKSPACE.path), dirPart || ".");
+    const dir = resolveAgainst(String(cwd ?? MOCK_PROJECT.path), dirPart || ".");
     return listDir(dir)
       .filter((entry) => {
         // Hidden entries only when the prefix asks for them, as Rust does.
@@ -682,7 +682,7 @@ export const terminalHandlers: MockHandlers = {
   // Both resolvers answer `null` for a token that is not a path — that is the
   // common case (the link regex matches plenty of prose), not an error.
   terminal_resolve_path: ({ id, raw }): string | null =>
-    resolvePath(sessions.get(String(id))?.cwd ?? MOCK_WORKSPACE.path, String(raw ?? "")),
+    resolvePath(sessions.get(String(id))?.cwd ?? MOCK_PROJECT.path, String(raw ?? "")),
   resolve_path: ({ base, raw }): string | null =>
-    resolvePath(String(base ?? MOCK_WORKSPACE.path), String(raw ?? "")),
+    resolvePath(String(base ?? MOCK_PROJECT.path), String(raw ?? "")),
 };

@@ -23,8 +23,8 @@ import { AtlasLoader } from "@/components/atlas-loader";
 import { timeAgo } from "@/lib/time-ago";
 import { ThreadHistoryView } from "./thread-history-view";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
@@ -38,7 +38,7 @@ import {
 } from "../lib/history-api";
 import { getAgentSync } from "../lib/agents-api";
 import { AtlasIcon } from "@/components/atlas-icon";
-import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
+import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { resumeThreadFast, ResumeError } from "../lib/resume-session";
 
 /** One key for the whole sidebar: history is one store, so there is one query. */
@@ -172,26 +172,27 @@ export const SessionSidebar = memo(function SessionSidebar({
   const queryClient = useQueryClient();
   const project = useAppStore.use.currentProject();
   // `currentProject` is a legacy field that's transiently null during boot and
-  // workspace switches (it's repopulated by a fire-and-forget `void switchTo`).
+  // project switches (it's repopulated by a fire-and-forget `void switchTo`).
   // When it's null, `cwd` was "" → every history query (gated on
   // `cwd.length > 0`) returned [] → the sidebar showed only ephemeral live rows.
-  // Fall back to the active workspace's path (the real source of truth).
-  const activeWorkspaceId = useWorkspaceStore.use.activeWorkspaceId();
-  // ACTIVE-org workspaces only — the fallback below must never resolve to (or
+  // Fall back to the active project's path (the real source of truth).
+  const activeProjectId = useProjectStore.use.activeProjectId();
+  // ACTIVE-org projects only — the fallback below must never resolve to (or
   // hold, via the sticky ref) a path that belongs to another organisation.
-  const workspaces = useActiveOrgWorkspaces();
+  // (`projects` further down is the thread-history grouping, not this list.)
+  const orgProjects = useActiveOrgProjects();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const resolvedCwd =
-    project?.path ?? workspaces.find((w) => w.id === activeWorkspaceId)?.path ?? "";
+    project?.path ?? orgProjects.find((w) => w.id === activeProjectId)?.path ?? "";
   // STICKY cwd. It no longer keys any query — history is one app-level store —
   // but it still decides which project's threads sort to the top and which
   // directory a resumed thread binds against, and both would flicker if it
-  // collapsed to "" for a render. Even with the workspace fallback,
+  // collapsed to "" for a render. Even with the project fallback,
   // `currentProject` and
-  // `activeWorkspaceId`/`workspaces` can momentarily DISAGREE mid-switch,
+  // `activeProjectId`/`orgProjects` can momentarily DISAGREE mid-switch,
   // collapsing `resolvedCwd` to "" for a render or two. Hold the last NON-EMPTY
   // cwd across those blips; only clear it when there is genuinely no project
-  // open (zero workspaces).
+  // open (zero projects).
   const lastCwdRef = useRef("");
   // The sticky hold must not survive an ORG switch — it would pin the
   // outgoing org's cwd (and thus its thread ordering) into the new org while
@@ -204,7 +205,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   }
   if (resolvedCwd) {
     lastCwdRef.current = resolvedCwd;
-  } else if (workspaces.length === 0) {
+  } else if (orgProjects.length === 0) {
     lastCwdRef.current = "";
   }
   const cwd = lastCwdRef.current;
@@ -357,7 +358,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     [projects],
   );
 
-  // Self-heal the workspace panel's persisted "Chats" list for THIS project.
+  // Self-heal the project panel's persisted "Chats" list for THIS project.
   // That list (`atlas-recent-chats`) is recorded on agent activity and never
   // re-validated, so rows for sessions deleted elsewhere linger forever. Now
   // that history is one store, "does this still exist" is one lookup.
@@ -592,7 +593,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       // (ADR-0001). No per-agent branch, and no path into anyone's storage.
       await deleteThread(item.threadId);
       if (activeAcpId === item.id) clearSession(tabId);
-      // The workspace panel's "Chats" list is a separate persisted store,
+      // The project panel's "Chats" list is a separate persisted store,
       // recorded on agent activity and never re-validated — purge the deleted
       // session's row so it doesn't linger there.
       useRecentChatsStore.getState().actions.removeBySession(item.id);

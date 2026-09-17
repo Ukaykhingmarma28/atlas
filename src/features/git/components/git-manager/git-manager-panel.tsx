@@ -17,7 +17,7 @@ type View = "changes" | "history" | "stashes";
  * Unified Source-Control manager — GitHub-Desktop-style toolbar (branch
  * switcher + fetch/pull/push with ahead/behind) over Changes / History /
  * Stashes views. Lives in the right panel and is the single place to run
- * the workspace repo's git workflow.
+ * the project repo's git workflow.
  */
 export function GitManagerPanel() {
   const isRepo = useGitStore.use.isRepo();

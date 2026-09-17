@@ -32,11 +32,11 @@ import {
   openFileIndex,
   markFileIndexClosed,
 } from "@/features/file-picker/lib/file-picker-api";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { pickAndAddWorkspace } from "@/features/workspaces/lib/pick-workspace";
-import { flushAll } from "@/features/workspaces/lib/flush-registry";
-import { captureSnapshot } from "@/features/workspaces/lib/workspace-snapshot";
+import { activeProjectId } from "@/features/projects/lib/active-project";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { pickAndAddProject } from "@/features/projects/lib/pick-project";
+import { flushAll } from "@/features/projects/lib/flush-registry";
+import { captureSnapshot } from "@/features/projects/lib/project-snapshot";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -44,11 +44,11 @@ import {
   ensureRecentFilesListener,
   type RecentFile,
 } from "@/features/chat/stores/recent-files-store";
-import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
+import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
-import { jumpToSession } from "@/features/chat/lib/tab-workspace";
+import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { isWindows } from "@/lib/platform";
@@ -70,7 +70,7 @@ import { NotificationPanel } from "@/features/notifications/components/notificat
 import { FeedbackPanel } from "@/features/feedback/components/feedback-panel";
 import { UpdateAvailableModal } from "@/features/updater/components/update-available-modal";
 import { LoadingOrganisationOverlay } from "@/features/organisations/components/loading-organisation-overlay";
-import { StopAgentsDialog } from "@/features/workspaces/components/stop-agents-dialog";
+import { StopAgentsDialog } from "@/features/projects/components/stop-agents-dialog";
 import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
@@ -168,8 +168,8 @@ export function App() {
 
   // Warm-launch CLI: when `atlas <path>` runs while Atlas is already open, the
   // Rust single-instance callback forwards the folder here. The app is already
-  // hydrated, so we just ADD it to the workspace list and switch to it (no race
-  // with hydration). `openProject` → `addWorkspace` dedupes by path.
+  // hydrated, so we just ADD it to the project list and switch to it (no race
+  // with hydration). `openProject` → `addProject` dedupes by path.
   useEffect(() => {
     const unlisten = listen<string>("atlas:cli-open-project", (event) => {
       const path = event.payload;
@@ -177,7 +177,7 @@ export function App() {
       logEvent({
         source: "atlas",
         kind: "cli-launch-open-project",
-        summary: `Adding workspace from CLI (warm launch): ${path}`,
+        summary: `Adding project from CLI (warm launch): ${path}`,
         status: "success",
         payload: { path },
       });
@@ -359,7 +359,7 @@ export function App() {
   }, [bootRemoteOrgId, bootSignedIn]);
 
   // NOTE: we intentionally do NOT wipe localStorage on boot anymore. Several
-  // stores legitimately persist there via zustand `persist` — the workspace
+  // stores legitimately persist there via zustand `persist` — the project
   // "Chats" list (`atlas-recent-chats`), layout prefs (`atlas-layout-prefs`),
   // the review provider/model selection — and a blanket clear was silently
   // dropping all of them on every restart. Each store carries its own
@@ -390,9 +390,9 @@ export function App() {
     (async () => {
       // A terminal `atlas <path>` launch stashes the path in Rust (single-shot,
       // so a window reload won't re-trigger). Consume it BEFORE hydrating: the
-      // CLI project must be ADDED to the workspace list and switched to, but
+      // CLI project must be ADDED to the project list and switched to, but
       // hydrate replaces that list and fires its own `switchTo` — which would
-      // both clobber the CLI workspace and swallow the CLI switch (`switching`
+      // both clobber the CLI project and swallow the CLI switch (`switching`
       // guard). So we suppress hydrate's auto-switch when a CLI path is present
       // and perform the CLI open as the sole, final switch.
       const cliPath = await invoke<string | null>("cli_take_initial_project_path").catch(
@@ -431,7 +431,7 @@ export function App() {
             logEvent({
               source: "atlas",
               kind: "cli-launch-open-project",
-              summary: `Adding workspace from CLI argv: ${cliPath}`,
+              summary: `Adding project from CLI argv: ${cliPath}`,
               status: "success",
               payload: { path: cliPath },
             });
@@ -465,7 +465,7 @@ export function App() {
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newTabPaletteOpen, setNewTabPaletteOpen] = useState(false);
-  // The workspace rail's "Open module" row opens the same palette ⌘⌥N does.
+  // The project rail's "Open module" row opens the same palette ⌘⌥N does.
   // The palette's state lives here, so the rail asks for it by event rather
   // than the state being lifted into a store for one caller.
   useEffect(() => {
@@ -631,15 +631,15 @@ export function App() {
     // Establish notification permission EAGERLY at startup (see native-notify.ts
     // for why lazy asking lost the first real background notification).
     void primeNativeNotificationPermission();
-    // Name the SESSION's workspace, not the active project — a finish in
-    // workspace B while A is focused used to read "Atlas — A".
+    // Name the SESSION's project, not the active project — a finish in
+    // project B while A is focused used to read "Atlas — A".
     const sessionProjectName = (acpSessionId: string): string => {
       const sess = Object.values(useChatStore.getState().sessions).find(
         (s) => s.acpSessionId === acpSessionId,
       );
-      const byPath = useWorkspaceStore
+      const byPath = useProjectStore
         .getState()
-        .workspaces.find((w) => w.path === sess?.workingDirectory)?.name;
+        .projects.find((w) => w.path === sess?.workingDirectory)?.name;
       return byPath ?? useAppStore.getState().currentProject?.name ?? "Atlas";
     };
     const notifyAgentDone = (acpSessionId: string) =>
@@ -836,10 +836,10 @@ export function App() {
     const notify = () => useNotificationsStore.getState().actions;
 
     // In-app toast for events from a session the user ISN'T looking at (another
-    // tab or another workspace) — the OS notification only fires when the whole
-    // window is unfocused, so without this a background workspace's permission
+    // tab or another project) — the OS notification only fires when the whole
+    // window is unfocused, so without this a background project's permission
     // prompt was invisible until the user happened to switch. Click jumps to
-    // the owning workspace + tab.
+    // the owning project + tab.
     const toastBackgroundSession = (
       tabId: string | undefined,
       acpSessionId: string,
@@ -852,9 +852,9 @@ export function App() {
       const wsName = (() => {
         const path = useChatStore.getState().sessions[tabId]?.workingDirectory;
         if (!path) return null;
-        const ws = useWorkspaceStore.getState();
-        const w = ws.workspaces.find((x) => x.path === path);
-        return w && w.id !== ws.activeWorkspaceId ? w.name : null;
+        const ws = useProjectStore.getState();
+        const w = ws.projects.find((x) => x.path === path);
+        return w && w.id !== ws.activeProjectId ? w.name : null;
       })();
       const fn = kind === "failed" ? toast.error : kind === "done" ? toast.success : toast;
       fn(wsName ? `${title} — ${wsName}` : title, {
@@ -1148,9 +1148,9 @@ export function App() {
     };
     listen<Payload>("atlas:explorer:changed", (e) => {
       if (cancelled) return;
-      // Ignore changes from a backgrounded workspace's resident watcher —
-      // only the active workspace's explorer should reconcile.
-      const active = activeWorkspaceId();
+      // Ignore changes from a backgrounded project's resident watcher —
+      // only the active project's explorer should reconcile.
+      const active = activeProjectId();
       if (e.payload.workspaceId && active && e.payload.workspaceId !== active) {
         return;
       }
@@ -1216,10 +1216,10 @@ export function App() {
       fileIndex.closeProject().catch(() => {});
       markFileIndexClosed();
       // Deliberately does NOT stop git watchers. This branch runs whenever the
-      // *current* project becomes null, but watchers are per-workspace and a
-      // backgrounded workspace must keep watching — its commits still need
+      // *current* project becomes null, but watchers are per-project and a
+      // backgrounded project must keep watching — its commits still need
       // linking to its Sessions. Tearing one down is `teardownHot`'s job, with
-      // the workspace id it actually owns.
+      // the project id it actually owns.
       void invoke("recent_files_close_project").catch(() => {});
       // Drop the mention cache so the @-picker doesn't briefly
       // surface the previous project's notes / symbols on a fresh
@@ -1228,24 +1228,24 @@ export function App() {
       return;
     }
     // Deliberately NOT `markFileIndexClosed()` here: switching projects keeps
-    // every hot workspace's Rust index resident (`fileindex_open_project` is
+    // every hot project's Rust index resident (`fileindex_open_project` is
     // idempotent for a live one), so previously-confirmed roots stay valid —
     // clearing them made the first Cmd+P/@ after every switch pay a status
     // round-trip. Roots are forgotten where indexes actually die: project
-    // close (above) and workspace teardown (`markFileIndexClosedFor`).
-    const workspaceId = activeWorkspaceId();
+    // close (above) and project teardown (`markFileIndexClosedFor`).
+    const projectId = activeProjectId();
     void openFileIndex(currentProject.path);
     // Git watcher: emits `atlas:git-changed` on commit / checkout /
     // branch ops. Replaces the 3-second polling that git-graph-panel
     // used to do via `refetchInterval` on `git_graph_signature`.
-    // Keyed by workspace so each open workspace keeps its own resident watcher.
+    // Keyed by project so each open project keeps its own resident watcher.
     void invoke("git_watch_start", {
       projectPath: currentProject.path,
-      workspaceId,
+      workspaceId: projectId,
     }).catch((e) => console.warn("git watch start failed:", e));
-    // Capture: a bound Workspace just became active — open its store (which
+    // Capture: a bound Project just became active — open its store (which
     // also heals a folder rename) and kick its transcript import and drain.
-    // A no-op for Workspaces that never enabled capture.
+    // A no-op for Projects that never enabled capture.
     void invoke("capture_activate", { projectPath: currentProject.path }).catch((e) =>
       console.warn("capture activate failed:", e),
     );
@@ -1259,7 +1259,7 @@ export function App() {
     // first render of the new project.
     void invoke<RecentFile[]>("recent_files_open_project", {
       projectPath: currentProject.path,
-      workspaceId,
+      workspaceId: projectId,
     })
       .then((items) => {
         useRecentFilesStore.getState().actions.hydrate(items);
@@ -1282,17 +1282,17 @@ export function App() {
   }, []);
 
   // Quit durability: per-switch flushes are fire-and-forget, so on window
-  // close flush the ACTIVE workspace's pending writes (background workspaces
+  // close flush the ACTIVE project's pending writes (background projects
   // were already flushed when we left them). beforeunload can't await, but it
   // cancels the debounce and kicks the write immediately.
   useEffect(() => {
     const onBeforeUnload = () => {
-      const wsId = useWorkspaceStore.getState().activeWorkspaceId;
+      const wsId = useProjectStore.getState().activeProjectId;
       const path = useAppStore.getState().currentProject?.path ?? null;
       // Capture first so the flush dedup compares against the CURRENT state
       // (not a stale capture from the last switch-away).
       if (wsId) captureSnapshot(wsId);
-      void flushAll({ workspaceId: wsId, path });
+      void flushAll({ projectId: wsId, path });
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -1302,15 +1302,15 @@ export function App() {
   // this is only the action-id → behaviour map. See
   // `src/features/keybindings/lib/actions.ts` for the registry.
   useActionHotkeys({
-    // ⌘⇧N — "new workspace": pick a folder and add it as a workspace in
+    // ⌘⇧N — "new project": pick a folder and add it as a project in
     // this window (Atlas is single-window now; this replaces the old
     // "open a new native window" behaviour).
     "workspace.add": () => {
-      void pickAndAddWorkspace();
+      void pickAndAddProject();
     },
-    // ⌘⇧. — toggle the Arc-like workspace sidebar. (⌘. alone is the macOS
+    // ⌘⇧. — toggle the Arc-like project sidebar. (⌘. alone is the macOS
     // system "Cancel" chord and gets swallowed before reaching the webview.)
-    "workspace.toggleSidebar": () => useWorkspaceStore.getState().actions.toggleSidebar(),
+    "workspace.toggleSidebar": () => useProjectStore.getState().actions.toggleSidebar(),
     "nav.commandPalette": () => setCommandPaletteOpen(true),
     "nav.filePicker": () => setFilePickerOpen(true),
     "nav.search": () => setSearchOpen(true),

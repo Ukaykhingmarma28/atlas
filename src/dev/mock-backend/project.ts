@@ -1,4 +1,4 @@
-// The fake project every scenario opens: one org, a few workspaces, and the
+// The fake project every scenario opens: one org, a few projects, and the
 // helpers that turn a relative path into the absolute one Rust would see.
 //
 // The tree itself lives in `fixtures/files.ts` (with the files' real content),
@@ -6,25 +6,25 @@
 // files exist.
 
 import type { AppStateWire } from "@/features/app/stores/app-store";
-import type { Workspace } from "@/features/workspaces/stores/workspace-store";
+import type { Project } from "@/features/projects/stores/project-store";
 
 export const MOCK_ORG_ID = "org-mock";
 
-export const MOCK_WORKSPACE = {
+export const MOCK_PROJECT = {
   id: "ws-mock",
   name: "acme-app",
   path: "/Users/dev/acme-app",
   groupId: null,
   orgId: MOCK_ORG_ID,
-} satisfies Workspace;
+} satisfies Project;
 
 /**
- * Two more workspaces, for the surfaces that list or aggregate every project:
- * the switcher, the sidebar's per-workspace git summaries, and Mission
+ * Two more projects, for the surfaces that list or aggregate every project:
+ * the switcher, the sidebar's per-project git summaries, and Mission
  * Control's project table. One carries a deliberately over-long name so
  * truncation is visible without hunting for a repro.
  */
-export const OTHER_WORKSPACES = [
+export const OTHER_PROJECTS = [
   {
     id: "ws-mock-2",
     name: "acme-platform-migration-experiments",
@@ -39,20 +39,20 @@ export const OTHER_WORKSPACES = [
     groupId: null,
     orgId: MOCK_ORG_ID,
   },
-] satisfies Workspace[];
+] satisfies Project[];
 
-export const ALL_WORKSPACES: Workspace[] = [MOCK_WORKSPACE, ...OTHER_WORKSPACES];
+export const ALL_PROJECTS: Project[] = [MOCK_PROJECT, ...OTHER_PROJECTS];
 
-/** `path` relative to the workspace root. */
-export const abs = (path: string) => `${MOCK_WORKSPACE.path}/${path}`;
+/** `path` relative to the project root. */
+export const abs = (path: string) => `${MOCK_PROJECT.path}/${path}`;
 
 export function appState(overrides: Partial<AppStateWire> = {}): AppStateWire {
   return {
     currentProject: null,
     recentProjects: [],
-    workspaces: ALL_WORKSPACES,
+    workspaces: ALL_PROJECTS,
     groups: [],
-    activeWorkspaceId: MOCK_WORKSPACE.id,
+    activeWorkspaceId: MOCK_PROJECT.id,
     // Sync is ON, and the org carries a `remoteId`: `CommsPanel` renders
     // "not connected" for a local-only org, so a local org would hide the
     // whole team-chat surface behind a placeholder no fixture can fill.

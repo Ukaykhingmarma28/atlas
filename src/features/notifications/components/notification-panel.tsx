@@ -10,7 +10,7 @@ import { AtlasIcon } from "@/components/atlas-icon";
 const ProviderLogo = lazy(() =>
   import("@/components/provider-logo").then((m) => ({ default: m.ProviderLogo })),
 );
-import { jumpToSession } from "@/features/chat/lib/tab-workspace";
+import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { jumpToTerminal } from "@/features/terminal/lib/jump-to-terminal";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
@@ -198,13 +198,13 @@ function NotificationIcon({ n }: { n: AppNotification }) {
 /** Best-effort: bring the originating chat or terminal into view. */
 function focusNotification(n: AppNotification) {
   if (n.source === "terminal" && n.tabId) {
-    void jumpToTerminal({ tabId: n.tabId, terminalId: n.terminalId, workspaceId: n.workspaceId });
+    void jumpToTerminal({ tabId: n.tabId, terminalId: n.terminalId, projectId: n.projectId });
     return;
   }
   if (n.source === "agent" && n.tabId) {
-    // Workspace-aware: a bare setActiveTab on a tab from ANOTHER workspace
+    // Project-aware: a bare setActiveTab on a tab from ANOTHER project
     // falls back to tabs[0] of the current one — jumpToSession switches to the
-    // owning workspace first.
+    // owning project first.
     void jumpToSession(n.tabId);
     return;
   }

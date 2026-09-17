@@ -42,7 +42,7 @@ import type {
 import type { EventKind, MemoryEvent, SharedState } from "@/features/memory/lib/shared-memory-api";
 import type { MockHandlers } from "../types";
 import { fileText } from "./files";
-import { ALL_WORKSPACES, MOCK_WORKSPACE } from "../workspace";
+import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
 /** Fixed "now" so every seeded timestamp is stable between reloads. */
 const NOW = Date.parse("2026-09-18T11:30:00Z");
@@ -73,7 +73,7 @@ function quoteAfter(rel: string, marker: string, lines = 6): string {
 // The fake home: Claude keeps per-project memory under the slugified cwd
 // (`agent_memory.rs::encode_project_dir` — every `/` becomes `-`).
 const HOME = "/Users/dev";
-const CLAUDE_MEM = `${HOME}/.claude/projects/${MOCK_WORKSPACE.path.replace(/\//g, "-")}/memory`;
+const CLAUDE_MEM = `${HOME}/.claude/projects/${MOCK_PROJECT.path.replace(/\//g, "-")}/memory`;
 
 // ── Embedding model ─────────────────────────────────────────────────────────
 
@@ -485,9 +485,9 @@ function extraNodes(projectPath: string): MemoryNode[] {
 }
 
 function graphFor(projectPath: string): MemoryGraphData {
-  // Only the primary workspace has memory; the other two answer with an empty
+  // Only the primary project has memory; the other two answer with an empty
   // corpus, which is the "No memory to graph yet." state.
-  if (projectPath !== MOCK_WORKSPACE.path) return { nodes: [], edges: [] };
+  if (projectPath !== MOCK_PROJECT.path) return { nodes: [], edges: [] };
   return { nodes: [...GRAPH.nodes, ...extraNodes(projectPath)], edges: GRAPH.edges };
 }
 
@@ -545,7 +545,7 @@ function seedLayout(): GraphLayout {
   return { positions };
 }
 
-const layouts = new Map<string, GraphLayout>([[MOCK_WORKSPACE.path, seedLayout()]]);
+const layouts = new Map<string, GraphLayout>([[MOCK_PROJECT.path, seedLayout()]]);
 
 // ── Policy ──────────────────────────────────────────────────────────────────
 
@@ -649,7 +649,7 @@ const POLICY_SEEDS: Policy[] = [
     origin: "preference",
     match_kind: "semantic",
     source: "codex",
-    file_path: `${MOCK_WORKSPACE.path}/AGENTS.md`,
+    file_path: `${MOCK_PROJECT.path}/AGENTS.md`,
     doc_title: "AGENTS.md",
     score: 0.69,
   },
@@ -729,20 +729,20 @@ const policies: Policy[] = POLICY_SEEDS.map((policy) => ({ ...policy }));
 
 /**
  * Sharing is per project, so the switcher has one shared project and two
- * private ones — reopening the toggle after switching workspaces shows a
+ * private ones — reopening the toggle after switching projects shows a
  * different answer, which is the bug this panel keeps having.
  */
 const sharingEnabled = new Map<string, boolean>([
-  [MOCK_WORKSPACE.path, true],
-  [ALL_WORKSPACES[1].path, false],
-  [ALL_WORKSPACES[2].path, false],
+  [MOCK_PROJECT.path, true],
+  [ALL_PROJECTS[1].path, false],
+  [ALL_PROJECTS[2].path, false],
 ]);
 
 /** The BYOK summariser, so the provider/model picker opens on a selection
  *  rather than on the default `raw` (which hides the picker entirely). */
 const summarizers = new Map<string, SummarizerPref>([
-  [MOCK_WORKSPACE.path, { mode: "provider", provider: "anthropic", model: "claude-sonnet-4-5" }],
-  [ALL_WORKSPACES[1].path, { mode: "raw", provider: "", model: "" }],
+  [MOCK_PROJECT.path, { mode: "provider", provider: "anthropic", model: "claude-sonnet-4-5" }],
+  [ALL_PROJECTS[1].path, { mode: "raw", provider: "", model: "" }],
 ]);
 
 const DEFAULT_SUMMARIZER: SummarizerPref = { mode: "raw", provider: "", model: "" };
@@ -774,7 +774,7 @@ const S4 = "0193f0dd-4444-7000-9000-dddddddddddd";
  * typed here. Their derived buckets are seeded below instead.
  */
 const EVENT_SEEDS: EventSeed[] = [
-  [(5 * DAY) / MIN, "claude", S1, "session_start", "", { cwd: MOCK_WORKSPACE.path }],
+  [(5 * DAY) / MIN, "claude", S1, "session_start", "", { cwd: MOCK_PROJECT.path }],
   [
     (5 * DAY) / MIN - 4,
     "claude",
@@ -820,7 +820,7 @@ const EVENT_SEEDS: EventSeed[] = [
   ],
   [(5 * DAY) / MIN - 30, "claude", S1, "session_end", "", { turns: 14 }],
 
-  [(3 * DAY) / MIN, "codex", S2, "session_start", "", { cwd: MOCK_WORKSPACE.path }],
+  [(3 * DAY) / MIN, "codex", S2, "session_start", "", { cwd: MOCK_PROJECT.path }],
   [
     (3 * DAY) / MIN - 3,
     "codex",
@@ -867,7 +867,7 @@ const EVENT_SEEDS: EventSeed[] = [
   [(3 * DAY) / MIN - 40, "codex", S2, "todo_done", "purge-hex", { text: "Purge the last 3 hexes" }],
   [(3 * DAY) / MIN - 44, "codex", S2, "session_end", "", { turns: 31 }],
 
-  [(26 * HOUR) / MIN, "opencode", S3, "session_start", "", { cwd: MOCK_WORKSPACE.path }],
+  [(26 * HOUR) / MIN, "opencode", S3, "session_start", "", { cwd: MOCK_PROJECT.path }],
   [
     (26 * HOUR) / MIN - 5,
     "opencode",
@@ -896,7 +896,7 @@ const EVENT_SEEDS: EventSeed[] = [
   ],
   [(26 * HOUR) / MIN - 55, "opencode", S3, "session_end", "", { turns: 7 }],
 
-  [(4 * HOUR) / MIN, "claude", S4, "session_start", "", { cwd: MOCK_WORKSPACE.path }],
+  [(4 * HOUR) / MIN, "claude", S4, "session_start", "", { cwd: MOCK_PROJECT.path }],
   [
     (4 * HOUR) / MIN - 2,
     "claude",
@@ -941,7 +941,7 @@ function seededEvents(): MemoryEvent[] {
   }));
 }
 
-const eventLog = new Map<string, MemoryEvent[]>([[MOCK_WORKSPACE.path, seededEvents()]]);
+const eventLog = new Map<string, MemoryEvent[]>([[MOCK_PROJECT.path, seededEvents()]]);
 
 /** Projects nobody has run an agent in answer with an empty log, which is the
  *  view's "No shared memory yet" state. */
@@ -1280,7 +1280,7 @@ const TIMELINE_MEMORY: TimelineMemory[] = GRAPH.nodes
   .sort((a, b) => a.ts_ms - b.ts_ms);
 
 function timelineFor(projectPath: string): MemoryTimeline {
-  if (projectPath !== MOCK_WORKSPACE.path) {
+  if (projectPath !== MOCK_PROJECT.path) {
     // `build_git` fails outside a repository, and the view's "Couldn't build
     // the timeline." retry screen is the only thing that shows it.
     throw new Error("not a git repository");
@@ -1332,7 +1332,7 @@ export const memoryHandlers: MockHandlers = {
   // ── policy ───────────────────────────────────────────────────────────────
   memory_policies: ({ projectPath }): Policy[] => {
     if (!MODEL_READY) throw new Error("model-not-downloaded");
-    return String(projectPath) === MOCK_WORKSPACE.path ? policies : [];
+    return String(projectPath) === MOCK_PROJECT.path ? policies : [];
   },
   memory_policy_update: ({ filePath, oldText, newText }): null => {
     const row = policies.find(
@@ -1407,7 +1407,7 @@ export const memoryHandlers: MockHandlers = {
    * Anywhere else there is no cache at all, which is the null branch.
    */
   memory_timeline_cached: ({ projectPath }): MemoryTimeline | null =>
-    String(projectPath) === MOCK_WORKSPACE.path
+    String(projectPath) === MOCK_PROJECT.path
       ? { ...timelineFor(String(projectPath)), sessions: SESSIONS.slice(0, -2) }
       : null,
 

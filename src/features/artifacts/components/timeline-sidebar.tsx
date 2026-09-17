@@ -33,7 +33,7 @@ import type { BoardSession } from "../types";
 
 interface Props {
   sessions: BoardSession[];
-  /** True while the first read for this Workspace is in flight. */
+  /** True while the first read for this Project is in flight. */
   loading: boolean;
   /** True when a search or facet is narrowing the board — changes the empty copy. */
   filtered: boolean;
@@ -599,7 +599,7 @@ function Empty({ filtered }: { filtered: boolean }) {
       </p>
       {!filtered && (
         <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-          Send a prompt to an agent in this Workspace and it will appear here.
+          Send a prompt to an agent in this Project and it will appear here.
         </p>
       )}
     </div>

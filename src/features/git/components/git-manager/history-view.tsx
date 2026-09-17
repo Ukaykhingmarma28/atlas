@@ -245,7 +245,7 @@ function CommitSessions({ sha }: { sha: string }) {
       .then((found) => {
         if (!cancelled) setSessions(found);
       })
-      // A Workspace with capture off returns an empty list rather than failing,
+      // A Project with capture off returns an empty list rather than failing,
       // so reaching here means a store-level problem. The git panel is not the
       // place to report it — capture health already owns that signal.
       .catch(() => {});

@@ -12,7 +12,7 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /** Inset from the window's bottom-right corner. The status bar the panel
  *  used to sit above is gone (2026-09-16); the feedback entry is now the
- *  workspace sidebar's menu and Settings. */
+ *  project sidebar's menu and Settings. */
 const EDGE_OFFSET = 12;
 
 /**

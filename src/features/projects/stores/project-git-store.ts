@@ -13,11 +13,11 @@ export interface GitSummary {
 }
 
 interface State {
-  /** Cached per-workspace git summaries, keyed by project path. */
+  /** Cached per-project git summaries, keyed by project path. */
   summaries: Record<string, GitSummary>;
   actions: {
-    /** Fetch a workspace's summary the FIRST time only. Cached at module scope,
-     *  so opening/closing the workspace switcher renders instantly from cache
+    /** Fetch a project's summary the FIRST time only. Cached at module scope,
+     *  so opening/closing the project switcher renders instantly from cache
      *  and never recalculates git status/diff. */
     ensure: (path: string) => void;
     /** Force a silent background refetch (used when git state changes). */
@@ -46,7 +46,7 @@ function scheduleRefresh(path: string, refresh: (p: string) => void) {
   );
 }
 
-export const useWorkspaceGitStore = createSelectors(
+export const useProjectGitStore = createSelectors(
   create<State>((set, get) => {
     function ensureListener() {
       if (listenerReady) return;
@@ -68,12 +68,12 @@ export const useWorkspaceGitStore = createSelectors(
       void listen<{ dirs?: string[]; fullRefresh?: boolean }>("atlas:explorer:changed", (e) => {
         const refresh = get().actions.refresh;
         // Opaque batch (rename, etc.): we can't pinpoint dirs — refresh every
-        // cached workspace.
+        // cached project.
         if (e.payload?.fullRefresh || !e.payload?.dirs?.length) {
           for (const p of fetched) scheduleRefresh(p, refresh);
           return;
         }
-        // Match each touched dir to the workspace whose root contains it.
+        // Match each touched dir to the project whose root contains it.
         for (const p of fetched) {
           const hit = e.payload.dirs.some((d) => d === p || d.startsWith(p + "/"));
           if (hit) scheduleRefresh(p, refresh);

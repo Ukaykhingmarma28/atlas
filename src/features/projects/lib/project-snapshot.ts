@@ -1,17 +1,17 @@
 /**
- * In-RAM per-workspace snapshot of the LIGHT panel-data stores
+ * In-RAM per-project snapshot of the LIGHT panel-data stores
  * (explorer/git/analysis/knowledge) — part of the fast-switch path.
  *
  * Heavy tab content (editor/terminal/chat) and the tab/split layout are NOT
- * snapshotted here: they stay RESIDENT in their own stores while the workspace
+ * snapshotted here: they stay RESIDENT in their own stores while the project
  * is in the hot set (its CenterPanel subtree stays mounted), and the layout
- * view is restored via `layout-store.loadWorkspaceView`. So this cache only
+ * view is restored via `layout-store.loadProjectView`. So this cache only
  * needs to carry the cheap panel slices, restored synchronously via `setState`
  * on a warm switch. On a cache miss (first visit / discarded) the cold loaders
  * run instead.
  *
  * Intentionally NOT a Zustand store: it must never trigger React renders. It's
- * a plain Map keyed by workspace id, capped LRU.
+ * a plain Map keyed by project id, capped LRU.
  */
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -20,7 +20,7 @@ import { useGitStore } from "@/features/git/stores/git-store";
 import { useKnowledgeStore } from "@/features/knowledge/stores/knowledge-store";
 import { useKnowledgeMetaStore } from "@/features/knowledge/stores/knowledge-meta-store";
 
-/** Max number of workspace snapshots kept warm in RAM. Beyond this we evict
+/** Max number of project snapshots kept warm in RAM. Beyond this we evict
  *  the least-recently-restored (never the active one). These are now just the
  *  lightweight PANEL-data slices (explorer/git/analysis/knowledge) — the heavy
  *  tab content (editor/terminal/chat) and the tab/split layout stay RESIDENT in
@@ -89,10 +89,10 @@ function hashString(s: string): string {
 }
 
 /**
- * Capture the active stores into the cache under `workspaceId`. Synchronous +
+ * Capture the active stores into the cache under `projectId`. Synchronous +
  * cheap (a few JSON clones). Call this BEFORE resetting the stores on a switch.
  */
-export function captureSnapshot(workspaceId: string): void {
+export function captureSnapshot(projectId: string): void {
   const explorer = dataSlice(useExplorerStore.getState());
   const git = dataSlice(useGitStore.getState());
   // Knowledge is captured BY REFERENCE, not cloned. Its store replaces state
@@ -129,22 +129,22 @@ export function captureSnapshot(workspaceId: string): void {
     touchedAt: ++clock,
   };
 
-  cache.set(workspaceId, snapshot);
-  evictIfNeeded(workspaceId);
+  cache.set(projectId, snapshot);
+  evictIfNeeded(projectId);
 }
 
 /**
- * Restore a workspace's stores from the cache. Returns false on a miss (caller
+ * Restore a project's stores from the cache. Returns false on a miss (caller
  * runs the cold loader path). Synchronous — React re-renders once after the
  * batched setStates.
  */
-export function restoreSnapshot(workspaceId: string): boolean {
-  const snap = cache.get(workspaceId);
+export function restoreSnapshot(projectId: string): boolean {
+  const snap = cache.get(projectId);
   if (!snap) return false;
 
   // Light PANEL-data stores only: merge the data slice back (actions untouched).
   // Tab content (editor/terminal/chat) + tab/split layout are resident in their
-  // own stores and are restored via `loadWorkspaceView`, not here.
+  // own stores and are restored via `loadProjectView`, not here.
   useExplorerStore.setState(snap.explorer);
   useGitStore.setState(snap.git);
   useKnowledgeStore.setState(snap.knowledge);
@@ -154,21 +154,21 @@ export function restoreSnapshot(workspaceId: string): boolean {
   return true;
 }
 
-/** Drop a workspace's snapshot entirely (on close). */
-export function evictSnapshot(workspaceId: string): void {
-  cache.delete(workspaceId);
+/** Drop a project's snapshot entirely (on close). */
+export function evictSnapshot(projectId: string): void {
+  cache.delete(projectId);
 }
 
 /**
- * The persist hash captured for this workspace, or null if no snapshot. Used by
+ * The persist hash captured for this project, or null if no snapshot. Used by
  * the flush coordinator to skip redundant disk writes when nothing changed.
  */
-export function persistHashOf(workspaceId: string): string | null {
-  return cache.get(workspaceId)?.persistHash ?? null;
+export function persistHashOf(projectId: string): string | null {
+  return cache.get(projectId)?.persistHash ?? null;
 }
 
 /** Evict the least-recently-restored snapshot when over the cap. The `keep`
- *  workspace (the one just captured/active) is never evicted. Chat sessions —
+ *  project (the one just captured/active) is never evicted. Chat sessions —
  *  the memory hog — are dropped first by virtue of dropping the whole entry. */
 function evictIfNeeded(keep: string): void {
   while (cache.size > LRU_CAP) {

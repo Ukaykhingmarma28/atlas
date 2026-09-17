@@ -13,7 +13,7 @@ import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 export interface RecentFile {
   absPath: string;
@@ -40,22 +40,22 @@ export const useRecentFilesStore = createSelectors(
     items: [],
     actions: {
       push: (entry) => {
-        const workspaceId = activeWorkspaceId();
-        if (!workspaceId) return;
+        const projectId = activeProjectId();
+        if (!projectId) return;
         // Fire-and-forget — the Rust side emits the updated list
         // through the global listener wired in App.tsx.
         void invoke<RecentFile[]>("recent_files_push", {
           absPath: entry.absPath,
           rel: entry.rel,
-          workspaceId,
+          workspaceId: projectId,
         })
           .then((items) => set({ items }))
           .catch((e) => console.warn("recent_files_push failed:", e));
       },
       clear: () => {
-        const workspaceId = activeWorkspaceId();
-        if (!workspaceId) return;
-        void invoke("recent_files_clear", { workspaceId })
+        const projectId = activeProjectId();
+        if (!projectId) return;
+        void invoke("recent_files_clear", { workspaceId: projectId })
           .then(() => set({ items: [] }))
           .catch((e) => console.warn("recent_files_clear failed:", e));
       },
@@ -73,9 +73,9 @@ export function ensureRecentFilesListener(): void {
   void listen<{ workspaceId?: string; project: string; items: RecentFile[] }>(
     "atlas:recent-files-changed",
     (e) => {
-      // Only mirror events for the active workspace — a background
-      // workspace's push must not overwrite the visible picker.
-      const active = activeWorkspaceId();
+      // Only mirror events for the active project — a background
+      // project's push must not overwrite the visible picker.
+      const active = activeProjectId();
       if (e.payload.workspaceId && active && e.payload.workspaceId !== active) {
         return;
       }

@@ -617,7 +617,7 @@ function ConversationHeader({
         )}
         {isChannel && conv.workspace_ref_ids.length > 0 && (
           <span className="shrink-0 rounded bg-bg-hover px-1 py-px text-[9px] text-text-tertiary">
-            {conv.workspace_ref_ids.length} workspace
+            {conv.workspace_ref_ids.length} project
           </span>
         )}
       </div>

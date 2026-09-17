@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Keeps the vendored Codex engine quarantined (issue #42, spec D2 / Phase 1).
  *
- * The engine landed whole and compiles as workspace members, but **nothing
+ * The engine landed whole and compiles as project members, but **nothing
  * that ships may depend on it** until the seam is rewired (#45) and the
  * phone-home paths are ripped out (#43). Those two are the reason the
  * quarantine is not merely tidiness: `codex-analytics` and `codex-otel` are in
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
  * these are removed "before any build leaves developers' machines". A stray
  * `codex-*` dependency added to `src-tauri` before #43 lands would ship them.
  *
- * Cargo cannot enforce this. An unused workspace member is not an error, and
+ * Cargo cannot enforce this. An unused project member is not an error, and
  * adding a dependency on one is the most ordinary edit there is — it compiles,
  * it passes clippy, and the only symptom is in the shipped binary.
  *
@@ -86,7 +86,7 @@ function vendoredManifests(dir = VENDOR): string[] {
   return out;
 }
 
-/** `codex-foo = …` / `codex-foo.workspace = true` in a dependency table. */
+/** `codex-foo = …` / `codex-foo.project = true` in a dependency table. */
 const CODEX_DEP = /^\s*(codex-[a-z0-9-]+|app_test_support|core_test_support)\s*[.=]/m;
 
 describe("the vendored engine is present and whole", () => {

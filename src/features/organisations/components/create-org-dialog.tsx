@@ -165,7 +165,7 @@ export function CreateOrgDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        {/* Strong dim + blur, same language as the unpinned workspace scrim —
+        {/* Strong dim + blur, same language as the unpinned project scrim —
             the frosted panel above it needs a hidden, low-contrast backdrop to
             read as a focus transition rather than a floating card. */}
         <Dialog.Overlay className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />

@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { logEvent } from "@/features/log/lib/log";
 import { scheduleAppStateSave } from "@/features/app/stores/app-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import type { Organisation } from "../types";
 import { isSyncedOrg, slugify } from "../types";
 import { syncOrgTelemetry } from "../lib/org-telemetry";
@@ -33,7 +33,7 @@ function nameTaken(name: string, orgs: Organisation[], exceptId?: string): boole
  *
  * The survivor is the active org if one of the duplicates is active (switching
  * away from under the user would be worse than the duplicate), else the first.
- * Workspaces and groups tagged with a dropped org are re-tagged to the survivor
+ * Projects and groups tagged with a dropped org are re-tagged to the survivor
  * — dropping the org without that would strand every project inside it.
  */
 function collapseDuplicateRemotes(
@@ -61,15 +61,15 @@ function collapseDuplicateRemotes(
   if (remap.size === 0) return;
 
   // Re-tag before dropping, so nothing is briefly owned by a missing org.
-  // Log which workspaces move — a silent re-tag here is how "my projects
+  // Log which projects move — a silent re-tag here is how "my projects
   // jumped into another org" reports happen, and this trail makes them
   // diagnosable.
-  const retagged = useWorkspaceStore
+  const retagged = useProjectStore
     .getState()
-    .workspaces.filter((w) => w.orgId && remap.has(w.orgId))
+    .projects.filter((w) => w.orgId && remap.has(w.orgId))
     .map((w) => w.id);
-  useWorkspaceStore.setState((s) => ({
-    workspaces: s.workspaces.map((w) =>
+  useProjectStore.setState((s) => ({
+    projects: s.projects.map((w) =>
       w.orgId && remap.has(w.orgId) ? { ...w, orgId: remap.get(w.orgId) } : w,
     ),
     groups: s.groups.map((g) =>
@@ -80,7 +80,7 @@ function collapseDuplicateRemotes(
     source: "project",
     kind: "org-duplicate-collapse",
     summary: `merged ${remap.size} duplicate org row(s)`,
-    payload: { remap: Object.fromEntries(remap), retaggedWorkspaceIds: retagged },
+    payload: { remap: Object.fromEntries(remap), retaggedProjectIds: retagged },
   });
 
   set((s) => ({
@@ -108,7 +108,7 @@ function uniqueSlug(base: string, orgs: Organisation[]): string {
 interface OrgState {
   /** All organisations known to this window. */
   organisations: Organisation[];
-  /** The single active org (mirrors the one-active-workspace invariant). */
+  /** The single active org (mirrors the one-active-project invariant). */
   activeOrganisationId: string | null;
   /** True while an org switch is tearing down + reloading; gates the full-app
    *  "Loading Organisation…" overlay. Driven by `lib/org-switch.ts`. */
@@ -141,11 +141,11 @@ interface OrgState {
      *  taken by ANOTHER org (case-insensitive), so no two orgs collide. */
     rename: (id: string, name: string) => boolean;
     setColor: (id: string, color: string | null) => void;
-    /** Remove an org. Refuses if it's the last org or still owns workspaces
+    /** Remove an org. Refuses if it's the last org or still owns projects
      *  (the caller must reassign/close those first). Returns whether removed. */
     deleteOrg: (id: string) => boolean;
-    /** Record the per-org last-active workspace (restore target on switch). */
-    setActiveWorkspaceForOrg: (orgId: string, workspaceId: string | null) => void;
+    /** Record the per-org last-active project (restore target on switch). */
+    setActiveProjectForOrg: (orgId: string, projectId: string | null) => void;
     /** Low-level setter used by the org-switch orchestration + overlay gate. */
     setSwitching: (v: boolean) => void;
     /** Set the active org id (authoritative swap; called by org-switch). */
@@ -297,14 +297,14 @@ export const useOrgStore = createSelectors(
       deleteOrg: (id) => {
         const { organisations } = get();
         if (organisations.length <= 1) return false; // never delete the last org
-        // Cascade: wipe all app-state scoped to this org — its workspace/group
+        // Cascade: wipe all app-state scoped to this org — its project/group
         // references, and the recent chats for those projects. (The user's
         // actual project files + `.atlas/` data on disk are NOT touched; only
         // Atlas's org-scoped tracking is removed.) The caller (deleteOrgAndData)
         // must have already switched away if this is the active org.
-        const ws = useWorkspaceStore.getState();
-        const orgPaths = new Set(ws.workspaces.filter((w) => w.orgId === id).map((w) => w.path));
-        ws.actions.removeWorkspacesForOrg(id);
+        const ws = useProjectStore.getState();
+        const orgPaths = new Set(ws.projects.filter((w) => w.orgId === id).map((w) => w.path));
+        ws.actions.removeProjectsForOrg(id);
         const rc = useRecentChatsStore.getState();
         for (const c of rc.items) {
           if (orgPaths.has(c.projectPath)) rc.actions.remove(c.tabId);
@@ -316,10 +316,10 @@ export const useOrgStore = createSelectors(
         return true;
       },
 
-      setActiveWorkspaceForOrg: (orgId, workspaceId) => {
+      setActiveProjectForOrg: (orgId, projectId) => {
         set((s) => ({
           organisations: s.organisations.map((o) =>
-            o.id === orgId ? { ...o, activeWorkspaceId: workspaceId ?? undefined } : o,
+            o.id === orgId ? { ...o, activeProjectId: projectId ?? undefined } : o,
           ),
         }));
         // Persisted via the switch's flushAppStateSave / scheduleAppStateSave.
@@ -358,8 +358,8 @@ export const useOrgStore = createSelectors(
             // (add-only), which copied the name exactly once — at first link —
             // and left every surface reading this store stale across refreshes
             // and relaunches. Only the name is reconciled: the slug is a local
-            // handle that is kept stable (workspaces key off it), and the
-            // colour/active-workspace fields are local-only by design. The
+            // handle that is kept stable (projects key off it), and the
+            // colour/active-project fields are local-only by design. The
             // server's name is applied even if it collides with a local-only
             // org's (`nameTaken` is a rule for local edits, not for the truth).
             // At most one row matches: `collapseDuplicateRemotes` ran above.
@@ -375,7 +375,7 @@ export const useOrgStore = createSelectors(
           // covers an org created offline that later arrives from the server.
           // Only genuinely local rows qualify (`!remoteId && !syncEnabled`);
           // logged because adoption changes which server org owns the local
-          // org's workspaces, and a wrong name-match must be traceable.
+          // org's projects, and a wrong name-match must be traceable.
           const adoptIdx = next.findIndex(
             (o) =>
               !o.remoteId &&

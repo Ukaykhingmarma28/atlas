@@ -19,7 +19,7 @@ export function LayoutsSettings() {
       <div>
         <h2 className="text-sm font-semibold text-text-primary">Layouts</h2>
         <p className="text-[11px] text-text-tertiary mt-0.5">
-          Rearrange panels and tabs into a ready-made workspace. Press{" "}
+          Rearrange panels and tabs into a ready-made project. Press{" "}
           <kbd className="px-1 py-0.5 rounded bg-bg-elevated border border-border-default font-mono text-[9px]">
             {switcherHint}
           </kbd>{" "}

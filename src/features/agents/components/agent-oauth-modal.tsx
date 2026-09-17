@@ -221,7 +221,7 @@ function AgentOAuthModal({
    *  picker, a device code, a y/n — can never be answered and simply hangs
    *  (#24). Atlas used to run it headlessly first and let the user discover the
    *  hang, then offer a terminal; now the terminal IS the flow. Zed does not
-   *  spawn these itself either: it hands them to the workspace terminal.
+   *  spawn these itself either: it hands them to the project terminal.
    *
    *  Keyed on the method's OWN advertised command, never on which agent it is:
    *  whether a login is interactive is not something ACP says, so every agent
@@ -440,7 +440,7 @@ function AgentOAuthModal({
     phase.kind === "terminal" ||
     ((phase.kind === "running" || phase.kind === "done") && phase.docked);
   // Centred on the content, not the window: with source control or the
-  // workspace switcher open, `left-1/2` sat the dock half a panel off-centre.
+  // project switcher open, `left-1/2` sat the dock half a panel off-centre.
   // `left-1/2` stays as the fallback for a window with no centre panel.
   const centerX = useCenterPanelCenterX();
   const centred = centerX != null ? { left: centerX } : undefined;

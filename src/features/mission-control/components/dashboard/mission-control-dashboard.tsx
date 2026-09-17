@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useMissionControlStore } from "../../stores/mission-control-store";
 import { RANGE_DAYS } from "../../types";
 import { copyMarkdownReport, exportJpeg, exportMarkdown, exportPdf } from "../../lib/export";
@@ -18,8 +18,8 @@ export function MissionControlDashboard() {
   const loading = useMissionControlStore.use.loading();
   const error = useMissionControlStore.use.error();
   const { setRange, refresh } = useMissionControlStore.use.actions();
-  // Re-fetch when the set of workspaces changes.
-  const wsSig = useWorkspaceStore((s) => s.workspaces.map((w) => w.path).join("|"));
+  // Re-fetch when the set of projects changes.
+  const wsSig = useProjectStore((s) => s.projects.map((w) => w.path).join("|"));
 
   // Node captured for image/PDF export (cards + charts + gantt).
   const captureRef = useRef<HTMLDivElement>(null);

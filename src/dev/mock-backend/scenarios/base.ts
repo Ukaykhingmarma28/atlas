@@ -26,7 +26,7 @@ import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
 import { spacesHandlers } from "../fixtures/spaces";
 import { terminalHandlers } from "../fixtures/terminal";
-import { appState } from "../workspace";
+import { appState } from "../project";
 
 const nothing = () => null;
 
@@ -78,7 +78,7 @@ export const baseHandlers: MockHandlers = {
     warnings: [],
   }),
 
-  // ── workspace open ──────────────────────────────────────────────────────
+  // ── project open ──────────────────────────────────────────────────────
   save_app_state: nothing,
   asset_allow_dir: nothing,
   ensure_atlas_gitignore: nothing,

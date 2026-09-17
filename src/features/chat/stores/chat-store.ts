@@ -386,7 +386,7 @@ interface ChatActions {
     setResumePending: (sessionId: string, pending: boolean) => void;
     clearSession: (sessionId: string) => void;
     removeSession: (sessionId: string) => void;
-    /** Drop several sessions at once (used when a workspace is DISCARDED from
+    /** Drop several sessions at once (used when a project is DISCARDED from
      *  the hot set — frees its chat history from RAM; reloaded cold on revisit). */
     removeSessions: (sessionIds: string[]) => void;
     /** Drop all chat sessions, queues, and pending permissions. Used when
@@ -1621,11 +1621,11 @@ export const useChatStore = createSelectors(
             if (!session) return;
             // A (re)bind points the tab at a DIFFERENT backend session — a
             // freshly spawned SessionActor whose `turn_seq` counter restarts at
-            // 1 (turn_seq is not persisted; new / resumed / workspace-switched
+            // 1 (turn_seq is not persisted; new / resumed / project-switched
             // sessions all reconstruct it from 0). The frontend `currentTurnSeq`
             // is a monotonic high-water mark that only ratchets UP (see the
             // status handler), so a value retained from the PREVIOUS session —
-            // e.g. after ⌥N launches a new session in a new workspace, or "New
+            // e.g. after ⌥N launches a new session in a new project, or "New
             // Chat" resets the singleton tab in place — would make every
             // terminal of the new session (idle / turn_finished at turn_seq 1)
             // look stale via `isStaleTurn` and get dropped, stranding the
@@ -1647,7 +1647,7 @@ export const useChatStore = createSelectors(
             session.bindError = undefined;
             // Stamp the session's project root the moment it's bound (the agent
             // was created with this cwd). Without it `workingDirectory` stays ""
-            // and the chat never lands in the workspace "Chats" list / running
+            // and the chat never lands in the project "Chats" list / running
             // counts. Callers pass the project path they used for the session.
             if (cwd) session.workingDirectory = cwd;
           }),

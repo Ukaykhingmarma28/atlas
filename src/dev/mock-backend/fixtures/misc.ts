@@ -38,7 +38,7 @@ import type { UpdateStatus } from "@/features/updater/lib/updater-api";
 import type { AgentInfo } from "@/types/acp";
 import type { NativeModelsRefresh } from "@/types/agents";
 import type { MockHandlers } from "../types";
-import { abs, MOCK_WORKSPACE, OTHER_WORKSPACES } from "../workspace";
+import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
 
 const nothing = () => null;
 
@@ -62,8 +62,8 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(5 * 60_000),
     createdAt: ago(3 * 3_600_000),
     archived: false,
-    projectName: MOCK_WORKSPACE.name,
-    folderPaths: [MOCK_WORKSPACE.path],
+    projectName: MOCK_PROJECT.name,
+    folderPaths: [MOCK_PROJECT.path],
   },
   {
     threadId: "th-02",
@@ -74,8 +74,8 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(40 * 60_000),
     createdAt: ago(40 * 60_000),
     archived: false,
-    projectName: MOCK_WORKSPACE.name,
-    folderPaths: [MOCK_WORKSPACE.path],
+    projectName: MOCK_PROJECT.name,
+    folderPaths: [MOCK_PROJECT.path],
   },
   {
     threadId: "th-03",
@@ -86,8 +86,8 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(26 * 3_600_000),
     createdAt: ago(28 * 3_600_000),
     archived: false,
-    projectName: MOCK_WORKSPACE.name,
-    folderPaths: [MOCK_WORKSPACE.path, abs("src/styles")],
+    projectName: MOCK_PROJECT.name,
+    folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
   },
   {
     threadId: "th-04",
@@ -97,8 +97,8 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(3 * 86_400_000),
     createdAt: ago(3 * 86_400_000),
     archived: false,
-    projectName: OTHER_WORKSPACES[0].name,
-    folderPaths: [OTHER_WORKSPACES[0].path],
+    projectName: OTHER_PROJECTS[0].name,
+    folderPaths: [OTHER_PROJECTS[0].path],
   },
   {
     threadId: "th-05",
@@ -109,8 +109,8 @@ const THREADS: ThreadRow[] = [
     createdAt: ago(9 * 86_400_000),
     // The only archived row — the history view's filter has something to do.
     archived: true,
-    projectName: MOCK_WORKSPACE.name,
-    folderPaths: [MOCK_WORKSPACE.path],
+    projectName: MOCK_PROJECT.name,
+    folderPaths: [MOCK_PROJECT.path],
   },
 ];
 
@@ -132,7 +132,7 @@ function threadProjects(cwd: string | null): ThreadProject[] {
   return [...byProject].map(([name, rows]) => ({
     name,
     paths: [...new Set(rows.flatMap((row) => row.folderPaths))],
-    isCurrent: cwd === null ? name === MOCK_WORKSPACE.name : rows[0].folderPaths.includes(cwd),
+    isCurrent: cwd === null ? name === MOCK_PROJECT.name : rows[0].folderPaths.includes(cwd),
     threads: rows,
   }));
 }
@@ -372,7 +372,7 @@ export const miscHandlers: MockHandlers = {
   codebase_index_build: nothing,
 
   // ── the native agent's entitlement ──────────────────────────────────────
-  // `localOrg` is the honest answer for the fake workspace's local-only org,
+  // `localOrg` is the honest answer for the fake project's local-only org,
   // and it is the one state that needs no gateway to be plausible.
   native_agent_entitlement: (): Entitlement => ({ state: "localOrg" }),
   native_agent_refresh_models: (): NativeModelsRefresh => ({

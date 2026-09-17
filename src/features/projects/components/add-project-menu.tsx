@@ -1,22 +1,22 @@
 /**
- * The workspace rail's "+" — Open Folder plus a searchable list of recent
+ * The project rail's "+" — Open Folder plus a searchable list of recent
  * projects, adding the chosen one to the sidebar.
  *
  * Its own file because two surfaces render it: the rail's org row (its home,
  * beside the ⌘K search button) and, historically, the titlebar band. Keeping
- * it in `workspace-sidebar.tsx` would have made `org-switcher.tsx` import from
+ * it in `project-sidebar.tsx` would have made `org-switcher.tsx` import from
  * the very module that renders `<OrgSwitcher/>` — a cycle.
  */
 import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Folder, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useWorkspaceStore } from "../stores/workspace-store";
-import { pickAndAddWorkspace } from "../lib/pick-workspace";
+import { useProjectStore } from "../stores/project-store";
+import { pickAndAddProject } from "../lib/pick-project";
 import { Hint } from "@/ui/tooltip";
 
 export function AddProjectMenu() {
-  const { addWorkspace } = useWorkspaceStore.use.actions();
+  const { addProject } = useProjectStore.use.actions();
   const recentProjects = useAppStore.use.recentProjects();
   const { clearRecents } = useAppStore.use.actions();
   const [query, setQuery] = useState("");
@@ -50,7 +50,7 @@ export function AddProjectMenu() {
           className="z-[var(--z-max)] w-[280px] max-h-[360px] rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl text-[var(--text-secondary)] flex flex-col overflow-hidden"
         >
           <DropdownMenu.Item
-            onSelect={() => void pickAndAddWorkspace()}
+            onSelect={() => void pickAndAddProject()}
             className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default shrink-0"
           >
             <FolderOpen size={13} className="text-[var(--text-tertiary)] shrink-0" />
@@ -83,7 +83,7 @@ export function AddProjectMenu() {
                   filtered.map((p) => (
                     <DropdownMenu.Item
                       key={p.path}
-                      onSelect={() => void addWorkspace(p.path)}
+                      onSelect={() => void addProject(p.path)}
                       className="w-full flex items-center gap-2 px-3 h-[26px] text-[11px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
                     >
                       <Folder size={12} className="text-[var(--text-tertiary)] shrink-0" />

@@ -69,7 +69,7 @@ export function LayoutSwitcher({
             Choose a layout
           </Dialog.Title>
           <p className="text-[11px] text-[var(--text-tertiary)] mb-4">
-            Rearranges panels and tabs into a ready-made workspace.
+            Rearranges panels and tabs into a ready-made project.
           </p>
 
           <div className="grid grid-cols-3 gap-3">

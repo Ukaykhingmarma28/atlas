@@ -1,14 +1,14 @@
 /**
- * Stale-while-revalidate for warm workspace switches.
+ * Stale-while-revalidate for warm project switches.
  *
  * After `restoreSnapshot` paints the cached UI instantly, we kick a
  * NON-BLOCKING background refresh of the cheap-but-possibly-stale data (git
  * status, explorer tree). Steady-state freshness also arrives
  * via the resident watchers (`atlas:git-changed`, `atlas:explorer:changed`),
- * so this mainly covers changes that happened while the workspace was
+ * so this mainly covers changes that happened while the project was
  * backgrounded.
  *
- * Generation guard: we capture the active workspace id at dispatch and re-check
+ * Generation guard: we capture the active project id at dispatch and re-check
  * it right before each refresh applies, so a rapid A→B→A doesn't let B's late
  * refresh clobber A. Authoritative-in-RAM stores (layout/editor/terminal/chat/
  * knowledge) are intentionally NOT revalidated — reloading them would discard
@@ -17,10 +17,10 @@
 
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
-import { useWorkspaceStore } from "../stores/workspace-store";
+import { useProjectStore } from "../stores/project-store";
 
-export function revalidateWorkspace(workspaceId: string, path: string): void {
-  const stillActive = () => useWorkspaceStore.getState().activeWorkspaceId === workspaceId;
+export function revalidateProject(projectId: string, path: string): void {
+  const stillActive = () => useProjectStore.getState().activeProjectId === projectId;
 
   // Git status — quick; the resident watcher keeps it fresh thereafter.
   if (stillActive()) {

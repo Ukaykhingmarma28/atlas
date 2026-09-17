@@ -19,12 +19,12 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { auth } from "@/features/auth/lib/auth-api";
 import { useOrgStore } from "../stores/org-store";
 import { switchOrg, deleteOrgAndData } from "../lib/org-switch";
-import { AddProjectMenu } from "@/features/workspaces/components/add-project-menu";
+import { AddProjectMenu } from "@/features/projects/components/add-project-menu";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { CreateOrgDialog } from "./create-org-dialog";
 import { MembersModal } from "./members-modal";
@@ -119,7 +119,7 @@ export function OrgSwitcher() {
   const organisations = useOrgStore.use.organisations();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const { rename, enableSync } = useOrgStore.use.actions();
-  const workspaces = useWorkspaceStore.use.workspaces();
+  const projects = useProjectStore.use.projects();
   const snapshot = useAuthStore.use.snapshot();
   const signedIn = snapshot.status === "signed-in";
   /** The server orgs THIS account belongs to. `null` = signed out OR never
@@ -553,7 +553,7 @@ export function OrgSwitcher() {
       <DeleteOrgDialog
         org={confirmDelete}
         projectCount={
-          confirmDelete ? workspaces.filter((w) => w.orgId === confirmDelete.id).length : 0
+          confirmDelete ? projects.filter((w) => w.orgId === confirmDelete.id).length : 0
         }
         onClose={() => setConfirmDelete(null)}
       />

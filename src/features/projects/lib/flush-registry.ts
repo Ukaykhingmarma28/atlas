@@ -1,24 +1,24 @@
 /**
  * Flush registry — the "save all pending UI state" coordinator used when
- * switching or closing workspaces (and on app quit).
+ * switching or closing projects (and on app quit).
  *
  * Many stores persist project-scoped state to `<project>/.atlas/*.json`
  * through their own *debounced* `invoke(...)` writes. None of them expose a
  * way to (a) cancel the pending debounce and (b) await the resulting write.
- * Without that, switching workspaces could drop the last few edits that were
+ * Without that, switching projects could drop the last few edits that were
  * still sitting in a debounce timer.
  *
  * Each store registers a `flush()` that MUST: cancel its debounce timer,
  * perform the save immediately, and return a promise that resolves only once
  * the underlying `invoke` settles. `flushAll()` awaits every registered
  * flush. It is intentionally resilient — one store throwing never blocks the
- * others (and therefore never blocks a workspace switch).
+ * others (and therefore never blocks a project switch).
  */
 
-/** Context passed to each flush so it writes to the OUTGOING workspace even
+/** Context passed to each flush so it writes to the OUTGOING project even
  *  after `currentProject` has already swapped to the incoming one. */
 export interface FlushCtx {
-  workspaceId: string | null;
+  projectId: string | null;
   path: string | null;
   /** Why the flush is running. A `"switch"` stays on screen — a registrant
    *  holding non-user data (app-state metadata) may fire-and-forget to keep
@@ -51,12 +51,12 @@ export function registerFlush(id: string, flush: FlushFn): () => void {
 }
 
 /**
- * Flush every registered store for the given workspace. Resolves only after
+ * Flush every registered store for the given project. Resolves only after
  * ALL flushes settle, so callers can `await flushAll(ctx)` and be certain
  * pending writes have hit disk. Individual failures are swallowed (logged) so
- * a single bad store can't strand a workspace switch.
+ * a single bad store can't strand a project switch.
  */
-export async function flushAll(ctx: FlushCtx = { workspaceId: null, path: null }): Promise<void> {
+export async function flushAll(ctx: FlushCtx = { projectId: null, path: null }): Promise<void> {
   const pending = Array.from(registry.values()).map((r) =>
     r.flush(ctx).catch((e) => {
       console.warn(`flushAll: "${r.id}" flush failed:`, e);

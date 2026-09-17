@@ -9,7 +9,7 @@ const pillButton =
 
 /**
  * Global "this will stop running agents" confirmation, driven by
- * `useStopAgentsConfirmStore.ask()` (org switch, workspace close). Mounted once
+ * `useStopAgentsConfirmStore.ask()` (org switch, project close). Mounted once
  * in App. Radix handles Esc/overlay-click as dismiss → treated as "Go back".
  */
 export function StopAgentsDialog() {

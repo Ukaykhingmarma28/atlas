@@ -50,7 +50,7 @@ import {
   type SendStatus,
 } from "@/features/comms/types";
 import type { MockHandlers } from "../types";
-import { abs, MOCK_ORG_ID } from "../workspace";
+import { abs, MOCK_ORG_ID } from "../project";
 
 const MIN = 60_000;
 /** Fixed "now", as in `log.ts`, so day dividers and relative times are stable

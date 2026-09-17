@@ -5,7 +5,7 @@
 // records, and a grey dot. Every affordance in the 1,400-line popover hangs off
 // a binding that did not exist, so the surface could not be looked at at all.
 //
-// So the fakes are per project path, and the three seeded Workspaces are three
+// So the fakes are per project path, and the three seeded Projects are three
 // different shapes on purpose:
 //
 //   acme-app          Local, capturing, degraded — flagged Sessions and failed
@@ -43,14 +43,14 @@ import type {
   SlugAvailability,
 } from "@/features/capture/types";
 import type { MockHandlers } from "../types";
-import { ALL_WORKSPACES, MOCK_WORKSPACE } from "../workspace";
+import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
 /** Fixed "now", so seeded dates never drift between reloads. */
 const NOW = "2026-09-18T11:30:00Z";
 
 const plural = (count: number) => (count === 1 ? "" : "s");
 
-/** Everything the capture commands read and write for one Workspace. */
+/** Everything the capture commands read and write for one Project. */
 interface ProjectCapture {
   binding: Binding | null;
   detection: Detection;
@@ -59,7 +59,7 @@ interface ProjectCapture {
   flaggedSessions: number;
   failedRows: number;
   pendingRows: number;
-  /** A watcher this Workspace expects but does not have — the `stopped` issue
+  /** A watcher this Project expects but does not have — the `stopped` issue
    *  that `capture_retry_watcher` is allowed to heal. */
   watcherStopped: boolean;
   /** How many local rows a promotion would flip to `pending`. */
@@ -88,16 +88,16 @@ function binding(over: Partial<Binding> & { workspaceId: string; root: string })
 
 const PROJECTS = new Map<string, ProjectCapture>([
   [
-    MOCK_WORKSPACE.path,
+    MOCK_PROJECT.path,
     {
       binding: binding({
-        workspaceId: MOCK_WORKSPACE.id,
-        root: MOCK_WORKSPACE.path,
+        workspaceId: MOCK_PROJECT.id,
+        root: MOCK_PROJECT.path,
         rootCommitSha: "9f2c1ab4d7e6058c3b1f24a97de0c5b8ef31a204",
         gitUrl: "https://github.com/acme/acme-app.git",
       }),
       detection: {
-        root: MOCK_WORKSPACE.path,
+        root: MOCK_PROJECT.path,
         isGitRepository: true,
         hasCommits: true,
         rootCommitSha: "9f2c1ab4d7e6058c3b1f24a97de0c5b8ef31a204",
@@ -125,11 +125,11 @@ const PROJECTS = new Map<string, ProjectCapture>([
     },
   ],
   [
-    ALL_WORKSPACES[1].path,
+    ALL_PROJECTS[1].path,
     {
       binding: binding({
-        workspaceId: ALL_WORKSPACES[1].id,
-        root: ALL_WORKSPACES[1].path,
+        workspaceId: ALL_PROJECTS[1].id,
+        root: ALL_PROJECTS[1].path,
         mode: "cloud",
         slug: "platform-migration",
         orgId: "remote-org-acme",
@@ -140,14 +140,14 @@ const PROJECTS = new Map<string, ProjectCapture>([
         // about it even on a match — this is the binding that shows it.
         fingerprintIsShallow: true,
         // Never confirmed, so the "History import is waiting for your review"
-        // row is reachable: this Workspace imports nothing until it is.
+        // row is reachable: this Project imports nothing until it is.
         importApproved: false,
         // Terminal until re-registration — the `degraded` issue underneath the
         // watcher one, which is what makes the banner a two-line stack.
         drainState: "not_authorized",
       }),
       detection: {
-        root: ALL_WORKSPACES[1].path,
+        root: ALL_PROJECTS[1].path,
         isGitRepository: true,
         hasCommits: true,
         rootCommitSha: "3ad90f7c22b41e8d5a6790cf1b4e2d83a0c95716",
@@ -173,13 +173,13 @@ const PROJECTS = new Map<string, ProjectCapture>([
     },
   ],
   [
-    ALL_WORKSPACES[2].path,
+    ALL_PROJECTS[2].path,
     {
       // The state a new user actually opens Atlas in: nothing enabled, nothing
       // recorded, and no repository either.
       binding: null,
       detection: {
-        root: ALL_WORKSPACES[2].path,
+        root: ALL_PROJECTS[2].path,
         isGitRepository: false,
         hasCommits: false,
         rootCommitSha: null,
@@ -261,7 +261,7 @@ const off = (summary: string): CaptureHealth => ({
 
 /**
  * Mirrors `atlas_checkpoint::health::evaluate`, including the parts that are
- * easy to get wrong by hand: `off` is not a fault (so a paused Workspace shows
+ * easy to get wrong by hand: `off` is not a fault (so a paused Project shows
  * no red), issues sort worst-first, and a single issue is summarised as itself
  * rather than as a count of one.
  */
@@ -284,7 +284,7 @@ function healthOf(project: ProjectCapture): CaptureHealth {
       reason:
         "No longer authorized to sync with your Organisation — new work stays on this machine.",
       nextStep:
-        "Reconnect or re-register this Workspace to resume syncing. Capture itself continues.",
+        "Reconnect or re-register this Project to resume syncing. Capture itself continues.",
     });
   }
   if (project.flaggedSessions > 0) {
@@ -415,7 +415,7 @@ export const captureHandlers: MockHandlers = {
   capture_detect: ({ projectPath }): Detection => projectFor(projectPath).detection,
   capture_import_preview: ({ projectPath }): ImportPreview => projectFor(projectPath).preview,
   capture_health: ({ projectPath }): CaptureHealth => healthOf(projectFor(projectPath)),
-  // Fire-and-forget on Workspace activation: the real one opens the store and
+  // Fire-and-forget on Project activation: the real one opens the store and
   // kicks the import, neither of which has an answer.
   capture_activate: (): null => null,
 
@@ -426,7 +426,7 @@ export const captureHandlers: MockHandlers = {
 
   // ── Enable / disable ────────────────────────────────────────────────────
   capture_enable: ({ projectPath, mode }): Binding => {
-    // Rejected exactly as Rust rejects it: a Cloud Workspace must be settled
+    // Rejected exactly as Rust rejects it: a Cloud Project must be settled
     // server-side first, or its rows queue forever with nowhere to go.
     if (String(mode) === "cloud") {
       throw new Error("Cloud requires registration — use capture_register_cloud");
@@ -437,7 +437,7 @@ export const captureHandlers: MockHandlers = {
       ? { ...project.binding, enabled: true }
       : binding({
           workspaceId:
-            ALL_WORKSPACES.find((workspace) => workspace.path === root)?.id ?? `ws-${root.length}`,
+            ALL_PROJECTS.find((project) => project.path === root)?.id ?? `ws-${root.length}`,
           root,
           rootCommitSha: project.detection.rootCommitSha,
           gitUrl: project.detection.gitUrl,
@@ -464,7 +464,7 @@ export const captureHandlers: MockHandlers = {
     // the offer unlocks commit linkage, it does not backfill one.
     project.detection = { ...project.detection, isGitRepository: true, hasCommits: false };
     captureChanged();
-    // Null for a Workspace that was never enabled: the real command refuses to
+    // Null for a Project that was never enabled: the real command refuses to
     // create `.atlas/` as a side effect of re-detection.
     return project.binding;
   },
@@ -530,7 +530,7 @@ export const captureHandlers: MockHandlers = {
     const project = projectFor(projectPath);
     // Registration needs a binding to read fingerprints from; the popover's
     // Confirm runs enable-Local first for exactly this reason.
-    if (!project.binding) throw new Error("enable capture for this Workspace first");
+    if (!project.binding) throw new Error("enable capture for this Project first");
     project.binding = {
       ...project.binding,
       mode: "cloud",
@@ -548,7 +548,7 @@ export const captureHandlers: MockHandlers = {
 
   capture_connect: ({ projectPath, orgId, slug, workspaceId }): Binding => {
     const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Workspace first");
+    if (!project.binding) throw new Error("enable capture for this Project first");
     project.binding = {
       ...project.binding,
       mode: "cloud",
@@ -564,7 +564,7 @@ export const captureHandlers: MockHandlers = {
 
   capture_promotion_preview: ({ projectPath }): PromotionPreview => {
     const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Workspace first");
+    if (!project.binding) throw new Error("enable capture for this Project first");
     return {
       sessionCount: project.preview.sessionCount,
       earliest: project.preview.earliest,
@@ -575,7 +575,7 @@ export const captureHandlers: MockHandlers = {
 
   capture_promote: ({ projectPath, orgId, slug }): number => {
     const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Workspace first");
+    if (!project.binding) throw new Error("enable capture for this Project first");
     // Promotion *is* flipping local rows to pending — there is no separate
     // backfill — so the pending queue jumps by the whole accumulated history.
     const promoted = project.localRows;

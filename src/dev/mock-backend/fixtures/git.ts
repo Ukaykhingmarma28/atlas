@@ -33,9 +33,9 @@ import type {
   RemoteInfo,
   StashEntry,
 } from "@/features/git/stores/git-store";
-import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
+import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { MockHandlers } from "../types";
-import { ALL_WORKSPACES, MOCK_WORKSPACE } from "../workspace";
+import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 import { binaryFileDiff, buildFileDiff, lineStatusOf, unifiedDiff } from "./diff";
 import { fileText } from "./files";
 
@@ -737,7 +737,7 @@ const clearInProgress = () => {
 /** What Rust's `emit_synthetic_change` does after every mutating command. */
 function notifyChanged(): void {
   epoch += 1;
-  void emit("atlas:git-changed", { project: MOCK_WORKSPACE.path });
+  void emit("atlas:git-changed", { project: MOCK_PROJECT.path });
 }
 
 /** A typed rejection, shaped exactly like `atlas_git::GitErrorPayload` —
@@ -775,7 +775,7 @@ async function runOp<T>(kind: string, opId: unknown, steps: OpStep[], finish: ()
   const id = typeof opId === "string" ? opId : null;
   const send = (event: Omit<GitOpWire, "opId" | "repo" | "kind">) => {
     if (!id) return;
-    void emit("atlas:git:op", { opId: id, repo: MOCK_WORKSPACE.path, kind, ...event });
+    void emit("atlas:git:op", { opId: id, repo: MOCK_PROJECT.path, kind, ...event });
   };
   send({ phase: "started" });
   for (const step of steps) {
@@ -963,9 +963,9 @@ function treeStats(): { additions: number; deletions: number } {
 
 // ── handlers ──────────────────────────────────────────────────────────────
 
-/** Per-workspace summaries: a dirty repo, a clean one, and a non-repo. */
+/** Per-project summaries: a dirty repo, a clean one, and a non-repo. */
 const SUMMARIES: Record<string, GitSummary> = {
-  [ALL_WORKSPACES[1].path]: {
+  [ALL_PROJECTS[1].path]: {
     isRepo: true,
     branch: "renovate/design-tokens-and-the-entire-colour-system-rewrite",
     headSubject: "chore(deps): bump every design-token package and regenerate the palette",
@@ -973,7 +973,7 @@ const SUMMARIES: Record<string, GitSummary> = {
     additions: 0,
     deletions: 0,
   },
-  [ALL_WORKSPACES[2].path]: {
+  [ALL_PROJECTS[2].path]: {
     isRepo: false,
     branch: "",
     headSubject: "",
@@ -1063,15 +1063,15 @@ const FETCH_STEPS: OpStep[] = [
 export const gitHandlers: MockHandlers = {
   // ── watcher ─────────────────────────────────────────────────────────────
   git_watch_start: () => null,
-  // Fired on every workspace close. Nothing reads the result, but leaving it
+  // Fired on every project close. Nothing reads the result, but leaving it
   // unmocked puts a warning on the badge for an action that did work.
   git_watch_stop: () => null,
 
   // ── status ──────────────────────────────────────────────────────────────
   git_workspace_summary: ({ path }): GitSummary => {
-    // The active workspace's summary is live: commit and the sidebar's
+    // The active project's summary is live: commit and the sidebar's
     // dirty dot / +N −M go quiet with the panel, rather than disagreeing.
-    if (String(path) === MOCK_WORKSPACE.path) {
+    if (String(path) === MOCK_PROJECT.path) {
       const { additions, deletions } = treeStats();
       return {
         isRepo: true,
@@ -1544,7 +1544,7 @@ export const gitHandlers: MockHandlers = {
     if (branch.isCurrent) {
       throw fail(
         "generic",
-        `Cannot delete branch '${branch.name}' checked out at '${MOCK_WORKSPACE.path}'`,
+        `Cannot delete branch '${branch.name}' checked out at '${MOCK_PROJECT.path}'`,
       );
     }
     if (!force && !branch.upstream && branch.ahead > 0) {

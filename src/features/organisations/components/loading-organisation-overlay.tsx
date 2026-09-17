@@ -3,9 +3,9 @@ import { AtlasLoader } from "@/components/atlas-loader";
 
 /**
  * Full-app "Loading Organisation…" overlay, shown while an org switch tears down
- * the old org's workspaces and brings the new org's online. Mirrors the opaque
+ * the old org's projects and brings the new org's online. Mirrors the opaque
  * `.atlas-boot` skeleton (`#050505`) from `index.html` — it covers the sidebar +
- * center below the titlebar, since both the project list and the workspace are
+ * center below the titlebar, since both the project list and the project are
  * changing. Gated on `useOrgStore.orgSwitching`.
  */
 export function LoadingOrganisationOverlay() {

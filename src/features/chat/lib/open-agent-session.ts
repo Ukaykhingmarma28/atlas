@@ -3,7 +3,7 @@ import { emit } from "@tauri-apps/api/event";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { ensureAgent, getAgentSync } from "./agents-api";
 import { errInfo } from "./agent-signin";
 import {
@@ -16,11 +16,11 @@ import { invalidateLoad } from "./load-tokens";
 import { resumeSessionFast } from "./resume-session";
 
 /** Active project root, preferring the legacy `currentProject` but falling back
- *  to the active workspace path (mirrors the sidebar's `cwd` resolution). */
+ *  to the active project path (mirrors the sidebar's `cwd` resolution). */
 function activeCwd(): string {
   const project = useAppStore.getState().currentProject;
-  const ws = useWorkspaceStore.getState();
-  return project?.path ?? ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.path ?? "";
+  const ws = useProjectStore.getState();
+  return project?.path ?? ws.projects.find((w) => w.id === ws.activeProjectId)?.path ?? "";
 }
 
 /** Nudge the history sidebar to refetch all three agent session lists. The
@@ -55,10 +55,10 @@ function freshTabId(): string {
 
 /**
  * Open the agent chat focused on a specific ACP session, reloading its
- * transcript from disk. Assumes the target workspace is already active (the
- * caller switches workspaces first). Mirrors `session-sidebar.handleOpenAgent`'s
+ * transcript from disk. Assumes the target project is already active (the
+ * caller switches projects first). Mirrors `session-sidebar.handleOpenAgent`'s
  * load flow (focus-if-open, reuse-idle-tab-else-new) so it can be invoked from
- * anywhere (e.g. the workspace switcher's Chats section).
+ * anywhere (e.g. the project switcher's Chats section).
  */
 export async function openAgentSession({
   acpSessionId,

@@ -5,7 +5,7 @@
 //
 // The two searchable submenus (GitHub, Sessions) embed a text <input> inside a
 // Radix `SubContent` and stop keydown propagation so Radix's typeahead doesn't
-// eat the keystrokes — the same pattern the workspace "+" AddProjectMenu uses.
+// eat the keystrokes — the same pattern the project "+" AddProjectMenu uses.
 
 import { useEffect, useMemo, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -35,13 +35,13 @@ import type { GithubRepo, ClonedRepo } from "@/features/github/types";
 import {
   searchMentions,
   listPastSessions,
-  type MentionWorkspace,
+  type MentionProject,
   type PastSessionRef,
 } from "../lib/mentions";
 
 interface ComposerAddMenuProps {
   disabled?: boolean;
-  /** Project root — scopes sessions/workspaces to this project, and is the
+  /** Project root — scopes sessions/projects to this project, and is the
    *  clone destination root for GitHub repos (`<project>/.atlas/repos`). */
   projectPath: string | null;
   /** Skill-registry agent id (e.g. "claude-code" | "codex" | "cersei"). */
@@ -55,7 +55,7 @@ interface ComposerAddMenuProps {
   onPickSession: (session: PastSessionRef) => void;
   /** Reference another project in the active org — inserts a `@workspace`
    *  mention that hands the agent that project's path. */
-  onPickWorkspace: (workspace: MentionWorkspace) => void;
+  onPickProject: (project: MentionProject) => void;
 }
 
 const ITEM_CLASS =
@@ -115,7 +115,7 @@ export function ComposerAddMenu({
   onTakeScreenshot,
   onCloneRepo,
   onPickSession,
-  onPickWorkspace,
+  onPickProject,
 }: ComposerAddMenuProps) {
   const [open, setOpen] = useState(false);
 
@@ -209,10 +209,10 @@ export function ComposerAddMenu({
             onPickSession={onPickSession}
           />
 
-          <WorkspaceSubmenu
+          <ProjectSubmenu
             projectPath={projectPath}
             agentId={agentId}
-            onPickWorkspace={onPickWorkspace}
+            onPickProject={onPickProject}
           />
 
           {/* Zed-style registry entry point: opens Settings → Agents. Agent
@@ -492,24 +492,24 @@ function SessionsSubmenu({
   );
 }
 
-// ── Reference workspace — hand the agent another project's path ───────────────
-// Mirrors `SessionsSubmenu`, but lists the OTHER workspaces in the active org
+// ── Reference project — hand the agent another project's path ───────────────
+// Mirrors `SessionsSubmenu`, but lists the OTHER projects in the active org
 // (the same set the `@workspace` reference-picker rail surfaces). Picking one
 // inserts a `@workspace` mention; at send time Rust expands it into that
 // project's absolute path so an agent in p1 can be told to go inspect p3.
-function WorkspaceSubmenu({
+function ProjectSubmenu({
   projectPath,
   agentId,
-  onPickWorkspace,
+  onPickProject,
 }: {
   projectPath: string | null;
   agentId?: string;
-  onPickWorkspace: (workspace: MentionWorkspace) => void;
+  onPickProject: (project: MentionProject) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [workspaces, setWorkspaces] = useState<MentionWorkspace[] | null>(null);
+  const [projects, setProjects] = useState<MentionProject[] | null>(null);
 
-  // `searchMentions("workspace")` reads the workspace + org stores synchronously
+  // `searchMentions("workspace")` reads the project + org stores synchronously
   // and filters to the active org, so this is effectively instant — but it stays
   // async to match the mention API and to re-run per keystroke for free.
   useEffect(() => {
@@ -517,10 +517,10 @@ function WorkspaceSubmenu({
     void searchMentions(query, "workspace", { projectPath, agentId })
       .then((rows) => {
         if (cancelled) return;
-        setWorkspaces(rows.filter((m): m is MentionWorkspace => m.kind === "workspace"));
+        setProjects(rows.filter((m): m is MentionProject => m.kind === "workspace"));
       })
       .catch(() => {
-        if (!cancelled) setWorkspaces([]);
+        if (!cancelled) setProjects([]);
       });
     return () => {
       cancelled = true;
@@ -531,7 +531,7 @@ function WorkspaceSubmenu({
     <DropdownMenu.Sub>
       <DropdownMenu.SubTrigger className={ITEM_CLASS}>
         <Boxes size={11} />
-        <span>Reference workspace</span>
+        <span>Reference project</span>
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
       </DropdownMenu.SubTrigger>
       <DropdownMenu.Portal>
@@ -540,23 +540,23 @@ function WorkspaceSubmenu({
           className={cn(CONTENT_CLASS, "w-[300px]")}
           style={{ zIndex: 9999 }}
         >
-          <SearchBox value={query} onChange={setQuery} placeholder="Search workspaces…" />
+          <SearchBox value={query} onChange={setQuery} placeholder="Search projects…" />
           <div className="max-h-[300px] overflow-y-auto">
-            {workspaces === null ? (
+            {projects === null ? (
               <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
                 <Loader2 size={11} className="animate-spin" />
-                Loading workspaces…
+                Loading projects…
               </div>
-            ) : workspaces.length === 0 ? (
+            ) : projects.length === 0 ? (
               <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
                 {query ? "No matches." : "No other projects in this organisation."}
               </div>
             ) : (
-              workspaces.map((w) => (
+              projects.map((w) => (
                 <DropdownMenu.Item
                   key={w.id}
                   className={cn(ITEM_CLASS, "h-auto items-start py-1.5")}
-                  onSelect={() => onPickWorkspace(w)}
+                  onSelect={() => onPickProject(w)}
                   title={w.absPath}
                 >
                   <Boxes size={11} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />

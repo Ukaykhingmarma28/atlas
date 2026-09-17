@@ -86,7 +86,7 @@ import { imageMimeFromPath } from "@/lib/byok/model-capabilities";
 import type { ImageAttachment } from "@/types/agents";
 import type {
   MentionFile,
-  MentionWorkspace,
+  MentionProject,
   MentionRepo,
   MentionPastSession,
   PastSessionRef,
@@ -217,7 +217,7 @@ function acpModeColor(modeId: string | undefined): string {
   const id = (modeId ?? "").toLowerCase();
   if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id)) return "var(--status-error)";
   if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--primary)";
-  if (/auto|default|edit|accept|agent|workspace/.test(id)) return "var(--status-success)";
+  if (/auto|default|edit|accept|agent|project/.test(id)) return "var(--status-success)";
   return "var(--text-tertiary)";
 }
 
@@ -1270,8 +1270,8 @@ export function MessageInput({
     }
   }, [imageSupported, handleDropFiles]);
 
-  const handlePickWorkspace = useCallback((workspace: MentionWorkspace) => {
-    inputRef.current?.insertMention(workspace);
+  const handlePickProject = useCallback((project: MentionProject) => {
+    inputRef.current?.insertMention(project);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
@@ -2060,7 +2060,7 @@ export function MessageInput({
                 onTakeScreenshot={(mode) => void handleTakeScreenshot(mode)}
                 onCloneRepo={(repo) => void handleCloneRepo(repo)}
                 onPickSession={handlePickSession}
-                onPickWorkspace={handlePickWorkspace}
+                onPickProject={handlePickProject}
               />
               {/* Agent / mode / model as one grouped, animated picker — the
                   pills double as its tab strip. Cycling shortcuts (⌥/ agents,

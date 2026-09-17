@@ -4,19 +4,22 @@ import { createSelectors } from "@/lib/create-selectors";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { logEvent } from "@/features/log/lib/log";
 import {
-  useWorkspaceStore,
-  type Workspace,
-  type WorkspaceGroup,
-} from "@/features/workspaces/stores/workspace-store";
+  useProjectStore,
+  type Project,
+  type ProjectGroup,
+} from "@/features/projects/stores/project-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import type { Organisation } from "@/features/organisations/types";
-import { registerFlush } from "@/features/workspaces/lib/flush-registry";
-import { persistHashOf } from "@/features/workspaces/lib/workspace-snapshot";
+import { registerFlush } from "@/features/projects/lib/flush-registry";
+import { persistHashOf } from "@/features/projects/lib/project-snapshot";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import type { ConfigStatus } from "@/features/settings/lib/atlas-config-api";
 import type { AppSettings } from "@/features/settings/lib/app-settings";
 
-interface Project {
+/** Just enough to name the open project: `Project` itself belongs to the
+ *  projects feature, and this is only the {name, path} pair the app store
+ *  and the persisted recents list carry. */
+interface ProjectRef {
   name: string;
   path: string;
 }
@@ -32,16 +35,20 @@ interface RecentProject {
  * `src-tauri/src/state/app_state.rs:AppState` field-for-field.
  *
  * `currentProject` is a legacy v1 field — Rust migrates it into `workspaces`
- * on load, so it arrives `null` here in practice. The multi-workspace fields
+ * on load, so it arrives `null` here in practice. The multi-project fields
  * are the source of truth.
+ *
+ * `workspaces` / `activeWorkspaceId` are STORAGE KEYS, not concepts: they are
+ * what `state.json` has held since v2, so renaming them would need a data
+ * migration and break every existing install. The app calls these projects.
  */
 export interface AppStateWire {
-  currentProject: Project | null;
+  currentProject: ProjectRef | null;
   recentProjects: RecentProject[];
-  workspaces?: Workspace[];
-  groups?: WorkspaceGroup[];
+  workspaces?: Project[];
+  groups?: ProjectGroup[];
   activeWorkspaceId?: string | null;
-  /** The Organisation layer above workspaces (v3). */
+  /** The Organisation layer above projects (v3). */
   organisations?: Organisation[];
   activeOrganisationId?: string | null;
   /** Sourced from `config.toml`, not `state.json` (issue #64) — folded into
@@ -61,19 +68,19 @@ export interface AppStateWire {
 }
 
 interface AppState {
-  currentProject: Project | null;
+  currentProject: ProjectRef | null;
   recentProjects: RecentProject[];
   /** True until the Rust-side bootstrap returns. UI gates on this to keep
    *  the boot skeleton up rather than flashing an empty WelcomeScreen. */
   hydrated: boolean;
   actions: {
     /** Public entry point used across the app (welcome screen, titlebar,
-     *  command palette, CLI). Adds-or-focuses a workspace for `path`. */
+     *  command palette, CLI). Adds-or-focuses a project for `path`. */
     openProject: (path: string) => Promise<void>;
-    /** Point the store at a workspace's project (or clear with `null`).
-     *  Called by the workspace switch coordinator — does NOT run the
+    /** Point the store at the switched-to project (or clear with `null`).
+     *  Called by the project switch coordinator — does NOT run the
      *  downstream loaders (that's `loadProjectStores`). */
-    setActiveProject: (project: Project | null) => void;
+    setActiveProject: (project: ProjectRef | null) => void;
     removeRecent: (path: string) => void;
     clearRecents: () => void;
     /** One-shot hydration from Rust. Called once on app boot. */
@@ -87,30 +94,31 @@ interface AppState {
 interface AppStatePatchWire {
   currentProject: null;
   recentProjects: RecentProject[];
-  workspaces: Workspace[];
-  groups: WorkspaceGroup[];
+  /** Storage keys — see `AppStateWire`. The values are projects. */
+  workspaces: Project[];
+  groups: ProjectGroup[];
   activeWorkspaceId: string | null;
   organisations: Organisation[];
   activeOrganisationId: string | null;
 }
 
 // Debounced persistence: the Rust `save_app_state` command takes the
-// workspaces/recents/orgs slice of `AppState`. Both `useAppStore`
-// (recents) and `useWorkspaceStore` (workspaces/groups/activeWorkspaceId)
+// projects/recents/orgs slice of `AppState`. Both `useAppStore`
+// (recents) and `useProjectStore` (projects/groups/activeProjectId)
 // contribute to it, so the save reads from both stores at flush time.
 // Coalesced to ~500ms.
 /** Build the `AppStatePatch` payload from every contributing store. Shared by
  *  the debounced + immediate save paths so they never drift. */
 function buildAppStatePayload(): AppStatePatchWire {
   const app = useAppStore.getState();
-  const ws = useWorkspaceStore.getState();
+  const ws = useProjectStore.getState();
   const org = useOrgStore.getState();
   return {
     currentProject: null,
     recentProjects: app.recentProjects,
-    workspaces: ws.workspaces,
+    workspaces: ws.projects,
     groups: ws.groups,
-    activeWorkspaceId: ws.activeWorkspaceId,
+    activeWorkspaceId: ws.activeProjectId,
     organisations: org.organisations,
     activeOrganisationId: org.activeOrganisationId,
   };
@@ -127,7 +135,7 @@ export function scheduleAppStateSave(): void {
 }
 
 /** Flush the pending app-state save immediately (used by the switch/quit
- *  flush coordinator) so workspace list + active id are durable. */
+ *  flush coordinator) so project list + active id are durable. */
 export async function flushAppStateSave(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -138,12 +146,12 @@ export async function flushAppStateSave(): Promise<void> {
   );
 }
 
-// The workspace list + active id must be durable on quit/close, so register it
+// The project list + active id must be durable on quit/close, so register it
 // with the flush coordinator. On a SWITCH the write is fired without being
 // awaited: it held a full IPC + disk round-trip on the critical path of every
 // switch, for a payload that (a) is about to change again the moment the
 // switch commits, and (b) is re-saved by the switch's own
-// `scheduleAppStateSave()` 500ms later. Losing it in a crash costs workspace
+// `scheduleAppStateSave()` 500ms later. Losing it in a crash costs project
 // -list metadata only — never user content, which is what the awaited
 // KB/editor flushes protect.
 registerFlush("app-state", (ctx) => {
@@ -154,13 +162,13 @@ registerFlush("app-state", (ctx) => {
   return flushAppStateSave();
 });
 
-// Dedup gate: the persist hash last written to disk per workspace. If the
-// workspace's snapshot hash is unchanged since the last write, we skip the
+// Dedup gate: the persist hash last written to disk per project. If the
+// project's snapshot hash is unchanged since the last write, we skip the
 // editor-state disk write entirely (the user's "don't re-write the cache when
 // the snapshot is identical").
 const lastPersistedHash = new Map<string, string>();
 
-// Editor tabs / split layout for a workspace. `ctx.path` is the OUTGOING
+// Editor tabs / split layout for a project. `ctx.path` is the OUTGOING
 // project path (passed explicitly so the write targets the right project even
 // after `currentProject` has swapped); falls back to the live current project
 // for non-switch flushes (e.g. app quit).
@@ -169,12 +177,12 @@ registerFlush("editor-state", async (ctx) => {
   if (!path) return;
 
   // Skip the disk write when nothing the user cares about changed.
-  if (ctx.workspaceId) {
-    const hash = persistHashOf(ctx.workspaceId);
-    if (hash && lastPersistedHash.get(ctx.workspaceId) === hash) {
+  if (ctx.projectId) {
+    const hash = persistHashOf(ctx.projectId);
+    if (hash && lastPersistedHash.get(ctx.projectId) === hash) {
       return; // identical snapshot — no write
     }
-    if (hash) lastPersistedHash.set(ctx.workspaceId, hash);
+    if (hash) lastPersistedHash.set(ctx.projectId, hash);
   }
   await useLayoutStore.getState().actions.flushEditorState(path);
 });
@@ -192,7 +200,7 @@ function maybeEnsureAtlasGitignore(path: string, settings: AppSettings): void {
 }
 
 /**
- * Load every downstream store for `path` in parallel. Shared by workspace
+ * Load every downstream store for `path` in parallel. Shared by project
  * switch + boot hydration. Each loader renders its own loading state, so this
  * runs on Tauri's runtime without blocking the JS main thread.
  *
@@ -237,7 +245,7 @@ export async function loadProjectStores(path: string): Promise<void> {
   // biggest post-switch main-thread spike (up to ~1.2s on large vaults) and it
   // isn't needed for first paint — Knowledge isn't the landing tab, and
   // `KnowledgePanel` reloads entries on its own mount. Deferring to idle keeps
-  // its setState from colliding with (and congesting) rapid workspace switches,
+  // its setState from colliding with (and congesting) rapid project switches,
   // while still warming the @-/~ mention cache shortly after open. Fire-and-
   // forget; a stale project is harmless (entries are keyed by path).
   const warmEntries = () => {
@@ -259,14 +267,14 @@ export const useAppStore = createSelectors(
     hydrated: false,
     actions: {
       openProject: async (path: string) => {
-        // The workspace store is now the single entry point for "open a
+        // The project store is now the single entry point for "open a
         // project": it dedupes by path (focus-existing) and drives the
         // flush/restore switch. Everything that used to call openProject
         // keeps working unchanged.
-        await useWorkspaceStore.getState().actions.addWorkspace(path);
+        await useProjectStore.getState().actions.addProject(path);
       },
 
-      setActiveProject: (project: Project | null) => {
+      setActiveProject: (project: ProjectRef | null) => {
         if (!project) {
           set({ currentProject: null });
           return;
@@ -283,7 +291,7 @@ export const useAppStore = createSelectors(
         // Idempotent + setting-gated. Safe to fire on every switch.
         maybeEnsureAtlasGitignore(path, useSettingsStore.getState().settings);
         // Grant the asset protocol access to this project's tree so the media
-        // viewer can serve its files. Scope only widens across workspaces.
+        // viewer can serve its files. Scope only widens across projects.
         invoke("asset_allow_dir", { path }).catch(() => {});
 
         logEvent({
@@ -331,8 +339,8 @@ export const useAppStore = createSelectors(
           hydrated: true,
         });
 
-        // Hand the Organisation layer to the org store FIRST — the workspace
-        // sidebar filters by the active org, and new workspaces tag themselves
+        // Hand the Organisation layer to the org store FIRST — the project
+        // sidebar filters by the active org, and new projects tag themselves
         // with it. (Rust `migrate()` guarantees a default "Personal" org + an
         // `activeOrganisationId` on any pre-v3 state, so this is always set.)
         useOrgStore.getState().actions.hydrate({
@@ -340,32 +348,32 @@ export const useAppStore = createSelectors(
           activeOrganisationId: payload.activeOrganisationId ?? null,
         });
 
-        // Hand the multi-workspace fields to the workspace store. We hydrate
-        // with `activeWorkspaceId: null` and then `switchTo` the persisted id
+        // Hand the multi-project fields to the project store. We hydrate
+        // with `activeProjectId: null` and then `switchTo` the persisted id
         // below, so the switch is a genuine null→id transition that actually
         // runs the loaders (a same-id switch is a no-op by design).
-        const workspaces = payload.workspaces ?? [];
+        const projects = payload.workspaces ?? [];
         const groups = payload.groups ?? [];
-        const activeWorkspaceId = payload.activeWorkspaceId ?? null;
-        useWorkspaceStore.getState().actions.hydrate({
-          workspaces,
+        const activeProjectId = payload.activeWorkspaceId ?? null;
+        useProjectStore.getState().actions.hydrate({
+          projects,
           groups,
-          activeWorkspaceId: null,
+          activeProjectId: null,
         });
 
-        // Restore the active workspace, if any. `switchTo` sets
+        // Restore the active project, if any. `switchTo` sets
         // `currentProject` (which drives the App-level Rust lifecycle effects)
         // and loads the downstream stores.
         //
         // `skipActiveSwitch` is set when a `atlas <path>` CLI launch is about to
-        // open its own workspace: `switchTo` no-ops while another switch is in
+        // open its own project: `switchTo` no-ops while another switch is in
         // flight (the `switching` guard), so auto-switching here would swallow
-        // the CLI switch and strand the user on the persisted workspace. The
+        // the CLI switch and strand the user on the persisted project. The
         // caller switches to the CLI project instead.
-        const active = activeWorkspaceId && workspaces.find((w) => w.id === activeWorkspaceId);
+        const active = activeProjectId && projects.find((w) => w.id === activeProjectId);
         if (active && !opts?.skipActiveSwitch) {
           maybeEnsureAtlasGitignore(active.path, useSettingsStore.getState().settings);
-          void useWorkspaceStore.getState().actions.switchTo(active.id);
+          void useProjectStore.getState().actions.switchTo(active.id);
         }
       },
     },

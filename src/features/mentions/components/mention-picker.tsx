@@ -63,7 +63,7 @@ import { SKILLS_CHANGED_EVENT } from "@/features/skills/lib/skills-events";
 import { useRecentFilesStore, type RecentFile } from "@/features/chat/stores/recent-files-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     ref,
   ) {
     const recentFiles = useRecentFilesStore.use.items();
-    // Workspace mentions are scoped to the active org (see `searchWorkspaces`).
+    // Project mentions are scoped to the active org (see `searchProjects`).
     // Subscribe so switching orgs re-runs the search and the list reflects the
     // new org's projects even while the picker stays mounted.
     const activeOrganisationId = useOrgStore.use.activeOrganisationId();
@@ -159,7 +159,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     const [results, setResults] = useState<MentionData[]>([]);
     const [active, setActive] = useState(0);
     /** True until the backend FileIndex finishes its initial walk for the
-     *  active workspace. With multiple workspaces the first `@`/`~` in a
+     *  active project. With multiple projects the first `@`/`~` in a
      *  freshly-switched project can land before its index is built — without
      *  this we'd flash a misleading "No matches" instead of a loading hint. */
     const [indexing, setIndexing] = useState(false);
@@ -246,9 +246,9 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       setActive(0);
     }, [query, scope, pastSession]);
 
-    // Detect whether the active workspace's file index is still building, for
+    // Detect whether the active project's file index is still building, for
     // the file-dependent scopes (blended / file / folder). Drives the
-    // "Indexing files…" hint so the first `@` in a freshly-opened workspace
+    // "Indexing files…" hint so the first `@` in a freshly-opened project
     // shows a loading state instead of "No matches". `ensureFileIndex` returns
     // null on the already-confirmed fast path (→ not indexing).
     useEffect(() => {
@@ -279,11 +279,11 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       let unlisten: (() => void) | null = null;
       void listen<{ workspaceId?: string }>("atlas:fileindex:updated", (ev) => {
         if (cancelled) return;
-        // The event carries the owning workspace — a background reindex for
-        // ANOTHER workspace must not clear this picker's loading hint or
+        // The event carries the owning project — a background reindex for
+        // ANOTHER project must not clear this picker's loading hint or
         // re-fire its search.
         const ws = ev.payload?.workspaceId;
-        if (ws && ws !== activeWorkspaceId()) return;
+        if (ws && ws !== activeProjectId()) return;
         setIndexing(false);
         setIndexNonce((n) => n + 1);
       }).then((un) => {
@@ -373,7 +373,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       // even when scores interleave.
       const emptyQuery = !query.trim();
       // The recents mirror is a single global store reflecting the ACTIVE
-      // workspace; right after a workspace switch there's an async window
+      // project; right after a project switch there's an async window
       // where it still holds the previous project's files. Filter to THIS
       // picker's project so a recent from another project can never surface.
       const recents = emptyQuery

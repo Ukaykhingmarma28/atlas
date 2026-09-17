@@ -38,11 +38,11 @@ import type {
   ThreadMeta,
 } from "@/features/artifacts/lib/session-chat-api";
 import type { ModelChatEvent } from "@/lib/byok/byok-chat";
-import type { Workspace } from "@/features/workspaces/stores/workspace-store";
+import type { Project } from "@/features/projects/stores/project-store";
 import type { MockHandlers } from "../types";
-import { abs, ALL_WORKSPACES, MOCK_WORKSPACE } from "../workspace";
+import { abs, ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
-const [APP, PLATFORM, DOCS] = ALL_WORKSPACES;
+const [APP, PLATFORM, DOCS] = ALL_PROJECTS;
 
 /** Local-clock ISO stamp, `daysAgo` back at a given hour — the board groups on
  *  local midnight, so a UTC-built date would land yesterday for half the world. */
@@ -118,7 +118,7 @@ interface Seed {
   model: string | null;
   /** `acp`, `cersei` or `external_jsonl` — drives the row's state glyph. */
   source: string;
-  project: Workspace;
+  project: Project;
   startedAt: string;
   lastActivityAt: string;
   activeSeconds: number;
@@ -520,9 +520,9 @@ function liveTimeline(seed: Seed): TimelineEntry[] {
       at: t(31),
       turnSeq: 8,
       toolName: "bash",
-      toolTitle: "cargo check --workspace",
+      toolTitle: "cargo check --project",
       toolStatus: "failed",
-      arguments: JSON.stringify({ command: "cargo check --workspace" }, null, 2),
+      arguments: JSON.stringify({ command: "cargo check --project" }, null, 2),
       result:
         "error[E0308]: mismatched types\n  --> src-tauri/src/commands/capture.rs:1551:9\n   |\n   = note: expected `Vec<BoardSession>`, found `Option<_>`",
       resultRef: "blob-cargo-log",
@@ -874,7 +874,7 @@ const threads = new Map<string, SessionChatThreadWire[]>([
             sources: [
               {
                 kind: "tool_call",
-                label: "cargo check --workspace",
+                label: "cargo check --project",
                 entryId: `${LIVE_ID}-e31`,
                 commitSha: null,
               },
@@ -908,7 +908,7 @@ const ANSWER = [
   "   sites inherit it.",
   "2. The first Checkpoint (`4f21a90`) carries that work: 96 insertions across",
   "   three files.",
-  "3. `cargo check --workspace` then failed on the board command:",
+  "3. `cargo check --project` then failed on the board command:",
   "",
   "```rust",
   "// src-tauri/src/commands/capture.rs:1551",
@@ -1096,6 +1096,6 @@ export const artifactsHandlers: MockHandlers = {
   // `null` — indistinguishable from "the developer pressed Escape".
   "plugin:dialog|save": ({ options }): string => {
     const name = String(options?.defaultPath ?? "export");
-    return `${MOCK_WORKSPACE.path}/${name}`;
+    return `${MOCK_PROJECT.path}/${name}`;
   },
 };
