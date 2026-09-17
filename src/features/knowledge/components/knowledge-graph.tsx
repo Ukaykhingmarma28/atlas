@@ -79,7 +79,7 @@ interface SceneState {
 /** Per-node {x, y} world-space positions. Loaded from disk on mount,
  *  saved on unmount + on a debounced timer while the simulation runs.
  *  Mirrors the Rust `GraphLayout` shape in `knowledge_graph_layout.rs`. */
-interface GraphLayout {
+export interface GraphLayout {
   positions: Record<string, { x: number; y: number }>;
 }
 

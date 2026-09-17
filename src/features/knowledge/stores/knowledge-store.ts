@@ -3,7 +3,7 @@ import { createSelectors } from "@/lib/create-selectors";
 import { invoke } from "@tauri-apps/api/core";
 import { logEvent } from "@/features/log/lib/log";
 
-interface KnowledgeEntry {
+export interface KnowledgeEntry {
   id: string;
   title: string;
   content: string;

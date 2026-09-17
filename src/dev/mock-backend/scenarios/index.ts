@@ -4,6 +4,7 @@
 import type { Scenario } from "../types";
 import { chatTools } from "./chat-tools";
 import { gitConflict } from "./git-conflict";
+import { knowledge } from "./knowledge";
 
 const all: Scenario[] = [
   {
@@ -12,6 +13,7 @@ const all: Scenario[] = [
   },
   chatTools,
   gitConflict,
+  knowledge,
 ];
 
 export const scenarios: Record<string, Scenario> = Object.fromEntries(all.map((s) => [s.name, s]));
