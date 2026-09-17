@@ -13,12 +13,20 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod color;
+pub mod export;
+pub mod import;
+pub mod toml_writer;
+
 pub const THEME_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_THEME_ID: &str = "atlas";
 
 const THEME_KEYS: &str = include_str!("../theme-keys.txt");
 
-const BASE_TOKENS: &[&str] = &[
+/// The shadcn base tokens, in the order `docs/reference/theme-keys.md` and the
+/// built-in TOMLs list them. Public because the importers fill this exact set
+/// and the TOML writer emits it in this exact order.
+pub const BASE_TOKENS: &[&str] = &[
     "background",
     "foreground",
     "card",
@@ -66,7 +74,9 @@ const BASE_TOKENS: &[&str] = &[
     "shadow-2xl",
 ];
 
-const NON_COLOR_BASE_TOKENS: &[&str] = &[
+/// Base tokens whose value is free text (a length, a font stack, a composed
+/// shadow) rather than a colour, so the colour validator skips them.
+pub const NON_COLOR_BASE_TOKENS: &[&str] = &[
     "radius",
     "font-sans",
     "font-serif",
@@ -82,7 +92,8 @@ const NON_COLOR_BASE_TOKENS: &[&str] = &[
     "shadow-2xl",
 ];
 
-const PALETTE_KEYS: &[&str] =
+/// The optional eight-colour palette, which ~40 theme keys resolve through.
+pub const PALETTE_KEYS: &[&str] =
     &["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -262,6 +273,57 @@ pub fn built_in_themes() -> Result<Vec<Theme>, ThemeError> {
 
 pub fn user_theme_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|dir| dir.join("atlas").join("themes"))
+}
+
+/// Write a theme into `dir` as `<id>.toml`, returning the path.
+///
+/// The TOML is parsed first, and the id it declares is what names the file —
+/// the caller's id is not trusted. Both matter: `id` reaches this from an
+/// import UI where the user types it, so `../../../.zshrc` has to be
+/// impossible, and a file whose name and declared id disagree loads under one
+/// name and is overwritten under the other.
+pub fn write_theme_to(dir: &Path, source: &str) -> Result<PathBuf, ThemeError> {
+    let theme = parse_theme(source, "import")?;
+    let id = theme.id.trim();
+    if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
+        return Err(validation(
+            "import",
+            format!("theme id '{id}' must be letters, digits, '-' or '_'"),
+        ));
+    }
+    fs::create_dir_all(dir).map_err(|source| ThemeError::Read { path: dir.to_path_buf(), source })?;
+    let path = dir.join(format!("{id}.toml"));
+    fs::write(&path, source).map_err(|source| ThemeError::Read { path: path.clone(), source })?;
+    Ok(path)
+}
+
+/// [`write_theme_to`] against `~/.config/atlas/themes`, where the watcher looks.
+pub fn write_user_theme(source: &str) -> Result<PathBuf, ThemeError> {
+    let dir = user_theme_dir()
+        .ok_or_else(|| validation("import", "could not resolve the config directory"))?;
+    write_theme_to(&dir, source)
+}
+
+/// Is there already a theme with this id? Distinguishes "you are about to
+/// replace your own import" from "you are about to shadow a built-in".
+pub fn theme_origin(id: &str) -> ThemeOrigin {
+    if BUILT_INS.iter().any(|(name, _)| *name == format!("{id}.toml")) {
+        return ThemeOrigin::BuiltIn;
+    }
+    match user_theme_dir() {
+        Some(dir) if dir.join(format!("{id}.toml")).exists() => ThemeOrigin::User,
+        _ => ThemeOrigin::New,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeOrigin {
+    New,
+    /// A user theme with this id exists and would be overwritten.
+    User,
+    /// A built-in with this id exists; a user theme of the same id shadows it.
+    BuiltIn,
 }
 
 /// The themes on offer, plus whatever went wrong getting there.
@@ -577,7 +639,7 @@ fn parse_number(value: &str) -> bool {
     value.parse::<f64>().is_ok_and(f64::is_finite)
 }
 
-fn validation(origin: &str, message: impl Into<String>) -> ThemeError {
+pub(crate) fn validation(origin: &str, message: impl Into<String>) -> ThemeError {
     ThemeError::Validation { origin: origin.to_string(), message: message.into() }
 }
 
