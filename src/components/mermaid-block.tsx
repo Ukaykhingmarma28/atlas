@@ -4,57 +4,71 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { createPortal } from "react-dom";
 import { Check, Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 
+import { getActiveTheme } from "@/features/theme/apply-theme";
+import { themeBase, themeColor, useThemeVersion } from "@/features/theme/theme-values";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 
-// Mermaid is heavy (~500KB) — load it on first diagram render only. The theme is
-// mapped to the *live* Atlas interface-theme tokens (read from CSS custom
-// properties), so a diagram matches whichever palette is active (Atlas Black,
-// Chyral, Mirage, …). We re-initialize whenever the palette changes so switching
-// themes re-skins subsequently-rendered diagrams too.
+// Mermaid is heavy (~500KB) — load it on first diagram render only.
+//
+// A diagram is an SVG mermaid BUILDS from a `themeVariables` object, not
+// something it styles afterwards, so the colours have to be resolved values
+// (decision 14) and re-initializing is not enough on its own: an already-drawn
+// diagram keeps the palette it was drawn with for ever. `MermaidBlock` watches
+// `useThemeVersion()` and re-renders on a theme switch, which is what makes a
+// diagram that is already on screen follow the theme rather than the next one
+// somebody types.
 let counter = 0;
 let lastPaletteKey = "";
-
-/** Read one CSS custom property off the document root, with a fallback. */
-function cssVar(name: string, fallback: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
 
 async function getMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
 
-  // Pull the current interface-theme palette from CSS vars (set by
-  // apply-atlas-theme.ts). Falls back to the AMOLED-black defaults.
-  const bg = cssVar("--bg-base", "#0a0a0a");
-  const raised = cssVar("--bg-raised", "#161616");
-  const elevated = cssVar("--bg-elevated", "#0f0f0f");
-  const textPrimary = cssVar("--text-primary", "#ffffff");
-  const textSecondary = cssVar("--text-secondary", "#aaaaaa");
-  const border = cssVar("--border-strong", "#3d3d3d");
-  const line = cssVar("--text-tertiary", "#777777");
+  const appearance = getActiveTheme()?.appearance ?? "dark";
+  const background = themeBase("background");
+  const card = themeBase("card");
+  const secondary = themeBase("secondary");
+  const foreground = themeBase("foreground");
+  const textColor = themeBase("secondary-foreground");
+  const border = themeColor("border.strong");
+  const line = themeColor("text.muted");
+  const fontFamily = themeBase("font-sans");
 
-  const paletteKey = [bg, raised, elevated, textPrimary, textSecondary, border, line].join("|");
+  const paletteKey = [
+    appearance,
+    background,
+    card,
+    secondary,
+    foreground,
+    textColor,
+    border,
+    line,
+    fontFamily,
+  ].join("|");
   if (paletteKey !== lastPaletteKey) {
     lastPaletteKey = paletteKey;
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
-      theme: "dark",
+      // The built-in base that `themeVariables` is layered over. Mermaid
+      // derives a long tail of secondary colours (pie slices, gantt bars, note
+      // fills) from it, and only the matching one derives them light enough or
+      // dark enough to read against the theme's background.
+      theme: appearance === "light" ? "default" : "dark",
       themeVariables: {
-        darkMode: true,
-        background: bg,
-        primaryColor: raised,
-        primaryTextColor: textPrimary,
+        darkMode: appearance === "dark",
+        background,
+        primaryColor: card,
+        primaryTextColor: foreground,
         primaryBorderColor: border,
-        secondaryColor: elevated,
-        tertiaryColor: bg,
+        secondaryColor: secondary,
+        tertiaryColor: background,
         lineColor: line,
-        textColor: textSecondary,
+        textColor,
         fontSize: "12px",
-        fontFamily: '-apple-system, "SF Pro Text", system-ui, sans-serif',
+        fontFamily,
       },
     });
   }
@@ -153,6 +167,9 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const mountedRef = useRef(true);
+  // Re-renders the diagram after a theme switch: mermaid bakes the palette into
+  // the SVG it emits, so nothing about the existing markup can follow a change.
+  const themeVersion = useThemeVersion();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -181,7 +198,7 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
     return () => {
       mountedRef.current = false;
     };
-  }, [code]);
+  }, [code, themeVersion]);
 
   if (failed) {
     return (
@@ -475,7 +492,7 @@ async function svgToPngBase64(svg: string): Promise<string> {
 
   // Mermaid draws no background of its own, so a PNG without this is a diagram
   // on transparency — invisible in any light-background document.
-  ctx.fillStyle = cssVar("--bg-base", "#0a0a0a");
+  ctx.fillStyle = themeBase("background");
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
