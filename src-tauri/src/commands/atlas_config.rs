@@ -163,7 +163,7 @@ fn emit_error(app: &AppHandle, error: &ConfigError) {
 /// this is just wiring its result to Tauri events.
 ///
 /// Leaks the debouncer into a background thread for the process lifetime —
-/// there is exactly one `config.toml`, unlike the per-workspace git watcher,
+/// there is exactly one `config.toml`, unlike the per-project git watcher,
 /// so there is nothing to ever tear this down for.
 pub fn start_watcher(app: &AppHandle, handle: AtlasConfigHandle) {
     let watch_dir = {

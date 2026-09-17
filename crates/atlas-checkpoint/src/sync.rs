@@ -29,7 +29,7 @@
 //!   every 401 against a server that keeps saying 401 (clock skew, key
 //!   rotation, audience mismatch) is a hot loop, not a retry.
 //! * **403** — terminal, on the push path *and* the blob path. Removed from
-//!   the Organisation, or the Workspace was deleted. Retrying forever would be
+//!   the Organisation, or the Project was deleted. Retrying forever would be
 //!   a permanent spinner; this stops and says "no longer authorized". Local
 //!   capture continues untouched.
 //! * **A single bad row** — marked failed and skipped, so one malformed record
@@ -94,8 +94,8 @@ pub enum DrainStatus {
     Offline,
     /// Rate limited. Back off and try later.
     RateLimited,
-    /// No longer authorized for this Workspace — removed from the Organisation,
-    /// or the Workspace was deleted server-side. Terminal: retrying is pointless
+    /// No longer authorized for this Project — removed from the Organisation,
+    /// or the Project was deleted server-side. Terminal: retrying is pointless
     /// and presenting it as a transient failure would be a lie. Local capture is
     /// unaffected; only the drain stops.
     NotAuthorized,
@@ -132,8 +132,8 @@ pub struct SyncConfig<'a> {
     pub org_id: String,
     /// Keys the local rows: the path they were written under.
     pub workspace_id: String,
-    /// Stamped into every artifact as `workspaceId` — the server-assigned
-    /// Workspace id (or slug fallback), never the local filesystem path, which
+    /// Stamped into every artifact as `projectId` — the server-assigned
+    /// Project id (or slug fallback), never the local filesystem path, which
     /// no teammate shares and which would leak the directory layout to the
     /// whole Organisation.
     pub wire_workspace_id: String,
@@ -152,7 +152,7 @@ impl SyncConfig<'_> {
     }
 }
 
-/// Send everything pending for a Workspace.
+/// Send everything pending for a Project.
 ///
 /// Never blocks capture: it runs on its own thread and touches the store only
 /// through short transactions. Safe to call repeatedly — the server dedupes on
@@ -541,7 +541,7 @@ fn upload_blob(
     }
 }
 
-// ── Workspace registration (ATL-86) ─────────────────────────────────────────
+// ── Project registration (ATL-86) ─────────────────────────────────────────
 
 /// Whether a Slug is free within an Organisation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -590,11 +590,11 @@ pub fn check_slug(config: &SyncConfig<'_>, slug: &str) -> SlugAvailability {
     }
 }
 
-/// Register a Workspace with an Organisation.
+/// Register a Project with an Organisation.
 ///
 /// **Server first.** The Slug is globally unique within the Organisation, so it
 /// has to be settled server-side before anything local changes — otherwise a
-/// rejected Slug leaves a half-bound Workspace behind. The identity signals
+/// rejected Slug leaves a half-bound Project behind. The identity signals
 /// travel as advisory data: the server must accept a registration with neither.
 pub fn register_workspace(
     config: &SyncConfig<'_>,
@@ -616,7 +616,7 @@ pub fn register_workspace(
             "gitUrl": git_url,
         }))
         .send()
-        .map_err(|e| Error::Storage(format!("register workspace: {e}")))?;
+        .map_err(|e| Error::Storage(format!("register project: {e}")))?;
 
     let status = response.status();
     if status == 409 {
@@ -626,7 +626,7 @@ pub fn register_workspace(
     }
     if !status.is_success() {
         return Err(Error::Storage(format!(
-            "register workspace: server returned {status}"
+            "register project: server returned {status}"
         )));
     }
 
@@ -639,27 +639,27 @@ pub fn register_workspace(
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
         })
-        .ok_or_else(|| Error::Storage("register workspace: no id in response".into()))
+        .ok_or_else(|| Error::Storage("register project: no id in response".into()))
 }
 
-/// A Workspace as the Organisation knows it.
+/// A Project as the Organisation knows it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteWorkspace {
     pub id: String,
     pub slug: String,
-    /// Advisory fingerprints, as whoever created the Workspace supplied them.
+    /// Advisory fingerprints, as whoever created the Project supplied them.
     #[serde(default)]
     pub root_commit_sha: Option<String>,
     #[serde(default)]
     pub git_url: Option<String>,
 }
 
-/// Which Workspace the popover should pre-select, and why.
+/// Which Project the popover should pre-select, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Preselection {
-    /// Exactly one Workspace matches. One click.
-    One { workspace: RemoteWorkspace, reason: MatchReason },
+    /// Exactly one Project matches. One click.
+    One { project: RemoteWorkspace, reason: MatchReason },
     /// Several matched. **Pre-select nothing** and show them all.
     ///
     /// Every repository created from the same GitHub template shares a root
@@ -687,14 +687,14 @@ pub enum MatchReason {
 /// Pure, so the rule that actually matters — ambiguity pre-selects nothing — is
 /// testable without a server.
 pub fn preselect(
-    workspaces: &[RemoteWorkspace],
+    projects: &[RemoteWorkspace],
     root_commit_sha: Option<&str>,
     git_url: Option<&str>,
 ) -> Preselection {
     // The fingerprint is tried first because it is the identity that survives a
     // fork: same root commit, different origin URL.
     if let Some(sha) = root_commit_sha.filter(|s| !s.is_empty()) {
-        let matches: Vec<RemoteWorkspace> = workspaces
+        let matches: Vec<RemoteWorkspace> = projects
             .iter()
             .filter(|w| w.root_commit_sha.as_deref() == Some(sha))
             .cloned()
@@ -702,7 +702,7 @@ pub fn preselect(
         match matches.len() {
             1 => {
                 return Preselection::One {
-                    workspace: matches[0].clone(),
+                    project: matches[0].clone(),
                     reason: MatchReason::Fingerprint,
                 }
             }
@@ -712,7 +712,7 @@ pub fn preselect(
     }
 
     if let Some(url) = git_url.filter(|u| !u.is_empty()) {
-        let matches: Vec<RemoteWorkspace> = workspaces
+        let matches: Vec<RemoteWorkspace> = projects
             .iter()
             .filter(|w| w.git_url.as_deref() == Some(url))
             .cloned()
@@ -720,7 +720,7 @@ pub fn preselect(
         match matches.len() {
             1 => {
                 return Preselection::One {
-                    workspace: matches[0].clone(),
+                    project: matches[0].clone(),
                     reason: MatchReason::OriginUrl,
                 }
             }
@@ -732,7 +732,7 @@ pub fn preselect(
     Preselection::None
 }
 
-/// Every Workspace in the Organisation the developer can reach.
+/// Every Project in the Organisation the developer can reach.
 pub fn list_workspaces(config: &SyncConfig<'_>) -> Result<Vec<RemoteWorkspace>> {
     let token = (config.token)().ok_or_else(|| Error::Storage("not signed in".into()))?;
     let client = config.client()?;
@@ -765,7 +765,7 @@ pub fn list_workspaces(config: &SyncConfig<'_>) -> Result<Vec<RemoteWorkspace>> 
 mod tests {
     use super::*;
 
-    fn workspace(id: &str, sha: Option<&str>, url: Option<&str>) -> RemoteWorkspace {
+    fn project(id: &str, sha: Option<&str>, url: Option<&str>) -> RemoteWorkspace {
         RemoteWorkspace {
             id: id.to_string(),
             slug: id.to_string(),
@@ -777,8 +777,8 @@ mod tests {
     #[test]
     fn a_single_fingerprint_match_preselects_it() {
         let all = vec![
-            workspace("atlas", Some("root-1"), Some("github.com/tryatlas/atlas")),
-            workspace("server", Some("root-2"), Some("github.com/tryatlas/server")),
+            project("atlas", Some("root-1"), Some("github.com/tryatlas/atlas")),
+            project("server", Some("root-2"), Some("github.com/tryatlas/server")),
         ];
         assert!(matches!(
             preselect(&all, Some("root-1"), None),
@@ -790,7 +790,7 @@ mod tests {
     fn a_fork_preselects_correctly_despite_a_different_origin() {
         // Same root commit, different remote — the case the fingerprint exists
         // for.
-        let all = vec![workspace("atlas", Some("root-1"), Some("github.com/tryatlas/atlas"))];
+        let all = vec![project("atlas", Some("root-1"), Some("github.com/tryatlas/atlas"))];
         let chosen = preselect(&all, Some("root-1"), Some("github.com/nafiz/atlas-fork"));
         assert!(matches!(
             chosen,
@@ -801,7 +801,7 @@ mod tests {
     #[test]
     fn an_origin_match_preselects_when_the_fingerprint_does_not() {
         // A squashed history has a different root commit but the same remote.
-        let all = vec![workspace("atlas", Some("other-root"), Some("github.com/tryatlas/atlas"))];
+        let all = vec![project("atlas", Some("other-root"), Some("github.com/tryatlas/atlas"))];
         assert!(matches!(
             preselect(&all, Some("root-1"), Some("github.com/tryatlas/atlas")),
             Preselection::One { reason: MatchReason::OriginUrl, .. }
@@ -814,8 +814,8 @@ mod tests {
         // commit, so a match is not proof. A confident wrong answer here
         // pollutes a shared timeline with foreign Sessions.
         let all = vec![
-            workspace("from-template-a", Some("template-root"), None),
-            workspace("from-template-b", Some("template-root"), None),
+            project("from-template-a", Some("template-root"), None),
+            project("from-template-b", Some("template-root"), None),
         ];
         match preselect(&all, Some("template-root"), None) {
             Preselection::Ambiguous { candidates } => {
@@ -828,7 +828,7 @@ mod tests {
     #[test]
     fn nothing_matching_preselects_nothing_but_does_not_block() {
         assert_eq!(
-            preselect(&[workspace("atlas", Some("root-1"), None)], Some("unrelated"), None),
+            preselect(&[project("atlas", Some("root-1"), None)], Some("unrelated"), None),
             Preselection::None
         );
     }
@@ -838,7 +838,7 @@ mod tests {
         // A shallow clone with no remote, or a directory that is not a
         // repository. Still connectable — the developer chooses.
         assert_eq!(
-            preselect(&[workspace("atlas", Some("root-1"), None)], None, None),
+            preselect(&[project("atlas", Some("root-1"), None)], None, None),
             Preselection::None
         );
     }

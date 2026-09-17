@@ -115,7 +115,7 @@ pub(crate) fn project_usage(
         return Ok(ProjectUsage::default());
     };
     let sessions = store
-        .sessions_for_workspace(project_path)
+        .sessions_for_project(project_path)
         .map_err(|e| e.to_string())?;
     let message_counts = store
         .message_counts(project_path)

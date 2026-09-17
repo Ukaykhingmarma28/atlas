@@ -7,7 +7,7 @@ use crate::state::{
     AppSettings, AppState, AppStateHandle, AppStatePatch, AtlasConfigHandle, ConfigStatus,
 };
 
-/// Bootstrap response: `AppState` (workspaces/recents/orgs) plus the
+/// Bootstrap response: `AppState` (projects/recents/orgs) plus the
 /// `config.toml`-sourced settings snapshot, combined into one payload so the
 /// frontend pays a single IPC round trip at boot. The two remain separately
 /// stored/versioned on the Rust side — this struct exists only at the wire

@@ -336,7 +336,7 @@ pub fn run() {
         .manage(CliLaunchState::new(initial_project))
         .manage(commands::memory_sharing::MemorySharingState::new())
         .manage(commands::shared_memory::SharedMemoryStore::new())
-        // Owns the per-Workspace session stores and the capture worker
+        // Owns the per-Project session stores and the capture worker
         // thread. Managed before `install_manager` runs its pipeline so a
         // delta arriving early finds it.
         .manage(commands::capture::CaptureState::new())

@@ -6,7 +6,7 @@
 //! produces a Checkpoint that never forms, a mangled path produces the same. So
 //! these tests assert the stored rows rather than the code path that wrote them.
 
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{canonical_name, extract_paths, resolve_path, ToolName};
 use atlas_checkpoint::{
     hash_written_content, Capture, FileWrite, SessionKey, Source, Store, ToolCallContent,
@@ -33,7 +33,7 @@ fn no_locations() -> serde_json::Value {
 
 /// A session with one prompt already recorded.
 fn started(store: &mut Store) -> String {
-    let mut capture = Capture::new(store, WorkspaceMode::Local);
+    let mut capture = Capture::new(store, ProjectMode::Local);
     capture
         .record_prompt(&key(), "Add rate limiting", 1, Some("claude-code"), None, None)
         .expect("prompt")
@@ -46,7 +46,7 @@ fn a_turn_that_reads_edits_and_runs_a_shell_command_records_three_rows() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     for (native_id, name, title, kind) in [
         ("tc-1", ToolName::Read, "Read src/limits.rs", "read"),
@@ -86,7 +86,7 @@ fn counting_tool_calls_by_kind_is_answerable_by_query_alone() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     for (native_id, name) in [
         ("a", ToolName::Read),
@@ -133,7 +133,7 @@ fn a_failed_tool_call_is_recorded_with_failed_status_rather_than_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     capture
         .record_tool_call(
@@ -162,7 +162,7 @@ fn a_later_update_refines_the_call_rather_than_duplicating_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let first = capture
         .record_tool_call(
@@ -216,7 +216,7 @@ fn locations_arriving_only_on_the_completion_update_are_kept() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     capture
         .record_tool_call(
@@ -262,7 +262,7 @@ fn an_update_with_no_locations_does_not_erase_the_ones_already_stored() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let early = serde_json::json!([{ "path": "src/lib.rs" }]);
     for locations in [&early, &no_locations()] {
@@ -297,7 +297,7 @@ fn a_secret_printed_by_a_shell_command_is_absent_from_the_stored_result() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     capture
         .record_tool_call(
@@ -329,7 +329,7 @@ fn a_secret_in_the_arguments_is_absent_too() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     capture
         .record_tool_call(
@@ -364,7 +364,7 @@ fn a_quoted_low_entropy_credential_in_json_arguments_is_redacted() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     // Assembled at runtime so the fixture never contains a greppable secret.
     let secret = ["hun", "ter2"].concat();
@@ -406,7 +406,7 @@ fn json_identifiers_in_arguments_survive_redaction() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let id_value = "xJ3kQ9vB2mZ7pL5rT8wN4cF6yH1sD0gA";
     let arguments =
@@ -440,7 +440,7 @@ fn a_json_shaped_tool_result_is_redacted_json_aware() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let secret = ["hun", "ter2"].concat();
     let result = serde_json::json!({
@@ -483,7 +483,7 @@ fn a_binary_result_is_stored_intact_marked_binary_and_round_trips_byte_identical
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let binary: Vec<u8> = vec![0x00, 0xff, 0xfe, 0x41, 0x80, 0xc3, 0x28, 0x00, 0x01];
     capture
@@ -516,7 +516,7 @@ fn a_large_result_spills_to_a_blob_and_is_referenced() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let huge = "compiling crate number one\n".repeat(20_000);
     assert!(huge.len() > SPILL_THRESHOLD_BYTES);
@@ -554,7 +554,7 @@ fn every_file_the_agent_writes_records_path_hash_and_whether_it_existed() {
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -611,7 +611,7 @@ fn existed_before_distinguishes_a_new_file_from_a_modified_one() {
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -661,7 +661,7 @@ fn a_file_written_twice_in_one_turn_records_both_and_the_link_rule_sees_the_last
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -717,7 +717,7 @@ fn a_file_touched_across_several_turns_records_one_per_turn() {
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
     let resolved = resolve_path("src/lib.rs", &root);
 
     for turn in 1..=3 {
@@ -763,7 +763,7 @@ fn a_file_created_then_deleted_is_represented_truthfully() {
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
     let resolved = resolve_path("src/scratch.rs", &root);
 
     let call = capture
@@ -821,12 +821,12 @@ fn a_file_created_then_deleted_is_represented_truthfully() {
 }
 
 #[test]
-fn a_write_outside_the_workspace_is_flagged_rather_than_recorded_as_a_broken_path() {
+fn a_write_outside_the_project_is_flagged_rather_than_recorded_as_a_broken_path() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -870,7 +870,7 @@ fn a_read_only_call_produces_a_tool_call_row_and_no_file_touch() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     capture
         .record_tool_call(
@@ -903,7 +903,7 @@ fn an_edit_shaped_call_stores_the_patch_it_applied() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -939,7 +939,7 @@ fn a_secret_inside_an_edit_patch_is_redacted_too() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -982,7 +982,7 @@ fn a_unicode_normalisation_difference_does_not_prevent_a_path_from_matching() {
     let root = dir.path().to_path_buf();
     let mut store = store_in(&root);
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let call = capture
         .record_tool_call(
@@ -1025,7 +1025,7 @@ fn a_unicode_normalisation_difference_does_not_prevent_a_path_from_matching() {
 }
 
 #[test]
-fn paths_are_stored_relative_to_the_workspace_root() {
+fn paths_are_stored_relative_to_the_project_root() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let absolute = root.join("src/lib.rs");
@@ -1041,7 +1041,7 @@ fn capture_degrades_gracefully_when_a_call_carries_no_usable_location() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     let session_id = started(&mut store);
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
 
     let arguments = serde_json::json!({ "command": "cargo test" });
     assert!(extract_paths(&[], &[], &arguments).is_empty());

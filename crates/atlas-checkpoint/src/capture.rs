@@ -96,14 +96,14 @@ pub struct TurnContent {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Records agent activity into a Workspace's store.
+/// Records agent activity into a Project's store.
 pub struct Capture<'a> {
     store: &'a mut Store,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 }
 
 impl<'a> Capture<'a> {
-    pub fn new(store: &'a mut Store, mode: WorkspaceMode) -> Self {
+    pub fn new(store: &'a mut Store, mode: ProjectMode) -> Self {
         Self { store, mode }
     }
 

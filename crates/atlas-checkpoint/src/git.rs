@@ -214,7 +214,7 @@ pub fn changed_between(repo: &Path, from: &str, to: &str) -> Option<Vec<ChangedP
 
 /// Is this directory a git repository?
 ///
-/// Git is optional: a Workspace that is not a repository captures Sessions
+/// Git is optional: a Project that is not a repository captures Sessions
 /// perfectly well and simply never produces Checkpoints.
 pub fn is_repository(repo: &Path) -> bool {
     repo.join(".git").exists() && run(repo, &["rev-parse", "--git-dir"]).is_ok()
@@ -298,7 +298,7 @@ pub fn commits_between(repo: &Path, from: Option<&str>, to: &str) -> Result<Vec<
 /// The recovery path for a cursor that can no longer be resolved — garbage
 /// collected, or rewritten away. `rev-list from..HEAD` fails outright in that
 /// case, after which detection would silently stop forever, so a bounded
-/// re-scan is what keeps a Workspace from going quietly dark. Re-processing is
+/// re-scan is what keeps a Project from going quietly dark. Re-processing is
 /// harmless because `(Session, commit)` is the idempotency key.
 pub fn recent_commits(repo: &Path, limit: usize) -> Result<Vec<String>> {
     let out = run(
@@ -592,7 +592,7 @@ pub fn blob_at(repo: &Path, sha: &str, path: &str) -> Option<Vec<u8>> {
     output.status.success().then_some(output.stdout)
 }
 
-/// Whether `HEAD` already tracks this workspace-relative path.
+/// Whether `HEAD` already tracks this project-relative path.
 ///
 /// The fallback answer for `existed_before` when the write-sampling probe
 /// cannot run before the agent's write. A filesystem `exists()` is only

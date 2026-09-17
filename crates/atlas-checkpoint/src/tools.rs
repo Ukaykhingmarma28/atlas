@@ -201,20 +201,20 @@ fn from_kind(kind: Option<&str>, arguments: &serde_json::Value) -> ToolName {
     }
 }
 
-/// A path an agent touched, resolved against the Workspace.
+/// A path an agent touched, resolved against the Project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedPath {
-    /// NFC-normalised and workspace-relative when inside the Workspace;
+    /// NFC-normalised and project-relative when inside the Project;
     /// otherwise the path as given.
     pub path: String,
-    /// The agent wrote outside the Workspace root (`../../etc/hosts`, somewhere
+    /// The agent wrote outside the Project root (`../../etc/hosts`, somewhere
     /// in `~`). Recorded rather than dropped, and flagged so the link rule knows
     /// it can never match a commit and does not count it as pending agent work
     /// forever.
     pub out_of_repo: bool,
 }
 
-/// Resolve a path the agent reported against the Workspace root.
+/// Resolve a path the agent reported against the Project root.
 ///
 /// Two normalisations, both of which exist because their failure mode is a
 /// **silently missing Checkpoint** rather than an error anyone sees:
@@ -224,16 +224,16 @@ pub struct ResolvedPath {
 ///   forms, and nothing is logged.
 /// * **Separators and `.` / `..` segments.** The link rule compares against
 ///   git's stored path, which is always `/`-separated and always minimal.
-pub fn resolve_path(raw: &str, workspace_root: &Path) -> ResolvedPath {
+pub fn resolve_path(raw: &str, project_root: &Path) -> ResolvedPath {
     let candidate = PathBuf::from(raw);
     let absolute = if candidate.is_absolute() {
         candidate
     } else {
-        workspace_root.join(candidate)
+        project_root.join(candidate)
     };
 
     let cleaned = lexically_normalize(&absolute);
-    match cleaned.strip_prefix(lexically_normalize(workspace_root)) {
+    match cleaned.strip_prefix(lexically_normalize(project_root)) {
         Ok(relative) => ResolvedPath {
             path: nfc(&to_slash(relative)),
             out_of_repo: false,
@@ -565,14 +565,14 @@ mod tests {
     // ── Path resolution ─────────────────────────────────────────────────────
 
     #[test]
-    fn an_absolute_path_inside_the_workspace_becomes_relative() {
+    fn an_absolute_path_inside_the_project_becomes_relative() {
         let resolved = resolve_path("/tmp/project/src/lib.rs", Path::new("/tmp/project"));
         assert_eq!(resolved.path, "src/lib.rs");
         assert!(!resolved.out_of_repo);
     }
 
     #[test]
-    fn a_relative_path_is_taken_as_workspace_relative() {
+    fn a_relative_path_is_taken_as_project_relative() {
         let resolved = resolve_path("src/lib.rs", Path::new("/tmp/project"));
         assert_eq!(resolved.path, "src/lib.rs");
         assert!(!resolved.out_of_repo);
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn a_path_escaping_the_workspace_is_flagged_rather_than_dropped() {
+    fn a_path_escaping_the_project_is_flagged_rather_than_dropped() {
         // Flagged, because the link rule must know it can never match a commit —
         // and dropping it would leave it looking like pending agent work forever.
         let resolved = resolve_path("../../etc/hosts", Path::new("/tmp/project"));

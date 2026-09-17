@@ -1,7 +1,7 @@
 //! Global tracing subscriber installer.
 //!
 //! Routes `tracing::info!` / `warn!` / `error!` calls from anywhere in the
-//! Rust workspace to stderr AND to a daily-rotated log file. Verbosity is
+//! Rust project to stderr AND to a daily-rotated log file. Verbosity is
 //! controlled by the `RUST_LOG` environment variable; default is
 //! `atlas=info,atlas_acp_thread=info,atlas_agent_servers=info,atlas_agent_store=info,info`.
 //!

@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS counter (
 );
 INSERT OR IGNORE INTO counter (name, value) VALUES ('seq', 0);
 
--- The outbox drain: pending rows in sequence order, per workspace.
+-- The outbox drain: pending rows in sequence order, per project.
 CREATE INDEX IF NOT EXISTS idx_session_outbox
     ON agent_session (workspace_id, sync_state);
 CREATE INDEX IF NOT EXISTS idx_message_outbox
@@ -313,7 +313,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_message_native_id
     ON agent_message (session_id, native_message_id)
     WHERE native_message_id IS NOT NULL;
 
--- Timeline ordering across a Workspace.
+-- Timeline ordering across a Project.
 CREATE INDEX IF NOT EXISTS idx_session_started
     ON agent_session (workspace_id, started_at);
 "#;
@@ -375,13 +375,13 @@ CREATE TABLE IF NOT EXISTS file_touch (
     session_id     TEXT NOT NULL REFERENCES agent_session(id) ON DELETE CASCADE,
     turn_seq       INTEGER NOT NULL,
     seq            INTEGER NOT NULL,
-    -- NFC-normalised, workspace-relative. macOS hands back NFD while git stores
+    -- NFC-normalised, project-relative. macOS hands back NFD while git stores
     -- NFC, and a byte comparison of the two fails silently.
     path           TEXT NOT NULL,
     sha256_after   TEXT,
     existed_before INTEGER NOT NULL,
     deleted        INTEGER NOT NULL DEFAULT 0,
-    -- Written outside the Workspace root. Can never match a commit, and is
+    -- Written outside the Project root. Can never match a commit, and is
     -- flagged so it is not counted as pending agent work forever.
     out_of_repo    INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL
@@ -416,7 +416,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_call_native_id
 CREATE INDEX IF NOT EXISTS idx_file_touch_path
     ON file_touch (session_id, path);
 -- …and the reverse, which is what turns an observed commit into candidate
--- Sessions without scanning every Session in the Workspace.
+-- Sessions without scanning every Session in the Project.
 CREATE INDEX IF NOT EXISTS idx_file_touch_by_path
     ON file_touch (path);
 CREATE INDEX IF NOT EXISTS idx_agent_edit_session
@@ -470,14 +470,14 @@ CREATE TABLE IF NOT EXISTS checkpoint (
     UNIQUE (session_id, commit_sha)
 );
 
--- How far the commit walk has got, per Workspace. Advanced only after the
+-- How far the commit walk has got, per Project. Advanced only after the
 -- Checkpoints for a range are durably written, so a crash mid-walk re-processes
 -- rather than skips.
 CREATE TABLE IF NOT EXISTS workspace_cursor (
     workspace_id     TEXT PRIMARY KEY,
     last_seen_commit TEXT,
     -- Set when the cursor could not be resolved and a bounded re-scan was used
-    -- instead. Surfaces through the capture-health signal, because a Workspace
+    -- instead. Surfaces through the capture-health signal, because a Project
     -- that silently stopped detecting commits is the failure this whole design
     -- exists to avoid.
     recovered        INTEGER NOT NULL DEFAULT 0,
@@ -495,9 +495,9 @@ CREATE INDEX IF NOT EXISTS idx_checkpoint_outbox
 "#;
 
 const V4: &str = r#"
--- How this Workspace is bound, and whether it is capturing at all.
+-- How this Project is bound, and whether it is capturing at all.
 --
--- One row: a store belongs to exactly one Workspace, so `id = 1` is a
+-- One row: a store belongs to exactly one Project, so `id = 1` is a
 -- singleton, enforced by the CHECK rather than by convention.
 --
 -- The identity signals are evidence, never gates. A repository with no remote,
@@ -510,10 +510,10 @@ CREATE TABLE IF NOT EXISTS binding (
     workspace_id    TEXT NOT NULL,
     root            TEXT NOT NULL,
     mode            TEXT NOT NULL DEFAULT 'local',
-    -- Set once the Workspace is registered to an Organisation.
+    -- Set once the Project is registered to an Organisation.
     slug            TEXT,
     org_id          TEXT,
-    -- Advisory. Null for a non-git Workspace, or one with no commits yet.
+    -- Advisory. Null for a non-git Project, or one with no commits yet.
     root_commit_sha TEXT,
     -- The grafted boundary of a shallow clone is not the true root, so the
     -- fingerprint it yields is stored but flagged as not authoritative.
@@ -545,7 +545,7 @@ CREATE TABLE IF NOT EXISTS import_progress (
 
 const V6: &str = r#"
 -- The Cloud bulk-import disclosure is a real gate, not ceremony: the background
--- transcript scan must refuse to import for a Cloud Workspace until the user has
+-- transcript scan must refuse to import for a Cloud Project until the user has
 -- explicitly confirmed the disclosure. Local needs no approval and the flag is
 -- set at enable time.
 ALTER TABLE binding ADD COLUMN import_approved INTEGER NOT NULL DEFAULT 0;
@@ -555,7 +555,7 @@ ALTER TABLE binding ADD COLUMN import_approved INTEGER NOT NULL DEFAULT 0;
 -- retry loop — and the capture-health signal needs to render it.
 ALTER TABLE binding ADD COLUMN drain_state TEXT NOT NULL DEFAULT 'ok';
 
--- The server-assigned Workspace id from registration. The wire identity of every
+-- The server-assigned Project id from registration. The wire identity of every
 -- artifact: without it two teammates' pushes can never converge on one timeline,
 -- and the local filesystem path would leak to the whole Organisation.
 ALTER TABLE binding ADD COLUMN remote_workspace_id TEXT;

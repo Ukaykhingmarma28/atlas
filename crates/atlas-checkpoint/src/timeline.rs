@@ -247,14 +247,14 @@ pub struct ToolTally {
     pub count: i64,
 }
 
-/// Every Session in a Workspace, newest first.
+/// Every Session in a Project, newest first.
 ///
 /// Ordered by `updated_at` rather than `started_at`: a Session resumed today is
 /// today's work, whatever day it began on.
-/// Every Session in a Workspace, newest first.
+/// Every Session in a Project, newest first.
 ///
 /// Four queries regardless of how many Sessions there are. It used to be
-/// `3n + 1` — three per row — which was invisible for one Workspace and became
+/// `3n + 1` — three per row — which was invisible for one Project and became
 /// the whole cost once the board started spanning every project in an
 /// Organisation. The totals and the Checkpoints are fetched in one pass each
 /// and matched up in memory.
@@ -265,12 +265,12 @@ pub fn sessions(store: &Store, workspace_id: &str) -> Result<Vec<SessionSummary>
     let message_time = store.message_active_seconds(workspace_id, IDLE_CAP_SECONDS)?;
 
     let mut by_session: HashMap<String, Vec<Checkpoint>> = HashMap::new();
-    for checkpoint in store.checkpoints_for_workspace(workspace_id)? {
+    for checkpoint in store.checkpoints_for_project(workspace_id)? {
         by_session.entry(checkpoint.session_id.clone()).or_default().push(checkpoint);
     }
 
     let mut out = Vec::new();
-    for session in store.sessions_for_workspace(workspace_id)? {
+    for session in store.sessions_for_project(workspace_id)? {
         let checkpoints = by_session.get(&session.id).map(Vec::as_slice).unwrap_or(&[]);
         out.push(summarize(
             &session,
@@ -291,7 +291,7 @@ pub fn sessions(store: &Store, workspace_id: &str) -> Result<Vec<SessionSummary>
 ///
 /// The composer's Usage popup asks for exactly one row while a session is
 /// live; the board's one-`GROUP BY`-per-table shape would read the whole
-/// Workspace to answer it. Five point queries over covering indexes instead.
+/// Project to answer it. Five point queries over covering indexes instead.
 pub fn session_summary(store: &Store, session_id: &str) -> Result<Option<SessionSummary>> {
     let Some(session) = store.session(session_id)? else {
         return Ok(None);
@@ -420,10 +420,10 @@ pub struct CheckpointRow {
     pub at: String,
 }
 
-/// The newest Checkpoints across a Workspace, most recent first.
+/// The newest Checkpoints across a Project, most recent first.
 ///
 /// `subject_for` is a callback for the same reason it is on [`detail`]: the read
-/// model has to work for a Workspace whose repository has moved, where the rows
+/// model has to work for a Project whose repository has moved, where the rows
 /// still render without subjects.
 pub fn recent_checkpoints(
     store: &Store,
@@ -453,7 +453,7 @@ pub fn recent_checkpoints(
 ///
 /// `subject_for` resolves a commit sha to its subject line. It is a callback
 /// rather than a git call inside this crate because the read model must work for
-/// a Workspace whose repository has moved or been deleted — in which case the
+/// a Project whose repository has moved or been deleted — in which case the
 /// Checkpoint still renders, without a subject.
 pub fn detail(
     store: &Store,

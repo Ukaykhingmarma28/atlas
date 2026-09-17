@@ -161,7 +161,7 @@ fn inflight() -> &'static Mutex<HashMap<String, SnapshotCell>> {
 
 /// Everything the Source-Control panel headers need in one IPC call.
 /// Concurrent calls for the same repo share one computation (the debounced
-/// watcher, the store's own refresh and the workspace sidebar all land here
+/// watcher, the store's own refresh and the project sidebar all land here
 /// after a commit — only the first pays).
 #[tauri::command]
 pub async fn git_snapshot(path: String) -> Result<GitSnapshot, GitErrorPayload> {

@@ -27,7 +27,7 @@ use crate::model::*;
 use crate::tools::ToolName;
 use crate::schema;
 
-/// A Workspace's recorded Sessions.
+/// A Project's recorded Sessions.
 pub struct Store {
     conn: Connection,
     blobs: BlobStore,
@@ -38,7 +38,7 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open (creating if needed) the store under a Workspace's `.atlas/`.
+    /// Open (creating if needed) the store under a Project's `.atlas/`.
     ///
     /// Takes the writer lock. If another Atlas window already holds it, this
     /// still succeeds — attached read-only — because a second window must
@@ -53,7 +53,7 @@ impl Store {
     /// The writer lock arbitrates between **processes**. A second `Store` opened
     /// inside the *same* process contends for it exactly as hard as a second
     /// window would, and loses — so a read path that used [`Store::open`] would
-    /// make the host lock itself out of its own Workspace and then report
+    /// make the host lock itself out of its own Project and then report
     /// "another Atlas window is already recording", which is both false and
     /// unactionable.
     ///
@@ -69,7 +69,7 @@ impl Store {
     /// Unlike [`Store::open`] this **creates nothing** and errors if the store
     /// does not exist. Capture is opt-in, and a read — listing Sessions, polling
     /// a status line — must never be what silently plants an `.atlas/` directory
-    /// in a Workspace the developer never enabled.
+    /// in a Project the developer never enabled.
     pub fn open_reader(atlas_dir: impl AsRef<Path>) -> Result<Self> {
         Self::open_inner(atlas_dir.as_ref(), false, false)
     }
@@ -115,7 +115,7 @@ impl Store {
         // A reader opens read-write-without-create rather than read-only: the
         // schema migration below is idempotent and must still be able to run on
         // a database written by an older build, but a *missing* database is an
-        // absent Workspace and must stay absent.
+        // absent Project and must stay absent.
         let mut flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
             | rusqlite::OpenFlags::SQLITE_OPEN_URI
             | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -139,7 +139,7 @@ impl Store {
         Ok(conn)
     }
 
-    /// Does this process own the Workspace's writer lock?
+    /// Does this process own the Project's writer lock?
     ///
     /// Capture must check this. A second window attaches read-only so the
     /// timeline still browses, but writing from both is what corrupts the
@@ -170,7 +170,7 @@ impl Store {
 
     /// Find or create the Session for an agent conversation.
     ///
-    /// Keyed on (workspace, source, native id), so a second sighting of the same
+    /// Keyed on (project, source, native id), so a second sighting of the same
     /// conversation updates rather than duplicating — which is what makes both
     /// re-processing and re-import no-ops.
     #[allow(clippy::too_many_arguments)]
@@ -183,7 +183,7 @@ impl Store {
         model: Option<&str>,
         branch: Option<&str>,
         cwd: Option<&str>,
-        mode: WorkspaceMode,
+        mode: ProjectMode,
     ) -> Result<String> {
         // `branch` is the branch at the moment of this prompt. It is COALESCEd
         // onto the EXISTING value below, so the first one seen sticks: a
@@ -279,7 +279,7 @@ impl Store {
             .optional()?)
     }
 
-    pub fn sessions_for_workspace(&self, workspace_id: &str) -> Result<Vec<Session>> {
+    pub fn sessions_for_project(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {SESSION_COLUMNS} FROM agent_session
               WHERE workspace_id = ?1 ORDER BY started_at"
@@ -642,17 +642,17 @@ impl Store {
         )?)
     }
 
-    /// Message totals for every Session in a Workspace, as `session_id -> n`.
+    /// Message totals for every Session in a Project, as `session_id -> n`.
     ///
     /// The list view needs one of these per row. Asking per Session made the
-    /// read cost `3n + 1` queries, which is invisible at one Workspace and the
+    /// read cost `3n + 1` queries, which is invisible at one Project and the
     /// dominant cost once the board spans every project in an Organisation.
     /// One `GROUP BY` over the same covering index answers all of them.
     pub fn message_counts(&self, workspace_id: &str) -> Result<HashMap<String, i64>> {
         self.counts_by_session("agent_message", workspace_id)
     }
 
-    /// Tool-call totals for every Session in a Workspace. See [`Self::message_counts`].
+    /// Tool-call totals for every Session in a Project. See [`Self::message_counts`].
     pub fn tool_call_counts_by_session(
         &self,
         workspace_id: &str,
@@ -767,7 +767,7 @@ impl Store {
         )?)
     }
 
-    /// `session_id -> COUNT(*)` for one child table, scoped to a Workspace.
+    /// `session_id -> COUNT(*)` for one child table, scoped to a Project.
     ///
     /// `table` is a hardcoded literal at both call sites, never user input.
     fn counts_by_session(&self, table: &str, workspace_id: &str) -> Result<HashMap<String, i64>> {
@@ -1077,7 +1077,7 @@ impl Store {
 
     // ── Binding ─────────────────────────────────────────────────────────────
 
-    /// How this Workspace is bound, or `None` if capture was never enabled.
+    /// How this Project is bound, or `None` if capture was never enabled.
     pub fn binding(&self) -> Result<Option<Binding>> {
         Ok(self
             .conn
@@ -1093,7 +1093,7 @@ impl Store {
                     Ok(Binding {
                         workspace_id: row.get(0)?,
                         root: row.get(1)?,
-                        mode: WorkspaceMode::parse(&mode).unwrap_or(WorkspaceMode::Local),
+                        mode: ProjectMode::parse(&mode).unwrap_or(ProjectMode::Local),
                         slug: row.get(3)?,
                         org_id: row.get(4)?,
                         root_commit_sha: row.get(5)?,
@@ -1113,14 +1113,14 @@ impl Store {
     /// Bind, or refresh an existing binding's detected signals.
     ///
     /// Idempotent by construction — the singleton row is upserted rather than
-    /// inserted, so re-opening the popover for an already-bound Workspace shows
+    /// inserted, so re-opening the popover for an already-bound Project shows
     /// its state instead of offering to create a second one. `created_at` is
     /// preserved so "capturing since" stays true.
     pub fn upsert_binding(
         &self,
         workspace_id: &str,
         root: &str,
-        mode: WorkspaceMode,
+        mode: ProjectMode,
         root_commit_sha: Option<&str>,
         fingerprint_is_shallow: bool,
         git_url: Option<&str>,
@@ -1154,7 +1154,7 @@ impl Store {
         Ok(())
     }
 
-    /// Record the Organisation this Workspace was registered to.
+    /// Record the Organisation this Project was registered to.
     ///
     /// Separate from [`Store::upsert_binding`] because it is a different event:
     /// binding is local and immediate, registration is a server round-trip that
@@ -1182,7 +1182,7 @@ impl Store {
     }
 
     /// Promote to Cloud atomically: the binding flip and the row flip commit
-    /// together, so a crash can never leave a Cloud Workspace whose history is
+    /// together, so a crash can never leave a Cloud Project whose history is
     /// stranded as `local` — invisible to the drain forever, after the user was
     /// told it would be shared.
     pub fn promote_to_cloud(
@@ -1208,7 +1208,7 @@ impl Store {
         Ok(moved)
     }
 
-    /// Was promotion interrupted? A Cloud Workspace should have no `local` rows;
+    /// Was promotion interrupted? A Cloud Project should have no `local` rows;
     /// any that exist were stranded by a crash between registration and the row
     /// flip on an older build, and flipping them is always correct.
     pub fn heal_stranded_local_rows(&self, workspace_id: &str) -> Result<i64> {
@@ -1530,13 +1530,13 @@ impl Store {
 
     /// Re-key every row after the project folder moved.
     ///
-    /// The Workspace's identity must survive renaming the repo folder: `.atlas/`
+    /// The Project's identity must survive renaming the repo folder: `.atlas/`
     /// travels with the directory, but rows written under the old absolute path
     /// would be invisible to every query keyed on the new one — the timeline,
     /// the health counts and the promotion preview would all silently read as
     /// empty. One transaction, so a crash re-keys nothing rather than half.
-    pub fn rekey_workspace(&self, old_workspace_id: &str, new_workspace_id: &str, new_root: &str) -> Result<()> {
-        if old_workspace_id == new_workspace_id {
+    pub fn rekey_project(&self, old_project_id: &str, new_project_id: &str, new_root: &str) -> Result<()> {
+        if old_project_id == new_project_id {
             return Ok(());
         }
         self.require_writer()?;
@@ -1544,15 +1544,15 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             "UPDATE agent_session SET workspace_id = ?2 WHERE workspace_id = ?1",
-            rusqlite::params![old_workspace_id, new_workspace_id],
+            rusqlite::params![old_project_id, new_project_id],
         )?;
         tx.execute(
             "UPDATE workspace_cursor SET workspace_id = ?2 WHERE workspace_id = ?1",
-            rusqlite::params![old_workspace_id, new_workspace_id],
+            rusqlite::params![old_project_id, new_project_id],
         )?;
         tx.execute(
             "UPDATE binding SET workspace_id = ?1, root = ?2, updated_at = ?3 WHERE id = 1",
-            rusqlite::params![new_workspace_id, new_root, now],
+            rusqlite::params![new_project_id, new_root, now],
         )?;
         tx.commit()?;
         Ok(())
@@ -1719,8 +1719,8 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Every Checkpoint belonging to a Workspace's Sessions.
-    pub fn checkpoints_for_workspace(&self, workspace_id: &str) -> Result<Vec<Checkpoint>> {
+    /// Every Checkpoint belonging to a Project's Sessions.
+    pub fn checkpoints_for_project(&self, workspace_id: &str) -> Result<Vec<Checkpoint>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint
               WHERE session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)
@@ -1730,7 +1730,7 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// The newest Checkpoints in this Workspace, with the title of the Session
+    /// The newest Checkpoints in this Project, with the title of the Session
     /// that produced each.
     ///
     /// The title is joined here rather than looked up per row: the picker this
@@ -1863,7 +1863,7 @@ impl Store {
         Ok(())
     }
 
-    /// How far the commit walk has got for this Workspace.
+    /// How far the commit walk has got for this Project.
     pub fn commit_cursor(&self, workspace_id: &str) -> Result<Option<String>> {
         Ok(self
             .conn
@@ -1946,7 +1946,7 @@ impl Store {
             != 0)
     }
 
-    /// Live Sessions in a Workspace, with the *unconsumed* files each left
+    /// Live Sessions in a Project, with the *unconsumed* files each left
     /// behind.
     ///
     /// Only live Sessions: an imported one has no write-time `existed_before`,
@@ -2185,7 +2185,7 @@ pub struct FileTouchInput<'a> {
     pub tool_call_id: &'a str,
     pub session_id: &'a str,
     pub turn_seq: i64,
-    /// NFC-normalised, workspace-relative.
+    /// NFC-normalised, project-relative.
     pub path: &'a str,
     pub sha256_after: Option<&'a str>,
     /// Bounded fingerprint of the written content (see `crate::sketch`), for the
@@ -2254,7 +2254,7 @@ fn row_to_file_touch(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileTouch> {
     })
 }
 
-/// Flip every `local` row of a Workspace to `pending`, on any connection-like
+/// Flip every `local` row of a Project to `pending`, on any connection-like
 /// handle — the shared body of [`Store::promote_to_cloud`],
 /// [`Store::promote_local_rows`] and [`Store::heal_stranded_local_rows`].
 fn promote_local_rows_in(conn: &Connection, workspace_id: &str) -> Result<i64> {

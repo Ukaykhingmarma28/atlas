@@ -119,7 +119,7 @@ impl Mode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncState {
-    /// Local Workspace, or not yet eligible. Parks here forever in Local mode.
+    /// Local Project, or not yet eligible. Parks here forever in Local mode.
     Local,
     /// Queued for the drain.
     Pending,
@@ -151,17 +151,17 @@ impl SyncState {
     }
 }
 
-/// How a Workspace treats what it captures.
+/// How a Project treats what it captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WorkspaceMode {
+pub enum ProjectMode {
     /// Never drains. A complete mode, not a buffer.
     Local,
     /// Drains to the Organisation.
     Cloud,
 }
 
-impl WorkspaceMode {
+impl ProjectMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Local => "local",
@@ -255,6 +255,8 @@ impl TokenTotals {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
+    /// Storage key (the `agent_session.workspace_id` column) — this is the
+    /// project's id.
     pub workspace_id: String,
     pub source: Source,
     /// The agent's own id for this conversation — the half of the identity
@@ -398,7 +400,7 @@ pub struct FileTouch {
     pub session_id: String,
     pub turn_seq: i64,
     pub seq: i64,
-    /// NFC-normalised and workspace-relative.
+    /// NFC-normalised and project-relative.
     pub path: String,
     /// Hash of what the agent produced. `None` for a deletion.
     pub sha256_after: Option<String>,
@@ -407,7 +409,7 @@ pub struct FileTouch {
     /// one only on a content match.
     pub existed_before: bool,
     pub deleted: bool,
-    /// Written outside the Workspace root, so it can never match a commit.
+    /// Written outside the Project root, so it can never match a commit.
     pub out_of_repo: bool,
     pub created_at: DateTime<Utc>,
     /// Bounded fingerprint of what the agent wrote (see `crate::sketch`).
@@ -416,14 +418,16 @@ pub struct FileTouch {
     pub sketch_after: Option<String>,
 }
 
-/// How a Workspace is bound, and whether it is capturing.
+/// How a Project is bound, and whether it is capturing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Binding {
+    /// Storage key (the `binding.workspace_id` column, and the camelCase
+    /// `workspaceId` the capture UI reads) — this is the project's id.
     pub workspace_id: String,
     pub root: String,
-    pub mode: WorkspaceMode,
-    /// The Workspace's handle within its Organisation. `None` until Cloud.
+    pub mode: ProjectMode,
+    /// The Project's handle within its Organisation. `None` until Cloud.
     pub slug: Option<String>,
     pub org_id: Option<String>,
     /// Root commit. Advisory — it pre-selects and warns, it never gates.
@@ -443,31 +447,31 @@ pub struct Binding {
     /// push. Terminal until re-registration — remembered so the drain does not
     /// retry a revoked membership every thirty seconds forever.
     pub drain_state: DrainGate,
-    /// The server-assigned Workspace id from registration. The wire identity of
-    /// every synced artifact; `None` until the Workspace is registered.
+    /// The server-assigned Project id from registration. The wire identity of
+    /// every synced artifact; `None` until the Project is registered.
     pub remote_workspace_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 impl Binding {
-    /// Is this Workspace recording right now?
+    /// Is this Project recording right now?
     pub fn is_capturing(&self) -> bool {
         self.enabled
     }
 
-    /// May the background scan import transcripts for this Workspace?
+    /// May the background scan import transcripts for this Project?
     ///
     /// Local always may — nothing leaves the machine. Cloud requires the
     /// explicit bulk-disclosure confirmation first.
     pub fn may_import(&self) -> bool {
         match self.mode {
-            WorkspaceMode::Local => true,
-            WorkspaceMode::Cloud => self.import_approved,
+            ProjectMode::Local => true,
+            ProjectMode::Cloud => self.import_approved,
         }
     }
 }
 
-/// Whether the drain is allowed to run at all for this Workspace.
+/// Whether the drain is allowed to run at all for this Project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DrainGate {
@@ -500,7 +504,7 @@ impl DrainGate {
 /// developer to type it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceDetection {
+pub struct ProjectDetection {
     pub root: String,
     pub is_git_repository: bool,
     /// True for a repository with no commits yet — `git init` and nothing else.

@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use atlas_checkpoint::artifacts::AtlasArtifact;
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
     bind, drain, Capture, DrainStatus, Role, SessionKey, Source, Store, SyncConfig, TurnContent,
     SPILL_THRESHOLD_BYTES,
@@ -199,12 +199,12 @@ fn handle(
         return;
     }
 
-    // Workspace registration.
+    // Project registration.
     if request_line.starts_with("POST /workspaces ") {
         if String::from_utf8_lossy(&body).contains("\"slug\":\"taken\"") {
             respond(&mut stream, 409, "{}");
         } else {
-            respond(&mut stream, 200, "{\"workspaceId\":\"ws-remote-1\"}");
+            respond(&mut stream, 200, "{\"projectId\":\"ws-remote-1\"}");
         }
         return;
     }
@@ -292,12 +292,12 @@ fn respond_with_header(stream: &mut TcpStream, status: u16, header: &str, body: 
 
 fn cloud_store(dir: &std::path::Path) -> Store {
     let store = Store::open(dir.join(".atlas")).expect("store opens");
-    bind(&store, WORKSPACE, dir, WorkspaceMode::Cloud).expect("binds");
+    bind(&store, WORKSPACE, dir, ProjectMode::Cloud).expect("binds");
     store
 }
 
 fn record(store: &mut Store, native_id: &str, body: &str) -> String {
-    let mut capture = Capture::new(store, WorkspaceMode::Cloud);
+    let mut capture = Capture::new(store, ProjectMode::Cloud);
     let session = capture
         .record_prompt(
             &SessionKey {
@@ -381,7 +381,7 @@ fn no_author_field_is_ever_sent() {
 }
 
 #[test]
-fn the_wire_workspace_id_is_never_the_local_row_key() {
+fn the_wire_project_id_is_never_the_local_row_key() {
     // The local row key is the project path — machine-specific, privacy-bearing,
     // and useless to the server for converging two teammates onto one timeline.
     // Every artifact must carry the registered wire identity instead.
@@ -498,7 +498,7 @@ fn a_token_expiring_mid_drain_refreshes_and_resumes() {
 
 #[test]
 fn a_permanent_authorization_failure_stops_retrying_and_says_so() {
-    // Removed from the Organisation, or the Workspace was deleted. Presenting
+    // Removed from the Organisation, or the Project was deleted. Presenting
     // that as a transient failure would be an endless spinner.
     let dir = tempfile::tempdir().unwrap();
     let mut store = cloud_store(dir.path());
@@ -870,14 +870,14 @@ fn a_429_carries_the_servers_retry_after_hint_into_the_outcome() {
 // ── Local mode never drains ─────────────────────────────────────────────────
 
 #[test]
-fn a_local_workspace_accumulates_rows_that_never_drain() {
+fn a_local_project_accumulates_rows_that_never_drain() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join(".atlas")).unwrap();
-    bind(&store, WORKSPACE, dir.path(), WorkspaceMode::Local).unwrap();
+    bind(&store, WORKSPACE, dir.path(), ProjectMode::Local).unwrap();
 
     let mut store = store;
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture
             .record_prompt(
                 &SessionKey {

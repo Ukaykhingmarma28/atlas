@@ -14,14 +14,14 @@ use tauri::{AppHandle, Manager};
 /// shape. Older payloads with a smaller `version` are loadable as long as
 /// the missing fields default to sensible values.
 ///
-/// v2 introduced the multi-workspace model (`workspaces`/`groups`/
+/// v2 introduced the multi-project model (`projects`/`groups`/
 /// `active_workspace_id`); `current_project` is retained only as a
 /// migration source for v1 payloads.
 ///
-/// v3 introduced the Organisation layer above workspaces
+/// v3 introduced the Organisation layer above projects
 /// (`organisations`/`active_organisation_id`, plus `org_id` on each
-/// workspace/group). v2 payloads are migrated by wrapping all existing
-/// workspaces in a default local "Personal" org.
+/// project/group). v2 payloads are migrated by wrapping all existing
+/// projects in a default local "Personal" org.
 ///
 /// v4 removed `AppSettings` from this struct entirely (issue #64) — user
 /// preferences now live in their own validated `config.toml`
@@ -31,9 +31,12 @@ use tauri::{AppHandle, Manager};
 /// was last in `state.json`.
 pub const SCHEMA_VERSION: u32 = 4;
 
+/// Just enough to name a project: the {name, path} pair the legacy v1
+/// `current_project` field and the recents list carry. `Project` proper is
+/// below.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Project {
+pub struct ProjectRef {
     pub name: String,
     pub path: String,
 }
@@ -47,20 +50,20 @@ pub struct RecentProject {
     pub last_opened: String,
 }
 
-/// A single open workspace = one project plus its UI state identity. The
+/// A single open project = one project plus its UI state identity. The
 /// `id` is the stable key that replaces `webview.label()` everywhere Rust
 /// state used to be keyed per-window (file index, git watcher, mention
 /// cache, recent files).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Workspace {
+pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
     #[serde(default)]
     pub group_id: Option<String>,
     /// Owning Organisation. `None` on pre-v3 payloads — `migrate()` backfills
-    /// it to the default org. The sidebar filters workspaces by the active org.
+    /// it to the default org. The sidebar filters projects by the active org.
     #[serde(default)]
     pub org_id: Option<String>,
     #[serde(default)]
@@ -70,27 +73,27 @@ pub struct Workspace {
     /// itself never syncs. `None` for local-only projects.
     #[serde(default)]
     pub git_url: Option<String>,
-    /// ISO-8601 timestamp of the last time this workspace was the active
+    /// ISO-8601 timestamp of the last time this project was the active
     /// one; used to order the sidebar / pick a fallback on close.
     #[serde(default)]
     pub last_active_at: Option<String>,
 }
 
-/// A user-defined collapsible folder that groups workspaces in the sidebar.
+/// A user-defined collapsible folder that groups projects in the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceGroup {
+pub struct ProjectGroup {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub order: u32,
-    /// Owning Organisation (mirrors `Workspace::org_id`). `None` on pre-v3
+    /// Owning Organisation (mirrors `Project::org_id`). `None` on pre-v3
     /// payloads — `migrate()` backfills it to the default org.
     #[serde(default)]
     pub org_id: Option<String>,
 }
 
-/// A top-level tenant that owns a set of workspaces (the Linear "workspace
+/// A top-level tenant that owns a set of projects (the Linear "project
 /// picker" model). Exactly one org is active per window. Local-only until the
 /// user opts into sync per org (Chrome-profile model). The shape is a superset
 /// of the server `organization` row so cloud sync is a thin adapter:
@@ -110,7 +113,7 @@ pub struct Organisation {
     /// ISO-8601 creation timestamp.
     #[serde(default)]
     pub created_at: Option<String>,
-    /// Per-org memory of the last active workspace, so an org switch restores
+    /// Per-org memory of the last active project, so an org switch restores
     /// the user where they left off. Local-only (the server has no such notion).
     #[serde(default)]
     pub active_workspace_id: Option<String>,
@@ -131,16 +134,19 @@ pub struct AppState {
     /// the frontend now derives "current project" from
     /// `active_workspace_id`. New writes leave this `None`.
     #[serde(default)]
-    pub current_project: Option<Project>,
+    pub current_project: Option<ProjectRef>,
     #[serde(default)]
     pub recent_projects: Vec<RecentProject>,
+    /// STORAGE KEYS, not concepts: `workspaces` and `active_workspace_id` are
+    /// what `state.json` has held since v2, so renaming them would need a data
+    /// migration and break every existing install. These are projects.
     #[serde(default)]
-    pub workspaces: Vec<Workspace>,
+    pub workspaces: Vec<Project>,
     #[serde(default)]
-    pub groups: Vec<WorkspaceGroup>,
+    pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
-    /// The Organisation layer above workspaces (v3). Each workspace/group is
+    /// The Organisation layer above projects (v3). Each project/group is
     /// tagged with an `org_id`; the sidebar shows only the active org's set.
     #[serde(default)]
     pub organisations: Vec<Organisation>,
@@ -181,10 +187,13 @@ fn default_version() -> u32 {
 pub struct AppStatePatch {
     #[serde(default)]
     pub recent_projects: Vec<RecentProject>,
+    /// STORAGE KEYS, not concepts: `workspaces` and `active_workspace_id` are
+    /// what `state.json` has held since v2, so renaming them would need a data
+    /// migration and break every existing install. These are projects.
     #[serde(default)]
-    pub workspaces: Vec<Workspace>,
+    pub workspaces: Vec<Project>,
     #[serde(default)]
-    pub groups: Vec<WorkspaceGroup>,
+    pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
     #[serde(default)]
@@ -244,17 +253,17 @@ impl AppState {
     /// Migrate a freshly-deserialized older payload in place. Idempotent —
     /// re-running on an already-migrated state is a no-op.
     ///
-    /// v1 → v2: if no workspaces exist yet but a legacy `current_project` is
-    /// present, synthesize a single workspace from it and make it active.
+    /// v1 → v2: if no projects exist yet but a legacy `current_project` is
+    /// present, synthesize a single project from it and make it active.
     ///
-    /// v2 → v3: if no organisations exist yet, wrap every workspace/group in a
+    /// v2 → v3: if no organisations exist yet, wrap every project/group in a
     /// default local "Personal" org and make it active.
     fn migrate(&mut self) {
         if self.workspaces.is_empty() {
             if let Some(project) = self.current_project.take() {
                 let id = uuid::Uuid::new_v4().to_string();
                 self.active_workspace_id = Some(id.clone());
-                self.workspaces.push(Workspace {
+                self.workspaces.push(Project {
                     id,
                     name: project.name,
                     path: project.path,
@@ -268,7 +277,7 @@ impl AppState {
         }
         self.current_project = None;
 
-        // v2 → v3: ensure a default Organisation owns all existing workspaces.
+        // v2 → v3: ensure a default Organisation owns all existing projects.
         if self.organisations.is_empty() {
             let org_id = uuid::Uuid::new_v4().to_string();
             self.organisations.push(Organisation {
@@ -298,7 +307,7 @@ impl AppState {
             }
         }
 
-        // Backfill org ownership on any untagged workspace/group (covers both
+        // Backfill org ownership on any untagged project/group (covers both
         // the fresh migration above and stray untagged entries — the frontend
         // can mint `org_id: null` rows during a boot race, and every render
         // surface filters strictly by org, so an untagged row would otherwise
@@ -324,7 +333,7 @@ impl AppState {
             }
             for ws in &mut self.workspaces {
                 if ws.org_id.is_none() {
-                    // A workspace inside an org-tagged group belongs to that
+                    // A project inside an org-tagged group belongs to that
                     // group's org; only truly orphaned rows get the default.
                     ws.org_id = Some(
                         ws.group_id
@@ -339,7 +348,7 @@ impl AppState {
                 tracing::info!(
                     count = backfilled,
                     default_org = %default_org,
-                    "backfilled org_id on untagged workspaces/groups"
+                    "backfilled org_id on untagged projects/groups"
                 );
             }
         }
@@ -573,7 +582,7 @@ mod tests {
             "recentProjects": [],
             "workspaces": [],
             "groups": [],
-            "activeWorkspaceId": null,
+            "activeProjectId": null,
             "organisations": [],
             "activeOrganisationId": null,
             "version": 4,

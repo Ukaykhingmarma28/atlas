@@ -40,10 +40,10 @@ struct ProjectIndex {
     root: PathBuf,
     /// When the last full `walk_project` ran (initial build, watcher-forced
     /// rewalk, or background refresh). Gates the stale-while-revalidate
-    /// rebuild in `fileindex_open_project` so rapid workspace toggles /
+    /// rebuild in `fileindex_open_project` so rapid project toggles /
     /// picker opens don't stack redundant walks.
     last_walk: Arc<parking_lot::Mutex<std::time::Instant>>,
-    /// True while a background rebuild for this workspace is in flight.
+    /// True while a background rebuild for this project is in flight.
     refreshing: Arc<std::sync::atomic::AtomicBool>,
     files: Arc<RwLock<Vec<IndexedFile>>>,
     /// Derived unique-parent-directories list, cached. Lazily built
@@ -160,9 +160,9 @@ pub async fn fileindex_open_project(
     webview: WebviewWindow,
     state: State<'_, FileIndexState>,
 ) -> Result<usize, String> {
-    // The index is keyed by the caller's workspace id (multiple workspaces now
+    // The index is keyed by the caller's project id (multiple projects now
     // live in one window). Watcher events still go to the real window, tagged
-    // with this id so the frontend can route them to the right workspace.
+    // with this id so the frontend can route them to the right project.
     let key = workspace_id.unwrap_or_else(|| webview.label().to_string());
     let window_label = webview.label().to_string();
     let root = PathBuf::from(&path);
@@ -170,7 +170,7 @@ pub async fn fileindex_open_project(
         return Err(format!("not a directory: {path}"));
     }
 
-    // Resident index → return the current count instantly (workspace
+    // Resident index → return the current count instantly (project
     // switches must stay cheap), but kick off a THROTTLED background
     // rebuild: fresh walk AND fresh watch plan, swapped in atomically when
     // done. The old unconditional early-return made every re-open a no-op,
@@ -207,7 +207,7 @@ pub async fn fileindex_open_project(
                         let fresh_count = index.files.read().len();
                         let st = app_bg.state::<FileIndexState>();
                         // Swap in the fresh index (dropping the old watcher) —
-                        // but ONLY if the workspace still holds an index for
+                        // but ONLY if the project still holds an index for
                         // this same root. If it was closed (or repointed at a
                         // different project) mid-rebuild, inserting would
                         // resurrect a torn-down watcher.
@@ -250,8 +250,8 @@ pub async fn fileindex_open_project(
     // Tell the window the index is now searchable. Mirrors the event the
     // watcher fires on file-set changes — palette + mention picker both listen
     // for it, so a re-query lands the user's first results the instant the walk
-    // finishes (no manual reopen needed). Tagged with the workspace id so the
-    // frontend ignores it unless it belongs to the active workspace.
+    // finishes (no manual reopen needed). Tagged with the project id so the
+    // frontend ignores it unless it belongs to the active project.
     let _ = app.emit_to(
         window_label.as_str(),
         "atlas:fileindex:updated",
@@ -262,12 +262,12 @@ pub async fn fileindex_open_project(
 }
 
 /// Minimum age before a re-open triggers a background rebuild. Guards rapid
-/// workspace toggles and per-keystroke ensure calls from stacking walks.
+/// project toggles and per-keystroke ensure calls from stacking walks.
 const REFRESH_MIN_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Build a complete `ProjectIndex` for `root`: full ignore-respecting walk,
 /// fresh watcher plan, debounced watcher wired to emit against
-/// (`key` = workspace id, `window_label` = emit target). Shared by the
+/// (`key` = project id, `window_label` = emit target). Shared by the
 /// first open and the background refresh path.
 async fn build_project_index(
     root: PathBuf,
@@ -280,8 +280,8 @@ async fn build_project_index(
     // path tree before returning a stream handle.
     let root_for_task = root.clone();
     let app_for_task = app.clone();
-    // Capture both: the workspace id (payload tag) and the window label (emit
-    // target) — they differ now that one window hosts many workspaces.
+    // Capture both: the project id (payload tag) and the window label (emit
+    // target) — they differ now that one window hosts many projects.
     let key_for_task = key.clone();
     let window_for_task = window_label.clone();
     let (files, folders, debouncer): (

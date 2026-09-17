@@ -317,7 +317,7 @@ fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
         Ok(Some(s)) => s,
         _ => return Vec::new(),
     };
-    let sessions = match store.sessions_for_workspace(project_path) {
+    let sessions = match store.sessions_for_project(project_path) {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!(target: "atlas::memory", "capture corpus read failed: {e}");

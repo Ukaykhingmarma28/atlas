@@ -17,7 +17,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{resolve_path, ToolName};
 use atlas_checkpoint::{
     hash_written_content, walk_new_commits, Capture, FileWrite, SessionKey, Source, Store,
@@ -68,7 +68,7 @@ impl Repo {
         Store::open(self.path().join(".atlas")).expect("store opens")
     }
     fn walk(&self, store: &Store) -> atlas_checkpoint::WalkOutcome {
-        walk_new_commits(store, &self.id(), self.path(), WorkspaceMode::Local).expect("walk")
+        walk_new_commits(store, &self.id(), self.path(), ProjectMode::Local).expect("walk")
     }
 }
 
@@ -89,7 +89,7 @@ fn agent_wrote(
         source: Source::Acp,
         native_session_id: native_id.to_string(),
     };
-    let mut capture = Capture::new(store, WorkspaceMode::Local);
+    let mut capture = Capture::new(store, ProjectMode::Local);
     let session_id = capture
         .record_prompt(&key, &format!("write {rel}"), 1, Some(plugin), Some("m"), Some(&repo.id()))
         .expect("prompt");
@@ -224,7 +224,7 @@ fn multi_file_turn_links_once() {
     // Same session, second file.
     {
         repo.write("src/two.rs", "pub fn two() {}\n");
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let call = capture
             .record_tool_call(
                 &sid,
