@@ -26,7 +26,7 @@ import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
 import { spacesHandlers } from "../fixtures/spaces";
 import { terminalHandlers } from "../fixtures/terminal";
-import { themeImportHandlers } from "../fixtures/theme-import";
+import { importedUserThemes, themeImportHandlers } from "../fixtures/theme-import";
 import { appState } from "../project";
 
 const nothing = () => null;
@@ -37,19 +37,23 @@ const builtinThemes = builtinThemesJson as Theme[];
 
 export const baseHandlers: MockHandlers = {
   // ── theme ──────────────────────────────────────────────────────────────
+  // Built-ins plus whatever this session has imported, which is how the real
+  // catalog reads `~/.config/atlas/themes` on top of `include_str!`.
   list_themes: (): ThemeSummary[] =>
-    builtinThemes.map((theme) => ({
+    [...builtinThemes, ...importedUserThemes].map((theme) => ({
       id: theme.id,
       name: theme.name,
       author: theme.author,
       license: theme.license,
       hasDark: Boolean(theme.dark),
       hasLight: Boolean(theme.light),
-      builtIn: true,
+      builtIn: !importedUserThemes.includes(theme),
       warnings: theme.warnings ?? [],
     })),
   get_theme: (a): Theme => {
-    const theme = builtinThemes.find((candidate) => candidate.id === a.id);
+    const theme = [...importedUserThemes, ...builtinThemes].find(
+      (candidate) => candidate.id === a.id,
+    );
     if (!theme) throw new Error(`theme '${String(a.id)}' was not found`);
     return theme;
   },

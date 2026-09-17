@@ -355,6 +355,13 @@ function previewFor(args: { text?: string; url?: string; path?: string }): Theme
   return SHADCN;
 }
 
+/** Rust labels a preview with where the bytes came from; so does the mock. */
+function originOf(args: { text?: string; url?: string; path?: string }): string {
+  if (args.path) return args.path.split("/").pop() ?? args.path;
+  if (args.url) return args.url;
+  return "pasted text";
+}
+
 function exportOf(id: string): ShadcnExport {
   const theme = builtins.find((candidate) => candidate.id === id) ?? builtins[0];
   const dropped =
@@ -420,9 +427,36 @@ function countFamilies(theme: Theme): Record<string, number> {
   return out;
 }
 
+/**
+ * Themes committed during this session.
+ *
+ * A committed import has to become a theme the picker lists and `get_theme`
+ * answers for, or "Add theme" leaves the app on the fallback and the one thing
+ * the panel exists to do cannot be checked in the browser. `scenarios/base.ts`
+ * merges this over the built-ins, so the sequence a user actually performs —
+ * convert, name, add, watch the app repaint — works end to end on the mock.
+ *
+ * Session-only, like every other mock write.
+ */
+export const importedUserThemes: Theme[] = [];
+
+function install(toml: string, id: string, name: string): string {
+  // The preview's TOML is a stub here, so the theme is taken from the snapshot
+  // the same preview was built from, then renamed the way Rust renames it.
+  const source = imported.find((theme) => toml.includes(`id = "${theme.id}"`)) ?? imported[0];
+  const installed: Theme = { ...source, id, name: name.trim() || source.name };
+  const existing = importedUserThemes.findIndex((theme) => theme.id === id);
+  if (existing >= 0) importedUserThemes[existing] = installed;
+  else importedUserThemes.push(installed);
+  return `~/.config/atlas/themes/${id}.toml`;
+}
+
 export const themeImportHandlers: MockHandlers = {
-  preview_theme_import: ({ input }): ThemeImportPreview =>
-    previewFor((input ?? {}) as { text?: string; url?: string; path?: string }),
-  commit_theme_import: ({ id }): string => `~/.config/atlas/themes/${String(id)}.toml`,
+  preview_theme_import: ({ input }): ThemeImportPreview => {
+    const args = (input ?? {}) as { text?: string; url?: string; path?: string };
+    return { ...previewFor(args), origin: originOf(args) };
+  },
+  commit_theme_import: ({ toml, id, name }): string =>
+    install(String(toml), String(id), String(name)),
   export_theme_shadcn: ({ id }): ShadcnExport => exportOf(String(id)),
 };
