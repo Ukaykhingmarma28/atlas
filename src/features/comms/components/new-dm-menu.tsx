@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Check, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -78,83 +78,88 @@ export function NewDmMenu() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Hint label="New message">
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-          >
-            <Plus size={11} />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+            >
+              <Plus size={11} />
+            </button>
+          }
+        />
       </Hint>
       <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
-        >
-          <div className="flex max-h-[min(380px,55vh)] w-[260px] flex-col">
-            <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
-              <Search size={11} className="shrink-0 text-text-tertiary" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search people…"
-                aria-label="Search people"
-                className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
-              />
-            </div>
+        <Popover.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
+          <Popover.Popup
+            style={{
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+            }}
+            className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
+          >
+            <div className="flex max-h-[min(380px,55vh)] w-[260px] flex-col">
+              <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
+                <Search size={11} className="shrink-0 text-text-tertiary" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search people…"
+                  aria-label="Search people"
+                  className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+                />
+              </div>
 
-            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto py-1">
-              {candidates.length === 0 && (
-                <div className="py-5 text-center text-[11px] text-text-ghost">
-                  {memberList.length <= 1 ? "Nobody else is here yet." : "Nobody matches."}
-                </div>
-              )}
-              {candidates.map((m) => {
-                const selected = picked.has(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => toggle(m.id)}
-                    className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-[var(--bg-hover)] cursor-pointer"
-                  >
-                    <CommsAvatar member={m} size={20} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] text-text-primary">{m.name}</span>
-                      <span className="block truncate text-[9.5px] text-text-ghost">{m.email}</span>
-                    </span>
-                    <Check
-                      size={12}
-                      className={cn(
-                        "shrink-0 transition-opacity",
-                        selected ? "text-text-primary opacity-100" : "opacity-0",
-                      )}
-                    />
-                  </button>
-                );
-              })}
-            </div>
+              <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto py-1">
+                {candidates.length === 0 && (
+                  <div className="py-5 text-center text-[11px] text-text-ghost">
+                    {memberList.length <= 1 ? "Nobody else is here yet." : "Nobody matches."}
+                  </div>
+                )}
+                {candidates.map((m) => {
+                  const selected = picked.has(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => toggle(m.id)}
+                      className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-[var(--bg-hover)] cursor-pointer"
+                    >
+                      <CommsAvatar member={m} size={20} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] text-text-primary">
+                          {m.name}
+                        </span>
+                        <span className="block truncate text-[9.5px] text-text-ghost">
+                          {m.email}
+                        </span>
+                      </span>
+                      <Check
+                        size={12}
+                        className={cn(
+                          "shrink-0 transition-opacity",
+                          selected ? "text-text-primary opacity-100" : "opacity-0",
+                        )}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
 
-            <div className="shrink-0 border-t border-white/5 p-2">
-              <button
-                type="button"
-                disabled={picked.size === 0 || pending}
-                onClick={() => void start()}
-                className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-white/10 text-[11px] font-medium text-text-primary transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
-              >
-                {pending && <Loader2 size={11} className="animate-spin" />}
-                Message
-              </button>
+              <div className="shrink-0 border-t border-white/5 p-2">
+                <button
+                  type="button"
+                  disabled={picked.size === 0 || pending}
+                  onClick={() => void start()}
+                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-white/10 text-[11px] font-medium text-text-primary transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
+                >
+                  {pending && <Loader2 size={11} className="animate-spin" />}
+                  Message
+                </button>
+              </div>
             </div>
-          </div>
-        </Popover.Content>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

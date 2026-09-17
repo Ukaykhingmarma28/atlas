@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import {
   ExternalLink,
   ChevronRight,
@@ -475,47 +475,45 @@ function LangFilterPopover({
   return (
     <Popover.Root>
       <HintItem label="Filter by language">
-        <Popover.Trigger asChild>
-          <button
-            className={cn(
-              "p-1 rounded transition-colors cursor-pointer",
-              active ? "text-primary bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
-            )}
-          >
-            <Code size={11} />
-          </button>
-        </Popover.Trigger>
-      </HintItem>
-      <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="w-[140px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1"
-          style={{ zIndex: 99999 }}
-        >
-          <button
-            onClick={() => onSelect(null)}
-            className={cn(
-              "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
-              !active ? "text-primary" : "text-text-secondary",
-            )}
-          >
-            All languages
-          </button>
-          {languages.map((lang) => (
+        <Popover.Trigger
+          render={
             <button
-              key={lang}
-              onClick={() => onSelect(active === lang ? null : lang)}
               className={cn(
-                "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
-                active === lang ? "text-primary" : "text-text-secondary",
+                "p-1 rounded transition-colors cursor-pointer",
+                active ? "text-primary bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
               )}
             >
-              {lang}
+              <Code size={11} />
             </button>
-          ))}
-        </Popover.Content>
+          }
+        />
+      </HintItem>
+      <Popover.Portal>
+        <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="w-[140px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
+            <button
+              onClick={() => onSelect(null)}
+              className={cn(
+                "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
+                !active ? "text-primary" : "text-text-secondary",
+              )}
+            >
+              All languages
+            </button>
+            {languages.map((lang) => (
+              <button
+                key={lang}
+                onClick={() => onSelect(active === lang ? null : lang)}
+                className={cn(
+                  "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
+                  active === lang ? "text-primary" : "text-text-secondary",
+                )}
+              >
+                {lang}
+              </button>
+            ))}
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -533,52 +531,50 @@ function FileListPopover({
   return (
     <Popover.Root onOpenChange={() => setSearch("")}>
       <HintItem label="All changed files">
-        <Popover.Trigger asChild>
-          <button className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer">
-            <MoreHorizontal size={10} />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer">
+              <MoreHorizontal size={10} />
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="w-[280px] max-h-[300px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col"
-          style={{ zIndex: 99999 }}
-        >
-          <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border-default shrink-0">
-            <Search size={10} className="text-text-tertiary shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search files…"
-              className="flex-1 bg-transparent outline-none text-[10px] text-text-primary placeholder:text-text-tertiary"
-              autoFocus
-              onKeyDown={(e) => e.stopPropagation()}
-            />
-          </div>
-          <div className="overflow-y-auto py-1 hide-scrollbar">
-            {filtered.map((file) => (
-              <button
-                key={file.path}
-                onClick={() => onOpen?.(file.path)}
-                className="w-full flex items-center gap-2 px-3 h-[26px] text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none font-mono"
-              >
-                <span className="truncate flex-1 text-left">{file.path}</span>
-                <span className="shrink-0">
-                  <span className="text-success">+{file.additions}</span>{" "}
-                  <span className="text-error">-{file.deletions}</span>
-                </span>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <div className="px-3 py-2 text-[10px] text-text-tertiary text-center">
-                No files found
-              </div>
-            )}
-          </div>
-        </Popover.Content>
+        <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="w-[280px] max-h-[300px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
+            <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border-default shrink-0">
+              <Search size={10} className="text-text-tertiary shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search files…"
+                className="flex-1 bg-transparent outline-none text-[10px] text-text-primary placeholder:text-text-tertiary"
+                autoFocus
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="overflow-y-auto py-1 hide-scrollbar">
+              {filtered.map((file) => (
+                <button
+                  key={file.path}
+                  onClick={() => onOpen?.(file.path)}
+                  className="w-full flex items-center gap-2 px-3 h-[26px] text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none font-mono"
+                >
+                  <span className="truncate flex-1 text-left">{file.path}</span>
+                  <span className="shrink-0">
+                    <span className="text-success">+{file.additions}</span>{" "}
+                    <span className="text-error">-{file.deletions}</span>
+                  </span>
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-[10px] text-text-tertiary text-center">
+                  No files found
+                </div>
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

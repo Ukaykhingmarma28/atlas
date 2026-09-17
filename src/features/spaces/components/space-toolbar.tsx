@@ -1,4 +1,4 @@
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import {
   Circle,
   Diamond,
@@ -203,57 +203,62 @@ function DockMenu({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <DockHint label="Dock position">
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            className={cn(
-              "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
-              open
-                ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
-                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
-            )}
-          >
-            <Settings2 size={16} />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              className={cn(
+                "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
+                open
+                  ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
+                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+              )}
+            >
+              <Settings2 size={16} />
+            </button>
+          }
+        />
       </DockHint>
       <Popover.Portal>
-        <Popover.Content
+        <Popover.Positioner
+          style={{ zIndex: 9999 }}
           side={horizontal ? "top" : dock === "right" ? "left" : "right"}
           align="end"
           sideOffset={8}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
         >
-          <div className="flex w-[168px] flex-col py-1">
-            <div className="px-3 pb-1 pt-1 text-[9.5px] font-semibold uppercase tracking-wider text-text-tertiary">
-              Dock position
+          <Popover.Popup
+            style={{
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+            }}
+            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
+          >
+            <div className="flex w-[168px] flex-col py-1">
+              <div className="px-3 pb-1 pt-1 text-[9.5px] font-semibold uppercase tracking-wider text-text-tertiary">
+                Dock position
+              </div>
+              {DOCKS.map((d) => (
+                <button
+                  key={d.dock}
+                  type="button"
+                  onClick={() => {
+                    onDock(d.dock);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
+                    dock === d.dock ? "text-text-primary" : "text-text-secondary",
+                  )}
+                >
+                  <d.icon size={12} className="shrink-0 text-text-tertiary" />
+                  {d.label}
+                  {dock === d.dock && (
+                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
+                  )}
+                </button>
+              ))}
             </div>
-            {DOCKS.map((d) => (
-              <button
-                key={d.dock}
-                type="button"
-                onClick={() => {
-                  onDock(d.dock);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
-                  dock === d.dock ? "text-text-primary" : "text-text-secondary",
-                )}
-              >
-                <d.icon size={12} className="shrink-0 text-text-tertiary" />
-                {d.label}
-                {dock === d.dock && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
-                )}
-              </button>
-            ))}
-          </div>
-        </Popover.Content>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

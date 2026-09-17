@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Copy,
@@ -647,36 +647,40 @@ function HoverActions({
       >
         <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
           <HintItem label="React">
-            <Popover.Trigger asChild>
-              <button type="button" className={actionBtn}>
-                <SmilePlus size={12} />
-              </button>
-            </Popover.Trigger>
+            <Popover.Trigger
+              render={
+                <button type="button" className={actionBtn}>
+                  <SmilePlus size={12} />
+                </button>
+              }
+            />
           </HintItem>
           <Popover.Portal>
-            <Popover.Content
+            <Popover.Positioner
+              className="z-[var(--z-modal)]"
               side="top"
               align="end"
               sideOffset={6}
-              className="z-[var(--z-modal)] w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] origin-[var(--radix-popover-content-transform-origin)] animate-scale-in"
             >
-              <div className="grid grid-cols-7 gap-0.5">
-                {/* Built FROM the allowlist, so no button here can be refused. */}
-                {CHAT_REACTION_EMOJI.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => {
-                      onReact(e);
-                      setPickerOpen(false);
-                    }}
-                    className="flex h-7 w-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-bg-hover cursor-pointer"
-                  >
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </Popover.Content>
+              <Popover.Popup className="w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
+                <div className="grid grid-cols-7 gap-0.5">
+                  {/* Built FROM the allowlist, so no button here can be refused. */}
+                  {CHAT_REACTION_EMOJI.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => {
+                        onReact(e);
+                        setPickerOpen(false);
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-bg-hover cursor-pointer"
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </Popover.Popup>
+            </Popover.Positioner>
           </Popover.Portal>
         </Popover.Root>
 

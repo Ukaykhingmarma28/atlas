@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import {
   ArrowRight,
   ArrowUp,
@@ -283,92 +283,92 @@ function ThreadPicker({
         if (!v) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
-        >
-          <span className="truncate">{title}</span>
-          <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-[var(--z-max)] flex max-h-[380px] w-[280px] origin-[var(--radix-popover-content-transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
-            <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find a chat…"
-              spellCheck={false}
-              autoFocus
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-            />
-          </div>
-
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
-            {filtered.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[11.5px] text-[var(--text-tertiary)]">
-                {metas.length === 0 ? "No chats yet." : "No match."}
-              </p>
-            ) : (
-              filtered.map((meta) => (
-                <div
-                  key={meta.id}
-                  className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelect(meta.id);
-                      setOpen(false);
-                    }}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-                  >
-                    <Check
-                      size={11}
-                      className={cn(
-                        "shrink-0",
-                        meta.id === activeId ? "text-[var(--text-primary)]" : "opacity-0",
-                      )}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-secondary)]">
-                      {meta.title}
-                    </span>
-                    <span className="shrink-0 font-mono text-[10px] text-[var(--text-ghost)]">
-                      {timeAgo(meta.updatedAt)}
-                    </span>
-                  </button>
-                  <Hint label="Delete chat">
-                    <button
-                      type="button"
-                      onClick={() => onDelete(meta.id)}
-                      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all hover:text-[var(--status-error)] group-hover:opacity-100 focus-visible:opacity-100"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </Hint>
-                </div>
-              ))
-            )}
-          </div>
-
+      <Popover.Trigger
+        render={
           <button
             type="button"
-            onClick={() => {
-              onNew();
-              setOpen(false);
-            }}
-            className="flex h-8 shrink-0 cursor-pointer items-center gap-2 border-t border-[var(--border-default)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
           >
-            <Plus size={12} />
-            New chat
+            <span className="truncate">{title}</span>
+            <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)]" />
           </button>
-        </Popover.Content>
+        }
+      />
+      <Popover.Portal>
+        <Popover.Positioner className="z-[var(--z-max)]" align="start" sideOffset={6}>
+          <Popover.Popup className="flex max-h-[380px] w-[280px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
+              <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Find a chat…"
+                spellCheck={false}
+                autoFocus
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              />
+            </div>
+
+            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
+              {filtered.length === 0 ? (
+                <p className="px-2 py-3 text-center text-[11.5px] text-[var(--text-tertiary)]">
+                  {metas.length === 0 ? "No chats yet." : "No match."}
+                </p>
+              ) : (
+                filtered.map((meta) => (
+                  <div
+                    key={meta.id}
+                    className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(meta.id);
+                        setOpen(false);
+                      }}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                    >
+                      <Check
+                        size={11}
+                        className={cn(
+                          "shrink-0",
+                          meta.id === activeId ? "text-[var(--text-primary)]" : "opacity-0",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-secondary)]">
+                        {meta.title}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-ghost)]">
+                        {timeAgo(meta.updatedAt)}
+                      </span>
+                    </button>
+                    <Hint label="Delete chat">
+                      <button
+                        type="button"
+                        onClick={() => onDelete(meta.id)}
+                        className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all hover:text-[var(--status-error)] group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </Hint>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onNew();
+                setOpen(false);
+              }}
+              className="flex h-8 shrink-0 cursor-pointer items-center gap-2 border-t border-[var(--border-default)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <Plus size={12} />
+              New chat
+            </button>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

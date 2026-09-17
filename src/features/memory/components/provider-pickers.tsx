@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Loader2, ChevronDown, Search, Check } from "lucide-react";
 import { ProviderLogo } from "@/components/provider-logo";
 import { providerById } from "@/features/settings/lib/providers";
@@ -87,55 +87,54 @@ function ModelCombo({
         if (!o) setQ("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
-          {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
-          <span className="max-w-[160px] truncate font-mono">
-            {value || (loading ? "Loading…" : "Select model")}
-          </span>
-          <ChevronDown size={11} className="text-text-tertiary" />
-        </button>
-      </Popover.Trigger>
+      <Popover.Trigger
+        render={
+          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
+            {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
+            <span className="max-w-[160px] truncate font-mono">
+              {value || (loading ? "Loading…" : "Select model")}
+            </span>
+            <ChevronDown size={11} className="text-text-tertiary" />
+          </button>
+        }
+      />
       <Popover.Portal>
-        <Popover.Content
-          align="start"
-          side="top"
-          sideOffset={6}
-          className="z-[9999] w-[260px] overflow-hidden rounded-md border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)]"
-        >
-          <div className="flex items-center gap-1.5 h-8 border-b border-border-subtle px-2.5">
-            <Search size={12} className="shrink-0 text-text-tertiary" />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search models…"
-              spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
-            />
-          </div>
-          <div className="max-h-[300px] overflow-y-auto hide-scrollbar py-1">
-            {filtered.length === 0 ? (
-              <div className="px-2.5 py-2 text-[11px] text-text-tertiary">
-                {loading ? "Loading…" : "No models"}
-              </div>
-            ) : (
-              filtered.map((id) => (
-                <button
-                  key={id}
-                  onClick={() => {
-                    onSelect(id);
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-2.5 h-[26px] text-left text-[11px] font-mono text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-                >
-                  <span className="flex-1 truncate">{id}</span>
-                  {id === value && <Check size={11} className="text-text-primary" />}
-                </button>
-              ))
-            )}
-          </div>
-        </Popover.Content>
+        <Popover.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
+          <Popover.Popup className="w-[260px] overflow-hidden rounded-md border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)]">
+            <div className="flex items-center gap-1.5 h-8 border-b border-border-subtle px-2.5">
+              <Search size={12} className="shrink-0 text-text-tertiary" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search models…"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+              />
+            </div>
+            <div className="max-h-[300px] overflow-y-auto hide-scrollbar py-1">
+              {filtered.length === 0 ? (
+                <div className="px-2.5 py-2 text-[11px] text-text-tertiary">
+                  {loading ? "Loading…" : "No models"}
+                </div>
+              ) : (
+                filtered.map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      onSelect(id);
+                      setOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-2.5 h-[26px] text-left text-[11px] font-mono text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                  >
+                    <span className="flex-1 truncate">{id}</span>
+                    {id === value && <Check size={11} className="text-text-primary" />}
+                  </button>
+                ))
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

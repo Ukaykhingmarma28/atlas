@@ -9,7 +9,7 @@
 //! coding-model catalog).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Check, ChevronDown, Loader2, RefreshCw, Search, Star } from "lucide-react";
 import { ProviderLogo } from "@/components/provider-logo";
 import {
@@ -228,127 +228,126 @@ export function ProviderModelPills({
         if (!o) setQ("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button className={PILL_CLASS} title="Model — click to choose provider + model">
-          <ProviderLogo id={provider || viewProvider} size={13} />
-          {loadingModels && (
-            <Loader2 size={10} className="animate-spin text-[var(--text-tertiary)]" />
-          )}
-          <span className="max-w-[150px] truncate font-mono">
-            {model || (loadingModels ? "Loading…" : "Select model")}
-          </span>
-          <ChevronDown size={11} className="text-[var(--text-tertiary)]" />
-        </button>
-      </Popover.Trigger>
+      <Popover.Trigger
+        render={
+          <button className={PILL_CLASS} title="Model — click to choose provider + model">
+            <ProviderLogo id={provider || viewProvider} size={13} />
+            {loadingModels && (
+              <Loader2 size={10} className="animate-spin text-[var(--text-tertiary)]" />
+            )}
+            <span className="max-w-[150px] truncate font-mono">
+              {model || (loadingModels ? "Loading…" : "Select model")}
+            </span>
+            <ChevronDown size={11} className="text-[var(--text-tertiary)]" />
+          </button>
+        }
+      />
       <Popover.Portal>
-        <Popover.Content
-          align="start"
-          side="top"
-          sideOffset={6}
-          className="z-[9999] w-[360px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
-        >
-          <div className="flex max-h-[420px]">
-            {/* Provider rail — ALWAYS shown, lists every chat provider. Ones
-                without a key are dimmed; selecting one shows the setup prompt. */}
-            <div className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-[var(--border-subtle)] py-1.5 min-h-0 overflow-y-auto hide-scrollbar">
-              {CHAT_PROVIDERS.map((p) => {
-                const keyed = hasKey(p.id);
-                return (
-                  <Hint key={p.id} label={`${p.name}${keyed ? "" : " — no API key"}`} side="left">
-                    <button
-                      onClick={() => setViewProvider(p.id)}
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-md transition-all",
-                        p.id === viewProvider
-                          ? "bg-[var(--bg-selected,var(--bg-hover))]"
-                          : keyed
-                            ? "opacity-60 hover:opacity-100 hover:bg-[var(--bg-hover)]"
-                            : "opacity-25 hover:opacity-60 hover:bg-[var(--bg-hover)]",
-                      )}
-                    >
-                      <ProviderLogo id={p.id} size={15} />
-                    </button>
-                  </Hint>
-                );
-              })}
-            </div>
-
-            <div className="flex min-w-0 flex-1 flex-col min-h-0">
-              {hasKey(viewProvider) ? (
-                <>
-                  {/* Search + pricing refresh */}
-                  <div className="flex items-center gap-1.5 h-8 border-b border-[var(--border-subtle)] px-2.5">
-                    <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-                    <input
-                      autoFocus
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      placeholder="Search models…"
-                      spellCheck={false}
-                      className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-                    />
-                    <Hint label="Refresh model pricing (models.dev)" side="top">
+        <Popover.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
+          <Popover.Popup className="w-[360px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
+            <div className="flex max-h-[420px]">
+              {/* Provider rail — ALWAYS shown, lists every chat provider. Ones
+                  without a key are dimmed; selecting one shows the setup prompt. */}
+              <div className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-[var(--border-subtle)] py-1.5 min-h-0 overflow-y-auto hide-scrollbar">
+                {CHAT_PROVIDERS.map((p) => {
+                  const keyed = hasKey(p.id);
+                  return (
+                    <Hint key={p.id} label={`${p.name}${keyed ? "" : " — no API key"}`} side="left">
                       <button
-                        onClick={() => void refreshPricing()}
-                        disabled={pricingLoading}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] cursor-pointer disabled:cursor-default"
+                        onClick={() => setViewProvider(p.id)}
+                        className={cn(
+                          "flex h-7 w-7 items-center justify-center rounded-md transition-all",
+                          p.id === viewProvider
+                            ? "bg-[var(--bg-selected,var(--bg-hover))]"
+                            : keyed
+                              ? "opacity-60 hover:opacity-100 hover:bg-[var(--bg-hover)]"
+                              : "opacity-25 hover:opacity-60 hover:bg-[var(--bg-hover)]",
+                        )}
                       >
-                        <RefreshCw size={11} className={cn(pricingLoading && "animate-spin")} />
+                        <ProviderLogo id={p.id} size={15} />
                       </button>
                     </Hint>
-                  </div>
+                  );
+                })}
+              </div>
 
-                  {/* Model list (name + $/1M) — fills the column height so the
-                      popover has no dead "footer" gap below it. */}
-                  <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar py-1">
-                    {pinned.length === 0 && rest.length === 0 ? (
-                      <div className="px-2.5 py-2 text-[11px] text-[var(--text-tertiary)]">
-                        {loadingModels ? "Loading…" : "No models"}
-                      </div>
-                    ) : (
-                      <>
-                        {pinned.length > 0 && (
-                          <>
-                            <div className="px-2.5 pt-1 pb-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
-                              Recommended for coding
-                            </div>
-                            {pinned.map((id) => renderModel(id, true))}
-                            {rest.length > 0 && (
-                              <div className="my-1 h-px bg-[var(--border-subtle)]" />
-                            )}
-                          </>
-                        )}
-                        {rest.map((id) => renderModel(id, false))}
-                      </>
-                    )}
+              <div className="flex min-w-0 flex-1 flex-col min-h-0">
+                {hasKey(viewProvider) ? (
+                  <>
+                    {/* Search + pricing refresh */}
+                    <div className="flex items-center gap-1.5 h-8 border-b border-[var(--border-subtle)] px-2.5">
+                      <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                      <input
+                        autoFocus
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="Search models…"
+                        spellCheck={false}
+                        className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                      />
+                      <Hint label="Refresh model pricing (models.dev)" side="top">
+                        <button
+                          onClick={() => void refreshPricing()}
+                          disabled={pricingLoading}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] cursor-pointer disabled:cursor-default"
+                        >
+                          <RefreshCw size={11} className={cn(pricingLoading && "animate-spin")} />
+                        </button>
+                      </Hint>
+                    </div>
+
+                    {/* Model list (name + $/1M) — fills the column height so the
+                        popover has no dead "footer" gap below it. */}
+                    <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar py-1">
+                      {pinned.length === 0 && rest.length === 0 ? (
+                        <div className="px-2.5 py-2 text-[11px] text-[var(--text-tertiary)]">
+                          {loadingModels ? "Loading…" : "No models"}
+                        </div>
+                      ) : (
+                        <>
+                          {pinned.length > 0 && (
+                            <>
+                              <div className="px-2.5 pt-1 pb-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                                Recommended for coding
+                              </div>
+                              {pinned.map((id) => renderModel(id, true))}
+                              {rest.length > 0 && (
+                                <div className="my-1 h-px bg-[var(--border-subtle)]" />
+                              )}
+                            </>
+                          )}
+                          {rest.map((id) => renderModel(id, false))}
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  /* No key for the browsed provider — prompt to set one up. */
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+                    <ProviderLogo id={viewProvider} size={22} />
+                    <div className="text-[12px] text-[var(--text-secondary)]">
+                      No API key for{" "}
+                      <span className="text-[var(--text-primary)]">
+                        {providerById(viewProvider)?.name ?? viewProvider}
+                      </span>
+                    </div>
+                    <button
+                      onClick={openApiKeys}
+                      className="rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                    >
+                      Set up key in Settings
+                    </button>
                   </div>
-                </>
-              ) : (
-                /* No key for the browsed provider — prompt to set one up. */
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center">
-                  <ProviderLogo id={viewProvider} size={22} />
-                  <div className="text-[12px] text-[var(--text-secondary)]">
-                    No API key for{" "}
-                    <span className="text-[var(--text-primary)]">
-                      {providerById(viewProvider)?.name ?? viewProvider}
-                    </span>
-                  </div>
-                  <button
-                    onClick={openApiKeys}
-                    className="rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-                  >
-                    Set up key in Settings
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* The "Compress Tokens" toggle stood here. It drove the Cersei
-              runtime's RTK tool-output compressor, which the ported engine has
-              no counterpart for (#54, D8) — so the control is gone rather than
-              left switching nothing. */}
-        </Popover.Content>
+            {/* The "Compress Tokens" toggle stood here. It drove the Cersei
+                runtime's RTK tool-output compressor, which the ported engine has
+                no counterpart for (#54, D8) — so the control is gone rather than
+                left switching nothing. */}
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

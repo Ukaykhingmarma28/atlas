@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
@@ -333,52 +333,58 @@ function ProjectLabel({
           the one control in the app that always names the project it would
           apply to — which the Timeline board, spanning every project, cannot. */}
       <Popover.Root open={captureOpen} onOpenChange={setCaptureOpen}>
-        <Popover.Trigger asChild>
-          <button
-            // `leading-none` is what actually centres the capture dot: with the
-            // inherited line-height the label spans set a taller line box than
-            // the dot, and `items-center` centred the dot against *that* — which
-            // is why it sat visibly high.
-            className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-[#303030] bg-[#0C0C0C] px-2 text-[11px] leading-none font-medium transition-colors hover:bg-[#1f1f1f]"
-            title={health?.summary ?? "Session capture"}
-            aria-label={health?.summary ?? "Session capture"}
-          >
-            {orgName && (
-              <>
-                <span className="min-w-0 shrink truncate text-[var(--text-tertiary)]">
-                  {orgName}
-                </span>
-                <span className="shrink-0 text-[var(--text-tertiary)] opacity-50">/</span>
-              </>
-            )}
-            <span className="min-w-0 truncate text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
-              {name}
-            </span>
-            {/* Only once capture is on. An always-present grey dot on every
+        <Popover.Trigger
+          render={
+            <button
+              // `leading-none` is what actually centres the capture dot: with the
+              // inherited line-height the label spans set a taller line box than
+              // the dot, and `items-center` centred the dot against *that* — which
+              // is why it sat visibly high.
+              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-[#303030] bg-[#0C0C0C] px-2 text-[11px] leading-none font-medium transition-colors hover:bg-[#1f1f1f]"
+              title={health?.summary ?? "Session capture"}
+              aria-label={health?.summary ?? "Session capture"}
+            >
+              {orgName && (
+                <>
+                  <span className="min-w-0 shrink truncate text-[var(--text-tertiary)]">
+                    {orgName}
+                  </span>
+                  <span className="shrink-0 text-[var(--text-tertiary)] opacity-50">/</span>
+                </>
+              )}
+              <span className="min-w-0 truncate text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
+                {name}
+              </span>
+              {/* Only once capture is on. An always-present grey dot on every
                 project reads as a defect indicator rather than a state. */}
-            {binding?.enabled && <StatusDot binding={binding} health={health} />}
-          </button>
-        </Popover.Trigger>
+              {binding?.enabled && <StatusDot binding={binding} health={health} />}
+            </button>
+          }
+        />
         {path && (
           <Popover.Portal>
-            <Popover.Content
+            <Popover.Positioner
+              className="z-[var(--z-max)]"
               side="bottom"
               align="start"
               sideOffset={6}
-              // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
-              // here: this wrapper would hold a transform for the duration, and
-              // a transformed ancestor becomes the backdrop root — which
-              // flattens the panel's blur while it plays. Exit stays here
-              // because Radix needs the animation on the element it unmounts.
-              className="z-[var(--z-max)] origin-[var(--radix-popover-content-transform-origin)] data-[state=closed]:animate-scale-out"
             >
-              <CapturePopover
-                projectPath={path}
-                health={health}
-                onChanged={readCapture}
-                onClose={() => setCaptureOpen(false)}
-              />
-            </Popover.Content>
+              <Popover.Popup
+                // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
+                // here: this wrapper would hold a transform for the duration, and
+                // a transformed ancestor becomes the backdrop root — which
+                // flattens the panel's blur while it plays. Exit stays here
+                // because Base UI holds the popup mounted through it.
+                className="origin-[var(--transform-origin)] data-closed:animate-scale-out"
+              >
+                <CapturePopover
+                  projectPath={path}
+                  health={health}
+                  onChanged={readCapture}
+                  onClose={() => setCaptureOpen(false)}
+                />
+              </Popover.Popup>
+            </Popover.Positioner>
           </Popover.Portal>
         )}
       </Popover.Root>

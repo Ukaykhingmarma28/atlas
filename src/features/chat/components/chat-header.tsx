@@ -18,7 +18,7 @@
 
 import { forwardRef, memo, useState } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   ChevronDown,
@@ -125,56 +125,57 @@ function ChatHeaderImpl({
 
           {/* Session picker */}
           <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-            <Popover.Trigger asChild>
-              {/* Same outline as the circles, just pill-shaped. Bare text on a
-                bare header gave no hint that the title was a control at all. */}
-              <button
-                type="button"
-                className={cn(
-                  "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
-                  CONTROL_H,
-                  OUTLINE,
-                  "text-[12px] font-medium leading-none text-[var(--text-primary)]",
-                  "cursor-pointer outline-none",
-                )}
-                title="Switch session"
-              >
-                <span className="truncate">{title}</span>
-                <ChevronDown
-                  size={12}
+            <Popover.Trigger
+              render={
+                /* Same outline as the circles, just pill-shaped. Bare text on a
+                bare header gave no hint that the title was a control at all. */
+                <button
+                  type="button"
                   className={cn(
-                    "shrink-0 text-[var(--text-tertiary)] transition-transform",
-                    pickerOpen && "rotate-180",
+                    "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
+                    CONTROL_H,
+                    OUTLINE,
+                    "text-[12px] font-medium leading-none text-[var(--text-primary)]",
+                    "cursor-pointer outline-none",
                   )}
-                />
-              </button>
-            </Popover.Trigger>
+                  title="Switch session"
+                >
+                  <span className="truncate">{title}</span>
+                  <ChevronDown
+                    size={12}
+                    className={cn(
+                      "shrink-0 text-[var(--text-tertiary)] transition-transform",
+                      pickerOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+              }
+            />
             <Popover.Portal>
-              <Popover.Content
-                align="start"
-                sideOffset={6}
-                style={{
-                  zIndex: 9999,
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-                  // No `will-change` — it would isolate the layer and flatten the blur.
-                }}
-                className={cn(
-                  "overflow-hidden rounded-xl select-none",
-                  // Border, translucent fill, blur AND the enter animation all on
-                  // THIS element. Splitting them isolates the layer and kills the
-                  // backdrop blur (see the feedback panel for the same rule).
-                  "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
-                  // Grows out of its trigger's top-left corner.
-                  "atlas-panel-in-tl",
-                )}
-              >
-                {/* The sidebar's own search input is the combo box's filter. */}
-                <SessionSidebar
-                  tabId={tabId}
-                  variant="dropdown"
-                  onOpened={() => setPickerOpen(false)}
-                />
-              </Popover.Content>
+              <Popover.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={6}>
+                <Popover.Popup
+                  style={{
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+                    // No `will-change` — it would isolate the layer and flatten the blur.
+                  }}
+                  className={cn(
+                    "overflow-hidden rounded-xl select-none",
+                    // Border, translucent fill, blur AND the enter animation all on
+                    // THIS element. Splitting them isolates the layer and kills the
+                    // backdrop blur (see the feedback panel for the same rule).
+                    "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+                    // Grows out of its trigger's top-left corner.
+                    "atlas-panel-in-tl",
+                  )}
+                >
+                  {/* The sidebar's own search input is the combo box's filter. */}
+                  <SessionSidebar
+                    tabId={tabId}
+                    variant="dropdown"
+                    onOpened={() => setPickerOpen(false)}
+                  />
+                </Popover.Popup>
+              </Popover.Positioner>
             </Popover.Portal>
           </Popover.Root>
 
@@ -290,8 +291,8 @@ function ChatHeaderImpl({
  * read as a bar floating above the button rather than as light on its rim. The
  * effect does not survive the shape; it was removed rather than tuned.
  *
- * `forwardRef` is required: Radix's `asChild` triggers clone this element and
- * hand it a ref, and without one the dropdown has nothing to anchor to.
+ * `forwardRef` is required: a trigger's `render` clones this element and hands
+ * it a ref, and without one the dropdown has nothing to anchor to.
  */
 const HeaderCircleButton = forwardRef<
   HTMLButtonElement,

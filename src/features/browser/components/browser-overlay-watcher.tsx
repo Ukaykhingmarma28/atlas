@@ -8,19 +8,21 @@ import { useBrowserOverlayStore } from "../stores/browser-overlay-store";
  *
  * One MutationObserver on document.body, active ONLY while a browser embed is
  * live (gated on embedCount), rAF-coalesced. Catches:
- *   [role="dialog"]        — all Radix Dialogs + Popovers (palettes, modals…)
- *   [role="menu"]          — all Radix DropdownMenu + ContextMenu
+ *   [role="dialog"]        — all Dialogs + Popovers (palettes, modals…)
+ *   [role="menu"]          — all dropdown and context menus
+ *   [data-open][data-side] — any Base UI Positioner/Popup that is anchored
  *   [data-hint-overlay]    — the hint-nav overlay
- *   [data-browser-suppress]— opt-in marker for custom (non-Radix) overlays
+ *   [data-browser-suppress]— opt-in marker for custom overlays
  * Deliberately NOT tooltips, so hovering a control doesn't flash the browser.
- * Radix tooltips render inside a popper wrapper too, so wrappers holding one
- * are skipped. (Filtered in JS: `:has()` is missing from older WKWebViews,
- * and an unsupported selector would make querySelector throw.)
+ * A tooltip is anchored too, so its Positioner matches `[data-open][data-side]`
+ * — elements that ARE or CONTAIN a tooltip popup are skipped. (Filtered in JS:
+ * `:has()` is missing from older WKWebViews, and an unsupported selector would
+ * make querySelector throw.)
  */
 const TOOLTIP_SELECTOR = '[role="tooltip"], [data-slot="tooltip-content"]';
 
 const OVERLAY_SELECTOR =
-  '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [data-hint-overlay], [data-browser-suppress], [data-overlay], [data-modal], [data-state="open"][data-side]';
+  '[role="dialog"], [role="menu"], [role="listbox"], [data-hint-overlay], [data-browser-suppress], [data-overlay], [data-modal], [data-open][data-side]';
 
 export function BrowserOverlayWatcher() {
   const embedCount = useBrowserOverlayStore.use.embedCount();
@@ -54,7 +56,7 @@ export function BrowserOverlayWatcher() {
       attributes: true,
       attributeFilter: [
         "role",
-        "data-state",
+        "data-open",
         "style",
         "data-browser-suppress",
         "data-overlay",

@@ -44,14 +44,16 @@ export function HeaderDock({ children }: { children: React.ReactNode }) {
 /**
  * The class an icon control wears inside a {@link HeaderDock}.
  *
- * Exported rather than wrapped in a component because Radix owns the popover
- * triggers via `asChild` and hands them the class directly — including the
- * `data-[state=open]` styling that keeps a button lit while its menu is up.
+ * Exported rather than wrapped in a component because the popover triggers own
+ * these buttons through `render` and hand them the class directly — including
+ * the `data-popup-open` styling that keeps a button lit while its menu is up.
+ * (Base UI marks an open trigger `data-popup-open`; Radix used
+ * `data-[state=open]`.)
  */
 export const DOCK_TRIGGER =
   "relative flex size-5 cursor-pointer items-center justify-center rounded-full outline-none " +
   "text-[var(--text-tertiary)] transition-colors duration-150 hover:bg-white/[0.08] hover:text-[var(--text-primary)] " +
-  "data-[state=open]:bg-white/[0.12] data-[state=open]:text-[var(--text-primary)]";
+  "data-popup-open:bg-white/[0.12] data-popup-open:text-[var(--text-primary)]";
 
 /** Applied on top of {@link DOCK_TRIGGER} when the control's mode is on. */
 export const DOCK_ACTIVE = "bg-white/[0.12] text-[var(--text-primary)]";

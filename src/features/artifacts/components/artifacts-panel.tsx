@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Filter, PanelLeft, RefreshCw, Search, X } from "lucide-react";
@@ -878,94 +878,95 @@ function BoardFilter({
       <HintItem
         label={active ? `${active} filter${active === 1 ? "" : "s"} active` : "Filter sessions"}
       >
-        <Popover.Trigger asChild>
-          <button type="button" className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}>
-            <Filter size={13} />
-            {/* A filter that is ON has to say so from the collapsed state — the
+        <Popover.Trigger
+          render={
+            <button type="button" className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}>
+              <Filter size={13} />
+              {/* A filter that is ON has to say so from the collapsed state — the
                 values are inside the menu, and a funnel that looks identical
                 either way hides an empty board behind a control nobody checks. */}
-            {active > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-[9px] font-medium text-[var(--text-inverse)]">
-                {active}
-              </span>
-            )}
-          </button>
-        </Popover.Trigger>
+              {active > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-[9px] font-medium text-[var(--text-inverse)]">
+                  {active}
+                </span>
+              )}
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="z-[var(--z-max)] flex max-h-[420px] w-[262px] origin-[var(--radix-popover-content-transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          {active > 0 && (
-            <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
-              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-                {active} active
-              </span>
-              <Popover.Close asChild>
-                <button
-                  type="button"
-                  onClick={onClear}
-                  className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)]"
-                >
-                  Clear all
-                </button>
-              </Popover.Close>
-            </div>
-          )}
-
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search projects…"
-            className="h-[28px] shrink-0 border-b border-[var(--border-default)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-          />
-
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
-            <GroupLabel>Project</GroupLabel>
-            <Option
-              label="All projects"
-              count={projects.length}
-              selected={projectFilter === null}
-              onSelect={() => onProjectFilter(null)}
-            />
-            {shownProjects.map((p) => (
-              <Option
-                key={p.path}
-                label={p.name}
-                title={p.path}
-                selected={projectFilter === p.path}
-                onSelect={() => onProjectFilter(projectFilter === p.path ? null : p.path)}
-                lead={<GitDot summary={summaries[p.path]} />}
-                sub={<BranchLine summary={summaries[p.path]} className="mt-0.5" />}
-                trail={<NumStatPill summary={summaries[p.path]} />}
-              />
-            ))}
-            {shownProjects.length === 0 && (
-              <p className="px-2 py-2 text-center text-[11px] text-[var(--text-tertiary)]">
-                No project matches “{query.trim()}”.
-              </p>
+        <Popover.Positioner className="z-[var(--z-max)]" side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="flex max-h-[420px] w-[262px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
+            {active > 0 && (
+              <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
+                <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                  {active} active
+                </span>
+                <Popover.Close
+                  render={
+                    <button
+                      type="button"
+                      onClick={onClear}
+                      className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)]"
+                    >
+                      Clear all
+                    </button>
+                  }
+                />
+              </div>
             )}
 
-            {otherGroups.map((group) => (
-              <div key={group.key}>
-                <GroupLabel>{group.label}</GroupLabel>
-                {group.options.map((o) => (
-                  <Option
-                    key={`${group.key}:${o.value ?? "all"}`}
-                    label={o.label}
-                    count={o.count}
-                    selected={selection[group.key] === o.value}
-                    onSelect={() => onSelect(group.key, o.value)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </Popover.Content>
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search projects…"
+              className="h-[28px] shrink-0 border-b border-[var(--border-default)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+            />
+
+            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
+              <GroupLabel>Project</GroupLabel>
+              <Option
+                label="All projects"
+                count={projects.length}
+                selected={projectFilter === null}
+                onSelect={() => onProjectFilter(null)}
+              />
+              {shownProjects.map((p) => (
+                <Option
+                  key={p.path}
+                  label={p.name}
+                  title={p.path}
+                  selected={projectFilter === p.path}
+                  onSelect={() => onProjectFilter(projectFilter === p.path ? null : p.path)}
+                  lead={<GitDot summary={summaries[p.path]} />}
+                  sub={<BranchLine summary={summaries[p.path]} className="mt-0.5" />}
+                  trail={<NumStatPill summary={summaries[p.path]} />}
+                />
+              ))}
+              {shownProjects.length === 0 && (
+                <p className="px-2 py-2 text-center text-[11px] text-[var(--text-tertiary)]">
+                  No project matches “{query.trim()}”.
+                </p>
+              )}
+
+              {otherGroups.map((group) => (
+                <div key={group.key}>
+                  <GroupLabel>{group.label}</GroupLabel>
+                  {group.options.map((o) => (
+                    <Option
+                      key={`${group.key}:${o.value ?? "all"}`}
+                      label={o.label}
+                      count={o.count}
+                      selected={selection[group.key] === o.value}
+                      onSelect={() => onSelect(group.key, o.value)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

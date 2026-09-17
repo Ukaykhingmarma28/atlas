@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Copy, Undo2, GitGraph, RotateCcw, Sparkles, Tag, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -184,32 +184,30 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <HintItem label="Reset current branch to this commit">
-        <Popover.Trigger asChild>
-          <button
-            className={cn(
-              "p-1 rounded hover:bg-bg-hover",
-              open ? "text-text-primary" : "text-text-tertiary hover:text-text-primary",
-            )}
-          >
-            <RotateCcw size={12} />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              className={cn(
+                "p-1 rounded hover:bg-bg-hover",
+                open ? "text-text-primary" : "text-text-tertiary hover:text-text-primary",
+              )}
+            >
+              <RotateCcw size={12} />
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="w-[200px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1"
-          style={{ zIndex: 99999 }}
-        >
-          <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-            Reset to here
-          </div>
-          {item("soft", "Soft", "keep changes staged")}
-          {item("mixed", "Mixed", "keep changes unstaged")}
-          {item("hard", "Hard", "discard all changes")}
-        </Popover.Content>
+        <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="w-[200px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
+            <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+              Reset to here
+            </div>
+            {item("soft", "Soft", "keep changes staged")}
+            {item("mixed", "Mixed", "keep changes unstaged")}
+            {item("hard", "Hard", "discard all changes")}
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

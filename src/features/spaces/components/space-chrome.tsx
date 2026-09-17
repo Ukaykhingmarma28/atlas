@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useReactFlow, useViewport } from "@xyflow/react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import {
   ChevronDown,
   Crosshair,
@@ -119,54 +119,55 @@ export function SpaceHeaderPill({
       {/* The page name is the shorthand page selector — the dock is the long
           way round, and a canvas is usually two clicks from another page. */}
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            title="Switch page"
-            className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-bg-hover"
-          >
-            <SyncDot sync={sync} />
-            <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
-              {active?.name || "Space"}
-            </span>
-            <ChevronDown size={11} className="shrink-0 text-text-tertiary" />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              title="Switch page"
+              className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-bg-hover"
+            >
+              <SyncDot sync={sync} />
+              <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
+                {active?.name || "Space"}
+              </span>
+              <ChevronDown size={11} className="shrink-0 text-text-tertiary" />
+            </button>
+          }
+        />
         <Popover.Portal>
-          <Popover.Content
-            align="start"
-            sideOffset={6}
-            style={{
-              zIndex: 9999,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-          >
-            <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
-              {selectable.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    onOpenPage(p.id);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
-                    p.id === activePageId ? "text-text-primary" : "text-text-secondary",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
-                  {p.id === activePageId && (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />
-                  )}
-                </button>
-              ))}
-              {selectable.length === 0 && (
-                <div className="px-3 py-2 text-[10px] text-text-tertiary">No pages yet.</div>
-              )}
-            </div>
-          </Popover.Content>
+          <Popover.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={6}>
+            <Popover.Popup
+              style={{
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+              }}
+              className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
+            >
+              <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
+                {selectable.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      onOpenPage(p.id);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
+                      p.id === activePageId ? "text-text-primary" : "text-text-secondary",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
+                    {p.id === activePageId && (
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />
+                    )}
+                  </button>
+                ))}
+                {selectable.length === 0 && (
+                  <div className="px-3 py-2 text-[10px] text-text-tertiary">No pages yet.</div>
+                )}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
 
@@ -405,40 +406,41 @@ export function SpaceActionPill({
 
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Hint label="Export canvas">
-          <Popover.Trigger asChild>
-            <button
-              type="button"
-              disabled={!!busy}
-              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
-            >
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-            </button>
-          </Popover.Trigger>
+          <Popover.Trigger
+            render={
+              <button
+                type="button"
+                disabled={!!busy}
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
+              >
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              </button>
+            }
+          />
         </Hint>
         <Popover.Portal>
-          <Popover.Content
-            align="end"
-            sideOffset={6}
-            style={{
-              zIndex: 9999,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-          >
-            <div className="flex w-[140px] flex-col py-1">
-              {FORMATS.map((f) => (
-                <button
-                  key={f.format}
-                  type="button"
-                  onClick={() => void run(f.format)}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
-                >
-                  <f.icon size={12} className="shrink-0 text-text-tertiary" />
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </Popover.Content>
+          <Popover.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
+            <Popover.Popup
+              style={{
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+              }}
+              className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
+            >
+              <div className="flex w-[140px] flex-col py-1">
+                {FORMATS.map((f) => (
+                  <button
+                    key={f.format}
+                    type="button"
+                    onClick={() => void run(f.format)}
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
+                  >
+                    <f.icon size={12} className="shrink-0 text-text-tertiary" />
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
     </div>

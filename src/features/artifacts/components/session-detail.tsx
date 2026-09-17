@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Brain,
@@ -1857,80 +1857,82 @@ function CheckpointJump({
         if (!v) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-raised)] px-3 text-left text-[12.5px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-        >
-          <span className="flex-1">Jump to</span>
-          <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-        </button>
-      </Popover.Trigger>
+      <Popover.Trigger
+        render={
+          <button
+            type="button"
+            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-raised)] px-3 text-left text-[12.5px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+          >
+            <span className="flex-1">Jump to</span>
+            <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+          </button>
+        }
+      />
       <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-[var(--z-max)] flex max-h-[320px] w-[var(--radix-popover-trigger-width)] origin-[var(--radix-popover-content-transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/95 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          {/* The search only appears when there is enough to search. */}
-          {checkpoints.length > 4 && (
-            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
-              <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find a commit…"
-                spellCheck={false}
-                autoFocus
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-              />
-            </div>
-          )}
-
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
-            {matches.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[11.5px] text-[var(--text-tertiary)]">
-                No match.
-              </p>
-            ) : (
-              matches.map((checkpoint, i) => {
-                const sha = checkpoint.commitSha ?? "";
-                const changed = checkpoint.insertions + checkpoint.deletions;
-                return (
-                  <button
-                    key={checkpoint.id}
-                    type="button"
-                    onClick={() => {
-                      onJump(checkpoint.id);
-                      setOpen(false);
-                    }}
-                    className="flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
-                  >
-                    <span className="truncate text-[12.5px] text-[var(--text-secondary)]">
-                      {checkpoint.commitSubject ?? (
-                        <span className="text-[var(--text-tertiary)]">Subject unavailable</span>
-                      )}
-                    </span>
-                    <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--text-ghost)]">
-                      <span>
-                        #{ordinal.get(checkpoint.id) ?? i + 1} · {sha.slice(0, 7)}
-                      </span>
-                      {changed > 0 && (
-                        <>
-                          <span>·</span>
-                          <span className="text-[var(--stat-added)]">+{checkpoint.insertions}</span>
-                          <span className="text-[var(--stat-removed)]">
-                            −{checkpoint.deletions}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </button>
-                );
-              })
+        <Popover.Positioner className="z-[var(--z-max)]" align="start" sideOffset={6}>
+          <Popover.Popup className="flex max-h-[320px] w-[var(--anchor-width)] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/95 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+            {/* The search only appears when there is enough to search. */}
+            {checkpoints.length > 4 && (
+              <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
+                <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Find a commit…"
+                  spellCheck={false}
+                  autoFocus
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                />
+              </div>
             )}
-          </div>
-        </Popover.Content>
+
+            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
+              {matches.length === 0 ? (
+                <p className="px-2 py-3 text-center text-[11.5px] text-[var(--text-tertiary)]">
+                  No match.
+                </p>
+              ) : (
+                matches.map((checkpoint, i) => {
+                  const sha = checkpoint.commitSha ?? "";
+                  const changed = checkpoint.insertions + checkpoint.deletions;
+                  return (
+                    <button
+                      key={checkpoint.id}
+                      type="button"
+                      onClick={() => {
+                        onJump(checkpoint.id);
+                        setOpen(false);
+                      }}
+                      className="flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                    >
+                      <span className="truncate text-[12.5px] text-[var(--text-secondary)]">
+                        {checkpoint.commitSubject ?? (
+                          <span className="text-[var(--text-tertiary)]">Subject unavailable</span>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--text-ghost)]">
+                        <span>
+                          #{ordinal.get(checkpoint.id) ?? i + 1} · {sha.slice(0, 7)}
+                        </span>
+                        {changed > 0 && (
+                          <>
+                            <span>·</span>
+                            <span className="text-[var(--stat-added)]">
+                              +{checkpoint.insertions}
+                            </span>
+                            <span className="text-[var(--stat-removed)]">
+                              −{checkpoint.deletions}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

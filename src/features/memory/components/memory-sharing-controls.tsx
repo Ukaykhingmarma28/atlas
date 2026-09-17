@@ -6,7 +6,7 @@
 // Local-disabled) plus the reused ProviderModelSelector when mode === provider.
 
 import { useEffect, useMemo } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Share2, SlidersHorizontal, FileText, Server, Cpu, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
@@ -68,76 +68,75 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
       {/* Summarizer settings popover */}
       <Popover.Root>
         <Hint label="Handoff summarizer settings">
-          <Popover.Trigger asChild>
-            <button
-              type="button"
-              className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
-            >
-              <SlidersHorizontal size={12} />
-            </button>
-          </Popover.Trigger>
+          <Popover.Trigger
+            render={
+              <button
+                type="button"
+                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+              >
+                <SlidersHorizontal size={12} />
+              </button>
+            }
+          />
         </Hint>
         <Popover.Portal>
-          <Popover.Content
-            align="end"
-            side="bottom"
-            sideOffset={6}
-            className="z-[9999] w-[300px] rounded-md border border-border-default bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]"
-          >
-            <div className="eyebrow mb-2">Recent-session handoff</div>
-            <p className="mb-2.5 text-[11px] leading-snug text-text-tertiary">
-              How the previous session's tail is summarized before it is injected into the next
-              agent.
-            </p>
-
-            <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
-              <ModeSeg
-                active={pref.mode === "raw"}
-                label="Raw"
-                icon={FileText}
-                enabled
-                onClick={() => setMode("raw")}
-              />
-              <ModeSeg
-                active={pref.mode === "provider"}
-                label="Provider"
-                icon={Server}
-                enabled={providerReady}
-                onClick={() => setMode("provider")}
-              />
-              <ModeSeg
-                active={pref.mode === "local"}
-                label="Local"
-                icon={Cpu}
-                enabled={false}
-                onClick={() => {}}
-              />
-            </div>
-
-            {pref.mode === "provider" && (
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                {providerReady ? (
-                  <ProviderModelSelector
-                    configured={configured}
-                    provider={pref.provider}
-                    model={pref.model}
-                    onProvider={(provider) => void setPref({ ...pref, provider, model: "" })}
-                    onModel={(model) => void setPref({ ...pref, model })}
-                  />
-                ) : (
-                  <p className="text-[11px] text-text-tertiary">
-                    Add a provider key in Settings to use provider summaries.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {pref.mode === "raw" && (
-              <p className="mt-2.5 text-[11px] text-text-tertiary">
-                Injecting the last turns verbatim — no model call, no latency.
+          <Popover.Positioner className="z-[9999]" align="end" side="bottom" sideOffset={6}>
+            <Popover.Popup className="w-[300px] rounded-md border border-border-default bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]">
+              <div className="eyebrow mb-2">Recent-session handoff</div>
+              <p className="mb-2.5 text-[11px] leading-snug text-text-tertiary">
+                How the previous session's tail is summarized before it is injected into the next
+                agent.
               </p>
-            )}
-          </Popover.Content>
+
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
+                <ModeSeg
+                  active={pref.mode === "raw"}
+                  label="Raw"
+                  icon={FileText}
+                  enabled
+                  onClick={() => setMode("raw")}
+                />
+                <ModeSeg
+                  active={pref.mode === "provider"}
+                  label="Provider"
+                  icon={Server}
+                  enabled={providerReady}
+                  onClick={() => setMode("provider")}
+                />
+                <ModeSeg
+                  active={pref.mode === "local"}
+                  label="Local"
+                  icon={Cpu}
+                  enabled={false}
+                  onClick={() => {}}
+                />
+              </div>
+
+              {pref.mode === "provider" && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {providerReady ? (
+                    <ProviderModelSelector
+                      configured={configured}
+                      provider={pref.provider}
+                      model={pref.model}
+                      onProvider={(provider) => void setPref({ ...pref, provider, model: "" })}
+                      onModel={(model) => void setPref({ ...pref, model })}
+                    />
+                  ) : (
+                    <p className="text-[11px] text-text-tertiary">
+                      Add a provider key in Settings to use provider summaries.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {pref.mode === "raw" && (
+                <p className="mt-2.5 text-[11px] text-text-tertiary">
+                  Injecting the last turns verbatim — no model call, no latency.
+                </p>
+              )}
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
     </div>

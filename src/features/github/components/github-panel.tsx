@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import {
   Check,
@@ -126,6 +126,8 @@ function BranchPicker({
       : list;
   }, [branches, filter, repo.branch]);
 
+  const filterRef = useRef<HTMLInputElement>(null);
+
   return (
     <Popover.Root
       open={open}
@@ -134,83 +136,84 @@ function BranchPicker({
         if (!o) setFilter("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          disabled={busy}
-          className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary cursor-pointer disabled:cursor-default"
-          title="Switch to another remote branch"
-        >
-          <GitBranch size={9} />
-          <span className="truncate max-w-[140px]">{repo.branch ?? "detached"}</span>
-          <ChevronDown size={9} />
-        </button>
-      </Popover.Trigger>
+      <Popover.Trigger
+        render={
+          <button
+            type="button"
+            disabled={busy}
+            className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary cursor-pointer disabled:cursor-default"
+            title="Switch to another remote branch"
+          >
+            <GitBranch size={9} />
+            <span className="truncate max-w-[140px]">{repo.branch ?? "detached"}</span>
+            <ChevronDown size={9} />
+          </button>
+        }
+      />
       <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={4}
-          className="atlas-menu-pop z-[9999] w-[260px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)]"
-          onOpenAutoFocus={(e) => {
-            // Land in the filter box, not on the first row.
-            e.preventDefault();
-            (e.currentTarget as HTMLElement).querySelector("input")?.focus();
-          }}
-        >
-          <div className="flex items-center gap-1.5 h-[30px] px-2.5 border-b border-[var(--border-default)]">
-            <Search size={10} className="shrink-0 text-text-tertiary" />
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && shown[0]) onSwitch(shown[0]);
-              }}
-              placeholder="Filter branches"
-              className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
-            />
-            {branches ? (
-              <span className="text-[9px] tabular-nums text-text-tertiary">{shown.length}</span>
-            ) : null}
-          </div>
-          <div className="max-h-[260px] overflow-y-auto hide-scrollbar py-1">
-            {error ? (
-              <div className="px-3 py-1.5 text-[10px] text-error">{error}</div>
-            ) : !branches ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] text-text-tertiary">
-                <Loader2 size={10} className="animate-spin" /> Fetching branches
-              </div>
-            ) : shown.length === 0 ? (
-              <div className="px-3 py-1.5 text-[10px] text-text-tertiary">
-                {filter ? "No branch matches" : "No branches"}
-              </div>
-            ) : (
-              shown.map((b) => {
-                const current = b === repo.branch;
-                return (
-                  <button
-                    key={b}
-                    type="button"
-                    role="option"
-                    aria-selected={current}
-                    onClick={() => {
-                      setOpen(false);
-                      if (!current) onSwitch(b);
-                    }}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 h-[26px] text-[11px] text-left cursor-pointer outline-none",
-                      current
-                        ? "text-[var(--text-primary)]"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--bg-hover)]",
-                    )}
-                  >
-                    <span className="truncate flex-1">{b}</span>
-                    {current ? <Check size={11} className="text-[var(--primary)]" /> : null}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </Popover.Content>
+        <Popover.Positioner className="z-[9999]" align="start" sideOffset={4}>
+          <Popover.Popup
+            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)]"
+            // Land in the filter box, not on the first row. Base UI's
+            // initialFocus replaces Radix's onOpenAutoFocus + preventDefault.
+            initialFocus={filterRef}
+          >
+            <div className="flex items-center gap-1.5 h-[30px] px-2.5 border-b border-[var(--border-default)]">
+              <Search size={10} className="shrink-0 text-text-tertiary" />
+              <input
+                ref={filterRef}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && shown[0]) onSwitch(shown[0]);
+                }}
+                placeholder="Filter branches"
+                className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+              />
+              {branches ? (
+                <span className="text-[9px] tabular-nums text-text-tertiary">{shown.length}</span>
+              ) : null}
+            </div>
+            <div className="max-h-[260px] overflow-y-auto hide-scrollbar py-1">
+              {error ? (
+                <div className="px-3 py-1.5 text-[10px] text-error">{error}</div>
+              ) : !branches ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] text-text-tertiary">
+                  <Loader2 size={10} className="animate-spin" /> Fetching branches
+                </div>
+              ) : shown.length === 0 ? (
+                <div className="px-3 py-1.5 text-[10px] text-text-tertiary">
+                  {filter ? "No branch matches" : "No branches"}
+                </div>
+              ) : (
+                shown.map((b) => {
+                  const current = b === repo.branch;
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      role="option"
+                      aria-selected={current}
+                      onClick={() => {
+                        setOpen(false);
+                        if (!current) onSwitch(b);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 h-[26px] text-[11px] text-left cursor-pointer outline-none",
+                        current
+                          ? "text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--bg-hover)]",
+                      )}
+                    >
+                      <span className="truncate flex-1">{b}</span>
+                      {current ? <Check size={11} className="text-[var(--primary)]" /> : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
