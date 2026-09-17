@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Download, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/ui/button";
+import { Icon } from "@/ui/icon";
 import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { ThemeImportPanel } from "./theme-import-panel";
 
 // Light variants are loadable and persistable in schema 1, but the setting is
 // intentionally hidden until PR 4 finishes the app-wide light appearance QA.
@@ -20,6 +23,7 @@ export function AtlasThemesSettings() {
   const error = useThemeStore.use.error();
   const { load } = useThemeStore.use.actions();
   const [query, setQuery] = useState("");
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     void load();
@@ -34,6 +38,24 @@ export function AtlasThemesSettings() {
   }, [query, themes]);
 
   const modes: ThemeMode[] = ENABLE_LIGHT_MODE ? ["system", "dark", "light"] : ["system", "dark"];
+
+  // The import panel replaces the grid rather than floating over it: it is a
+  // multi-step, scrolling surface (paste, convert, read the report, name the
+  // theme) and a dialog would fight the settings pane for height.
+  if (importing) {
+    return (
+      <ThemeImportPanel
+        themes={themes}
+        onClose={() => setImporting(false)}
+        onImported={(id) => {
+          // The watcher will re-list the catalog; applying it here is what
+          // makes the import visibly land.
+          updateSettings({ theme: id });
+          void load();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -78,6 +100,12 @@ export function AtlasThemesSettings() {
             </button>
           </Hint>
         )}
+        <Hint label="Convert a shadcn, Zed or VS Code theme">
+          <Button size="xs" variant="outline" onClick={() => setImporting(true)}>
+            <Icon icon={Download} size="xs" />
+            Import
+          </Button>
+        </Hint>
       </div>
 
       <ScrollArea className="flex-1 p-2">

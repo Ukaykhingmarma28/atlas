@@ -26,6 +26,7 @@ import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
 import { spacesHandlers } from "../fixtures/spaces";
 import { terminalHandlers } from "../fixtures/terminal";
+import { themeImportHandlers } from "../fixtures/theme-import";
 import { appState } from "../project";
 
 const nothing = () => null;
@@ -52,6 +53,7 @@ export const baseHandlers: MockHandlers = {
     if (!theme) throw new Error(`theme '${String(a.id)}' was not found`);
     return theme;
   },
+  ...themeImportHandlers,
 
   // ── boot ────────────────────────────────────────────────────────────────
   bootstrap_app_state: () => appState(),
