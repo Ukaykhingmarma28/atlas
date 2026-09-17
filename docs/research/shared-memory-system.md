@@ -10,7 +10,57 @@ Researched 2026-09-16 on branch `0.3.3` against primary sources only: the
 source of `atlas`, the vendored engine at `vendor/codex`, and the official
 docs of Claude Code, Gemini CLI and ACP. Every claim carries a `path:line` or
 a URL. A live sample of the injected prompt (captured during this session) is
-used as evidence in §8.
+used as evidence in §8. Design decisions were then settled by interview on
+2026-09-17 (three rounds, §11–§12) under one constraint: **every capability
+the shared memory feature has today survives.** Glossary terms live in
+`CONTEXT.md` under "Shared memory domain".
+
+**Status:** research complete, decisions settled, ready for `/to-spec`.
+Branch `feat/shared-memory-unification`.
+
+## Outcome in one page
+
+*Read this if you read nothing else. §2–§9 are the evidence; §11–§12 are the
+per-question decisions and their citations.*
+
+**What exists today.** Six app-owned stores under `<project>/.atlas/`, three
+foreign stores read continuously, one dormant store inside the engine. Memory
+reaches every agent by prompt push (four delimited blocks prepended to the
+user's text) and reaches the native agent alone by a `search_memory` tool.
+ACP agents receive an empty MCP list. Writes come from a keyword pass, a
+legacy BYOK distill and a BYOK extractor behind an env flag, so a fresh
+install never distills. Injected blocks leak into Claude's private memory
+files and are re-injected.
+
+**What changes.**
+
+| Area | Decision |
+|------|----------|
+| Store | One SQLite record store per **repository** (main worktree via git common dir), WAL, backend-only writer, at `<scope root>/.atlas/memory/memory.sqlite`. Tables `entries`, `events`, `sessions`. HNSW vectors stay. The five Shared-tab commands keep their shapes. |
+| Kinds | The six existing kinds, unchanged: Active plan, Decision, File changed, Fact, Failure, Architecture. Plan and File changed are **working memory**; the other four are **durable memory**. Session lifecycle is bookkeeping. |
+| Reach | One **in-process MCP server over streamable HTTP** on localhost with a per-session bearer token. Offered to an ACP agent when it advertises `mcpCapabilities.http`, and to the native agent through its `mcp_servers` config. Tools: `memory_search`, `memory_remember`, `memory_forget`, `memory_list`. Agents without HTTP keep today's push-only behaviour. |
+| Push | All four blocks stay, wrapped in `<atlas-memory>` with a do-not-persist line. Session-start index ranked by recency, use and confidence, capped at today's budgets. Per-turn RAG stays, skipped on short or continuation prompts. Deltas by the existing sync clock. |
+| Writers | Delta capture (unchanged), marker phrases (kept as zero-cost fallback), `memory_remember` (new), extractor in BYOK **or gateway** mode (gateway is what makes a fresh install work), user edits, consented imports. Every write passes `atlas-redact`. |
+| Ranking and limits | Today's caps become index display limits. Nothing is auto-deleted. Records carry provenance, confidence, `last_used`, `uses`. |
+| Pollution loop | Fixed at the reader: `read_claude` strips injected blocks the way capture docs already do. |
+| Memory panel | All four tabs stay. Shared gains provenance, edit, forget and live refresh via `atlas:memory-changed`. Import of Claude auto-memory is a previewed, user-triggered action. |
+| Global | Promotion to `~/.atlas/memory` stays, rule remapped to high-confidence Facts seen in two or more repositories. Org scope stays out. |
+| Deleted | Legacy per-turn distill, grafeo graph paths, legacy flat index, native dynamic tool, stub reader, two dead commands. Each has a named replacement. |
+
+**Order of work.** Twelve tickets (§12.3). The loop fix and the capability
+plumbing have no dependencies and ship first; the record store blocks most of
+the rest; deletions come last.
+
+**Still to verify at runtime.** Whether the Claude Code and Gemini ACP
+adapters advertise HTTP MCP support. Ticket 2 answers it.
+
+---
+
+**Contents.** §1 Summary · §2 Inventory of stores · §3 Data flow · §4
+kb-server / company brain · §5 Frontend wiring · §6 Lifecycle and scoping ·
+§7 External comparison · §8 Gaps · §9 Open questions (resolved) · §10 Initial
+direction (superseded in part) · §11 Round-2 decisions · §12 Round-3
+decisions and ticket order.
 
 ---
 
@@ -254,16 +304,30 @@ None of them accepts memory via any other channel.
     (`TODO(step8)`), Codex thread list from `~/.codex/state_*.sqlite`
     (flagged in `CONTEXT.md:22`).
 
-## 9. Open questions
+## 9. Open questions (all resolved 2026-09-17)
 
 - Should Atlas keep reading foreign stores (Claude memory dir, Codex SQLite)
   at all once it has a canonical store, or only import them once?
+  **Resolved: keep reading; fix the loop at the reader; add an optional
+  consented import** (§11.2 Q7, Q24).
 - Is the gateway model allowed to run background extraction (cost/entitlement
-  per ADR-0007)?
+  per ADR-0007)? **Resolved: yes, gateway becomes the default extraction mode
+  when signed in, BYOK stays as an alternative; entitlement is checked the
+  same way the native agent's turns are** (§11.2 Q6).
 - Does the product want an org scope (ADR-0006) before or after the local
-  unification?
+  unification? **Resolved: after. The record table carries no org field yet;
+  org becomes an import source when it arrives** (§11.2 Q20, round 1 Q10).
 
-## 10. Proposed direction (for discussion, not findings)
+## 10. Initial proposed direction (2026-09-16, superseded in part)
+
+*Kept for the record of how the design moved. Where this section and §11–§12
+disagree, §11–§12 win. The points that were reversed by the "no capability
+lost" constraint or by code evidence: the server runs **in-process over
+HTTP**, not as a stdio child; per-turn RAG is **kept**; foreign stores are
+**still read** (with stripping) rather than imported once; the marker-phrase
+capture, the Codex thread list, the Policy view and the session handoff all
+**stay**; the file projection to `.atlas/MEMORY.md` was **not adopted**
+(nothing in Atlas needs it while the tag and the tools exist).*
 
 One store, one reach mechanism, one write discipline.
 
@@ -299,37 +363,51 @@ One store, one reach mechanism, one write discipline.
   graph, `read_cersei_docs`, the two dead commands, the Codex SQLite thread
   list, and the Claude-only handoff.
 
-### 10.1 Target-state diagram
+### 10.1 Target-state diagram (final, reflects §11–§12)
 
 ```mermaid
 flowchart TB
-  UI["Memory panel: list · edit · forget · provenance"]
-  subgraph Store["ATLAS MEMORY STORE (one per git repo, single writer)"]
-    REC["records: id · kind · content · source_agent · session · confidence · created · last_used · scope · content_hash"]
-    VEC["HNSW vectors (on-device MiniLM)"]
-    CAP["capture transcripts (raw archive)"]
-    LC["Compact: hash-dedup → last_used bump → decay → promote to ~/.atlas/memory"]
-  end
-  UI --> Store
-  W1["memory_remember (agent-explicit tool)"] --> Store
-  W2["TurnFinished → gateway-model extraction (≥20 turns / ≥3 tools) + structured deltas (plans, file edits)"] --> Store
-  IMP["Import sources: Claude auto-memory · AGENTS.md · Knowledge notes · Codebase index · later org brain (ADR-0006)"] -.-> Store
+  UI["Memory panel — Shared (provenance · edit · forget · live) · Graph · Tree · Policy · Timeline"]
 
-  subgraph Reach["ONE REACH LAYER"]
-    MCP["A. Atlas MCP memory server (stdio): memory_search · memory_remember · memory_forget · memory_list"]
-    PUSH["B. Slim tagged push: session-start MEMORY index ≤200 lines, then deltas only; tag stripped by every corpus reader"]
-    FILE["C. File projection <repo>/.atlas/MEMORY.md, @imported from CLAUDE.md / AGENTS.md / GEMINI.md"]
+  subgraph Store["ATLAS MEMORY STORE — one per repository (main worktree), backend-only writer"]
+    REC["memory.sqlite (WAL): entries · events · sessions"]
+    VEC["HNSW vectors (on-device MiniLM)"]
+    CAP["capture transcripts (raw archive, every agent)"]
+    GL["~/.atlas/memory — promoted Facts (≥0.8, ≥2 repos)"]
+  end
+  UI <-->|"five existing commands + atlas:memory-changed"| Store
+  REC --> GL
+
+  subgraph Writers["WRITERS (all through atlas-redact)"]
+    W1["Delta capture: plan · file edits · marker phrases (unchanged)"]
+    W2["memory_remember tool (new)"]
+    W3["Extractor on turn-finished / session-end — gateway or BYOK"]
+    W4["User edits · consented imports (Claude auto-memory, previewed)"]
+  end
+  Writers --> Store
+
+  subgraph Sources["READ-ONLY SOURCES (atlas-memory tag stripped at the reader)"]
+    S1["CLAUDE.md · AGENTS.md · Claude memory dir · Codex threads"]
+    S2["Knowledge notes · Codebase index"]
+  end
+  Sources -->|collect_corpus| VEC
+
+  subgraph Reach["REACH"]
+    MCP["In-process MCP server, streamable HTTP on 127.0.0.1, per-session token: memory_search · memory_remember · memory_forget · memory_list"]
+    PUSH["Tagged push (atlas-memory tag): session-start index (working memory + ranked durable index + pack + handoff) · per-turn RAG with short-prompt floor · sync-clock deltas"]
   end
   Store --> Reach
-  MCP -->|"session/new mcpServers"| ACP["ACP agents (Claude Code · Codex · Gemini · …)"]
-  MCP -->|"dynamicTools on thread/start"| NA["Native agent (Codex fork)"]
+  MCP -->|"session/new mcpServers, only if mcpCapabilities.http"| ACP["ACP agents"]
+  MCP -->|"mcp_servers.atlas_memory (StreamableHttp) override"| NA["Native agent (Codex fork)"]
   PUSH --> ACP & NA
-  FILE --> ACP & NA
+  ACP -.->|"no http capability → push only, as today"| PUSH
 ```
 
-Versus today, three things change: every agent gets the same pull tools
-through MCP, the push shrinks to a tagged index that cannot be re-absorbed,
-and all writers land in one record table instead of three formats.
+Versus today, four things change and nothing is removed: every agent that
+can speak HTTP MCP gets the same pull and explicit-write tools; injected
+context is tagged and stripped so it cannot be re-absorbed; all writers land
+in one record table with provenance and confidence; and extraction runs on a
+fresh install through the gateway.
 
 ---
 
