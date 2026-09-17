@@ -4,13 +4,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
+import { LIGHT_APPEARANCE_ENABLED } from "@/features/theme/apply-theme";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
-
-// Light variants are loadable and persistable in schema 1, but the setting is
-// intentionally hidden until PR 4 finishes the app-wide light appearance QA.
-const ENABLE_LIGHT_MODE = false;
 
 export function AtlasThemesSettings() {
   const settings = useSettingsStore.use.settings();
@@ -34,7 +31,12 @@ export function AtlasThemesSettings() {
     );
   }, [query, themes]);
 
-  const modes: ThemeMode[] = ENABLE_LIGHT_MODE ? ["system", "dark", "light"] : ["system", "dark"];
+  // Light variants are loadable and persistable in schema 1; the button
+  // appears when `LIGHT_APPEARANCE_ENABLED` does, which is also what stops
+  // `system` resolving to light in the meantime.
+  const modes: ThemeMode[] = LIGHT_APPEARANCE_ENABLED
+    ? ["system", "dark", "light"]
+    : ["system", "dark"];
 
   return (
     <div className="flex h-full min-h-0 flex-col">

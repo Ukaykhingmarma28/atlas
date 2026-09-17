@@ -4,7 +4,21 @@ import { resolveTheme, type ResolvedTheme, type ThemeOverride } from "./resolve-
 const STYLE_ID = "atlas-resolved-theme";
 let activeTheme: ResolvedTheme | null = null;
 
+/**
+ * The one switch for the light appearance. Flip it to `true` when the
+ * app-wide light sweep is finished, and nothing else needs to change: the
+ * Light button appears in the theme picker and `system` starts honouring the
+ * OS again.
+ *
+ * While it is `false`, `system` must resolve to `dark`. Hiding the Light
+ * button alone was not enough — the OS decides what `system` means, so anyone
+ * on a light Mac was landed in the unfinished light UI at boot, having never
+ * chosen it and with no visible control to get out.
+ */
+export const LIGHT_APPEARANCE_ENABLED = false;
+
 export function appearanceForMode(mode: ThemeMode): "dark" | "light" {
+  if (!LIGHT_APPEARANCE_ENABLED) return "dark";
   if (mode !== "system") return mode;
   if (typeof matchMedia === "undefined") return "dark";
   return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
