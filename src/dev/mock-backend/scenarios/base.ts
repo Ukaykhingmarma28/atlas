@@ -4,18 +4,11 @@
 // Each answer is typed with the same type the frontend's API wrapper uses, so
 // `bun run typecheck` flags a fake that no longer matches what Rust returns.
 
-import type { AcpRegistryListing } from "@/features/agents/lib/agent-registry-api";
-import type { AuthSnapshot } from "@/features/auth/lib/auth-api";
 import type { KeybindingsLoadResult } from "@/features/keybindings/lib/keybindings-api";
 import { DEFAULT_KEYBINDINGS_FILE } from "@/features/keybindings/lib/types";
-import type { ModelStatus } from "@/features/settings/lib/models-api";
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
-import type { AgentCatalog } from "@/types/agent-catalog";
-import type { CaptureHealth } from "@/features/capture/types";
 import type { MentionData } from "@/features/chat/lib/mentions";
-import type { ThreadProject } from "@/features/chat/lib/history-api";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
-import type { ClonedRepo } from "@/features/github/types";
 import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
 import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-store";
 import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
@@ -25,10 +18,19 @@ import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
+import { artifactsHandlers } from "../fixtures/artifacts";
+import { captureHandlers } from "../fixtures/capture";
+import { commsHandlers } from "../fixtures/comms";
 import { fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
+import { integrationsHandlers } from "../fixtures/integrations";
 import { logHandlers } from "../fixtures/log";
+import { memoryHandlers } from "../fixtures/memory";
+import { miscHandlers } from "../fixtures/misc";
 import { settingsHandlers } from "../fixtures/settings";
+import { skillsHandlers } from "../fixtures/skills";
+import { spacesHandlers } from "../fixtures/spaces";
+import { terminalHandlers } from "../fixtures/terminal";
 import { appState, MOCK_WORKSPACE } from "../workspace";
 
 const nothing = () => null;
@@ -81,7 +83,6 @@ export const baseHandlers: MockHandlers = {
     // null keeps posthog-js from ever loading in mock mode.
     key: null,
   }),
-  auth_snapshot: (): AuthSnapshot => ({ status: "signed-out" }),
   update_state: (): UpdaterSnapshot => ({
     phase: "idle",
     version: null,
@@ -125,23 +126,6 @@ export const baseHandlers: MockHandlers = {
     throw new Error("cover not found");
   },
   knowledge_cover_upload: ({ entryId }): string => `covers/${entryId.replace(/\//g, "__")}.png`,
-  // The real command always returns a list; the sidebar also guards null.
-  list_cloned_repos: (): ClonedRepo[] => [],
-  read_repo_readme: () => {
-    throw new Error("No README found");
-  },
-  delete_cloned_repo: nothing,
-  threads_projects: (): ThreadProject[] => [],
-  capture_activate: nothing,
-  capture_binding: nothing,
-  capture_health: (): CaptureHealth => ({
-    state: "off",
-    summary: "",
-    issues: [],
-    flaggedSessions: 0,
-    failedRows: 0,
-    pendingRows: 0,
-  }),
 
   // ── git ─────────────────────────────────────────────────────────────────
   // A dirty working tree with a branch list, a stash stack, a commit graph and
@@ -149,27 +133,26 @@ export const baseHandlers: MockHandlers = {
   ...gitHandlers,
 
   // ── agents ──────────────────────────────────────────────────────────────
-  agents_catalog: (): AgentCatalog => ({
-    entries: [],
-    lastRefreshedAt: null,
-    lastDiscoveredAt: null,
-    lastError: null,
-  }),
-  acp_registry_list: (): AcpRegistryListing => ({
-    entries: [],
-    lastRefreshedAt: null,
-    lastError: null,
-    isFetching: false,
-  }),
-  models_list: (): ModelStatus[] => [],
-
   ...agentHandlers,
   agents_set_effort: nothing,
 
-  // ── files, settings, activity log, Mission Control ──────────────────────
+  // ── everything else, one fixture file per surface ───────────────────────
+  //
+  // Spread last and in one place, so a command answered by two fixtures is
+  // decided here rather than by an import's position. `misc` comes last
+  // because it is the catch-all: anything a domain file claims outranks it.
   ...fsHandlers,
   ...settingsHandlers,
   ...logHandlers,
+  ...artifactsHandlers,
+  ...captureHandlers,
+  ...commsHandlers,
+  ...integrationsHandlers,
+  ...memoryHandlers,
+  ...skillsHandlers,
+  ...spacesHandlers,
+  ...terminalHandlers,
+  ...miscHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
