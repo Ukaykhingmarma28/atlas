@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, ArrowDown, ArrowUp, UploadCloud, Loader2, GitMerge } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 import { BranchSwitcher } from "./branch-switcher";
@@ -77,50 +78,53 @@ export function GitManagerPanel() {
         />
       )}
       {/* Toolbar: branch + sync */}
-      <div className="shrink-0 flex items-center gap-1 px-1.5 h-[29px] border-b border-border-default">
-        <BranchSwitcher />
-        <button
-          onClick={() => setMergeOpen(true)}
-          className="flex items-center justify-center w-6 h-6 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer shrink-0"
-          title={`Merge a branch into ${current?.name ?? "the current branch"}`}
-        >
-          <GitMerge size={12} />
-        </button>
-        <div className="ml-auto flex items-center gap-0.5">
-          <ToolbarBtn
-            onClick={() => run("fetch", () => actions.fetch())}
-            busy={busy === "fetch"}
-            title="Fetch"
-            icon={<RefreshCw size={12} />}
-          />
-          {hasUpstream ? (
-            <>
-              <ToolbarBtn
-                onClick={() => run("pull", () => actions.pull(false))}
-                busy={busy === "pull"}
-                title="Pull"
-                icon={<ArrowDown size={12} />}
-                badge={behind > 0 ? behind : undefined}
-              />
-              <ToolbarBtn
-                onClick={() => run("push", () => actions.push())}
-                busy={busy === "push"}
-                title="Push"
-                icon={<ArrowUp size={12} />}
-                badge={ahead > 0 ? ahead : undefined}
-              />
-            </>
-          ) : (
+      <HintGroup>
+        <div className="shrink-0 flex items-center gap-1 px-1.5 h-[29px] border-b border-border-default">
+          <BranchSwitcher />
+          <HintItem label={`Merge a branch into ${current?.name ?? "the current branch"}`}>
+            <button
+              onClick={() => setMergeOpen(true)}
+              className="flex items-center justify-center w-6 h-6 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer shrink-0"
+            >
+              <GitMerge size={12} />
+            </button>
+          </HintItem>
+          <div className="ml-auto flex items-center gap-0.5">
             <ToolbarBtn
-              onClick={() => run("publish", () => actions.publishBranch())}
-              busy={busy === "publish"}
-              title="Publish branch (push -u origin)"
-              icon={<UploadCloud size={12} />}
-              label="Publish"
+              onClick={() => run("fetch", () => actions.fetch())}
+              busy={busy === "fetch"}
+              title="Fetch"
+              icon={<RefreshCw size={12} />}
             />
-          )}
+            {hasUpstream ? (
+              <>
+                <ToolbarBtn
+                  onClick={() => run("pull", () => actions.pull(false))}
+                  busy={busy === "pull"}
+                  title="Pull"
+                  icon={<ArrowDown size={12} />}
+                  badge={behind > 0 ? behind : undefined}
+                />
+                <ToolbarBtn
+                  onClick={() => run("push", () => actions.push())}
+                  busy={busy === "push"}
+                  title="Push"
+                  icon={<ArrowUp size={12} />}
+                  badge={ahead > 0 ? ahead : undefined}
+                />
+              </>
+            ) : (
+              <ToolbarBtn
+                onClick={() => run("publish", () => actions.publishBranch())}
+                busy={busy === "publish"}
+                title="Publish branch (push -u origin)"
+                icon={<UploadCloud size={12} />}
+                label="Publish"
+              />
+            )}
+          </div>
         </div>
-      </div>
+      </HintGroup>
 
       {/* View tabs */}
       <div className="shrink-0 flex items-center gap-0.5 px-1.5 h-[29px] border-b border-border-default">
@@ -162,11 +166,12 @@ function ToolbarBtn({
   badge?: number;
   label?: string;
 }) {
-  return (
+  const button = (
     <button
       onClick={onClick}
       disabled={busy}
-      title={title}
+      // A labelled button explains itself; its title only adds the detail.
+      title={label ? title : undefined}
       className="flex items-center gap-1 h-6 px-1.5 rounded text-[10px] font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50"
     >
       {busy ? <Loader2 size={12} className="animate-spin" /> : icon}
@@ -176,6 +181,7 @@ function ToolbarBtn({
       )}
     </button>
   );
+  return label ? button : <HintItem label={title}>{button}</HintItem>;
 }
 
 function ViewTab({

@@ -1,6 +1,7 @@
 import { forwardRef, useState } from "react";
 import { Eye, EyeOff, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 /**
  * SecretInput — a masked text field with reveal + copy affordances. Modular
@@ -51,44 +52,46 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
   };
 
   return (
-    <div
-      className={cn(
-        "group flex items-center gap-1 rounded-md border border-border-default bg-bg-elevated",
-        "px-2 h-8 transition-colors focus-within:border-accent",
-        className,
-      )}
-    >
-      <input
-        ref={ref}
-        type={revealed ? "text" : "password"}
-        value={value}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        autoComplete="off"
+    <HintGroup>
+      <div
         className={cn(
-          "flex-1 min-w-0 bg-transparent outline-none text-[11px]",
-          "text-text-primary placeholder:text-text-tertiary font-mono",
+          "group flex items-center gap-1 rounded-md border border-border-default bg-bg-elevated",
+          "px-2 h-8 transition-colors focus-within:border-accent",
+          className,
         )}
-        onChange={(e) => {
-          onValueChange?.(e.target.value);
-          onChange?.(e);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onSubmit?.();
-          onKeyDown?.(e);
-        }}
-        {...rest}
-      />
-      {copyable && (
-        <IconBtn label={copied ? "Copied" : "Copy"} onClick={() => void copy()}>
-          {copied ? <Check size={13} /> : <Copy size={13} />}
+      >
+        <input
+          ref={ref}
+          type={revealed ? "text" : "password"}
+          value={value}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          autoComplete="off"
+          className={cn(
+            "flex-1 min-w-0 bg-transparent outline-none text-[11px]",
+            "text-text-primary placeholder:text-text-tertiary font-mono",
+          )}
+          onChange={(e) => {
+            onValueChange?.(e.target.value);
+            onChange?.(e);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSubmit?.();
+            onKeyDown?.(e);
+          }}
+          {...rest}
+        />
+        {copyable && (
+          <IconBtn label={copied ? "Copied" : "Copy"} onClick={() => void copy()}>
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+          </IconBtn>
+        )}
+        <IconBtn label={revealed ? "Hide" : "Reveal"} onClick={() => setRevealed((r) => !r)}>
+          {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
         </IconBtn>
-      )}
-      <IconBtn label={revealed ? "Hide" : "Reveal"} onClick={() => setRevealed((r) => !r)}>
-        {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
-      </IconBtn>
-    </div>
+      </div>
+    </HintGroup>
   );
 });
 
@@ -102,15 +105,15 @@ function IconBtn({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      tabIndex={-1}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="shrink-0 grid place-items-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
-    >
-      {children}
-    </button>
+    <HintItem label={label} className="shrink-0">
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={onClick}
+        className="shrink-0 grid place-items-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }

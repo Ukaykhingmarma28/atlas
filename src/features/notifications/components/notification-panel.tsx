@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from "react";
 import { Bell, Shield, AlertTriangle, X, Sparkles, BellRing, SquareTerminal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { timeAgo } from "@/lib/time-ago";
 import { AtlasIcon } from "@/components/atlas-icon";
 // `@lobehub/icons` (~34 KB runtime + 21 glyphs) only matters once a chat-done
@@ -160,17 +161,18 @@ function NotificationCard({ n }: { n: AppNotification }) {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          dismiss(n.id);
-        }}
-        className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.08] transition-opacity"
-        title="Dismiss"
-      >
-        <X size={11} />
-      </button>
+      <Hint label="Dismiss">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            dismiss(n.id);
+          }}
+          className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.08] transition-opacity"
+        >
+          <X size={11} />
+        </button>
+      </Hint>
     </div>
   );
 }

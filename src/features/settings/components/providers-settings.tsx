@@ -17,6 +17,7 @@ import {
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { SecretInput } from "@/ui/secret-input";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { tildePath } from "@/lib/paths";
 import { AtlasLoader } from "@/components/atlas-loader";
@@ -165,15 +166,13 @@ export function ProvidersSettings() {
         </div>
 
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button
-              className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
-              title="Filters & sort"
-              aria-label="Filters & sort"
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          </DropdownMenu.Trigger>
+          <Hint label="Filters & sort">
+            <DropdownMenu.Trigger asChild>
+              <button className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors">
+                <MoreHorizontal size={14} />
+              </button>
+            </DropdownMenu.Trigger>
+          </Hint>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
               align="end"
@@ -398,14 +397,15 @@ function ProviderEditor({
           <code className="flex-1 min-w-0 truncate rounded bg-[var(--bg-base)] border border-border-subtle px-2 py-1 font-mono text-[10.5px] text-text-secondary">
             {revealed !== null ? revealed || "(empty)" : `${envVar}=••••${entry.last4}`}
           </code>
-          <button
-            type="button"
-            onClick={() => void onReveal()}
-            title={revealed !== null ? "Hide" : "Reveal"}
-            className="flex items-center justify-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            {revealed !== null ? <EyeOff size={12} /> : <Eye size={12} />}
-          </button>
+          <Hint label={revealed !== null ? "Hide" : "Reveal"}>
+            <button
+              type="button"
+              onClick={() => void onReveal()}
+              className="flex items-center justify-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              {revealed !== null ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          </Hint>
           {revealed !== null && revealed && (
             <button
               type="button"

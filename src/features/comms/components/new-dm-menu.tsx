@@ -3,6 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Check, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { CommsAvatar } from "./comms-avatar";
 import { comms } from "../lib/comms-api";
 import { useCommsStore } from "../stores/comms-store";
@@ -76,15 +77,16 @@ export function NewDmMenu() {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="New message"
-          className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Plus size={11} />
-        </button>
-      </Popover.Trigger>
+      <Hint label="New message">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+          >
+            <Plus size={11} />
+          </button>
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         <Popover.Content
           align="end"

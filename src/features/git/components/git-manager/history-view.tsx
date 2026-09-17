@@ -3,6 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Copy, Undo2, GitGraph, RotateCcw, Sparkles, Tag, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 import { useArtifactsStore } from "@/features/artifacts/stores/artifacts-store";
@@ -35,51 +36,60 @@ export function HistoryView() {
     return (
       <div className="h-full flex flex-col">
         <div className="shrink-0 border-b border-border-default">
-          <div className="flex items-center gap-2 px-2 h-[30px]">
-            <button
-              onClick={() => actions.clearSelectedCommit()}
-              className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-              title="Back to history"
-            >
-              <ArrowLeft size={13} />
-            </button>
-            <span className="font-mono text-[11px] text-text-secondary">{selected.shortHash}</span>
-            <div className="ml-auto flex items-center gap-0.5">
-              <button
-                onClick={() => {
-                  void navigator.clipboard.writeText(selected.hash).catch(() => {});
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
-                }}
-                className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-                title="Copy SHA"
-              >
-                {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-              </button>
-              <button
-                onClick={() => run(() => actions.cherryPick(selected.hash))}
-                className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-                title="Cherry-pick onto current branch"
-              >
-                <GitGraph size={12} />
-              </button>
-              <button
-                onClick={() => run(() => actions.revert(selected.hash))}
-                className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-                title="Revert this commit"
-              >
-                <Undo2 size={12} />
-              </button>
-              <ResetMenu onReset={(mode) => run(() => actions.reset(selected.hash, mode))} />
-              <button
-                onClick={() => setTagging((v) => !v)}
-                className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
-                title="Tag this commit"
-              >
-                <Tag size={12} />
-              </button>
+          <HintGroup>
+            <div className="flex items-center gap-2 px-2 h-[30px]">
+              <HintItem label="Back to history">
+                <button
+                  onClick={() => actions.clearSelectedCommit()}
+                  className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                >
+                  <ArrowLeft size={13} />
+                </button>
+              </HintItem>
+              <span className="font-mono text-[11px] text-text-secondary">
+                {selected.shortHash}
+              </span>
+              <div className="ml-auto flex items-center gap-0.5">
+                <HintItem label="Copy SHA">
+                  <button
+                    onClick={() => {
+                      void navigator.clipboard.writeText(selected.hash).catch(() => {});
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1200);
+                    }}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                  >
+                    {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                  </button>
+                </HintItem>
+                <HintItem label="Cherry-pick onto current branch">
+                  <button
+                    onClick={() => run(() => actions.cherryPick(selected.hash))}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                  >
+                    <GitGraph size={12} />
+                  </button>
+                </HintItem>
+                <HintItem label="Revert this commit">
+                  <button
+                    onClick={() => run(() => actions.revert(selected.hash))}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                  >
+                    <Undo2 size={12} />
+                  </button>
+                </HintItem>
+                <ResetMenu onReset={(mode) => run(() => actions.reset(selected.hash, mode))} />
+                <HintItem label="Tag this commit">
+                  <button
+                    onClick={() => setTagging((v) => !v)}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                  >
+                    <Tag size={12} />
+                  </button>
+                </HintItem>
+              </div>
             </div>
-          </div>
+          </HintGroup>
           {tagging && (
             <div className="px-2 pb-2">
               <input
@@ -173,17 +183,18 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
   );
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          className={cn(
-            "p-1 rounded hover:bg-bg-hover",
-            open ? "text-text-primary" : "text-text-tertiary hover:text-text-primary",
-          )}
-          title="Reset current branch to this commit"
-        >
-          <RotateCcw size={12} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Reset current branch to this commit">
+        <Popover.Trigger asChild>
+          <button
+            className={cn(
+              "p-1 rounded hover:bg-bg-hover",
+              open ? "text-text-primary" : "text-text-tertiary hover:text-text-primary",
+            )}
+          >
+            <RotateCcw size={12} />
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           side="bottom"

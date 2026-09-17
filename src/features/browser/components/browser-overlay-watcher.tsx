@@ -12,8 +12,13 @@ import { useBrowserOverlayStore } from "../stores/browser-overlay-store";
  *   [role="menu"]          — all Radix DropdownMenu + ContextMenu
  *   [data-hint-overlay]    — the hint-nav overlay
  *   [data-browser-suppress]— opt-in marker for custom (non-Radix) overlays
- * Deliberately NOT [role="tooltip"], so hover tooltips don't flash the browser.
+ * Deliberately NOT tooltips, so hovering a control doesn't flash the browser.
+ * Radix tooltips render inside a popper wrapper too, so wrappers holding one
+ * are skipped. (Filtered in JS: `:has()` is missing from older WKWebViews,
+ * and an unsupported selector would make querySelector throw.)
  */
+const TOOLTIP_SELECTOR = '[role="tooltip"], [data-slot="tooltip-content"]';
+
 const OVERLAY_SELECTOR =
   '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [data-hint-overlay], [data-browser-suppress], [data-overlay], [data-modal], [data-state="open"][data-side]';
 
@@ -27,7 +32,12 @@ export function BrowserOverlayWatcher() {
     let raf = 0;
     const evaluate = () => {
       raf = 0;
-      setOverlayOpen(!!document.querySelector(OVERLAY_SELECTOR));
+      const overlays = document.querySelectorAll(OVERLAY_SELECTOR);
+      setOverlayOpen(
+        Array.from(overlays).some(
+          (el) => !el.matches(TOOLTIP_SELECTOR) && !el.querySelector(TOOLTIP_SELECTOR),
+        ),
+      );
     };
     const schedule = () => {
       if (raf) return;

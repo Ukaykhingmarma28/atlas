@@ -2,6 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceGitStore, type GitSummary } from "../stores/workspace-git-store";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import {
   FolderPlus,
   Folder,
@@ -159,12 +161,12 @@ const WorkspaceRow = memo(function WorkspaceRow({
         "group relative flex items-center gap-2.5 pr-1.5 rounded-md cursor-pointer",
         active ? "bg-[var(--bg-active)]" : "hover:bg-[var(--bg-hover)]",
       )}
-      title={ws.path}
     >
       <GitDot summary={summary} className="size-1.5" />
       {/* `pr-14` clears the right slot (pill at rest, actions on hover) on both
-          lines, so neither can run under it. */}
-      <div className="flex-1 min-w-0 pr-14">
+          lines, so neither can run under it. The path tooltip lives here rather
+          than on the row so it doesn't stack on the actions' own tooltips. */}
+      <div className="flex-1 min-w-0 pr-14" title={ws.path}>
         {editing ? (
           <input
             ref={nameInputRef}
@@ -207,114 +209,120 @@ const WorkspaceRow = memo(function WorkspaceRow({
           matters while hovering — unlike promoting the whole row, which the
           root above deliberately no longer does. */}
       <span className="absolute inset-y-0 right-1.5 flex items-center transform-gpu [backface-visibility:hidden]">
-        <span className="group-hover:opacity-0">
+        <span className="group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
           <NumStatPill summary={summary} />
         </span>
-        <span className="absolute inset-y-0 right-0 flex items-center gap-0.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (ws.pinned) unpin(ws.id);
-              else pin(ws.id);
-            }}
-            className={cn(
-              "flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] cursor-pointer",
-              ws.pinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            )}
-            title={ws.pinned ? "Unpin" : "Pin"}
-          >
-            {ws.pinned ? <PinOff size={11} /> : <Pin size={11} />}
-          </button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
+        <HintGroup>
+          <span className="absolute inset-y-0 right-0 flex items-center gap-0.5">
+            <HintItem label={ws.pinned ? "Unpin" : "Pin"}>
               <button
-                onClick={(e) => e.stopPropagation()}
-                className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
-                title="More"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (ws.pinned) unpin(ws.id);
+                  else pin(ws.id);
+                }}
+                className={cn(
+                  "flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] cursor-pointer",
+                  ws.pinned
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                )}
               >
-                <MoreHorizontal size={12} />
+                {ws.pinned ? <PinOff size={11} /> : <Pin size={11} />}
               </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={4}
-                onClick={(e) => e.stopPropagation()}
-                // On close Radix restores focus to the trigger button. When the
-                // close is caused by selecting "Rename", that focus-return lands
-                // AFTER the rename input has mounted+autofocused, blurring it
-                // instantly → commitRename → edit mode exits. Suppressing the
-                // close auto-focus lets the input keep focus.
-                onCloseAutoFocus={(e) => e.preventDefault()}
-                className="z-[var(--z-max)] min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-              >
-                <DropdownMenu.Item
-                  onSelect={() => beginRenameWorkspace(ws.id)}
-                  className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+            </HintItem>
+            <DropdownMenu.Root>
+              <HintItem label="More">
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+                  >
+                    <MoreHorizontal size={12} />
+                  </button>
+                </DropdownMenu.Trigger>
+              </HintItem>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={4}
+                  onClick={(e) => e.stopPropagation()}
+                  // On close Radix restores focus to the trigger button. When the
+                  // close is caused by selecting "Rename", that focus-return lands
+                  // AFTER the rename input has mounted+autofocused, blurring it
+                  // instantly → commitRename → edit mode exits. Suppressing the
+                  // close auto-focus lets the input keep focus.
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                  className="z-[var(--z-max)] min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
                 >
-                  <Pencil size={11} /> Rename
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  onSelect={() => {
-                    void navigator.clipboard
-                      .writeText(ws.path)
-                      .then(() => toast.success("Path copied"))
-                      .catch(() => toast.error("Couldn't copy path"));
-                  }}
-                  className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
-                >
-                  <Copy size={11} /> Copy path
-                </DropdownMenu.Item>
-                <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger className="flex items-center justify-between px-2.5 h-6 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default">
-                    Move to group <ChevronRight size={11} />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent className="z-[var(--z-max)] min-w-[140px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
-                      {groups.map((g) => (
-                        <DropdownMenu.Item
-                          key={g.id}
-                          onSelect={() => setGroup(ws.id, g.id)}
-                          className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
-                        >
-                          {g.name}
-                        </DropdownMenu.Item>
-                      ))}
-                      <DropdownMenu.Item
-                        onSelect={() => {
-                          const gid = addGroup("New Group");
-                          setGroup(ws.id, gid);
-                        }}
-                        className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
-                      >
-                        <FolderPlus size={11} /> New group
-                      </DropdownMenu.Item>
-                      {ws.groupId && (
-                        <>
-                          <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                  <DropdownMenu.Item
+                    onSelect={() => beginRenameWorkspace(ws.id)}
+                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                  >
+                    <Pencil size={11} /> Rename
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => {
+                      void navigator.clipboard
+                        .writeText(ws.path)
+                        .then(() => toast.success("Path copied"))
+                        .catch(() => toast.error("Couldn't copy path"));
+                    }}
+                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                  >
+                    <Copy size={11} /> Copy path
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                  <DropdownMenu.Sub>
+                    <DropdownMenu.SubTrigger className="flex items-center justify-between px-2.5 h-6 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default">
+                      Move to group <ChevronRight size={11} />
+                    </DropdownMenu.SubTrigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.SubContent className="z-[var(--z-max)] min-w-[140px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                        {groups.map((g) => (
                           <DropdownMenu.Item
-                            onSelect={() => setGroup(ws.id, null)}
+                            key={g.id}
+                            onSelect={() => setGroup(ws.id, g.id)}
                             className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
                           >
-                            Remove from group
+                            {g.name}
                           </DropdownMenu.Item>
-                        </>
-                      )}
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
-                <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                <DropdownMenu.Item
-                  onSelect={() => void closeWorkspace(ws.id)}
-                  className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
-                >
-                  <X size={11} /> Remove from list
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </span>
+                        ))}
+                        <DropdownMenu.Item
+                          onSelect={() => {
+                            const gid = addGroup("New Group");
+                            setGroup(ws.id, gid);
+                          }}
+                          className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                        >
+                          <FolderPlus size={11} /> New group
+                        </DropdownMenu.Item>
+                        {ws.groupId && (
+                          <>
+                            <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                            <DropdownMenu.Item
+                              onSelect={() => setGroup(ws.id, null)}
+                              className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                            >
+                              Remove from group
+                            </DropdownMenu.Item>
+                          </>
+                        )}
+                      </DropdownMenu.SubContent>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Sub>
+                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                  <DropdownMenu.Item
+                    onSelect={() => void closeWorkspace(ws.id)}
+                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
+                  >
+                    <X size={11} /> Remove from list
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </span>
+        </HintGroup>
       </span>
     </div>
   );
@@ -381,7 +389,7 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
             e.stopPropagation();
             beginRenameGroup(group.id);
           }}
-          className="min-w-0 flex-1 truncate text-[11px] leading-none text-[var(--text-secondary)] group-hover/h:text-[var(--text-primary)]"
+          className="min-w-0 flex-1 truncate text-[11px] leading-normal text-[var(--text-secondary)] group-hover/h:text-[var(--text-primary)]"
         >
           {group.name}
         </span>
@@ -390,55 +398,60 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
       {/* Actions + disclosure in ONE promoted box with NO opacity transition:
           tweening opacity on an unpromoted icon makes WebKit re-rasterise it
           mid-fade, which is the hover wobble (same lesson as the git dot). */}
-      <span className="ml-auto flex shrink-0 items-center gap-0.5 transform-gpu [backface-visibility:hidden]">
-        {!editing && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              beginRenameGroup(group.id);
-            }}
-            className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] group-hover/h:opacity-100 cursor-pointer"
-            title="Rename group"
-          >
-            <Pencil size={10} />
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (group.pinned) unpinGroup(group.id);
-            else pinGroup(group.id);
-          }}
-          className={cn(
-            "flex size-5 items-center justify-center rounded hover:bg-[var(--bg-elevated)] cursor-pointer",
-            group.pinned
-              ? "opacity-100 text-[var(--accent-primary)]"
-              : "opacity-0 group-hover/h:opacity-100 text-[var(--text-tertiary)]",
+      <HintGroup>
+        <span className="ml-auto flex shrink-0 items-center gap-0.5 transform-gpu [backface-visibility:hidden]">
+          {!editing && (
+            <HintItem label="Rename group">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  beginRenameGroup(group.id);
+                }}
+                className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] group-hover/h:opacity-100 focus-visible:opacity-100 cursor-pointer"
+              >
+                <Pencil size={10} />
+              </button>
+            </HintItem>
           )}
-          title={group.pinned ? "Unpin group" : "Pin group"}
-        >
-          {group.pinned ? <PinOff size={10} /> : <Pin size={10} />}
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            removeGroup(group.id);
-          }}
-          className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] group-hover/h:opacity-100 cursor-pointer"
-          title="Delete group"
-        >
-          <X size={10} />
-        </button>
-        {!editing && (
-          <ChevronDown
-            size={10}
-            className={cn(
-              "shrink-0 text-[var(--text-tertiary)] transition-transform",
-              collapsed && "-rotate-90",
-            )}
-          />
-        )}
-      </span>
+          <HintItem label={group.pinned ? "Unpin group" : "Pin group"}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (group.pinned) unpinGroup(group.id);
+                else pinGroup(group.id);
+              }}
+              className={cn(
+                "flex size-5 items-center justify-center rounded hover:bg-[var(--bg-elevated)] cursor-pointer",
+                group.pinned
+                  ? "opacity-100 text-[var(--accent-primary)]"
+                  : "opacity-0 group-hover/h:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)]",
+              )}
+            >
+              {group.pinned ? <PinOff size={10} /> : <Pin size={10} />}
+            </button>
+          </HintItem>
+          <HintItem label="Delete group">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                removeGroup(group.id);
+              }}
+              className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] group-hover/h:opacity-100 focus-visible:opacity-100 cursor-pointer"
+            >
+              <X size={10} />
+            </button>
+          </HintItem>
+          {!editing && (
+            <ChevronDown
+              size={10}
+              className={cn(
+                "shrink-0 text-[var(--text-tertiary)] transition-transform",
+                collapsed && "-rotate-90",
+              )}
+            />
+          )}
+        </span>
+      </HintGroup>
     </div>
   );
 });
@@ -495,16 +508,17 @@ const SectionHeaderRow = memo(function SectionHeaderRow({
           />
         </span>
         {clearable && onClear && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onClear(id);
-            }}
-            title={CLEAR_TITLE[id] ?? "Clear"}
-            className="ml-auto flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover/s:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--status-error,#f44)] outline-none cursor-pointer transform-gpu [backface-visibility:hidden]"
-          >
-            <Trash2 size={11} />
-          </button>
+          <Hint label={CLEAR_TITLE[id] ?? "Clear"}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear(id);
+              }}
+              className="ml-auto flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover/s:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--status-error,#f44)] outline-none cursor-pointer transform-gpu [backface-visibility:hidden]"
+            >
+              <Trash2 size={11} />
+            </button>
+          </Hint>
         )}
       </div>
     </div>
@@ -530,7 +544,7 @@ const RecentProjectRow = memo(function RecentProjectRow({
       title={path}
     >
       <Folder size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-      <span className="flex-1 min-w-0 truncate text-[12px] leading-none text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
+      <span className="flex-1 min-w-0 truncate text-[12px] leading-normal text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
         {name}
       </span>
     </div>
@@ -895,36 +909,38 @@ export function WorkspaceSidebar() {
         )}
         data-tauri-drag-region
       >
-        <RailIconButton
-          onClick={toggleSidebarPinned}
-          active={sidebarPinned}
-          title={
-            sidebarPinned ? "Unpin sidebar (float as overlay)" : "Pin sidebar (dock into layout)"
-          }
-        >
-          {sidebarPinned ? <PinOff size={12} /> : <Pin size={12} />}
-        </RailIconButton>
-        <RailIconButton onClick={toggleAll} title={allCollapsed ? "Expand all" : "Collapse all"}>
-          {allCollapsed ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
-        </RailIconButton>
-        {/* Console sits with the other rail-chrome controls; the project "+"
-         *  moved down to the org row, next to search. Same singleton tab id
-         *  the org row used, so an open Console is focused, not duplicated. */}
-        <RailIconButton
-          onClick={() =>
-            addTab({
-              id: "mission-control",
-              type: "mission-control",
-              title: "Console",
-              closable: true,
-              dirty: false,
-              data: {},
-            })
-          }
-          title="Console"
-        >
-          <ChartPie size={12} />
-        </RailIconButton>
+        <HintGroup>
+          <RailIconButton
+            onClick={toggleSidebarPinned}
+            active={sidebarPinned}
+            title={
+              sidebarPinned ? "Unpin sidebar (float as overlay)" : "Pin sidebar (dock into layout)"
+            }
+          >
+            {sidebarPinned ? <PinOff size={12} /> : <Pin size={12} />}
+          </RailIconButton>
+          <RailIconButton onClick={toggleAll} title={allCollapsed ? "Expand all" : "Collapse all"}>
+            {allCollapsed ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
+          </RailIconButton>
+          {/* Console sits with the other rail-chrome controls; the project "+"
+           *  moved down to the org row, next to search. Same singleton tab id
+           *  the org row used, so an open Console is focused, not duplicated. */}
+          <RailIconButton
+            onClick={() =>
+              addTab({
+                id: "mission-control",
+                type: "mission-control",
+                title: "Console",
+                closable: true,
+                dirty: false,
+                data: {},
+              })
+            }
+            title="Console"
+          >
+            <ChartPie size={12} />
+          </RailIconButton>
+        </HintGroup>
       </div>
 
       {/* Organisation switcher — the top-level tenant picker. */}
@@ -1430,16 +1446,17 @@ function HelpItem({
 function HelpMenu() {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          title="Help & community"
-          aria-label="Help and community"
-          className="flex size-[22px] items-center justify-center rounded-full border border-white/[0.08] text-[var(--text-tertiary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-        >
-          <HelpCircle size={12} />
-        </button>
-      </DropdownMenu.Trigger>
+      <Hint label="Help & community" side="top">
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            aria-label="Help and community"
+            className="flex size-[22px] items-center justify-center rounded-full border border-white/[0.08] text-[var(--text-tertiary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+          >
+            <HelpCircle size={12} />
+          </button>
+        </DropdownMenu.Trigger>
+      </Hint>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="start"
@@ -1568,18 +1585,19 @@ function RailIconButton({
   active?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(
-        "flex size-6 items-center justify-center rounded-md outline-none transition-colors cursor-pointer hover:bg-[var(--bg-hover)]",
-        active
-          ? "text-[var(--accent-primary)]"
-          : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
-      )}
-    >
-      {children}
-    </button>
+    <HintItem label={title}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex size-6 items-center justify-center rounded-md outline-none transition-colors cursor-pointer hover:bg-[var(--bg-hover)]",
+          active
+            ? "text-[var(--accent-primary)]"
+            : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }

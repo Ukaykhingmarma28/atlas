@@ -5,6 +5,7 @@ import { Archive, Download, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { deleteThread, onThreadsChanged, threadHistory, type ThreadRow } from "../lib/history-api";
 import { ImportThreadsModal } from "./import-threads-modal";
@@ -168,18 +169,19 @@ export function ThreadHistoryView({
                       {thread.archived && (
                         <Archive size={10} className="shrink-0 text-text-tertiary" />
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void remove(thread);
-                        }}
-                        aria-label="Delete thread"
-                        title="Delete thread"
-                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary opacity-0 transition-opacity hover:bg-bg-elevated hover:text-[var(--status-error)] group-hover:opacity-100 cursor-pointer"
-                      >
-                        <Trash2 size={10} />
-                      </button>
+                      <Hint label="Delete thread">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void remove(thread);
+                          }}
+                          aria-label="Delete thread"
+                          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary opacity-0 transition-opacity hover:bg-bg-elevated hover:text-[var(--status-error)] group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </Hint>
                     </div>
                   ))}
                 </div>

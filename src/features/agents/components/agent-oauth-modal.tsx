@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import {
   agents,
   ensureAgent,
@@ -727,13 +728,14 @@ function TerminalHandoffDockBody({
         I've finished signing in
       </button>
 
-      <button
-        onClick={onDismiss}
-        title="Dismiss"
-        className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
-      >
-        <X className="size-3.5" />
-      </button>
+      <Hint label="Dismiss" side="top">
+        <button
+          onClick={onDismiss}
+          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
+        >
+          <X className="size-3.5" />
+        </button>
+      </Hint>
     </>
   );
 }

@@ -18,6 +18,7 @@ import { ChevronRight, X } from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 
 import {
   formatDuration,
@@ -230,14 +231,15 @@ function Chip({
     <span className="flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-base)] pl-2.5 pr-1.5 text-[11px] text-[var(--text-secondary)]">
       {field && <span className="shrink-0 text-[var(--text-ghost)]">{field}</span>}
       <span className="min-w-0 truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={`Clear ${field ?? "search"}`}
-        className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-      >
-        <X size={10} />
-      </button>
+      <Hint label={`Clear ${field ?? "search"}`}>
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        >
+          <X size={10} />
+        </button>
+      </Hint>
     </span>
   );
 }

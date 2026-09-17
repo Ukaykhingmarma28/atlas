@@ -9,6 +9,7 @@ import { useEffect, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Share2, SlidersHorizontal, FileText, Server, Cpu, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { ProviderModelSelector } from "./provider-pickers";
 import { useByokStore } from "@/features/settings/stores/byok-store";
 import { CHAT_PROVIDERS } from "@/features/settings/lib/providers";
@@ -66,15 +67,16 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
 
       {/* Summarizer settings popover */}
       <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            title="Handoff summarizer settings"
-            className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
-          >
-            <SlidersHorizontal size={12} />
-          </button>
-        </Popover.Trigger>
+        <Hint label="Handoff summarizer settings">
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+            >
+              <SlidersHorizontal size={12} />
+            </button>
+          </Popover.Trigger>
+        </Hint>
         <Popover.Portal>
           <Popover.Content
             align="end"

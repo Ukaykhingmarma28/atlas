@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
@@ -255,14 +256,14 @@ export function OrgSwitcher() {
          *  the command palette, so it no longer spends a slot here. */}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
           <AddProjectMenu />
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
-            title={paletteHint ? `Search (${paletteHint})` : "Search"}
-            aria-label="Search"
-            className="flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
-          >
-            <Search size={13} />
-          </button>
+          <Hint label="Search" shortcut={paletteHint}>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
+              className="flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+            >
+              <Search size={13} />
+            </button>
+          </Hint>
         </div>
 
         <DropdownMenu.Portal>
@@ -298,26 +299,27 @@ export function OrgSwitcher() {
               {/* Manual re-sync — only meaningful with a credential to pull
                   with. Silent on failure: Rust keeps the last-known list. */}
               {signedIn && (
-                <button
-                  title="Refresh organisations"
-                  disabled={refreshing}
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setRefreshing(true);
-                    try {
-                      await auth.refresh();
-                    } catch {
-                      // Left as-is on purpose; the pull failing is not an error
-                      // worth a toast on a background list.
-                    } finally {
-                      setRefreshing(false);
-                    }
-                  }}
-                  className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
-                </button>
+                <Hint label="Refresh organisations">
+                  <button
+                    disabled={refreshing}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setRefreshing(true);
+                      try {
+                        await auth.refresh();
+                      } catch {
+                        // Left as-is on purpose; the pull failing is not an error
+                        // worth a toast on a background list.
+                      } finally {
+                        setRefreshing(false);
+                      }
+                    }}
+                    className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
+                  </button>
+                </Hint>
               )}
             </div>
 
@@ -384,33 +386,35 @@ export function OrgSwitcher() {
                         rename would silently revert. There is no org-update
                         route in the client to write it through with. */}
                     {access.ok && !isSyncedOrg(org) && (
-                      <button
-                        title="Rename organisation"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          beginRename(org.id, org.name);
-                        }}
-                        className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-[var(--text-primary)] group-hover/org:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
-                      >
-                        <Pencil size={11} />
-                      </button>
+                      <Hint label="Rename organisation">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            beginRename(org.id, org.name);
+                          }}
+                          className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-[var(--text-primary)] group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      </Hint>
                     )}
                     {/* Delete — appears on hover; opens confirmation. Hidden when
                         this is the only org (can't delete the last one). */}
                     {access.ok && canDelete && (
-                      <button
-                        title="Delete organisation"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setConfirmDelete(org);
-                          setOpen(false);
-                        }}
-                        className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-error group-hover/org:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
-                      >
-                        <Trash2 size={11} />
-                      </button>
+                      <Hint label="Delete organisation">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setConfirmDelete(org);
+                            setOpen(false);
+                          }}
+                          className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-error group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </Hint>
                     )}
                     {!access.ok ? (
                       <Lock size={11} className="text-[var(--text-tertiary)] shrink-0" />

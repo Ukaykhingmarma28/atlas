@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileCode2, Check } from "lucide-react";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 
@@ -78,40 +79,46 @@ export function ConflictsView({ onOpenFile }: { onOpenFile: (path: string) => vo
           ) : (
             <span className="shrink-0 text-[9px] font-mono text-text-tertiary">no markers</span>
           )}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
-            <button
-              onClick={() => void resolve(f.path, "ours")}
-              className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-              title="Keep your version"
-            >
-              Ours
-            </button>
-            <button
-              onClick={() => void resolve(f.path, "theirs")}
-              className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-              title="Take their version"
-            >
-              Theirs
-            </button>
-            <button
-              onClick={() => onOpenFile(f.path)}
-              className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
-              title="Open in editor"
-            >
-              <FileCode2 size={11} />
-            </button>
-            <button
-              onClick={() => void resolve(f.path, "manual")}
-              className="p-0.5 rounded text-text-tertiary hover:text-success"
-              title={
-                f.markerCount > 0
-                  ? "Mark resolved (conflict markers still present!)"
-                  : "Mark resolved"
-              }
-            >
-              <Check size={11} />
-            </button>
-          </div>
+          <HintGroup>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 shrink-0">
+              <button
+                onClick={() => void resolve(f.path, "ours")}
+                className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                title="Keep your version"
+              >
+                Ours
+              </button>
+              <button
+                onClick={() => void resolve(f.path, "theirs")}
+                className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                title="Take their version"
+              >
+                Theirs
+              </button>
+              <HintItem label="Open in editor">
+                <button
+                  onClick={() => onOpenFile(f.path)}
+                  className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
+                >
+                  <FileCode2 size={11} />
+                </button>
+              </HintItem>
+              <HintItem
+                label={
+                  f.markerCount > 0
+                    ? "Mark resolved (conflict markers still present!)"
+                    : "Mark resolved"
+                }
+              >
+                <button
+                  onClick={() => void resolve(f.path, "manual")}
+                  className="p-0.5 rounded text-text-tertiary hover:text-success"
+                >
+                  <Check size={11} />
+                </button>
+              </HintItem>
+            </div>
+          </HintGroup>
         </div>
       ))}
     </div>

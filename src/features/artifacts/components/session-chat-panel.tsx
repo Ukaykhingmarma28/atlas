@@ -39,6 +39,7 @@ import { CHAT_PROVIDERS } from "@/features/settings/lib/providers";
 import { useByokStore } from "@/features/settings/stores/byok-store";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 
 import { useSessionChatStore, UNTITLED } from "../stores/session-chat-store";
 import type { SessionDetail as Detail, TimelineEntry } from "../types";
@@ -181,14 +182,15 @@ export function SessionChatPanel({
             <AgentGlyph agent={detail.summary.agent} mono />
           </span>
         )}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close chat"
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <X size={14} />
-        </button>
+        <Hint label="Close chat">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <X size={14} />
+          </button>
+        </Hint>
       </header>
 
       <div
@@ -341,14 +343,15 @@ function ThreadPicker({
                       {timeAgo(meta.updatedAt)}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    aria-label="Delete chat"
-                    onClick={() => onDelete(meta.id)}
-                    className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all hover:text-[var(--status-error)] group-hover:opacity-100"
-                  >
-                    <Trash2 size={11} />
-                  </button>
+                  <Hint label="Delete chat">
+                    <button
+                      type="button"
+                      onClick={() => onDelete(meta.id)}
+                      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all hover:text-[var(--status-error)] group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </Hint>
                 </div>
               ))
             )}
@@ -560,26 +563,27 @@ function Composer({
             onProvider={onProvider}
             onModel={onModel}
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!running && (!hasText || !ready)}
-            aria-label={running ? "Stop" : "Send"}
-            className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-full transition-colors",
-              running
-                ? "cursor-pointer bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                : !hasText || !ready
-                  ? "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-tertiary)]"
-                  : "cursor-pointer bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90",
-            )}
-          >
-            {running ? (
-              <Square size={11} strokeWidth={3} fill="currentColor" />
-            ) : (
-              <ArrowUp size={14} strokeWidth={2.5} />
-            )}
-          </button>
+          <Hint label={running ? "Stop" : "Send"}>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!running && (!hasText || !ready)}
+              className={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-full transition-colors",
+                running
+                  ? "cursor-pointer bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  : !hasText || !ready
+                    ? "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-tertiary)]"
+                    : "cursor-pointer bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90",
+              )}
+            >
+              {running ? (
+                <Square size={11} strokeWidth={3} fill="currentColor" />
+              ) : (
+                <ArrowUp size={14} strokeWidth={2.5} />
+              )}
+            </button>
+          </Hint>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { TerminalSquare, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import type { ChatMessage } from "@/types/agent";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { isBashToolCall, bashCommandOf } from "../lib/tool-calls";
@@ -120,13 +121,14 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
             <span className="text-[11px] font-medium text-[var(--text-secondary)]">Bash calls</span>
             <span className="text-[10px] text-[var(--text-tertiary)]">· {entries.length}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            title="Hide bash history"
-          >
-            <ChevronRight size={12} />
-          </button>
+          <Hint label="Hide bash history">
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </Hint>
         </div>
 
         {/* Virtualized list */}

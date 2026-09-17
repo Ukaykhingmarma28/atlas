@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { GithubIcon } from "@/components/github-icon";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import type { GithubRepo, ClonedRepo } from "@/features/github/types";
 import {
@@ -138,21 +139,23 @@ export function ComposerAddMenu({
         }
       }}
     >
-      <DropdownMenu.Trigger asChild>
-        <button
-          disabled={disabled}
-          className={cn(
-            "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border-default)]",
-            "bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors outline-none",
-            disabled
-              ? "opacity-50 cursor-default"
-              : "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer",
-          )}
-          title="Attach files, media, repos, or a past session"
-        >
-          <Plus size={13} />
-        </button>
-      </DropdownMenu.Trigger>
+      {/* `wrap`: the Trigger has no `disabled` prop for Hint to detect, but its button does. */}
+      <Hint label="Attach files, media, repos, or a past session" side="top" wrap>
+        <DropdownMenu.Trigger asChild>
+          <button
+            disabled={disabled}
+            className={cn(
+              "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border-default)]",
+              "bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors outline-none",
+              disabled
+                ? "opacity-50 cursor-default"
+                : "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer",
+            )}
+          >
+            <Plus size={13} />
+          </button>
+        </DropdownMenu.Trigger>
+      </Hint>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="start"

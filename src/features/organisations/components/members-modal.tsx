@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { timeAgo } from "@/lib/time-ago";
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
@@ -184,28 +186,30 @@ export function MembersModal({
             <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide">
               {org.name} · {members.length} {members.length === 1 ? "member" : "members"}
             </span>
-            <div className="flex items-center gap-0.5">
-              <button
-                disabled={!signedIn}
-                onClick={() => orgId && void load(orgId, { force: true })}
-                className={cn(
-                  "p-1 rounded text-text-tertiary transition-colors",
-                  signedIn
-                    ? "hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-                    : "opacity-40 cursor-not-allowed",
-                  loading && "animate-spin",
-                )}
-                title={signedIn ? "Refresh" : "Sign in to refresh"}
-              >
-                <RefreshCw size={11} />
-              </button>
-              <Dialog.Close
-                className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X size={11} />
-              </Dialog.Close>
-            </div>
+            <HintGroup>
+              <div className="flex items-center gap-0.5">
+                <HintItem label={signedIn ? "Refresh" : "Sign in to refresh"}>
+                  <button
+                    disabled={!signedIn}
+                    onClick={() => orgId && void load(orgId, { force: true })}
+                    className={cn(
+                      "p-1 rounded text-text-tertiary transition-colors",
+                      signedIn
+                        ? "hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                        : "opacity-40 cursor-not-allowed",
+                      loading && "animate-spin",
+                    )}
+                  >
+                    <RefreshCw size={11} />
+                  </button>
+                </HintItem>
+                <HintItem label="Close">
+                  <Dialog.Close className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer">
+                    <X size={11} />
+                  </Dialog.Close>
+                </HintItem>
+              </div>
+            </HintGroup>
           </div>
 
           {/* Toolbar — tabs with counts + search. */}
@@ -395,14 +399,13 @@ function MemberRow({
         <span className={cn(COL.actions, "flex items-center justify-end")}>
           {isAdmin && (
             <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer"
-                  title="Manage"
-                >
-                  <MoreHorizontal size={12} />
-                </button>
-              </DropdownMenu.Trigger>
+              <Hint label="Manage">
+                <DropdownMenu.Trigger asChild>
+                  <button className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer">
+                    <MoreHorizontal size={12} />
+                  </button>
+                </DropdownMenu.Trigger>
+              </Hint>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content
                   align="end"
@@ -475,26 +478,30 @@ function InviteRow({
         <span className={cn(COL.joined, "text-[10px] text-text-tertiary capitalize")}>
           {invite.status}
         </span>
-        <span className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
-          {invite.acceptUrl && (
-            <button
-              onClick={() => void copy(invite.acceptUrl!, "Invite link copied.")}
-              className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
-              title="Copy invite link"
-            >
-              <Copy size={11} />
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              onClick={onCancel}
-              className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-[var(--status-error,#f44)] transition-colors cursor-pointer"
-              title="Cancel invite"
-            >
-              <X size={11} />
-            </button>
-          )}
-        </span>
+        <HintGroup>
+          <span className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
+            {invite.acceptUrl && (
+              <HintItem label="Copy invite link">
+                <button
+                  onClick={() => void copy(invite.acceptUrl!, "Invite link copied.")}
+                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                >
+                  <Copy size={11} />
+                </button>
+              </HintItem>
+            )}
+            {isAdmin && (
+              <HintItem label="Cancel invite">
+                <button
+                  onClick={onCancel}
+                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-[var(--status-error,#f44)] transition-colors cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </HintItem>
+            )}
+          </span>
+        </HintGroup>
       </div>
     </div>
   );
@@ -570,7 +577,6 @@ function EmailChipsInput({
         return (
           <span
             key={email}
-            title={valid ? email : "Not a valid email address"}
             className={cn(
               // h-5 + a 14px avatar keeps the chip inside the 28px field.
               "inline-flex shrink-0 items-center gap-1 rounded-full border pl-0.5 pr-1 h-5 text-[11px] max-w-[220px]",
@@ -580,17 +586,23 @@ function EmailChipsInput({
             )}
           >
             <AccountAvatar user={{ id: email, name: "", email, avatarPath: null }} size={14} />
-            <span className="truncate">{email}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEmailsChange(emails.filter((x) => x !== email));
-              }}
-              className="shrink-0 rounded-full p-0.5 text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
-              aria-label={`Remove ${email}`}
-            >
-              <X size={9} />
-            </button>
+            {/* The title sits on the text rather than the chip, so it doesn't
+                open over the remove button's own tooltip. */}
+            <span className="truncate" title={valid ? email : "Not a valid email address"}>
+              {email}
+            </span>
+            <Hint label="Remove">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEmailsChange(emails.filter((x) => x !== email));
+                }}
+                className="shrink-0 rounded-full p-0.5 text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                aria-label={`Remove ${email}`}
+              >
+                <X size={9} />
+              </button>
+            </Hint>
           </span>
         );
       })}

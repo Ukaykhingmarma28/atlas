@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import * as Dialog from "@radix-ui/react-dialog";
 import { RefreshCw, GitBranch, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -209,25 +210,29 @@ function GraphView({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={onToggleFullscreen}
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
-            title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-          >
-            {fullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
-          </button>
-          <button
-            onClick={onRefresh}
-            className={cn(
-              "p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer",
-              refreshing && "animate-spin",
-            )}
-            title="Refresh"
-          >
-            <RefreshCw size={11} />
-          </button>
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-0.5">
+            <HintItem label={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
+              <button
+                onClick={onToggleFullscreen}
+                className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+              >
+                {fullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              </button>
+            </HintItem>
+            <HintItem label="Refresh">
+              <button
+                onClick={onRefresh}
+                className={cn(
+                  "p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer",
+                  refreshing && "animate-spin",
+                )}
+              >
+                <RefreshCw size={11} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
       </div>
 
       {/* Virtualized commit list */}

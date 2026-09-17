@@ -28,6 +28,7 @@ import {
 } from "@/features/settings/lib/model-catalog";
 import { loadCerseiModelPref } from "../lib/cersei-model-pref";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 
 // Curated model-list cache — `modelchat.models(provider)` hits the provider API,
 // so cache the curated list per provider for the app session and dedupe
@@ -256,21 +257,21 @@ export function ProviderModelPills({
               {CHAT_PROVIDERS.map((p) => {
                 const keyed = hasKey(p.id);
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => setViewProvider(p.id)}
-                    title={`${p.name}${keyed ? "" : " — no API key"}`}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-md transition-all",
-                      p.id === viewProvider
-                        ? "bg-[var(--bg-selected,var(--bg-hover))]"
-                        : keyed
-                          ? "opacity-60 hover:opacity-100 hover:bg-[var(--bg-hover)]"
-                          : "opacity-25 hover:opacity-60 hover:bg-[var(--bg-hover)]",
-                    )}
-                  >
-                    <ProviderLogo id={p.id} size={15} />
-                  </button>
+                  <Hint key={p.id} label={`${p.name}${keyed ? "" : " — no API key"}`} side="left">
+                    <button
+                      onClick={() => setViewProvider(p.id)}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-md transition-all",
+                        p.id === viewProvider
+                          ? "bg-[var(--bg-selected,var(--bg-hover))]"
+                          : keyed
+                            ? "opacity-60 hover:opacity-100 hover:bg-[var(--bg-hover)]"
+                            : "opacity-25 hover:opacity-60 hover:bg-[var(--bg-hover)]",
+                      )}
+                    >
+                      <ProviderLogo id={p.id} size={15} />
+                    </button>
+                  </Hint>
                 );
               })}
             </div>
@@ -289,14 +290,15 @@ export function ProviderModelPills({
                       spellCheck={false}
                       className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                     />
-                    <button
-                      onClick={() => void refreshPricing()}
-                      disabled={pricingLoading}
-                      title="Refresh model pricing (models.dev)"
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] cursor-pointer disabled:cursor-default"
-                    >
-                      <RefreshCw size={11} className={cn(pricingLoading && "animate-spin")} />
-                    </button>
+                    <Hint label="Refresh model pricing (models.dev)" side="top">
+                      <button
+                        onClick={() => void refreshPricing()}
+                        disabled={pricingLoading}
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] cursor-pointer disabled:cursor-default"
+                      >
+                        <RefreshCw size={11} className={cn(pricingLoading && "animate-spin")} />
+                      </button>
+                    </Hint>
                   </div>
 
                   {/* Model list (name + $/1M) — fills the column height so the

@@ -11,6 +11,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { usePageMeta, useKnowledgeMetaStore } from "../stores/knowledge-meta-store";
 
 interface PagePropertiesProps {
@@ -406,22 +407,23 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
           }}
         >
           {t}
-          <button
-            type="button"
-            onClick={() => onChange(tags.filter((x) => x !== t))}
-            style={{
-              background: "transparent",
-              border: 0,
-              padding: 0,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-            title="Remove tag"
-          >
-            <X size={9} />
-          </button>
+          <Hint label="Remove tag">
+            <button
+              type="button"
+              onClick={() => onChange(tags.filter((x) => x !== t))}
+              style={{
+                background: "transparent",
+                border: 0,
+                padding: 0,
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            >
+              <X size={9} />
+            </button>
+          </Hint>
         </span>
       ))}
       {adding ? (

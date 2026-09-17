@@ -22,6 +22,8 @@ import * as Popover from "@radix-ui/react-popover";
 import { Pin, PinOff, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
+import { HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { pinsFor, useChatPinsStore, type ChatPin } from "../stores/chat-pins-store";
 
 export function ChatPinnedMenu({
@@ -54,17 +56,14 @@ export function ChatPinnedMenu({
         if (o) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title={`${pins.length} pinned`}
-          aria-label={`${pins.length} pinned messages`}
-          className={className}
-        >
-          <Pin size={12} />
-          <span className="tabular-nums text-[11px] leading-none">{pins.length}</span>
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Pinned messages">
+        <Popover.Trigger asChild>
+          <button type="button" aria-label={`${pins.length} pinned messages`} className={className}>
+            <Pin size={12} />
+            <span className="tabular-nums text-[11px] leading-none">{pins.length}</span>
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           align="end"
@@ -116,17 +115,18 @@ export function ChatPinnedMenu({
                       Pinned {timeAgo(pin.at, { suffix: true })}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    title="Unpin"
-                    aria-label="Unpin message"
-                    onClick={() =>
-                      useChatPinsStore.getState().actions.unpin(pinScopeKey, pin.messageId)
-                    }
-                    className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/pin:opacity-100 focus-visible:opacity-100"
-                  >
-                    <PinOff size={11} />
-                  </button>
+                  <Hint label="Unpin">
+                    <button
+                      type="button"
+                      aria-label="Unpin message"
+                      onClick={() =>
+                        useChatPinsStore.getState().actions.unpin(pinScopeKey, pin.messageId)
+                      }
+                      className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/pin:opacity-100 focus-visible:opacity-100"
+                    >
+                      <PinOff size={11} />
+                    </button>
+                  </Hint>
                 </div>
               ))}
             </div>

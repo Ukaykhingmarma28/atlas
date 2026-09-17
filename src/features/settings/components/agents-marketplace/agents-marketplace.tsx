@@ -19,6 +19,8 @@ import { GithubIcon } from "@/components/github-icon";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { AgentMonogram, ExternalAgentIcon } from "@/components/agent-icons";
 import {
   acpRegistry,
@@ -276,12 +278,14 @@ export function AgentsMarketplace() {
               className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--border-focus,var(--border-default))]"
             />
             {query && (
-              <button
-                onClick={() => setQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={11} />
-              </button>
+              <Hint label="Clear search">
+                <button
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </Hint>
             )}
           </div>
           <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
@@ -499,24 +503,28 @@ const AgentCard = memo(function AgentCard({
           height={20}
           label={`≈${trend.total.toLocaleString()} downloads in the last 6 months`}
         />
-        {entry.repository && (
-          <button
-            onClick={() => void openUrl(entry.repository!)}
-            className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={entry.repository}
-          >
-            <GithubIcon size={11} />
-          </button>
-        )}
-        {entry.website && (
-          <button
-            onClick={() => void openUrl(entry.website!)}
-            className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={entry.website}
-          >
-            <Globe size={11} />
-          </button>
-        )}
+        <HintGroup>
+          {entry.repository && (
+            <HintItem label="Open repository">
+              <button
+                onClick={() => void openUrl(entry.repository!)}
+                className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                <GithubIcon size={11} />
+              </button>
+            </HintItem>
+          )}
+          {entry.website && (
+            <HintItem label="Open website">
+              <button
+                onClick={() => void openUrl(entry.website!)}
+                className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              >
+                <Globe size={11} />
+              </button>
+            </HintItem>
+          )}
+        </HintGroup>
       </div>
     </div>
   );

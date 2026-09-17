@@ -3,6 +3,8 @@ import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys"
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useKnowledgeStore } from "../stores/knowledge-store";
 import { useKnowledgeMetaStore, usePageMeta } from "../stores/knowledge-meta-store";
 import {
@@ -888,26 +890,27 @@ function PageHeaderWithIcon({
       </div>
 
       <div className="flex items-start" style={{ gap: 14, marginTop: 10 }}>
-        <button
-          title="Change icon"
-          onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 9,
-            background: "var(--bg-elevated-2)",
-            border: "1px solid var(--border-subtle)",
-            fontSize: 24,
-            lineHeight: 1,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flex: "none",
-            cursor: "pointer",
-          }}
-        >
-          {icon}
-        </button>
+        <Hint label="Change icon">
+          <button
+            onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 9,
+              background: "var(--bg-elevated-2)",
+              border: "1px solid var(--border-subtle)",
+              fontSize: 24,
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flex: "none",
+              cursor: "pointer",
+            }}
+          >
+            {icon}
+          </button>
+        </Hint>
         <div className="flex-1 min-w-0">
           <input
             value={titleDraft}
@@ -984,14 +987,15 @@ function RepoTopbar({
       style={{ height: 36, gap: 8, padding: "0 14px", background: "var(--bg-canvas)" }}
     >
       {onToggleSidebar && (
-        <button
-          onClick={onToggleSidebar}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
-          title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
-          style={{ width: 22, height: 22, marginLeft: -6 }}
-        >
-          <PanelLeft size={12} />
-        </button>
+        <Hint label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}>
+          <button
+            onClick={onToggleSidebar}
+            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            style={{ width: 22, height: 22, marginLeft: -6 }}
+          >
+            <PanelLeft size={12} />
+          </button>
+        </Hint>
       )}
       <GitBranch size={12} className="text-text-tertiary shrink-0" />
       <span
@@ -1003,22 +1007,26 @@ function RepoTopbar({
       <span className="pill pill-bare" style={{ height: 18, fontSize: 9.5, padding: "0 6px" }}>
         REPO
       </span>
-      <button
-        onClick={() => navigator.clipboard.writeText(path)}
-        className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
-        title="Copy path"
-        style={{ width: 22, height: 22 }}
-      >
-        <Copy size={11} />
-      </button>
-      <button
-        onClick={onToggleInspector}
-        className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
-        title="Toggle inspector"
-        style={{ width: 22, height: 22 }}
-      >
-        <PanelRight size={12} />
-      </button>
+      <HintGroup>
+        <HintItem label="Copy path">
+          <button
+            onClick={() => navigator.clipboard.writeText(path)}
+            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
+            style={{ width: 22, height: 22 }}
+          >
+            <Copy size={11} />
+          </button>
+        </HintItem>
+        <HintItem label="Toggle inspector">
+          <button
+            onClick={onToggleInspector}
+            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            style={{ width: 22, height: 22 }}
+          >
+            <PanelRight size={12} />
+          </button>
+        </HintItem>
+      </HintGroup>
     </div>
   );
 }

@@ -52,7 +52,10 @@ export function SkillModalShell({
                 </div>
               )}
             </div>
-            <Dialog.Close className="shrink-0 rounded p-1 text-text-tertiary hover:bg-bg-hover hover:text-text-primary">
+            <Dialog.Close
+              aria-label="Close"
+              className="shrink-0 rounded p-1 text-text-tertiary hover:bg-bg-hover hover:text-text-primary"
+            >
               <X size={14} />
             </Dialog.Close>
           </div>

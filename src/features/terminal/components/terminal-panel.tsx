@@ -24,6 +24,8 @@ import {
   Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 
 // Sessions close when their terminal leaves the store — every close path in
 // one place. Bound once for the app's lifetime.
@@ -319,71 +321,80 @@ function PaneView({
               )}
               <span>~</span>
               {pane.terminals.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTerminalInPane(tabId, pane.id, ptyId);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 hover:text-text-primary"
-                >
-                  <X size={8} />
-                </button>
+                <Hint label="Close terminal">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTerminalInPane(tabId, pane.id, ptyId);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary"
+                  >
+                    <X size={8} />
+                  </button>
+                </Hint>
               )}
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          {zoomed && (
-            <span className="mr-1 rounded bg-white/[0.06] px-1.5 py-px text-[9px] text-text-tertiary">
-              zoomed
-            </span>
-          )}
-          <button
-            onClick={() => {
-              addTerminalToPane(tabId, pane.id);
-              setActivePane(tabId, pane.id);
-            }}
-            className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
-            title="New tab"
-          >
-            <Plus size={11} />
-          </button>
-          <button
-            onClick={() => splitPane(tabId, pane.id, "horizontal")}
-            className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
-            title="Split right"
-          >
-            <Columns2 size={11} />
-          </button>
-          <button
-            onClick={() => splitPane(tabId, pane.id, "vertical")}
-            className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
-            title="Split down"
-          >
-            <Rows2 size={11} />
-          </button>
-          {hasSplits && (
-            <button
-              onClick={() => toggleZoom(tabId, pane.id)}
-              className={cn(
-                "flex items-center justify-center w-5 h-5 rounded hover:bg-bg-hover transition-colors cursor-pointer",
-                zoomed ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
-              )}
-              title={zoomed ? "Unzoom pane" : "Zoom pane"}
-            >
-              <Maximize2 size={11} />
-            </button>
-          )}
-          {hasSplits && (
-            <button
-              onClick={() => closePane(tabId, pane.id)}
-              className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-white hover:bg-bg-hover transition-colors cursor-pointer"
-              title="Close pane"
-            >
-              <X size={11} />
-            </button>
-          )}
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-0.5 shrink-0">
+            {zoomed && (
+              <span className="mr-1 rounded bg-white/[0.06] px-1.5 py-px text-[9px] text-text-tertiary">
+                zoomed
+              </span>
+            )}
+            <HintItem label="New tab">
+              <button
+                onClick={() => {
+                  addTerminalToPane(tabId, pane.id);
+                  setActivePane(tabId, pane.id);
+                }}
+                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+              >
+                <Plus size={11} />
+              </button>
+            </HintItem>
+            <HintItem label="Split right">
+              <button
+                onClick={() => splitPane(tabId, pane.id, "horizontal")}
+                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+              >
+                <Columns2 size={11} />
+              </button>
+            </HintItem>
+            <HintItem label="Split down">
+              <button
+                onClick={() => splitPane(tabId, pane.id, "vertical")}
+                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+              >
+                <Rows2 size={11} />
+              </button>
+            </HintItem>
+            {hasSplits && (
+              <HintItem label={zoomed ? "Unzoom pane" : "Zoom pane"}>
+                <button
+                  onClick={() => toggleZoom(tabId, pane.id)}
+                  className={cn(
+                    "flex items-center justify-center w-5 h-5 rounded hover:bg-bg-hover transition-colors cursor-pointer",
+                    zoomed ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
+                  )}
+                >
+                  <Maximize2 size={11} />
+                </button>
+              </HintItem>
+            )}
+            {hasSplits && (
+              <HintItem label="Close pane">
+                <button
+                  onClick={() => closePane(tabId, pane.id)}
+                  className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-white hover:bg-bg-hover transition-colors cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </HintItem>
+            )}
+          </div>
+        </HintGroup>
       </div>
       {/* The pane's terminals, in the DOM where they belong. Inactive ones stay
           laid out (`visibility:hidden`, not `display:none`) so their fit is

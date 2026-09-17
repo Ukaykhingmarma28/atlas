@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { GitBranch, Check, Plus, Search, Trash2, GitMerge } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 
@@ -104,28 +105,32 @@ export function BranchSwitcher() {
                   </span>
                 )}
                 {!b.isCurrent && !b.isRemote && (
-                  <div className="flex items-center opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void run(() => actions.mergeBranch(b.name));
-                      }}
-                      className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
-                      title={`Merge ${b.name} into ${branch}`}
-                    >
-                      <GitMerge size={11} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void run(() => actions.deleteBranch(b.name));
-                      }}
-                      className="p-0.5 rounded text-text-tertiary hover:text-[var(--status-error)]"
-                      title={`Delete ${b.name}`}
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
+                  <HintGroup>
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                      <HintItem label={`Merge ${b.name} into ${branch}`}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void run(() => actions.mergeBranch(b.name));
+                          }}
+                          className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
+                        >
+                          <GitMerge size={11} />
+                        </button>
+                      </HintItem>
+                      <HintItem label={`Delete ${b.name}`}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void run(() => actions.deleteBranch(b.name));
+                          }}
+                          className="p-0.5 rounded text-text-tertiary hover:text-[var(--status-error)]"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </HintItem>
+                    </div>
+                  </HintGroup>
                 )}
               </div>
             ))}

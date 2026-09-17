@@ -9,6 +9,7 @@ import {
   Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { AtlasIcon } from "@/components/atlas-icon";
 import type { TimeRange } from "../../types";
 
@@ -51,16 +52,17 @@ export function DashboardHeader({
         ))}
       </div>
 
-      <button
-        onClick={onRefresh}
-        className={cn(
-          "flex items-center justify-center h-[26px] w-[26px] rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] transition-colors",
-          loading && "animate-spin",
-        )}
-        title="Refresh"
-      >
-        <RefreshCw size={13} />
-      </button>
+      <Hint label="Refresh">
+        <button
+          onClick={onRefresh}
+          className={cn(
+            "flex items-center justify-center h-[26px] w-[26px] rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] transition-colors",
+            loading && "animate-spin",
+          )}
+        >
+          <RefreshCw size={13} />
+        </button>
+      </Hint>
 
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>

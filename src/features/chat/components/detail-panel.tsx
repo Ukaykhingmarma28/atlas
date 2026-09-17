@@ -18,6 +18,7 @@
 import { useCallback, useMemo, useRef, useEffect } from "react";
 import { ChevronRight, TerminalSquare, Copy } from "lucide-react";
 import { copyText } from "@/lib/clipboard";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 import {
   useDetailPanelStore,
@@ -119,14 +120,15 @@ function PanelBody({
         onClose={onClose}
         action={
           output ? (
-            <button
-              type="button"
-              onClick={() => void copyText(output)}
-              title="Copy output"
-              className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            >
-              <Copy size={11} />
-            </button>
+            <HintItem label="Copy output">
+              <button
+                type="button"
+                onClick={() => void copyText(output)}
+                className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+              >
+                <Copy size={11} />
+              </button>
+            </HintItem>
           ) : undefined
         }
       />
@@ -179,17 +181,20 @@ function Header({
           <span className="shrink-0 text-[10px] text-[var(--text-tertiary)]">· {count}</span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
-        {action}
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close (Esc)"
-          className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-        >
-          <ChevronRight size={12} />
-        </button>
-      </div>
+      <HintGroup>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {action}
+          <HintItem label="Close (Esc)">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
 import { safeUnlistenPromise } from "@/lib/safe-unlisten";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useBrowserOverlayStore } from "../stores/browser-overlay-store";
 import {
   Globe,
@@ -581,27 +582,36 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
     <div className="h-full flex flex-col bg-bg-base" onMouseDownCapture={focusThisGroup}>
       {/* Address bar */}
       <div className="flex items-center gap-1.5 px-2 h-[36px] shrink-0 border-b border-border-default bg-bg-primary">
-        <button
-          onClick={goBack}
-          disabled={!canBack}
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer disabled:opacity-30"
-        >
-          <ArrowLeft size={12} />
-        </button>
-        <button
-          onClick={goForward}
-          disabled={!canFwd}
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer disabled:opacity-30"
-        >
-          <ArrowRight size={12} />
-        </button>
-        <button
-          onClick={reload}
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
-          title="Reload"
-        >
-          {isLoading ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
-        </button>
+        {/* The live webview paints over anything below this bar, so the
+            address-bar tooltips open upward. */}
+        <HintGroup side="top">
+          <HintItem label="Back">
+            <button
+              onClick={goBack}
+              disabled={!canBack}
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer disabled:opacity-30"
+            >
+              <ArrowLeft size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="Forward">
+            <button
+              onClick={goForward}
+              disabled={!canFwd}
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer disabled:opacity-30"
+            >
+              <ArrowRight size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="Reload">
+            <button
+              onClick={reload}
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
+            >
+              {isLoading ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
+            </button>
+          </HintItem>
+        </HintGroup>
 
         <div className="flex-1 flex items-center gap-2 h-7 rounded border border-border-default bg-bg-secondary px-2 focus-within:ring-1 focus-within:ring-border-focus">
           <Globe size={11} className="text-text-tertiary shrink-0" />
@@ -632,38 +642,44 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           <span className="text-[10px]">{mode === "reader" ? "Live" : "Reader"}</span>
         </button>
 
-        {!isLive && page && currentProject && (
-          <button
-            onClick={saveToKnowledge}
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
-            title="Save to knowledge base"
-          >
-            <Save size={12} />
-          </button>
-        )}
-        {!isLive && (
-          <button
-            onClick={() => setSearchOpen(!searchOpen)}
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
-            title="Find in page"
-          >
-            <Search size={12} />
-          </button>
-        )}
-        <button
-          onClick={openBrowserWindow}
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
-          title="Open in browser window"
-        >
-          <AppWindow size={12} />
-        </button>
-        <button
-          onClick={openExternal}
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
-          title="Open in system browser"
-        >
-          <ExternalLink size={12} />
-        </button>
+        <HintGroup side="top">
+          {!isLive && page && currentProject && (
+            <HintItem label="Save to knowledge base">
+              <button
+                onClick={saveToKnowledge}
+                className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
+              >
+                <Save size={12} />
+              </button>
+            </HintItem>
+          )}
+          {!isLive && (
+            <HintItem label="Find in page">
+              <button
+                onClick={() => setSearchOpen(!searchOpen)}
+                className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
+              >
+                <Search size={12} />
+              </button>
+            </HintItem>
+          )}
+          <HintItem label="Open in browser window">
+            <button
+              onClick={openBrowserWindow}
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
+            >
+              <AppWindow size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="Open in system browser">
+            <button
+              onClick={openExternal}
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary transition-colors cursor-pointer"
+            >
+              <ExternalLink size={12} />
+            </button>
+          </HintItem>
+        </HintGroup>
       </div>
 
       {/* Search bar (Reader only) */}

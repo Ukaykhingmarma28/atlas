@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Loader2, RotateCw, GitBranch, Search, X, ArrowUp } from "lucide-react";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useGitStore } from "@/features/git/stores/git-store";
@@ -276,14 +278,14 @@ export function MemoryTimelineView() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => projectPath && void loadTimeline(projectPath, true)}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="Refresh"
-          aria-label="Refresh"
-        >
-          <RotateCw size={12} className={loading ? "animate-spin" : ""} />
-        </button>
+        <Hint label="Refresh">
+          <button
+            onClick={() => projectPath && void loadTimeline(projectPath, true)}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} className={loading ? "animate-spin" : ""} />
+          </button>
+        </Hint>
       </div>
 
       {/* Chart + panel + tooltip */}
@@ -312,37 +314,45 @@ export function MemoryTimelineView() {
 
         {/* Floating semantic search pill — overlaid on the chart, no box. */}
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 w-[min(620px,calc(100%-40px))]">
-          <div className="flex items-center gap-2.5 h-11 rounded-full bg-[#141414]/95 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.6)] border border-white/[0.12] px-4">
-            <Search size={15} className="text-[var(--text-tertiary)] shrink-0" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void runSearch();
-                else if (e.key === "Escape") clearSearch();
-              }}
-              placeholder="Ask how memory shaped your branches…"
-              spellCheck={false}
-              className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-            />
-            {(query || searchMode) && !searching && (
-              <button
-                onClick={clearSearch}
-                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
-                title="Clear"
-              >
-                <X size={15} />
-              </button>
-            )}
-            <button
-              onClick={() => void runSearch()}
-              disabled={!query.trim() || searching}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
-              title="Search memory impact"
-            >
-              {searching ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={15} />}
-            </button>
-          </div>
+          <HintGroup side="top">
+            <div className="flex items-center gap-2.5 h-11 rounded-full bg-[#141414]/95 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.6)] border border-white/[0.12] px-4">
+              <Search size={15} className="text-[var(--text-tertiary)] shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void runSearch();
+                  else if (e.key === "Escape") clearSearch();
+                }}
+                placeholder="Ask how memory shaped your branches…"
+                spellCheck={false}
+                className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              />
+              {(query || searchMode) && !searching && (
+                <HintItem label="Clear">
+                  <button
+                    onClick={clearSearch}
+                    className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
+                  >
+                    <X size={15} />
+                  </button>
+                </HintItem>
+              )}
+              <HintItem label="Search memory impact">
+                <button
+                  onClick={() => void runSearch()}
+                  disabled={!query.trim() || searching}
+                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  {searching ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <ArrowUp size={15} />
+                  )}
+                </button>
+              </HintItem>
+            </div>
+          </HintGroup>
         </div>
       </div>
     </div>

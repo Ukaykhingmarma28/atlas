@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileText, Image as ImageIcon, Music, RefreshCw } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 import { AudioPlayer } from "./audio-player";
 import { CommsAvatar } from "./comms-avatar";
 import { formatBytes, saveAttachment } from "./message-group";
@@ -142,15 +143,17 @@ function SectionHead({
       <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
         {label}
       </span>
-      <button
-        type="button"
-        title="Load older messages"
-        disabled={refreshing}
-        onClick={onRefresh}
-        className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
-      >
-        <RefreshCw size={9} className={refreshing ? "animate-spin" : ""} />
-      </button>
+      {/* Unwrapped: a wrapper span would swallow the button's `ml-auto`. */}
+      <Hint label="Load older messages" wrap={false}>
+        <button
+          type="button"
+          disabled={refreshing}
+          onClick={onRefresh}
+          className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw size={9} className={refreshing ? "animate-spin" : ""} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -201,10 +204,7 @@ function MediaThumb({
             />
           )
         ) : (
-          <span
-            className="absolute inset-0 bg-[var(--bg-elevated)]"
-            style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-          />
+          <span className="absolute inset-0 bg-[var(--bg-elevated)] atlas-marker-running" />
         )}
       </button>
     </>

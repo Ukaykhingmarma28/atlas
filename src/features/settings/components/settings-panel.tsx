@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { ScrollArea } from "@/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import {
   Settings,
   Palette,
@@ -99,43 +100,52 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
         )}
       >
         <div className="flex-1">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
-              title={navCollapsed ? s.label : undefined}
-              className={cn(
-                "w-full flex items-center h-[32px] whitespace-nowrap text-[11px] font-medium transition-colors border-l-2 cursor-pointer",
-                navCollapsed ? "justify-center px-0" : "gap-2 px-4",
-                activeSection === s.id
-                  ? "text-text-primary bg-bg-selected border-l-accent"
-                  : "text-text-secondary hover:bg-bg-hover border-l-transparent",
-              )}
-            >
-              <s.icon size={13} className="shrink-0" />
-              {!navCollapsed && s.label}
-            </button>
-          ))}
+          {SECTIONS.map((s) => {
+            const item = (
+              <button
+                key={s.id}
+                onClick={() => setActiveSection(s.id)}
+                className={cn(
+                  "w-full flex items-center h-[32px] whitespace-nowrap text-[11px] font-medium transition-colors border-l-2 cursor-pointer",
+                  navCollapsed ? "justify-center px-0" : "gap-2 px-4",
+                  activeSection === s.id
+                    ? "text-text-primary bg-bg-selected border-l-accent"
+                    : "text-text-secondary hover:bg-bg-hover border-l-transparent",
+                )}
+              >
+                <s.icon size={13} className="shrink-0" />
+                {!navCollapsed && s.label}
+              </button>
+            );
+            return navCollapsed ? (
+              <Hint key={s.id} label={s.label} side="right">
+                {item}
+              </Hint>
+            ) : (
+              item
+            );
+          })}
         </div>
 
         {/* Hide / show toggle — divided from the section list. */}
-        <button
-          onClick={toggleNav}
-          title={navCollapsed ? "Show sidebar" : "Hide sidebar"}
-          className={cn(
-            "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border-default text-[11px] font-medium text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
-            navCollapsed ? "justify-center px-0" : "gap-2 px-4",
-          )}
-        >
-          {navCollapsed ? (
-            <ChevronRight size={14} className="shrink-0" />
-          ) : (
-            <>
-              <ChevronLeft size={14} className="shrink-0" />
-              <span>Hide</span>
-            </>
-          )}
-        </button>
+        <Hint label={navCollapsed ? "Show sidebar" : "Hide sidebar"} side="right">
+          <button
+            onClick={toggleNav}
+            className={cn(
+              "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border-default text-[11px] font-medium text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+              navCollapsed ? "justify-center px-0" : "gap-2 px-4",
+            )}
+          >
+            {navCollapsed ? (
+              <ChevronRight size={14} className="shrink-0" />
+            ) : (
+              <>
+                <ChevronLeft size={14} className="shrink-0" />
+                <span>Hide</span>
+              </>
+            )}
+          </button>
+        </Hint>
       </div>
 
       {/* Settings content. The providers ("API Keys") and skills sections are
@@ -521,11 +531,9 @@ function AppearanceSettings() {
 
   const scalePct = Math.round(settings.uiScale * 100);
   const setScale = (next: number) => updateSettings({ uiScale: clampScale(next) });
-  const zoomHints = [
-    useActionShortcut("view.zoomIn")?.label,
-    useActionShortcut("view.zoomOut")?.label,
-    useActionShortcut("view.zoomReset")?.label,
-  ].filter(Boolean);
+  const zoomInKeys = useActionShortcut("view.zoomIn")?.label;
+  const zoomOutKeys = useActionShortcut("view.zoomOut")?.label;
+  const zoomResetKeys = useActionShortcut("view.zoomReset")?.label;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -541,44 +549,44 @@ function AppearanceSettings() {
         ))}
 
         {/* Interface zoom — right-aligned control (like Skills' scope control). */}
-        <div
-          className="ml-auto flex items-center gap-1 pr-0.5"
-          title={zoomHints.length ? `Interface zoom (${zoomHints.join(" / ")})` : "Interface zoom"}
-        >
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => setScale(settings.uiScale - SCALE_STEP)}
-            disabled={settings.uiScale <= MIN_SCALE}
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
-              "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
-              "disabled:opacity-40 disabled:cursor-not-allowed",
-            )}
-          >
-            <Minus size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setScale(DEFAULT_SCALE)}
-            title="Reset to 100%"
-            className="h-6 min-w-[44px] rounded-md px-1.5 text-[11px] font-medium tabular-nums text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
-          >
-            {scalePct}%
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => setScale(settings.uiScale + SCALE_STEP)}
-            disabled={settings.uiScale >= MAX_SCALE}
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
-              "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
-              "disabled:opacity-40 disabled:cursor-not-allowed",
-            )}
-          >
-            <Plus size={12} />
-          </button>
+        <div className="ml-auto flex items-center gap-1 pr-0.5">
+          <Hint label="Zoom out" shortcut={zoomOutKeys}>
+            <button
+              type="button"
+              onClick={() => setScale(settings.uiScale - SCALE_STEP)}
+              disabled={settings.uiScale <= MIN_SCALE}
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
+                "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              <Minus size={12} />
+            </button>
+          </Hint>
+          <Hint label="Reset to 100%" shortcut={zoomResetKeys}>
+            <button
+              type="button"
+              onClick={() => setScale(DEFAULT_SCALE)}
+              className="h-6 min-w-[44px] rounded-md px-1.5 text-[11px] font-medium tabular-nums text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+            >
+              {scalePct}%
+            </button>
+          </Hint>
+          <Hint label="Zoom in" shortcut={zoomInKeys}>
+            <button
+              type="button"
+              onClick={() => setScale(settings.uiScale + SCALE_STEP)}
+              disabled={settings.uiScale >= MAX_SCALE}
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
+                "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              <Plus size={12} />
+            </button>
+          </Hint>
         </div>
       </div>
 

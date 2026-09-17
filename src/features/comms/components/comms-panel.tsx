@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Hash, Loader2, Lock, MessageCircle, MessagesSquare, Plus, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { CommsConversation } from "./comms-conversation";
 import { MediaLightbox } from "./media-lightbox";
 import { primeCommsMarkdown } from "./message-body";
@@ -205,14 +206,15 @@ export function CommsPanel() {
 
         {/* The workspace sidebar's add-project button, verbatim. */}
         <div className="flex shrink-0 items-center pr-1.5">
-          <button
-            type="button"
-            title="New tab"
-            onClick={() => actions.newTab()}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
-          >
-            <Plus size={14} />
-          </button>
+          <Hint label="New tab">
+            <button
+              type="button"
+              onClick={() => actions.newTab()}
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+            >
+              <Plus size={14} />
+            </button>
+          </Hint>
         </div>
       </div>
 
@@ -228,8 +230,8 @@ export function CommsPanel() {
       <CommsSurface>
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {activeConv ? (
-            // Keyed so navigating between conversations re-runs the fade.
-            <div key={activeConv.id} className="flex min-w-0 flex-1 animate-fade-in">
+            // Keyed so each conversation mounts fresh.
+            <div key={activeConv.id} className="flex min-w-0 flex-1">
               <CommsConversation conv={activeConv} />
             </div>
           ) : (
@@ -319,8 +321,8 @@ function TabButton({
       }}
       className={cn(
         "group/tab relative flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg pl-2.5 text-[11.5px] font-medium select-none",
-        "transition-[padding-right,background-color,color] duration-150",
-        "pr-2.5 hover:pr-6",
+        "transition-[background-color,color] duration-150",
+        "pr-6",
         active
           ? "bg-white/[0.07] text-text-primary"
           : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary",
@@ -335,22 +337,23 @@ function TabButton({
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--comms-unread)]" />
       ) : null}
 
-      <button
-        type="button"
-        title="Close tab"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        className={cn(
-          "absolute right-1 top-1/2 -translate-y-1/2",
-          "inline-flex h-4 w-4 items-center justify-center rounded-full",
-          "text-text-tertiary opacity-0 group-hover/tab:opacity-100",
-          "transition-opacity duration-150 hover:bg-[#ffffff22] hover:text-text-primary cursor-pointer",
-        )}
-      >
-        <X size={10} strokeWidth={2.2} />
-      </button>
+      <Hint label="Close tab">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className={cn(
+            "absolute right-1 top-1/2 -translate-y-1/2",
+            "inline-flex h-4 w-4 items-center justify-center rounded-full",
+            "text-text-tertiary opacity-0 scale-90 group-hover/tab:opacity-100 group-hover/tab:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+            "transition-[opacity,transform] duration-150 hover:bg-[#ffffff22] hover:text-text-primary cursor-pointer",
+          )}
+        >
+          <X size={10} strokeWidth={2.2} />
+        </button>
+      </Hint>
     </div>
   );
 }

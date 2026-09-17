@@ -10,14 +10,24 @@
 // library. The reference implementation uses framer-motion, which is not a
 // dependency here and would be a poor one to add for this: the titlebar is on
 // the eager boot path, so its cost would be paid before first paint by every
-// launch, to animate a hover. An easing curve with a little overshoot reads
-// close enough to a spring over 260ms.
+// launch, to animate a hover. Timing and curves come from
+// `ui/tooltip-timing.ts`, shared with every other tooltip: the first label
+// waits for the open delay, and the next one is instant while any tooltip in
+// the app is warm.
 //
 // It opens DOWNWARD. A titlebar tooltip has nothing above it but the window
 // edge and the traffic lights.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { slideGeometry, type SlideGeometry } from "@/ui/slide-geometry";
+import {
+  isTooltipWarm,
+  markTooltipClosed,
+  markTooltipOpen,
+  slideTransition,
+  TOOLTIP_OPEN_DELAY,
+} from "@/ui/tooltip-timing";
 
 export interface DockItem {
   /** Stable identity, and the tooltip's text. */
@@ -31,12 +41,7 @@ export interface DockItem {
   title?: string;
 }
 
-interface Geometry {
-  /** Strip offset, in px, that centres the active label on its icon. */
-  tx: number;
-  /** Percentages hiding everything either side of the active label. */
-  left: number;
-  right: number;
+interface Geometry extends SlideGeometry {
   /** False for the first reveal: it must materialise in place, not fly in
    *  from wherever the previous hover left the strip. */
   animate: boolean;
@@ -67,7 +72,25 @@ export function TitlebarDock({
   const anchor = useRef<HTMLDivElement>(null);
 
   const [geometry, setGeometry] = useState<Geometry | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisibleState] = useState(false);
+  const visibleRef = useRef(false);
+  const openTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const setVisible = useCallback((next: boolean) => {
+    if (next === visibleRef.current) return;
+    visibleRef.current = next;
+    if (next) markTooltipOpen();
+    else markTooltipClosed();
+    setVisibleState(next);
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearTimeout(openTimer.current);
+      if (visibleRef.current) markTooltipClosed();
+    },
+    [],
+  );
 
   const onEnter = useCallback(
     (index: number) => {
@@ -79,41 +102,35 @@ export function TitlebarDock({
       // Widths are read fresh rather than cached: the labels are laid out once
       // and never change, but a font swap or a UI-scale change would move them
       // and a stale cache would offset every tooltip by the difference.
-      let before = 0;
-      for (let i = 0; i < index; i++) {
-        before += labels.current[i]?.getBoundingClientRect().width ?? 0;
-      }
-      let after = 0;
-      for (let i = index + 1; i < count; i++) {
-        after += labels.current[i]?.getBoundingClientRect().width ?? 0;
-      }
-      const total = before + active.width + after;
-      if (total <= 0) return;
-
-      const iconCentre = button.left + button.width / 2;
-      let tx = iconCentre - (parent.left + before + active.width / 2);
-
-      // After the shift the active label spans [centre - w/2, centre + w/2].
-      // Push it back inside the window if either edge escapes.
-      const overflowRight = iconCentre + active.width / 2 - (window.innerWidth - EDGE_MARGIN);
-      if (overflowRight > 0) tx -= overflowRight;
-      const overflowLeft = EDGE_MARGIN - (iconCentre - active.width / 2);
-      if (overflowLeft > 0) tx += overflowLeft;
-
-      setGeometry({
-        tx,
-        left: (before / total) * 100,
-        right: (after / total) * 100,
-        animate: visible,
+      const widths = Array.from(
+        { length: count },
+        (_, i) => labels.current[i]?.getBoundingClientRect().width ?? 0,
+      );
+      const slide = slideGeometry({
+        index,
+        widths,
+        controlCentre: button.left + button.width / 2,
+        stripLeft: parent.left,
+        viewportWidth: window.innerWidth,
+        margin: EDGE_MARGIN,
       });
-      setVisible(true);
+      if (!slide) return;
+
+      clearTimeout(openTimer.current);
+      const travelling = visibleRef.current;
+      setGeometry({ ...slide, animate: travelling });
+      if (travelling || isTooltipWarm()) setVisible(true);
+      else openTimer.current = setTimeout(() => setVisible(true), TOOLTIP_OPEN_DELAY);
     },
-    [count, visible],
+    [count, setVisible],
   );
 
   // Only the fade runs on leave, so the strip stays where it was and the next
   // hover travels from there rather than from the origin.
-  const onLeave = useCallback(() => setVisible(false), []);
+  const onLeave = useCallback(() => {
+    clearTimeout(openTimer.current);
+    setVisible(false);
+  }, [setVisible]);
 
   return (
     <div className={cn("relative", className)} onMouseLeave={onLeave}>
@@ -175,18 +192,9 @@ export function TitlebarDock({
             opacity: visible ? 1 : 0,
             transform: `translateX(${geometry?.tx ?? 0}px)`,
             clipPath: `inset(0 ${geometry?.right ?? 0}% 0 ${geometry?.left ?? 0}% round 6px)`,
-            // A touch of overshoot at the end of the travel, which is the part
-            // of a spring the eye actually reads. Opacity is always eased and
-            // quick; position only animates once the strip is already up.
-            transition: [
-              "opacity 140ms ease-out",
-              ...(geometry?.animate
-                ? [
-                    "transform 260ms cubic-bezier(0.22, 1.2, 0.36, 1)",
-                    "clip-path 260ms cubic-bezier(0.22, 1.2, 0.36, 1)",
-                  ]
-                : []),
-            ].join(", "),
+            // Opacity is always eased and quick; position only animates once
+            // the strip is already up, and never under reduced motion.
+            transition: slideTransition({ visible, travel: geometry?.animate ?? false }),
           }}
         >
           {[...items.map((i) => i.label), ...(trailing ? [trailing.label] : [])].map(

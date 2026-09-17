@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { CommsAvatar } from "./comms-avatar";
 import { CommsComposer } from "./comms-composer";
 import { MessageGroup } from "./message-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { PinnedMenu } from "./pinned-menu";
 import { CallMenu } from "./call-menu";
 import { DraftsTab } from "./drafts-tab";
@@ -560,14 +560,15 @@ function ConversationHeader({
     // shoving the buttons off the edge.
     <div className="flex h-[38px] shrink-0 items-center gap-1 border-b border-border-default px-2">
       {/* Back to the tab's home view — the panel has no sidebar to fall back on. */}
-      <button
-        type="button"
-        title="Back to chats"
-        onClick={onBack}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-      >
-        <ChevronLeft size={15} />
-      </button>
+      <Hint label="Back to chats">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+        >
+          <ChevronLeft size={15} />
+        </button>
+      </Hint>
 
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {isChannel ? (
@@ -731,7 +732,7 @@ function TypingHint({ names }: { names: string[] }) {
 /**
  * Message-shaped placeholders for a transcript that has not arrived.
  *
- * Opacity-only shimmer (`atlas-marker-shimmer`): this renders inside
+ * Opacity-only shimmer (`atlas-marker-running`): this renders inside
  * `atlas-vibrant-panel`, whose grain overlay makes WKWebView mis-composite
  * anything animating a transform.
  */
@@ -740,24 +741,15 @@ function TranscriptSkeleton() {
     <div className="flex flex-col gap-3 px-3 py-4">
       {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} className="flex gap-2">
-          <div
-            className="h-[30px] w-[30px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50"
-            style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-          />
+          <div className="h-[30px] w-[30px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50 atlas-marker-running" />
           <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1">
             <div
-              className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50"
-              style={{
-                width: 90 + ((i * 31) % 50),
-                animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-              }}
+              className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+              style={{ width: 90 + ((i * 31) % 50) }}
             />
             <div
-              className="h-[8px] rounded bg-[var(--bg-elevated)] opacity-35"
-              style={{
-                width: `${58 + ((i * 17) % 34)}%`,
-                animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-              }}
+              className="h-[8px] rounded bg-[var(--bg-elevated)] opacity-35 atlas-marker-running"
+              style={{ width: `${58 + ((i * 17) % 34)}%` }}
             />
           </div>
         </div>

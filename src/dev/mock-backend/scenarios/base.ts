@@ -12,16 +12,34 @@ import type { ModelStatus } from "@/features/settings/lib/models-api";
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
 import type { AgentCatalog } from "@/types/agent-catalog";
 import type { CaptureHealth } from "@/features/capture/types";
+import type { MentionData } from "@/features/chat/lib/mentions";
 import type { ThreadProject } from "@/features/chat/lib/history-api";
 import type { RecentFile } from "@/features/chat/stores/recent-files-store";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type { FileIndexStatus } from "@/features/file-picker/lib/file-picker-api";
 import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
+import type { ClonedRepo } from "@/features/github/types";
+import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
+import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-store";
+import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
+import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
+import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
 import type { MockHandlers } from "../types";
 import { agentHandlers } from "../fake-agent";
 import { appState, listDir, MOCK_WORKSPACE } from "../workspace";
 
 const nothing = () => null;
+
+// Inline `invoke<…>` result types in the knowledge panel / footer, restated
+// here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
+export interface KbImportResult {
+  notes_imported: number;
+  files_copied: number;
+}
+export interface KbServerExport {
+  binaryPath: string;
+  noteCount: number;
+}
 
 export const baseHandlers: MockHandlers = {
   // ── boot ────────────────────────────────────────────────────────────────
@@ -67,8 +85,35 @@ export const baseHandlers: MockHandlers = {
   }),
   recent_files_open_project: (): RecentFile[] => [],
   codebase_index_status: () => ({ indexed: false, fileCount: 0, summaryCount: 0, builtAtMs: 0 }),
-  list_knowledge: () => [],
-  knowledge_meta_load: () => ({ version: 1, pages: {} }),
+  // Knowledge: an empty base. Writes are accepted and forgotten; the
+  // `knowledge` scenario overrides all of these with a live in-memory store.
+  list_knowledge: (): KnowledgeEntry[] => [],
+  knowledge_meta_load: (): MetaFile => ({ version: 1, pages: {} }),
+  knowledge_meta_patch: ({ patch }): RustPageMeta => ({ ...patch }),
+  knowledge_meta_delete: nothing,
+  save_knowledge_note: ({ id }) => `${MOCK_WORKSPACE.path}/.atlas/knowledge/${id}.md`,
+  delete_knowledge_note: nothing,
+  create_knowledge_dir: nothing,
+  import_into_knowledge: (): KbImportResult => ({ notes_imported: 0, files_copied: 0 }),
+  log_interaction: nothing,
+  knowledge_backlinks: (): Backlink[] => [],
+  knowledge_link_counts: (): LinkCounts => ({ backlinks: 0, forwardlinks: 0 }),
+  knowledge_links_graph: (): ProjectGraph => ({ nodes: [], edges: [] }),
+  knowledge_links_invalidate: nothing,
+  knowledge_graph_layout_load: (): GraphLayout => ({ positions: {} }),
+  knowledge_graph_layout_save: nothing,
+  // Rust hands gradient refs back untouched; there are no image covers here.
+  knowledge_cover_data_url: ({ cover }): string => {
+    if (String(cover).startsWith("gradient:")) return cover;
+    throw new Error("cover not found");
+  },
+  knowledge_cover_upload: ({ entryId }): string => `covers/${entryId.replace(/\//g, "__")}.png`,
+  // The real command always returns a list; the sidebar also guards null.
+  list_cloned_repos: (): ClonedRepo[] => [],
+  read_repo_readme: () => {
+    throw new Error("No README found");
+  },
+  delete_cloned_repo: nothing,
   threads_projects: (): ThreadProject[] => [],
   capture_activate: nothing,
   capture_binding: nothing,
@@ -132,6 +177,16 @@ export const baseHandlers: MockHandlers = {
   recent_files_close_project: nothing,
   mention_cache_clear: nothing,
   mention_cache_set_knowledge: nothing,
+  // The unscoped `@` picker spreads this result, so `null` would throw.
+  mention_search: (): MentionData[] => [],
+  knowledge_export_note_md: nothing,
+  knowledge_export_note_html: nothing,
+  knowledge_export_workspace_md: nothing,
+  knowledge_export_workspace_html: nothing,
+  knowledge_export_server: (): KbServerExport => ({
+    binaryPath: "/Users/dev/Downloads/atlas-kb-server",
+    noteCount: 0,
+  }),
   telemetry_set_org: nothing,
 
   // ── Tauri plugins ───────────────────────────────────────────────────────

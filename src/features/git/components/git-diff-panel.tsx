@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openFile } from "@/lib/open-file";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { getLanguage } from "../lib/diff";
 import {
   ensureDiffHighlight,
@@ -493,70 +494,77 @@ export function GitDiffPanel({
       <Panel id="git-diff-tree-diff" className="min-w-0">
         <div className="flex h-full min-w-0 flex-col">
           {/* Toolbar */}
-          <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
-            <button
-              onClick={toggleTree}
-              className="-ml-1 rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-              title={treeCollapsed ? "Show changed files" : "Hide changed files"}
-            >
-              {treeCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
-            </button>
-            <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-            <span className="truncate font-mono text-[11px] text-[var(--text-secondary)]">
-              {file || "Git Diff"}
-            </span>
-            {staged && (
-              <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
-                staged
+          <HintGroup>
+            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
+              <HintItem label={treeCollapsed ? "Show changed files" : "Hide changed files"}>
+                <button
+                  onClick={toggleTree}
+                  className="-ml-1 rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  {treeCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
+                </button>
+              </HintItem>
+              <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+              <span className="truncate font-mono text-[11px] text-[var(--text-secondary)]">
+                {file || "Git Diff"}
               </span>
-            )}
-            {stats && (
-              <span className="shrink-0 font-mono text-[10px]">
-                <span className="text-[var(--status-success)]">+{stats.additions}</span>{" "}
-                <span className="text-[var(--status-error)]">-{stats.deletions}</span>
-              </span>
-            )}
-            {!!file && (
-              <div className="ml-auto flex items-center gap-0.5">
-                <span className="mr-1 font-mono text-[10px] text-[var(--text-tertiary)] tabular-nums">
-                  {diffCount} diff{diffCount !== 1 ? "s" : ""}
+              {staged && (
+                <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                  staged
                 </span>
-                <button
-                  onClick={() => jump(-1)}
-                  disabled={diffCount === 0}
-                  className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
-                  title="Previous change"
-                >
-                  <ChevronUp size={12} />
-                </button>
-                <button
-                  onClick={() => jump(1)}
-                  disabled={diffCount === 0}
-                  className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
-                  title="Next change"
-                >
-                  <ChevronDown size={12} />
-                </button>
-                <button
-                  onClick={() => void refetch()}
-                  className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-                  title="Refresh"
-                >
-                  <RefreshCw size={11} />
-                </button>
-                <button
-                  onClick={() => {
-                    void openFile(`${repoPath}/${file}`);
-                    onOpenInEditor?.();
-                  }}
-                  className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-                  title="Open in editor"
-                >
-                  <ExternalLink size={11} />
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+              {stats && (
+                <span className="shrink-0 font-mono text-[10px]">
+                  <span className="text-[var(--status-success)]">+{stats.additions}</span>{" "}
+                  <span className="text-[var(--status-error)]">-{stats.deletions}</span>
+                </span>
+              )}
+              {!!file && (
+                <div className="ml-auto flex items-center gap-0.5">
+                  <span className="mr-1 font-mono text-[10px] text-[var(--text-tertiary)] tabular-nums">
+                    {diffCount} diff{diffCount !== 1 ? "s" : ""}
+                  </span>
+                  <HintItem label="Previous change">
+                    <button
+                      onClick={() => jump(-1)}
+                      disabled={diffCount === 0}
+                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronUp size={12} />
+                    </button>
+                  </HintItem>
+                  <HintItem label="Next change">
+                    <button
+                      onClick={() => jump(1)}
+                      disabled={diffCount === 0}
+                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronDown size={12} />
+                    </button>
+                  </HintItem>
+                  <HintItem label="Refresh">
+                    <button
+                      onClick={() => void refetch()}
+                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                    >
+                      <RefreshCw size={11} />
+                    </button>
+                  </HintItem>
+                  <HintItem label="Open in editor">
+                    <button
+                      onClick={() => {
+                        void openFile(`${repoPath}/${file}`);
+                        onOpenInEditor?.();
+                      }}
+                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                    >
+                      <ExternalLink size={11} />
+                    </button>
+                  </HintItem>
+                </div>
+              )}
+            </div>
+          </HintGroup>
 
           {/* Body */}
           {!file ? (

@@ -29,6 +29,8 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { timeAgo } from "@/lib/time-ago";
 import { useLogStore, type LogEntry, type LogSource } from "../stores/log-store";
@@ -216,16 +218,17 @@ export function LogPanel() {
         cell: ({ row }) => {
           const open = expanded.has(row.original.id);
           return (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpanded(row.original.id);
-              }}
-              className="p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
-              title={open ? "Collapse" : "Expand"}
-            >
-              {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            </button>
+            <Hint label={open ? "Collapse" : "Expand"}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpanded(row.original.id);
+                }}
+                className="p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              </button>
+            </Hint>
           );
         },
         size: 24,
@@ -299,44 +302,49 @@ export function LogPanel() {
         cell: ({ row }) => {
           const e = row.original;
           return (
-            <div className="flex items-center gap-0.5 justify-end pr-1">
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  if (e.pinned) unpin(e.id);
-                  else pin(e.id);
-                }}
-                className={cn(
-                  "p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer transition-colors",
-                  e.pinned
-                    ? "text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]"
-                    : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
-                )}
-                title={e.pinned ? "Unpin" : "Pin (save)"}
-              >
-                {e.pinned ? <PinOff size={11} /> : <Pin size={11} />}
-              </button>
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  handleCopy(e);
-                }}
-                className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-                title="Copy JSON"
-              >
-                {copiedId === e.id ? <Check size={11} /> : <Copy size={11} />}
-              </button>
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  handleCopyLine(e);
-                }}
-                className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors opacity-0 group-hover:opacity-100"
-                title="Copy line"
-              >
-                {copiedLineId === e.id ? <Check size={11} /> : <ClipboardCopy size={11} />}
-              </button>
-            </div>
+            <HintGroup>
+              <div className="flex items-center gap-0.5 justify-end pr-1">
+                <HintItem label={e.pinned ? "Unpin" : "Pin (save)"}>
+                  <button
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (e.pinned) unpin(e.id);
+                      else pin(e.id);
+                    }}
+                    className={cn(
+                      "p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer transition-colors",
+                      e.pinned
+                        ? "text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]"
+                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+                    )}
+                  >
+                    {e.pinned ? <PinOff size={11} /> : <Pin size={11} />}
+                  </button>
+                </HintItem>
+                <HintItem label="Copy JSON">
+                  <button
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      handleCopy(e);
+                    }}
+                    className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+                  >
+                    {copiedId === e.id ? <Check size={11} /> : <Copy size={11} />}
+                  </button>
+                </HintItem>
+                <HintItem label="Copy line">
+                  <button
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      handleCopyLine(e);
+                    }}
+                    className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    {copiedLineId === e.id ? <Check size={11} /> : <ClipboardCopy size={11} />}
+                  </button>
+                </HintItem>
+              </div>
+            </HintGroup>
           );
         },
         size: 84,

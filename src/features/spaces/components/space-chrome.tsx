@@ -18,7 +18,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommsAvatar } from "@/features/comms/components/comms-avatar";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { exportCanvas, type ExportFormat } from "@/features/canvas/lib/canvas-export";
@@ -98,19 +98,20 @@ export function SpaceHeaderPill({
         "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-2xl",
       )}
     >
-      <button
-        type="button"
-        onClick={onTogglePages}
-        title={pagesOpen ? "Hide pages" : "Show pages"}
-        className={cn(
-          "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors",
-          pagesOpen
-            ? "bg-bg-selected text-text-primary"
-            : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
-        )}
-      >
-        <PanelLeft size={13} />
-      </button>
+      <Hint label={pagesOpen ? "Hide pages" : "Show pages"}>
+        <button
+          type="button"
+          onClick={onTogglePages}
+          className={cn(
+            "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors",
+            pagesOpen
+              ? "bg-bg-selected text-text-primary"
+              : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+          )}
+        >
+          <PanelLeft size={13} />
+        </button>
+      </Hint>
       <div className="mx-0.5 h-4 w-px bg-white/10" />
 
       {/* The page name is the shorthand page selector — the dock is the long
@@ -169,14 +170,15 @@ export function SpaceHeaderPill({
 
       <div className="mx-0.5 h-4 w-px bg-white/10" />
       <ZoomReadout />
-      <button
-        type="button"
-        onClick={() => rf.fitView({ duration: 350, padding: 0.2 })}
-        title="Fit to view"
-        className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
-      >
-        <Crosshair size={12} />
-      </button>
+      <Hint label="Fit to view">
+        <button
+          type="button"
+          onClick={() => rf.fitView({ duration: 350, padding: 0.2 })}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+        >
+          <Crosshair size={12} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -194,14 +196,11 @@ function ZoomReadout() {
     "flex h-6 w-5 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary";
   return (
     <div className="flex items-center">
-      <button
-        type="button"
-        title="Zoom out"
-        onClick={() => void rf.zoomOut({ duration: 150 })}
-        className={step}
-      >
-        <Minus size={11} />
-      </button>
+      <Hint label="Zoom out">
+        <button type="button" onClick={() => void rf.zoomOut({ duration: 150 })} className={step}>
+          <Minus size={11} />
+        </button>
+      </Hint>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -216,14 +215,11 @@ function ZoomReadout() {
           Reset zoom to 100%
         </TooltipContent>
       </Tooltip>
-      <button
-        type="button"
-        title="Zoom in"
-        onClick={() => void rf.zoomIn({ duration: 150 })}
-        className={step}
-      >
-        <Plus size={11} />
-      </button>
+      <Hint label="Zoom in">
+        <button type="button" onClick={() => void rf.zoomIn({ duration: 150 })} className={step}>
+          <Plus size={11} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -330,6 +326,7 @@ export function SpaceActionPill({
                   <button
                     type="button"
                     aria-pressed={riding}
+                    aria-label={`Follow ${nameOf(a)}`}
                     onClick={() => onFollow(riding ? null : a.id)}
                     className={cn(
                       "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
@@ -384,40 +381,30 @@ export function SpaceActionPill({
 
       <div className="mx-0.5 h-4 w-px bg-white/10" />
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={openInWeb}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            <ExternalLink size={12} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" sideOffset={4}>
-          Open in web
-        </TooltipContent>
-      </Tooltip>
+      <Hint label="Open in web">
+        <button
+          type="button"
+          onClick={openInWeb}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+        >
+          <ExternalLink size={12} />
+        </button>
+      </Hint>
 
       <div className="mx-0.5 h-4 w-px bg-white/10" />
 
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Popover.Trigger asChild>
-              <button
-                type="button"
-                disabled={!!busy}
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
-              >
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              </button>
-            </Popover.Trigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
-            Export canvas
-          </TooltipContent>
-        </Tooltip>
+        <Hint label="Export canvas">
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              disabled={!!busy}
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            </button>
+          </Popover.Trigger>
+        </Hint>
         <Popover.Portal>
           <Popover.Content
             align="end"

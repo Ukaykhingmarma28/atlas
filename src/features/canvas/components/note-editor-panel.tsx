@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useCanvasStore } from "../stores/canvas-store";
 import {
   TiptapEditor,
@@ -93,45 +94,50 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
         )}
       >
         {/* Header — matches the tab-bar height (29px) so the two rows align. */}
-        <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border-default shrink-0">
-          <button
-            type="button"
-            title="Change icon"
-            onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
-            className="flex h-5 w-5 items-center justify-center rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer shrink-0"
-          >
-            {note.icon ? (
-              <span className="text-[12px] leading-none">{note.icon}</span>
-            ) : (
-              <span className="text-[11px] leading-none text-white/60">＋</span>
-            )}
-          </button>
-          <input
-            value={note.title}
-            onChange={(e) => updateNote(noteId, { title: e.target.value })}
-            placeholder="Untitled"
-            className="flex-1 min-w-0 bg-transparent outline-none text-[12px] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              deleteNote(noteId);
-              onClose();
-            }}
-            title="Delete note"
-            className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={close}
-            title="Close"
-            className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border-default shrink-0">
+            <HintItem label="Change icon">
+              <button
+                type="button"
+                onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
+                className="flex h-5 w-5 items-center justify-center rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer shrink-0"
+              >
+                {note.icon ? (
+                  <span className="text-[12px] leading-none">{note.icon}</span>
+                ) : (
+                  <span className="text-[11px] leading-none text-white/60">＋</span>
+                )}
+              </button>
+            </HintItem>
+            <input
+              value={note.title}
+              onChange={(e) => updateNote(noteId, { title: e.target.value })}
+              placeholder="Untitled"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[12px] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            />
+            <HintItem label="Delete note">
+              <button
+                type="button"
+                onClick={() => {
+                  deleteNote(noteId);
+                  onClose();
+                }}
+                className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer transition-colors"
+              >
+                <Trash2 size={12} />
+              </button>
+            </HintItem>
+            <HintItem label="Close">
+              <button
+                type="button"
+                onClick={close}
+                className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
 
         {/* Body — the editor fills the full width + height with comfortable
             padding. `!bg-transparent` drops the editor's default #000 so it

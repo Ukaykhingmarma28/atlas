@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -167,15 +168,17 @@ export function SearchOverlay({
                         {q}
                       </span>
                     </button>
-                    <button
-                      onClick={() => {
-                        removeSearchHistory(q);
-                        if (currentProject) saveSession(currentProject.path);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
-                    >
-                      <X size={9} />
-                    </button>
+                    <Hint label="Remove from history">
+                      <button
+                        onClick={() => {
+                          removeSearchHistory(q);
+                          if (currentProject) saveSession(currentProject.path);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
+                      >
+                        <X size={9} />
+                      </button>
+                    </Hint>
                   </div>
                 ))}
               </div>

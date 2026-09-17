@@ -12,7 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint } from "@/ui/tooltip";
 import { openKeybindingsFile } from "../lib/keybindings-api";
 import { useKeybindingsStore } from "../stores/keybindings-store";
 
@@ -252,26 +252,22 @@ export function IconButton({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          aria-pressed={active}
-          disabled={disabled}
-          onClick={onClick}
-          className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-            active
-              ? "bg-bg-selected text-text-primary"
-              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
-            disabled ? "opacity-35 cursor-not-allowed" : "cursor-pointer",
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <Hint label={label}>
+      <button
+        type="button"
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+          active
+            ? "bg-bg-selected text-text-primary"
+            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+          disabled ? "opacity-35 cursor-not-allowed" : "cursor-pointer",
+        )}
+      >
+        {children}
+      </button>
+    </Hint>
   );
 }

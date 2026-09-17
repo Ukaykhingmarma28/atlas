@@ -14,6 +14,7 @@ import {
   GitCompare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { parseDiff, buildRows, type DiffFile, type DiffHunk } from "../lib/diff";
 import { highlightDiffLine } from "../lib/diff-highlight";
 
@@ -142,60 +143,65 @@ export function DiffView({
     });
 
   const header = filters ? (
-    <div className="shrink-0 border-b border-border-default">
-      <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-[10px] font-mono text-text-tertiary">
-          {files.length} file{files.length !== 1 ? "s" : ""}{" "}
-          <span className="text-success">+{totalAdd}</span>{" "}
-          <span className="text-error">-{totalDel}</span>
-        </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() =>
-              setCollapsed(anyExpanded ? new Set(files.map((f) => f.path)) : new Set())
-            }
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer"
-            title={anyExpanded ? "Collapse all" : "Expand all"}
-          >
-            {anyExpanded ? <FoldVertical size={10} /> : <UnfoldVertical size={10} />}
-          </button>
-          {onRefresh && (
+    <HintGroup>
+      <div className="shrink-0 border-b border-border-default">
+        <div className="flex items-center justify-between px-3 pt-2">
+          <span className="text-[10px] font-mono text-text-tertiary">
+            {files.length} file{files.length !== 1 ? "s" : ""}{" "}
+            <span className="text-success">+{totalAdd}</span>{" "}
+            <span className="text-error">-{totalDel}</span>
+          </span>
+          <div className="flex items-center gap-0.5">
+            <HintItem label={anyExpanded ? "Collapse all" : "Expand all"}>
+              <button
+                onClick={() =>
+                  setCollapsed(anyExpanded ? new Set(files.map((f) => f.path)) : new Set())
+                }
+                className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer"
+              >
+                {anyExpanded ? <FoldVertical size={10} /> : <UnfoldVertical size={10} />}
+              </button>
+            </HintItem>
+            {onRefresh && (
+              <HintItem label="Refresh diff">
+                <button
+                  onClick={onRefresh}
+                  className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer"
+                >
+                  <RefreshCw size={10} />
+                </button>
+              </HintItem>
+            )}
+            <FileListPopover files={files} onOpen={onOpenFile} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5">
+          <div className="flex-1 flex items-center gap-1.5 h-6 rounded border border-border-default bg-bg-secondary px-2">
+            <Search size={10} className="text-text-tertiary shrink-0" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter files…"
+              className="flex-1 bg-transparent outline-none text-[10px] text-text-primary placeholder:text-text-tertiary min-w-0"
+            />
+          </div>
+          <HintItem label="Sort by most changes">
             <button
-              onClick={onRefresh}
-              className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer"
-              title="Refresh diff"
+              onClick={() => setSortMode(sortMode === "most-changes" ? "default" : "most-changes")}
+              className={cn(
+                "p-1 rounded transition-colors cursor-pointer",
+                sortMode === "most-changes"
+                  ? "text-accent bg-bg-selected"
+                  : "text-text-tertiary hover:bg-bg-hover",
+              )}
             >
-              <RefreshCw size={10} />
+              <ArrowDownWideNarrow size={11} />
             </button>
-          )}
-          <FileListPopover files={files} onOpen={onOpenFile} />
+          </HintItem>
+          <LangFilterPopover languages={languages} active={langFilter} onSelect={setLangFilter} />
         </div>
       </div>
-      <div className="flex items-center gap-1.5 px-3 py-1.5">
-        <div className="flex-1 flex items-center gap-1.5 h-6 rounded border border-border-default bg-bg-secondary px-2">
-          <Search size={10} className="text-text-tertiary shrink-0" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter files…"
-            className="flex-1 bg-transparent outline-none text-[10px] text-text-primary placeholder:text-text-tertiary min-w-0"
-          />
-        </div>
-        <button
-          onClick={() => setSortMode(sortMode === "most-changes" ? "default" : "most-changes")}
-          className={cn(
-            "p-1 rounded transition-colors cursor-pointer",
-            sortMode === "most-changes"
-              ? "text-accent bg-bg-selected"
-              : "text-text-tertiary hover:bg-bg-hover",
-          )}
-          title="Sort by most changes"
-        >
-          <ArrowDownWideNarrow size={11} />
-        </button>
-        <LangFilterPopover languages={languages} active={langFilter} onSelect={setLangFilter} />
-      </div>
-    </div>
+    </HintGroup>
   ) : null;
 
   return (
@@ -230,53 +236,56 @@ export function DiffView({
                 const file = row.file;
                 const isCollapsed = collapsed.has(file.path);
                 return (
-                  <div
-                    key={vr.index}
-                    data-index={vr.index}
-                    ref={virtualizer.measureElement}
-                    style={base}
-                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-t-md border border-border-default bg-[#0F0F0F] hover:bg-[#141414] cursor-pointer group"
-                    onClick={() => toggleFile(file.path)}
-                  >
-                    <ChevronRight
-                      size={11}
-                      className={cn(
-                        "shrink-0 text-text-tertiary transition-transform",
-                        !isCollapsed && "rotate-90",
+                  <HintGroup key={vr.index}>
+                    <div
+                      data-index={vr.index}
+                      ref={virtualizer.measureElement}
+                      style={base}
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-t-md border border-border-default bg-[#0F0F0F] hover:bg-[#141414] cursor-pointer group"
+                      onClick={() => toggleFile(file.path)}
+                    >
+                      <ChevronRight
+                        size={11}
+                        className={cn(
+                          "shrink-0 text-text-tertiary transition-transform",
+                          !isCollapsed && "rotate-90",
+                        )}
+                      />
+                      <span className="text-[11px] text-text-secondary font-mono truncate flex-1 select-text">
+                        {file.path}
+                      </span>
+                      {onOpenDiff && (
+                        <HintItem label="Open in diff view">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenDiff(file.path);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-text-tertiary hover:text-text-primary"
+                          >
+                            <GitCompare size={10} />
+                          </button>
+                        </HintItem>
                       )}
-                    />
-                    <span className="text-[11px] text-text-secondary font-mono truncate flex-1 select-text">
-                      {file.path}
-                    </span>
-                    {onOpenDiff && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenDiff(file.path);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-text-tertiary hover:text-text-primary"
-                        title="Open in diff view"
-                      >
-                        <GitCompare size={10} />
-                      </button>
-                    )}
-                    {onOpenFile && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenFile(file.path);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-text-tertiary hover:text-text-primary"
-                        title="Open in code editor"
-                      >
-                        <ExternalLink size={9} />
-                      </button>
-                    )}
-                    <span className="text-[9px] font-mono shrink-0">
-                      <span className="text-success">+{file.additions}</span>{" "}
-                      <span className="text-error">-{file.deletions}</span>
-                    </span>
-                  </div>
+                      {onOpenFile && (
+                        <HintItem label="Open in code editor">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenFile(file.path);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-text-tertiary hover:text-text-primary"
+                          >
+                            <ExternalLink size={9} />
+                          </button>
+                        </HintItem>
+                      )}
+                      <span className="text-[9px] font-mono shrink-0">
+                        <span className="text-success">+{file.additions}</span>{" "}
+                        <span className="text-error">-{file.deletions}</span>
+                      </span>
+                    </div>
+                  </HintGroup>
                 );
               }
 
@@ -465,17 +474,18 @@ function LangFilterPopover({
 }) {
   return (
     <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          className={cn(
-            "p-1 rounded transition-colors cursor-pointer",
-            active ? "text-accent bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
-          )}
-          title="Filter by language"
-        >
-          <Code size={11} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Filter by language">
+        <Popover.Trigger asChild>
+          <button
+            className={cn(
+              "p-1 rounded transition-colors cursor-pointer",
+              active ? "text-accent bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
+            )}
+          >
+            <Code size={11} />
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           side="bottom"
@@ -522,14 +532,13 @@ function FileListPopover({
   const filtered = files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase()));
   return (
     <Popover.Root onOpenChange={() => setSearch("")}>
-      <Popover.Trigger asChild>
-        <button
-          className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer"
-          title="All changed files"
-        >
-          <MoreHorizontal size={10} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="All changed files">
+        <Popover.Trigger asChild>
+          <button className="p-1 rounded hover:bg-bg-hover text-text-tertiary cursor-pointer">
+            <MoreHorizontal size={10} />
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           side="bottom"

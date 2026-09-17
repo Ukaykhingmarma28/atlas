@@ -11,6 +11,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { ClaudeIcon, CodexIcon } from "@/components/agent-icons";
@@ -210,13 +212,14 @@ export function MemoryPolicyView() {
           </span>
         </span>
         <div className="flex-1" />
-        <button
-          onClick={() => void loadPolicies(projectPath, true)}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="Re-scan preferences"
-        >
-          <RotateCw size={12} />
-        </button>
+        <Hint label="Re-scan preferences">
+          <button
+            onClick={() => void loadPolicies(projectPath, true)}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} />
+          </button>
+        </Hint>
       </div>
 
       {policies.length === 0 ? (
@@ -413,35 +416,40 @@ function PolicyRow({
         {Math.round(policy.score * 100)}%
       </div>
 
-      <div className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
-        {dirty ? (
-          <>
-            <button
-              onClick={() => void save()}
-              disabled={saving}
-              className="flex items-center justify-center w-5 h-5 rounded text-[var(--status-success,#4d4d4d)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
-              title="Save (Enter)"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
-            </button>
-            <button
-              onClick={() => setDraft(policy.value)}
-              className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-              title="Revert (Esc)"
-            >
-              <X size={12} />
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => sendToAgentChat(`Preference — ${policy.key}: ${policy.value}`)}
-            className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-            title="Send to agent chat"
-          >
-            <MessageSquarePlus size={13} />
-          </button>
-        )}
-      </div>
+      <HintGroup>
+        <div className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
+          {dirty ? (
+            <>
+              <HintItem label="Save (Enter)">
+                <button
+                  onClick={() => void save()}
+                  disabled={saving}
+                  className="flex items-center justify-center w-5 h-5 rounded text-[var(--status-success,#4d4d4d)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
+                </button>
+              </HintItem>
+              <HintItem label="Revert (Esc)">
+                <button
+                  onClick={() => setDraft(policy.value)}
+                  className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                >
+                  <X size={12} />
+                </button>
+              </HintItem>
+            </>
+          ) : (
+            <HintItem label="Send to agent chat">
+              <button
+                onClick={() => sendToAgentChat(`Preference — ${policy.key}: ${policy.value}`)}
+                className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+              >
+                <MessageSquarePlus size={13} />
+              </button>
+            </HintItem>
+          )}
+        </div>
+      </HintGroup>
     </div>
   );
 }

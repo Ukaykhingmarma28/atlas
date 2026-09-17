@@ -2,6 +2,7 @@ import { useProjectStore } from "../stores/project-store";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { FolderOpen, Clock, X, Folder } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
+import { Hint } from "@/ui/tooltip";
 
 export function WelcomeScreen() {
   const paletteHint = useActionShortcut("nav.commandPalette")?.label ?? "⌘K";
@@ -65,15 +66,17 @@ export function WelcomeScreen() {
                       {project.path}
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeRecent(project.path);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--bg-active)] text-[var(--text-tertiary)] transition-opacity"
-                  >
-                    <X size={10} />
-                  </button>
+                  <Hint label="Remove from recents">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeRecent(project.path);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded hover:bg-[var(--bg-active)] text-[var(--text-tertiary)] transition-opacity"
+                    >
+                      <X size={10} />
+                    </button>
+                  </Hint>
                 </div>
               ))}
             </div>

@@ -8,6 +8,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { usePdfAnnotationStore, PDF_COLORS, type PdfTool } from "../stores/pdf-annotation-store";
 
 interface PdfToolbarProps {
@@ -26,6 +27,14 @@ const TOOLS: Array<{ tool: PdfTool; icon: typeof Pencil; label: string }> = [
   { tool: "erase", icon: Eraser, label: "Erase" },
 ];
 
+const COLOR_NAMES: Record<string, string> = {
+  "#F5C542": "Amber",
+  "#6796E6": "Blue",
+  "#5CC28A": "Green",
+  "#F44747": "Red",
+  "#C4A5E7": "Purple",
+};
+
 export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfToolbarProps) {
   const tool = usePdfAnnotationStore.use.tool();
   const color = usePdfAnnotationStore.use.color();
@@ -34,43 +43,50 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
   return (
     <div className="flex items-center gap-2 px-3 h-[36px] shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-base)]">
       {/* Tools */}
-      <div className="flex items-center gap-0.5">
-        {TOOLS.map(({ tool: t, icon: Icon, label }) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTool(t)}
-            title={label}
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded transition-colors",
-              tool === t
-                ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-            )}
-          >
-            <Icon size={13} />
-          </button>
-        ))}
-      </div>
+      <HintGroup>
+        <div className="flex items-center gap-0.5">
+          {TOOLS.map(({ tool: t, icon: Icon, label }) => (
+            <HintItem key={t} label={label}>
+              <button
+                type="button"
+                onClick={() => setTool(t)}
+                className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded transition-colors",
+                  tool === t
+                    ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                )}
+              >
+                <Icon size={13} />
+              </button>
+            </HintItem>
+          ))}
+        </div>
+      </HintGroup>
 
       <div className="h-4 w-px bg-[var(--border-default)]" />
 
       {/* Colors */}
-      <div className="flex items-center gap-1">
-        {PDF_COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setColor(c)}
-            title={c}
-            className={cn(
-              "h-3.5 w-3.5 rounded-full border transition-transform",
-              color === c ? "border-[var(--text-primary)] scale-110" : "border-black/20",
-            )}
-            style={{ background: c }}
-          />
-        ))}
-      </div>
+      <HintGroup>
+        <div className="flex items-center gap-1">
+          {PDF_COLORS.map((c) => (
+            <HintItem
+              key={c}
+              label={COLOR_NAMES[c] ? `Color: ${COLOR_NAMES[c]}` : `Use color ${c}`}
+            >
+              <button
+                type="button"
+                onClick={() => setColor(c)}
+                className={cn(
+                  "h-3.5 w-3.5 rounded-full border transition-transform",
+                  color === c ? "border-[var(--text-primary)] scale-110" : "border-black/20",
+                )}
+                style={{ background: c }}
+              />
+            </HintItem>
+          ))}
+        </div>
+      </HintGroup>
 
       <div
         className="mx-1 flex flex-1 items-center justify-center gap-1.5 truncate text-[11px] font-mono text-[var(--text-tertiary)]"
@@ -87,29 +103,31 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
       </div>
 
       {/* Zoom */}
-      <div className="flex items-center gap-0.5">
-        <button
-          type="button"
-          onClick={onZoomOut}
-          title="Zoom out"
-          aria-label="Zoom out"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomOut size={13} />
-        </button>
-        <span className="w-9 text-center text-[10px] font-mono text-[var(--text-tertiary)]">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          type="button"
-          onClick={onZoomIn}
-          title="Zoom in"
-          aria-label="Zoom in"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomIn size={13} />
-        </button>
-      </div>
+      <HintGroup>
+        <div className="flex items-center gap-0.5">
+          <HintItem label="Zoom out">
+            <button
+              type="button"
+              onClick={onZoomOut}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <ZoomOut size={13} />
+            </button>
+          </HintItem>
+          <span className="w-9 text-center text-[10px] font-mono text-[var(--text-tertiary)]">
+            {Math.round(zoom * 100)}%
+          </span>
+          <HintItem label="Zoom in">
+            <button
+              type="button"
+              onClick={onZoomIn}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <ZoomIn size={13} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }

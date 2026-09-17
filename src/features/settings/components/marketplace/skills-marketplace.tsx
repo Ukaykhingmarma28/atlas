@@ -16,6 +16,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { packs as packsApi } from "@/features/packs/lib/packs-api";
 import { skills as skillsApi } from "@/features/skills/lib/skills-api";
 import { SKILLS_CHANGED_EVENT } from "@/features/skills/lib/skills-events";
@@ -233,13 +234,15 @@ export function SkillsMarketplace({
         />
         {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
         {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="shrink-0 text-text-tertiary hover:text-text-primary cursor-pointer"
-          >
-            <X size={11} />
-          </button>
+          <Hint label="Clear search">
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="shrink-0 text-text-tertiary hover:text-text-primary cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          </Hint>
         )}
       </div>
 

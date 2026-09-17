@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { copyText } from "@/lib/clipboard";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -503,7 +504,9 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
     <div
       role="button"
       tabIndex={0}
-      title={`Download ${attachment.filename}`}
+      // A name rather than a native `title`: the title would also show over
+      // the action buttons inside, on top of their own tooltips.
+      aria-label={`Download ${attachment.filename}`}
       onClick={() => {
         if (!downloading) void saveAttachment(attachment);
       }}
@@ -531,31 +534,35 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
           {failed && " · could not load"}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/file:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          title="Copy link"
-          onClick={(e) => {
-            e.stopPropagation();
-            void copyAttachmentLink(attachment);
-          }}
-          className={fileActionBtn}
-        >
-          <LinkIcon size={12} />
-        </button>
-        <button
-          type="button"
-          title="Download"
-          disabled={downloading}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!downloading) void saveAttachment(attachment);
-          }}
-          className={fileActionBtn}
-        >
-          <Download size={12} />
-        </button>
-      </span>
+      <HintGroup>
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/file:opacity-100 focus-within:opacity-100">
+          <HintItem label="Copy link">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void copyAttachmentLink(attachment);
+              }}
+              className={fileActionBtn}
+            >
+              <LinkIcon size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="Download">
+            <button
+              type="button"
+              disabled={downloading}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!downloading) void saveAttachment(attachment);
+              }}
+              className={fileActionBtn}
+            >
+              <Download size={12} />
+            </button>
+          </HintItem>
+        </span>
+      </HintGroup>
     </div>
   );
 }
@@ -630,92 +637,100 @@ function HoverActions({
   }, [forceShow, onOpenChange]);
 
   return (
-    <div
-      className={cn(
-        "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border-default bg-bg-overlay p-0.5 shadow-[var(--shadow-md)]",
-        "opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100",
-        forceShow && "opacity-100",
-      )}
-    >
-      <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-        <Popover.Trigger asChild>
-          <button type="button" title="React" className={actionBtn}>
-            <SmilePlus size={12} />
+    <HintGroup side="top">
+      <div
+        className={cn(
+          "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border-default bg-bg-overlay p-0.5 shadow-[var(--shadow-md)]",
+          "opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100",
+          forceShow && "opacity-100",
+        )}
+      >
+        <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
+          <HintItem label="React">
+            <Popover.Trigger asChild>
+              <button type="button" className={actionBtn}>
+                <SmilePlus size={12} />
+              </button>
+            </Popover.Trigger>
+          </HintItem>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="end"
+              sideOffset={6}
+              className="z-[var(--z-modal)] w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] origin-[var(--radix-popover-content-transform-origin)] animate-scale-in"
+            >
+              <div className="grid grid-cols-7 gap-0.5">
+                {/* Built FROM the allowlist, so no button here can be refused. */}
+                {CHAT_REACTION_EMOJI.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => {
+                      onReact(e);
+                      setPickerOpen(false);
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-bg-hover cursor-pointer"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+
+        <HintItem label="Reply">
+          <button type="button" onClick={onReply} className={actionBtn}>
+            <CornerUpRight size={12} className="-scale-y-100" />
           </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            align="end"
-            sideOffset={6}
-            className="z-[var(--z-modal)] w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] animate-scale-in"
-          >
-            <div className="grid grid-cols-7 gap-0.5">
-              {/* Built FROM the allowlist, so no button here can be refused. */}
-              {CHAT_REACTION_EMOJI.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => {
-                    onReact(e);
-                    setPickerOpen(false);
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-bg-hover cursor-pointer"
+        </HintItem>
+
+        <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <HintItem label="More">
+            <DropdownMenu.Trigger asChild>
+              <button type="button" className={actionBtn}>
+                <MoreHorizontal size={12} />
+              </button>
+            </DropdownMenu.Trigger>
+          </HintItem>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              side="top"
+              align="end"
+              sideOffset={6}
+              className="z-[var(--z-modal)] min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] origin-[var(--radix-dropdown-menu-content-transform-origin)] animate-scale-in"
+            >
+              <DropdownMenu.Item onSelect={onCopy} className={menuItem}>
+                <Copy size={12} /> Copy text
+              </DropdownMenu.Item>
+              {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
+              <DropdownMenu.Item onSelect={onPin} className={menuItem}>
+                {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                {pinned ? "Unpin for everyone" : "Pin for everyone"}
+              </DropdownMenu.Item>
+              {(canEdit || canDelete) && (
+                <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
+              )}
+              {/* Author only — an admin can delete but never rewrite. */}
+              {canEdit && (
+                <DropdownMenu.Item onSelect={onEdit} className={menuItem}>
+                  <Pencil size={12} /> Edit
+                </DropdownMenu.Item>
+              )}
+              {canDelete && (
+                <DropdownMenu.Item
+                  onSelect={onDelete}
+                  className={cn(menuItem, "text-error data-[highlighted]:text-error")}
                 >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-
-      <button type="button" title="Reply" onClick={onReply} className={actionBtn}>
-        <CornerUpRight size={12} className="-scale-y-100" />
-      </button>
-
-      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenu.Trigger asChild>
-          <button type="button" title="More" className={actionBtn}>
-            <MoreHorizontal size={12} />
-          </button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            side="top"
-            align="end"
-            sideOffset={6}
-            className="z-[var(--z-modal)] min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] animate-scale-in"
-          >
-            <DropdownMenu.Item onSelect={onCopy} className={menuItem}>
-              <Copy size={12} /> Copy text
-            </DropdownMenu.Item>
-            {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
-            <DropdownMenu.Item onSelect={onPin} className={menuItem}>
-              {pinned ? <PinOff size={12} /> : <Pin size={12} />}
-              {pinned ? "Unpin for everyone" : "Pin for everyone"}
-            </DropdownMenu.Item>
-            {(canEdit || canDelete) && (
-              <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
-            )}
-            {/* Author only — an admin can delete but never rewrite. */}
-            {canEdit && (
-              <DropdownMenu.Item onSelect={onEdit} className={menuItem}>
-                <Pencil size={12} /> Edit
-              </DropdownMenu.Item>
-            )}
-            {canDelete && (
-              <DropdownMenu.Item
-                onSelect={onDelete}
-                className={cn(menuItem, "text-error data-[highlighted]:text-error")}
-              >
-                <Trash2 size={12} /> Delete
-              </DropdownMenu.Item>
-            )}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    </div>
+                  <Trash2 size={12} /> Delete
+                </DropdownMenu.Item>
+              )}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+    </HintGroup>
   );
 }
 
