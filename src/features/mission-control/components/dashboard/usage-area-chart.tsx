@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { fmtTokens } from "@/features/monitor/lib/usage-format";
-import { CHART, projectColorMap } from "../../lib/chart-theme";
+import { useChartPalette } from "../../lib/chart-theme";
 import { areaRows, filterDaily } from "../../lib/series";
 import type { MissionControlUsage } from "../../types";
 import { ChartCard } from "./chart-card";
@@ -23,12 +23,13 @@ export function UsageAreaChart({
   data: MissionControlUsage;
   rangeDays: number | null;
 }) {
+  const { axes, projectColorMap } = useChartPalette();
   const paths = useMemo(() => data.projects.map((p) => p.projectPath), [data.projects]);
   const nameByPath = useMemo(
     () => Object.fromEntries(data.projects.map((p) => [p.projectPath, p.projectName])),
     [data.projects],
   );
-  const colors = useMemo(() => projectColorMap(paths), [paths]);
+  const colors = useMemo(() => projectColorMap(paths), [projectColorMap, paths]);
   const rows = useMemo(
     () => areaRows(filterDaily(data.daily, rangeDays), paths),
     [data.daily, rangeDays, paths],
@@ -50,23 +51,23 @@ export function UsageAreaChart({
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={axes.grid} vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={{ fill: CHART.axis, fontSize: CHART.tickFont }}
+                tick={{ fill: axes.axis, fontSize: axes.tickFont }}
                 tickLine={false}
-                axisLine={{ stroke: CHART.grid }}
+                axisLine={{ stroke: axes.grid }}
                 minTickGap={28}
                 tickFormatter={(d: string) => d.slice(5)}
               />
               <YAxis
-                tick={{ fill: CHART.axis, fontSize: CHART.tickFont }}
+                tick={{ fill: axes.axis, fontSize: axes.tickFont }}
                 tickLine={false}
                 axisLine={false}
                 width={44}
                 tickFormatter={(v: number) => fmtTokens(v)}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ stroke: CHART.grid }} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: axes.grid }} />
               {paths.map((p) => (
                 <Area
                   key={p}

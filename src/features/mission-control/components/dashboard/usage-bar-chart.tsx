@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fmtTokens } from "@/features/monitor/lib/usage-format";
-import { AGENT_COLOR, CHART } from "../../lib/chart-theme";
+import { useChartPalette } from "../../lib/chart-theme";
 import type { MissionControlUsage } from "../../types";
 import { ChartCard } from "./chart-card";
 import { ChartTooltip } from "./chart-tooltip";
 
 /** Per-project bars of agent token consumption. */
 export function UsageBarChart({ data }: { data: MissionControlUsage }) {
+  const { axes, agent } = useChartPalette();
   const rows = useMemo(
     () =>
       data.projects
@@ -31,26 +32,26 @@ export function UsageBarChart({ data }: { data: MissionControlUsage }) {
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={rows} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={axes.grid} vertical={false} />
               <XAxis
                 dataKey="name"
-                tick={{ fill: CHART.axis, fontSize: CHART.tickFont }}
+                tick={{ fill: axes.axis, fontSize: axes.tickFont }}
                 tickLine={false}
-                axisLine={{ stroke: CHART.grid }}
+                axisLine={{ stroke: axes.grid }}
                 interval={0}
                 tickFormatter={(s: string) => (s.length > 10 ? `${s.slice(0, 9)}…` : s)}
               />
               <YAxis
-                tick={{ fill: CHART.axis, fontSize: CHART.tickFont }}
+                tick={{ fill: axes.axis, fontSize: axes.tickFont }}
                 tickLine={false}
                 axisLine={false}
                 width={44}
                 tickFormatter={(v: number) => fmtTokens(v)}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: axes.cursor }} />
               <Bar
                 dataKey="Agents"
-                fill={AGENT_COLOR.agents}
+                fill={agent.agents}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />

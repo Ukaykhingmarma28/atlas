@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { fmtTokens } from "@/features/monitor/lib/usage-format";
-import { projectColor } from "../../lib/chart-theme";
+import { useChartPalette } from "../../lib/chart-theme";
 import { consumptionShares } from "../../lib/series";
 import type { MissionControlUsage } from "../../types";
 import { ChartCard } from "./chart-card";
 
 /** Donut of max consumption — token share by project. */
 export function ConsumptionPie({ data }: { data: MissionControlUsage }) {
+  const { projectColor } = useChartPalette();
   const shares = useMemo(() => consumptionShares(data), [data]);
   const total = shares.reduce((n, s) => n + s.value, 0);
 

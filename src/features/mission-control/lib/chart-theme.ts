@@ -1,52 +1,101 @@
-// Recharts theming for the AMOLED-black Mission Control dashboard. Recharts
-// takes color PROPS (not CSS classes), so we expose concrete hex values that
-// match the design tokens + a deterministic per-project palette.
+/**
+ * Recharts theming, from the active theme.
+ *
+ * Recharts takes colour PROPS, not CSS classes — `stroke`, `fill`, and a `tick`
+ * object that becomes SVG attributes — so nothing here can be a `var(--…)` and
+ * every value is resolved (decision 14).
+ *
+ * The series palette is the theme's `chart-1..5`, which is exactly what those
+ * five shadcn base tokens are for: a theme author picks five colours that read
+ * as a set against their background, and every chart in Atlas follows. The file
+ * used to hold sixteen hand-picked greys chosen for one AMOLED-black theme;
+ * on Rosé Pine Dawn they were invisible.
+ *
+ * Five tokens, more series than that: `projectColor` cycles them and dims each
+ * further lap toward the background, so an eleventh project is still separable
+ * without inventing an eleventh token (decision 18 — role tokens only).
+ *
+ * Read it through `useChartPalette()`. The hook subscribes to
+ * `atlas:theme-applied`, so a chart repaints on a theme switch; a module-level
+ * constant, which is what this was, could not.
+ */
+import { useMemo } from "react";
+import { mix } from "@/features/theme/color";
+import { themeBase, themeColor, useThemeVersion } from "@/features/theme/theme-values";
 
-export const CHART = {
-  grid: "rgba(255,255,255,0.06)",
-  axis: "#777777", // --text-tertiary
-  tickFont: 11,
-  tooltipBg: "#0f0f0f", // --bg-elevated
-  tooltipBorder: "#1e1e1e", // --border-default
-} as const;
+/** The five series tokens, in the order a theme author sees them. */
+const SERIES_TOKENS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"] as const;
 
-// Muted, desaturated tones that sit quietly on Atlas's AMOLED-black monochrome
-// theme (NO bright orange / saturated hues). Faint hue separation only.
-export const AGENT_COLOR = {
-  // One colour for every Atlas agent: the dashboard folds them into one
-  // series rather than growing a column per agent (issue #17).
-  agents: "#b9b1a6", // warm gray
-  gpt: "#93a3ad", // muted slate
-  gemini: "#9aa6c0", // muted periwinkle-gray
-  byok: "#a89fb0", // muted mauve-gray
-  input: "#c9c9cf", // light gray
-  output: "#7f8088", // mid gray
-} as const;
+/** How far each extra lap of the cycle is pulled toward the background. */
+const LAP_FADE = 0.25;
+const MAX_LAP_FADE = 0.6;
 
-// Per-project palette: low-saturation grays with a whisper of hue so adjacent
-// projects stay distinguishable without breaking the monochrome feel. Cycles.
-const PROJECT_PALETTE = [
-  "#cfcfd4", // light gray
-  "#9aa3ad", // slate
-  "#a8b0a3", // sage-gray
-  "#b3aa9e", // warm gray
-  "#a39fb0", // mauve-gray
-  "#8f96a0", // cool gray
-  "#bdb6ab", // sand-gray
-  "#9bb0aa", // muted teal-gray
-  "#b0a6b3", // dusty lilac-gray
-  "#878d92", // graphite
-] as const;
-
-export function projectColor(index: number): string {
-  return PROJECT_PALETTE[index % PROJECT_PALETTE.length];
+export interface ChartAxes {
+  /** Gridlines and axis lines. */
+  grid: string;
+  /** Tick labels. */
+  axis: string;
+  tickFont: number;
+  /** The band recharts paints under the hovered category. */
+  cursor: string;
 }
 
-/** Build a stable path→color map preserving project order. */
-export function projectColorMap(paths: string[]): Record<string, string> {
-  const map: Record<string, string> = {};
-  paths.forEach((p, i) => {
-    map[p] = projectColor(i);
-  });
-  return map;
+/**
+ * One colour per named series. There are six names and five tokens, so `output`
+ * shares `chart-2` with `gpt`; the two never appear in the same chart.
+ */
+export interface SeriesColors {
+  agents: string;
+  gpt: string;
+  gemini: string;
+  byok: string;
+  input: string;
+  output: string;
+}
+
+export interface ChartPalette {
+  axes: ChartAxes;
+  agent: SeriesColors;
+  /** Stable colour for the nth project, cycling `chart-1..5`. */
+  projectColor: (index: number) => string;
+  /** `projectColor` as a path→colour map, preserving project order. */
+  projectColorMap: (paths: string[]) => Record<string, string>;
+}
+
+function buildChartPalette(): ChartPalette {
+  const background = themeBase("background");
+  const series = SERIES_TOKENS.map((token) => themeBase(token));
+
+  const projectColor = (index: number): string => {
+    const color = series[index % series.length];
+    const lap = Math.floor(index / series.length);
+    return lap === 0 ? color : mix(color, background, Math.min(lap * LAP_FADE, MAX_LAP_FADE));
+  };
+
+  return {
+    axes: {
+      grid: themeColor("border.default"),
+      axis: themeColor("text.muted"),
+      tickFont: 11,
+      cursor: themeColor("element.hover"),
+    },
+    agent: {
+      agents: series[0],
+      gpt: series[1],
+      gemini: series[2],
+      byok: series[3],
+      input: series[4],
+      output: series[1],
+    },
+    projectColor,
+    projectColorMap: (paths) =>
+      Object.fromEntries(paths.map((path, index) => [path, projectColor(index)])),
+  };
+}
+
+export function useChartPalette(): ChartPalette {
+  // `version` is the whole dependency: it changes on `atlas:theme-applied` and
+  // on nothing else, which is exactly when the resolved values move.
+  const version = useThemeVersion();
+  return useMemo(buildChartPalette, [version]);
 }

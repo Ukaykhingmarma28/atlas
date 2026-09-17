@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { fmtTokens, fmtDate } from "@/features/monitor/lib/usage-format";
-import { AGENT_COLOR } from "../../lib/chart-theme";
+import { useChartPalette } from "../../lib/chart-theme";
 import { bucketTokens } from "../../lib/series";
 import type { MissionControlUsage } from "../../types";
 import { ChartCard } from "./chart-card";
@@ -12,6 +12,7 @@ import { ChartCard } from "./chart-card";
  * so it survives html-to-image export.
  */
 export function GanttTimeline({ data }: { data: MissionControlUsage }) {
+  const { agent } = useChartPalette();
   const rows = useMemo(() => {
     const dayTokens = new Map<string, Map<string, number>>(); // path -> date -> tokens
     for (const d of data.daily) {
@@ -97,7 +98,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
                 style={{
                   left: `${pct(r.first)}%`,
                   width: `${Math.max(0.6, pct(r.last) - pct(r.first))}%`,
-                  backgroundColor: "rgba(255,255,255,0.08)",
+                  backgroundColor: "var(--atlas-element-active)",
                 }}
               />
               {/* bucketed heat cells (bounded count) */}
@@ -110,7 +111,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
                     style={{
                       left: `${(i / BUCKETS) * 100}%`,
                       width: `${100 / BUCKETS}%`,
-                      backgroundColor: AGENT_COLOR.agents,
+                      backgroundColor: agent.agents,
                       opacity: 0.3 + 0.7 * Math.min(1, tokens / maxCell),
                     }}
                   />
