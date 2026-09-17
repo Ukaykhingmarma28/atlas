@@ -18,7 +18,7 @@ export function AtlasThemesSettings() {
   const themes = useThemeStore.use.themes();
   const loading = useThemeStore.use.loading();
   const error = useThemeStore.use.error();
-  const { load } = useThemeStore.use.actions();
+  const { load, reapply } = useThemeStore.use.actions();
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -89,7 +89,13 @@ export function AtlasThemesSettings() {
                 key={theme.id}
                 type="button"
                 onClick={() => {
-                  updateSettings({ theme: theme.id });
+                  // Clicking the theme you are already on writes the same id
+                  // back, and `applySettingsSideEffects` — rightly — skips a
+                  // value that did not change. That made the obvious way to
+                  // pick up a hand-edit ("click it again") do nothing at all,
+                  // so ask the theme store directly instead.
+                  if (selected) void reapply();
+                  else updateSettings({ theme: theme.id });
                   toast.success(`Applied “${theme.name}” theme`);
                 }}
                 className={cn(

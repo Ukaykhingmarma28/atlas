@@ -32,8 +32,18 @@ interface ThemeState {
   actions: {
     load: () => Promise<void>;
     apply: (id: string, mode: ThemeMode, themeOverrides?: ThemeOverride) => Promise<void>;
+    /** Re-run the last `apply` against freshly read theme data. */
+    reapply: () => Promise<void>;
   };
 }
+
+/** What `apply` was last asked for.
+ *
+ * Kept outside the store because it is not UI state — nothing renders it, and
+ * a re-render on every theme change would be noise. It exists so that a
+ * *source* change with no settings change can still repaint: editing the
+ * active theme's TOML, or clicking the theme you are already on. */
+let lastRequest: { id: string; mode: ThemeMode; themeOverrides: ThemeOverride } | null = null;
 
 const baseStore = create<ThemeState>()((set, get) => ({
   themes: [],
@@ -50,6 +60,7 @@ const baseStore = create<ThemeState>()((set, get) => ({
       }
     },
     apply: async (id, mode, themeOverrides = {}) => {
+      lastRequest = { id, mode, themeOverrides };
       let theme = get().loaded[id];
       if (!theme) {
         // Both loads are guarded. The fallback used to sit bare inside the
@@ -69,6 +80,16 @@ const baseStore = create<ThemeState>()((set, get) => ({
       }
       applyTheme(theme, mode, themeOverrides);
     },
+    reapply: async () => {
+      if (!lastRequest) return;
+      const { id, mode, themeOverrides } = lastRequest;
+      // Drop the cached copy first: the whole point is to read the file again.
+      set((state) => {
+        const { [id]: _stale, ...rest } = state.loaded;
+        return { loaded: rest };
+      });
+      await get().actions.apply(id, mode, themeOverrides);
+    },
   },
 }));
 
@@ -76,12 +97,21 @@ export const useThemeStore = createSelectors(baseStore);
 
 let listening = false;
 
+/** Keep the picker and the painted app in step with the theme files on disk.
+ *
+ * Rust watches `~/.config/atlas/themes` and fires `atlas:themes-changed` on
+ * every write. Refreshing the catalog is only half of it: the catalog feeds
+ * the picker, and nothing else re-reads the theme the app is *wearing*. So
+ * saving a change to the active theme used to update the picker card's name
+ * and leave every colour on screen exactly as it was — the hot reload the
+ * watcher exists for did nothing visible. `reapply` closes that loop. */
 export function startThemeCatalogListener(): void {
   if (listening) return;
   listening = true;
   void onThemesChanged(() => {
     baseStore.setState({ loaded: {} });
     void baseStore.getState().actions.load();
+    void baseStore.getState().actions.reapply();
   }).catch((error) => {
     listening = false;
     console.warn("Theme watcher listener failed", error);
