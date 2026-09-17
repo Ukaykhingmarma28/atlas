@@ -59,6 +59,9 @@ export function FileIcon({ path, kind = "file", size = 14, className, fallback }
   const languageId = detected === PLAINTEXT ? undefined : detected;
   const key = cacheKey({ path, kind, languageId });
 
+  // Re-asking when the theme changes is what makes a switch repaint the rows
+  // that are already on screen; see `generation` in the store.
+  const generation = useIconThemeStore.use.generation();
   const icon = useIconThemeStore((state) => state.resolved[key]);
   const prepared = useIconThemeStore((state) =>
     icon && icon.kind === "image" ? state.prepared[icon.definition] : undefined,
@@ -68,7 +71,7 @@ export function FileIcon({ path, kind = "file", size = 14, className, fallback }
   // render pure — and lets one commit's worth of rows batch into one call.
   useEffect(() => {
     want({ path, kind, languageId });
-  }, [want, path, kind, languageId]);
+  }, [want, path, kind, languageId, generation]);
 
   if (icon?.kind === "glyph") {
     return (

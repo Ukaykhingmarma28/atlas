@@ -9,12 +9,16 @@ import { sanitizeSvg } from "./sanitize-svg";
  * would make a perfectly good icon render wrong.
  */
 describe("sanitizeSvg", () => {
-  it("keeps the drawing", () => {
+  it("keeps the drawing, and the paint that makes it follow the theme", () => {
+    // `currentColor` rather than a hex on purpose, and not only to stay off
+    // the design-system ratchet: it is the property that inlining exists for.
+    // An <img> would render this icon in its authored colour forever.
     const out = sanitizeSvg(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#0288d1" d="M2 2v12h12V2z"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" stroke="tomato" d="M2 2v12h12V2z"/></svg>',
     );
     expect(out).toContain('d="M2 2v12h12V2z"');
-    expect(out).toContain('fill="#0288d1"');
+    expect(out).toContain('fill="currentColor"');
+    expect(out).toContain('stroke="tomato"');
     expect(out).toContain('viewBox="0 0 16 16"');
   });
 

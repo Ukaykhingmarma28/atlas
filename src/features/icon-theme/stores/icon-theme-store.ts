@@ -59,6 +59,16 @@ export interface PreparedIcon {
 
 interface IconThemeState {
   themes: IconThemeSummary[];
+  /**
+   * Bumped every time the caches are thrown away.
+   *
+   * A row registers its want in an effect keyed on its own path, so after a
+   * theme switch clears `resolved` nothing would ask again: every mounted icon
+   * would sit on its lucide fallback until it happened to unmount. This is the
+   * one piece of state that changes for *every* row when the theme does, so
+   * the effect depends on it and the whole screen re-asks at once.
+   */
+  generation: number;
   /** The active theme's id. `minimal` means "use Atlas's own icons". */
   themeId: string;
   appearance: IconAppearance;
@@ -87,8 +97,15 @@ function emptyCaches(): Pick<IconThemeState, "resolved" | "prepared" | "fonts"> 
   return { resolved: {}, prepared: {}, fonts: [] };
 }
 
+let generation = 0;
+function nextGeneration(): number {
+  generation += 1;
+  return generation;
+}
+
 const baseStore = create<IconThemeState>()((set, get) => ({
   themes: [],
+  generation: 0,
   // Nothing is assumed before `setTheme` runs: an unconfigured app draws its
   // own icons rather than briefly drawing the wrong theme's.
   themeId: MINIMAL_ICON_THEME_ID,
@@ -125,6 +142,7 @@ const baseStore = create<IconThemeState>()((set, get) => ({
       set({
         themeId,
         appearance,
+        generation: nextGeneration(),
         ...emptyCaches(),
         hidesExplorerArrows:
           current.themes.find((theme) => theme.id === themeId)?.hidesExplorerArrows ?? false,
@@ -263,7 +281,7 @@ export function startIconThemeCatalogListener(): void {
     // An install or a removal can change the *active* theme's files, so the
     // caches go as well as the catalog.
     pending.clear();
-    baseStore.setState(emptyCaches());
+    baseStore.setState({ ...emptyCaches(), generation: nextGeneration() });
     void baseStore.getState().actions.load();
   }).catch((error) => {
     listening = false;
