@@ -54,13 +54,13 @@ license = "MIT"
 
 [dark.palette]
 red = "#ff5555"
-orange = "#bd93f9"
-yellow = "#8be9fd"
-green = "#f1fa8c"
-cyan = "#ff79c6"
-blue = "#50fa7b"
-purple = "#ff79c6"
-pink = "#ff5555"
+orange = "#ffb86c"
+yellow = "#f1fa8c"
+green = "#50fa7b"
+cyan = "#8be9fd"
+blue = "#bd93f9"
+purple = "#bd93f9"
+pink = "#ff79c6"
 
 [dark.keys]
 "border.default" = "#44475a"

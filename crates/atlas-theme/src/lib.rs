@@ -696,6 +696,95 @@ mod tests {
         assert_eq!(include_str!("../../../src/dev/mock-backend/fixtures/builtin-themes.json"), expected);
     }
 
+    /// The eight `[<variant>.palette]` names are *hues*, and everything
+    /// derived from them — ANSI colours, diff tints, status colours, agent
+    /// chips — trusts the name. The first port filled them by walking the old
+    /// editor themes' *syntax* tokens instead (`red` took `regexp`, `yellow`
+    /// took `type`, `blue` took `func`, …), which put One Dark's green in
+    /// `red`, Dracula's cyan in `yellow` and Monokai's pink in `cyan`. Nothing
+    /// failed to compile and every theme still rendered; it was only wrong.
+    /// This pins each hue to its name so the same class of swap cannot return.
+    #[test]
+    fn palette_hues_match_the_names_they_are_filed_under() {
+        /// Canonical hue angle, in degrees, for each palette name.
+        const CANONICAL: &[(&str, f64)] = &[
+            ("red", 0.0),
+            ("orange", 30.0),
+            ("yellow", 60.0),
+            ("green", 120.0),
+            ("cyan", 180.0),
+            ("blue", 220.0),
+            ("purple", 285.0),
+            ("pink", 330.0),
+        ];
+        /// How far a hue may sit from its canonical angle. Generous on
+        /// purpose: themes stretch their hues, and the bug this guards is a
+        /// *swap* — 90°+ — not a stylistic lean.
+        const TOLERANCE: f64 = 55.0;
+        /// A theme is allowed to file a hue under a distant name when its
+        /// upstream does. Each entry is (theme id, palette name, why).
+        const EXCEPTIONS: &[(&str, &str, &str)] = &[
+            ("rose-pine", "green", "Rosé Pine has no green; upstream's ANSI green is pine"),
+            ("rose-pine-moon", "green", "same as rose-pine"),
+        ];
+
+        /// Hue angle in degrees, and saturation, of a `#rrggbb` colour.
+        fn hue_and_saturation(hex: &str) -> Option<(f64, f64)> {
+            let hex = hex.strip_prefix('#').filter(|rest| rest.len() == 6)?;
+            let channel = |index: usize| {
+                u8::from_str_radix(&hex[index..index + 2], 16).ok().map(|v| f64::from(v) / 255.0)
+            };
+            let (r, g, b) = (channel(0)?, channel(2)?, channel(4)?);
+            let max = r.max(g).max(b);
+            let min = r.min(g).min(b);
+            let delta = max - min;
+            if delta == 0.0 {
+                return Some((0.0, 0.0));
+            }
+            let hue = 60.0
+                * if max == r {
+                    ((g - b) / delta).rem_euclid(6.0)
+                } else if max == g {
+                    (b - r) / delta + 2.0
+                } else {
+                    (r - g) / delta + 4.0
+                };
+            let lightness = (max + min) / 2.0;
+            Some((hue, delta / (1.0 - (2.0 * lightness - 1.0).abs())))
+        }
+
+        for theme in built_in_themes().unwrap() {
+            for (appearance, variant) in
+                [("dark", theme.dark.as_ref()), ("light", theme.light.as_ref())]
+            {
+                let Some(variant) = variant else { continue };
+                for (name, canonical) in CANONICAL {
+                    let Some(value) = variant.palette.get(*name) else { continue };
+                    let (hue, saturation) =
+                        hue_and_saturation(value).unwrap_or_else(|| panic!("{value} is #rrggbb"));
+                    // A deliberately achromatic theme (Atlas Mono, Vesper's
+                    // blue and purple) has no hue to be wrong about.
+                    if saturation < 0.18 {
+                        continue;
+                    }
+                    if EXCEPTIONS
+                        .iter()
+                        .any(|(id, key, _)| *id == theme.id && key == name)
+                    {
+                        continue;
+                    }
+                    let distance = (hue - canonical).abs().min(360.0 - (hue - canonical).abs());
+                    assert!(
+                        distance <= TOLERANCE,
+                        "{}: {appearance}.palette.{name} = {value} is at hue {hue:.0}°, \
+                         {distance:.0}° from the {canonical:.0}° that '{name}' names",
+                        theme.id
+                    );
+                }
+            }
+        }
+    }
+
     /// A light appearance that copies its shadow ramp byte-for-byte from
     /// dark renders pure-black halos on a light surface: dark's alphas run
     /// up to 0.9, which reads as a heavy ring rather than a soft lift once

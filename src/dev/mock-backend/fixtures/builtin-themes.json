@@ -18,7 +18,7 @@
         "chart-3": "#e0b070",
         "chart-4": "#c9a2f5",
         "chart-5": "#e59a72",
-        "destructive": "#e59a72",
+        "destructive": "#f44747",
         "destructive-foreground": "#000000",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -54,14 +54,14 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#ffff00",
-        "cyan": "#9a9a9a",
+        "blue": "#6796e6",
+        "cyan": "#7fd1e8",
         "green": "#9ecf8a",
         "orange": "#e0b070",
         "pink": "#e59a72",
         "purple": "#c9a2f5",
-        "red": "#e59a72",
-        "yellow": "#7fd1e8"
+        "red": "#f44747",
+        "yellow": "#ffff00"
       },
       "keys": {
         "border.default": "#1e1e1e",
@@ -176,7 +176,7 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#ffff00",
+        "blue": "#a8a8a8",
         "cyan": "#9c9c9c",
         "green": "#b0b0b0",
         "orange": "#c2c2c2",
@@ -298,14 +298,14 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#c9a35a",
+        "blue": "#61afef",
         "cyan": "#56b6c2",
         "green": "#98c379",
         "orange": "#d19a66",
         "pink": "#e06c75",
         "purple": "#c678dd",
         "red": "#f44747",
-        "yellow": "#56b6c2"
+        "yellow": "#e5c07b"
       },
       "keys": {
         "border.default": "#2a2114",
@@ -542,7 +542,7 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#31748f",
+        "blue": "#9ccfd8",
         "cyan": "#9ccfd8",
         "green": "#31748f",
         "orange": "#ebbcba",
@@ -657,7 +657,7 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#286983",
+        "blue": "#56949f",
         "cyan": "#56949f",
         "green": "#286983",
         "orange": "#d7827e",
@@ -779,7 +779,7 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#3e8fb0",
+        "blue": "#9ccfd8",
         "cyan": "#9ccfd8",
         "green": "#3e8fb0",
         "orange": "#ea9a97",
@@ -865,7 +865,7 @@
         "chart-3": "#d19a66",
         "chart-4": "#c678dd",
         "chart-5": "#56b6c2",
-        "destructive": "#98c379",
+        "destructive": "#e06c75",
         "destructive-foreground": "#08111a",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -905,9 +905,9 @@
         "cyan": "#56b6c2",
         "green": "#98c379",
         "orange": "#d19a66",
-        "pink": "#56b6c2",
+        "pink": "#c678dd",
         "purple": "#c678dd",
-        "red": "#98c379",
+        "red": "#e06c75",
         "yellow": "#e5c07b"
       },
       "keys": {
@@ -1023,14 +1023,14 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#ff9500",
+        "blue": "#61afef",
         "cyan": "#56b6c2",
         "green": "#98c379",
         "orange": "#d19a66",
         "pink": "#e06c75",
         "purple": "#c678dd",
         "red": "#f44747",
-        "yellow": "#56b6c2"
+        "yellow": "#e5c07b"
       },
       "keys": {
         "border.default": "#3d2200",
@@ -1145,14 +1145,14 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#50fa7b",
-        "cyan": "#ff79c6",
-        "green": "#f1fa8c",
-        "orange": "#bd93f9",
-        "pink": "#ff5555",
-        "purple": "#ff79c6",
+        "blue": "#bd93f9",
+        "cyan": "#8be9fd",
+        "green": "#50fa7b",
+        "orange": "#ffb86c",
+        "pink": "#ff79c6",
+        "purple": "#bd93f9",
         "red": "#ff5555",
-        "yellow": "#8be9fd"
+        "yellow": "#f1fa8c"
       },
       "keys": {
         "border.default": "#44475a",
@@ -1231,7 +1231,7 @@
         "chart-3": "#ae81ff",
         "chart-4": "#f92672",
         "chart-5": "#ae81ff",
-        "destructive": "#e6db74",
+        "destructive": "#f92672",
         "destructive-foreground": "#272822",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1267,14 +1267,14 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#a6e22e",
-        "cyan": "#f92672",
-        "green": "#e6db74",
-        "orange": "#ae81ff",
-        "pink": "#ae81ff",
-        "purple": "#f92672",
-        "red": "#e6db74",
-        "yellow": "#66d9ef"
+        "blue": "#66d9ef",
+        "cyan": "#a1efe4",
+        "green": "#a6e22e",
+        "orange": "#fd971f",
+        "pink": "#f92672",
+        "purple": "#ae81ff",
+        "red": "#f92672",
+        "yellow": "#e6db74"
       },
       "keys": {
         "border.default": "#49483e",
@@ -1353,7 +1353,7 @@
         "chart-3": "#ff9e64",
         "chart-4": "#bb9af7",
         "chart-5": "#bb9af7",
-        "destructive": "#b4f9f8",
+        "destructive": "#f7768e",
         "destructive-foreground": "#1a1b26",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1390,13 +1390,13 @@
       },
       "palette": {
         "blue": "#7aa2f7",
-        "cyan": "#89ddff",
+        "cyan": "#7dcfff",
         "green": "#9ece6a",
         "orange": "#ff9e64",
-        "pink": "#bb9af7",
+        "pink": "#ff007c",
         "purple": "#bb9af7",
-        "red": "#b4f9f8",
-        "yellow": "#2ac3de"
+        "red": "#f7768e",
+        "yellow": "#e0af68"
       },
       "keys": {
         "border.default": "#292e42",
@@ -1475,7 +1475,7 @@
         "chart-3": "#ef9f76",
         "chart-4": "#ca9ee6",
         "chart-5": "#f4b8e4",
-        "destructive": "#f4b8e4",
+        "destructive": "#e78284",
         "destructive-foreground": "#303446",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1517,7 +1517,7 @@
         "orange": "#ef9f76",
         "pink": "#f4b8e4",
         "purple": "#ca9ee6",
-        "red": "#f4b8e4",
+        "red": "#e78284",
         "yellow": "#e5c890"
       },
       "keys": {
@@ -1597,7 +1597,7 @@
         "chart-3": "#f5a97f",
         "chart-4": "#c6a0f6",
         "chart-5": "#f5bde6",
-        "destructive": "#f5bde6",
+        "destructive": "#ed8796",
         "destructive-foreground": "#24273a",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1639,7 +1639,7 @@
         "orange": "#f5a97f",
         "pink": "#f5bde6",
         "purple": "#c6a0f6",
-        "red": "#f5bde6",
+        "red": "#ed8796",
         "yellow": "#eed49f"
       },
       "keys": {
@@ -1719,7 +1719,7 @@
         "chart-3": "#fab387",
         "chart-4": "#cba6f7",
         "chart-5": "#f5c2e7",
-        "destructive": "#f5c2e7",
+        "destructive": "#f38ba8",
         "destructive-foreground": "#1e1e2e",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1761,7 +1761,7 @@
         "orange": "#fab387",
         "pink": "#f5c2e7",
         "purple": "#cba6f7",
-        "red": "#f5c2e7",
+        "red": "#f38ba8",
         "yellow": "#f9e2af"
       },
       "keys": {
@@ -1841,7 +1841,7 @@
         "chart-3": "#ffc799",
         "chart-4": "#a0a0a0",
         "chart-5": "#99ffe4",
-        "destructive": "#99ffe4",
+        "destructive": "#ff8080",
         "destructive-foreground": "#101010",
         "font-mono": "\"SF Mono\", \"Geist Mono\", \"JetBrains Mono\", monospace",
         "font-sans": "-apple-system, \"SF Pro Text\", system-ui, sans-serif",
@@ -1877,13 +1877,13 @@
         "tracking-normal": "0em"
       },
       "palette": {
-        "blue": "#ffc799",
-        "cyan": "#a0a0a0",
+        "blue": "#a0a0a0",
+        "cyan": "#99ffe4",
         "green": "#99ffe4",
         "orange": "#ffc799",
-        "pink": "#99ffe4",
+        "pink": "#ff8080",
         "purple": "#a0a0a0",
-        "red": "#99ffe4",
+        "red": "#ff8080",
         "yellow": "#ffcfa8"
       },
       "keys": {

@@ -55,10 +55,10 @@ license = "Apache-2.0"
 [dark.palette]
 red = "#f44747"
 orange = "#d19a66"
-yellow = "#56b6c2"
+yellow = "#e5c07b"
 green = "#98c379"
 cyan = "#56b6c2"
-blue = "#ff9500"
+blue = "#61afef"
 purple = "#c678dd"
 pink = "#e06c75"
 
