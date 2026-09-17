@@ -746,6 +746,26 @@ mod tests {
         assert!(themes.is_empty() && warnings.is_empty());
     }
 
+    /// The id reaches `write_theme_to` from an import panel where the user
+    /// types it, so the file name comes from the *parsed* theme and is checked
+    /// rather than trusted. Without this, `../../../.zshrc` is a theme id.
+    #[test]
+    fn a_written_theme_is_named_by_its_own_id_and_cannot_escape_the_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = minimal_theme("").replace("id = \"test\"", "id = \"my-import_2\"");
+        let path = write_theme_to(dir.path(), &good).unwrap();
+        assert_eq!(path, dir.path().join("my-import_2.toml"));
+        assert_eq!(load_theme_file(&path).unwrap().id, "my-import_2");
+
+        for bad in ["../escape", "a/b", "", "with space"] {
+            let source = minimal_theme("").replace("id = \"test\"", &format!("id = \"{bad}\""));
+            assert!(write_theme_to(dir.path(), &source).is_err(), "accepted id {bad:?}");
+        }
+        // Nothing else was created along the way.
+        let written = fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(written, 1);
+    }
+
     #[test]
     fn generated_schema_is_current() {
         let expected = serde_json::to_string_pretty(&json_schema()).unwrap() + "\n";
