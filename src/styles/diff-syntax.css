@@ -1,23 +1,27 @@
 /* Syntax-highlight theme for the git diff view (src/features/git/).
  *
- * Mirrors the code editor's default `atlas` palette (AMOLED black, restrained
- * syntax hues, a #ffff00 accent on function names) — see the theme registry in
- * features/editor/themes/themes.ts. lowlight emits highlight.js
- * token classes, so we key the same colors off `.hljs-*` here.
+ * Mirrors the code editor's palette — the `--cm-*` aliases in tokens.css are
+ * the resolved theme's `syntax.*` / `editor.*` keys. lowlight emits
+ * highlight.js token classes, so we key the same colors off `.hljs-*` here.
  *
  * Scoped under `.diff-syntax` (specificity 0,2,0) AND intentionally UNLAYERED:
- * chat markdown imports `highlight.js/styles/github-dark.css` (unlayered, bare
- * `.hljs-*`). Unlayered styles always beat @layer'd ones, so we stay unlayered
- * and win the github-dark rules on specificity instead. We never add the bare
- * `.hljs` root class to diff spans, so github-dark's root bg/color never apply.
+ * chat markdown imports `styles/hljs.css` (unlayered, bare `.hljs-*`).
+ * Unlayered styles always beat @layer'd ones, so we stay unlayered and win
+ * those rules on specificity instead. We never add the bare `.hljs` root class
+ * to diff spans, so its root bg/color never apply.
+ *
+ * Since PR 2 both files resolve the SAME theme keys — `hljs.css` names
+ * `--atlas-syntax-*` directly, this one reaches them through the `--cm-*`
+ * aliases — so the two agree by construction. The scope survives because a diff
+ * row needs per-line backgrounds the markdown pipeline has no concept of.
  *
  * Base text color (operators, punctuation, plain identifiers — left unclassed
- * by highlight.js) comes from the row's `text-text-secondary` (#aaaaaa),
- * close to the editor's operator/punctuation color. */
+ * by highlight.js) comes from the row's `text-text-secondary`, close to the
+ * editor's operator/punctuation color. */
 
-/* Colors resolve from the active editor theme's CSS custom properties
-   (set on :root by applyEditorTheme). The atlas hex values remain as
-   fallbacks so an un-applied theme degrades to the default `atlas` look. */
+/* Colors resolve from the resolved theme's CSS custom properties (written to
+   :root by applyTheme). The atlas hex values remain as fallbacks so an
+   un-applied theme degrades to the default `atlas` look. */
 
 .diff-syntax .hljs-comment,
 .diff-syntax .hljs-quote {

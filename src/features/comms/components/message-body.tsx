@@ -23,7 +23,7 @@
 // lazy chunk means a code fence never paints unstyled for a frame.
 
 import { lazy, memo, Suspense, useMemo } from "react";
-import "highlight.js/styles/github-dark.css";
+import "@/styles/hljs.css";
 import { cn } from "@/lib/utils";
 import { MentionContext } from "./message-body-context";
 import type { OrgMemberProfile } from "../types";

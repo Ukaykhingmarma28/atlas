@@ -5,13 +5,12 @@
  * `highlight.js` directly, and that is the whole design:
  *
  * * **It follows the Atlas theme.** `diff-syntax.css` keys every token off the
- *   active editor theme's `--cm-*` variables, so a payload here matches the
- *   diff view, the editor, and whatever theme is selected. A direct
- *   `highlight.js` stylesheet is one fixed palette that ignores all of it.
- * * **It never applies the bare `.hljs` class.** `github-dark.css` is loaded
- *   globally by the markdown pipeline and its root rule carries a background
- *   *and* `padding: 1em` — which, applied per line, boxes every row and blows
- *   the line height apart.
+ *   resolved theme's `--cm-*` variables, so a payload here matches the diff
+ *   view, the editor, and whatever theme is selected.
+ * * **It never applies the bare `.hljs` class.** `styles/hljs.css` is loaded by
+ *   the markdown pipeline and its root rule carries a background *and*
+ *   `padding: 1em` — which, applied per line, boxes every row and blows the
+ *   line height apart.
  * * **It is already cached and bounded.** The tokenizer memoises per
  *   (grammar, line), so a payload that repeats a line pays for it once.
  *
