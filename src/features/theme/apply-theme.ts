@@ -2,7 +2,41 @@ import type { Theme, ThemeMode } from "./lib/theme-api";
 import { resolveTheme, type ResolvedTheme, type ThemeOverride } from "./resolve-theme";
 
 const STYLE_ID = "atlas-resolved-theme";
+/**
+ * Where `index.html` looks for the last theme's launch colours. Read by an
+ * inline script before any module — and before `tokens.css` — so the boot
+ * skeleton paints in the theme the user chose instead of flashing black.
+ */
+const LAUNCH_CACHE_KEY = "atlas:launch-theme";
 let activeTheme: ResolvedTheme | null = null;
+
+/**
+ * Cache the handful of colours the boot skeleton needs.
+ *
+ * Deliberately NOT the whole resolved map: this is read synchronously on the
+ * critical path of every cold start, and six values is a string small enough
+ * that parsing it costs nothing. Failure is silent and harmless — `index.html`
+ * falls back to the literals it has always had (a blocked or full store, or a
+ * private window, all land there).
+ */
+function cacheLaunchColors(resolved: ResolvedTheme): void {
+  try {
+    localStorage.setItem(
+      LAUNCH_CACHE_KEY,
+      JSON.stringify({
+        appearance: resolved.appearance,
+        background: resolved.base.background,
+        chrome: resolved.base.sidebar,
+        card: resolved.base.card,
+        line: resolved.keys["border.subtle"],
+        skeleton: resolved.keys["element.selected"],
+        text: resolved.keys["text.muted"],
+      }),
+    );
+  } catch {
+    /* an unavailable store just means the compiled-in fallbacks */
+  }
+}
 
 export function appearanceForMode(mode: ThemeMode): "dark" | "light" {
   if (mode !== "system") return mode;
@@ -34,6 +68,7 @@ export function applyTheme(
     .map(([name, value]) => `${name}:${value}`)
     .join(";");
   style.textContent = `:root{${declarations}}`;
+  cacheLaunchColors(resolved);
   window.dispatchEvent(new CustomEvent("atlas:theme-applied"));
   return resolved;
 }
