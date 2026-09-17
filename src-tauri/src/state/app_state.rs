@@ -576,18 +576,31 @@ mod tests {
 
     /// Exactly the payload `buildAppStatePayload()` sends — note the absence of
     /// `telemetryAnonId`, which is the whole point.
+    ///
+    /// `activeWorkspaceId` is the FROZEN wire key (see `AppStatePatch`): the
+    /// rename to "project" stopped at the storage boundary. This fixture used
+    /// to say `activeProjectId`, which `AppStatePatch` — no
+    /// `deny_unknown_fields` — silently dropped, so every assertion below ran
+    /// against a field the frontend had never actually set.
     fn frontend_payload() -> AppStatePatch {
         serde_json::from_value(serde_json::json!({
             "currentProject": null,
             "recentProjects": [],
             "workspaces": [],
             "groups": [],
-            "activeProjectId": null,
+            "activeWorkspaceId": "proj-1",
             "organisations": [],
             "activeOrganisationId": null,
             "version": 4,
         }))
         .expect("frontend payload deserializes as a patch")
+    }
+
+    /// Guards the fixture itself: if the frozen key is ever mistyped again, the
+    /// payload deserializes to `None` and this fails instead of passing quietly.
+    #[test]
+    fn frontend_payload_carries_the_frozen_active_project_key() {
+        assert_eq!(frontend_payload().active_workspace_id.as_deref(), Some("proj-1"));
     }
 
     /// The regression test for the analytics bug: a settings save must not cost
