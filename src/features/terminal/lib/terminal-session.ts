@@ -35,6 +35,8 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { isWindows } from "@/lib/platform";
+import { onThemeApplied } from "@/features/theme/theme-values";
+import { terminalTheme } from "./terminal-theme";
 import { BlockStreamParser, type TerminalBlock, type TerminalEvent } from "./block-parser";
 import { createTerminalEventSink } from "./terminal-notifier";
 import { createTerminalKeymap } from "./terminal-keymap";
@@ -98,31 +100,6 @@ const SUDO_SHELL_RE = /^sudo\s+(?:-s|-i|su(?:\s+-l?|\s+-)?)\s*$/;
  *  shells keep LF, which the line discipline already reads as end-of-line. */
 const ENTER = isWindows ? "\r" : "\n";
 
-// ANSI palette for the interactive xterm surface — matches the block renderer
-// so blocks and the live surface look the same.
-const XTERM_THEME = {
-  background: "#000000",
-  foreground: "#cccccc",
-  cursor: "#b3b3b3",
-  selectionBackground: "rgba(97,175,239,0.35)",
-  selectionInactiveBackground: "rgba(255,255,255,0.16)",
-  black: "#1a1a1a",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#cccccc",
-  brightBlack: "#5c6370",
-  brightRed: "#e06c75",
-  brightGreen: "#98c379",
-  brightYellow: "#e5c07b",
-  brightBlue: "#61afef",
-  brightMagenta: "#c678dd",
-  brightCyan: "#56b6c2",
-  brightWhite: "#ffffff",
-};
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 1.4;
 
@@ -156,6 +133,13 @@ function startGlobalListeners(): void {
   });
   void listen<{ id: string }>("terminal-exit", (evt) => {
     reg.byPty.get(evt.payload.id)?.onExited();
+  });
+  // One subscription for every session: an xterm that already exists takes a
+  // new palette through `options.theme`, so a live alt-screen app (vim, htop)
+  // recolours on a theme switch instead of keeping the palette it was born
+  // with until the next respawn.
+  onThemeApplied(() => {
+    for (const session of reg.sessions.values()) session.retheme();
   });
   void invoke<string | null>("terminal_zsh_dir")
     .then((d) => {
@@ -517,6 +501,17 @@ export class TerminalSession {
       .catch(() => {});
   }
 
+  /**
+   * Push the active theme's palette into a live xterm. Called for every
+   * session on `atlas:theme-applied`; a no-op for the common case where the
+   * session holds no xterm (the block renderer follows the theme through CSS
+   * custom properties and needs nothing).
+   */
+  retheme(): void {
+    if (!this.xterm) return;
+    this.xterm.options.theme = terminalTheme();
+  }
+
   private async ensureXterm(): Promise<void> {
     if (this.xterm || this.xtermCreating || this.closed) return;
     this.xtermCreating = true;
@@ -536,7 +531,7 @@ export class TerminalSession {
         scrollback: 0,
         cursorBlink: true,
         allowProposedApi: true,
-        theme: XTERM_THEME,
+        theme: terminalTheme(),
       });
       const fit = new FitAddon();
       term.loadAddon(fit);

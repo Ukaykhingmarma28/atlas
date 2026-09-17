@@ -361,7 +361,7 @@ export const BlockTerminal = memo(function BlockTerminal({
         ref={xtermHostRef}
         // Keep Atlas's footer outside the app-controlled terminal viewport so
         // the stop control never covers top/htop clocks, menus, or editor UI.
-        className="absolute inset-x-0 top-0 bottom-[29px] z-10 bg-[#000] px-1 py-1"
+        className="absolute inset-x-0 top-0 bottom-[29px] z-10 bg-[var(--atlas-terminal-background)] px-1 py-1"
         style={{
           visibility: altScreen ? "visible" : "hidden",
           pointerEvents: altScreen ? "auto" : "none",
