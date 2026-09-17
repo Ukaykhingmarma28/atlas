@@ -23,6 +23,7 @@ import { mockConvertFileSrc, mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { baseHandlers } from "./scenarios/base";
 import { scenarios } from "./scenarios";
 import { mountBadge } from "./badge";
+import { mockAssetUrl } from "./fixtures/files";
 import type { MockArgs } from "./types";
 
 declare global {
@@ -65,6 +66,18 @@ function install(): void {
 
   mockWindows("main");
   mockConvertFileSrc("macos");
+  // The media viewer bypasses `invoke()` and hands the webview an `asset://`
+  // URL, which resolves to nothing in a plain browser. Serve the seeded binary
+  // files as `data:` URLs instead so an image tab actually shows an image;
+  // anything else keeps Tauri's answer (a broken image — the real "file is
+  // gone" state).
+  const internals = (
+    window as unknown as {
+      __TAURI_INTERNALS__: { convertFileSrc: (p: string, protocol?: string) => string };
+    }
+  ).__TAURI_INTERNALS__;
+  const tauriConvert = internals.convertFileSrc.bind(internals);
+  internals.convertFileSrc = (filePath: string) => mockAssetUrl(filePath, tauriConvert);
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as MockArgs;

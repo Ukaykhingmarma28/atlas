@@ -14,10 +14,7 @@ import type { AgentCatalog } from "@/types/agent-catalog";
 import type { CaptureHealth } from "@/features/capture/types";
 import type { MentionData } from "@/features/chat/lib/mentions";
 import type { ThreadProject } from "@/features/chat/lib/history-api";
-import type { RecentFile } from "@/features/chat/stores/recent-files-store";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
-import type { FileIndexStatus } from "@/features/file-picker/lib/file-picker-api";
-import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
 import type { ClonedRepo } from "@/features/github/types";
 import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
 import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-store";
@@ -25,10 +22,12 @@ import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge
 import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
 import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
+import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
 import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
-import { appState, listDir, MOCK_WORKSPACE } from "../workspace";
+import { fsHandlers, listDir } from "../fixtures/files";
+import { appState, MOCK_WORKSPACE } from "../workspace";
 
 const nothing = () => null;
 
@@ -101,13 +100,6 @@ export const baseHandlers: MockHandlers = {
   save_editor_state: nothing,
   load_project_session: () => "{}",
   read_directory: ({ path }): FileEntry[] => listDir(path),
-  fileindex_open_project: () => 0,
-  fileindex_status: (): FileIndexStatus => ({
-    indexed: true,
-    count: 0,
-    root: MOCK_WORKSPACE.path,
-  }),
-  recent_files_open_project: (): RecentFile[] => [],
   codebase_index_status: () => ({ indexed: false, fileCount: 0, summaryCount: 0, builtAtMs: 0 }),
   // Knowledge: an empty base. Writes are accepted and forgotten; the
   // `knowledge` scenario overrides all of these with a live in-memory store.
@@ -194,6 +186,9 @@ export const baseHandlers: MockHandlers = {
 
   ...agentHandlers,
   agents_set_effort: nothing,
+
+  // ── files ───────────────────────────────────────────────────────────────
+  ...fsHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
