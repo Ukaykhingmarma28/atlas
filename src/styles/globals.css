@@ -6,6 +6,7 @@
 @import "tailwindcss" source("../");
 @import "./tokens.css";
 @import "./diff-syntax.css";
+@import "./xyflow.css";
 
 @theme inline {
   --color-background: var(--background);

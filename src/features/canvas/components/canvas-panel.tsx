@@ -453,7 +453,14 @@ function CanvasSurface({
             variant={BackgroundVariant.Dots}
             gap={20}
             size={1.2}
-            color="rgba(255,255,255,0.18)"
+            // xyflow writes `color` into `--xy-background-pattern-color-props`
+            // and the dot's `fill` reads it back through a var chain, so a
+            // custom property survives the round trip and the grid recolours
+            // on a theme switch with no re-render. `border.strong` is the
+            // structural ramp's top rung — the same weight the dots had as a
+            // fixed 18%-white, and the only one still legible on a light
+            // variant.
+            color="var(--atlas-border-strong)"
           />
         </ReactFlow>
 
