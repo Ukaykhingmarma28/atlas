@@ -1,0 +1,114 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  OUTPUTS,
+  readSource,
+  staleOutputs,
+  cssVar,
+  keyDescription,
+} from "../scripts/generate-theme-keys.mjs";
+
+/**
+ * The theme-key registry has one source: `crates/atlas-theme/keys.toml`.
+ *
+ * The same 135 facts used to live in five files — the TS registry, the Rust key
+ * list, the JSON Schema, this repo's reference doc and the public one — each
+ * hand-edited. Nothing compiled differently when they disagreed, so they did:
+ * a "134 keys" count that was really 135, and a scrollbar rule documented as
+ * "alpha/lighten" that is plain alpha, both shipped and both survived review.
+ *
+ * So this suite is the whole point of the generator. `bun run theme:keys`
+ * rewrites every derived file; this fails the build the moment one of them
+ * stops matching the source, which is what makes the drift impossible rather
+ * than merely noticed.
+ *
+ * It does NOT re-check the derivation results — `resolve-theme.test.ts` owns
+ * that. It checks that the generated copies agree with the source.
+ */
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const source = readSource();
+const read = (relative: string) => readFileSync(path.join(REPO_ROOT, relative), "utf8");
+
+describe("the generated theme-key registry", () => {
+  it("has a source with every key described", () => {
+    // Floor guard: an empty parse would make every assertion below vacuous.
+    expect(source.keys.length).toBeGreaterThan(100);
+    for (const key of source.keys) {
+      expect(key.description, key.name).toMatch(/\.$/);
+      expect(key.palette ?? key.base, `${key.name} has no derivation source`).toBeTruthy();
+    }
+  });
+
+  /**
+   * The failure this suite exists for. `bun run theme:keys` fixes it; the
+   * message names the files rather than making you bisect four diffs.
+   */
+  it("has no generated file that has drifted from crates/atlas-theme/keys.toml", () => {
+    const stale = staleOutputs().map((entry) => entry.path);
+    expect(stale, "run `bun run theme:keys`").toEqual([]);
+  });
+
+  it("names every key in each generated file", () => {
+    const registry = read(OUTPUTS.registry);
+    const keyList = read(OUTPUTS.keyList);
+    const docs = read(OUTPUTS.docs);
+    const schemaKeys = JSON.parse(read(OUTPUTS.schema)).definitions.ThemeVariant.properties.keys;
+
+    for (const key of source.keys) {
+      expect(registry, key.name).toContain(`define("${key.name}", {`);
+      expect(keyList, key.name).toContain(`\n${key.name}\t`);
+      expect(docs, key.name).toContain(`| \`${key.name}\` |`);
+      expect(schemaKeys.properties[key.name]?.description).toBe(keyDescription(key));
+    }
+    expect(Object.keys(schemaKeys.properties)).toHaveLength(source.keys.length);
+  });
+
+  /**
+   * An open `keys` map validates nothing, so `#:schema` used to accept a
+   * misspelled role name and the author's colour silently never appeared.
+   */
+  it("closes the key set in the schema so an author's typo is an error", () => {
+    const schemaKeys = JSON.parse(read(OUTPUTS.schema)).definitions.ThemeVariant.properties.keys;
+    expect(schemaKeys.additionalProperties).toBe(false);
+    expect(schemaKeys.properties["syntax.keyword"].allOf).toEqual([
+      { $ref: "#/definitions/ThemeKeyValue" },
+    ]);
+    expect(schemaKeys.properties["syntax.keywrod"]).toBeUndefined();
+  });
+
+  it("warns Rust about exactly the keys the frontend resolves", () => {
+    const fromRust = read(OUTPUTS.keyList)
+      .split("\n")
+      .filter((line) => line !== "" && !line.startsWith("#"))
+      .map((line) => line.split("\t")[0]);
+    expect(fromRust).toEqual(source.keys.map((key) => key.name));
+  });
+
+  /** The CSS variable name is the contract with every `var(--atlas-…)` call. */
+  it("keeps the CSS variable spelling of every key", () => {
+    const registry = read(OUTPUTS.registry);
+    for (const key of source.keys) {
+      expect(cssVar(key.name)).toBe(
+        `--atlas-${key.name.replaceAll(".", "-").replaceAll("_", "-")}`,
+      );
+    }
+    expect(registry).toContain(
+      'cssVar: `--atlas-${key.replaceAll(".", "-").replaceAll("_", "-")}`',
+    );
+  });
+
+  it("keeps each group's keys contiguous", () => {
+    const seen: string[] = [];
+    for (const key of source.keys) {
+      if (seen[seen.length - 1] !== key.group) {
+        expect(seen, `group ${key.group} is split`).not.toContain(key.group);
+        seen.push(key.group);
+      }
+    }
+    expect(seen).toEqual(source.groups.map((group) => group.name));
+  });
+});

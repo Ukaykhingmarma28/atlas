@@ -1,3 +1,6 @@
+// Generated from crates/atlas-theme/keys.toml — do not edit.
+// Run `bun run theme:keys` after editing that file.
+
 import { withAlpha, lighten, mix } from "./color";
 
 export const PALETTE_KEYS = [
@@ -123,9 +126,11 @@ export const THEME_KEY_REGISTRY = [
     light: "rgba(0,0,0,0.08)",
     description: "Pressed overlay for ordinary elements.",
   }),
-  /** The 1px top edge on raised glass — `inset-highlight` in globals.css. It
-   *  is the theme's own foreground at 6%, so a light variant gets a dark edge
-   *  instead of the white-on-white one a hardcoded highlight would give it. */
+  /**
+   * The 1px top edge on raised glass — `inset-highlight` in globals.css. It is
+   * the theme's own foreground at 6%, so a light variant gets a dark edge
+   * instead of the white-on-white one a hardcoded highlight would give it.
+   */
   define("element.highlight", {
     base: "foreground",
     transform: alpha(0.06),

@@ -1,135 +1,139 @@
-border.default
-border.subtle
-border.strong
-border.focus
-border.variant
-element.hover
-element.selected
-element.active
-element.highlight
-element.primary_hover
-element.primary_muted
-ghost_element.hover
-ghost_element.selected
-ghost_element.active
-text.muted
-text.placeholder
-text.disabled
-text.accent
-status.success.foreground
-status.success.background
-status.warning.foreground
-status.warning.background
-status.error.foreground
-status.error.background
-status.info.foreground
-status.info.background
-status.purple.foreground
-status.orange.foreground
-selection.background
-terminal.foreground
-terminal.background
-terminal.cursor
-terminal.selection
-terminal.ansi.black
-terminal.ansi.red
-terminal.ansi.green
-terminal.ansi.yellow
-terminal.ansi.blue
-terminal.ansi.magenta
-terminal.ansi.cyan
-terminal.ansi.white
-terminal.ansi.bright_black
-terminal.ansi.bright_red
-terminal.ansi.bright_green
-terminal.ansi.bright_yellow
-terminal.ansi.bright_blue
-terminal.ansi.bright_magenta
-terminal.ansi.bright_cyan
-terminal.ansi.bright_white
-syntax.comment
-syntax.keyword
-syntax.string
-syntax.number
-syntax.type
-syntax.function
-syntax.variable
-syntax.operator
-syntax.tag
-syntax.attribute
-syntax.constant
-syntax.regexp
-syntax.escape
-syntax.definition
-syntax.property
-syntax.boolean
-syntax.null
-syntax.meta
-syntax.builtin
-syntax.punctuation
-editor.background
-editor.foreground
-editor.caret
-editor.gutter.background
-editor.gutter.foreground
-editor.active_line.background
-editor.active_line.gutter_foreground
-editor.selection.background
-editor.match_bracket.background
-editor.match_bracket.border
-editor.fold.background
-editor.fold.border
-editor.fold.foreground
-scrollbar.track.background
-scrollbar.thumb.background
-scrollbar.thumb.hover
-tab.active.background
-tab.inactive.background
-tab.active.border
-panel.rail.background
-panel.background
-panel.elevated.background
-panel.overlay.background
-panel.input.background
-diff.added.background
-diff.added.text
-diff.removed.background
-diff.removed.text
-diff.modified.background
-diff.add_line.background
-diff.remove_line.background
-diff.context.background
-diff.add_side.background
-diff.remove_side.background
-diff.emphasis_added.background
-diff.emphasis_removed.background
-comms.outer.background
-comms.surface.background
-comms.mention.background
-comms.mention.foreground
-comms.other_mention.background
-comms.other_mention.foreground
-comms.unread.foreground
-comms.unread_strong.foreground
-agent.claude.foreground
-agent.claude.background
-agent.gpt.foreground
-agent.gpt.background
-agent.gemini.foreground
-agent.gemini.background
-agent.local.foreground
-agent.local.background
-agent.cursor.foreground
-agent.cursor.background
-agent.amp.foreground
-agent.amp.background
-agent.codex.foreground
-agent.codex.background
-agent.opencode.foreground
-agent.opencode.background
-agent.kilo.foreground
-agent.kilo.background
-stat.added
-stat.removed
-capture.live
-atlas.ants
+# Generated from crates/atlas-theme/keys.toml — do not edit.
+# Run `bun run theme:keys` after editing that file.
+#
+# One key per line: the role name, a tab, and the hover text an author sees.
+border.default	Default separator and control border. Source: base.border → Atlas default.
+border.subtle	Low-emphasis separator. Source: base.sidebar-border → Atlas default.
+border.strong	High-emphasis border. Source: base.ring → Atlas default.
+border.focus	Focused-control border. Source: base.ring → Atlas default.
+border.variant	Alternate low-emphasis border. Source: base.sidebar-border → Atlas default.
+element.hover	Hover overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.04.
+element.selected	Selected overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.06.
+element.active	Pressed overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.08.
+element.highlight	Top-edge highlight on a raised surface. Source: base.foreground → Atlas default. Transform: alpha 0.06.
+element.primary_hover	Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: lighten 0.15.
+element.primary_muted	Muted primary-brand fill. Source: base.primary → Atlas default. Transform: alpha 0.06.
+ghost_element.hover	Hover overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.03.
+ghost_element.selected	Selected overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.05.
+ghost_element.active	Pressed overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.07.
+text.muted	Muted prose and metadata. Source: base.muted-foreground → Atlas default.
+text.placeholder	Input placeholder text. Source: base.muted-foreground → Atlas default. Transform: mix 0.12 toward base.background.
+text.disabled	Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.35 toward base.background.
+text.accent	Rare text-only signature accent. Source: palette.yellow → base.primary → Atlas default.
+status.success.foreground	Success status foreground. Source: palette.green → Atlas default.
+status.success.background	Success status background. Source: palette.green → Atlas default. Transform: alpha 0.12.
+status.warning.foreground	Warning status foreground. Source: palette.yellow → Atlas default.
+status.warning.background	Warning status background. Source: palette.yellow → Atlas default. Transform: alpha 0.12.
+status.error.foreground	Error status foreground. Source: palette.red → base.destructive → Atlas default.
+status.error.background	Error status background. Source: palette.red → base.destructive → Atlas default. Transform: alpha 0.12.
+status.info.foreground	Informational status foreground. Source: palette.blue → Atlas default.
+status.info.background	Informational status background. Source: palette.blue → Atlas default. Transform: alpha 0.12.
+status.purple.foreground	Purple categorical status. Source: palette.purple → Atlas default.
+status.orange.foreground	Orange categorical status. Source: palette.orange → Atlas default.
+selection.background	Document text selection. Source: base.primary → Atlas default. Transform: alpha 0.18.
+terminal.foreground	Terminal default foreground. Source: base.foreground → Atlas default.
+terminal.background	Terminal background. Source: base.background → Atlas default.
+terminal.cursor	Terminal cursor. Source: base.foreground → Atlas default.
+terminal.selection	Terminal selection. Source: base.primary → Atlas default. Transform: alpha 0.3.
+terminal.ansi.black	ANSI black. Source: base.background → Atlas default. Transform: lighten 0.12.
+terminal.ansi.red	ANSI red. Source: palette.red → Atlas default.
+terminal.ansi.green	ANSI green. Source: palette.green → Atlas default.
+terminal.ansi.yellow	ANSI yellow. Source: palette.yellow → Atlas default.
+terminal.ansi.blue	ANSI blue. Source: palette.blue → Atlas default.
+terminal.ansi.magenta	ANSI magenta. Source: palette.purple → Atlas default.
+terminal.ansi.cyan	ANSI cyan. Source: palette.cyan → Atlas default.
+terminal.ansi.white	ANSI white. Source: base.foreground → Atlas default.
+terminal.ansi.bright_black	ANSI bright black. Source: base.muted-foreground → Atlas default.
+terminal.ansi.bright_red	ANSI bright red. Source: palette.red → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_green	ANSI bright green. Source: palette.green → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_yellow	ANSI bright yellow. Source: palette.yellow → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_blue	ANSI bright blue. Source: palette.blue → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_magenta	ANSI bright magenta. Source: palette.purple → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_cyan	ANSI bright cyan. Source: palette.cyan → Atlas default. Transform: lighten 0.15.
+terminal.ansi.bright_white	ANSI bright white. Source: base.foreground → Atlas default. Transform: lighten 0.18.
+syntax.comment	Comments and prose quotes. Source: base.muted-foreground → Atlas default.
+syntax.keyword	Keywords and control flow. Source: palette.purple → Atlas default.
+syntax.string	Strings. Source: palette.green → Atlas default.
+syntax.number	Numbers. Source: palette.orange → Atlas default.
+syntax.type	Types, classes, and namespaces. Source: palette.cyan → Atlas default.
+syntax.function	Functions and headings. Source: palette.blue → base.primary → Atlas default.
+syntax.variable	Variables. Source: base.foreground → Atlas default.
+syntax.operator	Operators. Source: palette.cyan → Atlas default.
+syntax.tag	Markup tags. Source: palette.red → Atlas default.
+syntax.attribute	Markup attributes. Source: palette.yellow → Atlas default.
+syntax.constant	Constants and atoms. Source: palette.orange → Atlas default.
+syntax.regexp	Regular expressions. Source: palette.red → Atlas default.
+syntax.escape	Escape sequences. Source: palette.pink → Atlas default.
+syntax.definition	Definitions and strong prose. Source: base.foreground → Atlas default.
+syntax.property	Properties and object keys. Source: palette.cyan → Atlas default.
+syntax.boolean	Booleans. Source: palette.orange → Atlas default.
+syntax.null	Null-like literals. Source: palette.orange → Atlas default.
+syntax.meta	Pragmas and metadata. Source: palette.yellow → Atlas default.
+syntax.builtin	Built-in symbols. Source: palette.red → Atlas default.
+syntax.punctuation	Punctuation. Source: base.muted-foreground → Atlas default.
+editor.background	Code editor background. Source: base.background → Atlas default.
+editor.foreground	Code editor foreground. Source: base.foreground → Atlas default.
+editor.caret	Code editor caret. Source: base.foreground → Atlas default.
+editor.gutter.background	Code editor gutter background. Source: base.background → Atlas default.
+editor.gutter.foreground	Code editor line numbers. Source: base.muted-foreground → Atlas default.
+editor.active_line.background	Active editor line. Source: base.foreground → Atlas default. Transform: alpha 0.04.
+editor.active_line.gutter_foreground	Active line number. Source: base.foreground → Atlas default.
+editor.selection.background	Editor selection. Source: base.primary → Atlas default. Transform: alpha 0.24.
+editor.match_bracket.background	Matching bracket background. Source: base.accent → Atlas default.
+editor.match_bracket.border	Matching bracket outline. Source: base.ring → Atlas default.
+editor.fold.background	Fold placeholder background. Source: base.secondary → Atlas default.
+editor.fold.border	Fold placeholder border. Source: base.border → Atlas default.
+editor.fold.foreground	Fold placeholder foreground. Source: base.muted-foreground → Atlas default.
+scrollbar.track.background	Scrollbar track. Source: base.background → Atlas default.
+scrollbar.thumb.background	Scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.16.
+scrollbar.thumb.hover	Hovered scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.26.
+tab.active.background	Active tab background. Source: base.accent → Atlas default.
+tab.inactive.background	Inactive tab background. Source: base.sidebar → Atlas default.
+tab.active.border	Active tab indicator. Source: base.primary → Atlas default.
+panel.rail.background	Project rail background. Source: base.sidebar → Atlas default.
+panel.background	Panel background. Source: base.sidebar → Atlas default.
+panel.elevated.background	Elevated panel background. Source: base.card → Atlas default.
+panel.overlay.background	Panel overlay background. Source: base.popover → Atlas default.
+panel.input.background	Panel input background. Source: base.background → Atlas default.
+diff.added.background	Added diff region. Source: palette.green → Atlas default. Transform: alpha 0.08.
+diff.added.text	Added diff text. Source: palette.green → Atlas default.
+diff.removed.background	Removed diff region. Source: palette.red → Atlas default. Transform: alpha 0.08.
+diff.removed.text	Removed diff text. Source: palette.red → Atlas default.
+diff.modified.background	Modified diff region. Source: palette.blue → Atlas default. Transform: alpha 0.08.
+diff.add_line.background	Added line background. Source: palette.green → Atlas default. Transform: alpha 0.13.
+diff.remove_line.background	Removed line background. Source: palette.red → Atlas default. Transform: alpha 0.13.
+diff.context.background	Unchanged diff context. Source: base.background → Atlas default.
+diff.add_side.background	Side-by-side addition. Source: palette.green → Atlas default. Transform: alpha 0.13.
+diff.remove_side.background	Side-by-side removal. Source: palette.red → Atlas default. Transform: alpha 0.13.
+diff.emphasis_added.background	Intraline addition. Source: palette.green → Atlas default. Transform: alpha 0.34.
+diff.emphasis_removed.background	Intraline removal. Source: palette.red → Atlas default. Transform: alpha 0.34.
+comms.outer.background	Team chat outer surface. Source: base.sidebar → Atlas default.
+comms.surface.background	Team chat transcript surface. Source: base.background → Atlas default.
+comms.mention.background	Current-user mention background. Source: base.foreground → Atlas default. Transform: alpha 0.16.
+comms.mention.foreground	Current-user mention text. Source: base.foreground → Atlas default.
+comms.other_mention.background	Other-user mention background. Source: base.foreground → Atlas default. Transform: alpha 0.08.
+comms.other_mention.foreground	Other-user mention text. Source: base.muted-foreground → Atlas default.
+comms.unread.foreground	Unread and presence indicator. Source: palette.green → Atlas default.
+comms.unread_strong.foreground	Strong unread indicator. Source: palette.green → Atlas default. Transform: mix 0.2 toward base.background.
+agent.claude.foreground	Claude identity chip. Source: palette.orange → Atlas default.
+agent.claude.background	Claude identity background. Source: palette.orange → Atlas default. Transform: alpha 0.1.
+agent.gpt.foreground	GPT identity chip. Source: palette.green → Atlas default.
+agent.gpt.background	GPT identity background. Source: palette.green → Atlas default. Transform: alpha 0.1.
+agent.gemini.foreground	Gemini identity chip. Source: palette.blue → Atlas default.
+agent.gemini.background	Gemini identity background. Source: palette.blue → Atlas default. Transform: alpha 0.1.
+agent.local.foreground	Local-agent identity chip. Source: palette.purple → Atlas default.
+agent.local.background	Local-agent identity background. Source: palette.purple → Atlas default. Transform: alpha 0.1.
+agent.cursor.foreground	Cursor identity chip. Source: palette.yellow → Atlas default.
+agent.cursor.background	Cursor identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1.
+agent.amp.foreground	Amp identity chip. Source: palette.pink → Atlas default.
+agent.amp.background	Amp identity background. Source: palette.pink → Atlas default. Transform: alpha 0.1.
+agent.codex.foreground	Codex identity chip. Source: palette.green → Atlas default.
+agent.codex.background	Codex identity background. Source: palette.green → Atlas default. Transform: alpha 0.1.
+agent.opencode.foreground	OpenCode identity chip. Source: base.muted-foreground → Atlas default.
+agent.opencode.background	OpenCode identity background. Source: base.muted-foreground → Atlas default. Transform: alpha 0.1.
+agent.kilo.foreground	Kilo identity chip. Source: palette.yellow → Atlas default.
+agent.kilo.background	Kilo identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1.
+stat.added	Added-line statistic. Source: palette.green → Atlas default.
+stat.removed	Removed-line statistic. Source: palette.red → Atlas default.
+capture.live	Active capture indicator. Source: palette.green → Atlas default.
+atlas.ants	Animated marching-ants stroke. Source: base.primary → Atlas default.
