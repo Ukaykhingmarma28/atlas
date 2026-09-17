@@ -92,7 +92,7 @@ export function AtlasThemesSettings() {
           <div className="mb-2 rounded-lg border border-warning/40 bg-warning-muted p-2.5">
             <div className="flex items-center gap-1.5">
               <AlertTriangle size={11} className="shrink-0 text-warning" />
-              <span className="text-[11px] font-medium text-text-primary">
+              <span className="text-xs font-medium text-text-primary">
                 {skipped.length === 1
                   ? "1 theme file was skipped"
                   : `${skipped.length} theme files were skipped`}
@@ -100,7 +100,7 @@ export function AtlasThemesSettings() {
             </div>
             <ul className="mt-1.5 space-y-1">
               {skipped.map((warning) => (
-                <li key={warning.key} className="text-[10.5px] leading-snug text-text-tertiary">
+                <li key={warning.key} className="text-2xs leading-snug text-text-tertiary">
                   <span className="font-medium text-text-secondary">{warning.key}</span> —{" "}
                   {warning.message}
                 </li>

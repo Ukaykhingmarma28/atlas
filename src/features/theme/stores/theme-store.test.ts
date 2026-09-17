@@ -85,7 +85,9 @@ describe("re-applying the active theme", () => {
   it("repaints when the theme catalog changes underneath it", async () => {
     getTheme.mockResolvedValue(ATLAS);
     listThemes.mockResolvedValue({ themes: [], warnings: [] });
-    await useThemeStore.getState().actions.apply("atlas", "dark", { base: { background: "#000" } });
+    await useThemeStore
+      .getState()
+      .actions.apply("atlas", "dark", { base: { background: "black" } });
     expect(applyTheme).toHaveBeenCalledTimes(1);
 
     startThemeCatalogListener();
@@ -95,7 +97,7 @@ describe("re-applying the active theme", () => {
 
     // Re-read from Rust rather than served from the cache, and with the same
     // mode and overrides the original apply carried.
-    expect(applyTheme).toHaveBeenLastCalledWith(EDITED, "dark", { base: { background: "#000" } });
+    expect(applyTheme).toHaveBeenLastCalledWith(EDITED, "dark", { base: { background: "black" } });
   });
 
   it("re-reads the file when the active theme is picked again", async () => {
