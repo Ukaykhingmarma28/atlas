@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 interface ImageZoomViewProps {
   src: string;
@@ -127,36 +128,41 @@ export function ImageZoomView({ src, alt, fill, checkerboard }: ImageZoomViewPro
         }}
       />
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1 py-0.5 shadow-[var(--shadow-overlay)]">
-        <button
-          type="button"
-          onClick={zoomButton(1 / 1.3)}
-          title="Zoom out"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomOut size={13} />
-        </button>
-        <span className="w-9 text-center text-[10px] font-mono text-[var(--text-tertiary)]">
-          {Math.round(scale * 100)}%
-        </span>
-        <button
-          type="button"
-          onClick={zoomButton(1.3)}
-          title="Zoom in"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomIn size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={reset}
-          title="Reset zoom"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <Maximize size={12} />
-        </button>
-      </div>
+      {/* Zoom controls — at the bottom of the view, so tooltips open upward. */}
+      <HintGroup side="top">
+        <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1 py-0.5 shadow-[var(--shadow-overlay)]">
+          <HintItem label="Zoom out">
+            <button
+              type="button"
+              onClick={zoomButton(1 / 1.3)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <ZoomOut size={13} />
+            </button>
+          </HintItem>
+          <span className="w-9 text-center text-[10px] font-mono text-[var(--text-tertiary)]">
+            {Math.round(scale * 100)}%
+          </span>
+          <HintItem label="Zoom in">
+            <button
+              type="button"
+              onClick={zoomButton(1.3)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <ZoomIn size={13} />
+            </button>
+          </HintItem>
+          <HintItem label="Reset zoom">
+            <button
+              type="button"
+              onClick={reset}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <Maximize size={12} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }

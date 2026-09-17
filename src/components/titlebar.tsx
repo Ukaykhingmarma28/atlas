@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { TitlebarDock, type DockItem } from "./titlebar-dock";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -153,8 +154,10 @@ export function Titlebar() {
       )}
     >
       <div className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5">
-        <WorkspaceToggle />
-        {currentProject && <LeftPanelToggle />}
+        <HintGroup>
+          <WorkspaceToggle />
+          {currentProject && <LeftPanelToggle />}
+        </HintGroup>
         {/* `org / project` pill — click to copy the workspace path. */}
         <ProjectLabel name={displayName} orgName={orgName} path={currentProject?.path} />
       </div>
@@ -216,36 +219,38 @@ function WindowControls() {
     "flex h-[29px] w-[46px] items-center justify-center text-[#999] transition-colors duration-100";
 
   return (
-    <div className="ml-2 flex h-[29px] items-center self-start">
-      <button
-        onClick={() => void windowRef.current?.minimize()}
-        className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
-        title="Minimize"
-        aria-label="Minimize"
-      >
-        <Minus size={14} strokeWidth={1.25} />
-      </button>
-      <button
-        onClick={() => void windowRef.current?.toggleMaximize()}
-        className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
-        title={isMaximized ? "Restore" : "Maximize"}
-        aria-label={isMaximized ? "Restore" : "Maximize"}
-      >
-        {isMaximized ? (
-          <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
-        ) : (
-          <Square size={11} strokeWidth={1.25} />
-        )}
-      </button>
-      <button
-        onClick={() => void windowRef.current?.close()}
-        className={cn(button, "hover:bg-[#c42b1c] hover:text-white")}
-        title="Close"
-        aria-label="Close"
-      >
-        <X size={15} strokeWidth={1.25} />
-      </button>
-    </div>
+    <HintGroup>
+      <div className="ml-2 flex h-[29px] items-center self-start">
+        <HintItem label="Minimize">
+          <button
+            onClick={() => void windowRef.current?.minimize()}
+            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+          >
+            <Minus size={14} strokeWidth={1.25} />
+          </button>
+        </HintItem>
+        <HintItem label={isMaximized ? "Restore" : "Maximize"}>
+          <button
+            onClick={() => void windowRef.current?.toggleMaximize()}
+            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+          >
+            {isMaximized ? (
+              <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
+            ) : (
+              <Square size={11} strokeWidth={1.25} />
+            )}
+          </button>
+        </HintItem>
+        <HintItem label="Close">
+          <button
+            onClick={() => void windowRef.current?.close()}
+            className={cn(button, "hover:bg-[#c42b1c] hover:text-white")}
+          >
+            <X size={15} strokeWidth={1.25} />
+          </button>
+        </HintItem>
+      </div>
+    </HintGroup>
   );
 }
 
@@ -451,22 +456,23 @@ function WorkspaceToggle() {
   const count = useActiveOrgWorkspaces().length;
 
   return (
-    <button
-      onClick={toggleSidebar}
-      className={cn(
-        "relative flex items-center justify-center w-6 h-6 rounded hover:bg-[#ffffff08] transition-all duration-150",
-        sidebarOpen ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
-      )}
-      title={sidebarOpen ? `Hide workspaces${suffix}` : `Show workspaces${suffix}`}
-      aria-label={sidebarOpen ? "Hide workspaces" : "Show workspaces"}
-    >
-      <Layers size={14} />
-      {count > 1 && (
-        <span className="absolute -bottom-0.5 -right-0.5 text-[7px] font-mono text-white">
-          {count}
-        </span>
-      )}
-    </button>
+    <HintItem label={sidebarOpen ? `Hide workspaces${suffix}` : `Show workspaces${suffix}`}>
+      <button
+        onClick={toggleSidebar}
+        className={cn(
+          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-[#ffffff08] transition-all duration-150",
+          sidebarOpen ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
+        )}
+        aria-label={sidebarOpen ? "Hide workspaces" : "Show workspaces"}
+      >
+        <Layers size={14} />
+        {count > 1 && (
+          <span className="absolute -bottom-0.5 -right-0.5 text-[7px] font-mono text-white">
+            {count}
+          </span>
+        )}
+      </button>
+    </HintItem>
   );
 }
 
@@ -475,14 +481,14 @@ function LeftPanelToggle() {
   const { toggleLeftPanel } = useLayoutStore.use.actions();
 
   return (
-    <button
-      onClick={toggleLeftPanel}
-      className="flex items-center justify-center w-6 h-6 rounded text-[#555] hover:text-[#aaa] hover:bg-[#ffffff08] transition-all duration-150"
-      title={leftPanel.visible ? "Hide left panel" : "Show left panel"}
-      aria-label={leftPanel.visible ? "Hide left panel" : "Show left panel"}
-    >
-      <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
-    </button>
+    <HintItem label={leftPanel.visible ? "Hide left panel" : "Show left panel"}>
+      <button
+        onClick={toggleLeftPanel}
+        className="flex items-center justify-center w-6 h-6 rounded text-[#555] hover:text-[#aaa] hover:bg-[#ffffff08] transition-all duration-150"
+      >
+        <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
+      </button>
+    </HintItem>
   );
 }
 

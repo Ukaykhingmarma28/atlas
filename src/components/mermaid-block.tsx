@@ -6,6 +6,7 @@ import { Check, Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 // Mermaid is heavy (~500KB) — load it on first diagram render only. The theme is
 // mapped to the *live* Atlas interface-theme tokens (read from CSS custom
@@ -275,32 +276,39 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
       </div>
 
       {/* Revealed on hover: at rest the diagram is the content, not a widget. */}
-      <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
-        <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
-          <Minus size={12} />
-        </IconButton>
-        <button
-          type="button"
-          onClick={() => setZoom(1)}
-          title="Reset zoom"
-          className="cursor-pointer px-1 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
-          <Plus size={12} />
-        </IconButton>
-        <span aria-hidden className="mx-0.5 h-3 w-px bg-[var(--border-default)]" />
-        <IconButton label="Open full screen" onClick={() => setFull(true)}>
-          <Maximize2 size={11} />
-        </IconButton>
-        <IconButton label="Copy diagram source" onClick={copy}>
-          {copied ? <Check size={11} className="text-[var(--capture-live)]" /> : <Copy size={11} />}
-        </IconButton>
-        <IconButton label="Export as PNG" onClick={() => void exportPng()} disabled={saving}>
-          <Download size={11} />
-        </IconButton>
-      </div>
+      <HintGroup>
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
+          <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
+            <Minus size={12} />
+          </IconButton>
+          <HintItem label="Reset zoom">
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              className="cursor-pointer px-1 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+          </HintItem>
+          <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
+            <Plus size={12} />
+          </IconButton>
+          <span aria-hidden className="mx-0.5 h-3 w-px bg-[var(--border-default)]" />
+          <IconButton label="Open full screen" onClick={() => setFull(true)}>
+            <Maximize2 size={11} />
+          </IconButton>
+          <IconButton label="Copy diagram source" onClick={copy}>
+            {copied ? (
+              <Check size={11} className="text-[var(--capture-live)]" />
+            ) : (
+              <Copy size={11} />
+            )}
+          </IconButton>
+          <IconButton label="Export as PNG" onClick={() => void exportPng()} disabled={saving}>
+            <Download size={11} />
+          </IconButton>
+        </div>
+      </HintGroup>
 
       {full &&
         createPortal(
@@ -357,31 +365,38 @@ function Fullscreen({
       <header className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--border-default)] px-3">
         <span className="text-[12px] text-[var(--text-secondary)]">Diagram</span>
         <div className="flex-1" />
-        <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
-          <Minus size={13} />
-        </IconButton>
-        <button
-          type="button"
-          onClick={() => setZoom(1)}
-          title="Reset zoom"
-          className="cursor-pointer px-1.5 font-mono text-[11px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
-          <Plus size={13} />
-        </IconButton>
-        <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
-        <IconButton label="Copy diagram source" onClick={onCopy}>
-          {copied ? <Check size={12} className="text-[var(--capture-live)]" /> : <Copy size={12} />}
-        </IconButton>
-        <IconButton label="Export as PNG" onClick={onExport} disabled={saving}>
-          <Download size={12} />
-        </IconButton>
-        <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
-        <IconButton label="Close" onClick={onClose}>
-          <X size={13} />
-        </IconButton>
+        <HintGroup>
+          <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
+            <Minus size={13} />
+          </IconButton>
+          <HintItem label="Reset zoom">
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              className="cursor-pointer px-1.5 font-mono text-[11px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+          </HintItem>
+          <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
+            <Plus size={13} />
+          </IconButton>
+          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
+          <IconButton label="Copy diagram source" onClick={onCopy}>
+            {copied ? (
+              <Check size={12} className="text-[var(--capture-live)]" />
+            ) : (
+              <Copy size={12} />
+            )}
+          </IconButton>
+          <IconButton label="Export as PNG" onClick={onExport} disabled={saving}>
+            <Download size={12} />
+          </IconButton>
+          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
+          <IconButton label="Close" onClick={onClose}>
+            <X size={13} />
+          </IconButton>
+        </HintGroup>
       </header>
 
       <div className="hide-scrollbar min-h-0 flex-1 overflow-auto p-6">
@@ -407,21 +422,21 @@ function IconButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "flex size-5 items-center justify-center rounded-full transition-colors",
-        disabled
-          ? "cursor-default text-[var(--text-ghost)]"
-          : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-      )}
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          "flex size-5 items-center justify-center rounded-full transition-colors",
+          disabled
+            ? "cursor-default text-[var(--text-ghost)]"
+            : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 

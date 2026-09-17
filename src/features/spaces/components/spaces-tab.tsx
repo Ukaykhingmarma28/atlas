@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, Frame, X } from "lucide-react";
+import { Hint } from "@/ui/tooltip";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { useSpaceSession } from "../lib/use-space-session";
 import { useSpacesStore } from "../stores/spaces-store";
@@ -78,13 +79,15 @@ function SpaceHost({ convId }: { convId: string }) {
         <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
           <AlertTriangle size={11} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{session.banner}</span>
-          <button
-            type="button"
-            onClick={session.dismissBanner}
-            className="flex h-4 w-4 cursor-pointer items-center justify-center rounded text-text-tertiary hover:text-text-primary"
-          >
-            <X size={10} />
-          </button>
+          <Hint label="Dismiss">
+            <button
+              type="button"
+              onClick={session.dismissBanner}
+              className="flex h-4 w-4 cursor-pointer items-center justify-center rounded text-text-tertiary hover:text-text-primary"
+            >
+              <X size={10} />
+            </button>
+          </Hint>
         </div>
       )}
 

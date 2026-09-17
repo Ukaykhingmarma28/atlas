@@ -70,8 +70,6 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
   // `parseConfigOptions` filters those out. There is nothing left to offer, so
   // this reads as "default" exactly like an empty advertisement does.
   const hasOptions = configOptions.length > 0;
-  /** The three things the pill can be. Drives the swap animation's key. */
-  const state = loading ? "loading" : hasOptions ? "options" : "default";
 
   // A loading pill has nothing to open yet; the hook closes it if it got there.
   const { open, toggle, close, ref, contentRef, panelHeight } = useComposerDropup("options", {
@@ -178,12 +176,9 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
               : "Agent loaded with default configuration"
         }
       >
-        {/* Keyed on the state so React remounts it and the one-shot animation
-            replays: the pill fades its contents between loading / Options /
-            Default instead of snapping. Most visible on an agent switch, where
-            the old agent's state is dropped and the new agent's cached knobs
-            land in the same frame. */}
-        <span key={state} className="atlas-pill-swap flex items-center">
+        {/* Updates in place: agent switches are keyboard-driven (⌥/), so the
+            content swaps without animation. */}
+        <span className="flex items-center">
           {loading ? (
             <Loader2 size={11} className="shrink-0 animate-spin text-[var(--text-tertiary)]" />
           ) : (

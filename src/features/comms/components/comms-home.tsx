@@ -139,17 +139,11 @@ export function CommsHome() {
         {rosterPending &&
           [0, 1, 2].map((i) => (
             <div key={`sk${i}`} className="flex items-center gap-2.5 py-[5px] pl-3.5 pr-2.5">
-              <div
-                className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50"
-                style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-              />
+              <div className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50 atlas-marker-running" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div
-                  className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50"
-                  style={{
-                    width: 88 + ((i * 37) % 60),
-                    animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-                  }}
+                  className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                  style={{ width: 88 + ((i * 37) % 60) }}
                 />
               </div>
             </div>

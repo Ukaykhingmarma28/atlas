@@ -1,6 +1,9 @@
 import { CircleUser, Loader2 } from "lucide-react";
 
+import type { ComponentProps } from "react";
+
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useAuthStore } from "../stores/auth-store";
 import { AccountAvatar } from "./account-avatar";
 import { AccountMenu } from "./account-menu";
@@ -42,13 +45,16 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
         ? "Waiting for approval in your browser…"
         : "Account and settings";
 
+  // In the dock the pill's sliding label already names this control, so only
+  // the standalone button carries a tooltip of its own.
+  const Button = compact ? "button" : HintedButton;
+
   const button = (
     // Only the connecting state keeps a click of its own. In the other two the
     // click is Radix's to handle, and one that also ran would fight the trigger
     // it is wrapped in.
-    <button
+    <Button
       onClick={connecting ? toggleDialog : undefined}
-      title={title}
       aria-label={title}
       className={cn(
         "relative flex items-center justify-center transition-all duration-150",
@@ -70,7 +76,7 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
       ) : (
         <CircleUser size={compact ? 12 : 14} />
       )}
-    </button>
+    </Button>
   );
 
   // The menu opens signed out as well as signed in. Settings, Keybindings,
@@ -84,4 +90,18 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
   // putting that behind a menu adds a step to a state that lasts seconds.
   if (snapshot.status === "connecting") return button;
   return <AccountMenu account={snapshot}>{button}</AccountMenu>;
+}
+
+/**
+ * The button with its tooltip inside. It has to be a component that forwards
+ * its props: as the child of `DropdownMenu.Trigger asChild`, the trigger's
+ * props and ref land here and must reach the same `<button>` the tooltip
+ * trigger merges onto.
+ */
+function HintedButton(props: ComponentProps<"button">) {
+  return (
+    <Hint label={props["aria-label"] ?? ""}>
+      <button {...props} />
+    </Hint>
+  );
 }

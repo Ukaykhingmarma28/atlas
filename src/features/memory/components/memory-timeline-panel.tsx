@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { timeAgo } from "@/lib/time-ago";
 import { AgentMark } from "@/components/agent-mark";
 import { pluginIdForSource } from "../lib/memory-agent";
@@ -53,14 +54,14 @@ export function MemoryTimelinePanel({
             </div>
             <div className="text-[9px] text-[var(--text-tertiary)] truncate">{subtitle}</div>
           </div>
-          <button
-            onClick={onClose}
-            className="mt-1 flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title="Close"
-            aria-label="Close"
-          >
-            <X size={13} />
-          </button>
+          <Hint label="Close">
+            <button
+              onClick={onClose}
+              className="mt-1 flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+            >
+              <X size={13} />
+            </button>
+          </Hint>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">

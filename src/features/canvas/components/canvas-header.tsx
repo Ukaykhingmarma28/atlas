@@ -1,5 +1,6 @@
 import { Crosshair, Maximize2, Minimize2, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { DEFAULT_PAGE_ICON } from "./pages-panel";
 
 /**
@@ -24,49 +25,54 @@ export function CanvasHeader({
   onToggleFullscreen: () => void;
 }) {
   return (
-    <div
-      className={cn(
-        "absolute left-3 top-3 z-20 flex items-center gap-1.5 pl-1 pr-1 py-1",
-        "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-[var(--shadow-overlay)]",
-      )}
-    >
-      <button
-        type="button"
-        onClick={onTogglePages}
-        title={pagesOpen ? "Hide pages" : "Show pages"}
+    <HintGroup>
+      <div
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-md transition-colors cursor-pointer",
-          pagesOpen
-            ? "bg-bg-selected text-text-primary"
-            : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+          "absolute left-3 top-3 z-20 flex items-center gap-1.5 pl-1 pr-1 py-1",
+          "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-[var(--shadow-overlay)]",
         )}
       >
-        <PanelLeft size={13} />
-      </button>
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[12px] leading-none">
-        {pageIcon || DEFAULT_PAGE_ICON}
-      </span>
-      <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
-        {pageName || "Spaces"}
-      </span>
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
-      <button
-        type="button"
-        onClick={onFit}
-        title="Fit to view"
-        className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
-      >
-        <Crosshair size={12} />
-      </button>
-      <button
-        type="button"
-        onClick={onToggleFullscreen}
-        title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-        className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
-      >
-        {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-      </button>
-    </div>
+        <HintItem label={pagesOpen ? "Hide pages" : "Show pages"}>
+          <button
+            type="button"
+            onClick={onTogglePages}
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md transition-colors cursor-pointer",
+              pagesOpen
+                ? "bg-bg-selected text-text-primary"
+                : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+            )}
+          >
+            <PanelLeft size={13} />
+          </button>
+        </HintItem>
+        <div className="mx-0.5 h-4 w-px bg-white/10" />
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[12px] leading-none">
+          {pageIcon || DEFAULT_PAGE_ICON}
+        </span>
+        <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
+          {pageName || "Spaces"}
+        </span>
+        <div className="mx-0.5 h-4 w-px bg-white/10" />
+        <HintItem label="Fit to view">
+          <button
+            type="button"
+            onClick={onFit}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+          >
+            <Crosshair size={12} />
+          </button>
+        </HintItem>
+        <HintItem label={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+          >
+            {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+          </button>
+        </HintItem>
+      </div>
+    </HintGroup>
   );
 }

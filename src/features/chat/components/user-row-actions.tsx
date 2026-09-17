@@ -70,6 +70,7 @@ import { Check, Copy, Pencil, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { retryLastTurn } from "../lib/retry-turn";
 import { useChatPinsStore } from "../stores/chat-pins-store";
 
@@ -87,20 +88,20 @@ function ActionButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      className={cn(
-        "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
-        "hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]",
-        active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
-      )}
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={cn(
+          "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
+          "hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]",
+          active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 
@@ -193,47 +194,49 @@ export function UserRowActions({
   }, [pinScopeKey, messageId, timestamp, text]);
 
   return (
-    <div
-      className={cn(
-        // `top-full`, not "under the bubble": the attachment chip sits below
-        // the bubble too, and anchoring to the bubble would drop the bar on
-        // top of it.
-        "absolute right-0 top-full z-[2] flex items-center gap-0.5",
-        // The gap above the icons, as padding rather than a margin so the
-        // bar's box still starts exactly at `top-full`. Only the top half
-        // draws anything; the bottom 8px is empty and free to overhang the
-        // row's `pb-7`.
-        //
-        // A bubble with a "Show more" toggle already has that gap: the toggle
-        // is in flow between the bubble and this bar, so `top-full` is below
-        // IT, and a top pad here would stack on top of the toggle's own
-        // height — the icons visibly sat further from a clamped bubble than
-        // from a short one. Longhands in both branches, never `py-2` plus a
-        // `pt-0` override: shorthand-vs-longhand precedence is decided by
-        // stylesheet order, which is not something to bet spacing on.
-        toggleAbove ? "pt-0 pb-2" : "pt-2 pb-2",
-        // Hidden until the row is hovered, and it SNAPS — no transition, no
-        // fade, nothing to interpolate. `visibility` rather than `opacity`
-        // because an `opacity-0` bar is still hit-testable: it could be
-        // clicked while invisible. `focus-within` is not decoration either —
-        // without it, keyboard users would tab into controls they cannot see.
-        "invisible group-hover:visible focus-within:visible",
-      )}
-    >
-      {canRetry && (
-        <ActionButton label="Retry (replaces this response)" onClick={onRetry}>
-          <RefreshCw size={12} />
+    <HintGroup>
+      <div
+        className={cn(
+          // `top-full`, not "under the bubble": the attachment chip sits below
+          // the bubble too, and anchoring to the bubble would drop the bar on
+          // top of it.
+          "absolute right-0 top-full z-[2] flex items-center gap-0.5",
+          // The gap above the icons, as padding rather than a margin so the
+          // bar's box still starts exactly at `top-full`. Only the top half
+          // draws anything; the bottom 8px is empty and free to overhang the
+          // row's `pb-7`.
+          //
+          // A bubble with a "Show more" toggle already has that gap: the toggle
+          // is in flow between the bubble and this bar, so `top-full` is below
+          // IT, and a top pad here would stack on top of the toggle's own
+          // height — the icons visibly sat further from a clamped bubble than
+          // from a short one. Longhands in both branches, never `py-2` plus a
+          // `pt-0` override: shorthand-vs-longhand precedence is decided by
+          // stylesheet order, which is not something to bet spacing on.
+          toggleAbove ? "pt-0 pb-2" : "pt-2 pb-2",
+          // Hidden until the row is hovered, and it SNAPS — no transition, no
+          // fade, nothing to interpolate. `visibility` rather than `opacity`
+          // because an `opacity-0` bar is still hit-testable: it could be
+          // clicked while invisible. `focus-within` is not decoration either —
+          // without it, keyboard users would tab into controls they cannot see.
+          "invisible group-hover:visible focus-within:visible",
+        )}
+      >
+        {canRetry && (
+          <ActionButton label="Retry (replaces this response)" onClick={onRetry}>
+            <RefreshCw size={12} />
+          </ActionButton>
+        )}
+        <ActionButton label="Pin message" onClick={onPin} active={pinned}>
+          <Pin size={12} fill={pinned ? "currentColor" : "none"} />
         </ActionButton>
-      )}
-      <ActionButton label="Pin message" onClick={onPin} active={pinned}>
-        <Pin size={12} fill={pinned ? "currentColor" : "none"} />
-      </ActionButton>
-      <ActionButton label="Edit and send as new message" onClick={onEdit}>
-        <Pencil size={12} />
-      </ActionButton>
-      <ActionButton label="Copy message" onClick={onCopy}>
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-      </ActionButton>
-    </div>
+        <ActionButton label="Edit and send as new message" onClick={onEdit}>
+          <Pencil size={12} />
+        </ActionButton>
+        <ActionButton label="Copy message" onClick={onCopy}>
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </ActionButton>
+      </div>
+    </HintGroup>
   );
 }

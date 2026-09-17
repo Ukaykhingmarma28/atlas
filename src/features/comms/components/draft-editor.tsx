@@ -19,6 +19,7 @@ import { editorThemeExtensions } from "@/features/editor/themes/build-cm-theme";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { yCollab } from "y-codemirror.next";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommsAvatar } from "./comms-avatar";
 import { useDraftSession } from "../lib/use-draft-session";
@@ -116,21 +117,23 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
 
         {/* Centre: the grouped action pill. */}
         <div className="flex min-w-0 flex-1 justify-center">
-          <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06]">
-            <PillButton label="Copy draft" onClick={() => void copyAll()}>
-              <Copy size={11} />
-            </PillButton>
-            <span className="h-4 w-px bg-white/10" />
-            <PillButton label="Send to agent" onClick={toAgent}>
-              <Play size={11} />
-            </PillButton>
-            <span className="h-4 w-px bg-white/10" />
-            {/* No API mints a public draft link (the meetings door is the one
+          <HintGroup>
+            <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06]">
+              <PillButton label="Copy draft" onClick={() => void copyAll()}>
+                <Copy size={11} />
+              </PillButton>
+              <span className="h-4 w-px bg-white/10" />
+              <PillButton label="Send to agent" onClick={toAgent}>
+                <Play size={11} />
+              </PillButton>
+              <span className="h-4 w-px bg-white/10" />
+              {/* No API mints a public draft link (the meetings door is the one
                 unauthenticated surface) — a mock, like the Spaces pill. */}
-            <PillButton label="Public link — coming soon" disabled>
-              <Link2 size={11} />
-            </PillButton>
-          </div>
+              <PillButton label="Public link — coming soon" disabled>
+                <Link2 size={11} />
+              </PillButton>
+            </div>
+          </HintGroup>
         </div>
 
         {/* Who's here — always at least you: an empty corner read as "nobody
@@ -187,11 +190,8 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="h-[10px] rounded bg-[var(--bg-elevated)] opacity-50"
-                style={{
-                  width: `${60 - i * 12}%`,
-                  animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-                }}
+                className="h-[10px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                style={{ width: `${60 - i * 12}%` }}
               />
             ))}
           </div>
@@ -214,26 +214,21 @@ function PillButton({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onClick}
-          className={cn(
-            "flex h-[22px] w-8 items-center justify-center text-text-secondary transition-colors",
-            disabled
-              ? "cursor-not-allowed text-text-ghost"
-              : "hover:bg-white/10 hover:text-text-primary cursor-pointer",
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
+    <HintItem label={label}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          "flex h-[22px] w-8 items-center justify-center text-text-secondary transition-colors",
+          disabled
+            ? "cursor-not-allowed text-text-ghost"
+            : "hover:bg-white/10 hover:text-text-primary cursor-pointer",
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 

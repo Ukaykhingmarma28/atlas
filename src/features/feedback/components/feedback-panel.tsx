@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Camera, Check, EyeOff, MessageCircleQuestion, MessagesSquare, X } from "lucide-react";
 import { GithubIcon } from "@/components/github-icon";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
 import { useProjectStore } from "@/features/project/stores/project-store";
@@ -122,14 +123,16 @@ export function FeedbackPanel() {
           Send feedback
         </span>
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={a.closePanel}
-          aria-label="Close feedback"
-          className="grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] transition-colors cursor-pointer"
-        >
-          <X size={12} />
-        </button>
+        <Hint label="Close">
+          <button
+            type="button"
+            onClick={a.closePanel}
+            aria-label="Close feedback"
+            className="grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] transition-colors cursor-pointer"
+          >
+            <X size={12} />
+          </button>
+        </Hint>
       </div>
 
       {sent ? (
@@ -194,14 +197,16 @@ export function FeedbackPanel() {
                   alt="Attached screenshot"
                   className="h-full w-full object-cover"
                 />
-                <button
-                  type="button"
-                  onClick={a.removeScreenshot}
-                  aria-label="Remove screenshot"
-                  className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white/80 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
-                >
-                  <X size={9} />
-                </button>
+                <Hint label="Remove screenshot">
+                  <button
+                    type="button"
+                    onClick={a.removeScreenshot}
+                    aria-label="Remove screenshot"
+                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white/80 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                  >
+                    <X size={9} />
+                  </button>
+                </Hint>
               </div>
             ) : (
               <button

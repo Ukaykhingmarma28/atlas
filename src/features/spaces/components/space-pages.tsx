@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, FilePlus2, FolderPlus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { CommsAvatar } from "@/features/comms/components/comms-avatar";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { SPACE_PAGE_NAME_MAX } from "../lib/space-wire";
@@ -176,18 +177,20 @@ export function SpacePages({
         <span className="flex-1 text-[10px] font-semibold uppercase leading-none tracking-wider text-text-tertiary">
           Pages
         </span>
-        <RoundButton
-          label="New page"
-          disabled={!editable}
-          onClick={() => create({})}
-          icon={<FilePlus2 size={10} />}
-        />
-        <RoundButton
-          label="New folder"
-          disabled={!editable}
-          onClick={() => create({ kind: "folder" })}
-          icon={<FolderPlus size={10} />}
-        />
+        <HintGroup>
+          <RoundButton
+            label="New page"
+            disabled={!editable}
+            onClick={() => create({})}
+            icon={<FilePlus2 size={10} />}
+          />
+          <RoundButton
+            label="New folder"
+            disabled={!editable}
+            onClick={() => create({ kind: "folder" })}
+            icon={<FolderPlus size={10} />}
+          />
+        </HintGroup>
       </div>
 
       <div
@@ -309,39 +312,43 @@ export function SpacePages({
                 {editable && (
                   <span className="flex shrink-0 items-center gap-1">
                     {isFolder && (
-                      <button
-                        type="button"
-                        title="New page inside"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          create({ parent_id: page.id });
-                        }}
-                        className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
-                      >
-                        <FilePlus2 size={10} />
-                      </button>
+                      <Hint label="New page inside">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            create({ parent_id: page.id });
+                          }}
+                          className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
+                        >
+                          <FilePlus2 size={10} />
+                        </button>
+                      </Hint>
                     )}
                     {/* Always drawn, never hover-revealed: a delete that
                         appears under the cursor is a delete you click by
                         accident. */}
-                    <button
-                      type="button"
-                      title={
+                    <Hint
+                      label={
                         lastPage
                           ? "The last page of a Space cannot be deleted."
                           : isFolder
                             ? `Delete folder “${page.name}” and everything in it`
                             : `Delete “${page.name}”`
                       }
-                      disabled={lastPage}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        session.deletePage(page.id);
-                      }}
-                      className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
                     >
-                      <Trash2 size={10} />
-                    </button>
+                      <button
+                        type="button"
+                        disabled={lastPage}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          session.deletePage(page.id);
+                        }}
+                        className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </Hint>
                   </span>
                 )}
               </div>
@@ -368,15 +375,16 @@ function RoundButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border-default text-text-secondary outline-none transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {icon}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border-default text-text-secondary outline-none transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {icon}
+      </button>
+    </HintItem>
   );
 }
 

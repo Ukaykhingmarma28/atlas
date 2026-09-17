@@ -52,7 +52,7 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
         title="Session usage — context, tokens, cost and what Atlas recorded"
         data-usage-state={pill.state}
       >
-        <span key={`${pill.state}:${pill.label}`} className="atlas-pill-swap flex items-center">
+        <span key={pill.state} className="atlas-pill-swap flex items-center">
           <span className={cn("flex shrink-0 items-center", tint)}>
             {pill.state === "compacting" ? (
               <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />

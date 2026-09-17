@@ -4,6 +4,8 @@ import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { X, MessageSquare, Search, PanelLeft, Plus, History, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { isBusyAgentStatus, agentTypeFromPluginId } from "@/types/agent";
 import {
@@ -678,15 +680,16 @@ export const SessionSidebar = memo(function SessionSidebar({
         />
         {/* Everything ever, archived included — and where import lives. */}
         {!asDropdown && (
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(true)}
-            aria-label="All history"
-            title="All history — archived threads, and import"
-            className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
-          >
-            <History size={11} />
-          </button>
+          <Hint label="All history — archived threads, and import">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              aria-label="All history"
+              className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+            >
+              <History size={11} />
+            </button>
+          </Hint>
         )}
       </div>
       <ThreadHistoryView
@@ -799,23 +802,25 @@ export const SessionSidebar = memo(function SessionSidebar({
 
                 {/* Both work for every agent now: the row is Atlas's, so neither
                   depends on reaching the agent that produced it. */}
-                <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={(e) => handleArchiveAgent(e, item)}
-                    aria-label="Archive session"
-                    className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-                    title="Archive — keeps it in History"
-                  >
-                    <Archive size={10} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDeleteAgent(e, item)}
-                    aria-label="Delete session"
-                    className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--status-error)] hover:bg-[var(--bg-elevated)]"
-                    title="Delete session"
-                  >
-                    <X size={10} />
-                  </button>
+                <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <Hint label="Archive — keeps it in History">
+                    <button
+                      onClick={(e) => handleArchiveAgent(e, item)}
+                      aria-label="Archive session"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                    >
+                      <Archive size={10} />
+                    </button>
+                  </Hint>
+                  <Hint label="Delete session">
+                    <button
+                      onClick={(e) => handleDeleteAgent(e, item)}
+                      aria-label="Delete session"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--status-error)] hover:bg-[var(--bg-elevated)]"
+                    >
+                      <X size={10} />
+                    </button>
+                  </Hint>
                 </div>
               </div>
             </div>
@@ -826,31 +831,35 @@ export const SessionSidebar = memo(function SessionSidebar({
       {/* Bottom mini-bar. Height matches the left panel's collapsed Git
           strip (a 28px button + its 1px top border = 29px) so this
           footer's top border lines up horizontally with the Git strip's. */}
-      <div
-        className={cn(
-          "flex items-center justify-between px-1.5 h-[29px]",
-          // Same rule as the search row above: an opaque fill would punch a
-          // solid strip through the picker's blurred panel.
-          asDropdown
-            ? "border-t border-white/5"
-            : "border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]",
-        )}
-      >
-        <button
-          onClick={toggleChatSidebar}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title={sidebarHint ? `Hide sidebar (${sidebarHint})` : "Hide sidebar"}
+      <HintGroup side="top">
+        <div
+          className={cn(
+            "flex items-center justify-between px-1.5 h-[29px]",
+            // Same rule as the search row above: an opaque fill would punch a
+            // solid strip through the picker's blurred panel.
+            asDropdown
+              ? "border-t border-white/5"
+              : "border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]",
+          )}
         >
-          <PanelLeft size={12} />
-        </button>
-        <button
-          onClick={handleNewChat}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="New chat"
-        >
-          <Plus size={12} />
-        </button>
-      </div>
+          <HintItem label={sidebarHint ? `Hide sidebar (${sidebarHint})` : "Hide sidebar"}>
+            <button
+              onClick={toggleChatSidebar}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+            >
+              <PanelLeft size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="New chat">
+            <button
+              onClick={handleNewChat}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+            >
+              <Plus size={12} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
 
       {/* Resize handle — subtle, matches main panel handles. The dropdown has
           its own fixed size, so it has nothing to resize. */}

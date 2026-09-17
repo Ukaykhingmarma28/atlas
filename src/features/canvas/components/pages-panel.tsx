@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { IconPicker } from "@/features/knowledge/components/icon-picker";
 import { useCanvasStore, type PageTreeEntry } from "../stores/canvas-store";
 
@@ -40,17 +41,18 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
         onClick={() => setActivePage(entry.id)}
       >
         {/* Emoji — click opens the picker */}
-        <button
-          type="button"
-          title="Change icon"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIconFor({ id: entry.id, rect: e.currentTarget.getBoundingClientRect() });
-          }}
-          className="flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-white/10"
-        >
-          <span className="text-[11px] leading-none">{entry.icon || DEFAULT_PAGE_ICON}</span>
-        </button>
+        <Hint label="Change icon">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIconFor({ id: entry.id, rect: e.currentTarget.getBoundingClientRect() });
+            }}
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-white/10"
+          >
+            <span className="text-[11px] leading-none">{entry.icon || DEFAULT_PAGE_ICON}</span>
+          </button>
+        </Hint>
 
         {/* Name / inline rename */}
         {editingId === entry.id ? (
@@ -82,17 +84,18 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
         )}
 
         {/* Delete */}
-        <button
-          type="button"
-          title="Delete page"
-          onClick={(e) => {
-            e.stopPropagation();
-            deleteTreeEntry(entry.id);
-          }}
-          className="hidden shrink-0 rounded p-0.5 text-text-tertiary hover:text-[var(--status-error)] group-hover/row:block"
-        >
-          <Trash2 size={11} />
-        </button>
+        <Hint label="Delete page">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteTreeEntry(entry.id);
+            }}
+            className="hidden shrink-0 rounded p-0.5 text-text-tertiary hover:text-[var(--status-error)] group-hover/row:block"
+          >
+            <Trash2 size={11} />
+          </button>
+        </Hint>
       </div>
     );
   };
@@ -106,14 +109,15 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
         <span className="flex-1 text-[10px] font-semibold uppercase leading-none tracking-wider text-text-tertiary">
           Pages
         </span>
-        <button
-          type="button"
-          title="New page"
-          onClick={() => createPage(null)}
-          className="flex h-5 w-5 items-center justify-center rounded-full border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer"
-        >
-          <Plus size={12} />
-        </button>
+        <Hint label="New page">
+          <button
+            type="button"
+            onClick={() => createPage(null)}
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer"
+          >
+            <Plus size={12} />
+          </button>
+        </Hint>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto hide-scrollbar py-1 px-1.5">

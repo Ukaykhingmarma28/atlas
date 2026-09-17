@@ -20,6 +20,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { GitBranch, GitCommitHorizontal, Loader2, Unlink } from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
+import { HintItem } from "@/ui/hint-group";
 
 import { DOCK_TRIGGER } from "./header-dock";
 
@@ -80,16 +81,13 @@ export function CheckpointsPicker({
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Recent checkpoints"
-          title="Recent checkpoints"
-          className={DOCK_TRIGGER}
-        >
-          <GitCommitHorizontal size={13} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Recent checkpoints">
+        <Popover.Trigger asChild>
+          <button type="button" className={DOCK_TRIGGER}>
+            <GitCommitHorizontal size={13} />
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           align="end"

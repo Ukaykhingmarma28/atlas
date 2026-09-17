@@ -3,6 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Check, Hash, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { comms } from "../lib/comms-api";
 import { CHANNEL_NAME_MAX } from "../types";
 import { useCommsStore } from "../stores/comms-store";
@@ -50,15 +51,16 @@ export function CreateChannelMenu() {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="New channel"
-          className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Plus size={11} />
-        </button>
-      </Popover.Trigger>
+      <Hint label="New channel">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+          >
+            <Plus size={11} />
+          </button>
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         <Popover.Content
           align="end"

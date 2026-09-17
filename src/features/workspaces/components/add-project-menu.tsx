@@ -13,6 +13,7 @@ import { Folder, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { pickAndAddWorkspace } from "../lib/pick-workspace";
+import { Hint } from "@/ui/tooltip";
 
 export function AddProjectMenu() {
   const { addWorkspace } = useWorkspaceStore.use.actions();
@@ -30,15 +31,16 @@ export function AddProjectMenu() {
         if (!o) setQuery("");
       }}
     >
-      <DropdownMenu.Trigger asChild>
-        <button
-          className="flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
-          title="Add project"
-          aria-label="Add project"
-        >
-          <Plus size={14} />
-        </button>
-      </DropdownMenu.Trigger>
+      <Hint label="Add project">
+        <DropdownMenu.Trigger asChild>
+          <button
+            className="flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+            aria-label="Add project"
+          >
+            <Plus size={14} />
+          </button>
+        </DropdownMenu.Trigger>
+      </Hint>
       <DropdownMenu.Portal>
         {/* Compact menu primitive — mirrors the source-control "filter files"
          *  dropdown: 26px rows, px-3 on both sides, border-b search header. */}

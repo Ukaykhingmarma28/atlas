@@ -34,6 +34,7 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { SessionSidebar } from "./session-sidebar";
 import { ChatPinnedMenu } from "./chat-pinned-menu";
 import type { ChatPin } from "../stores/chat-pins-store";
@@ -116,160 +117,162 @@ function ChatHeaderImpl({
     // band behind it, so the thread stays visible-but-blurred underneath. Giving
     // this element a fill would hide the very effect it sits on.
     <div className="relative shrink-0">
-      <div className="flex h-[46px] items-center gap-2 px-6">
-        <HeaderCircleButton title="New session" onClick={onNewSession}>
-          <Plus size={13} />
-        </HeaderCircleButton>
+      <HintGroup>
+        <div className="flex h-[46px] items-center gap-2 px-6">
+          <HeaderCircleButton title="New session" onClick={onNewSession}>
+            <Plus size={13} />
+          </HeaderCircleButton>
 
-        {/* Session picker */}
-        <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-          <Popover.Trigger asChild>
-            {/* Same outline as the circles, just pill-shaped. Bare text on a
+          {/* Session picker */}
+          <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
+            <Popover.Trigger asChild>
+              {/* Same outline as the circles, just pill-shaped. Bare text on a
                 bare header gave no hint that the title was a control at all. */}
-            <button
-              type="button"
-              className={cn(
-                "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
-                CONTROL_H,
-                OUTLINE,
-                "text-[12px] font-medium leading-none text-[var(--text-primary)]",
-                "cursor-pointer outline-none",
-              )}
-              title="Switch session"
-            >
-              <span className="truncate">{title}</span>
-              <ChevronDown
-                size={12}
+              <button
+                type="button"
                 className={cn(
-                  "shrink-0 text-[var(--text-tertiary)] transition-transform",
-                  pickerOpen && "rotate-180",
+                  "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
+                  CONTROL_H,
+                  OUTLINE,
+                  "text-[12px] font-medium leading-none text-[var(--text-primary)]",
+                  "cursor-pointer outline-none",
                 )}
-              />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              align="start"
-              sideOffset={6}
-              style={{
-                zIndex: 9999,
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-                // No `will-change` — it would isolate the layer and flatten the blur.
-              }}
-              className={cn(
-                "overflow-hidden rounded-xl select-none",
-                // Border, translucent fill, blur AND the enter animation all on
-                // THIS element. Splitting them isolates the layer and kills the
-                // backdrop blur (see the feedback panel for the same rule).
-                "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
-                // Grows out of its trigger's top-left corner.
-                "atlas-panel-in-tl",
-              )}
-            >
-              {/* The sidebar's own search input is the combo box's filter. */}
-              <SessionSidebar
-                tabId={tabId}
-                variant="dropdown"
-                onOpened={() => setPickerOpen(false)}
-              />
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+                title="Switch session"
+              >
+                <span className="truncate">{title}</span>
+                <ChevronDown
+                  size={12}
+                  className={cn(
+                    "shrink-0 text-[var(--text-tertiary)] transition-transform",
+                    pickerOpen && "rotate-180",
+                  )}
+                />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                align="start"
+                sideOffset={6}
+                style={{
+                  zIndex: 9999,
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
+                  // No `will-change` — it would isolate the layer and flatten the blur.
+                }}
+                className={cn(
+                  "overflow-hidden rounded-xl select-none",
+                  // Border, translucent fill, blur AND the enter animation all on
+                  // THIS element. Splitting them isolates the layer and kills the
+                  // backdrop blur (see the feedback panel for the same rule).
+                  "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+                  // Grows out of its trigger's top-left corner.
+                  "atlas-panel-in-tl",
+                )}
+              >
+                {/* The sidebar's own search input is the combo box's filter. */}
+                <SessionSidebar
+                  tabId={tabId}
+                  variant="dropdown"
+                  onOpened={() => setPickerOpen(false)}
+                />
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
 
-        <div className="flex-1" />
+          <div className="flex-1" />
 
-        {/* Left of Find, so the two "go back to something" controls sit
+          {/* Left of Find, so the two "go back to something" controls sit
             together at the right end of the bar. Pill-shaped rather than a
             circle because it carries a count. */}
-        <ChatPinnedMenu
-          pinScopeKey={pinScopeKey}
-          onJump={onJumpToPin}
-          className={cn(
-            "flex shrink-0 items-center gap-1 rounded-full px-2.5",
-            CONTROL_H,
-            OUTLINE,
-            "cursor-pointer outline-none",
-          )}
-        />
+          <ChatPinnedMenu
+            pinScopeKey={pinScopeKey}
+            onJump={onJumpToPin}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded-full px-2.5",
+              CONTROL_H,
+              OUTLINE,
+              "cursor-pointer outline-none",
+            )}
+          />
 
-        <HeaderCircleButton
-          title={findHint ? `Find in chat (${findHint})` : "Find in chat"}
-          onClick={onOpenSearch}
-        >
-          <Search size={13} />
-        </HeaderCircleButton>
+          <HeaderCircleButton
+            title={findHint ? `Find in chat (${findHint})` : "Find in chat"}
+            onClick={onOpenSearch}
+          >
+            <Search size={13} />
+          </HeaderCircleButton>
 
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <HeaderCircleButton title="More">
-              <MoreHorizontal size={14} />
-            </HeaderCircleButton>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              sideOffset={6}
-              style={{ zIndex: 9999 }}
-              className="min-w-[180px] rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]"
-            >
-              <MenuLabel>Filter messages</MenuLabel>
-              {(["all", "user", "assistant"] as const).map((f) => (
-                <DropdownMenu.Item
-                  key={f}
-                  onSelect={() => onRoleFilterChange(f)}
-                  className={cn(
-                    "flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] capitalize outline-none",
-                    roleFilter === f
-                      ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                  )}
-                >
-                  {f === "user" ? (
-                    <User size={11} />
-                  ) : f === "assistant" ? (
-                    <Sparkles size={11} />
-                  ) : (
-                    <ListFilter size={11} />
-                  )}
-                  <span className="flex-1">{f}</span>
-                  {roleFilter === f && <Check size={11} />}
-                </DropdownMenu.Item>
-              ))}
-
-              <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
-
-              <DropdownMenu.Item
-                onSelect={onToggleBash}
-                className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <HeaderCircleButton title="More">
+                <MoreHorizontal size={14} />
+              </HeaderCircleButton>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={6}
+                style={{ zIndex: 9999 }}
+                className="min-w-[180px] rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]"
               >
-                <TerminalSquare size={11} />
-                <span className="flex-1">Bash calls</span>
-                {bashPanelOpen && <Check size={11} />}
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                onSelect={onTogglePlans}
-                className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              >
-                <ClipboardList size={11} />
-                <span className="flex-1">Plans</span>
-                {plansPanelOpen && <Check size={11} />}
-              </DropdownMenu.Item>
-              {onForkSession && (
-                <>
-                  <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+                <MenuLabel>Filter messages</MenuLabel>
+                {(["all", "user", "assistant"] as const).map((f) => (
                   <DropdownMenu.Item
-                    onSelect={onForkSession}
-                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    key={f}
+                    onSelect={() => onRoleFilterChange(f)}
+                    className={cn(
+                      "flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] capitalize outline-none",
+                      roleFilter === f
+                        ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                    )}
                   >
-                    <GitBranch size={11} />
-                    <span className="flex-1">Branch from here</span>
+                    {f === "user" ? (
+                      <User size={11} />
+                    ) : f === "assistant" ? (
+                      <Sparkles size={11} />
+                    ) : (
+                      <ListFilter size={11} />
+                    )}
+                    <span className="flex-1">{f}</span>
+                    {roleFilter === f && <Check size={11} />}
                   </DropdownMenu.Item>
-                </>
-              )}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      </div>
+                ))}
+
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+
+                <DropdownMenu.Item
+                  onSelect={onToggleBash}
+                  className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                >
+                  <TerminalSquare size={11} />
+                  <span className="flex-1">Bash calls</span>
+                  {bashPanelOpen && <Check size={11} />}
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onSelect={onTogglePlans}
+                  className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                >
+                  <ClipboardList size={11} />
+                  <span className="flex-1">Plans</span>
+                  {plansPanelOpen && <Check size={11} />}
+                </DropdownMenu.Item>
+                {onForkSession && (
+                  <>
+                    <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+                    <DropdownMenu.Item
+                      onSelect={onForkSession}
+                      className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    >
+                      <GitBranch size={11} />
+                      <span className="flex-1">Branch from here</span>
+                    </DropdownMenu.Item>
+                  </>
+                )}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      </HintGroup>
 
       {/* No fade element here: the blur behind this bar is drawn by the
           transcript's top `GradualBlur`. A backdrop-filter can only blur what is
@@ -300,22 +303,23 @@ const HeaderCircleButton = forwardRef<
   } & React.ButtonHTMLAttributes<HTMLButtonElement>
 >(function HeaderCircleButton({ children, title, onClick, className, ...rest }, ref) {
   return (
-    <button
-      {...rest}
-      ref={ref}
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(
-        "grid w-[26px] shrink-0 place-items-center rounded-full",
-        CONTROL_H,
-        OUTLINE,
-        "cursor-pointer outline-none",
-        className,
-      )}
-    >
-      {children}
-    </button>
+    <HintItem label={title}>
+      <button
+        {...rest}
+        ref={ref}
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "grid w-[26px] shrink-0 place-items-center rounded-full",
+          CONTROL_H,
+          OUTLINE,
+          "cursor-pointer outline-none",
+          className,
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 });
 

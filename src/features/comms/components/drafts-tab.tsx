@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FilePlus2, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { timeAgo } from "@/lib/time-ago";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommsAvatar } from "./comms-avatar";
 import { comms } from "../lib/comms-api";
 import { useCommsStore } from "../stores/comms-store";
@@ -113,31 +113,26 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
           aria-label="New draft title"
           className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
         />
-        <button
-          type="button"
-          title="Create draft"
-          disabled={!title.trim() || creating}
-          onClick={() => void create()}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
-        >
-          {creating ? <Loader2 size={11} className="animate-spin" /> : <Plus size={12} />}
-        </button>
+        <Hint label="Create draft">
+          <button
+            type="button"
+            disabled={!title.trim() || creating}
+            onClick={() => void create()}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+          >
+            {creating ? <Loader2 size={11} className="animate-spin" /> : <Plus size={12} />}
+          </button>
+        </Hint>
       </div>
 
       <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pb-3">
         {drafts === undefined &&
           [0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-2.5 px-3 py-[9px]">
+              <div className="h-4 w-4 rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running" />
               <div
-                className="h-4 w-4 rounded bg-[var(--bg-elevated)] opacity-50"
-                style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-              />
-              <div
-                className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50"
-                style={{
-                  width: 110 + ((i * 37) % 60),
-                  animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-                }}
+                className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                style={{ width: 110 + ((i * 37) % 60) }}
               />
             </div>
           ))}

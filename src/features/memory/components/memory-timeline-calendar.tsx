@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import type { MemoryTimeline } from "../lib/memory-timeline-api";
 
 /**
@@ -281,22 +282,24 @@ export function MemoryTimelineCalendar({
       <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-base)]">
         {/* Week nav */}
         <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
-          <button
-            onClick={goPrev}
-            disabled={!hasPrev}
-            title="Previous week with activity"
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <button
-            onClick={goNext}
-            disabled={!hasNext}
-            title="Next week with activity"
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
-          >
-            <ChevronRight size={15} />
-          </button>
+          <Hint label="Previous week with activity">
+            <button
+              onClick={goPrev}
+              disabled={!hasPrev}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
+            >
+              <ChevronLeft size={15} />
+            </button>
+          </Hint>
+          <Hint label="Next week with activity">
+            <button
+              onClick={goNext}
+              disabled={!hasNext}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </Hint>
           <button
             onClick={goToday}
             className="h-6 px-2.5 rounded-md border border-[var(--border-default)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"

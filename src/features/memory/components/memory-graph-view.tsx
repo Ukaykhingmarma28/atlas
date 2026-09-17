@@ -14,6 +14,7 @@ import {
   ListTree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useMemoryGraphStore } from "../stores/memory-graph-store";
 import { MemoryGraphCanvas } from "./memory-graph-canvas";
@@ -328,25 +329,28 @@ function GraphReady({
           />
           {querying && <Loader2 size={11} className="animate-spin text-[var(--text-tertiary)]" />}
           {query && !querying && (
-            <button
-              onClick={onClearQuery}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-            >
-              <X size={12} />
-            </button>
+            <Hint label="Clear search">
+              <button
+                onClick={onClearQuery}
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              >
+                <X size={12} />
+              </button>
+            </Hint>
           )}
         </div>
         <div className="flex-1" />
         <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">
           {docCount} memories · {graph.edges.length} links
         </span>
-        <button
-          onClick={onReindex}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="Re-index memory"
-        >
-          <RotateCw size={12} />
-        </button>
+        <Hint label="Re-index memory">
+          <button
+            onClick={onReindex}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} />
+          </button>
+        </Hint>
       </div>
 
       {/* Canvas + optional results rail */}
@@ -377,13 +381,14 @@ function GraphReady({
           {/* Time scrubber — watch memory accrue; drag to a moment in time. */}
           {hasTime && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-9 shadow-[var(--shadow-overlay)]">
-              <button
-                onClick={() => setPlaying((p) => !p)}
-                className="flex items-center justify-center w-6 h-6 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-                title={playing ? "Pause" : "Play timeline"}
-              >
-                {playing ? <Pause size={13} /> : <Play size={13} />}
-              </button>
+              <Hint label={playing ? "Pause" : "Play timeline"} side="top">
+                <button
+                  onClick={() => setPlaying((p) => !p)}
+                  className="flex items-center justify-center w-6 h-6 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                >
+                  {playing ? <Pause size={13} /> : <Play size={13} />}
+                </button>
+              </Hint>
               <Clock size={11} className="text-[var(--text-tertiary)]" />
               <input
                 type="range"

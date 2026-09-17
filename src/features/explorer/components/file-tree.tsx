@@ -14,6 +14,7 @@ import { useProjectStore } from "@/features/project/stores/project-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { FolderPlus, FoldVertical, UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { basename } from "@/lib/paths";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { TreeRow } from "./tree-row";
@@ -655,16 +656,23 @@ export function FileTree() {
         <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
           {rootPath ? basename(rootPath) : "Files"}
         </span>
-        <div className="flex items-center gap-0.5">
-          <FoldExpandButton tree={tree} onCollapseAll={collapseAll} onExpandAll={expandAllLoaded} />
-          <button
-            onClick={handlePickFolder}
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
-            title="Open folder"
-          >
-            <FolderPlus size={11} />
-          </button>
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-0.5">
+            <FoldExpandButton
+              tree={tree}
+              onCollapseAll={collapseAll}
+              onExpandAll={expandAllLoaded}
+            />
+            <HintItem label="Open folder">
+              <button
+                onClick={handlePickFolder}
+                className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+              >
+                <FolderPlus size={11} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
       </div>
 
       <ContextMenu>
@@ -835,13 +843,14 @@ function FoldExpandButton({
 }) {
   const anyExpanded = useMemo(() => hasAnyExpanded(tree), [tree]);
   return (
-    <button
-      onClick={anyExpanded ? onCollapseAll : onExpandAll}
-      className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
-      title={anyExpanded ? "Collapse all" : "Expand all"}
-    >
-      {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
-    </button>
+    <HintItem label={anyExpanded ? "Collapse all" : "Expand all"}>
+      <button
+        onClick={anyExpanded ? onCollapseAll : onExpandAll}
+        className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+      >
+        {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
+      </button>
+    </HintItem>
   );
 }
 

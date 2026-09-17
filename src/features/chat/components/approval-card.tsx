@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleHelp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import type { QuestionSpec } from "../lib/questions";
 
 /** One question's answer, as the card reports it. */
@@ -226,72 +227,78 @@ export function ApprovalCard({
         </div>
 
         {/* Footer: back, dots, next/submit. */}
-        <div className="mt-4 flex items-center gap-3 pl-[26px]">
-          <button
-            type="button"
-            aria-label="Previous question"
-            disabled={step === 0}
-            onClick={() => {
-              clearAdvance();
-              setStep((s) => Math.max(0, s - 1));
-            }}
-            className={cn(
-              "grid size-8 place-items-center rounded-full transition-colors",
-              step === 0
-                ? "cursor-default text-[var(--text-ghost)]"
-                : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-            )}
-          >
-            <ArrowLeft size={15} />
-          </button>
-
-          <span
-            className="flex items-center gap-1.5"
-            aria-label={`Question ${step + 1} of ${questions.length}`}
-          >
-            {questions.map((_, i) => (
-              <span
-                key={i}
-                aria-hidden
+        <HintGroup side="top">
+          <div className="mt-4 flex items-center gap-3 pl-[26px]">
+            <HintItem label="Previous question">
+              <button
+                type="button"
+                disabled={step === 0}
+                onClick={() => {
+                  clearAdvance();
+                  setStep((s) => Math.max(0, s - 1));
+                }}
                 className={cn(
-                  "rounded-full bg-[var(--text-primary)] transition-all duration-200",
-                  i === step ? "size-2 opacity-100" : "size-1.5",
-                  i < step ? "opacity-70" : i > step ? "opacity-30" : "",
+                  "grid size-8 place-items-center rounded-full transition-colors",
+                  step === 0
+                    ? "cursor-default text-[var(--text-ghost)]"
+                    : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
                 )}
-              />
-            ))}
-          </span>
+              >
+                <ArrowLeft size={15} />
+              </button>
+            </HintItem>
 
-          {onSkip && (
-            <button
-              type="button"
-              onClick={() => {
-                clearAdvance();
-                onSkip();
-              }}
-              className="ml-auto cursor-pointer rounded-full px-2.5 py-1.5 text-[12px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            <span
+              className="flex items-center gap-1.5"
+              aria-label={`Question ${step + 1} of ${questions.length}`}
             >
-              {skipLabel}
-            </button>
-          )}
+              {questions.map((_, i) => (
+                <span
+                  key={i}
+                  aria-hidden
+                  className={cn(
+                    "rounded-full bg-[var(--text-primary)] transition-all duration-200",
+                    i === step ? "size-2 opacity-100" : "size-1.5",
+                    i < step ? "opacity-70" : i > step ? "opacity-30" : "",
+                  )}
+                />
+              ))}
+            </span>
 
-          <button
-            type="button"
-            aria-label={last ? "Submit answers" : "Next question"}
-            disabled={!isAnswered(answer)}
-            onClick={() => goNext()}
-            className={cn(
-              "flex h-9 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
-              onSkip ? "" : "ml-auto",
-              isAnswered(answer)
-                ? "cursor-pointer bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary-hover)]"
-                : "cursor-default bg-[var(--bg-base)] text-[var(--text-ghost)]",
+            {onSkip && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearAdvance();
+                  onSkip();
+                }}
+                className="ml-auto cursor-pointer rounded-full px-2.5 py-1.5 text-[12px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                {skipLabel}
+              </button>
             )}
-          >
-            {last && questions.length > 1 && <span>Submit</span>}
-            <ArrowRight size={15} />
-          </button>
-        </div>
+
+            <HintItem
+              label={last ? "Submit answers" : "Next question"}
+              className={onSkip ? undefined : "ml-auto"}
+            >
+              <button
+                type="button"
+                disabled={!isAnswered(answer)}
+                onClick={() => goNext()}
+                className={cn(
+                  "flex h-9 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
+                  isAnswered(answer)
+                    ? "cursor-pointer bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary-hover)]"
+                    : "cursor-default bg-[var(--bg-base)] text-[var(--text-ghost)]",
+                )}
+              >
+                {last && questions.length > 1 && <span>Submit</span>}
+                <ArrowRight size={15} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
       </div>
     </div>
   );

@@ -71,11 +71,15 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  --animate-fade-in: fade-in 0.15s ease-out;
-  --animate-fade-out: fade-out 0.12s ease-in;
-  --animate-scale-in: scale-in 0.15s ease-out;
-  --animate-scale-out: scale-out 0.12s ease-in;
-  --animate-slide-in-right: slide-in-right 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-fade-in: fade-in 0.15s var(--ease-out-strong);
+  --animate-fade-out: fade-out 0.12s var(--ease-out-strong);
+  --animate-scale-in: scale-in 0.15s var(--ease-out-strong);
+  --animate-scale-out: scale-out 0.12s var(--ease-out-strong);
+  --animate-slide-in-right: slide-in-right 0.18s var(--ease-drawer);
 
   @keyframes slide-in-right {
     from {
@@ -800,21 +804,24 @@
   animation: atlas-panel-in-br 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Same, mirrored: the capture popover grows out of the titlebar project pill
-   it hangs below. The no-fill-mode rule above applies here for the same
-   reason — this element carries `backdrop-filter`. */
+/* Same, for popovers and menus: grows out of the trigger that opened it —
+   Radix's `--radix-popper-transform-origin` (inherited from the popper
+   wrapper), falling back to top-left for the capture popover under the
+   titlebar project pill. Scale only, so it reads correctly from any origin.
+   The no-fill-mode rule above applies here for the same reason — this
+   element carries `backdrop-filter`. */
 @keyframes atlas-panel-in-tl {
   from {
     opacity: 0;
-    transform: translate3d(-4px, -8px, 0) scale(0.965);
+    transform: scale(0.965);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: scale(1);
   }
 }
 .atlas-panel-in-tl {
-  transform-origin: 0 0;
+  transform-origin: var(--radix-popper-transform-origin, 0 0);
   animation: atlas-panel-in-tl 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -1060,8 +1067,27 @@
   animation: atlas-blink 1s steps(1, end) infinite;
 }
 
-/* Respect the OS "reduce motion" setting — hold the caret steady and
-   neutralize our entrance/blink animations (keep their end state). */
+/* Reduced-motion replacements: opacity only, so an entrance or exit keeps its
+   fade (and its duration and easing) but loses the movement. */
+@keyframes atlas-rm-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes atlas-rm-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Respect the OS "reduce motion" setting — hold the caret steady, stop the
+   loops, and swap movement in entrances/exits for a plain fade. */
 @media (prefers-reduced-motion: reduce) {
   .atlas-usage-in {
     animation: none;
@@ -1069,12 +1095,31 @@
   .atlas-stream-caret {
     animation: none;
   }
+  /* Attribute selectors so variant classes (`data-[state=open]:animate-scale-in`)
+     match too. Only the name is swapped — duration, easing, delay and fill-mode
+     stay. `animate-fade-in` / `.atlas-fade-in` are already opacity-only. */
+  [class*="animate-scale-in"],
+  [class*="animate-slide-in-right"],
   .atlas-pill-in,
   .atlas-panel-in-br,
   .atlas-panel-in-tl,
   .atlas-timeline-row,
-  .atlas-fade-in {
-    animation: none;
+  .atlas-bubble-in,
+  .atlas-menu-pop,
+  .atlas-group-slide-left,
+  .atlas-group-slide-right,
+  .atlas-pill-swap {
+    animation-name: atlas-rm-fade !important;
+  }
+  /* A Radix popover carries its enter AND exit classes at once, so the exit
+     swap is scoped to the closing state — otherwise it would also win while
+     opening and fade the popover out on entry. Elements with no data-state
+     (plain exit classes) still match. */
+  [data-state="closed"][class*="animate-scale-out"],
+  [data-state="closed"][class*="animate-fade-out"],
+  [class*="animate-scale-out"]:not([data-state]),
+  [class*="animate-fade-out"]:not([data-state]) {
+    animation-name: atlas-rm-fade-out !important;
   }
   /* The two looping animations in the chrome: the capture dot's halo and the
      Timeline teaser's rail pulse. Both are decorative. */
@@ -1099,11 +1144,6 @@
   /* Hold the sweep at its resting angle rather than un-rotated. */
   .atlas-radar-sweep {
     transform: rotate(-50deg);
-  }
-  .animate-scale-in,
-  .animate-fade-in,
-  .animate-slide-in-right {
-    animation: none !important;
   }
   .atlas-split {
     transition: none !important;
@@ -1965,7 +2005,7 @@
   }
 }
 .atlas-menu-pop {
-  transform-origin: bottom left;
+  transform-origin: var(--radix-popper-transform-origin, bottom left);
   animation: atlas-menu-pop 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 

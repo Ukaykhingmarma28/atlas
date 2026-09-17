@@ -1,15 +1,12 @@
 // The home view's shape, before the home view's data: search pill, section
 // labels, seven avatar+text rows at CommsHome's own geometry. Bars follow the
 // house PanelSkeleton (bg-elevated at half opacity, deterministic width
-// jitter). The pulse is OPACITY-ONLY, per the atlas-marker-shimmer precedent —
+// jitter). The pulse is OPACITY-ONLY, per the atlas-marker-running precedent —
 // this renders inside `atlas-vibrant-panel`, where transforms mis-composite.
 
 export function CommsSkeleton() {
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-      style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-    >
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden atlas-marker-running">
       {/* Search pill, at the sticky search box's size. */}
       <div className="px-2.5 pb-1 pt-2.5">
         <div className="h-[30px] rounded-lg bg-[var(--bg-elevated)] opacity-50" />

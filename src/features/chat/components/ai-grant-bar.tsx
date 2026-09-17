@@ -3,6 +3,7 @@ import { Cloud, MoveUpRight, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai-grant-store";
@@ -129,14 +130,15 @@ export function AiGrantBar() {
             <Cloud size={11} className={cn(syncing && "animate-pulse")} />
             {syncing ? "Syncing…" : "Turn on sync"}
           </button>
-          <button
-            type="button"
-            onClick={() => dismiss()}
-            title="Dismiss"
-            className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-          >
-            <X size={12} />
-          </button>
+          <Hint label="Dismiss" side="top">
+            <button
+              type="button"
+              onClick={() => dismiss()}
+              className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              <X size={12} />
+            </button>
+          </Hint>
         </div>
       </div>
     );
@@ -175,14 +177,15 @@ export function AiGrantBar() {
           Request
         </button>
 
-        <button
-          type="button"
-          onClick={() => dismiss()}
-          title="Dismiss"
-          className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          <X size={12} />
-        </button>
+        <Hint label="Dismiss" side="top">
+          <button
+            type="button"
+            onClick={() => dismiss()}
+            className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            <X size={12} />
+          </button>
+        </Hint>
       </div>
     </div>
   );

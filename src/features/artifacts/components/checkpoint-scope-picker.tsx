@@ -21,6 +21,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, GitCommitHorizontal, Layers, Search, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import type { TimelineEntry } from "../types";
 
 /**
@@ -154,7 +155,7 @@ export function CheckpointScopePicker({
               // Border, fill, blur and animation on ONE element — splitting them
               // isolates the layer and flattens the backdrop blur.
               "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
-              "data-[state=open]:animate-scale-in",
+              "origin-[var(--radix-popover-content-transform-origin)] data-[state=open]:animate-scale-in",
             )}
           >
             {/* Search first, like the agent chat's session picker. A Session can
@@ -214,20 +215,21 @@ export function CheckpointScopePicker({
         </Popover.Portal>
       </Popover.Root>
 
-      <button
-        type="button"
-        onClick={() => onChange(null)}
-        disabled={isFull}
-        title="Read the whole session"
-        className={cn(
-          "shrink-0 rounded p-0.5 transition-colors",
-          isFull
-            ? "cursor-default text-[var(--text-tertiary)]/30"
-            : "cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
-        )}
-      >
-        <X size={12} />
-      </button>
+      <Hint label="Read the whole session">
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          disabled={isFull}
+          className={cn(
+            "shrink-0 rounded p-0.5 transition-colors",
+            isFull
+              ? "cursor-default text-[var(--text-tertiary)]/30"
+              : "cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+          )}
+        >
+          <X size={12} />
+        </button>
+      </Hint>
     </div>
   );
 }

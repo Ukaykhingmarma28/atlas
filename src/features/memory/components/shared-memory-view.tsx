@@ -25,6 +25,7 @@ import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
 import type { MemoryEvent } from "../lib/shared-memory-api";
 
@@ -173,12 +174,14 @@ export function SharedMemoryView({ projectPath, className }: Props) {
           />
         </div>
 
-        <IconButton label="Refresh" onClick={() => void refresh()}>
-          <RefreshCw size={12} />
-        </IconButton>
-        <IconButton label="Clear shared memory" onClick={() => void clear()}>
-          <Trash2 size={12} />
-        </IconButton>
+        <HintGroup>
+          <IconButton label="Refresh" onClick={() => void refresh()}>
+            <RefreshCw size={12} />
+          </IconButton>
+          <IconButton label="Clear shared memory" onClick={() => void clear()}>
+            <Trash2 size={12} />
+          </IconButton>
+        </HintGroup>
       </div>
 
       {/* Body */}
@@ -637,15 +640,15 @@ function IconButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:scale-[0.96]"
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:scale-[0.96]"
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 

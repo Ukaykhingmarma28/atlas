@@ -12,6 +12,8 @@ import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
 import { BranchLine, GitDot, NumStatPill } from "@/features/workspaces/components/git-summary";
 import { useWorkspaceGitStore } from "@/features/workspaces/stores/workspace-git-store";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 import { useArtifactsStore } from "../stores/artifacts-store";
 import type { BoardSession, SessionDetail as Detail } from "../types";
@@ -551,13 +553,15 @@ export function ArtifactsPanel() {
                 {/* Maximise: tuck the nav away so the Session has the whole
                     tab. The same control brings it back — one button, one
                     place, whichever state you are in. */}
-                <DockButton
-                  label={showSidebar ? "Maximise session" : "Show timeline"}
-                  active={!showSidebar}
-                  onClick={toggleTimelineSidebar}
-                >
-                  <PanelLeft size={13} />
-                </DockButton>
+                <HintGroup>
+                  <DockButton
+                    label={showSidebar ? "Maximise session" : "Show timeline"}
+                    active={!showSidebar}
+                    onClick={toggleTimelineSidebar}
+                  >
+                    <PanelLeft size={13} />
+                  </DockButton>
+                </HintGroup>
                 <Breadcrumb
                   sessionId={open.sessionId}
                   title={detail?.summary.title ?? null}
@@ -730,14 +734,15 @@ function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) =
         className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11.5px] leading-none text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
       />
       {query && (
-        <button
-          type="button"
-          onClick={() => onQuery("")}
-          aria-label="Clear search"
-          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          <X size={11} />
-        </button>
+        <Hint label="Clear search">
+          <button
+            type="button"
+            onClick={() => onQuery("")}
+            className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            <X size={11} />
+          </button>
+        </Hint>
       )}
     </div>
   );
@@ -870,24 +875,23 @@ function BoardFilter({
         for (const p of projects) ensure(p.path);
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={active ? `${active} filters active` : "Filter sessions"}
-          title={active ? `${active} filter${active === 1 ? "" : "s"} active` : "Filter sessions"}
-          className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
-        >
-          <Filter size={13} />
-          {/* A filter that is ON has to say so from the collapsed state — the
-              values are inside the menu, and a funnel that looks identical
-              either way hides an empty board behind a control nobody checks. */}
-          {active > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-[9px] font-medium text-[var(--text-inverse)]">
-              {active}
-            </span>
-          )}
-        </button>
-      </Popover.Trigger>
+      <HintItem
+        label={active ? `${active} filter${active === 1 ? "" : "s"} active` : "Filter sessions"}
+      >
+        <Popover.Trigger asChild>
+          <button type="button" className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}>
+            <Filter size={13} />
+            {/* A filter that is ON has to say so from the collapsed state — the
+                values are inside the menu, and a funnel that looks identical
+                either way hides an empty board behind a control nobody checks. */}
+            {active > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-[9px] font-medium text-[var(--text-inverse)]">
+                {active}
+              </span>
+            )}
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           side="bottom"

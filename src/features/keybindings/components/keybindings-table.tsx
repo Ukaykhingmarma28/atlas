@@ -3,7 +3,7 @@ import { AlertTriangle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { KbdKeys } from "@/ui/kbd";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -239,20 +239,23 @@ function Row({
             selected ? "bg-bg-selected" : "hover:bg-bg-hover",
           )}
         >
-          <button
-            type="button"
-            aria-label="Change keybinding"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRecord("change");
-            }}
-            className={cn(
-              "flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:text-text-primary transition-opacity cursor-pointer",
-              selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            )}
-          >
-            <Pencil size={11} />
-          </button>
+          <Hint label="Change keybinding">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRecord("change");
+              }}
+              className={cn(
+                "flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:text-text-primary transition-opacity cursor-pointer",
+                selected
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+              )}
+            >
+              <Pencil size={11} />
+            </button>
+          </Hint>
 
           <div className="flex min-w-0 items-baseline gap-2">
             <span
@@ -291,6 +294,7 @@ function Row({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
+                    aria-label="Show conflicting bindings"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (firstCombo) onShowSame(firstCombo);

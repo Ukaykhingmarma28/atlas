@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardList, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { Markdown } from "@/lib/markdown";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/project/stores/project-store";
@@ -111,13 +112,14 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
             <span className="text-[11px] font-medium text-[var(--text-secondary)]">Plans</span>
             <span className="text-[10px] text-[var(--text-tertiary)]">· {plans.length}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            title="Hide plans"
-          >
-            <ChevronRight size={12} />
-          </button>
+          <Hint label="Hide plans">
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </Hint>
         </div>
 
         {/* List */}

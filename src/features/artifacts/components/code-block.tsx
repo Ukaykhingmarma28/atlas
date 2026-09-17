@@ -29,6 +29,7 @@ import { getLanguage } from "@/features/git/lib/diff";
 import { highlightDiffLine } from "@/features/git/lib/diff-highlight";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 
 /**
  * Lines past which the block renders plain.
@@ -233,22 +234,22 @@ export function CopyButton({ text, className }: { text: string; className?: stri
   }, [done]);
 
   return (
-    <button
-      type="button"
-      title="Copy"
-      aria-label="Copy"
-      onClick={() => void copyText(text).then((ok) => setDone(ok))}
-      className={cn(
-        "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:opacity-100",
-        className ?? "group-hover/head:opacity-100",
-      )}
-    >
-      {done ? (
-        <Check size={11} className="text-[var(--capture-live)]" />
-      ) : (
-        <Copy size={11} strokeWidth={1.7} />
-      )}
-    </button>
+    <Hint label="Copy">
+      <button
+        type="button"
+        onClick={() => void copyText(text).then((ok) => setDone(ok))}
+        className={cn(
+          "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:opacity-100",
+          className ?? "group-hover/head:opacity-100",
+        )}
+      >
+        {done ? (
+          <Check size={11} className="text-[var(--capture-live)]" />
+        ) : (
+          <Copy size={11} strokeWidth={1.7} />
+        )}
+      </button>
+    </Hint>
   );
 }
 

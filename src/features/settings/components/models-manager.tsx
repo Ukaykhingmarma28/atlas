@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Search, Download, Check, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { useModelsStore } from "../stores/models-store";
 import { models, type ModelStatus } from "../lib/models-api";
@@ -194,16 +195,16 @@ export function ModelsManager() {
                       </button>
                     )}
                     {m.downloaded && !m.selected && (
-                      <button
-                        type="button"
-                        title="Remove download"
-                        aria-label="Remove download"
-                        disabled={busy}
-                        onClick={() => void doRemove(m)}
-                        className="h-6 w-6 flex items-center justify-center rounded-md text-text-tertiary hover:text-[var(--status-error)] hover:bg-bg-hover transition-colors disabled:opacity-50"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <Hint label="Remove download">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void doRemove(m)}
+                          className="h-6 w-6 flex items-center justify-center rounded-md text-text-tertiary hover:text-[var(--status-error)] hover:bg-bg-hover transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </Hint>
                     )}
                   </div>
                 </div>

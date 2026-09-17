@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { openFileOrReveal } from "@/lib/open-file";
 import { markScrollHot } from "@/lib/scroll-hot";
 import { useProjectStore } from "@/features/project/stores/project-store";
@@ -385,27 +386,35 @@ export const BlockTerminal = memo(function BlockTerminal({
           <span className="w-10 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-tertiary)]">
             {matchCount}
           </span>
-          <button
-            type="button"
-            onClick={() => navMatch(-1)}
-            className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <ChevronUp size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => navMatch(1)}
-            className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <ChevronDown size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={closeSearch}
-            className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <X size={13} />
-          </button>
+          <HintGroup>
+            <HintItem label="Previous match">
+              <button
+                type="button"
+                onClick={() => navMatch(-1)}
+                className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <ChevronUp size={13} />
+              </button>
+            </HintItem>
+            <HintItem label="Next match">
+              <button
+                type="button"
+                onClick={() => navMatch(1)}
+                className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <ChevronDown size={13} />
+              </button>
+            </HintItem>
+            <HintItem label="Close search">
+              <button
+                type="button"
+                onClick={closeSearch}
+                className="rounded p-0.5 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <X size={13} />
+              </button>
+            </HintItem>
+          </HintGroup>
         </div>
       )}
 
@@ -640,30 +649,32 @@ const BlockCard = memo(function BlockCard({
 
           <div className="ml-auto flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
             {/* Hover actions */}
-            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              <BlockAction
-                title={copied ? "Copied" : "Copy output"}
-                onClick={copyOutput}
-                icon={Copy}
-              />
-              <BlockAction
-                title="Rerun"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRerun(block.command);
-                }}
-                icon={RotateCw}
-              />
-              <BlockAction
-                title={collapsed ? "Expand" : "Collapse"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCollapsed((c) => !c);
-                }}
-                icon={ChevronDown}
-                rotated={collapsed}
-              />
-            </div>
+            <HintGroup>
+              <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <BlockAction
+                  title={copied ? "Copied" : "Copy output"}
+                  onClick={copyOutput}
+                  icon={Copy}
+                />
+                <BlockAction
+                  title="Rerun"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRerun(block.command);
+                  }}
+                  icon={RotateCw}
+                />
+                <BlockAction
+                  title={collapsed ? "Expand" : "Collapse"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCollapsed((c) => !c);
+                  }}
+                  icon={ChevronDown}
+                  rotated={collapsed}
+                />
+              </div>
+            </HintGroup>
             {cwdName && (
               <span className="flex items-center gap-1">
                 <Folder size={9} />
@@ -702,14 +713,15 @@ function BlockAction({
   rotated?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-    >
-      <Icon size={11} className={cn("transition-transform", rotated && "-rotate-90")} />
-    </button>
+    <HintItem label={title}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        <Icon size={11} className={cn("transition-transform", rotated && "-rotate-90")} />
+      </button>
+    </HintItem>
   );
 }
 

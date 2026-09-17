@@ -3,6 +3,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { ImageZoomView } from "@/features/media/components/image-zoom-view";
 import { attachmentPath, cachedAttachmentPath } from "../lib/attachment-cache";
 import { useLightboxStore, type LightboxItem } from "../stores/lightbox-store";
@@ -105,22 +107,24 @@ export function MediaLightbox() {
                 {index + 1} / {count}
               </span>
             )}
-            {path && item && (
-              <a
-                href={convertFileSrc(path)}
-                download={item.filename}
-                title="Save a copy"
-                className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                <Download size={13} />
-              </a>
-            )}
-            <Dialog.Close
-              title="Close"
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-            >
-              <X size={13} />
-            </Dialog.Close>
+            <HintGroup>
+              {path && item && (
+                <HintItem label="Save a copy">
+                  <a
+                    href={convertFileSrc(path)}
+                    download={item.filename}
+                    className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                  >
+                    <Download size={13} />
+                  </a>
+                </HintItem>
+              )}
+              <HintItem label="Close">
+                <Dialog.Close className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer">
+                  <X size={13} />
+                </Dialog.Close>
+              </HintItem>
+            </HintGroup>
           </div>
 
           <div className="relative min-h-0 flex-1">
@@ -170,20 +174,28 @@ function NavButton({
 }) {
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={side === "left" ? "Previous  ←" : "Next  →"}
-      className={cn(
-        "absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
-        "border border-white/10 bg-[var(--bg-secondary)]/70 text-text-secondary backdrop-blur-xl",
-        "transition-opacity hover:text-text-primary cursor-pointer",
-        "disabled:cursor-default disabled:opacity-0",
-        side === "left" ? "left-3" : "right-3",
-      )}
+    // Unwrapped: the button is absolutely placed, and when disabled it is
+    // invisible anyway, so there is no tooltip to keep.
+    <Hint
+      label={side === "left" ? "Previous" : "Next"}
+      shortcut={side === "left" ? "←" : "→"}
+      side={side === "left" ? "right" : "left"}
+      wrap={false}
     >
-      <Icon size={16} />
-    </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          "absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
+          "border border-white/10 bg-[var(--bg-secondary)]/70 text-text-secondary backdrop-blur-xl",
+          "transition-opacity hover:text-text-primary cursor-pointer",
+          "disabled:cursor-default disabled:opacity-0",
+          side === "left" ? "left-3" : "right-3",
+        )}
+      >
+        <Icon size={16} />
+      </button>
+    </Hint>
   );
 }

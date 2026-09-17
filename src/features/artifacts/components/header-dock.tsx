@@ -7,9 +7,9 @@
  * be two bordered segments and a loose button, which drew three boxes in a 32px
  * bar to say one thing — "here are the tab's actions".
  *
- * No shared morphing tooltip here. The dock's tooltip machinery exists because
- * the titlebar has no room for labels; this bar does, and each control carries
- * its own `title`.
+ * The controls share one sliding tooltip (`HintGroup`), as the titlebar dock's
+ * do: the dock is the group, and each control is a `HintItem` — `DockButton`
+ * wraps itself, and the Radix triggers wrap their `Trigger` in one.
  *
  * Its own module rather than living in the panel, because the checkpoints picker
  * needs the trigger class too — and importing it from the panel, which imports
@@ -18,6 +18,7 @@
  */
 
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 /**
  * The pill that gathers the header's icon controls.
@@ -32,9 +33,11 @@ import { cn } from "@/lib/utils";
  */
 export function HeaderDock({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-7 items-center gap-1.5 rounded-full border border-white/[0.07] bg-[#121212] p-1">
-      {children}
-    </div>
+    <HintGroup>
+      <div className="flex h-7 items-center gap-1.5 rounded-full border border-white/[0.07] bg-[#121212] p-1">
+        {children}
+      </div>
+    </HintGroup>
   );
 }
 
@@ -53,7 +56,10 @@ export const DOCK_TRIGGER =
 /** Applied on top of {@link DOCK_TRIGGER} when the control's mode is on. */
 export const DOCK_ACTIVE = "bg-white/[0.12] text-[var(--text-primary)]";
 
-/** A plain button inside the dock. */
+/**
+ * A plain button inside the dock. Its tooltip comes from the enclosing
+ * `HintGroup`; one used outside a dock needs a group of its own.
+ */
 export function DockButton({
   label,
   onClick,
@@ -66,15 +72,15 @@ export function DockButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={onClick}
-      className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onClick}
+        className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }

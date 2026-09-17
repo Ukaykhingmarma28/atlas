@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 
 interface FinderEntry {
   id: string;
@@ -100,13 +101,14 @@ export function KnowledgeFinder({
               {results.length >= MAX_RESULTS ? "+" : ""}
             </span>
           )}
-          <button
-            onClick={onClose}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-            title="Close (Esc)"
-          >
-            <X size={12} />
-          </button>
+          <Hint label="Close" shortcut="Esc">
+            <button
+              onClick={onClose}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </Hint>
         </div>
         {q.trim() && (
           <div className="max-h-[340px] overflow-y-auto hide-scrollbar py-1">

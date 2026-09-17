@@ -173,7 +173,7 @@ describe("the no-grant setup state (bar 14)", () => {
     // what keeps the composer locked — see `message-input.tsx`.
     seed(NO_GRANT);
     render(<AiGrantBar />);
-    await userEvent.click(screen.getByTitle("Dismiss"));
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByTestId("ai-grant-bar")).toBeNull();
     expect(useAiGrantStore.getState().entitlement).toEqual(NO_GRANT);
   });

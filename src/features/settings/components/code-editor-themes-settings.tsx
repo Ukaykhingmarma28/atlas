@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { useProjectStore } from "@/features/project/stores/project-store";
 import { EDITOR_THEMES } from "@/features/editor/themes/themes";
@@ -39,13 +40,15 @@ export function CodeEditorThemesSettings() {
           className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
         />
         {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="shrink-0 cursor-pointer text-text-tertiary hover:text-text-primary"
-          >
-            <X size={11} />
-          </button>
+          <Hint label="Clear search">
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="shrink-0 cursor-pointer text-text-tertiary hover:text-text-primary"
+            >
+              <X size={11} />
+            </button>
+          </Hint>
         )}
       </div>
 

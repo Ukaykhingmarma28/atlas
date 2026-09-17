@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Building2, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { auth } from "@/features/auth/lib/auth-api";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "../stores/org-store";
@@ -184,12 +185,11 @@ export function CreateOrgDialog({
             "shadow-[var(--shadow-overlay)] animate-scale-in",
           )}
         >
-          <Dialog.Close
-            className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)]"
-            aria-label="Close"
-          >
-            <X size={13} />
-          </Dialog.Close>
+          <Hint label="Close">
+            <Dialog.Close className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)]">
+              <X size={13} />
+            </Dialog.Close>
+          </Hint>
 
           <div className="px-4 pt-3.5 pb-4">
             <Dialog.Title className="flex items-center gap-2 text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">

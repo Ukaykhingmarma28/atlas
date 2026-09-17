@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Search, Smile } from "lucide-react";
+import { HintItem } from "@/ui/hint-group";
 import { EMOJI_CATEGORIES, searchEmoji } from "../lib/emoji-data";
 
 /**
@@ -33,18 +34,19 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Emoji"
-          // Keeps the textarea selection alive so the emoji lands where the
-          // caret was, not at the end.
-          onMouseDown={(e) => e.preventDefault()}
-          className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Smile size={14} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Emoji">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            // Keeps the textarea selection alive so the emoji lands where the
+            // caret was, not at the end.
+            onMouseDown={(e) => e.preventDefault()}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+          >
+            <Smile size={14} />
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           side="top"
@@ -54,7 +56,7 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
             e.preventDefault();
             searchRef.current?.focus();
           }}
-          className="z-[var(--z-modal)] w-[292px] rounded-lg border border-border-default bg-bg-overlay shadow-[var(--shadow-overlay)] animate-scale-in"
+          className="z-[var(--z-modal)] w-[292px] rounded-lg border border-border-default bg-bg-overlay shadow-[var(--shadow-overlay)] origin-[var(--radix-popover-content-transform-origin)] animate-scale-in"
         >
           <div className="border-b border-border-default p-1.5">
             <div className="flex items-center gap-1.5 rounded-md border border-border-default bg-bg-input px-2 py-1 focus-within:border-border-focus">

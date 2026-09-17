@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Kbd } from "@/ui/kbd";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -321,7 +323,6 @@ export function CommsComposer({
               "absolute bottom-full left-2 right-2 z-[var(--z-dropdown)] mb-1 flex flex-col overflow-hidden rounded-lg",
               "border border-white/10 bg-black",
               "shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.6)]",
-              "animate-scale-in",
             )}
             // Selecting with the mouse must not blur the textarea first.
             onMouseDown={(e) => e.preventDefault()}
@@ -390,52 +391,54 @@ export function CommsComposer({
                 ? toPlainText(intentTarget.body, memberMap)
                 : null}
           </span>
-          <button
-            type="button"
-            title="Cancel"
-            onClick={onCancelIntent}
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
-          >
-            <X size={11} />
-          </button>
+          <Hint label="Cancel" side="top">
+            <button
+              type="button"
+              onClick={onCancelIntent}
+              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          </Hint>
         </div>
       )}
 
       {/* Outer shell — its exposed bottom strip is the toolbar. */}
-      <div
-        ref={shellRef}
-        className={cn(
-          // `z-10` so the shell paints over — and visually tucks — the reply
-          // strip's lower half.
-          "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-colors",
-          isDropTarget
-            ? "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40"
-            : overLimit
-              ? "border-error"
-              : "border-border-default",
-        )}
-      >
-        {isDropTarget && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
-            <span className="rounded-full bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
-              Drop files to attach
-            </span>
-          </div>
-        )}
+      <HintGroup side="top">
+        <div
+          ref={shellRef}
+          className={cn(
+            // `z-10` so the shell paints over — and visually tucks — the reply
+            // strip's lower half.
+            "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-colors",
+            isDropTarget
+              ? "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40"
+              : overLimit
+                ? "border-error"
+                : "border-border-default",
+          )}
+        >
+          {isDropTarget && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
+              <span className="rounded-full bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+                Drop files to attach
+              </span>
+            </div>
+          )}
 
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-2 pt-2">
-            {attachments.map((a) => (
-              <AttachmentChip key={a.uploadId} attachment={a} onRemove={onRemoveAttachment} />
-            ))}
-          </div>
-        )}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-2 pt-2">
+              {attachments.map((a) => (
+                <AttachmentChip key={a.uploadId} attachment={a} onRemove={onRemoveAttachment} />
+              ))}
+            </div>
+          )}
 
-        {/* Inner input surface. The disabled dimming, when it exists, belongs
+          {/* Inner input surface. The disabled dimming, when it exists, belongs
             HERE and not on the shell — on the shell it fades the toolbar and
             every popover anchored to it. */}
-        <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10">
-          {/* EVERY vertical value here is literal px, and that is the whole
+          <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10">
+            {/* EVERY vertical value here is literal px, and that is the whole
               point. Atlas's UI-scale shrinks the root font-size, so a rem-based
               `py-2` renders ~6px rather than 8px while `min-h-[34px]` stays a
               hard 34px — 6 + 18 + 6 = 30, and the missing 4px collected at the
@@ -444,139 +447,148 @@ export function CommsComposer({
               8 + 18 + 8 = 34, so one line is exactly centred and each extra
               line adds a clean 18px. (The agent composer pins its geometry in
               px for this same reason.) */}
-          <div className="min-h-[34px] w-full">
-            {Input ? (
-              <Input
-                handle={input}
-                value={draft}
-                placeholder={placeholder}
-                members={memberMap}
-                me={me}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-              />
-            ) : (
-              // Same geometry, so the composer does not resize when the real
-              // editor lands. Only ever seen on a cold first open.
-              <div className="px-[10px] py-[8px] text-[12.5px] leading-[18px] text-text-ghost">
-                {draft || placeholder}
-              </div>
-            )}
-          </div>
-          {/* Inline send, pinned top-right — the agent composer's placement, so
-              it stays put as the textarea grows downward. */}
-          <button
-            type="button"
-            title={editing ? "Save edit" : uploading ? "Waiting for uploads…" : "Send"}
-            disabled={!canSend}
-            onClick={submit}
-            className={cn(
-              "absolute right-[4px] top-[4px] flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
-              canSend
-                ? "text-text-primary hover:border-border-default hover:bg-bg-hover cursor-pointer"
-                : "text-text-tertiary cursor-not-allowed",
-            )}
-          >
-            {uploading ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <ArrowUp size={15} strokeWidth={2.5} />
-            )}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between gap-1 px-1.5 pb-1.5 pt-0.5">
-          <div className="flex min-w-0 items-center gap-0.5">
-            <button
-              type="button"
-              title={atLimit ? `At most ${CHAT_MESSAGE_ATTACHMENT_MAX} files` : "Attach a file"}
-              disabled={atLimit}
-              onClick={onPickFiles}
-              className={cn(
-                "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-secondary transition-colors",
-                atLimit
-                  ? "cursor-not-allowed opacity-50"
-                  : "hover:bg-bg-hover hover:text-text-primary cursor-pointer",
+            <div className="min-h-[34px] w-full">
+              {Input ? (
+                <Input
+                  handle={input}
+                  value={draft}
+                  placeholder={placeholder}
+                  members={memberMap}
+                  me={me}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                />
+              ) : (
+                // Same geometry, so the composer does not resize when the real
+                // editor lands. Only ever seen on a cold first open.
+                <div className="px-[10px] py-[8px] text-[12.5px] leading-[18px] text-text-ghost">
+                  {draft || placeholder}
+                </div>
               )}
+            </div>
+            {/* Inline send, pinned top-right — the agent composer's placement, so
+              it stays put as the textarea grows downward. */}
+            <HintItem
+              label={editing ? "Save edit" : uploading ? "Waiting for uploads…" : "Send"}
+              className="absolute right-[4px] top-[4px]"
             >
-              <Plus size={13} />
-            </button>
-            <Divider />
-            <EmojiPicker onPick={(char) => applyEdit(insertText(selection(), char))} />
-            <button
-              type="button"
-              title="Mention someone"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                const sel = selection();
-                const needsSpace = sel.start > 0 && !/\s$/.test(draft.slice(0, sel.start));
-                const edit = insertText(sel, needsSpace ? " @" : "@");
-                applyEdit(edit);
-                setMentionQuery({ start: edit.start - 1, query: "" });
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-            >
-              <AtSign size={14} />
-            </button>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-0.5">
-            {/* Only shown near the ceiling — a permanent counter is noise. */}
-            {bytes > CHAT_BODY_MAX_BYTES * 0.8 && (
-              <span
+              <button
+                type="button"
+                disabled={!canSend}
+                onClick={submit}
                 className={cn(
-                  "mr-1 text-[9.5px] tabular-nums",
-                  overLimit ? "text-error" : "text-text-ghost",
+                  "flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
+                  canSend
+                    ? "text-text-primary hover:border-border-default hover:bg-bg-hover cursor-pointer"
+                    : "text-text-tertiary cursor-not-allowed",
                 )}
               >
-                {bytes.toLocaleString()} / {CHAT_BODY_MAX_BYTES.toLocaleString()}
-              </span>
-            )}
-            <FormatButton
-              title="Bold  ⌘B"
-              icon={Bold}
-              onApply={() => applyEdit(wrap(selection(), "**"))}
-            />
-            <FormatButton
-              title="Italic  ⌘I"
-              icon={Italic}
-              onApply={() => applyEdit(wrap(selection(), "*"))}
-            />
-            <FormatButton
-              title="Strikethrough"
-              icon={Strikethrough}
-              onApply={() => applyEdit(wrap(selection(), "~~"))}
-            />
-            <FormatButton
-              title="Code"
-              icon={Code}
-              onApply={() => applyEdit(wrap(selection(), "`"))}
-            />
-            <FormatButton
-              title="Link  ⌘K"
-              icon={Link2}
-              onApply={() => applyEdit(insertLink(selection()))}
-            />
-            <Divider />
-            <FormatButton
-              title="Bulleted list"
-              icon={List}
-              onApply={() => applyEdit(linePrefix(selection(), "- "))}
-            />
-            <FormatButton
-              title="Numbered list"
-              icon={ListOrdered}
-              onApply={() => applyEdit(linePrefix(selection(), "1. ", true))}
-            />
-            <FormatButton
-              title="Quote"
-              icon={Quote}
-              onApply={() => applyEdit(linePrefix(selection(), "> "))}
-            />
+                {uploading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ArrowUp size={15} strokeWidth={2.5} />
+                )}
+              </button>
+            </HintItem>
+          </div>
+
+          <div className="flex items-center justify-between gap-1 px-1.5 pb-1.5 pt-0.5">
+            <div className="flex min-w-0 items-center gap-0.5">
+              <HintItem
+                label={atLimit ? `At most ${CHAT_MESSAGE_ATTACHMENT_MAX} files` : "Attach a file"}
+              >
+                <button
+                  type="button"
+                  disabled={atLimit}
+                  onClick={onPickFiles}
+                  className={cn(
+                    "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-secondary transition-colors",
+                    atLimit
+                      ? "cursor-not-allowed opacity-50"
+                      : "hover:bg-bg-hover hover:text-text-primary cursor-pointer",
+                  )}
+                >
+                  <Plus size={13} />
+                </button>
+              </HintItem>
+              <Divider />
+              <EmojiPicker onPick={(char) => applyEdit(insertText(selection(), char))} />
+              <HintItem label="Mention someone">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    const sel = selection();
+                    const needsSpace = sel.start > 0 && !/\s$/.test(draft.slice(0, sel.start));
+                    const edit = insertText(sel, needsSpace ? " @" : "@");
+                    applyEdit(edit);
+                    setMentionQuery({ start: edit.start - 1, query: "" });
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                >
+                  <AtSign size={14} />
+                </button>
+              </HintItem>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* Only shown near the ceiling — a permanent counter is noise. */}
+              {bytes > CHAT_BODY_MAX_BYTES * 0.8 && (
+                <span
+                  className={cn(
+                    "mr-1 text-[9.5px] tabular-nums",
+                    overLimit ? "text-error" : "text-text-ghost",
+                  )}
+                >
+                  {bytes.toLocaleString()} / {CHAT_BODY_MAX_BYTES.toLocaleString()}
+                </span>
+              )}
+              <FormatButton
+                title="Bold  ⌘B"
+                icon={Bold}
+                onApply={() => applyEdit(wrap(selection(), "**"))}
+              />
+              <FormatButton
+                title="Italic  ⌘I"
+                icon={Italic}
+                onApply={() => applyEdit(wrap(selection(), "*"))}
+              />
+              <FormatButton
+                title="Strikethrough"
+                icon={Strikethrough}
+                onApply={() => applyEdit(wrap(selection(), "~~"))}
+              />
+              <FormatButton
+                title="Code"
+                icon={Code}
+                onApply={() => applyEdit(wrap(selection(), "`"))}
+              />
+              <FormatButton
+                title="Link  ⌘K"
+                icon={Link2}
+                onApply={() => applyEdit(insertLink(selection()))}
+              />
+              <Divider />
+              <FormatButton
+                title="Bulleted list"
+                icon={List}
+                onApply={() => applyEdit(linePrefix(selection(), "- "))}
+              />
+              <FormatButton
+                title="Numbered list"
+                icon={ListOrdered}
+                onApply={() => applyEdit(linePrefix(selection(), "1. ", true))}
+              />
+              <FormatButton
+                title="Quote"
+                icon={Quote}
+                onApply={() => applyEdit(linePrefix(selection(), "> "))}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </HintGroup>
     </div>
   );
 }
@@ -602,15 +614,16 @@ function FormatButton({
   onApply: () => void;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onApply}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-    >
-      <Icon size={13} />
-    </button>
+    <HintItem label={title}>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onApply}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+      >
+        <Icon size={13} />
+      </button>
+    </HintItem>
   );
 }
 
@@ -650,14 +663,15 @@ function AttachmentChip({
       {attachment.state === "uploading" && (
         <span className="relative shrink-0 tabular-nums opacity-60">{pct}%</span>
       )}
-      <button
-        type="button"
-        title={failed ? attachment.error || "Upload failed — remove" : "Remove"}
-        onClick={() => onRemove(attachment.uploadId)}
-        className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
-      >
-        <X size={10} />
-      </button>
+      <Hint label={failed ? attachment.error || "Upload failed — remove" : "Remove"} side="top">
+        <button
+          type="button"
+          onClick={() => onRemove(attachment.uploadId)}
+          className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
+        >
+          <X size={10} />
+        </button>
+      </Hint>
     </div>
   );
 }

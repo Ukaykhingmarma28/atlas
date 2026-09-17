@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import {
   ArrowUp,
   Square,
@@ -667,21 +668,21 @@ function ComposerGroupsMenu({
                     // The gateway's list, re-fetched on demand (ADR-0007).
                     // Same icon, spin and disabled idiom as the grant bar's
                     // Refresh — no new pattern.
-                    <button
-                      type="button"
-                      title="Refresh models"
-                      aria-label="Refresh models"
-                      disabled={refreshingModels}
-                      onClick={() => void refreshNativeModels()}
-                      className={cn(
-                        "shrink-0 rounded p-0.5 text-[var(--text-tertiary)] transition-colors",
-                        refreshingModels
-                          ? "cursor-default"
-                          : "cursor-pointer hover:text-[var(--text-primary)]",
-                      )}
-                    >
-                      <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
-                    </button>
+                    <Hint label="Refresh models" side="top">
+                      <button
+                        type="button"
+                        disabled={refreshingModels}
+                        onClick={() => void refreshNativeModels()}
+                        className={cn(
+                          "shrink-0 rounded p-0.5 text-[var(--text-tertiary)] transition-colors",
+                          refreshingModels
+                            ? "cursor-default"
+                            : "cursor-pointer hover:text-[var(--text-primary)]",
+                        )}
+                      >
+                        <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
+                      </button>
+                    </Hint>
                   )}
                 </div>
                 <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
@@ -1942,13 +1943,15 @@ export function MessageInput({
                         alt="attachment"
                         className="h-14 w-14 object-cover rounded-lg border border-[var(--border-default)]"
                       />
-                      <button
-                        onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
-                        title="Remove image"
-                      >
-                        <X size={9} />
-                      </button>
+                      {/* Right, not top: the hover preview opens above the thumbnail. */}
+                      <Hint label="Remove image" side="right">
+                        <button
+                          onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                        >
+                          <X size={9} />
+                        </button>
+                      </Hint>
                       {/* Zed-style hover preview — a larger floating image above the
                         thumbnail. `pointer-events-none` so it never blocks the
                         remove button; only shown on hover. */}
@@ -1992,53 +1995,57 @@ export function MessageInput({
                 <div aria-hidden="true" style={{ minHeight: 44 }} className="px-4 pt-3 pb-1" />
               )}
             </div>
-            <button
-              onClick={submit}
-              disabled={!buttonEnabled}
-              className={cn(
-                // Reference-style squircle send: a soft rounded-square,
-                // transparent at rest, muted fill + border on hover, pinned
-                // top-right of the input surface (it does not ride down as
-                // the field grows — same as the Skiper component).
-                // Geometry IN PX, not rem: Atlas's UI-scale setting shrinks
-                // the root font-size, so rem utilities (w-7/top-2 → 23px/6.5px
-                // under scale) drift against CodeMirror's hardcoded 12px/16px
-                // padding — the ruler-measured misalignment. CM's first text
-                // line centers at 12px pad + ~10px half-line = 22px; a 28px
-                // button at 8px top centers at 22px at EVERY UI scale.
-                "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
-                buttonEnabled
-                  ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-default)] cursor-pointer"
-                  : "border-transparent text-[var(--text-tertiary)] cursor-not-allowed",
-              )}
-              title={
+            {/* No wrapping span: it would sit in flow and misplace this absolute button. */}
+            <Hint
+              side="top"
+              wrap={false}
+              label={
                 mode === "stop"
                   ? stopping
                     ? "Stopping… (waiting for the agent to wind down)"
                     : "Stop generation"
                   : mode === "queue"
                     ? "Queue message (sends after current finishes)"
-                    : `Send to agent (${enterToSend ? "↵" : "⌘↵"})`
+                    : "Send to agent"
               }
+              shortcut={mode === "send" ? (enterToSend ? "↵" : "⌘↵") : undefined}
             >
-              {/* Keyed span so the arrow↔stop swap plays the scale-pop morph
-                (existing `animate-scale-in` — ends at identity, no fill). */}
-              <span
-                key={mode === "stop" ? "stop" : "send"}
-                className="flex items-center justify-center animate-scale-in"
-              >
-                {mode === "stop" ? (
-                  <Square
-                    size={11}
-                    strokeWidth={3}
-                    fill="currentColor"
-                    className={stopping ? "animate-pulse" : undefined}
-                  />
-                ) : (
-                  <ArrowUp size={15} strokeWidth={2.5} />
+              <button
+                onClick={submit}
+                disabled={!buttonEnabled}
+                className={cn(
+                  // Reference-style squircle send: a soft rounded-square,
+                  // transparent at rest, muted fill + border on hover, pinned
+                  // top-right of the input surface (it does not ride down as
+                  // the field grows — same as the Skiper component).
+                  // Geometry IN PX, not rem: Atlas's UI-scale setting shrinks
+                  // the root font-size, so rem utilities (w-7/top-2 → 23px/6.5px
+                  // under scale) drift against CodeMirror's hardcoded 12px/16px
+                  // padding — the ruler-measured misalignment. CM's first text
+                  // line centers at 12px pad + ~10px half-line = 22px; a 28px
+                  // button at 8px top centers at 22px at EVERY UI scale.
+                  "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
+                  buttonEnabled
+                    ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-default)] cursor-pointer"
+                    : "border-transparent text-[var(--text-tertiary)] cursor-not-allowed",
                 )}
-              </span>
-            </button>
+              >
+                {/* Updates in place: Enter sends, so the arrow↔stop swap is
+                    keyboard-driven and has no animation. */}
+                <span className="flex items-center justify-center">
+                  {mode === "stop" ? (
+                    <Square
+                      size={11}
+                      strokeWidth={3}
+                      fill="currentColor"
+                      className={stopping ? "animate-pulse" : undefined}
+                    />
+                  ) : (
+                    <ArrowUp size={15} strokeWidth={2.5} />
+                  )}
+                </span>
+              </button>
+            </Hint>
           </div>
           {/* Footer strip — the exposed band of the outer shell. */}
           <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
@@ -2144,13 +2151,14 @@ function QueueChip({
         <Pencil size={9} className="text-[var(--text-tertiary)] shrink-0" />
         <span className="truncate">{text.replace(/\s+/g, " ")}</span>
       </button>
-      <button
-        onClick={onRemove}
-        className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer shrink-0"
-        title="Remove from queue"
-      >
-        <X size={10} />
-      </button>
+      <Hint label="Remove from queue" side="top">
+        <button
+          onClick={onRemove}
+          className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer shrink-0"
+        >
+          <X size={10} />
+        </button>
+      </Hint>
     </div>
   );
 }

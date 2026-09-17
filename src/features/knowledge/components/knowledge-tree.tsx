@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Trash2, FileText } from "lucide-react";
 import { TreeRow } from "@/features/explorer/components/tree-row";
 import { ROW_HEIGHT } from "@/features/explorer/lib/tree-constants";
+import { Hint } from "@/ui/tooltip";
 
 /** Imperative handle exposed to the sidebar so its header buttons can
  *  drive collapse-all / expand-all without lifting `expanded` state. */
@@ -190,17 +191,18 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                 trailing={
                   !node.isDir && onDelete ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(node.key);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-error text-text-tertiary transition-opacity"
-                      title="Delete note"
-                    >
-                      <Trash2 size={11} />
-                    </button>
+                    <Hint label="Delete note">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(node.key);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:text-error text-text-tertiary transition-opacity"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </Hint>
                   ) : null
                 }
               />

@@ -15,6 +15,8 @@ import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Download, Loader2 } from "lucide-react";
 
+import { HintItem } from "@/ui/hint-group";
+
 import type { SessionDetail as Detail } from "../types";
 import { exportSession, type ExportFormat } from "../lib/export";
 import { DOCK_TRIGGER } from "./header-dock";
@@ -35,21 +37,17 @@ export function ExportButton({ detail }: { detail: Detail }) {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Export session"
-          aria-label="Export session"
-          disabled={busy !== null}
-          className={DOCK_TRIGGER}
-        >
-          {busy ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Download size={12} strokeWidth={1.7} />
-          )}
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Export session">
+        <Popover.Trigger asChild>
+          <button type="button" disabled={busy !== null} className={DOCK_TRIGGER}>
+            {busy ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Download size={12} strokeWidth={1.7} />
+            )}
+          </button>
+        </Popover.Trigger>
+      </HintItem>
       <Popover.Portal>
         <Popover.Content
           align="end"

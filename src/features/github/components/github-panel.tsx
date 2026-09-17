@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { GithubIcon } from "@/components/github-icon";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { logEvent } from "@/features/log/lib/log";
 import { toast } from "sonner";
 import { metaFromSearch, type ClonedRepo, type GithubRepo } from "@/features/github/types";
@@ -332,43 +333,46 @@ function ClonedRow({
           </div>
         </div>
 
-        <div className={cn(GROUP, "shrink-0")}>
-          <button
-            type="button"
-            onClick={() => void update()}
-            disabled={busy !== null || !repo.branch}
-            className={GROUP_BUTTON}
-            title={repo.branch ? `Fetch origin/${repo.branch}` : "Pick a branch to fetch"}
-          >
-            {busy === "update" ? (
-              <Loader2 size={10} className="animate-spin" />
-            ) : (
-              <RefreshCw size={10} />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => void openOnGithub()}
-            className={GROUP_BUTTON}
-            title="Open on GitHub"
-          >
-            <ExternalLink size={10} />
-          </button>
-          <button
-            type="button"
-            onClick={() => void remove()}
-            onBlur={() => setConfirmDelete(false)}
-            disabled={busy !== null}
-            className={cn(GROUP_BUTTON, confirmDelete && "text-error hover:text-error")}
-            title={confirmDelete ? "Click again to delete the clone" : "Delete clone"}
-          >
-            {busy === "delete" ? (
-              <Loader2 size={10} className="animate-spin" />
-            ) : (
-              <Trash2 size={10} />
-            )}
-          </button>
-        </div>
+        <HintGroup>
+          <div className={cn(GROUP, "shrink-0")}>
+            <HintItem
+              label={repo.branch ? `Fetch origin/${repo.branch}` : "Pick a branch to fetch"}
+            >
+              <button
+                type="button"
+                onClick={() => void update()}
+                disabled={busy !== null || !repo.branch}
+                className={GROUP_BUTTON}
+              >
+                {busy === "update" ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={10} />
+                )}
+              </button>
+            </HintItem>
+            <HintItem label="Open on GitHub">
+              <button type="button" onClick={() => void openOnGithub()} className={GROUP_BUTTON}>
+                <ExternalLink size={10} />
+              </button>
+            </HintItem>
+            <HintItem label={confirmDelete ? "Click again to delete the clone" : "Delete clone"}>
+              <button
+                type="button"
+                onClick={() => void remove()}
+                onBlur={() => setConfirmDelete(false)}
+                disabled={busy !== null}
+                className={cn(GROUP_BUTTON, confirmDelete && "text-error hover:text-error")}
+              >
+                {busy === "delete" ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <Trash2 size={10} />
+                )}
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
       </div>
     </div>
   );
@@ -594,38 +598,48 @@ export function GithubPanel() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => openInBrowser(repo.html_url)}
-                      className="p-1 rounded hover:bg-bg-active text-text-tertiary hover:text-text-primary cursor-pointer"
-                      title="Open on GitHub"
-                    >
-                      <ExternalLink size={11} />
-                    </button>
-                    {currentProject && (
-                      <button
-                        onClick={() => cloneRepo(repo)}
-                        disabled={isCloning || isCloned}
-                        className={cn(
-                          "p-1 rounded cursor-pointer",
-                          isCloned
-                            ? "text-success"
-                            : isCloning
-                              ? "text-accent"
-                              : "text-text-tertiary hover:text-text-primary hover:bg-bg-active",
-                        )}
-                        title={
-                          isCloned ? "Cloned" : isCloning ? "Cloning..." : "Clone to .atlas/repos/"
-                        }
-                      >
-                        {isCloning ? (
-                          <Loader2 size={11} className="animate-spin" />
-                        ) : (
-                          <Download size={11} />
-                        )}
-                      </button>
-                    )}
-                  </div>
+                  <HintGroup>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <HintItem label="Open on GitHub">
+                        <button
+                          onClick={() => openInBrowser(repo.html_url)}
+                          className="p-1 rounded hover:bg-bg-active text-text-tertiary hover:text-text-primary cursor-pointer"
+                        >
+                          <ExternalLink size={11} />
+                        </button>
+                      </HintItem>
+                      {currentProject && (
+                        <HintItem
+                          label={
+                            isCloned
+                              ? "Cloned"
+                              : isCloning
+                                ? "Cloning..."
+                                : "Clone to .atlas/repos/"
+                          }
+                        >
+                          <button
+                            onClick={() => cloneRepo(repo)}
+                            disabled={isCloning || isCloned}
+                            className={cn(
+                              "p-1 rounded cursor-pointer",
+                              isCloned
+                                ? "text-success"
+                                : isCloning
+                                  ? "text-accent"
+                                  : "text-text-tertiary hover:text-text-primary hover:bg-bg-active",
+                            )}
+                          >
+                            {isCloning ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Download size={11} />
+                            )}
+                          </button>
+                        </HintItem>
+                      )}
+                    </div>
+                  </HintGroup>
                 </div>
               </div>
             );

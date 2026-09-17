@@ -39,6 +39,8 @@ import {
   type TokenSpend,
 } from "@/features/settings/stores/model-pricing-store";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 import {
   DEFAULT_FILTERS,
@@ -501,70 +503,73 @@ export function SessionDetail({
        *  scroller: the measure is centred and a full-width toolbar would put its
        *  controls further from the text than the text is wide. Left is what
        *  changes the view, right is what moves through it. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 px-4 pb-3.5">
-        <BarButton
-          label="Filters"
-          active={filtersOpen || activeFilters > 0}
-          badge={activeFilters > 0 ? activeFilters : undefined}
-          onClick={() => setFiltersOpen((v) => !v)}
-        >
-          <Filter size={14} strokeWidth={1.6} />
-        </BarButton>
-
-        {/* The search field, between the two control clusters and centred in the
-         *  measure. Same pill as the memory Timeline's: floating, blurred, no
-         *  box around it — it belongs to the content, not to a toolbar. */}
-        <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 px-4 shadow-[var(--shadow-overlay)] backdrop-blur-2xl">
-          <Search size={15} className="shrink-0 text-[var(--text-tertiary)]" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setSearch("");
-            }}
-            placeholder="Search this session…"
-            spellCheck={false}
-            aria-label="Search this session"
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-          />
-          {search && (
-            <>
-              <span className="shrink-0 font-mono text-[11px] text-[var(--text-ghost)]">
-                {groups.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-              >
-                <X size={14} />
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-xl">
+      <HintGroup side="top">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 px-4 pb-3.5">
           <BarButton
-            label="Next prompt"
-            bare
-            disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
-            onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
+            label="Filters"
+            active={filtersOpen || activeFilters > 0}
+            badge={activeFilters > 0 ? activeFilters : undefined}
+            onClick={() => setFiltersOpen((v) => !v)}
           >
-            <ChevronsDown size={14} strokeWidth={1.6} />
+            <Filter size={14} strokeWidth={1.6} />
           </BarButton>
-          <span aria-hidden className="h-4 w-px bg-[var(--border-default)]" />
-          <BarButton
-            label={chatOpen ? "Close chat" : "Ask about this session"}
-            bare
-            active={chatOpen}
-            disabled={!onToggleChat}
-            onClick={onToggleChat}
-          >
-            <Sparkles size={14} strokeWidth={1.6} />
-          </BarButton>
+
+          {/* The search field, between the two control clusters and centred in the
+           *  measure. Same pill as the memory Timeline's: floating, blurred, no
+           *  box around it — it belongs to the content, not to a toolbar. */}
+          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 px-4 shadow-[var(--shadow-overlay)] backdrop-blur-2xl">
+            <Search size={15} className="shrink-0 text-[var(--text-tertiary)]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSearch("");
+              }}
+              placeholder="Search this session…"
+              spellCheck={false}
+              aria-label="Search this session"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+            />
+            {search && (
+              <>
+                <span className="shrink-0 font-mono text-[11px] text-[var(--text-ghost)]">
+                  {groups.length}
+                </span>
+                <Hint label="Clear search">
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    <X size={14} />
+                  </button>
+                </Hint>
+              </>
+            )}
+          </div>
+
+          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-xl">
+            <BarButton
+              label="Next prompt"
+              bare
+              disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
+              onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
+            >
+              <ChevronsDown size={14} strokeWidth={1.6} />
+            </BarButton>
+            <span aria-hidden className="h-4 w-px bg-[var(--border-default)]" />
+            <BarButton
+              label={chatOpen ? "Close chat" : "Ask about this session"}
+              bare
+              active={chatOpen}
+              disabled={!onToggleChat}
+              onClick={onToggleChat}
+            >
+              <Sparkles size={14} strokeWidth={1.6} />
+            </BarButton>
+          </div>
         </div>
-      </div>
+      </HintGroup>
 
       {filtersOpen && (
         <FilterDrawer
@@ -1673,14 +1678,15 @@ function FilterDrawer({
          *  holding one X — the close button floats over the content instead,
          *  and the "N active · Reset" affordance rides as the content's first
          *  row only when there is something to reset. */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close filters"
-          className="absolute right-2 top-2 z-10 flex size-6 cursor-pointer items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <X size={14} />
-        </button>
+        <Hint label="Close filters">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-2 top-2 z-10 flex size-6 cursor-pointer items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <X size={14} />
+          </button>
+        </Hint>
 
         <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-8 pt-4">
           {activeFilters > 0 && (
@@ -2018,30 +2024,32 @@ function BarButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "pointer-events-auto relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
-        disabled
-          ? "cursor-default text-[var(--text-ghost)]"
-          : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-        !bare &&
-          "border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 backdrop-blur-xl",
-        !bare && "shadow-[var(--shadow-overlay)]",
-        active && !bare && "border-[var(--border-strong)] text-[var(--text-primary)]",
-      )}
-    >
-      {children}
-      {badge !== undefined && (
-        <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)] font-mono text-[8px] font-semibold text-[var(--bg-base)]">
-          {badge}
-        </span>
-      )}
-    </button>
+    // The bar is `pointer-events-none`; the item's span has to take the hover
+    // itself, or a disabled button (which passes events through) shows nothing.
+    <HintItem label={label} className="pointer-events-auto">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          "pointer-events-auto relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
+          disabled
+            ? "cursor-default text-[var(--text-ghost)]"
+            : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+          !bare &&
+            "border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 backdrop-blur-xl",
+          !bare && "shadow-[var(--shadow-overlay)]",
+          active && !bare && "border-[var(--border-strong)] text-[var(--text-primary)]",
+        )}
+      >
+        {children}
+        {badge !== undefined && (
+          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)] font-mono text-[8px] font-semibold text-[var(--bg-base)]">
+            {badge}
+          </span>
+        )}
+      </button>
+    </HintItem>
   );
 }
 

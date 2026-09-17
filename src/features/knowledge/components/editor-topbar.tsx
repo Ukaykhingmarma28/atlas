@@ -1,5 +1,7 @@
 import { ChevronRight, Folder, PanelLeft, PanelRight } from "lucide-react";
 
+import { Hint } from "@/ui/tooltip";
+
 interface EditorTopbarProps {
   /** Folder/segment trail (empty for root-level pages). */
   breadcrumbs?: string[];
@@ -44,14 +46,15 @@ export function EditorTopbar({
       }}
     >
       {onToggleSidebar && (
-        <button
-          onClick={onToggleSidebar}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
-          title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
-          style={{ width: 22, height: 22, marginLeft: -6 }}
-        >
-          <PanelLeft size={12} />
-        </button>
+        <Hint label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}>
+          <button
+            onClick={onToggleSidebar}
+            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            style={{ width: 22, height: 22, marginLeft: -6 }}
+          >
+            <PanelLeft size={12} />
+          </button>
+        </Hint>
       )}
       {/* Breadcrumbs */}
       <div
@@ -85,14 +88,15 @@ export function EditorTopbar({
         />
       )}
       {onToggleInspector && (
-        <button
-          onClick={onToggleInspector}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
-          title="Toggle inspector"
-          style={{ width: 22, height: 22 }}
-        >
-          <PanelRight size={12} />
-        </button>
+        <Hint label="Toggle inspector">
+          <button
+            onClick={onToggleInspector}
+            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            style={{ width: 22, height: 22 }}
+          >
+            <PanelRight size={12} />
+          </button>
+        </Hint>
       )}
     </div>
   );

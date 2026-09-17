@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore, retainGitDiff, type GitFileStatus } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 import { openGitDiff } from "../../lib/git-diff-api";
@@ -110,54 +111,60 @@ function FileRow({
         {dir && <span className="text-text-tertiary">{dir}</span>}
         <span className="text-text-secondary group-hover:text-text-primary">{name}</span>
       </span>
-      <div className="flex items-center opacity-0 group-hover:opacity-100 shrink-0">
-        {onOpenDiff && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenDiff();
-            }}
-            className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
-            title="Open in diff view"
-          >
-            <GitCompare size={11} />
-          </button>
-        )}
-        {onOpenInEditor && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenInEditor();
-            }}
-            className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
-            title="Open in code editor"
-          >
-            <FileCode2 size={11} />
-          </button>
-        )}
-        {onDiscard && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDiscard();
-            }}
-            className="p-0.5 rounded text-text-tertiary hover:text-[var(--status-error)]"
-            title="Discard changes"
-          >
-            <Undo2 size={11} />
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onAction();
-          }}
-          className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
-          title={action === "stage" ? "Stage" : "Unstage"}
-        >
-          {action === "stage" ? <Plus size={12} /> : <Minus size={12} />}
-        </button>
-      </div>
+      <HintGroup>
+        <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 shrink-0">
+          {onOpenDiff && (
+            <HintItem label="Open in diff view">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDiff();
+                }}
+                className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
+              >
+                <GitCompare size={11} />
+              </button>
+            </HintItem>
+          )}
+          {onOpenInEditor && (
+            <HintItem label="Open in code editor">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenInEditor();
+                }}
+                className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
+              >
+                <FileCode2 size={11} />
+              </button>
+            </HintItem>
+          )}
+          {onDiscard && (
+            <HintItem label="Discard changes">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDiscard();
+                }}
+                className="p-0.5 rounded text-text-tertiary hover:text-[var(--status-error)]"
+              >
+                <Undo2 size={11} />
+              </button>
+            </HintItem>
+          )}
+          <HintItem label={action === "stage" ? "Stage" : "Unstage"}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAction();
+              }}
+              className="p-0.5 rounded text-text-tertiary hover:text-text-primary"
+            >
+              {action === "stage" ? <Plus size={12} /> : <Minus size={12} />}
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Loader2, Pin, Search } from "lucide-react";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 import { CommsAvatar } from "./comms-avatar";
 import { comms } from "../lib/comms-api";
 import { toPlainText } from "../lib/to-plain-text";
@@ -76,16 +77,17 @@ export function PinnedMenu({
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title={`${count} pinned`}
-          className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Pin size={10} />
-          <span className="tabular-nums">{count}</span>
-        </button>
-      </Popover.Trigger>
+      <Hint label={`${count} pinned`}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+          >
+            <Pin size={10} />
+            <span className="tabular-nums">{count}</span>
+          </button>
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         <Popover.Content
           align="end"
