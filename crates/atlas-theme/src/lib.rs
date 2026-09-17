@@ -128,12 +128,20 @@ impl ThemeKeyValue {
     }
 }
 
+/// The table spelling of a theme key: `keyword = { color = "#c678dd" }`.
+///
+/// It carried a `font_style` too, which the schema accepted, the TS type
+/// mirrored and *nothing* read — so `font_style = "italic"` parsed, validated,
+/// shipped, and rendered upright. A theme author had no way to tell that from
+/// a bug in their own file. Atlas has no path from a theme key to a font
+/// style: CodeMirror, highlight.js and the markdown renderer each take a
+/// colour from the resolved key and nothing else. Until all three can honour
+/// one, the field is rejected at load with a message that says so, which is
+/// the only answer that cannot be mistaken for the feature working.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeKeyStyle {
     pub color: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub font_style: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -141,6 +149,19 @@ pub struct ThemeKeyStyle {
 pub struct ThemeWarning {
     pub key: String,
     pub message: String,
+}
+
+/// What the picker needs to draw itself: the themes on offer, and the user
+/// theme files that never made it that far.
+///
+/// [`ThemeCatalog::warnings`] used to stop at a `tracing::warn!` line. A
+/// skipped file is the one failure the *user* can fix, and they are not
+/// reading the log — so it travels to the UI with the list it is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeCatalogSummary {
+    pub themes: Vec<ThemeSummary>,
+    pub warnings: Vec<ThemeWarning>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -260,8 +281,48 @@ pub fn built_in_themes() -> Result<Vec<Theme>, ThemeError> {
     BUILT_INS.iter().map(|(name, source)| parse_theme(source, *name)).collect()
 }
 
+/// `~/.config/atlas/themes` (or `$XDG_CONFIG_HOME/atlas/themes`).
+///
+/// No migration reads or moves an old `~/Library/Application Support/atlas/
+/// themes` (the path a `dirs::config_dir()` bug used to resolve here on
+/// macOS): this crate has never shipped past a version branch — `git log`
+/// shows every commit that built it postdates the last release cut to
+/// `main` — so there is no installed build that could have written a theme
+/// there. A migration would add a permanent code path and test surface to
+/// guard against a location no released Atlas ever used.
 pub fn user_theme_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|dir| dir.join("atlas").join("themes"))
+    config_root().map(|dir| dir.join("themes"))
+}
+
+/// `~/.config/atlas/` — the same root `src-tauri/src/state/atlas_config.rs`
+/// resolves for `config.toml`, **not** `dirs::config_dir()` (which on macOS is
+/// `~/Library/Application Support`). `atlas-theme` sits below `src-tauri` in
+/// the dependency graph — the app crate depends on this one, not the other
+/// way round — so it cannot call that function directly without a cycle.
+///
+/// This is a deliberate, minimal copy of its logic (XDG override, `.config`
+/// fallback), not an independent decision about where config lives. Keep the
+/// two in sync by hand: the `config_root` tests below run the exact fixtures
+/// `atlas_config.rs`'s own `config_root_from` tests use (same inputs, same
+/// expected paths), so an edit to either one that changes the resolved path
+/// breaks a test right next to the copy that drifted.
+fn config_root() -> Option<PathBuf> {
+    let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let home = dirs::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+    config_root_from(xdg.as_deref(), home.as_deref())
+}
+
+/// The decision itself, taking its inputs rather than reading the
+/// environment, so it can be tested without racing every other test in the
+/// process over `set_var` — mirrors `config_root_from` in `atlas_config.rs`
+/// exactly, including the same relative-XDG and no-home edge cases.
+fn config_root_from(xdg: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(xdg) = xdg {
+        if xdg.is_absolute() {
+            return Some(xdg.join("atlas"));
+        }
+    }
+    home.map(|home| home.join(".config").join("atlas"))
 }
 
 /// The themes on offer, plus whatever went wrong getting there.
@@ -329,9 +390,14 @@ pub fn all_themes() -> Result<ThemeCatalog, ThemeError> {
     Ok(ThemeCatalog { themes: by_id.into_values().collect(), warnings })
 }
 
-pub fn list_themes() -> Result<Vec<ThemeSummary>, ThemeError> {
-    all_themes().map(|catalog| {
-        catalog.themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect()
+pub fn list_themes() -> Result<ThemeCatalogSummary, ThemeError> {
+    all_themes().map(|catalog| ThemeCatalogSummary {
+        themes: catalog
+            .themes
+            .into_iter()
+            .map(|(theme, built_in)| theme.summary(built_in))
+            .collect(),
+        warnings: catalog.warnings,
     })
 }
 
@@ -439,7 +505,7 @@ fn flatten_keys(
         let dotted = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
         if let Some(string) = value.as_str() {
             insert_leaf(out, dotted, ThemeKeyValue::Color(string.to_string()), origin)?;
-        } else if let Some(style) = parse_style(value) {
+        } else if let Some(style) = parse_style(value, &dotted).map_err(|message| validation(origin, message))? {
             insert_leaf(out, dotted, ThemeKeyValue::Styled(style), origin)?;
         } else if value.is_table() {
             flatten_keys(value, &dotted, out, origin, field)?;
@@ -450,14 +516,22 @@ fn flatten_keys(
     Ok(())
 }
 
-fn parse_style(value: &toml::Value) -> Option<ThemeKeyStyle> {
-    let table = value.as_table()?;
-    let color = table.get("color")?.as_str()?.to_string();
-    if table.keys().any(|key| !matches!(key.as_str(), "color" | "font_style")) {
-        return None;
+/// `Ok(None)` means "not a style table" — the caller then tries to descend
+/// into it as a nested group of keys. `Err` is reserved for a table that is
+/// unmistakably meant as a style and cannot be honoured.
+fn parse_style(value: &toml::Value, key: &str) -> Result<Option<ThemeKeyStyle>, String> {
+    let Some(table) = value.as_table() else { return Ok(None) };
+    let Some(color) = table.get("color").and_then(toml::Value::as_str) else { return Ok(None) };
+    if table.contains_key("font_style") {
+        return Err(format!(
+            "{key} sets font_style, which Atlas does not apply — a theme key is a colour. \
+             Remove it; leaving it in would silently render upright."
+        ));
     }
-    let font_style = table.get("font_style").and_then(toml::Value::as_str).map(ToOwned::to_owned);
-    Some(ThemeKeyStyle { color, font_style })
+    if table.keys().any(|key| key != "color") {
+        return Ok(None);
+    }
+    Ok(Some(ThemeKeyStyle { color: color.to_string() }))
 }
 
 fn insert_leaf<T>(
@@ -635,6 +709,24 @@ mod tests {
         assert!(parse_theme(&source, "test").is_err());
     }
 
+    /// Accepted-and-ignored is the worst of the three options: the author
+    /// gets no error and no italics, and nothing tells them which it is.
+    #[test]
+    fn font_style_is_rejected_rather_than_silently_dropped() {
+        let source =
+            minimal_theme("[dark.keys]\nsyntax.keyword = { color = \"#c678dd\", font_style = \"italic\" }");
+        let error = parse_theme(&source, "test").unwrap_err().to_string();
+        assert!(error.contains("font_style"), "{error}");
+        assert!(error.contains("syntax.keyword"), "{error}");
+
+        // The table spelling itself stays valid without it.
+        let plain = minimal_theme("[dark.keys]\nsyntax.keyword = { color = \"#c678dd\" }");
+        assert_eq!(
+            parse_theme(&plain, "test").unwrap().dark.unwrap().keys["syntax.keyword"].color(),
+            "#c678dd"
+        );
+    }
+
     #[test]
     fn unknown_theme_keys_are_warnings() {
         let theme = parse_theme(&minimal_theme("[dark.keys]\nfuture = \"#fff\""), "test").unwrap();
@@ -677,6 +769,56 @@ mod tests {
         assert!(warnings.iter().all(|warning| !warning.message.is_empty()));
     }
 
+    // ── config_root (must track `config_root` in `atlas_config.rs`; #64 follow-up) ──
+
+    /// The bug this whole fix exists for: `dirs::config_dir()` resolves to
+    /// `~/Library/Application Support` on macOS, which contradicts every
+    /// other place Atlas resolves its config root and the crate's own doc
+    /// comments. Pin the resolved *theme* directory under `~/.config/atlas`
+    /// and assert "Application Support" never appears in it.
+    #[test]
+    fn user_theme_dir_lives_under_dot_config_atlas_not_application_support() {
+        let home = PathBuf::from("/Users/someone");
+        let root = config_root_from(None, Some(&home)).expect("a home resolves a root");
+        let themes = root.join("themes");
+
+        assert_eq!(themes, PathBuf::from("/Users/someone/.config/atlas/themes"));
+        assert!(!themes.to_string_lossy().contains("Application Support"));
+        assert!(!themes.to_string_lossy().contains("Library"));
+    }
+
+    /// Same fixtures as `atlas_config.rs`'s `an_absolute_xdg_config_home_wins`
+    /// — the two resolvers must agree on every input, and this is the input
+    /// that most needs to be right, since it's how a user relocates config
+    /// for every tool they run.
+    #[test]
+    fn an_absolute_xdg_config_home_wins() {
+        let xdg = PathBuf::from("/elsewhere/cfg");
+        let home = PathBuf::from("/Users/someone");
+
+        let root = config_root_from(Some(&xdg), Some(&home)).unwrap();
+
+        assert_eq!(root, PathBuf::from("/elsewhere/cfg/atlas"));
+    }
+
+    /// A relative `$XDG_CONFIG_HOME` is ignored rather than resolved against
+    /// the cwd, matching `atlas_config.rs`'s `config_root_from` exactly.
+    #[test]
+    fn a_relative_xdg_config_home_is_ignored() {
+        let xdg = PathBuf::from("relative/cfg");
+        let home = PathBuf::from("/Users/someone");
+
+        let root = config_root_from(Some(&xdg), Some(&home)).unwrap();
+
+        assert_eq!(root, PathBuf::from("/Users/someone/.config/atlas"));
+    }
+
+    #[test]
+    fn no_home_and_no_xdg_resolves_nothing() {
+        assert_eq!(config_root_from(None, None), None);
+        assert_eq!(config_root_from(Some(&PathBuf::from("rel")), None), None);
+    }
+
     #[test]
     fn a_missing_user_theme_dir_is_not_a_failure() {
         let dir = tempfile::tempdir().unwrap();
@@ -694,5 +836,182 @@ mod tests {
     fn browser_mock_snapshot_is_current() {
         let expected = serde_json::to_string_pretty(&built_in_themes().unwrap()).unwrap() + "\n";
         assert_eq!(include_str!("../../../src/dev/mock-backend/fixtures/builtin-themes.json"), expected);
+    }
+
+    /// The eight `[<variant>.palette]` names are *hues*, and everything
+    /// derived from them — ANSI colours, diff tints, status colours, agent
+    /// chips — trusts the name. The first port filled them by walking the old
+    /// editor themes' *syntax* tokens instead (`red` took `regexp`, `yellow`
+    /// took `type`, `blue` took `func`, …), which put One Dark's green in
+    /// `red`, Dracula's cyan in `yellow` and Monokai's pink in `cyan`. Nothing
+    /// failed to compile and every theme still rendered; it was only wrong.
+    /// This pins each hue to its name so the same class of swap cannot return.
+    #[test]
+    fn palette_hues_match_the_names_they_are_filed_under() {
+        /// Canonical hue angle, in degrees, for each palette name.
+        const CANONICAL: &[(&str, f64)] = &[
+            ("red", 0.0),
+            ("orange", 30.0),
+            ("yellow", 60.0),
+            ("green", 120.0),
+            ("cyan", 180.0),
+            ("blue", 220.0),
+            ("purple", 285.0),
+            ("pink", 330.0),
+        ];
+        /// How far a hue may sit from its canonical angle. Generous on
+        /// purpose: themes stretch their hues, and the bug this guards is a
+        /// *swap* — 90°+ — not a stylistic lean.
+        const TOLERANCE: f64 = 55.0;
+        /// A theme is allowed to file a hue under a distant name when its
+        /// upstream does. Each entry is (theme id, palette name, why).
+        const EXCEPTIONS: &[(&str, &str, &str)] = &[
+            ("rose-pine", "green", "Rosé Pine has no green; upstream's ANSI green is pine"),
+            ("rose-pine-moon", "green", "same as rose-pine"),
+        ];
+
+        /// Hue angle in degrees, and saturation, of a `#rrggbb` colour.
+        fn hue_and_saturation(hex: &str) -> Option<(f64, f64)> {
+            let hex = hex.strip_prefix('#').filter(|rest| rest.len() == 6)?;
+            let channel = |index: usize| {
+                u8::from_str_radix(&hex[index..index + 2], 16).ok().map(|v| f64::from(v) / 255.0)
+            };
+            let (r, g, b) = (channel(0)?, channel(2)?, channel(4)?);
+            let max = r.max(g).max(b);
+            let min = r.min(g).min(b);
+            let delta = max - min;
+            if delta == 0.0 {
+                return Some((0.0, 0.0));
+            }
+            let hue = 60.0
+                * if max == r {
+                    ((g - b) / delta).rem_euclid(6.0)
+                } else if max == g {
+                    (b - r) / delta + 2.0
+                } else {
+                    (r - g) / delta + 4.0
+                };
+            let lightness = (max + min) / 2.0;
+            Some((hue, delta / (1.0 - (2.0 * lightness - 1.0).abs())))
+        }
+
+        for theme in built_in_themes().unwrap() {
+            for (appearance, variant) in
+                [("dark", theme.dark.as_ref()), ("light", theme.light.as_ref())]
+            {
+                let Some(variant) = variant else { continue };
+                for (name, canonical) in CANONICAL {
+                    let Some(value) = variant.palette.get(*name) else { continue };
+                    let (hue, saturation) =
+                        hue_and_saturation(value).unwrap_or_else(|| panic!("{value} is #rrggbb"));
+                    // A deliberately achromatic theme (Atlas Mono, Vesper's
+                    // blue and purple) has no hue to be wrong about.
+                    if saturation < 0.18 {
+                        continue;
+                    }
+                    if EXCEPTIONS
+                        .iter()
+                        .any(|(id, key, _)| *id == theme.id && key == name)
+                    {
+                        continue;
+                    }
+                    let distance = (hue - canonical).abs().min(360.0 - (hue - canonical).abs());
+                    assert!(
+                        distance <= TOLERANCE,
+                        "{}: {appearance}.palette.{name} = {value} is at hue {hue:.0}°, \
+                         {distance:.0}° from the {canonical:.0}° that '{name}' names",
+                        theme.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// `chart-1..5` are five *series*, so the only thing they must do is stay
+    /// tellable apart. Seven variants shipped with an outright repeated value
+    /// (Rosé Pine drew `chart-1` and `chart-2` in the same pine), and three
+    /// more were a couple of RGB steps apart — two tans in Chyral, a tan and a
+    /// salmon in Atlas, an orange and a salmon in Mirage. Either way adjacent
+    /// series render as one line. A plain RGB distance is crude, but it is
+    /// blind to *how* two colours are close, which is the point: it catches a
+    /// pair that differs only in lightness as readily as one that differs only
+    /// in hue, and the latter is what red/green colour blindness collapses.
+    #[test]
+    fn chart_series_are_tellable_apart() {
+        /// Below this Euclidean distance in 0–255 RGB, two series read as one.
+        const FLOOR: f64 = 40.0;
+        const CHART_KEYS: &[&str] = &["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
+
+        fn rgb(hex: &str) -> [f64; 3] {
+            let hex = hex.strip_prefix('#').expect("chart token is a hex colour");
+            assert_eq!(hex.len(), 6, "chart token is #rrggbb, got {hex}");
+            [0, 2, 4].map(|index| {
+                f64::from(u8::from_str_radix(&hex[index..index + 2], 16).expect("hex digits"))
+            })
+        }
+
+        for theme in built_in_themes().unwrap() {
+            for (appearance, variant) in
+                [("dark", theme.dark.as_ref()), ("light", theme.light.as_ref())]
+            {
+                let Some(variant) = variant else { continue };
+                for (index, key) in CHART_KEYS.iter().enumerate() {
+                    for other in &CHART_KEYS[index + 1..] {
+                        let (left, right) = (rgb(&variant.base[*key]), rgb(&variant.base[*other]));
+                        let distance = left
+                            .iter()
+                            .zip(right.iter())
+                            .map(|(a, b)| (a - b).powi(2))
+                            .sum::<f64>()
+                            .sqrt();
+                        assert!(
+                            distance >= FLOOR,
+                            "{}: {appearance}.base.{key} ({}) and {other} ({}) are {distance:.0} \
+                             apart; adjacent chart series will read as one",
+                            theme.id,
+                            variant.base[*key],
+                            variant.base[*other],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A light appearance that copies its shadow ramp byte-for-byte from
+    /// dark renders pure-black halos on a light surface: dark's alphas run
+    /// up to 0.9, which reads as a heavy ring rather than a soft lift once
+    /// the surface itself is light (rose-pine.toml shipped exactly this
+    /// bug). Every built-in theme that ships both appearances must give
+    /// light its own ramp, and that ramp must actually be lighter.
+    #[test]
+    fn light_shadow_ramp_is_not_copied_from_dark() {
+        const SHADOW_KEYS: &[&str] =
+            &["shadow-2xs", "shadow-xs", "shadow-sm", "shadow-md", "shadow-lg", "shadow-xl", "shadow-2xl"];
+
+        fn shadow_alpha(value: &str) -> f64 {
+            let start = value.rfind(',').expect("shadow value has an alpha channel");
+            let end = value.rfind(')').expect("shadow value is a function call");
+            value[start + 1..end].trim().parse().expect("alpha channel is numeric")
+        }
+
+        for theme in built_in_themes().unwrap() {
+            let (Some(dark), Some(light)) = (&theme.dark, &theme.light) else { continue };
+            for key in SHADOW_KEYS {
+                let dark_value = &dark.base[*key];
+                let light_value = &light.base[*key];
+                assert_ne!(
+                    dark_value, light_value,
+                    "{}: light.base.{key} is byte-identical to dark.base.{key}",
+                    theme.id
+                );
+                let alpha = shadow_alpha(light_value);
+                assert!(
+                    alpha <= 0.5,
+                    "{}: light.base.{key} alpha {alpha} reads as a heavy black halo on a light surface",
+                    theme.id
+                );
+            }
+        }
     }
 }

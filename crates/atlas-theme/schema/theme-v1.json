@@ -4,15 +4,10 @@
   "definitions": {
     "ThemeKeyStyle": {
       "additionalProperties": false,
+      "description": "The table spelling of a theme key: `keyword = { color = \"#c678dd\" }`.\n\nIt carried a `font_style` too, which the schema accepted, the TS type mirrored and *nothing* read — so `font_style = \"italic\"` parsed, validated, shipped, and rendered upright. A theme author had no way to tell that from a bug in their own file. Atlas has no path from a theme key to a font style: CodeMirror, highlight.js and the markdown renderer each take a colour from the resolved key and nothing else. Until all three can honour one, the field is rejected at load with a message that says so, which is the only answer that cannot be mistaken for the feature working.",
       "properties": {
         "color": {
           "type": "string"
-        },
-        "font_style": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [

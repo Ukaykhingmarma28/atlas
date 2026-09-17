@@ -123,7 +123,12 @@ Rendered today: **4 / 6 / 8 / 12**. Before Foundations it was 2 / 4 / 6 with no
 
 Three levels (decision 27). The shadow **colour comes from the theme**: each
 level points at one of the theme's shadcn `--shadow-*` tokens through an
-`--elevation-*` variable in `tokens.css`.
+`--elevation-*` variable in `tokens.css`. A theme's `[light.base]` and
+`[dark.base]` tables set their own `--shadow-*` ramps independently — a light
+appearance is not the dark ramp reused as-is. Pure black at the dark table's
+alphas reads as a heavy halo on a light surface, so a light ramp should tint
+from the theme's own light-appearance foreground (or another dark-enough base
+colour) at a much lower alpha instead.
 
 | utility | level |
 |---|---|

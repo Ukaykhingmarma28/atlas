@@ -1,24 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { AlertTriangle, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
+import { LIGHT_APPEARANCE_ENABLED } from "@/features/theme/apply-theme";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
-
-// Light variants are loadable and persistable in schema 1, but the setting is
-// intentionally hidden until PR 4 finishes the app-wide light appearance QA.
-const ENABLE_LIGHT_MODE = false;
 
 export function AtlasThemesSettings() {
   const settings = useSettingsStore.use.settings();
   const { updateSettings } = useSettingsStore.use.actions();
   const themes = useThemeStore.use.themes();
+  const skipped = useThemeStore.use.skipped();
   const loading = useThemeStore.use.loading();
   const error = useThemeStore.use.error();
-  const { load } = useThemeStore.use.actions();
+  const { load, reapply } = useThemeStore.use.actions();
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -33,7 +31,12 @@ export function AtlasThemesSettings() {
     );
   }, [query, themes]);
 
-  const modes: ThemeMode[] = ENABLE_LIGHT_MODE ? ["system", "dark", "light"] : ["system", "dark"];
+  // Light variants are loadable and persistable in schema 1; the button
+  // appears when `LIGHT_APPEARANCE_ENABLED` does, which is also what stops
+  // `system` resolving to light in the meantime.
+  const modes: ThemeMode[] = LIGHT_APPEARANCE_ENABLED
+    ? ["system", "dark", "light"]
+    : ["system", "dark"];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -81,6 +84,31 @@ export function AtlasThemesSettings() {
       </div>
 
       <ScrollArea className="flex-1 p-2">
+        {/* A file Rust could not load is skipped rather than fatal, which is
+            what keeps the catalog alive — but it also means the theme you
+            just saved simply never appears, with no clue why. Silent on a
+            healthy install; the whole point on a broken one. */}
+        {skipped.length > 0 && (
+          <div className="mb-2 rounded-lg border border-warning/40 bg-warning-muted p-2.5">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle size={11} className="shrink-0 text-warning" />
+              <span className="text-xs font-medium text-text-primary">
+                {skipped.length === 1
+                  ? "1 theme file was skipped"
+                  : `${skipped.length} theme files were skipped`}
+              </span>
+            </div>
+            <ul className="mt-1.5 space-y-1">
+              {skipped.map((warning) => (
+                <li key={warning.key} className="text-2xs leading-snug text-text-tertiary">
+                  <span className="font-medium text-text-secondary">{warning.key}</span> —{" "}
+                  {warning.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           {filtered.map((theme) => {
             const selected = theme.id === settings.theme;
@@ -89,7 +117,13 @@ export function AtlasThemesSettings() {
                 key={theme.id}
                 type="button"
                 onClick={() => {
-                  updateSettings({ theme: theme.id });
+                  // Clicking the theme you are already on writes the same id
+                  // back, and `applySettingsSideEffects` — rightly — skips a
+                  // value that did not change. That made the obvious way to
+                  // pick up a hand-edit ("click it again") do nothing at all,
+                  // so ask the theme store directly instead.
+                  if (selected) void reapply();
+                  else updateSettings({ theme: theme.id });
                   toast.success(`Applied “${theme.name}” theme`);
                 }}
                 className={cn(
@@ -106,10 +140,32 @@ export function AtlasThemesSettings() {
                   </div>
                   <p className="mt-1 text-[10.5px] text-text-tertiary">{theme.author}</p>
                 </div>
-                <div className="flex gap-1 text-[9px] uppercase tracking-wide text-text-muted">
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-muted">
                   {theme.hasDark && <span>Dark</span>}
                   {theme.hasLight && <span>Light</span>}
                   {!theme.builtIn && <span>Local</span>}
+                  {/* A theme that loaded but carries keys Atlas does not know.
+                      Those keys are preserved, not applied, so the author sees
+                      the name they typed do nothing until they are told. */}
+                  {theme.warnings.length > 0 && (
+                    <Hint
+                      label={
+                        <span className="block max-w-64 whitespace-pre-line text-left">
+                          {theme.warnings
+                            .map((warning) => `${warning.key}: ${warning.message}`)
+                            .join("\n")}
+                        </span>
+                      }
+                    >
+                      <span
+                        aria-label={`${theme.warnings.length} unknown theme key(s)`}
+                        className="ml-auto flex items-center gap-1 text-warning"
+                      >
+                        <AlertTriangle size={9} />
+                        {theme.warnings.length}
+                      </span>
+                    </Hint>
+                  )}
                 </div>
               </button>
             );
@@ -117,7 +173,7 @@ export function AtlasThemesSettings() {
         </div>
 
         {loading && <div className="py-6 text-center text-[11px] text-text-tertiary">Loading…</div>}
-        {error && <div className="py-6 text-center text-[11px] text-status-error">{error}</div>}
+        {error && <div className="py-6 text-center text-[11px] text-error">{error}</div>}
         {!loading && !error && filtered.length === 0 && (
           <div className="py-6 text-center text-[11px] text-text-tertiary">
             No themes match “{query}”.

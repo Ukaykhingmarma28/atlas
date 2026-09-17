@@ -3,7 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type ThemeAppearance = "dark" | "light";
-export type ThemeKeyStyle = { color: string; font_style?: string };
+/** The table spelling of a theme key. Rust rejects a `font_style` here:
+ *  nothing between a theme key and CodeMirror, highlight.js or the markdown
+ *  renderer can carry one, so accepting it would render upright in silence. */
+export type ThemeKeyStyle = { color: string };
 export type ThemeKeyValue = string | ThemeKeyStyle;
 
 export interface ThemeVariant {
@@ -40,9 +43,17 @@ export interface ThemeSummary {
   warnings: ThemeWarning[];
 }
 
+/** The picker's whole view of disk: what loaded, and what did not. */
+export interface ThemeCatalogSummary {
+  themes: ThemeSummary[];
+  /** One entry per user theme file that could not be loaded at all, keyed by
+   *  file name. Empty on a healthy install. */
+  warnings: ThemeWarning[];
+}
+
 export const THEMES_CHANGED_EVENT = "atlas:themes-changed";
 
-export function listThemes(): Promise<ThemeSummary[]> {
+export function listThemes(): Promise<ThemeCatalogSummary> {
   return invoke("list_themes");
 }
 

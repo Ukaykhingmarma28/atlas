@@ -8,7 +8,7 @@ import type { KeybindingsLoadResult } from "@/features/keybindings/lib/keybindin
 import { DEFAULT_KEYBINDINGS_FILE } from "@/features/keybindings/lib/types";
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
-import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
+import type { Theme, ThemeCatalogSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
@@ -36,8 +36,8 @@ const builtinThemes = builtinThemesJson as Theme[];
 
 export const baseHandlers: MockHandlers = {
   // ── theme ──────────────────────────────────────────────────────────────
-  list_themes: (): ThemeSummary[] =>
-    builtinThemes.map((theme) => ({
+  list_themes: (): ThemeCatalogSummary => ({
+    themes: builtinThemes.map((theme) => ({
       id: theme.id,
       name: theme.name,
       author: theme.author,
@@ -47,6 +47,8 @@ export const baseHandlers: MockHandlers = {
       builtIn: true,
       warnings: theme.warnings ?? [],
     })),
+    warnings: [],
+  }),
   get_theme: (a): Theme => {
     const theme = builtinThemes.find((candidate) => candidate.id === a.id);
     if (!theme) throw new Error(`theme '${String(a.id)}' was not found`);

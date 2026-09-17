@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use atlas_theme::{Theme, ThemeSummary};
+use atlas_theme::{Theme, ThemeCatalogSummary};
 use notify::RecommendedWatcher;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -16,14 +16,15 @@ struct ThemesChangedEvent {
 }
 
 #[tauri::command]
-pub async fn list_themes() -> Result<Vec<ThemeSummary>, String> {
-    let catalog = tokio::task::spawn_blocking(atlas_theme::all_themes)
+pub async fn list_themes() -> Result<ThemeCatalogSummary, String> {
+    let catalog = tokio::task::spawn_blocking(atlas_theme::list_themes)
         .await
         .map_err(|error| format!("theme list task failed: {error}"))?
         .map_err(|error| error.to_string())?;
     // A file in `~/.config/atlas/themes/` that could not be loaded no longer
-    // takes the catalog down with it, so the only trace left is this line —
-    // which is what a theme author mid-edit goes looking for.
+    // takes the catalog down with it. This line is for the log; the warnings
+    // also ride back with the list, because the person who can fix a
+    // half-typed TOML is the one in the theme picker, not the one in the log.
     for warning in &catalog.warnings {
         tracing::warn!(
             target: "atlas::themes",
@@ -32,7 +33,7 @@ pub async fn list_themes() -> Result<Vec<ThemeSummary>, String> {
             warning.message,
         );
     }
-    Ok(catalog.themes.into_iter().map(|(theme, built_in)| theme.summary(built_in)).collect())
+    Ok(catalog)
 }
 
 #[tauri::command]
