@@ -330,3 +330,73 @@ flowchart TB
 Versus today, three things change: every agent gets the same pull tools
 through MCP, the push shrinks to a tagged index that cannot be re-absorbed,
 and all writers land in one record table instead of three formats.
+
+---
+
+## 11. Round-2 decisions, chosen from Atlas evidence, with today's capabilities preserved
+
+Decided 2026-09-17 under one constraint from the user: **no capability the
+shared memory feature has today may be lost.** Each answer names the evidence
+that picked it. Where this reverses an earlier recommendation, it says so.
+
+### 11.1 Facts that changed the answers
+
+| Fact | Where | Consequence |
+|------|-------|-------------|
+| The Atlas binary deliberately does **not** dispatch on arg0: "`current_exe()` is a helper only in a process that dispatches on arg0, and Atlas does not" | `crates/atlas-native-agent/src/engine/config.rs:228-230` | Re-executing Atlas as a stdio MCP child would overturn a stated design choice. Rejected. |
+| No sidecar binaries exist (`externalBin` absent in `src-tauri/tauri.conf.json`); CI builds macOS + Ubuntu, Windows landed 2026-09 | `tauri.conf.json`, `.github/workflows/ci.yml` | A sidecar is a new sign/notarise/CI surface on three OSes. Not first choice. |
+| `rmcp` 3.0 with the `server` feature is already compiled through the fork; `axum` 0.8 is already a workspace dependency | `vendor/codex/codex-mcp/Cargo.toml:35`, `Cargo.toml:357,479` | An in-process MCP server costs no new dependency. |
+| ACP: stdio MCP is the mandatory transport; HTTP is optional and advertised per agent as `agentCapabilities.mcpCapabilities.http`; Atlas already stores the agent's capabilities after `initialize` | https://agentclientprotocol.com/protocol/session-setup, https://agentclientprotocol.com/protocol/initialization, `crates/atlas-agent-servers/src/connection.rs:116,378` | Atlas can decide per agent, at runtime, whether to offer the server. |
+| The fork's MCP client config supports `StreamableHttp` natively and Atlas already writes dotted `harness_overrides` into it | `vendor/codex/config/src/mcp_types.rs:514-528`, `config.rs:307-328`, `vendor/codex/config/src/overrides.rs:18-22` | The native agent can consume the same HTTP server through config, no dynamic tool needed. |
+| The shared-memory store's stated invariant is **one backend writer, in-process mutex, no cross-process locking** | `src-tauri/src/commands/shared_memory.rs:11-14` | An in-process server keeps that invariant; a child process would break it. |
+| The thread-metadata SQLite store already runs in WAL mode | `crates/atlas-thread-metadata/src/db.rs:60-62` | SQLite precedent exists if a second process ever needs the file. |
+| The pollution loop has a single cause: Claude's memory files are read into the corpus **without** `strip_injected_context`, while capture docs are stripped | `src-tauri/src/commands/agent_memory.rs:313` vs `read_claude` (no strip) | The loop is fixed by stripping at that reader. Stopping the reads is unnecessary. |
+| The session handoff reads `~/.claude/projects/*.jsonl` directly, so it only works when the previous agent was Claude | `src-tauri/src/commands/memory_pack.rs:100-109` | Capture already holds every agent's transcript (`agent_memory.rs:312`); the handoff can read capture and become agent-neutral. |
+| Summariser modes are `raw`, `provider`, and a `local` mode that is documented as a future phase and never implemented | `memory_sharing.rs:39-41`, `memory_summarize.rs:3` | The gateway becomes the third real mode; the UI type already has a slot. |
+
+### 11.2 Answers
+
+| Q | Decision | Evidence / reason | Change vs earlier |
+|---|----------|-------------------|-------------------|
+| Q12 server process | **In-process MCP server over streamable HTTP on `127.0.0.1`, random port, per-session bearer token**, hosted by the Tauri backend with `rmcp` `server` + `axum`. Offered to an ACP agent only when its `initialize` response advertises `mcpCapabilities.http`; offered to the native agent through a `mcp_servers.atlas_memory` StreamableHttp override. Agents without HTTP keep today's push-only behaviour. A stdio bridge is a follow-up ticket if a registry agent needs one. | keeps the one-writer invariant, no arg0 dispatch, no sidecar, MiniLM stays loaded once, ADR-0002 rule of "gate on advertised capabilities" | **Reversed** from stdio self-exec |
+| Q13 tools | `memory_search(query, kinds?, limit?)`, `memory_remember(kind, content, key?)` for the durable four, `memory_forget(id)`, `memory_list(kind?)`. Working memory stays delta-captured. | plan and file edits already arrive structured (`memory_delta.rs:8-11`) | unchanged |
+| Q14 session-start block | Working memory + durable index (≤200 lines) + one tool-hint line, wrapped in `<atlas-memory>` … `</atlas-memory>`; **also keep the `--- PROJECT MEMORY ---` pack and `--- RECENT SESSION ---` handoff** inside the tag | pack + handoff are current first-send capabilities | modified: pack/handoff kept |
+| Q4 (reopened) per-turn RAG | **Keep** `--- RELEVANT PROJECT MEMORY ---`, wrapped in the tag, skipped when the prompt is under a short-length floor, dedup by the existing `note_index_doc` clock | it is the only grounding for agents that never call a tool | **Reversed** from "retire" |
+| Q15 delta block | Other-sessions' new durable entries + working-memory changes, by the existing per-session sync clock | `memory_inject.rs:4-11` already implements it | unchanged |
+| Q16 replace/dedup | Agent key, else normalised content hash; near-duplicate merge at ~0.92 cosine | preserves "same key replaces" (`shared_memory.rs`) and closes triple-surfacing | unchanged |
+| Q17 caps | Caps become **index** limits; storage keeps everything searchable; nothing auto-deleted | user distrust of silent loss | unchanged |
+| Q18 confidence | Extractor 0–1; tool/user 1.0; import keeps source or 0.7 | ranking needs it | unchanged |
+| Q19 redaction | `atlas_redact::redact_auto` on every write | crate exists (`crates/atlas-redact/src/lib.rs:222`) | unchanged |
+| Q20 global promotion | **Keep** promotion; rule becomes: `Fact` entries with confidence ≥0.8 seen in ≥2 repositories are promoted to `~/.atlas/memory` | current `global.rs` behaviour survives with kinds mapped | **Reversed** from "drop" |
+| Q6 (reopened) extraction model | `provider` (BYOK) stays; **gateway** becomes the default when signed in; `raw` unchanged. `local` slot reserved. | fresh install must distill; UI type already has three modes | modified |
+| Q7 (reopened) foreign stores | **Keep continuous reads** of Claude memory dir, CLAUDE.md, AGENTS.md, Codex SQLite; apply `strip_injected_context` in `read_claude`; **add** an optional one-time import of Claude auto-memory into durable memory | Policy, Graph and Tree views depend on the reads; the loop is fixed at the reader | **Reversed** from "import once" |
+| Q21 Memory panel | **All four tabs stay** (Graph, Policy, Timeline, Shared). Shared gains provenance, edit and forget. Tree view stays. | every tab is a shipped capability | **Reversed** from "retire Graph/Policy" |
+| Q22 toggle | One per-project switch, default on, gates server, block, extractor, writers | `DEFAULT_ENABLED = true` (`memory_sharing.rs:34`) | unchanged |
+| Q23 cadence | Turn-finished with existing gates + once at session end | `extract.rs:8-12` | unchanged |
+| Q24 import | User-triggered, with preview, once per source | consent; files another program wrote | unchanged (now additive to Q7) |
+| Q25 deletions | **Trimmed.** Go: legacy per-turn distill (`memory_compile`, superseded by extractor with the same BYOK gate plus gateway), grafeo graph + `consolidate`/`dream` graph paths (retrieval keeps HNSW; promotion re-implemented on the record table), legacy `.atlas/memory-index`, native `search_memory` dynamic tool (replaced by the MCP tool), `read_cersei_docs` stub, the two dead knowledge commands. **Stay:** marker-phrase capture (zero-cost fallback writer), Codex SQLite thread list, Policy view, session handoff (made agent-neutral via capture). | each deleted item has a named replacement carrying the same capability | **Trimmed** |
+
+### 11.3 Capability-preservation matrix
+
+| Capability today | Where it lives after |
+|------------------|----------------------|
+| Six kinds captured from every agent with no agent cooperation | same `memory_delta` capture → record table |
+| Bounded "current truth" view (plan, 50/50/50/30/30) | index view over the record table, same caps as display limits |
+| Per-turn shared block with sync clock | unchanged, inside `<atlas-memory>` |
+| Per-turn RAG block | unchanged, inside the tag, short-prompt skip |
+| First-send pack + recent-session handoff | unchanged, handoff now reads capture for any agent |
+| BYOK summariser / distill | extractor keeps BYOK mode, adds gateway |
+| Native `search_memory` | `memory_search` over MCP |
+| Memory ▸ Shared: state, events, query, clear, append | same five commands, same response shapes, backed by SQLite |
+| Memory ▸ Graph / Tree: embed model download, index build, NL query | unchanged (`memory_graph.rs`, HNSW) |
+| Memory ▸ Policy: probe table over Claude memory + CLAUDE.md + AGENTS.md, in-place edit | unchanged |
+| Memory ▸ Timeline: git + sessions + memory events | unchanged, reads record table for events |
+| Sharing toggle + summariser prefs | unchanged files, one more mode |
+| Global promotion to `~/.atlas/memory` | kept, rule mapped to `Fact` |
+| Knowledge notes retrievable by agents | unchanged (`read_knowledge_docs`) |
+
+### 11.4 What is new, not replaced
+
+ACP agents gain a pull path (the MCP tools). Every agent gains an explicit
+write path (`memory_remember`). Records gain provenance, confidence and
+`last_used`. Injected context stops leaking into agents' private memory.
