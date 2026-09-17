@@ -329,11 +329,12 @@ pub fn user_theme_dir() -> Option<PathBuf> {
 /// way round — so it cannot call that function directly without a cycle.
 ///
 /// This is a deliberate, minimal copy of its logic (XDG override, `.config`
-/// fallback), not an independent decision about where config lives. Keep the
-/// two in sync by hand: the `config_root` tests below run the exact fixtures
-/// `atlas_config.rs`'s own `config_root_from` tests use (same inputs, same
-/// expected paths), so an edit to either one that changes the resolved path
-/// breaks a test right next to the copy that drifted.
+/// fallback), not an independent decision about where config lives — the same
+/// copy `atlas-icon-theme` carries for its own `user_icon_theme_dir()`. Keep
+/// all three in sync by hand: the `config_root` tests below run the exact
+/// fixtures `atlas_config.rs`'s own `config_root_from` tests use (same inputs,
+/// same expected paths), so an edit to any one of them that changes the
+/// resolved path breaks a test right next to the copy that drifted.
 fn config_root() -> Option<PathBuf> {
     let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let home = dirs::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));

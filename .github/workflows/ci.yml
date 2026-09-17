@@ -166,6 +166,8 @@ jobs:
           - crate: atlas-embed
           - crate: atlas-git
           - crate: atlas-gitdiff
+          - crate: atlas-icon-theme
+            clippy: true
           - crate: atlas-kb-server
           - crate: atlas-memory
           - crate: atlas-native-agent

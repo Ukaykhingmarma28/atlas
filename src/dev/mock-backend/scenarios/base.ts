@@ -17,6 +17,7 @@ import { captureHandlers } from "../fixtures/capture";
 import { commsHandlers } from "../fixtures/comms";
 import { fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
+import { iconThemeHandlers } from "../fixtures/icon-themes";
 import { integrationsHandlers } from "../fixtures/integrations";
 import { knowledgeHandlers } from "../fixtures/knowledge";
 import { logHandlers } from "../fixtures/log";
@@ -60,6 +61,9 @@ export const baseHandlers: MockHandlers = {
     return theme;
   },
   ...themeImportHandlers,
+
+  // ── icon theme ──────────────────────────────────────────────────────────
+  ...iconThemeHandlers,
 
   // ── boot ────────────────────────────────────────────────────────────────
   bootstrap_app_state: () => appState(),

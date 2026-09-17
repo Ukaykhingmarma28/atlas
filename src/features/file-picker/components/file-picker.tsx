@@ -15,6 +15,7 @@ import {
 } from "../lib/file-picker-api";
 import { openFile } from "@/lib/open-file";
 import { classifyFile, type FileKind } from "@/lib/file-types";
+import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 
 const DEBOUNCE_MS = 30;
 const RESULT_LIMIT = 200;
@@ -235,7 +236,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
                       )}
                     >
-                      <KindIcon kind={classifyFile(m.path)} />
+                      <FileIcon path={m.path} size={12} fallback={kindIcon(classifyFile(m.path))} />
                       <span className="truncate text-[12px] font-mono">{m.rel}</span>
                     </button>
                   );
@@ -269,11 +270,12 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
   );
 }
 
-function KindIcon({ kind }: { kind: FileKind }) {
-  const cls = "size-3 shrink-0 text-[var(--text-tertiary)]";
-  if (kind === "image" || kind === "svg") return <ImageIcon className={cls} />;
-  if (kind === "video") return <Film className={cls} />;
-  if (kind === "audio") return <Music className={cls} />;
-  if (kind === "text") return <FileCode className={cls} />;
-  return <FileX className={cls} />;
+/** The lucide icon this row drew before icon themes existed, and still draws
+ *  under "Minimal" or while a resolve is in flight. */
+function kindIcon(kind: FileKind): FallbackIcon {
+  if (kind === "image" || kind === "svg") return ImageIcon;
+  if (kind === "video") return Film;
+  if (kind === "audio") return Music;
+  if (kind === "text") return FileCode;
+  return FileX;
 }

@@ -781,6 +781,7 @@ export function FileTree() {
                                 isDropTarget={isDir && dropTargetPath === node.entry.path}
                                 isDragging={dragState.draggedItem?.path === node.entry.path}
                                 gitColor={gitColor}
+                                iconPath={node.entry.path}
                                 onClick={(e) => handleRowClick(node, e)}
                                 onRename={() => beginRename(node.entry.path)}
                                 style={{ transform: `translateY(${virtualRow.start}px)` }}

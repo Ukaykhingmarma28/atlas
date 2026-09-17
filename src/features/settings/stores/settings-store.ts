@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { applyUiScale } from "@/features/settings/lib/ui-scale";
 import { applyConfiguredTheme } from "@/features/theme/stores/theme-store";
+import { appearanceForMode } from "@/features/theme/apply-theme";
+import { applyConfiguredIconTheme } from "@/features/icon-theme/stores/icon-theme-store";
 import {
   updateSettings as updateAtlasConfig,
   resetConfig as resetAtlasConfig,
@@ -76,6 +78,11 @@ function applySettingsSideEffects(next: AppSettings, previous: AppSettings): voi
     next.themeOverrides !== previous.themeOverrides
   ) {
     applyConfiguredTheme(next.theme, next.themeMode, next.themeOverrides);
+  }
+  // Icons follow `themeMode` too: a theme's `light` association section is
+  // chosen by the same appearance the colours are.
+  if (next.iconTheme !== previous.iconTheme || next.themeMode !== previous.themeMode) {
+    applyConfiguredIconTheme(next.iconTheme, appearanceForMode(next.themeMode));
   }
 }
 
@@ -191,6 +198,9 @@ export const useSettingsStore = createSelectors(
         // Resolve and apply the one persisted theme across chrome, editor,
         // terminal, diffs and syntax variables.
         applyConfiguredTheme(settings.theme, settings.themeMode, settings.themeOverrides);
+        // The icon catalog is only listed here; no icon is fetched until a
+        // row asks for one (decision 12).
+        applyConfiguredIconTheme(settings.iconTheme, appearanceForMode(settings.themeMode));
       },
     },
   })),

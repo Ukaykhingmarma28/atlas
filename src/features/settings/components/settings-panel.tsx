@@ -7,6 +7,7 @@ import { Hint } from "@/ui/tooltip";
 import {
   Settings,
   Palette,
+  Shapes,
   Keyboard,
   Info,
   KeyRound,
@@ -25,6 +26,7 @@ import { AtlasIcon } from "@/components/atlas-icon";
 import { ProvidersSettings } from "./providers-settings";
 import { LayoutsSettings } from "./layouts-settings";
 import { AtlasThemesSettings } from "./atlas-themes-settings";
+import { IconThemesSettings } from "./icon-themes-settings";
 import { SkillsAndPacks } from "./skills-and-packs";
 import { AgentsMarketplace } from "./agents-marketplace/agents-marketplace";
 import { ModelsManager } from "./models-manager";
@@ -46,6 +48,7 @@ const SECTIONS: Array<{
 }> = [
   { id: "general", label: "General", icon: Settings },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "icons", label: "Icons", icon: Shapes },
   { id: "layouts", label: "Layouts", icon: LayoutTemplate },
   { id: "providers", label: "API Keys", icon: KeyRound },
   { id: "skills", label: "Skills", icon: Zap },
@@ -171,6 +174,10 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       ) : activeSection === "appearance" ? (
         <div className="flex-1 min-w-0 min-h-0">
           <AppearanceSettings />
+        </div>
+      ) : activeSection === "icons" ? (
+        <div className="flex-1 min-w-0 min-h-0">
+          <IconThemesSettings />
         </div>
       ) : activeSection === "keybindings" ? (
         <div className="flex-1 min-w-0 min-h-0">

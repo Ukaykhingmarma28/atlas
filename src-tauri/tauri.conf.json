@@ -57,7 +57,8 @@
       "resources/nvm.sh": "resources/nvm.sh",
       "licenses/Atlas-LICENSE.txt": "licenses/Atlas-LICENSE.txt",
       "licenses/OpenAI-Codex-LICENSE.txt": "licenses/OpenAI-Codex-LICENSE.txt",
-      "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt"
+      "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt",
+      "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },
     "category": "DeveloperTool",
     "shortDescription": "Atlas \u2014 agent-first ideation and planning tool",

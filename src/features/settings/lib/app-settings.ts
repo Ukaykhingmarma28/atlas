@@ -46,6 +46,10 @@ export interface AppSettings {
   themeMode: ThemeMode;
   /** User-local patch applied after the active theme variant. */
   themeOverrides: ThemeOverride;
+  /** File and folder icons, on their own track from the colour theme
+   *  (decision 4). `"minimal"` keeps Atlas's own lucide icons; anything else
+   *  names a VS Code icon theme — bundled, or installed from Open VSX. */
+  iconTheme: string;
   /** Adaptive next-step suggestion chips in the agent chat's per-turn card.
    *  "agent" (default) asks the coding agent to end each reply with a hidden
    *  `<next_steps>` block (uses the live session context, no BYOK); "off"
@@ -119,6 +123,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "atlas",
   themeMode: "system",
   themeOverrides: {},
+  iconTheme: "material-icon-theme",
   adaptiveSuggestions: "agent",
   gitBlameInline: true,
   autoUpdate: true,
