@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectGitStore, type GitSummary } from "../stores/project-git-store";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Hint } from "@/ui/tooltip";
 import {
@@ -233,92 +233,101 @@ const ProjectRow = memo(function ProjectRow({
             </HintItem>
             <DropdownMenu.Root>
               <HintItem label="More">
-                <DropdownMenu.Trigger asChild>
-                  <button
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
-                  >
-                    <MoreHorizontal size={12} />
-                  </button>
-                </DropdownMenu.Trigger>
+                <DropdownMenu.Trigger
+                  render={
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+                    >
+                      <MoreHorizontal size={12} />
+                    </button>
+                  }
+                />
               </HintItem>
               <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={4}
-                  onClick={(e) => e.stopPropagation()}
-                  // On close Radix restores focus to the trigger button. When the
-                  // close is caused by selecting "Rename", that focus-return lands
-                  // AFTER the rename input has mounted+autofocused, blurring it
-                  // instantly → commitRename → edit mode exits. Suppressing the
-                  // close auto-focus lets the input keep focus.
-                  onCloseAutoFocus={(e) => e.preventDefault()}
-                  className="z-[var(--z-max)] min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-                >
-                  <DropdownMenu.Item
-                    onSelect={() => beginRenameProject(ws.id)}
-                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
+                  <DropdownMenu.Popup
+                    onClick={(e) => e.stopPropagation()}
+                    // On close the menu restores focus to the trigger button.
+                    // When the close is caused by selecting "Rename", that
+                    // focus-return lands AFTER the rename input has
+                    // mounted+autofocused, blurring it instantly →
+                    // commitRename → edit mode exits. `finalFocus={false}`
+                    // leaves focus alone so the input keeps it.
+                    finalFocus={false}
+                    className="min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
                   >
-                    <Pencil size={11} /> Rename
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    onSelect={() => {
-                      void navigator.clipboard
-                        .writeText(ws.path)
-                        .then(() => toast.success("Path copied"))
-                        .catch(() => toast.error("Couldn't copy path"));
-                    }}
-                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
-                  >
-                    <Copy size={11} /> Copy path
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                  <DropdownMenu.Sub>
-                    <DropdownMenu.SubTrigger className="flex items-center justify-between px-2.5 h-6 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default">
-                      Move to group <ChevronRight size={11} />
-                    </DropdownMenu.SubTrigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.SubContent className="z-[var(--z-max)] min-w-[140px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
-                        {groups.map((g) => (
-                          <DropdownMenu.Item
-                            key={g.id}
-                            onSelect={() => setGroup(ws.id, g.id)}
-                            className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
-                          >
-                            {g.name}
-                          </DropdownMenu.Item>
-                        ))}
-                        <DropdownMenu.Item
-                          onSelect={() => {
-                            const gid = addGroup("New Group");
-                            setGroup(ws.id, gid);
-                          }}
-                          className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                    <DropdownMenu.Item
+                      onClick={() => beginRenameProject(ws.id)}
+                      className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                    >
+                      <Pencil size={11} /> Rename
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(ws.path)
+                          .then(() => toast.success("Path copied"))
+                          .catch(() => toast.error("Couldn't copy path"));
+                      }}
+                      className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                    >
+                      <Copy size={11} /> Copy path
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    <DropdownMenu.SubmenuRoot>
+                      <DropdownMenu.SubmenuTrigger className="flex items-center justify-between px-2.5 h-6 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default">
+                        Move to group <ChevronRight size={11} />
+                      </DropdownMenu.SubmenuTrigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Positioner
+                          className="z-[var(--z-max)]"
+                          side="right"
+                          align="start"
                         >
-                          <FolderPlus size={11} /> New group
-                        </DropdownMenu.Item>
-                        {ws.groupId && (
-                          <>
-                            <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                          <DropdownMenu.Popup className="min-w-[140px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                            {groups.map((g) => (
+                              <DropdownMenu.Item
+                                key={g.id}
+                                onClick={() => setGroup(ws.id, g.id)}
+                                className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                              >
+                                {g.name}
+                              </DropdownMenu.Item>
+                            ))}
                             <DropdownMenu.Item
-                              onSelect={() => setGroup(ws.id, null)}
-                              className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                              onClick={() => {
+                                const gid = addGroup("New Group");
+                                setGroup(ws.id, gid);
+                              }}
+                              className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
                             >
-                              Remove from group
+                              <FolderPlus size={11} /> New group
                             </DropdownMenu.Item>
-                          </>
-                        )}
-                      </DropdownMenu.SubContent>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Sub>
-                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                  <DropdownMenu.Item
-                    onSelect={() => void closeProject(ws.id)}
-                    className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
-                  >
-                    <X size={11} /> Remove from list
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
+                            {ws.groupId && (
+                              <>
+                                <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                                <DropdownMenu.Item
+                                  onClick={() => setGroup(ws.id, null)}
+                                  className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                                >
+                                  Remove from group
+                                </DropdownMenu.Item>
+                              </>
+                            )}
+                          </DropdownMenu.Popup>
+                        </DropdownMenu.Positioner>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.SubmenuRoot>
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    <DropdownMenu.Item
+                      onClick={() => void closeProject(ws.id)}
+                      className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
+                    >
+                      <X size={11} /> Remove from list
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Popup>
+                </DropdownMenu.Positioner>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           </span>
@@ -1429,7 +1438,7 @@ function HelpItem({
 }) {
   return (
     <DropdownMenu.Item
-      onSelect={onSelect}
+      onClick={onSelect}
       className="flex h-[26px] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
     >
       <span className="flex size-3.5 shrink-0 items-center justify-center text-[var(--text-tertiary)]">
@@ -1447,69 +1456,70 @@ function HelpMenu() {
   return (
     <DropdownMenu.Root>
       <Hint label="Help & community" side="top">
-        <DropdownMenu.Trigger asChild>
-          <button
-            type="button"
-            aria-label="Help and community"
-            className="flex size-[22px] items-center justify-center rounded-full border border-white/[0.08] text-[var(--text-tertiary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-          >
-            <HelpCircle size={12} />
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              type="button"
+              aria-label="Help and community"
+              className="flex size-[22px] items-center justify-center rounded-full border border-white/[0.08] text-[var(--text-tertiary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+            >
+              <HelpCircle size={12} />
+            </button>
+          }
+        />
       </Hint>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          side="top"
-          sideOffset={6}
-          style={{ zIndex: 9999, boxShadow: "0 16px 48px rgba(0,0,0,0.95)" }}
-          className="w-[212px] overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 p-1 backdrop-blur-2xl select-none"
-        >
-          <HelpItem
-            icon={<BookOpen size={12} />}
-            label="Docs"
-            onSelect={() => void openUrl(DOCS_URL)}
-          />
-          <HelpItem
-            icon={<MessageCircleQuestion size={12} />}
-            label="Send feedback"
-            // The panel is non-modal and anchored bottom-right; `toggle` is what
-            // the status-bar button uses, and the source tags the report.
-            onSelect={() => useFeedbackStore.getState().actions.toggle("status-bar")}
-          />
-          <HelpItem
-            icon={<Keyboard size={12} />}
-            label="Keyboard shortcuts"
-            onSelect={() => openSettingsSection("keybindings")}
-          />
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" side="top" sideOffset={6}>
+          <DropdownMenu.Popup
+            style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.95)" }}
+            className="w-[212px] overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 p-1 backdrop-blur-2xl select-none"
+          >
+            <HelpItem
+              icon={<BookOpen size={12} />}
+              label="Docs"
+              onSelect={() => void openUrl(DOCS_URL)}
+            />
+            <HelpItem
+              icon={<MessageCircleQuestion size={12} />}
+              label="Send feedback"
+              // The panel is non-modal and anchored bottom-right; `toggle` is what
+              // the status-bar button uses, and the source tags the report.
+              onSelect={() => useFeedbackStore.getState().actions.toggle("status-bar")}
+            />
+            <HelpItem
+              icon={<Keyboard size={12} />}
+              label="Keyboard shortcuts"
+              onSelect={() => openSettingsSection("keybindings")}
+            />
 
-          <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
+            <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
 
-          <HelpItem
-            icon={<GithubIcon className="size-3" />}
-            label="GitHub repo"
-            onSelect={() => void openUrl(GITHUB_URL)}
-          />
-          <HelpItem
-            icon={<MessageCircle size={12} />}
-            label="Discord community"
-            onSelect={() => void openUrl(DISCORD_URL)}
-          />
-          <HelpItem icon={<XIcon />} label="Follow on X" onSelect={() => void openUrl(X_URL)} />
+            <HelpItem
+              icon={<GithubIcon className="size-3" />}
+              label="GitHub repo"
+              onSelect={() => void openUrl(GITHUB_URL)}
+            />
+            <HelpItem
+              icon={<MessageCircle size={12} />}
+              label="Discord community"
+              onSelect={() => void openUrl(DISCORD_URL)}
+            />
+            <HelpItem icon={<XIcon />} label="Follow on X" onSelect={() => void openUrl(X_URL)} />
 
-          <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
+            <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
 
-          <HelpItem
-            icon={<Settings size={12} />}
-            label="Settings"
-            onSelect={() => openSettingsSection("general")}
-          />
-          <HelpItem
-            icon={<Globe size={12} />}
-            label="Our website"
-            onSelect={() => void openUrl(SITE_URL)}
-          />
-        </DropdownMenu.Content>
+            <HelpItem
+              icon={<Settings size={12} />}
+              label="Settings"
+              onSelect={() => openSettingsSection("general")}
+            />
+            <HelpItem
+              icon={<Globe size={12} />}
+              label="Our website"
+              onSelect={() => void openUrl(SITE_URL)}
+            />
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

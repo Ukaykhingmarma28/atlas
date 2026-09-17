@@ -19,7 +19,7 @@
 import { forwardRef, memo, useState } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import * as Popover from "@radix-ui/react-popover";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   ChevronDown,
   Search,
@@ -202,73 +202,72 @@ function ChatHeaderImpl({
           </HeaderCircleButton>
 
           <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <HeaderCircleButton title="More">
-                <MoreHorizontal size={14} />
-              </HeaderCircleButton>
-            </DropdownMenu.Trigger>
+            <DropdownMenu.Trigger
+              render={
+                <HeaderCircleButton title="More">
+                  <MoreHorizontal size={14} />
+                </HeaderCircleButton>
+              }
+            />
             <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={6}
-                style={{ zIndex: 9999 }}
-                className="min-w-[180px] rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]"
-              >
-                <MenuLabel>Filter messages</MenuLabel>
-                {(["all", "user", "assistant"] as const).map((f) => (
-                  <DropdownMenu.Item
-                    key={f}
-                    onSelect={() => onRoleFilterChange(f)}
-                    className={cn(
-                      "flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] capitalize outline-none",
-                      roleFilter === f
-                        ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                    )}
-                  >
-                    {f === "user" ? (
-                      <User size={11} />
-                    ) : f === "assistant" ? (
-                      <Sparkles size={11} />
-                    ) : (
-                      <ListFilter size={11} />
-                    )}
-                    <span className="flex-1">{f}</span>
-                    {roleFilter === f && <Check size={11} />}
-                  </DropdownMenu.Item>
-                ))}
-
-                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
-
-                <DropdownMenu.Item
-                  onSelect={onToggleBash}
-                  className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                >
-                  <TerminalSquare size={11} />
-                  <span className="flex-1">Bash calls</span>
-                  {bashPanelOpen && <Check size={11} />}
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  onSelect={onTogglePlans}
-                  className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                >
-                  <ClipboardList size={11} />
-                  <span className="flex-1">Plans</span>
-                  {plansPanelOpen && <Check size={11} />}
-                </DropdownMenu.Item>
-                {onForkSession && (
-                  <>
-                    <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+              <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]">
+                  <MenuLabel>Filter messages</MenuLabel>
+                  {(["all", "user", "assistant"] as const).map((f) => (
                     <DropdownMenu.Item
-                      onSelect={onForkSession}
-                      className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      key={f}
+                      onClick={() => onRoleFilterChange(f)}
+                      className={cn(
+                        "flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] capitalize outline-none",
+                        roleFilter === f
+                          ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                      )}
                     >
-                      <GitBranch size={11} />
-                      <span className="flex-1">Branch from here</span>
+                      {f === "user" ? (
+                        <User size={11} />
+                      ) : f === "assistant" ? (
+                        <Sparkles size={11} />
+                      ) : (
+                        <ListFilter size={11} />
+                      )}
+                      <span className="flex-1">{f}</span>
+                      {roleFilter === f && <Check size={11} />}
                     </DropdownMenu.Item>
-                  </>
-                )}
-              </DropdownMenu.Content>
+                  ))}
+
+                  <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+
+                  <DropdownMenu.Item
+                    onClick={onToggleBash}
+                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    <TerminalSquare size={11} />
+                    <span className="flex-1">Bash calls</span>
+                    {bashPanelOpen && <Check size={11} />}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={onTogglePlans}
+                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    <ClipboardList size={11} />
+                    <span className="flex-1">Plans</span>
+                    {plansPanelOpen && <Check size={11} />}
+                  </DropdownMenu.Item>
+                  {onForkSession && (
+                    <>
+                      <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+                      <DropdownMenu.Item
+                        onClick={onForkSession}
+                        className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      >
+                        <GitBranch size={11} />
+                        <span className="flex-1">Branch from here</span>
+                      </DropdownMenu.Item>
+                    </>
+                  )}
+                </DropdownMenu.Popup>
+              </DropdownMenu.Positioner>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         </div>

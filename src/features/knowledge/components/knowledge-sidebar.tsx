@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -192,34 +192,34 @@ export function KnowledgeSidebar({
           </HintItem>
           <DropdownMenu.Root>
             <HintItem label="Import notes / folder">
-              <DropdownMenu.Trigger asChild>
-                <button
-                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer outline-none"
-                  style={{ width: 22, height: 22 }}
-                >
-                  <Download size={12} />
-                </button>
-              </DropdownMenu.Trigger>
+              <DropdownMenu.Trigger
+                render={
+                  <button
+                    className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer outline-none"
+                    style={{ width: 22, height: 22 }}
+                  >
+                    <Download size={12} />
+                  </button>
+                }
+              />
             </HintItem>
             <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={4}
-                className="z-[9999] min-w-[180px] rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]"
-              >
-                <DropdownMenu.Item
-                  onSelect={onImportFiles}
-                  className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-                >
-                  <FileText size={13} /> Import .md files…
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  onSelect={onImportFolder}
-                  className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-                >
-                  <Folder size={13} /> Import folder…
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
+              <DropdownMenu.Positioner className="z-[9999]" align="end" sideOffset={4}>
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
+                  <DropdownMenu.Item
+                    onClick={onImportFiles}
+                    className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                  >
+                    <FileText size={13} /> Import .md files…
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={onImportFolder}
+                    className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                  >
+                    <Folder size={13} /> Import folder…
+                  </DropdownMenu.Item>
+                </DropdownMenu.Popup>
+              </DropdownMenu.Positioner>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         </div>

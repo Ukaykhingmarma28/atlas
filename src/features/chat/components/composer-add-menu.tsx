@@ -8,7 +8,7 @@
 // eat the keystrokes — the same pattern the project "+" AddProjectMenu uses.
 
 import { useEffect, useMemo, useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Boxes,
@@ -141,97 +141,101 @@ export function ComposerAddMenu({
     >
       {/* `wrap`: the Trigger has no `disabled` prop for Hint to detect, but its button does. */}
       <Hint label="Attach files, media, repos, or a past session" side="top" wrap>
-        <DropdownMenu.Trigger asChild>
-          <button
-            disabled={disabled}
-            className={cn(
-              "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border-default)]",
-              "bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors outline-none",
-              disabled
-                ? "opacity-50 cursor-default"
-                : "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer",
-            )}
-          >
-            <Plus size={13} />
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              disabled={disabled}
+              className={cn(
+                "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border-default)]",
+                "bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors outline-none",
+                disabled
+                  ? "opacity-50 cursor-default"
+                  : "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer",
+              )}
+            >
+              <Plus size={13} />
+            </button>
+          }
+        />
       </Hint>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          side="top"
-          sideOffset={6}
-          className={cn(CONTENT_CLASS, "min-w-[210px]")}
-          style={{ zIndex: 9999 }}
-        >
-          <DropdownMenu.Item className={ITEM_CLASS} onSelect={onAddFilesOrPhotos}>
-            <Paperclip size={11} />
-            <span>{imageSupported ? "Add files or photos" : "Add files"}</span>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item className={ITEM_CLASS} onSelect={onAttachMedia}>
-            <ImageIcon size={11} />
-            <span>Attach media</span>
-          </DropdownMenu.Item>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger className={ITEM_CLASS}>
-              <Camera size={11} />
-              <span>Take a screenshot</span>
-              <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.SubContent
-                sideOffset={6}
-                className={cn(CONTENT_CLASS, "min-w-[190px]")}
-                style={{ zIndex: 9999 }}
-              >
-                <DropdownMenu.Item
-                  className={ITEM_CLASS}
-                  onSelect={() => onTakeScreenshot("region")}
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" side="top" sideOffset={6}>
+          <DropdownMenu.Popup className={cn(CONTENT_CLASS, "min-w-[210px]")}>
+            <DropdownMenu.Item className={ITEM_CLASS} onClick={onAddFilesOrPhotos}>
+              <Paperclip size={11} />
+              <span>{imageSupported ? "Add files or photos" : "Add files"}</span>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item className={ITEM_CLASS} onClick={onAttachMedia}>
+              <ImageIcon size={11} />
+              <span>Attach media</span>
+            </DropdownMenu.Item>
+            <DropdownMenu.SubmenuRoot>
+              <DropdownMenu.SubmenuTrigger className={ITEM_CLASS}>
+                <Camera size={11} />
+                <span>Take a screenshot</span>
+                <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
+              </DropdownMenu.SubmenuTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Positioner
+                  style={{ zIndex: 9999 }}
+                  side="right"
+                  align="start"
+                  sideOffset={6}
                 >
-                  <Crop size={11} />
-                  <span>Selected region</span>
-                </DropdownMenu.Item>
-                <DropdownMenu.Item className={ITEM_CLASS} onSelect={() => onTakeScreenshot("full")}>
-                  <Monitor size={11} />
-                  <span>Whole desktop</span>
-                </DropdownMenu.Item>
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Sub>
+                  <DropdownMenu.Popup className={cn(CONTENT_CLASS, "min-w-[190px]")}>
+                    <DropdownMenu.Item
+                      className={ITEM_CLASS}
+                      onClick={() => onTakeScreenshot("region")}
+                    >
+                      <Crop size={11} />
+                      <span>Selected region</span>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={ITEM_CLASS}
+                      onClick={() => onTakeScreenshot("full")}
+                    >
+                      <Monitor size={11} />
+                      <span>Whole desktop</span>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Popup>
+                </DropdownMenu.Positioner>
+              </DropdownMenu.Portal>
+            </DropdownMenu.SubmenuRoot>
 
-          <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
 
-          <GithubSubmenu projectPath={projectPath} onCloneRepo={onCloneRepo} />
+            <GithubSubmenu projectPath={projectPath} onCloneRepo={onCloneRepo} />
 
-          <SessionsSubmenu
-            projectPath={projectPath}
-            agentId={agentId}
-            onPickSession={onPickSession}
-          />
+            <SessionsSubmenu
+              projectPath={projectPath}
+              agentId={agentId}
+              onPickSession={onPickSession}
+            />
 
-          <ProjectSubmenu
-            projectPath={projectPath}
-            agentId={agentId}
-            onPickProject={onPickProject}
-          />
+            <ProjectSubmenu
+              projectPath={projectPath}
+              agentId={agentId}
+              onPickProject={onPickProject}
+            />
 
-          {/* Zed-style registry entry point: opens Settings → Agents. Agent
-              SWITCHING lives on the agent pill, not here — this menu is about
-              what you attach to a message, and the pill's picker now offers
-              one-click installs of its own (see FeaturedAgentOffers). */}
-          <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              openSettingsSection("agents");
-            }}
-            className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-          >
-            <Plus size={11} />
-            Add more agents
-          </button>
-        </DropdownMenu.Content>
+            {/* Zed-style registry entry point: opens Settings → Agents. Agent
+                SWITCHING lives on the agent pill, not here — this menu is about
+                what you attach to a message, and the pill's picker now offers
+                one-click installs of its own (see FeaturedAgentOffers). */}
+            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                openSettingsSection("agents");
+              }}
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            >
+              <Plus size={11} />
+              Add more agents
+            </button>
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
@@ -281,127 +285,125 @@ function GithubSubmenu({
   };
 
   return (
-    <DropdownMenu.Sub onOpenChange={(o) => o && loadCloned()}>
-      <DropdownMenu.SubTrigger className={ITEM_CLASS}>
+    <DropdownMenu.SubmenuRoot onOpenChange={(o) => o && loadCloned()}>
+      <DropdownMenu.SubmenuTrigger className={ITEM_CLASS}>
         <GithubIcon size={11} />
         <span>Add from GitHub</span>
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
-      </DropdownMenu.SubTrigger>
+      </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.SubContent
-          sideOffset={6}
-          className={cn(CONTENT_CLASS, "w-[300px]")}
-          style={{ zIndex: 9999 }}
-        >
-          {!projectPath ? (
-            <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-              Open a project to clone repos into it.
-            </div>
-          ) : (
-            <>
-              <SearchBox
-                value={query}
-                onChange={setQuery}
-                placeholder="Search GitHub repos…  (Enter)"
-                onEnter={runSearch}
-              />
-              <div className="max-h-[300px] overflow-y-auto">
-                {/* Already-downloaded repos — a plain, disabled list. */}
-                {cloned.length > 0 && (
-                  <>
-                    <div className="px-3 pt-1 pb-0.5 text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
-                      Downloaded
-                    </div>
-                    {cloned.map((c) => (
-                      <DropdownMenu.Item
-                        key={c.name}
-                        disabled
-                        className={cn(ITEM_CLASS, "opacity-60 data-[disabled]:opacity-60")}
-                        title={`Already downloaded · ${c.path}`}
-                      >
-                        <FolderGit2 size={11} className="shrink-0 text-[var(--text-tertiary)]" />
-                        <span className="truncate">{c.display_name}</span>
-                        <Check
-                          size={11}
-                          className="ml-auto shrink-0 text-[var(--status-success)]"
-                        />
-                      </DropdownMenu.Item>
-                    ))}
-                    <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
-                  </>
-                )}
-
-                {/* Search results. */}
-                {loading ? (
-                  <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
-                    <Loader2 size={11} className="animate-spin" />
-                    Searching…
-                  </div>
-                ) : results === null ? (
-                  <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-                    Type a repo name and press Enter.
-                  </div>
-                ) : results.length === 0 ? (
-                  <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-                    No repositories found.
-                  </div>
-                ) : (
-                  results.map((repo) => {
-                    const already = isCloned(repo);
-                    return (
-                      <DropdownMenu.Item
-                        key={repo.full_name}
-                        disabled={already}
-                        className={cn(
-                          ITEM_CLASS,
-                          "h-auto items-start py-1.5",
-                          already && "opacity-60 data-[disabled]:opacity-60",
-                        )}
-                        onSelect={() => onCloneRepo(repo)}
-                        title={repo.description || repo.full_name}
-                      >
-                        {already ? (
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+          <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
+            {!projectPath ? (
+              <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                Open a project to clone repos into it.
+              </div>
+            ) : (
+              <>
+                <SearchBox
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search GitHub repos…  (Enter)"
+                  onEnter={runSearch}
+                />
+                <div className="max-h-[300px] overflow-y-auto">
+                  {/* Already-downloaded repos — a plain, disabled list. */}
+                  {cloned.length > 0 && (
+                    <>
+                      <div className="px-3 pt-1 pb-0.5 text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                        Downloaded
+                      </div>
+                      {cloned.map((c) => (
+                        <DropdownMenu.Item
+                          key={c.name}
+                          disabled
+                          className={cn(ITEM_CLASS, "opacity-60 data-[disabled]:opacity-60")}
+                          title={`Already downloaded · ${c.path}`}
+                        >
+                          <FolderGit2 size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+                          <span className="truncate">{c.display_name}</span>
                           <Check
                             size={11}
-                            className="mt-0.5 shrink-0 text-[var(--status-success)]"
+                            className="ml-auto shrink-0 text-[var(--status-success)]"
                           />
-                        ) : (
-                          <Download
-                            size={11}
-                            className="mt-0.5 shrink-0 text-[var(--text-tertiary)]"
-                          />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-[var(--text-primary)]">
-                              {repo.full_name}
-                            </span>
-                            {already ? (
-                              <span className="ml-auto shrink-0 text-[9px] text-[var(--text-tertiary)]">
-                                downloaded
+                        </DropdownMenu.Item>
+                      ))}
+                      <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+                    </>
+                  )}
+
+                  {/* Search results. */}
+                  {loading ? (
+                    <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                      <Loader2 size={11} className="animate-spin" />
+                      Searching…
+                    </div>
+                  ) : results === null ? (
+                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                      Type a repo name and press Enter.
+                    </div>
+                  ) : results.length === 0 ? (
+                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                      No repositories found.
+                    </div>
+                  ) : (
+                    results.map((repo) => {
+                      const already = isCloned(repo);
+                      return (
+                        <DropdownMenu.Item
+                          key={repo.full_name}
+                          disabled={already}
+                          className={cn(
+                            ITEM_CLASS,
+                            "h-auto items-start py-1.5",
+                            already && "opacity-60 data-[disabled]:opacity-60",
+                          )}
+                          onClick={() => onCloneRepo(repo)}
+                          title={repo.description || repo.full_name}
+                        >
+                          {already ? (
+                            <Check
+                              size={11}
+                              className="mt-0.5 shrink-0 text-[var(--status-success)]"
+                            />
+                          ) : (
+                            <Download
+                              size={11}
+                              className="mt-0.5 shrink-0 text-[var(--text-tertiary)]"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-[var(--text-primary)]">
+                                {repo.full_name}
                               </span>
-                            ) : (
-                              <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[9px] text-[var(--text-tertiary)]">
-                                <Star size={9} /> {repo.stars}
-                              </span>
+                              {already ? (
+                                <span className="ml-auto shrink-0 text-[9px] text-[var(--text-tertiary)]">
+                                  downloaded
+                                </span>
+                              ) : (
+                                <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[9px] text-[var(--text-tertiary)]">
+                                  <Star size={9} /> {repo.stars}
+                                </span>
+                              )}
+                            </div>
+                            {repo.description && (
+                              <div className="text-[10px] text-[var(--text-tertiary)] line-clamp-2">
+                                {repo.description}
+                              </div>
                             )}
                           </div>
-                          {repo.description && (
-                            <div className="text-[10px] text-[var(--text-tertiary)] line-clamp-2">
-                              {repo.description}
-                            </div>
-                          )}
-                        </div>
-                      </DropdownMenu.Item>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-        </DropdownMenu.SubContent>
+                        </DropdownMenu.Item>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
-    </DropdownMenu.Sub>
+    </DropdownMenu.SubmenuRoot>
   );
 }
 
@@ -432,63 +434,61 @@ function SessionsSubmenu({
   }, [sessions, query]);
 
   return (
-    <DropdownMenu.Sub onOpenChange={(o) => o && load()}>
-      <DropdownMenu.SubTrigger className={ITEM_CLASS}>
+    <DropdownMenu.SubmenuRoot onOpenChange={(o) => o && load()}>
+      <DropdownMenu.SubmenuTrigger className={ITEM_CLASS}>
         <MessageSquareText size={11} />
         <span>Attach a session</span>
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
-      </DropdownMenu.SubTrigger>
+      </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.SubContent
-          sideOffset={6}
-          className={cn(CONTENT_CLASS, "w-[300px]")}
-          style={{ zIndex: 9999 }}
-        >
-          {!projectPath ? (
-            <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-              Open a project to browse its sessions.
-            </div>
-          ) : (
-            <>
-              <SearchBox value={query} onChange={setQuery} placeholder="Search sessions…" />
-              <div className="max-h-[300px] overflow-y-auto">
-                {sessions === null ? (
-                  <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
-                    <Loader2 size={11} className="animate-spin" />
-                    Loading sessions…
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-                    {sessions.length === 0 ? "No past sessions in this project." : "No matches."}
-                  </div>
-                ) : (
-                  filtered.map((s) => (
-                    <DropdownMenu.Item
-                      key={s.id}
-                      className={cn(ITEM_CLASS, "h-auto items-start py-1.5")}
-                      onSelect={() => onPickSession(s)}
-                      title={s.title}
-                    >
-                      <MessageSquareText
-                        size={11}
-                        className="mt-0.5 shrink-0 text-[var(--text-tertiary)]"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[var(--text-primary)]">{s.title}</div>
-                        <div className="text-[10px] text-[var(--text-tertiary)]">
-                          {s.messageCount} message
-                          {s.messageCount === 1 ? "" : "s"}
-                        </div>
-                      </div>
-                    </DropdownMenu.Item>
-                  ))
-                )}
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+          <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
+            {!projectPath ? (
+              <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                Open a project to browse its sessions.
               </div>
-            </>
-          )}
-        </DropdownMenu.SubContent>
+            ) : (
+              <>
+                <SearchBox value={query} onChange={setQuery} placeholder="Search sessions…" />
+                <div className="max-h-[300px] overflow-y-auto">
+                  {sessions === null ? (
+                    <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                      <Loader2 size={11} className="animate-spin" />
+                      Loading sessions…
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                      {sessions.length === 0 ? "No past sessions in this project." : "No matches."}
+                    </div>
+                  ) : (
+                    filtered.map((s) => (
+                      <DropdownMenu.Item
+                        key={s.id}
+                        className={cn(ITEM_CLASS, "h-auto items-start py-1.5")}
+                        onClick={() => onPickSession(s)}
+                        title={s.title}
+                      >
+                        <MessageSquareText
+                          size={11}
+                          className="mt-0.5 shrink-0 text-[var(--text-tertiary)]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[var(--text-primary)]">{s.title}</div>
+                          <div className="text-[10px] text-[var(--text-tertiary)]">
+                            {s.messageCount} message
+                            {s.messageCount === 1 ? "" : "s"}
+                          </div>
+                        </div>
+                      </DropdownMenu.Item>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
-    </DropdownMenu.Sub>
+    </DropdownMenu.SubmenuRoot>
   );
 }
 
@@ -528,50 +528,48 @@ function ProjectSubmenu({
   }, [query, projectPath, agentId]);
 
   return (
-    <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger className={ITEM_CLASS}>
+    <DropdownMenu.SubmenuRoot>
+      <DropdownMenu.SubmenuTrigger className={ITEM_CLASS}>
         <Boxes size={11} />
         <span>Reference project</span>
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
-      </DropdownMenu.SubTrigger>
+      </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.SubContent
-          sideOffset={6}
-          className={cn(CONTENT_CLASS, "w-[300px]")}
-          style={{ zIndex: 9999 }}
-        >
-          <SearchBox value={query} onChange={setQuery} placeholder="Search projects…" />
-          <div className="max-h-[300px] overflow-y-auto">
-            {projects === null ? (
-              <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
-                <Loader2 size={11} className="animate-spin" />
-                Loading projects…
-              </div>
-            ) : projects.length === 0 ? (
-              <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
-                {query ? "No matches." : "No other projects in this organisation."}
-              </div>
-            ) : (
-              projects.map((w) => (
-                <DropdownMenu.Item
-                  key={w.id}
-                  className={cn(ITEM_CLASS, "h-auto items-start py-1.5")}
-                  onSelect={() => onPickProject(w)}
-                  title={w.absPath}
-                >
-                  <Boxes size={11} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[var(--text-primary)]">{w.displayName}</div>
-                    <div className="truncate text-[10px] text-[var(--text-tertiary)]">
-                      {w.absPath}
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+          <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
+            <SearchBox value={query} onChange={setQuery} placeholder="Search projects…" />
+            <div className="max-h-[300px] overflow-y-auto">
+              {projects === null ? (
+                <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                  <Loader2 size={11} className="animate-spin" />
+                  Loading projects…
+                </div>
+              ) : projects.length === 0 ? (
+                <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                  {query ? "No matches." : "No other projects in this organisation."}
+                </div>
+              ) : (
+                projects.map((w) => (
+                  <DropdownMenu.Item
+                    key={w.id}
+                    className={cn(ITEM_CLASS, "h-auto items-start py-1.5")}
+                    onClick={() => onPickProject(w)}
+                    title={w.absPath}
+                  >
+                    <Boxes size={11} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[var(--text-primary)]">{w.displayName}</div>
+                      <div className="truncate text-[10px] text-[var(--text-tertiary)]">
+                        {w.absPath}
+                      </div>
                     </div>
-                  </div>
-                </DropdownMenu.Item>
-              ))
-            )}
-          </div>
-        </DropdownMenu.SubContent>
+                  </DropdownMenu.Item>
+                ))
+              )}
+            </div>
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
-    </DropdownMenu.Sub>
+    </DropdownMenu.SubmenuRoot>
   );
 }

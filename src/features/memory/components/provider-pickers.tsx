@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import * as Popover from "@radix-ui/react-popover";
 import { Loader2, ChevronDown, Search, Check } from "lucide-react";
 import { ProviderLogo } from "@/components/provider-logo";
@@ -43,20 +43,19 @@ function PickerDropdown({
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
-          {trigger}
-        </button>
-      </DropdownMenu.Trigger>
+      <DropdownMenu.Trigger
+        render={
+          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
+            {trigger}
+          </button>
+        }
+      />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          side="top"
-          sideOffset={6}
-          className="z-[9999] max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]"
-        >
-          {children}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
+          <DropdownMenu.Popup className="max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
+            {children}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
@@ -201,7 +200,7 @@ export function ProviderModelSelector({
         {configured.map((p) => (
           <DropdownMenu.Item
             key={p.id}
-            onSelect={() => onProvider(p.id)}
+            onClick={() => onProvider(p.id)}
             className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
           >
             <ProviderLogo id={p.id} size={14} />

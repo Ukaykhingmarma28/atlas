@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Check,
   Copy,
@@ -400,54 +400,54 @@ function MemberRow({
           {isAdmin && (
             <DropdownMenu.Root>
               <Hint label="Manage">
-                <DropdownMenu.Trigger asChild>
-                  <button className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer">
-                    <MoreHorizontal size={12} />
-                  </button>
-                </DropdownMenu.Trigger>
+                <DropdownMenu.Trigger
+                  render={
+                    <button className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer">
+                      <MoreHorizontal size={12} />
+                    </button>
+                  }
+                />
               </Hint>
               <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={4}
-                  className="z-[var(--z-max)] min-w-[168px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-                >
-                  <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-                    Role
-                  </div>
-                  {ROLES.map((r) => (
+                <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
+                  <DropdownMenu.Popup className="min-w-[168px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                    <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+                      Role
+                    </div>
+                    {ROLES.map((r) => (
+                      <DropdownMenu.Item
+                        key={r}
+                        onClick={() => onRole(r)}
+                        className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                      >
+                        {ROLE_LABELS[r]}
+                        {member.role === r && <Check size={11} />}
+                      </DropdownMenu.Item>
+                    ))}
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    {/* An admin can't leave: doing so could strip the org of its
+                        last admin, leaving nobody able to invite, change roles or
+                        delete it. Hand the role over first. */}
                     <DropdownMenu.Item
-                      key={r}
-                      onSelect={() => onRole(r)}
-                      className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                      disabled={!canLeave}
+                      onClick={canLeave ? onRemove : undefined}
+                      title={
+                        canLeave
+                          ? undefined
+                          : "Admins can't leave — give someone else the Admin role first."
+                      }
+                      className={cn(
+                        "px-2.5 h-6 flex items-center gap-1.5 outline-none",
+                        canLeave
+                          ? "hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer"
+                          : "opacity-40 cursor-not-allowed",
+                      )}
                     >
-                      {ROLE_LABELS[r]}
-                      {member.role === r && <Check size={11} />}
+                      <Trash2 size={11} />
+                      {isSelf ? "Leave organisation" : "Remove from organisation"}
                     </DropdownMenu.Item>
-                  ))}
-                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                  {/* An admin can't leave: doing so could strip the org of its
-                      last admin, leaving nobody able to invite, change roles or
-                      delete it. Hand the role over first. */}
-                  <DropdownMenu.Item
-                    disabled={!canLeave}
-                    onSelect={canLeave ? onRemove : undefined}
-                    title={
-                      canLeave
-                        ? undefined
-                        : "Admins can't leave — give someone else the Admin role first."
-                    }
-                    className={cn(
-                      "px-2.5 h-6 flex items-center gap-1.5 outline-none",
-                      canLeave
-                        ? "hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer"
-                        : "opacity-40 cursor-not-allowed",
-                    )}
-                  >
-                    <Trash2 size={11} />
-                    {isSelf ? "Leave organisation" : "Remove from organisation"}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
+                  </DropdownMenu.Popup>
+                </DropdownMenu.Positioner>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           )}
@@ -651,28 +651,26 @@ function RolePicker({
 }: {
   role: Role;
   onSelect: (role: Role) => void;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
+      <DropdownMenu.Trigger render={trigger} />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={4}
-          className="z-[var(--z-max)] min-w-[150px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-        >
-          {ROLES.map((r) => (
-            <DropdownMenu.Item
-              key={r}
-              onSelect={() => onSelect(r)}
-              className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-            >
-              {ROLE_LABELS[r]}
-              {role === r && <Check size={11} />}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
+          <DropdownMenu.Popup className="min-w-[150px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+            {ROLES.map((r) => (
+              <DropdownMenu.Item
+                key={r}
+                onClick={() => onSelect(r)}
+                className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                {ROLE_LABELS[r]}
+                {role === r && <Check size={11} />}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

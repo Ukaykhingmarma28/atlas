@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Copy,
   CornerUpRight,
@@ -688,45 +688,49 @@ function HoverActions({
 
         <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <HintItem label="More">
-            <DropdownMenu.Trigger asChild>
-              <button type="button" className={actionBtn}>
-                <MoreHorizontal size={12} />
-              </button>
-            </DropdownMenu.Trigger>
+            <DropdownMenu.Trigger
+              render={
+                <button type="button" className={actionBtn}>
+                  <MoreHorizontal size={12} />
+                </button>
+              }
+            />
           </HintItem>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content
+            <DropdownMenu.Positioner
+              className="z-[var(--z-modal)]"
               side="top"
               align="end"
               sideOffset={6}
-              className="z-[var(--z-modal)] min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] origin-[var(--radix-dropdown-menu-content-transform-origin)] animate-scale-in"
             >
-              <DropdownMenu.Item onSelect={onCopy} className={menuItem}>
-                <Copy size={12} /> Copy text
-              </DropdownMenu.Item>
-              {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
-              <DropdownMenu.Item onSelect={onPin} className={menuItem}>
-                {pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                {pinned ? "Unpin for everyone" : "Pin for everyone"}
-              </DropdownMenu.Item>
-              {(canEdit || canDelete) && (
-                <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
-              )}
-              {/* Author only — an admin can delete but never rewrite. */}
-              {canEdit && (
-                <DropdownMenu.Item onSelect={onEdit} className={menuItem}>
-                  <Pencil size={12} /> Edit
+              <DropdownMenu.Popup className="min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
+                <DropdownMenu.Item onClick={onCopy} className={menuItem}>
+                  <Copy size={12} /> Copy text
                 </DropdownMenu.Item>
-              )}
-              {canDelete && (
-                <DropdownMenu.Item
-                  onSelect={onDelete}
-                  className={cn(menuItem, "text-error data-[highlighted]:text-error")}
-                >
-                  <Trash2 size={12} /> Delete
+                {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
+                <DropdownMenu.Item onClick={onPin} className={menuItem}>
+                  {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                  {pinned ? "Unpin for everyone" : "Pin for everyone"}
                 </DropdownMenu.Item>
-              )}
-            </DropdownMenu.Content>
+                {(canEdit || canDelete) && (
+                  <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
+                )}
+                {/* Author only — an admin can delete but never rewrite. */}
+                {canEdit && (
+                  <DropdownMenu.Item onClick={onEdit} className={menuItem}>
+                    <Pencil size={12} /> Edit
+                  </DropdownMenu.Item>
+                )}
+                {canDelete && (
+                  <DropdownMenu.Item
+                    onClick={onDelete}
+                    className={cn(menuItem, "text-error data-[highlighted]:text-error")}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </DropdownMenu.Item>
+                )}
+              </DropdownMenu.Popup>
+            </DropdownMenu.Positioner>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div>

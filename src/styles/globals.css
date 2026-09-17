@@ -1092,8 +1092,8 @@
 }
 
 /* Same, for popovers and menus: grows out of the trigger that opened it —
-   Radix's `--radix-popper-transform-origin` (inherited from the popper
-   wrapper), falling back to top-left for the capture popover under the
+   Base UI's `--transform-origin` (set on the Positioner and inherited by the
+   Popup inside it), falling back to top-left for the capture popover under the
    titlebar project pill. Scale only, so it reads correctly from any origin.
    The no-fill-mode rule above applies here for the same reason — this
    element carries `backdrop-filter`. */
@@ -1108,7 +1108,7 @@
   }
 }
 .atlas-panel-in-tl {
-  transform-origin: var(--radix-popper-transform-origin, 0 0);
+  transform-origin: var(--transform-origin, 0 0);
   animation: atlas-panel-in-tl 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -1398,14 +1398,18 @@
   .atlas-pill-swap {
     animation-name: atlas-rm-fade !important;
   }
-  /* A Radix popover carries its enter AND exit classes at once, so the exit
-     swap is scoped to the closing state — otherwise it would also win while
-     opening and fade the popover out on entry. Elements with no data-state
-     (plain exit classes) still match. */
+  /* A popover carries its enter AND exit classes at once, so the exit swap is
+     scoped to the closing state — otherwise it would also win while opening
+     and fade the popover out on entry. Base UI marks that state with a bare
+     `data-closed` attribute where Radix used `data-state="closed"`; both are
+     listed so a surface that has not been migrated yet still matches, as do
+     elements with neither (plain exit classes). */
+  [data-closed][class*="animate-scale-out"],
+  [data-closed][class*="animate-fade-out"],
   [data-state="closed"][class*="animate-scale-out"],
   [data-state="closed"][class*="animate-fade-out"],
-  [class*="animate-scale-out"]:not([data-state]),
-  [class*="animate-fade-out"]:not([data-state]) {
+  [class*="animate-scale-out"]:not([data-state]):not([data-closed]),
+  [class*="animate-fade-out"]:not([data-state]):not([data-closed]) {
     animation-name: atlas-rm-fade-out !important;
   }
   /* The two looping animations in the chrome: the capture dot's halo and the
@@ -2292,7 +2296,7 @@
   }
 }
 .atlas-menu-pop {
-  transform-origin: var(--radix-popper-transform-origin, bottom left);
+  transform-origin: var(--transform-origin, bottom left);
   animation: atlas-menu-pop 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 

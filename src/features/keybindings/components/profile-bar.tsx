@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Check,
   ChevronDown,
@@ -18,7 +18,7 @@ import { useKeybindingsStore } from "../stores/keybindings-store";
 
 // Same recipe as the account menu so every Atlas dropdown reads alike.
 const CONTENT_CLASS =
-  "z-[var(--z-max)] min-w-[200px] max-w-[280px] rounded-md border border-[var(--border-default)] " +
+  "min-w-[200px] max-w-[280px] rounded-md border border-[var(--border-default)] " +
   "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
 const ITEM_CLASS =
   "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-pointer outline-none " +
@@ -119,74 +119,77 @@ export function ProfileBar() {
         </div>
       ) : (
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium",
-                "text-text-primary hover:bg-bg-hover transition-colors cursor-pointer",
-              )}
-            >
-              <span className="text-text-tertiary font-normal">Profile</span>
-              <span className="max-w-[180px] truncate">{active.name}</span>
-              {locked && <Lock size={10} className="text-text-tertiary" />}
-              <ChevronDown size={11} className="text-text-tertiary" />
-            </button>
-          </DropdownMenu.Trigger>
+          <DropdownMenu.Trigger
+            render={
+              <button
+                type="button"
+                className={cn(
+                  "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium",
+                  "text-text-primary hover:bg-bg-hover transition-colors cursor-pointer",
+                )}
+              >
+                <span className="text-text-tertiary font-normal">Profile</span>
+                <span className="max-w-[180px] truncate">{active.name}</span>
+                {locked && <Lock size={10} className="text-text-tertiary" />}
+                <ChevronDown size={11} className="text-text-tertiary" />
+              </button>
+            }
+          />
           <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="start"
-              sideOffset={4}
-              className={CONTENT_CLASS}
-              onCloseAutoFocus={(e) => {
-                if (openingInput.current) e.preventDefault();
-              }}
-            >
-              {file.profiles.map((p) => (
+            <DropdownMenu.Positioner className="z-[var(--z-max)]" align="start" sideOffset={4}>
+              <DropdownMenu.Popup
+                className={CONTENT_CLASS}
+                // Base UI replaces Radix's onCloseAutoFocus with finalFocus:
+                // `false` means "leave focus alone", `true` means "do the
+                // default thing" (return it to the trigger).
+                finalFocus={() => !openingInput.current}
+              >
+                {file.profiles.map((p) => (
+                  <DropdownMenu.Item
+                    key={p.id}
+                    onClick={() => setActiveProfile(p.id)}
+                    className={ITEM_CLASS}
+                  >
+                    <span className="flex w-3 justify-center">
+                      {p.id === active.id && <Check size={11} />}
+                    </span>
+                    <span className="flex-1 truncate">{p.name}</span>
+                    {p.builtIn ? (
+                      <Lock size={10} className="text-text-tertiary" />
+                    ) : (
+                      <span className="text-[9.5px] tabular-nums text-text-muted">
+                        {Object.keys(p.bindings).length || ""}
+                      </span>
+                    )}
+                  </DropdownMenu.Item>
+                ))}
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
                 <DropdownMenu.Item
-                  key={p.id}
-                  onSelect={() => setActiveProfile(p.id)}
+                  onClick={() => {
+                    openingInput.current = true;
+                    startNaming("create");
+                  }}
                   className={ITEM_CLASS}
                 >
                   <span className="flex w-3 justify-center">
-                    {p.id === active.id && <Check size={11} />}
+                    <Plus size={11} />
                   </span>
-                  <span className="flex-1 truncate">{p.name}</span>
-                  {p.builtIn ? (
-                    <Lock size={10} className="text-text-tertiary" />
-                  ) : (
-                    <span className="text-[9.5px] tabular-nums text-text-muted">
-                      {Object.keys(p.bindings).length || ""}
-                    </span>
-                  )}
+                  <span className="flex-1">New profile…</span>
                 </DropdownMenu.Item>
-              ))}
-              <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
-              <DropdownMenu.Item
-                onSelect={() => {
-                  openingInput.current = true;
-                  startNaming("create");
-                }}
-                className={ITEM_CLASS}
-              >
-                <span className="flex w-3 justify-center">
-                  <Plus size={11} />
-                </span>
-                <span className="flex-1">New profile…</span>
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                onSelect={() => {
-                  openingInput.current = true;
-                  startNaming("duplicate");
-                }}
-                className={ITEM_CLASS}
-              >
-                <span className="flex w-3 justify-center">
-                  <Copy size={10} />
-                </span>
-                <span className="flex-1 truncate">Duplicate “{active.name}”…</span>
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
+                <DropdownMenu.Item
+                  onClick={() => {
+                    openingInput.current = true;
+                    startNaming("duplicate");
+                  }}
+                  className={ITEM_CLASS}
+                >
+                  <span className="flex w-3 justify-center">
+                    <Copy size={10} />
+                  </span>
+                  <span className="flex-1 truncate">Duplicate “{active.name}”…</span>
+                </DropdownMenu.Item>
+              </DropdownMenu.Popup>
+            </DropdownMenu.Positioner>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       )}

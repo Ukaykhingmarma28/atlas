@@ -1,5 +1,5 @@
 import { useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, Download, FileText, Globe, Loader2, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -156,70 +156,72 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       <span className="flex-1" />
 
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <button
-            disabled={isBusy}
-            className={cn(
-              "inline-flex items-center gap-1 h-5 px-2 rounded-full",
-              "border border-border-default bg-bg-elevated text-[var(--text-primary)]",
-              "text-[10px] font-medium leading-none cursor-pointer",
-              "hover:bg-bg-hover transition-colors",
-              "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
-              isBusy && "opacity-80 cursor-wait",
-            )}
-            title={busyLabel ?? "Export"}
-          >
-            {isBusy ? (
-              <>
-                <Loader2 size={10} className="animate-spin" />
-                {busyLabel}
-              </>
-            ) : (
-              <>
-                <Download size={10} />
-                Export
-                <ChevronDown size={10} className="opacity-70" />
-              </>
-            )}
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              disabled={isBusy}
+              className={cn(
+                "inline-flex items-center gap-1 h-5 px-2 rounded-full",
+                "border border-border-default bg-bg-elevated text-[var(--text-primary)]",
+                "text-[10px] font-medium leading-none cursor-pointer",
+                "hover:bg-bg-hover transition-colors",
+                "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
+                isBusy && "opacity-80 cursor-wait",
+              )}
+              title={busyLabel ?? "Export"}
+            >
+              {isBusy ? (
+                <>
+                  <Loader2 size={10} className="animate-spin" />
+                  {busyLabel}
+                </>
+              ) : (
+                <>
+                  <Download size={10} />
+                  Export
+                  <ChevronDown size={10} className="opacity-70" />
+                </>
+              )}
+            </button>
+          }
+        />
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="end"
-            sideOffset={6}
-            className={cn(
-              "min-w-[200px] rounded-md p-0.5 z-[9999]",
-              "bg-black border border-border-default",
-              "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
-              "text-text-primary",
-            )}
-          >
-            <ExportMenuItem
-              icon={FileText}
-              label="Export note as .md"
-              disabled={!hasNote}
-              onSelect={handleExportNoteMd}
-            />
-            <ExportMenuItem
-              icon={Globe}
-              label="Export note as .html"
-              disabled={!hasNote}
-              onSelect={handleExportNoteHtml}
-            />
-            <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
-            <ExportMenuItem
-              icon={FileText}
-              label="Export project as .md"
-              onSelect={handleExportProjectMd}
-            />
-            <ExportMenuItem
-              icon={Globe}
-              label="Export project as .html"
-              onSelect={handleExportProjectHtml}
-            />
-            <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
-            <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />
-          </DropdownMenu.Content>
+          <DropdownMenu.Positioner className="z-[9999]" align="end" sideOffset={6}>
+            <DropdownMenu.Popup
+              className={cn(
+                "min-w-[200px] rounded-md p-0.5",
+                "bg-black border border-border-default",
+                "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
+                "text-text-primary",
+              )}
+            >
+              <ExportMenuItem
+                icon={FileText}
+                label="Export note as .md"
+                disabled={!hasNote}
+                onSelect={handleExportNoteMd}
+              />
+              <ExportMenuItem
+                icon={Globe}
+                label="Export note as .html"
+                disabled={!hasNote}
+                onSelect={handleExportNoteHtml}
+              />
+              <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
+              <ExportMenuItem
+                icon={FileText}
+                label="Export project as .md"
+                onSelect={handleExportProjectMd}
+              />
+              <ExportMenuItem
+                icon={Globe}
+                label="Export project as .html"
+                onSelect={handleExportProjectHtml}
+              />
+              <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
+              <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />
+            </DropdownMenu.Popup>
+          </DropdownMenu.Positioner>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>
@@ -240,7 +242,7 @@ function ExportMenuItem({
   return (
     <DropdownMenu.Item
       disabled={disabled}
-      onSelect={() => void onSelect()}
+      onClick={() => void onSelect()}
       className={cn(
         "flex items-center gap-2 rounded px-2 py-1 outline-none cursor-pointer",
         "text-[11.5px] text-text-secondary",

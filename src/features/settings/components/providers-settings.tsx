@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Search,
   Check,
@@ -167,46 +167,45 @@ export function ProvidersSettings() {
 
         <DropdownMenu.Root>
           <Hint label="Filters & sort">
-            <DropdownMenu.Trigger asChild>
-              <button className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors">
-                <MoreHorizontal size={14} />
-              </button>
-            </DropdownMenu.Trigger>
+            <DropdownMenu.Trigger
+              render={
+                <button className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors">
+                  <MoreHorizontal size={14} />
+                </button>
+              }
+            />
           </Hint>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              sideOffset={4}
-              className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1 min-w-[180px]"
-              style={{ zIndex: 9999 }}
-            >
-              <DropdownMenu.CheckboxItem
-                checked={configuredOnly}
-                onCheckedChange={(c) => setConfiguredOnly(!!c)}
-                className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-              >
-                <span className="inline-flex w-3.5 justify-center">
-                  {configuredOnly && <Check size={11} className="text-text-primary" />}
-                </span>
-                Set only
-              </DropdownMenu.CheckboxItem>
-
-              <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
-
-              <DropdownMenu.Label className="px-3 pb-1 pt-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-                Sort by
-              </DropdownMenu.Label>
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
-                <DropdownMenu.Item
-                  key={k}
-                  onSelect={() => setSortKey(k)}
-                  className="flex items-center justify-between gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+            <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={4}>
+              <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1 min-w-[180px]">
+                <DropdownMenu.CheckboxItem
+                  checked={configuredOnly}
+                  onCheckedChange={(c) => setConfiguredOnly(!!c)}
+                  className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
                 >
-                  {SORT_LABELS[k]}
-                  {sortKey === k && <Check size={11} className="text-text-primary" />}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
+                  <span className="inline-flex w-3.5 justify-center">
+                    {configuredOnly && <Check size={11} className="text-text-primary" />}
+                  </span>
+                  Set only
+                </DropdownMenu.CheckboxItem>
+
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
+
+                <DropdownMenu.GroupLabel className="px-3 pb-1 pt-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+                  Sort by
+                </DropdownMenu.GroupLabel>
+                {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                  <DropdownMenu.Item
+                    key={k}
+                    onClick={() => setSortKey(k)}
+                    className="flex items-center justify-between gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                  >
+                    {SORT_LABELS[k]}
+                    {sortKey === k && <Check size={11} className="text-text-primary" />}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Popup>
+            </DropdownMenu.Positioner>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div>

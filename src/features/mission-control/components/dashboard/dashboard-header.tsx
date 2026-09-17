@@ -1,4 +1,4 @@
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Download,
   FileText,
@@ -65,39 +65,39 @@ export function DashboardHeader({
       </Hint>
 
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <button className="flex items-center gap-1.5 h-[26px] px-2.5 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none">
-            <Download size={12} /> Export{" "}
-            <ChevronDown size={11} className="text-[var(--text-tertiary)]" />
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button className="flex items-center gap-1.5 h-[26px] px-2.5 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none">
+              <Download size={12} /> Export{" "}
+              <ChevronDown size={11} className="text-[var(--text-tertiary)]" />
+            </button>
+          }
+        />
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="end"
-            sideOffset={4}
-            className="z-[var(--z-max)] min-w-[170px] rounded-lg border border-[var(--border-default)] bg-[#000] py-1.5 shadow-xl text-[12px] text-[var(--text-secondary)]"
-          >
-            <Item
-              icon={<FileType2 size={13} />}
-              label="PDF report"
-              onSelect={() => onExport("pdf")}
-            />
-            <Item
-              icon={<ImageIcon size={13} />}
-              label="JPEG image"
-              onSelect={() => onExport("jpeg")}
-            />
-            <Item
-              icon={<FileText size={13} />}
-              label="Markdown report"
-              onSelect={() => onExport("markdown")}
-            />
-            <Item
-              icon={<Copy size={13} />}
-              label="Copy as Markdown"
-              onSelect={() => onExport("copy-markdown")}
-            />
-          </DropdownMenu.Content>
+          <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
+            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border-default)] bg-[#000] py-1.5 shadow-xl text-[12px] text-[var(--text-secondary)]">
+              <Item
+                icon={<FileType2 size={13} />}
+                label="PDF report"
+                onSelect={() => onExport("pdf")}
+              />
+              <Item
+                icon={<ImageIcon size={13} />}
+                label="JPEG image"
+                onSelect={() => onExport("jpeg")}
+              />
+              <Item
+                icon={<FileText size={13} />}
+                label="Markdown report"
+                onSelect={() => onExport("markdown")}
+              />
+              <Item
+                icon={<Copy size={13} />}
+                label="Copy as Markdown"
+                onSelect={() => onExport("copy-markdown")}
+              />
+            </DropdownMenu.Popup>
+          </DropdownMenu.Positioner>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>
@@ -115,7 +115,7 @@ function Item({
 }) {
   return (
     <DropdownMenu.Item
-      onSelect={onSelect}
+      onClick={onSelect}
       className="flex items-center gap-2.5 px-3 h-[28px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
     >
       <span className="text-[var(--text-tertiary)]">{icon}</span>

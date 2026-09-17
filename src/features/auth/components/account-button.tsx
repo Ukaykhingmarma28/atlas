@@ -94,7 +94,7 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
 
 /**
  * The button with its tooltip inside. It has to be a component that forwards
- * its props: as the child of `DropdownMenu.Trigger asChild`, the trigger's
+ * its props: as the element `DropdownMenu.Trigger`'s `render` clones, the trigger's
  * props and ref land here and must reach the same `<button>` the tooltip
  * trigger merges onto.
  */

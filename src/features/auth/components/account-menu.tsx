@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { ReactElement } from "react";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Keyboard, LayoutTemplate, LogIn, LogOut, Palette, Settings, Zap } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,7 +37,7 @@ const ITEMS: Array<{
 // `body`, so it is not competing with the title bar, but it does share a
 // stacking context with every dialog and overlay in the app.
 const CONTENT_CLASS =
-  "z-[var(--z-max)] min-w-[228px] max-w-[300px] rounded-md border border-[var(--border-default)] " +
+  "min-w-[228px] max-w-[300px] rounded-md border border-[var(--border-default)] " +
   "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
 
 /**
@@ -92,7 +92,7 @@ export function AccountMenu({
    * name would be worse than the gap it fills.
    */
   account: SignedIn | SignedOut;
-  children: ReactNode;
+  children: ReactElement;
 }) {
   const { signOut, beginSignIn } = useAuthStore.use.actions();
   const signedIn = account.status === "signed-in";
@@ -107,48 +107,50 @@ export function AccountMenu({
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>{children}</DropdownMenu.Trigger>
+      <DropdownMenu.Trigger render={children} />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={6} className={CONTENT_CLASS}>
-          {/* The account zone is always first, whichever state we are in: the
-              identity when there is one, the way to get one when there is not.
-              Keeping it in the same place means the destinations below never
-              move under the pointer as the user signs in or out. */}
-          {user && <Header user={user} />}
-          {!signedIn && (
-            <>
-              <DropdownMenu.Item onSelect={() => void beginSignIn()} className={ITEM_CLASS}>
-                <LogIn size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="flex-1 text-left">Sign In</span>
+        <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={6}>
+          <DropdownMenu.Popup className={CONTENT_CLASS}>
+            {/* The account zone is always first, whichever state we are in: the
+                identity when there is one, the way to get one when there is not.
+                Keeping it in the same place means the destinations below never
+                move under the pointer as the user signs in or out. */}
+            {user && <Header user={user} />}
+            {!signedIn && (
+              <>
+                <DropdownMenu.Item onClick={() => void beginSignIn()} className={ITEM_CLASS}>
+                  <LogIn size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <span className="flex-1 text-left">Sign In</span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className={SEPARATOR_CLASS} />
+              </>
+            )}
+            {ITEMS.map((item) => (
+              <DropdownMenu.Item
+                key={item.section}
+                onClick={() => openSettingsSection(item.section)}
+                className={ITEM_CLASS}
+              >
+                <item.icon size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.shortcut && <KbdCombo combo={item.shortcut} />}
               </DropdownMenu.Item>
-              <DropdownMenu.Separator className={SEPARATOR_CLASS} />
-            </>
-          )}
-          {ITEMS.map((item) => (
-            <DropdownMenu.Item
-              key={item.section}
-              onSelect={() => openSettingsSection(item.section)}
-              className={ITEM_CLASS}
-            >
-              <item.icon size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-              <span className="flex-1 text-left">{item.label}</span>
-              {item.shortcut && <KbdCombo combo={item.shortcut} />}
-            </DropdownMenu.Item>
-          ))}
-          {/* Separated from the destinations above: everything else in this
-              menu navigates, and this one ends the session. Rendered whenever a
-              credential is held, with or without a profile — one we cannot put
-              a name to is still one the user must be able to disconnect. */}
-          {signedIn && (
-            <>
-              <DropdownMenu.Separator className={SEPARATOR_CLASS} />
-              <DropdownMenu.Item onSelect={() => void onSignOut()} className={ITEM_CLASS}>
-                <LogOut size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="flex-1 text-left">Sign Out</span>
-              </DropdownMenu.Item>
-            </>
-          )}
-        </DropdownMenu.Content>
+            ))}
+            {/* Separated from the destinations above: everything else in this
+                menu navigates, and this one ends the session. Rendered whenever a
+                credential is held, with or without a profile — one we cannot put
+                a name to is still one the user must be able to disconnect. */}
+            {signedIn && (
+              <>
+                <DropdownMenu.Separator className={SEPARATOR_CLASS} />
+                <DropdownMenu.Item onClick={() => void onSignOut()} className={ITEM_CLASS}>
+                  <LogOut size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <span className="flex-1 text-left">Sign Out</span>
+                </DropdownMenu.Item>
+              </>
+            )}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
@@ -168,7 +170,7 @@ function Header({ user }: { user: AccountUser }) {
     <>
       {/* `Label`, not a bare div: inside `role="menu"` an unlabelled block is
           announced as loose text between the items. This is the menu's title. */}
-      <DropdownMenu.Label className="flex items-center gap-2.5 px-3 py-1.5">
+      <DropdownMenu.GroupLabel className="flex items-center gap-2.5 px-3 py-1.5">
         <AccountAvatar user={user} size={28} />
         {/* `flex-1 min-w-0` against the content's max width is what makes a
             long address truncate rather than stretch the whole menu. */}
@@ -180,7 +182,7 @@ function Header({ user }: { user: AccountUser }) {
             <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">{email}</div>
           )}
         </div>
-      </DropdownMenu.Label>
+      </DropdownMenu.GroupLabel>
       <DropdownMenu.Separator className={SEPARATOR_CLASS} />
     </>
   );

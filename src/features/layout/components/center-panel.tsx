@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Hint } from "@/ui/tooltip";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
@@ -959,30 +959,29 @@ function NewTabDropdown({
   return (
     <DropdownMenu.Root>
       <HintItem label="New tab">
-        <DropdownMenu.Trigger asChild>
-          <button className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
-            <Plus size={14} />
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
+              <Plus size={14} />
+            </button>
+          }
+        />
       </HintItem>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="w-[160px] rounded-lg border border-border-default bg-bg-secondary shadow-lg py-1"
-          style={{ zIndex: 99999 }}
-        >
-          {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
-            <DropdownMenu.Item
-              key={type}
-              onClick={() => handleAdd(type, label)}
-              className="flex items-center gap-2 px-3 h-[30px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
-            >
-              <Icon size={12} className="text-text-tertiary" />
-              {label}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner style={{ zIndex: 99999 }} align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border-default bg-bg-secondary shadow-lg py-1">
+            {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
+              <DropdownMenu.Item
+                key={type}
+                onClick={() => handleAdd(type, label)}
+                className="flex items-center gap-2 px-3 h-[30px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
+              >
+                <Icon size={12} className="text-text-tertiary" />
+                {label}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

@@ -26,7 +26,7 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -517,51 +517,50 @@ function SourceFilter({
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
-          title="Filter sources"
-        >
-          <ListFilter size={11} />
-          Sources · {active.size}
-        </button>
-      </DropdownMenu.Trigger>
+      <DropdownMenu.Trigger
+        render={
+          <button
+            className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            title="Filter sources"
+          >
+            <ListFilter size={11} />
+            Sources · {active.size}
+          </button>
+        }
+      />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]"
-          style={{ zIndex: 9999 }}
-        >
-          {SOURCES.map((s) => {
-            const checked = active.has(s);
-            return (
-              <DropdownMenu.CheckboxItem
-                key={s}
-                checked={checked}
-                onCheckedChange={(c) => {
-                  const next = new Set(active);
-                  if (c) next.add(s);
-                  else next.delete(s);
-                  onChange(next);
-                }}
-                className="flex items-center gap-2 px-3 h-[24px] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none capitalize"
-              >
-                <span
-                  className={cn(
-                    "w-3 h-3 rounded-sm border flex items-center justify-center",
-                    checked
-                      ? "bg-[var(--primary)] border-[var(--primary)]"
-                      : "border-[var(--border-default)]",
-                  )}
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+            {SOURCES.map((s) => {
+              const checked = active.has(s);
+              return (
+                <DropdownMenu.CheckboxItem
+                  key={s}
+                  checked={checked}
+                  onCheckedChange={(c) => {
+                    const next = new Set(active);
+                    if (c) next.add(s);
+                    else next.delete(s);
+                    onChange(next);
+                  }}
+                  className="flex items-center gap-2 px-3 h-[24px] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none capitalize"
                 >
-                  {checked && <Check size={9} className="text-white" />}
-                </span>
-                {s}
-              </DropdownMenu.CheckboxItem>
-            );
-          })}
-        </DropdownMenu.Content>
+                  <span
+                    className={cn(
+                      "w-3 h-3 rounded-sm border flex items-center justify-center",
+                      checked
+                        ? "bg-[var(--primary)] border-[var(--primary)]"
+                        : "border-[var(--border-default)]",
+                    )}
+                  >
+                    {checked && <Check size={9} className="text-white" />}
+                  </span>
+                  {s}
+                </DropdownMenu.CheckboxItem>
+              );
+            })}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
@@ -578,43 +577,42 @@ function ProjectScopeFilter({
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
-          title="Project scope"
-        >
-          {value === "all" ? "All projects" : "Current project"}
-        </button>
-      </DropdownMenu.Trigger>
+      <DropdownMenu.Trigger
+        render={
+          <button
+            className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            title="Project scope"
+          >
+            {value === "all" ? "All projects" : "Current project"}
+          </button>
+        }
+      />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]"
-          style={{ zIndex: 9999 }}
-        >
-          {(
-            [
-              { v: "all", label: "All projects" },
-              { v: "current", label: "Current project" },
-            ] as const
-          ).map(({ v, label }) => (
-            <DropdownMenu.Item
-              key={v}
-              onClick={() => onChange(v)}
-              disabled={v === "current" && !hasProject}
-              className={cn(
-                "flex items-center gap-2 px-3 h-[24px] text-[11px] cursor-pointer outline-none",
-                value === v
-                  ? "text-[var(--text-primary)] bg-[var(--bg-selected)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                v === "current" && !hasProject && "opacity-50 cursor-not-allowed",
-              )}
-            >
-              {label}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+            {(
+              [
+                { v: "all", label: "All projects" },
+                { v: "current", label: "Current project" },
+              ] as const
+            ).map(({ v, label }) => (
+              <DropdownMenu.Item
+                key={v}
+                onClick={() => onChange(v)}
+                disabled={v === "current" && !hasProject}
+                className={cn(
+                  "flex items-center gap-2 px-3 h-[24px] text-[11px] cursor-pointer outline-none",
+                  value === v
+                    ? "text-[var(--text-primary)] bg-[var(--bg-selected)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                  v === "current" && !hasProject && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                {label}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
