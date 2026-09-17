@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, Copy, FileJson, Link2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -445,11 +446,14 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
     }
   };
 
+  // `copyText`, not `navigator.clipboard`: WKWebView's own writeText can
+  // resolve without writing, and this copy follows an `await` on the export.
   const copy = async () => {
     if (!result) return;
-    await navigator.clipboard.writeText(result.json);
-    setCopied(true);
-    toast.success("Registry item copied");
+    const ok = await copyText(result.json);
+    setCopied(ok);
+    if (ok) toast.success("Registry item copied");
+    else toast.error("Could not reach the clipboard");
   };
 
   return (
