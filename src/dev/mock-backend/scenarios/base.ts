@@ -27,6 +27,7 @@ import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
 import { fsHandlers, listDir } from "../fixtures/files";
+import { logHandlers } from "../fixtures/log";
 import { settingsHandlers } from "../fixtures/settings";
 import { appState, MOCK_WORKSPACE } from "../workspace";
 
@@ -94,7 +95,6 @@ export const baseHandlers: MockHandlers = {
 
   // ── workspace open ──────────────────────────────────────────────────────
   save_app_state: nothing,
-  append_project_log: nothing,
   asset_allow_dir: nothing,
   ensure_atlas_gitignore: nothing,
   load_editor_state: () => "{}",
@@ -188,9 +188,10 @@ export const baseHandlers: MockHandlers = {
   ...agentHandlers,
   agents_set_effort: nothing,
 
-  // ── files ───────────────────────────────────────────────────────────────
+  // ── files, settings, activity log, Mission Control ──────────────────────
   ...fsHandlers,
   ...settingsHandlers,
+  ...logHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
