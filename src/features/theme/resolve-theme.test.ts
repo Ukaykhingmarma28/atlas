@@ -30,11 +30,6 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--i": "component-local animation index",
   "--atlas-pulse-color": "component-local animation colour",
   "--atlas-beam-travel": "component-local animation distance",
-  "--radix-dropdown-menu-content-transform-origin": "Radix runtime positioning",
-  "--radix-popper-transform-origin": "Radix runtime positioning",
-  "--radix-popover-content-transform-origin": "Radix runtime positioning",
-  "--radix-popover-trigger-width": "Radix runtime positioning",
-  "--radix-tooltip-content-transform-origin": "Radix runtime positioning",
 };
 
 describe("theme resolution", () => {

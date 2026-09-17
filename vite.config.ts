@@ -90,10 +90,11 @@ export default defineConfig(() => ({
       "react-markdown",
       "remark-gfm",
       "rehype-highlight",
-      "@radix-ui/react-dropdown-menu",
-      "@radix-ui/react-popover",
-      "@radix-ui/react-dialog",
-      "@radix-ui/react-context-menu",
+      "@base-ui/react/menu",
+      "@base-ui/react/popover",
+      "@base-ui/react/dialog",
+      "@base-ui/react/context-menu",
+      "@base-ui/react/tooltip",
       // Pre-bundle the Tiptap stack so opening the Knowledge tab for
       // the first time doesn't trigger Vite's "new dependencies
       // optimized → reloading" cycle (which dumps editor state and
@@ -260,9 +261,9 @@ export default defineConfig(() => ({
                   id.includes("highlight.js")),
             },
             {
-              name: "vendor-radix",
+              name: "vendor-base-ui",
               priority: 50,
-              test: (id) => !id.endsWith(".css") && id.includes("@radix-ui"),
+              test: (id) => !id.endsWith(".css") && id.includes("@base-ui"),
             },
             {
               name: "vendor-tanstack",

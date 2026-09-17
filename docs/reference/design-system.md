@@ -253,9 +253,11 @@ so later `shadcn add` output drops in with the classes swapped rather than the
 structure rewritten. Two deliberate departures:
 
 - **Sizes are Atlas control heights**, not shadcn's 32/36/40px.
-- **No `asChild`.** shadcn's buttons lean on `@radix-ui/react-slot`, and
+- **No `asChild` on `Button`.** shadcn's buttons lean on a Slot primitive, and
   Foundations was allowed one new dependency. Compose instead:
-  `<a className={buttonVariants({ variant: "ghost" })}>`.
+  `<a className={buttonVariants({ variant: "ghost" })}>`. The overlay
+  primitives, which arrived with Base UI, do take Base UI's `render` prop —
+  that is the same idea under the name Base UI gives it.
 
 | primitive | reach for it when |
 |---|---|
@@ -264,9 +266,30 @@ structure rewritten. Two deliberate departures:
 | `Input` | a single-line text field. It keeps the global focus ring and lifts its border to `--border-focus`. For a secret, `SecretInput` already wraps it. |
 | `Badge` | a short status word. Seven variants, four of them the status roles (`destructive`, `success`, `warning`, `info`). Not a control, so not on the control-height scale. |
 | `Kbd` | the content is a keystroke. `KbdCombo combo="⌘⇧F"` and `KbdKeys keys={[…]}` are the two forms the app uses. |
+| `Tooltip` / `Hint` | a hint for an icon-only control. `Hint` is the one-liner; `Tooltip`/`TooltipTrigger`/`TooltipContent` is the composed form. Timing comes from `tooltip-timing.ts`, not from the library. |
+| `Dialog` | a centred modal. `DialogOverlay` is the scrim (Base UI calls it the Backdrop), `DialogContent` the panel. No Positioner — a centred modal places itself. |
+| `Popover` | anchored content that is not a list of commands. |
+| `DropdownMenu` | a list of commands anchored to a trigger. Base UI has no "DropdownMenu": a trigger-anchored menu *is* `Menu`, and the wrapper renames it back. |
+| `ContextMenu` | the same list, opened by right-click at the pointer. |
 
-Dialog, Popover, Menu, ContextMenu and Tooltip are **not** here yet — they arrive
-with the Base UI migration (decision 16), which builds them on these same tokens.
+Those five overlay primitives arrived with the Base UI migration (decision 16).
+Three rules they all share, because Base UI's anatomy differs from Radix's:
+
+- **`Portal > Positioner > Popup`** for anything anchored (popover, both menus,
+  tooltip). A centred dialog has no Positioner.
+- **Positioning props belong to the Positioner.** Each wrapper *declares*
+  `side` / `sideOffset` / `align` / `alignOffset` and *forwards* them. Left in
+  `...props` they land on the Popup, and positioning silently stops working —
+  no type error, no lint error.
+- **The z-index belongs to the Positioner too.** The Popup is statically
+  positioned inside it, so `z-popover` on the Popup would do nothing at all.
+  `z-popover` (200) sits above `z-modal` (110) so a menu opened inside a dialog
+  escapes it.
+
+`@base-ui/react` is the only dependency the migration added, and the five
+`@radix-ui/*` packages were removed with it. `components.json` names the
+`base-nova` style, so a future `shadcn add` delivers Base UI variants rather
+than Radix ones — its classes still need swapping for house tokens.
 
 Hover colour comes from real tokens (`bg-primary-hover`), never from a `/90`
 opacity modifier: Tailwind v4 compiles those to `color-mix()`, and decision 14
