@@ -695,4 +695,41 @@ mod tests {
         let expected = serde_json::to_string_pretty(&built_in_themes().unwrap()).unwrap() + "\n";
         assert_eq!(include_str!("../../../src/dev/mock-backend/fixtures/builtin-themes.json"), expected);
     }
+
+    /// A light appearance that copies its shadow ramp byte-for-byte from
+    /// dark renders pure-black halos on a light surface: dark's alphas run
+    /// up to 0.9, which reads as a heavy ring rather than a soft lift once
+    /// the surface itself is light (rose-pine.toml shipped exactly this
+    /// bug). Every built-in theme that ships both appearances must give
+    /// light its own ramp, and that ramp must actually be lighter.
+    #[test]
+    fn light_shadow_ramp_is_not_copied_from_dark() {
+        const SHADOW_KEYS: &[&str] =
+            &["shadow-2xs", "shadow-xs", "shadow-sm", "shadow-md", "shadow-lg", "shadow-xl", "shadow-2xl"];
+
+        fn shadow_alpha(value: &str) -> f64 {
+            let start = value.rfind(',').expect("shadow value has an alpha channel");
+            let end = value.rfind(')').expect("shadow value is a function call");
+            value[start + 1..end].trim().parse().expect("alpha channel is numeric")
+        }
+
+        for theme in built_in_themes().unwrap() {
+            let (Some(dark), Some(light)) = (&theme.dark, &theme.light) else { continue };
+            for key in SHADOW_KEYS {
+                let dark_value = &dark.base[*key];
+                let light_value = &light.base[*key];
+                assert_ne!(
+                    dark_value, light_value,
+                    "{}: light.base.{key} is byte-identical to dark.base.{key}",
+                    theme.id
+                );
+                let alpha = shadow_alpha(light_value);
+                assert!(
+                    alpha <= 0.5,
+                    "{}: light.base.{key} alpha {alpha} reads as a heavy black halo on a light surface",
+                    theme.id
+                );
+            }
+        }
+    }
 }
