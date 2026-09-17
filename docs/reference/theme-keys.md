@@ -11,6 +11,30 @@ An explicit key is written as a dotted TOML key (or as nested tables). A key
 may not also be a prefix, so use `terminal.ansi.red`, never both `terminal`
 and `terminal.ansi.red`.
 
+## Consuming a key
+
+Most code never touches this file: the applier writes every resolved key to
+`:root` as `--atlas-<key with dots and underscores as dashes>`, so a Tailwind
+utility or a `var()` follows the theme with no work and recolours on a switch
+with no re-render. Prefer that.
+
+Four subsystems cannot, because they take a colour as a JavaScript VALUE rather
+than as a style — xterm's `ITheme`, pixi's `Graphics.fill({ color })`, every
+recharts colour prop, and mermaid's `themeVariables`. They read
+`src/features/theme/theme-values.ts`:
+
+| | |
+|---|---|
+| `themeColor(key)` | the resolved colour for a theme key |
+| `themeBase(token)` | the resolved colour for a base token (`chart-1`, `card`, …) |
+| `themeHex(key)` / `hexOf(value)` | the same as pixi's 24-bit integer |
+| `onThemeApplied(fn)` | imperative repaint hook — a live xterm, a running pixi scene |
+| `useThemeVersion()` | React re-render hook — recharts, mermaid |
+
+Reading the right value once is only half of it. A subsystem that caches a
+colour at construction time is still theme-blind; it just fails one switch
+later. Every non-CSS consumer subscribes to one of the last two.
+
 ## Full key list and derivation sources
 
 The notation below records the first non-explicit source. `P:x` means
