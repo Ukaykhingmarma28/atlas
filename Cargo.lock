@@ -703,6 +703,7 @@ dependencies = [
  "atlas-embed",
  "atlas-git",
  "atlas-gitdiff",
+ "atlas-icon-theme",
  "atlas-memory",
  "atlas-native-agent",
  "atlas-process",

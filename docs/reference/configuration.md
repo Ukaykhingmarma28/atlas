@@ -158,6 +158,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `theme` | string | `"atlas"` | known theme id; an unknown id is logged and falls back to `"atlas"` |
 | `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
 | `themeOverrides` | table | absent | optional `base`, `palette`, and `keys` patch applied after the active theme variant |
+| `iconTheme` | string | `"material-icon-theme"` | a plain id (letters, digits, `.`, `-`, `_`) — it names a directory under `~/.config/atlas/icon-themes/`. `"minimal"` keeps Atlas's lucide icons. See `docs/reference/icon-themes.md` |
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `gitBlameInline` | boolean | `true` | — |
 | `autoUpdate` | boolean | `true` | — |

@@ -175,6 +175,11 @@ pub struct AppSettings {
     /// User-local patch applied after the active theme variant.
     #[serde(default, skip_serializing_if = "ThemeOverride::is_empty")]
     pub theme_overrides: ThemeOverride,
+    /// The file/folder icon set. Its own track from the colour theme
+    /// (decision 4): "minimal" keeps Atlas's lucide icons, and anything else
+    /// is a VS Code icon theme — bundled or installed from Open VSX.
+    #[serde(default = "default_icon_theme")]
+    pub icon_theme: String,
     /// Pre-theme-core config fields. Read once, never serialized again.
     #[serde(default, rename = "codeEditorTheme", skip_serializing)]
     legacy_code_editor_theme: Option<String>,
@@ -239,6 +244,10 @@ pub fn default_theme() -> String {
     atlas_theme::DEFAULT_THEME_ID.to_string()
 }
 
+pub fn default_icon_theme() -> String {
+    atlas_icon_theme::DEFAULT_ICON_THEME_ID.to_string()
+}
+
 pub fn default_embedding_model() -> String {
     "all-MiniLM-L6-v2".to_string()
 }
@@ -264,6 +273,7 @@ impl Default for AppSettings {
             theme: default_theme(),
             theme_mode: ThemeMode::default(),
             theme_overrides: ThemeOverride::default(),
+            icon_theme: default_icon_theme(),
             legacy_code_editor_theme: None,
             legacy_atlas_theme: None,
             adaptive_suggestions: AdaptiveSuggestions::default(),
@@ -371,6 +381,13 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "themeOverrides",
         "# Optional user-local patch with base, palette and keys tables, applied\n\
          # after the active theme variant. Omitted when empty.",
+    ),
+    (
+        "iconTheme",
+        "# File and folder icons, on their own track from the colour theme.\n\
+         # \"minimal\" keeps Atlas's own lucide icons; anything else names a VS\n\
+         # Code icon theme, bundled or installed from Open VSX.\n\
+         # (default: \"material-icon-theme\")",
     ),
     (
         "adaptiveSuggestions",
@@ -485,6 +502,16 @@ pub fn validate(settings: &AppSettings) -> Result<(), ValidationIssue> {
         return Err(ValidationIssue {
             key: "theme",
             message: "must not be empty".to_string(),
+        });
+    }
+    // An icon theme id is used as a directory name under
+    // `~/.config/atlas/icon-themes/`, so a value with a separator or a `..` in
+    // it would name a path outside it. Rejecting it here means the commands
+    // downstream never have to.
+    if !atlas_icon_theme::is_valid_id(&settings.icon_theme) {
+        return Err(ValidationIssue {
+            key: "iconTheme",
+            message: "must be a plain id: letters, digits, dot, dash or underscore".to_string(),
         });
     }
     Ok(())
@@ -682,6 +709,7 @@ pub struct SettingsPatch {
     pub theme: Option<String>,
     pub theme_mode: Option<ThemeMode>,
     pub theme_overrides: Option<ThemeOverride>,
+    pub icon_theme: Option<String>,
     pub adaptive_suggestions: Option<AdaptiveSuggestions>,
     pub git_blame_inline: Option<bool>,
     pub auto_update: Option<bool>,
@@ -728,6 +756,9 @@ impl SettingsPatch {
         }
         if let Some(v) = &self.theme_overrides {
             settings.theme_overrides = v.clone();
+        }
+        if let Some(v) = &self.icon_theme {
+            settings.icon_theme = v.clone();
         }
         if let Some(v) = self.adaptive_suggestions {
             settings.adaptive_suggestions = v;

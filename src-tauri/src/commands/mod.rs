@@ -33,6 +33,7 @@ pub mod git_snapshot;
 pub mod git_stage_ops;
 pub mod git_watcher;
 pub mod github;
+pub mod icon_themes;
 pub mod knowledge;
 pub mod knowledge_export;
 pub mod knowledge_graph_layout;
