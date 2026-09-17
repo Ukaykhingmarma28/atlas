@@ -155,8 +155,9 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `shareTelemetry` | boolean | `true` | — |
 | `linkTelemetryToAccount` | boolean | `true` | — |
 | `embeddingModelId` | string | `"all-MiniLM-L6-v2"` | non-empty |
-| `codeEditorTheme` | string | `"atlas"` | non-empty (not checked against the frontend theme catalog — see [Non-goals](#non-goals-for-validation)) |
-| `atlasTheme` | string | `"atlas-black"` | non-empty (same caveat) |
+| `theme` | string | `"atlas"` | known theme id; an unknown id is logged and falls back to `"atlas"` |
+| `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
+| `themeOverrides` | table | absent | optional `base`, `palette`, and `keys` patch applied after the active theme variant |
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `gitBlameInline` | boolean | `true` | — |
 | `autoUpdate` | boolean | `true` | — |
@@ -174,15 +175,14 @@ Any other key under `[settings]` is left on disk untouched and reported as an
 `unknownKeys` entry in `get_atlas_config_info` — never treated as an error,
 never deleted.
 
-### Non-goals for validation
+### Theme migration
 
-`codeEditorTheme`/`atlasTheme` are checked for non-emptiness, not membership
-in the frontend's theme catalogs (`src/features/theme/themes.ts`,
-`src/features/editor/themes/themes.ts`). Duplicating that catalog into Rust
-would create a second list that has to stay in sync with the frontend one —
-trading one drift bug for another. An unrecognized-but-well-formed theme id
-is accepted here and handled the same way the frontend already handles one
-from a newer Atlas version.
+`atlasTheme` and `codeEditorTheme` are legacy keys. The first schema-1 load
+replaces them with the single `theme` setting and deletes both old keys. When
+the old editor selection was not the matching editor half of the old interface
+theme, its `editor.*`, `syntax.*`, and `diff.*` values become `themeOverrides`
+so the user keeps that deliberate combination. There is no separate editor
+theme after this migration.
 
 ## Schema versioning
 

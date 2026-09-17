@@ -307,7 +307,7 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
       {view.groupOrder.map((gid, i) => (
         <Fragment key={gid}>
           {i > 0 && (
-            <Separator className="w-px bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize" />
+            <Separator className="w-px bg-border-default hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
           )}
           {/* Sizes are percentages: v4 reads bare numbers as PIXELS and
               unit-less strings as percentages. `order` is gone — panels are
@@ -448,7 +448,7 @@ const TabColumn = memo(function TabColumn({
                   )}
                 >
                   {isRunning ? (
-                    <Loader2 size={12} className="animate-spin text-accent shrink-0" />
+                    <Loader2 size={12} className="animate-spin text-primary shrink-0" />
                   ) : (
                     <Icon
                       size={12}
@@ -503,7 +503,7 @@ const TabColumn = memo(function TabColumn({
                 <span
                   aria-hidden
                   title="Active pane"
-                  className="self-center shrink-0 mx-1 h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)]"
+                  className="self-center shrink-0 mx-1 h-1.5 w-1.5 rounded-full bg-[var(--primary)]"
                 />
               )}
               <NewTabDropdown addTab={addTab} groupId={groupId} />

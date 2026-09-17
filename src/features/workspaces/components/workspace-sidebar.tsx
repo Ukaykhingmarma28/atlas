@@ -423,7 +423,7 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
               className={cn(
                 "flex size-5 items-center justify-center rounded hover:bg-[var(--bg-elevated)] cursor-pointer",
                 group.pinned
-                  ? "opacity-100 text-[var(--accent-primary)]"
+                  ? "opacity-100 text-[var(--primary)]"
                   : "opacity-0 group-hover/h:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)]",
               )}
             >
@@ -591,7 +591,7 @@ const ChatRow = memo(function ChatRow({
       title={`${chat.projectName} — ${chat.projectPath}`}
     >
       {running ? (
-        <AtlasLoader size={12} className="shrink-0 text-[var(--accent-primary)]" />
+        <AtlasLoader size={12} className="shrink-0 text-[var(--primary)]" />
       ) : chat.agentType === "cersei" ? (
         <AtlasIcon size={13} className="shrink-0" />
       ) : (
@@ -1592,7 +1592,7 @@ function RailIconButton({
         className={cn(
           "flex size-6 items-center justify-center rounded-md outline-none transition-colors cursor-pointer hover:bg-[var(--bg-hover)]",
           active
-            ? "text-[var(--accent-primary)]"
+            ? "text-[var(--primary)]"
             : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
         )}
       >

@@ -98,6 +98,7 @@ pub struct Theme {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub light: Option<ThemeVariant>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
     pub warnings: Vec<ThemeWarning>,
 }
 

@@ -342,7 +342,7 @@ export function MemoryTimelineView() {
                 <button
                   onClick={() => void runSearch()}
                   disabled={!query.trim() || searching}
-                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
+                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
                 >
                   {searching ? (
                     <Loader2 size={14} className="animate-spin" />

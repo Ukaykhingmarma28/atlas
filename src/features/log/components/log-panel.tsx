@@ -52,19 +52,19 @@ const SOURCES: LogSource[] = [
 
 const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string }> = {
   agent: {
-    text: "text-[var(--accent-primary)]",
-    bg: "bg-[var(--accent-primary-muted)]",
-    border: "border-[var(--accent-primary)]/30",
+    text: "text-[var(--primary)]",
+    bg: "bg-[var(--atlas-element-primary-muted)]",
+    border: "border-[var(--primary)]/30",
   },
   canvas: {
-    text: "text-[var(--accent-secondary)]",
-    bg: "bg-[var(--accent-secondary)]/15",
-    border: "border-[var(--accent-secondary)]/30",
+    text: "text-[var(--muted-foreground)]",
+    bg: "bg-[var(--muted-foreground)]/15",
+    border: "border-[var(--muted-foreground)]/30",
   },
   chat: {
-    text: "text-[var(--accent-primary)]",
-    bg: "bg-[var(--accent-primary-muted)]",
-    border: "border-[var(--accent-primary)]/30",
+    text: "text-[var(--primary)]",
+    bg: "bg-[var(--atlas-element-primary-muted)]",
+    border: "border-[var(--primary)]/30",
   },
   git: {
     text: "text-[var(--status-warning)]",
@@ -97,9 +97,9 @@ const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string
     border: "border-[var(--border-default)]",
   },
   atlas: {
-    text: "text-[var(--accent-primary)]",
-    bg: "bg-[var(--accent-primary-muted)]",
-    border: "border-[var(--accent-primary)]/30",
+    text: "text-[var(--primary)]",
+    bg: "bg-[var(--atlas-element-primary-muted)]",
+    border: "border-[var(--primary)]/30",
   },
 };
 
@@ -314,7 +314,7 @@ export function LogPanel() {
                     className={cn(
                       "p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer transition-colors",
                       e.pinned
-                        ? "text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]"
+                        ? "text-[var(--primary)] hover:text-[var(--atlas-element-primary-hover)]"
                         : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
                     )}
                   >
@@ -393,7 +393,7 @@ export function LogPanel() {
           className={cn(
             "flex items-center gap-1 px-2 h-6 rounded text-[10px] cursor-pointer outline-none transition-colors",
             showPinnedOnly
-              ? "text-[var(--accent-primary)] bg-[var(--accent-primary-muted)]"
+              ? "text-[var(--primary)] bg-[var(--atlas-element-primary-muted)]"
               : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover",
           )}
           title="Pinned only"
@@ -551,7 +551,7 @@ function SourceFilter({
                   className={cn(
                     "w-3 h-3 rounded-sm border flex items-center justify-center",
                     checked
-                      ? "bg-[var(--accent-primary)] border-[var(--accent-primary)]"
+                      ? "bg-[var(--primary)] border-[var(--primary)]"
                       : "border-[var(--border-default)]",
                   )}
                 >

@@ -20,10 +20,12 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent-primary);
-  --color-accent-hover: var(--accent-primary-hover);
-  --color-accent-muted: var(--accent-primary-muted);
-  --color-accent-secondary: var(--accent-secondary);
+  /* shadcn's accent is a selected/hover surface. Atlas's former brand
+     "accent" has been renamed primary; do not collapse the two again. */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--atlas-element-hover);
+  --color-accent-muted: var(--muted);
+  --color-accent-secondary: var(--secondary);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -67,9 +69,16 @@
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono);
 
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  /* Theme authors own --radius, but these utility values preserve the values
+     Atlas rendered before the namespace cleanup. Foundations owns changes. */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
 
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
@@ -282,7 +291,7 @@
 .atlas-comms-cm-host .cm-selectionBackground,
 .atlas-comms-cm-host .cm-focused .cm-selectionBackground,
 .atlas-comms-cm-host .cm-content ::selection {
-  background-color: color-mix(in srgb, var(--accent-primary) 28%, transparent) !important;
+  background-color: color-mix(in srgb, var(--primary) 28%, transparent) !important;
 }
 
 .atlas-mention-chip {
@@ -320,16 +329,16 @@
   white-space: nowrap;
 }
 .atlas-mention-chip[data-mention-kind="file"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="folder"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="symbol"] {
   color: var(--status-success);
 }
 .atlas-mention-chip[data-mention-kind="knowledge"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="repo"] {
   color: var(--status-success);
@@ -366,16 +375,16 @@
 }
 /* Invokable capabilities — distinguished by glyph/sigil, not color (white). */
 .atlas-mention-chip[data-mention-kind="skill"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="command"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="agent"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 .atlas-mention-chip[data-mention-kind="rule"] {
-  color: var(--accent-primary);
+  color: var(--primary);
 }
 
 /* Inline variant for sent chat messages: flows in selectable prose, carries the
@@ -674,13 +683,13 @@
     margin: 0.6em 0;
   }
   .reader-content a {
-    color: var(--accent-primary);
+    color: var(--primary);
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
   }
   .reader-content a:hover {
-    color: var(--accent-primary-hover);
+    color: var(--atlas-element-primary-hover);
   }
   .reader-content img {
     max-width: 100%;
@@ -1024,7 +1033,7 @@
 /* Brief highlight when jumping to a message (Cmd+F / links panel). */
 @keyframes atlas-jump-flash-kf {
   0% {
-    background-color: var(--accent-primary);
+    background-color: var(--primary);
     opacity: 0.14;
   }
   100% {
@@ -1062,7 +1071,7 @@
   height: 1em;
   margin-left: 2px;
   vertical-align: text-bottom;
-  background: var(--accent-primary);
+  background: var(--primary);
   border-radius: 1px;
   animation: atlas-blink 1s steps(1, end) infinite;
 }
@@ -1209,7 +1218,7 @@
   background-color: var(--bg-hover) !important;
 }
 .cm-panel.cm-search input[type="text"]:focus {
-  border-color: var(--border-focus, var(--accent-primary)) !important;
+  border-color: var(--border-focus, var(--primary)) !important;
   background-color: var(--bg-input) !important;
 }
 .cm-panel.cm-search input[type="text"]::placeholder {
@@ -1461,7 +1470,7 @@
   font-size: inherit;
 }
 .prose-chat a {
-  color: var(--accent-primary);
+  color: var(--primary);
   text-decoration: underline;
 }
 .prose-chat a:hover {
@@ -1528,7 +1537,7 @@
 }
 .prose-chat li input[type="checkbox"] {
   margin-right: 0.375rem;
-  accent-color: var(--accent-primary);
+  accent-color: var(--primary);
 }
 
 /* Atlas bars loader — four bars that shuffle (evokes the Atlas logo). Color
@@ -1690,7 +1699,7 @@
 }
 
 .atlas-prose a {
-  color: var(--accent-primary);
+  color: var(--primary);
   text-decoration: underline;
 }
 .atlas-prose a:hover {

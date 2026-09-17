@@ -58,21 +58,6 @@
         "base"
       ],
       "type": "object"
-    },
-    "ThemeWarning": {
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key",
-        "message"
-      ],
-      "type": "object"
     }
   },
   "properties": {
@@ -112,12 +97,6 @@
       "format": "uint32",
       "minimum": 0.0,
       "type": "integer"
-    },
-    "warnings": {
-      "items": {
-        "$ref": "#/definitions/ThemeWarning"
-      },
-      "type": "array"
     }
   },
   "required": [

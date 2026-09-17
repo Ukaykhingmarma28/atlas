@@ -48,7 +48,7 @@ export function AtlasThemesSettings() {
               className={cn(
                 "rounded px-2 py-1 text-[10px] capitalize transition-colors",
                 settings.themeMode === mode
-                  ? "bg-accent text-accent-foreground"
+                  ? "bg-primary text-primary-foreground"
                   : "text-text-tertiary hover:text-text-primary",
               )}
             >

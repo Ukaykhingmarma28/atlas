@@ -209,7 +209,7 @@ function DockMenu({
             className={cn(
               "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
               open
-                ? "bg-[var(--accent-primary)]/20 text-[var(--text-primary)]"
+                ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
                 : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
             )}
           >
@@ -248,7 +248,7 @@ function DockMenu({
                 <d.icon size={12} className="shrink-0 text-text-tertiary" />
                 {d.label}
                 {dock === d.dock && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)]" />
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
                 )}
               </button>
             ))}
@@ -276,7 +276,7 @@ function ToolButton({
         className={cn(
           "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
           active
-            ? "bg-[var(--accent-primary)]/20 text-[var(--text-primary)]"
+            ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
             : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
         )}
       >

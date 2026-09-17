@@ -180,7 +180,7 @@ export function ApprovalCard({
                     "mt-[3px] grid size-[15px] shrink-0 place-items-center border transition-colors",
                     q.multiSelect ? "rounded-[4px]" : "rounded-full",
                     on
-                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]"
+                      ? "border-[var(--primary)] bg-[var(--primary)]"
                       : "border-[var(--border-strong)]",
                   )}
                 >
@@ -289,7 +289,7 @@ export function ApprovalCard({
                 className={cn(
                   "flex h-9 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
                   isAnswered(answer)
-                    ? "cursor-pointer bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary-hover)]"
+                    ? "cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--atlas-element-primary-hover)]"
                     : "cursor-default bg-[var(--bg-base)] text-[var(--text-ghost)]",
                 )}
               >

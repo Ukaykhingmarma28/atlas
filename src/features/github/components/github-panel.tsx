@@ -204,7 +204,7 @@ function BranchPicker({
                     )}
                   >
                     <span className="truncate flex-1">{b}</span>
-                    {current ? <Check size={11} className="text-[var(--accent-primary)]" /> : null}
+                    {current ? <Check size={11} className="text-[var(--primary)]" /> : null}
                   </button>
                 );
               })
@@ -536,7 +536,7 @@ export function GithubPanel() {
 
           {loading && (
             <div className="flex items-center justify-center py-8">
-              <Loader2 size={16} className="animate-spin text-accent" />
+              <Loader2 size={16} className="animate-spin text-primary" />
             </div>
           )}
 
@@ -545,7 +545,7 @@ export function GithubPanel() {
               <p className="text-[11px] text-error">{error}</p>
               <button
                 onClick={handleSearch}
-                className="mt-1 text-[10px] text-accent hover:underline cursor-pointer"
+                className="mt-1 text-[10px] text-primary hover:underline cursor-pointer"
               >
                 Retry
               </button>
@@ -576,7 +576,7 @@ export function GithubPanel() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-accent truncate">
+                      <span className="text-[11px] font-medium text-primary truncate">
                         {repo.full_name}
                       </span>
                     </div>
@@ -626,7 +626,7 @@ export function GithubPanel() {
                               isCloned
                                 ? "text-success"
                                 : isCloning
-                                  ? "text-accent"
+                                  ? "text-primary"
                                   : "text-text-tertiary hover:text-text-primary hover:bg-bg-active",
                             )}
                           >

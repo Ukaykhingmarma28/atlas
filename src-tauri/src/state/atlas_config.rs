@@ -1664,7 +1664,7 @@ mod tests {
         let mgr = ConfigManager::from_raw(path, raw).expect("partial file parses");
         assert!(!mgr.effective().enter_to_send);
         // Every other field is absent from the file — must be the compiled default.
-        assert_eq!(mgr.effective().atlas_theme, default_atlas_theme());
+        assert_eq!(mgr.effective().theme, default_theme());
         assert_eq!(mgr.effective().ui_scale, default_ui_scale());
         assert!(mgr.effective().auto_update);
     }
@@ -1823,15 +1823,42 @@ someFutureKey = \"left alone\"
     fn legacy_migration_extracts_known_fields() {
         let legacy = serde_json::json!({
             "enterToSend": false,
-            "atlasTheme": "custom-theme",
+            "atlasTheme": "rose-pine",
             "uiScale": 1.5,
         });
         let settings = settings_from_legacy_json(Some(&legacy));
         assert!(!settings.enter_to_send);
-        assert_eq!(settings.atlas_theme, "custom-theme");
+        assert_eq!(settings.theme, "rose-pine");
         assert_eq!(settings.ui_scale, 1.5);
         // Untouched fields keep their compiled defaults.
         assert!(settings.auto_update);
+    }
+
+    #[test]
+    fn config_theme_migration_merges_the_two_legacy_pickers_once() {
+        let path = tmp_config_path();
+        let raw = "schemaVersion = 1\n\n[settings]\natlasTheme = \"one-dark\"\ncodeEditorTheme = \"dracula\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
+
+        assert_eq!(manager.effective().theme, "one-dark");
+        assert!(manager
+            .effective()
+            .theme_overrides
+            .keys
+            .contains_key("syntax.keyword"));
+        assert!(!manager.last_raw.contains("atlasTheme"));
+        assert!(!manager.last_raw.contains("codeEditorTheme"));
+        assert!(manager.last_raw.contains("themeOverrides"));
+    }
+
+    #[test]
+    fn unknown_config_theme_falls_back_to_atlas_and_is_rewritten() {
+        let path = tmp_config_path();
+        let raw = "schemaVersion = 1\n\n[settings]\ntheme = \"from-a-newer-atlas\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("unknown id falls back");
+
+        assert_eq!(manager.effective().theme, default_theme());
+        assert!(manager.last_raw.contains("theme = \"atlas\""));
     }
 
     #[test]
@@ -1863,13 +1890,13 @@ someFutureKey = \"left alone\"
     #[test]
     fn bootstrap_first_run_imports_legacy_settings_and_marks_migrated() {
         let path = tmp_config_path();
-        let legacy = serde_json::json!({ "enterToSend": false, "atlasTheme": "custom" });
+        let legacy = serde_json::json!({ "enterToSend": false, "atlasTheme": "rose-pine" });
 
         let outcome = bootstrap_at(path.clone(), false, Some(legacy));
 
         assert!(outcome.mark_migrated);
         assert!(!outcome.manager.effective().enter_to_send);
-        assert_eq!(outcome.manager.effective().atlas_theme, "custom");
+        assert_eq!(outcome.manager.effective().theme, "rose-pine");
         assert!(path.exists(), "bootstrap must actually write config.toml on first run");
     }
 
@@ -1900,7 +1927,7 @@ someFutureKey = \"left alone\"
         // The existing file wins outright — legacy data is never merged in,
         // not even for keys the existing file didn't set.
         assert!(!outcome.manager.effective().enter_to_send);
-        assert_eq!(outcome.manager.effective().atlas_theme, default_atlas_theme());
+        assert_eq!(outcome.manager.effective().theme, default_theme());
         assert_eq!(fs::read_to_string(&path).unwrap(), raw, "must not rewrite an existing config.toml");
     }
 

@@ -191,7 +191,7 @@ export function DiffView({
               className={cn(
                 "p-1 rounded transition-colors cursor-pointer",
                 sortMode === "most-changes"
-                  ? "text-accent bg-bg-selected"
+                  ? "text-primary bg-bg-selected"
                   : "text-text-tertiary hover:bg-bg-hover",
               )}
             >
@@ -402,7 +402,7 @@ export function DiffView({
                     width: "100%",
                     overflow: "hidden",
                     cursor: selectable && isChange ? "pointer" : undefined,
-                    outline: isSelected ? "1px solid var(--accent-primary)" : undefined,
+                    outline: isSelected ? "1px solid var(--primary)" : undefined,
                     outlineOffset: isSelected ? -1 : undefined,
                     backgroundColor:
                       line.type === "add"
@@ -479,7 +479,7 @@ function LangFilterPopover({
           <button
             className={cn(
               "p-1 rounded transition-colors cursor-pointer",
-              active ? "text-accent bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
+              active ? "text-primary bg-bg-selected" : "text-text-tertiary hover:bg-bg-hover",
             )}
           >
             <Code size={11} />
@@ -498,7 +498,7 @@ function LangFilterPopover({
             onClick={() => onSelect(null)}
             className={cn(
               "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
-              !active ? "text-accent" : "text-text-secondary",
+              !active ? "text-primary" : "text-text-secondary",
             )}
           >
             All languages
@@ -509,7 +509,7 @@ function LangFilterPopover({
               onClick={() => onSelect(active === lang ? null : lang)}
               className={cn(
                 "w-full text-left px-3 h-[26px] text-[10px] hover:bg-bg-hover cursor-default outline-none",
-                active === lang ? "text-accent" : "text-text-secondary",
+                active === lang ? "text-primary" : "text-text-secondary",
               )}
             >
               {lang}

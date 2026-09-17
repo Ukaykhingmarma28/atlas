@@ -17,7 +17,7 @@ function themeSummaries(): ThemeSummary[] {
     hasDark: Boolean(theme.dark),
     hasLight: Boolean(theme.light),
     builtIn: true,
-    warnings: theme.warnings,
+    warnings: theme.warnings ?? [],
   }));
 }
 

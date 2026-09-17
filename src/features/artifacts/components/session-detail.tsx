@@ -2044,7 +2044,7 @@ function BarButton({
       >
         {children}
         {badge !== undefined && (
-          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)] font-mono text-[8px] font-semibold text-[var(--bg-base)]">
+          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--primary)] font-mono text-[8px] font-semibold text-[var(--primary-foreground)]">
             {badge}
           </span>
         )}

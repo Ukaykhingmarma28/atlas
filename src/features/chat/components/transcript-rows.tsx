@@ -120,7 +120,7 @@ export const UserRowView = memo(function UserRowView({
           className={cn(
             // Apple-squircle read: one big continuous radius (no clipped
             // corner), a touch more padding — iMessage-adjacent geometry.
-            "atlas-prose atlas-prose--user min-w-0 max-w-full rounded-[20px] bg-[var(--accent-primary-muted)] px-4 py-2.5 select-text",
+            "atlas-prose atlas-prose--user min-w-0 max-w-full rounded-[20px] bg-[var(--atlas-element-primary-muted)] px-4 py-2.5 select-text",
             // Entrance only for THE message sent just now (id-scoped).
             justSent && "atlas-bubble-in",
           )}
@@ -343,7 +343,7 @@ function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) 
       size={15}
       className={cn(
         state === "failed" && "text-[var(--status-error)]",
-        state === "running" && "text-[var(--accent-primary)]",
+        state === "running" && "text-[var(--primary)]",
       )}
     />
   );
@@ -613,7 +613,7 @@ function FooterPill({
         "inline-flex h-[20px] cursor-pointer items-center gap-1 rounded-full border px-2",
         "text-[10px] font-medium leading-none transition-colors",
         primary
-          ? "border-[var(--accent-primary)]/40 bg-[var(--accent-primary-muted)] text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/20"
+          ? "border-[var(--primary)]/40 bg-[var(--atlas-element-primary-muted)] text-[var(--primary)] hover:bg-[var(--primary)]/20"
           : "border-white/[0.12] bg-white/[0.04] text-[var(--text-secondary)] hover:bg-white/[0.09] hover:text-[var(--text-primary)]",
       )}
     >

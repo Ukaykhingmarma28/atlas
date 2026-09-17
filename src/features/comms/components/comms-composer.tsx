@@ -412,14 +412,14 @@ export function CommsComposer({
             // strip's lower half.
             "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-colors",
             isDropTarget
-              ? "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40"
+              ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40"
               : overLimit
                 ? "border-error"
                 : "border-border-default",
           )}
         >
           {isDropTarget && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
               <span className="rounded-full bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
                 Drop files to attach
               </span>
@@ -437,7 +437,7 @@ export function CommsComposer({
           {/* Inner input surface. The disabled dimming, when it exists, belongs
             HERE and not on the shell — on the shell it fades the toolbar and
             every popover anchored to it. */}
-          <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10">
+          <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--primary)]/10">
             {/* EVERY vertical value here is literal px, and that is the whole
               point. Atlas's UI-scale shrinks the root font-size, so a rem-based
               `py-2` renders ~6px rather than 8px while `min-h-[34px]` stays a

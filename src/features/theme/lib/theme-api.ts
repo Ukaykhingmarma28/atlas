@@ -20,7 +20,8 @@ export interface Theme {
   license: string;
   dark?: ThemeVariant;
   light?: ThemeVariant;
-  warnings: ThemeWarning[];
+  /** Omitted by Rust when there are no forward-compatibility warnings. */
+  warnings?: ThemeWarning[];
 }
 
 export interface ThemeWarning {

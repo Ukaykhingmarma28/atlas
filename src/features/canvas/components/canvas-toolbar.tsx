@@ -140,7 +140,7 @@ function ToolButton({
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-lg transition-colors cursor-pointer",
           active
-            ? "bg-[var(--accent-primary)]/20 text-[var(--text-primary)]"
+            ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
             : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
         )}
       >

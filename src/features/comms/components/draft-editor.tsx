@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Hash, Link2, Play } from "lucide-react";
 import {
   EditorView,

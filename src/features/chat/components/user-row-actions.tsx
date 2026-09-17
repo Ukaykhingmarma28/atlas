@@ -96,7 +96,7 @@ function ActionButton({
         className={cn(
           "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
           "hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]",
-          active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
+          active ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]",
         )}
       >
         {children}
