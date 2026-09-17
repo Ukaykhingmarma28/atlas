@@ -621,7 +621,7 @@ function SpaceSurface({
           >
             {preview && (
               <div
-                className="pointer-events-none absolute rounded border border-[var(--accent-primary)] bg-[var(--accent-primary)]/10"
+                className="pointer-events-none absolute rounded border border-[var(--primary)] bg-[var(--primary)]/10"
                 style={{
                   left: preview.left,
                   top: preview.top,
@@ -643,11 +643,11 @@ function SpaceSurface({
             the drop against the wrapper; opacity only. */}
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[var(--accent-primary)]/8 transition-opacity duration-150 ${
+          className={`pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[var(--primary)]/8 transition-opacity duration-150 ${
             isDropTarget ? "opacity-100" : "opacity-0"
           }`}
         >
-          <span className="rounded-full border border-[var(--accent-primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+          <span className="rounded-full border border-[var(--primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
             Drop images or video to add them
           </span>
         </div>

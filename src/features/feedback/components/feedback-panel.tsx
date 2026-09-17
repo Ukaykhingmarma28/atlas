@@ -273,7 +273,7 @@ export function FeedbackPanel() {
               className={cn(
                 "inline-flex h-6 items-center gap-1.5 rounded-full px-3 text-[11px] font-medium transition-colors",
                 canSubmit
-                  ? "bg-[var(--accent-primary)] text-[var(--primary-foreground)] hover:opacity-90 cursor-pointer"
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 cursor-pointer"
                   : "bg-white/[0.06] text-text-ghost cursor-not-allowed",
               )}
             >

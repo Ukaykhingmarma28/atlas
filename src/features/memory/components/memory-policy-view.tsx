@@ -146,7 +146,7 @@ export function MemoryPolicyView() {
           </p>
           <button
             onClick={() => void download()}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--accent-primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Download size={13} />
             Download model
@@ -171,7 +171,7 @@ export function MemoryPolicyView() {
           <p className="text-[12px] text-[var(--text-primary)]">Downloading model…</p>
           <div className="h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
             <div
-              className="h-full bg-[var(--accent-primary)] transition-[width] duration-200"
+              className="h-full bg-[var(--primary)] transition-[width] duration-200"
               style={{ width: `${pct}%` }}
             />
           </div>

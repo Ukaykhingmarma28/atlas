@@ -582,7 +582,7 @@ function useUpdateItem(): DockItem {
     ) : (
       <ArrowDownToLine size={12} />
     ),
-    badge: ready ? <DockBadge className="bg-[var(--accent-primary)]" /> : undefined,
+    badge: ready ? <DockBadge className="bg-[var(--primary)]" /> : undefined,
   };
 }
 

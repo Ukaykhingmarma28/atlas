@@ -317,11 +317,11 @@ export const CommsConversation = memo(function CommsConversation({
               aria-hidden
               className={cn(
                 "pointer-events-none absolute inset-0 z-[4] flex items-center justify-center",
-                "bg-[var(--accent-primary)]/8 transition-opacity duration-150",
+                "bg-[var(--primary)]/8 transition-opacity duration-150",
                 isDropTarget ? "opacity-100" : "opacity-0",
               )}
             >
-              <span className="rounded-full border border-[var(--accent-primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+              <span className="rounded-full border border-[var(--primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
                 Drop files to attach
               </span>
             </div>

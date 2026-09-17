@@ -176,6 +176,7 @@ pub fn run() {
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             commands::atlas_config::start_watcher(app.handle(), atlas_config);
+            commands::themes::start_watcher(app.handle());
 
             // Mirror the (possibly updated) telemetry id + migration marker
             // back into `state.json` so both agree and a downgrade still
@@ -608,6 +609,8 @@ pub fn run() {
             commands::atlas_config::update_atlas_settings,
             commands::atlas_config::reset_atlas_config,
             commands::atlas_config::open_atlas_config,
+            commands::themes::list_themes,
+            commands::themes::get_theme,
             commands::telemetry::telemetry_config,
             commands::telemetry::telemetry_set_org,
             commands::feedback::feedback_submit,

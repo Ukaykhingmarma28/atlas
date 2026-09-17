@@ -821,7 +821,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
             >
               {loading && (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 size={20} className="animate-spin text-accent" />
+                  <Loader2 size={20} className="animate-spin text-primary" />
                 </div>
               )}
 
@@ -830,7 +830,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                   <p className="text-[12px] text-error">{error}</p>
                   <button
                     onClick={() => fetchPage(inputUrl)}
-                    className="mt-2 text-[11px] text-accent underline cursor-pointer"
+                    className="mt-2 text-[11px] text-primary underline cursor-pointer"
                   >
                     Retry
                   </button>

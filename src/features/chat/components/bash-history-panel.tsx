@@ -110,7 +110,7 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
         {/* Left-edge resize handle */}
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -left-px w-px h-full bg-border-default hover:bg-accent transition-colors cursor-col-resize z-10"
+          className="absolute top-0 -left-px w-px h-full bg-border-default hover:bg-primary transition-colors cursor-col-resize z-10"
           title="Drag to resize"
         />
 

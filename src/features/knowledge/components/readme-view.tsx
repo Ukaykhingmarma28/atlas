@@ -40,7 +40,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
               {...p}
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--accent-primary)] underline hover:opacity-80"
+              className="text-[var(--primary)] underline hover:opacity-80"
             />
           ),
           ul: (p) => <ul className="list-disc pl-6 space-y-1 my-3">{p.children}</ul>,

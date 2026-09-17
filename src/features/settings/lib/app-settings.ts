@@ -9,8 +9,8 @@
  */
 
 import { DEFAULT_SCALE } from "./ui-scale";
-import { DEFAULT_EDITOR_THEME_ID } from "@/features/editor/themes/themes";
-import { DEFAULT_ATLAS_THEME_ID } from "@/features/theme/themes";
+import type { ThemeMode } from "@/features/theme/lib/theme-api";
+import type { ThemeOverride } from "@/features/theme/resolve-theme";
 
 /**
  * App-wide preferences surfaced in Settings → General. Mirrors
@@ -39,14 +39,13 @@ export interface AppSettings {
   /** Selected on-device embedding model id (== dir name). Managed by the Local
    *  Model Manager; carried here so settings round-trips never clobber it. */
   embeddingModelId: string;
-  /** Code-editor color theme id (see src/features/editor/themes). Drives the
-   *  CodeMirror editor, the diff viewer and the source-control diff views. */
-  codeEditorTheme: string;
-  /** Atlas interface-theme id (see src/features/theme/themes). Swaps the whole
-   *  dark UI palette — background, panels, text, borders and accent — while
-   *  keeping dark-theme primitives. Independent of `codeEditorTheme` (which only
-   *  themes code syntax). Default "atlas-black" = original AMOLED look. */
-  atlasTheme: string;
+  /** One theme id for chrome, editor, terminal, diffs and syntax. */
+  theme: string;
+  /** Active variant preference. Light is persisted but hidden in Settings
+   *  until the light-mode QA flag is enabled. */
+  themeMode: ThemeMode;
+  /** User-local patch applied after the active theme variant. */
+  themeOverrides: ThemeOverride;
   /** Adaptive next-step suggestion chips in the agent chat's per-turn card.
    *  "agent" (default) asks the coding agent to end each reply with a hidden
    *  `<next_steps>` block (uses the live session context, no BYOK); "off"
@@ -117,8 +116,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shareTelemetry: true,
   linkTelemetryToAccount: true,
   embeddingModelId: "all-MiniLM-L6-v2",
-  codeEditorTheme: DEFAULT_EDITOR_THEME_ID,
-  atlasTheme: DEFAULT_ATLAS_THEME_ID,
+  theme: "atlas",
+  themeMode: "system",
+  themeOverrides: {},
   adaptiveSuggestions: "agent",
   gitBlameInline: true,
   autoUpdate: true,

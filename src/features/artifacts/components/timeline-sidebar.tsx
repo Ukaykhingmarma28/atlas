@@ -416,14 +416,11 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
       <Dot
         lane={0}
         r={DAY_R}
-        className={today ? "bg-[var(--accent-primary)]" : undefined}
+        className={today ? "bg-[var(--primary)]" : undefined}
         style={today ? undefined : { background: DOT_NEUTRAL }}
       />
       <span
-        className={cn(
-          "truncate",
-          today ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]",
-        )}
+        className={cn("truncate", today ? "text-[var(--primary)]" : "text-[var(--text-secondary)]")}
       >
         {row.label}
       </span>
@@ -442,7 +439,7 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
  */
 const ROW =
   "relative flex h-full w-full cursor-pointer items-center pr-3 text-left transition-colors hover:bg-[var(--bg-active)]";
-const ROW_SELECTED = "bg-[var(--accent-primary)]/15 hover:bg-[var(--accent-primary)]/15";
+const ROW_SELECTED = "bg-[var(--primary)]/15 hover:bg-[var(--primary)]/15";
 
 // memo: the board re-renders on every capture/git event while the tab is open;
 // with the parent's same-data bailout keeping row identities stable, memo

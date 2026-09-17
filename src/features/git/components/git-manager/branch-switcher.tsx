@@ -91,7 +91,7 @@ export function BranchSwitcher() {
               >
                 <Check
                   size={12}
-                  className={cn("shrink-0", b.isCurrent ? "text-accent" : "opacity-0")}
+                  className={cn("shrink-0", b.isCurrent ? "text-primary" : "opacity-0")}
                 />
                 <span className="truncate flex-1 font-mono">{b.name}</span>
                 {b.isRemote && (

@@ -29,9 +29,8 @@ import { cn } from "@/lib/utils";
 const TOOLBAR_HEIGHT = 32;
 const DIRTY_CHECK_DEBOUNCE = 300; // ms — only check dirty state, not sync content
 
-// Editor theme — live-swappable via a Compartment. The concrete colors come
-// from the theme registry (src/features/editor/themes), keyed by the persisted
-// `settings.codeEditorTheme`.
+// Theme colours are live-swappable through a compartment; the resolved theme
+// is shared with the rest of Atlas rather than selected independently.
 const themeCompartment = new Compartment();
 
 // Inline git blame — live-toggleable via a Compartment so flipping the
@@ -335,9 +334,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       const view = new EditorView({
         doc: originalContent,
         extensions: [
-          themeCompartment.of(
-            editorThemeExtensions(useProjectStore.getState().settings.codeEditorTheme),
-          ),
+          themeCompartment.of(editorThemeExtensions()),
           langExt,
           lineNumbers(),
           diffGutter(),
@@ -406,14 +403,17 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   // Live-reskin the editor when the persisted theme changes — reconfigure the
   // theme compartment in place so the buffer/undo history survive.
-  const codeEditorTheme = useProjectStore.use.settings().codeEditorTheme;
+  const theme = useProjectStore.use.settings().theme;
   useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      effects: themeCompartment.reconfigure(editorThemeExtensions(codeEditorTheme)),
-    });
-  }, [codeEditorTheme]);
+    const refreshTheme = () => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions()) });
+    };
+    refreshTheme();
+    window.addEventListener("atlas:theme-applied", refreshTheme);
+    return () => window.removeEventListener("atlas:theme-applied", refreshTheme);
+  }, [theme]);
 
   // Live-toggle inline blame: reconfigure the compartment in place; turning it
   // on also fetches a fresh snapshot (the extension starts empty).
@@ -446,7 +446,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         style={{ height: TOOLBAR_HEIGHT }}
       >
         <Breadcrumbs filePath={path} projectPath={projectPath} />
-        {buffer.dirty && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 ml-2" />}
+        {buffer.dirty && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 ml-2" />}
         {/* Right-hand controls. `ml-auto` on the group (rather than on whichever
             child happens to be present) keeps them pinned right no matter which
             of them render — the reload pill is conditional, and hanging the

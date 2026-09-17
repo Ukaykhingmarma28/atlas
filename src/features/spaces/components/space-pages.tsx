@@ -212,7 +212,7 @@ export function SpacePages({
               {dropHere && drop.where !== "into" && (
                 <div
                   className={cn(
-                    "pointer-events-none absolute left-1 right-1 z-10 h-[2px] rounded bg-[var(--accent-primary)]",
+                    "pointer-events-none absolute left-1 right-1 z-10 h-[2px] rounded bg-[var(--primary)]",
                     drop.where === "before" ? "top-0" : "bottom-0",
                   )}
                 />

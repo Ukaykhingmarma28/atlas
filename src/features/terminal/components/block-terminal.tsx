@@ -444,9 +444,9 @@ export const BlockTerminal = memo(function BlockTerminal({
           from obscuring application content. */}
       <div className="relative z-20 flex min-h-[29px] items-center gap-2 border-t border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-[5px]">
         {busy || altScreen ? (
-          <Loader2 size={13} className="shrink-0 animate-spin text-[var(--accent-primary)]" />
+          <Loader2 size={13} className="shrink-0 animate-spin text-[var(--primary)]" />
         ) : (
-          <ChevronRight size={13} className="shrink-0 text-[var(--accent-primary)]" />
+          <ChevronRight size={13} className="shrink-0 text-[var(--primary)]" />
         )}
         {exited ? (
           <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-tertiary)]">
@@ -497,7 +497,7 @@ function BlockPasswordInput({ onSubmit }: { onSubmit: (pw: string) => void }) {
   }, []);
   return (
     <div className="flex items-center gap-2 border-t border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-2">
-      <Lock size={12} className="shrink-0 text-[var(--accent-primary)]" />
+      <Lock size={12} className="shrink-0 text-[var(--primary)]" />
       <input
         ref={inputRef}
         type="password"
@@ -623,7 +623,7 @@ const BlockCard = memo(function BlockCard({
       {hasHeader && (
         <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-2.5 h-[28px] text-[12px]">
           {block.running ? (
-            <Loader2 size={12} className="shrink-0 animate-spin text-[var(--accent-primary)]" />
+            <Loader2 size={12} className="shrink-0 animate-spin text-[var(--primary)]" />
           ) : block.exitCode && block.exitCode !== 0 ? (
             <XCircle size={12} className="shrink-0 text-[var(--status-error)]" />
           ) : (
@@ -804,7 +804,7 @@ const OutputLine = memo(function OutputLine({
             key={i}
             style={r.style}
             title="⌘-click to open in browser"
-            className="cursor-pointer hover:text-[var(--accent-primary)] hover:underline"
+            className="cursor-pointer hover:text-[var(--primary)] hover:underline"
             onClick={(e) => {
               if (e.metaKey || e.ctrlKey) onOpenLink(r.target ?? r.text);
             }}
@@ -816,7 +816,7 @@ const OutputLine = memo(function OutputLine({
             key={i}
             style={r.style}
             title="⌘-click to open"
-            className="cursor-pointer hover:text-[var(--accent-primary)] hover:underline"
+            className="cursor-pointer hover:text-[var(--primary)] hover:underline"
             onClick={(e) => {
               if (e.metaKey || e.ctrlKey) onOpenPath(r.target ?? r.text);
             }}

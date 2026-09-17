@@ -13,8 +13,7 @@ import type { Organisation } from "@/features/organisations/types";
 import { registerFlush } from "@/features/workspaces/lib/flush-registry";
 import { persistHashOf } from "@/features/workspaces/lib/workspace-snapshot";
 import { applyUiScale } from "@/features/settings/lib/ui-scale";
-import { applyEditorTheme } from "@/features/editor/themes/apply-editor-theme";
-import { applyAtlasTheme } from "@/features/theme/apply-atlas-theme";
+import { applyConfiguredTheme } from "@/features/theme/stores/theme-store";
 import {
   updateSettings as updateAtlasConfig,
   resetConfig as resetAtlasConfig,
@@ -305,8 +304,13 @@ function applySettingsSideEffects(next: AppSettings, previous: AppSettings): voi
     );
   }
   if (next.uiScale !== previous.uiScale) applyUiScale(next.uiScale);
-  if (next.codeEditorTheme !== previous.codeEditorTheme) applyEditorTheme(next.codeEditorTheme);
-  if (next.atlasTheme !== previous.atlasTheme) applyAtlasTheme(next.atlasTheme);
+  if (
+    next.theme !== previous.theme ||
+    next.themeMode !== previous.themeMode ||
+    next.themeOverrides !== previous.themeOverrides
+  ) {
+    applyConfiguredTheme(next.theme, next.themeMode, next.themeOverrides);
+  }
 }
 
 /** How many times a settings write adopts the latest generation and retries
@@ -481,12 +485,9 @@ export const useProjectStore = createSelectors(
         // Re-apply the persisted interface zoom (needs the Tauri WebView API,
         // so it can only run here, not in the pre-mount boot path).
         applyUiScale(settings.uiScale);
-        // Re-apply the persisted code-editor theme (writes CSS custom
-        // properties consumed by the editor/diff surfaces).
-        applyEditorTheme(settings.codeEditorTheme);
-        // Re-apply the persisted Atlas interface theme (writes the palette CSS
-        // custom properties that re-skin the whole dark UI).
-        applyAtlasTheme(settings.atlasTheme);
+        // Resolve and apply the one persisted theme across chrome, editor,
+        // terminal, diffs and syntax variables.
+        applyConfiguredTheme(settings.theme, settings.themeMode, settings.themeOverrides);
 
         // Hand the Organisation layer to the org store FIRST — the workspace
         // sidebar filters by the active org, and new workspaces tag themselves

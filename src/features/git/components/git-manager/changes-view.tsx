@@ -49,7 +49,7 @@ function FieldToggle({
       {open ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
       {label}
       {!open && hasContent && (
-        <span className="inline-block w-1 h-1 rounded-full bg-[var(--accent-primary)]" />
+        <span className="inline-block w-1 h-1 rounded-full bg-[var(--primary)]" />
       )}
     </button>
   );
@@ -363,7 +363,7 @@ export function ChangesView() {
             onClick={() => run(() => actions.opControl(opKind, "continue"))}
             disabled={hasConflicts}
             title={hasConflicts ? "Resolve all conflicts first" : undefined}
-            className="px-2 h-6 rounded text-[10px] font-medium bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-2 h-6 rounded text-[10px] font-medium bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-element-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Continue
           </button>
@@ -525,7 +525,7 @@ export function ChangesView() {
               type="checkbox"
               checked={amend}
               onChange={(e) => setAmend(e.target.checked)}
-              className="accent-[var(--accent-primary)]"
+              className="accent-[var(--primary)]"
             />
             Amend last commit
           </label>

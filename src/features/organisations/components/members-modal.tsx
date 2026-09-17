@@ -226,7 +226,7 @@ export function MembersModal({
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 h-[40px] text-[11px] font-medium transition-colors border-b-2 -mb-px cursor-pointer",
                   tab === id
-                    ? "text-text-primary border-b-[var(--accent-primary)]"
+                    ? "text-text-primary border-b-[var(--primary)]"
                     : "text-text-secondary hover:text-text-primary border-b-transparent",
                 )}
               >

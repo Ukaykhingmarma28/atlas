@@ -146,9 +146,7 @@ function NotificationCard({ n }: { n: AppNotification }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {!n.read && (
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-primary)]" />
-          )}
+          {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />}
           <span className="truncate text-[12px] font-medium text-text-primary">{n.title}</span>
           <span className="ml-auto shrink-0 text-[9px] text-text-tertiary tabular-nums">
             {timeAgo(n.timestamp, { suffix: true })}
@@ -179,7 +177,7 @@ function NotificationCard({ n }: { n: AppNotification }) {
 
 function NotificationIcon({ n }: { n: AppNotification }) {
   if (n.kind === "permission")
-    return <Shield size={15} className="text-accent" strokeWidth={1.5} />;
+    return <Shield size={15} className="text-primary" strokeWidth={1.5} />;
   if (n.kind === "agent-failed" || n.kind === "chat-error" || n.kind === "terminal-failed")
     return <AlertTriangle size={15} className="text-[var(--status-error)]" strokeWidth={1.5} />;
   if (n.kind === "terminal-attention")

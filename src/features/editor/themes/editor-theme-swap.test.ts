@@ -21,11 +21,11 @@ import { editorThemeExtensions } from "./build-cm-theme";
 const themeCompartment = new Compartment();
 
 /** A view configured the way `EditorPanel` configures its theme slot. */
-function mountEditor(doc: string, themeId: string) {
+function mountEditor(doc: string) {
   const view = new EditorView({
     state: EditorState.create({
       doc,
-      extensions: [themeCompartment.of(editorThemeExtensions(themeId)), history()],
+      extensions: [themeCompartment.of(editorThemeExtensions()), history()],
     }),
     parent: document.body,
   });
@@ -42,20 +42,20 @@ function type(view: EditorView, text: string) {
 
 describe("live theme swap", () => {
   it("keeps the document across a theme change", () => {
-    const view = mountEditor("const a = 1;", "atlas");
+    const view = mountEditor("const a = 1;");
     type(view, "\nconst b = 2;");
 
-    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions("dracula")) });
+    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions()) });
 
     expect(view.state.doc.toString()).toBe("const a = 1;\nconst b = 2;");
     view.destroy();
   });
 
   it("keeps undo history usable across a theme change", () => {
-    const view = mountEditor("const a = 1;", "atlas");
+    const view = mountEditor("const a = 1;");
     type(view, "\nconst b = 2;");
 
-    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions("monokai")) });
+    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions()) });
     // The edit made *before* the swap must still be undoable after it.
     expect(undo(view)).toBe(true);
 
@@ -64,22 +64,22 @@ describe("live theme swap", () => {
   });
 
   it("keeps the selection across a theme change", () => {
-    const view = mountEditor("const a = 1;", "atlas");
+    const view = mountEditor("const a = 1;");
     view.dispatch({ selection: { anchor: 6, head: 11 } });
 
-    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions("one-dark")) });
+    view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions()) });
 
     expect(view.state.selection.main.anchor).toBe(6);
     expect(view.state.selection.main.head).toBe(11);
     view.destroy();
   });
 
-  it("survives a swap to an unknown theme id by falling back, not throwing", () => {
-    const view = mountEditor("const a = 1;", "atlas");
+  it("survives a swap before a theme has loaded", () => {
+    const view = mountEditor("const a = 1;");
 
     expect(() =>
       view.dispatch({
-        effects: themeCompartment.reconfigure(editorThemeExtensions("deleted-theme")),
+        effects: themeCompartment.reconfigure(editorThemeExtensions(null)),
       }),
     ).not.toThrow();
 
@@ -92,7 +92,7 @@ describe("live theme swap", () => {
     // precisely so a caller cannot install one without the other. Asserting the
     // bundle's *length* would pass for two chrome themes; ask the resulting
     // state whether a highlighter is actually answering instead.
-    const state = EditorState.create({ extensions: editorThemeExtensions("atlas") });
+    const state = EditorState.create({ extensions: editorThemeExtensions() });
     expect(highlightingFor(state, [tags.comment])).toBeTruthy();
   });
 });

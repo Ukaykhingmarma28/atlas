@@ -245,7 +245,7 @@ function SplitView({
           {i > 0 && (
             <Separator
               className={cn(
-                "bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors",
+                "bg-border-default hover:bg-primary data-[separator=active]:bg-primary transition-colors",
                 horizontal ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
               )}
             />
@@ -315,7 +315,7 @@ function PaneView({
               )}
             >
               {busy[ptyId] ? (
-                <Loader2 size={9} className="animate-spin text-[var(--accent-primary)]" />
+                <Loader2 size={9} className="animate-spin text-[var(--primary)]" />
               ) : (
                 <TerminalIcon size={9} />
               )}

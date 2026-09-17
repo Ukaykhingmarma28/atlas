@@ -146,7 +146,7 @@ export function ImportThreadsModal({
               onClick={() => void runImport()}
               className={cn(
                 "rounded px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer",
-                "bg-accent text-text-inverse hover:bg-accent-hover",
+                "bg-primary text-text-inverse hover:bg-primary",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >

@@ -124,8 +124,8 @@ function Headline({ view }: { view: SessionUsageView }) {
           <span>{fmtTokens(h.size)}</span>
         </div>
         {view.compacting ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--accent-primary)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--primary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
             Compacting the context window…
           </div>
         ) : view.savedTokens ? (

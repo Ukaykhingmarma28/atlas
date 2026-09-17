@@ -134,7 +134,7 @@ export function ModelsManager() {
                     <div className="flex items-center gap-1.5">
                       <span className="text-[12px] font-medium text-text-primary">{m.name}</span>
                       {m.selected && (
-                        <span className="text-[9px] uppercase tracking-wide text-[var(--bg-base)] bg-accent rounded px-1 py-px">
+                        <span className="text-[9px] uppercase tracking-wide text-[var(--bg-base)] bg-primary rounded px-1 py-px">
                           In use
                         </span>
                       )}
@@ -240,7 +240,7 @@ function ProgressBar({
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-[120px] rounded-full bg-bg-elevated overflow-hidden">
         <div
-          className="h-full bg-accent transition-[width] duration-200"
+          className="h-full bg-primary transition-[width] duration-200"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -289,7 +289,7 @@ function ConfirmReindex({
           <button
             type="button"
             onClick={onConfirm}
-            className="h-7 rounded-md px-3 text-[11px] font-medium bg-accent text-[var(--bg-base)] hover:opacity-90 transition-opacity"
+            className="h-7 rounded-md px-3 text-[11px] font-medium bg-primary text-[var(--bg-base)] hover:opacity-90 transition-opacity"
           >
             Switch & rebuild
           </button>

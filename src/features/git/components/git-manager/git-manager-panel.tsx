@@ -72,7 +72,7 @@ export function GitManagerPanel() {
       {/* Weighted progress for streaming network ops (fetch/pull/push/clone). */}
       {activeOp?.running && activeOp.progress && (
         <div
-          className="absolute top-0 left-0 h-[2px] bg-accent transition-[width] duration-200 z-10"
+          className="absolute top-0 left-0 h-[2px] bg-primary transition-[width] duration-200 z-10"
           style={{ width: `${Math.min(100, activeOp.progress.percent)}%` }}
           title={activeOp.progress.title}
         />

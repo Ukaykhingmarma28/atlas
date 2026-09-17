@@ -2,8 +2,9 @@ import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import type { EditorColorTheme } from "./types";
-import { getEditorTheme, resolveEditorColors } from "./themes";
+import type { EditorThemeColors } from "./types";
+import { getActiveTheme } from "@/features/theme/apply-theme";
+import type { ResolvedTheme } from "@/features/theme/resolve-theme";
 
 /**
  * The editor's type metrics. `13px` is the `--text-base` step of the Atlas
@@ -28,8 +29,52 @@ const EDITOR_LINE_HEIGHT = "20px";
  * syntax values are theme-driven; the background is always the interface base
  * surface (see `resolveEditorColors`).
  */
-export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
-  const c = resolveEditorColors(theme);
+export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeColors {
+  const key = (name: keyof ResolvedTheme["keys"], fallback: string) =>
+    theme?.keys[name] ?? fallback;
+  return {
+    bg: key("editor.background", "#000000"),
+    fg: key("editor.foreground", "#d4d4d4"),
+    caret: key("editor.caret", "#d4d4d4"),
+    gutterBg: key("editor.gutter.background", "#000000"),
+    gutterFg: key("editor.gutter.foreground", "#666666"),
+    activeLineGutterFg: key("editor.active_line.gutter_foreground", "#d4d4d4"),
+    activeLineBg: key("editor.active_line.background", "#ffffff0a"),
+    selectionBg: key("editor.selection.background", "#303030"),
+    matchBracketBg: key("editor.match_bracket.background", "#2d2d2d"),
+    matchBracketOutline: key("editor.match_bracket.border", "#3d3d3d"),
+    foldBg: key("editor.fold.background", "#1a1a1a"),
+    foldBorder: key("editor.fold.border", "#2a2a2a"),
+    foldFg: key("editor.fold.foreground", "#8a8a8a"),
+    comment: key("syntax.comment", "#8f8f8f"),
+    keyword: key("syntax.keyword", "#c9a2f5"),
+    string: key("syntax.string", "#9ecf8a"),
+    number: key("syntax.number", "#e0b070"),
+    type: key("syntax.type", "#7fd1e8"),
+    func: key("syntax.function", "#ffff00"),
+    variable: key("syntax.variable", "#eaeaea"),
+    operator: key("syntax.operator", "#9a9a9a"),
+    tagName: key("syntax.tag", "#7fd1e8"),
+    attributeName: key("syntax.attribute", "#d9b47a"),
+    constant: key("syntax.constant", "#e0b070"),
+    regexp: key("syntax.regexp", "#e59a72"),
+    escape: key("syntax.escape", "#e59a72"),
+    definition: key("syntax.definition", "#ffffff"),
+    propertyName: key("syntax.property", "#c8c8c8"),
+    bool: key("syntax.boolean", "#e0b070"),
+    null: key("syntax.null", "#e0b070"),
+    addLineBg: key("diff.add_line.background", "#0d2211"),
+    removeLineBg: key("diff.remove_line.background", "#220d0d"),
+    contextBg: key("diff.context.background", "#0a0a0a"),
+    addSideBg: key("diff.add_side.background", "rgba(34,197,94,0.13)"),
+    removeSideBg: key("diff.remove_side.background", "rgba(244,63,63,0.13)"),
+    emphAddBg: key("diff.emphasis_added.background", "rgba(52,211,153,0.34)"),
+    emphRemoveBg: key("diff.emphasis_removed.background", "rgba(244,63,63,0.34)"),
+  };
+}
+
+export function buildEditorChromeTheme(theme: ResolvedTheme | null): Extension {
+  const c = editorColorsFromTheme(theme);
   return EditorView.theme(
     {
       "&": {
@@ -92,7 +137,7 @@ export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
         padding: "0 4px",
       },
     },
-    { dark: theme.dark },
+    { dark: theme?.appearance !== "light" },
   );
 }
 
@@ -110,8 +155,8 @@ export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
  * keyword/operator variants the individual grammars reach for.
  * `build-cm-theme.test.ts` pins the set that must resolve to a style.
  */
-export function buildHighlightStyle(theme: EditorColorTheme): HighlightStyle {
-  const c = theme.colors;
+export function buildHighlightStyle(theme: ResolvedTheme | null): HighlightStyle {
+  const c = editorColorsFromTheme(theme);
   return HighlightStyle.define([
     // — Code —
     { tag: tags.comment, color: c.comment, fontStyle: "italic" },
@@ -173,7 +218,6 @@ export function buildHighlightStyle(theme: EditorColorTheme): HighlightStyle {
  * and reconfigure on a theme change without touching the document or its undo
  * history.
  */
-export function editorThemeExtensions(themeId: string | undefined | null): Extension {
-  const theme = getEditorTheme(themeId);
+export function editorThemeExtensions(theme: ResolvedTheme | null = getActiveTheme()): Extension {
   return [buildEditorChromeTheme(theme), syntaxHighlighting(buildHighlightStyle(theme))];
 }

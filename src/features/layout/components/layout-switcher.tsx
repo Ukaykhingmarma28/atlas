@@ -81,7 +81,7 @@ export function LayoutSwitcher({
                 className={cn(
                   "text-left rounded-xl border p-2.5 transition-colors outline-none",
                   i === selected
-                    ? "border-[var(--accent-primary)] bg-[var(--bg-active)]"
+                    ? "border-[var(--primary)] bg-[var(--bg-active)]"
                     : "border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
                 )}
               >

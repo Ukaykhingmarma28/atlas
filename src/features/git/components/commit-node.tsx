@@ -35,13 +35,13 @@ function segmentPath(seg: LaneSegment): string {
 
 function badgeClass(kind: RefBadge["kind"], isCurrent: boolean) {
   if (kind === "tag") {
-    return "bg-[var(--accent-secondary)]/15 text-[var(--accent-secondary)] border-[var(--accent-secondary)]/30";
+    return "bg-[var(--muted-foreground)]/15 text-[var(--muted-foreground)] border-[var(--muted-foreground)]/30";
   }
   if (kind === "remote") {
     return "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border-default)]";
   }
   if (isCurrent) {
-    return "bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] border-[var(--accent-primary)]/40";
+    return "bg-[var(--primary)]/20 text-[var(--primary)] border-[var(--primary)]/40";
   }
   return "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-default)]";
 }
@@ -70,7 +70,7 @@ export const CommitRowView = memo(function CommitRowView({
       className={cn(
         "group flex items-center cursor-pointer select-none",
         selected
-          ? "bg-[var(--accent-primary)]/15 text-[var(--text-primary)]"
+          ? "bg-[var(--primary)]/15 text-[var(--text-primary)]"
           : "hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]",
       )}
       style={{ height: ROW_HEIGHT }}
@@ -92,7 +92,7 @@ export const CommitRowView = memo(function CommitRowView({
           cy={ROW_HEIGHT / 2}
           r={3.5}
           fill={row.commitColor}
-          stroke={row.isHead ? "var(--accent-primary)" : "transparent"}
+          stroke={row.isHead ? "var(--primary)" : "transparent"}
           strokeWidth={row.isHead ? 1.5 : 0}
         />
       </svg>

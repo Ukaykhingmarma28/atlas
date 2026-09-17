@@ -61,7 +61,7 @@ export const MediaNode = memo(function MediaNode({ data, selected }: NodeProps) 
       <div
         className={cn(
           "rounded-xl overflow-hidden border shadow-2xl bg-[var(--bg-secondary)]/40",
-          selected ? "border-[var(--accent-primary)]/60" : "border-white/10 hover:border-white/20",
+          selected ? "border-[var(--primary)]/60" : "border-white/10 hover:border-white/20",
         )}
       >
         {url ? (

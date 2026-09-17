@@ -101,9 +101,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
                           {opt.name}
-                          {opt.value && (
-                            <Check size={11} className="text-[var(--accent-primary)]" />
-                          )}
+                          {opt.value && <Check size={11} className="text-[var(--primary)]" />}
                         </span>
                         {opt.description && (
                           <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)]">
@@ -134,9 +132,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                             <span className="min-w-0 flex-1">
                               <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
                                 {c.name}
-                                {active && (
-                                  <Check size={11} className="text-[var(--accent-primary)]" />
-                                )}
+                                {active && <Check size={11} className="text-[var(--primary)]" />}
                               </span>
                               {c.description && (
                                 <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)]">

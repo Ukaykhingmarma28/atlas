@@ -215,7 +215,7 @@ interface MessageInputProps {
 function acpModeColor(modeId: string | undefined): string {
   const id = (modeId ?? "").toLowerCase();
   if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id)) return "var(--status-error)";
-  if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--accent-primary)";
+  if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--primary)";
   if (/auto|default|edit|accept|agent|workspace/.test(id)) return "var(--status-success)";
   return "var(--text-tertiary)";
 }
@@ -287,13 +287,11 @@ function CerseiMemoryPill() {
       className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
-        <Loader2 size={11} className="animate-spin text-[var(--accent-primary)]" />
+        <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
       ) : (
         <Database
           size={11}
-          className={
-            status?.indexed ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]"
-          }
+          className={status?.indexed ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]"}
         />
       )}
       {label}
@@ -324,7 +322,7 @@ function EffortPill({ tabId }: { tabId: string }) {
     >
       <Brain
         size={11}
-        className={active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]"}
+        className={active ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]"}
       />
       {active ? `Think: ${effort}` : "Think"}
     </button>
@@ -354,7 +352,7 @@ function claudeModeDotClass(mode: ClaudePermissionMode): string {
     case "acceptEdits":
       return "bg-[var(--status-success)]";
     case "plan":
-      return "bg-[var(--accent-primary)]";
+      return "bg-[var(--primary)]";
     case "bypassPermissions":
       return "bg-[var(--status-error)]";
     case "auto":
@@ -552,7 +550,7 @@ function ComposerGroupsMenu({
                         <span className="flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">
                           {agentMeta(a).label}
                         </span>
-                        {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                        {active && <Check size={11} className="text-[var(--primary)]" />}
                       </button>
                     );
                   })}
@@ -602,7 +600,7 @@ function ComposerGroupsMenu({
                       <span className="flex-1 text-[11px] font-medium text-[var(--text-primary)]">
                         {CLAUDE_PERMISSION_MODE_LABEL[m]}
                       </span>
-                      {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                      {active && <Check size={11} className="text-[var(--primary)]" />}
                     </button>
                   );
                 })}
@@ -637,7 +635,7 @@ function ComposerGroupsMenu({
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
                             {displayModeName(m.name)}
-                            {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                            {active && <Check size={11} className="text-[var(--primary)]" />}
                           </span>
                           {m.description && (
                             <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)]">
@@ -715,10 +713,7 @@ function ComposerGroupsMenu({
                             <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
                               <span className="truncate">{modelLabel(m)}</span>
                               {active && (
-                                <Check
-                                  size={11}
-                                  className="shrink-0 text-[var(--accent-primary)]"
-                                />
+                                <Check size={11} className="shrink-0 text-[var(--primary)]" />
                               )}
                             </span>
                             {m.description &&
@@ -1879,7 +1874,7 @@ export function MessageInput({
             "relative z-30 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]",
             "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
             // Drag-over highlight: a clear accent ring while OS files hover.
-            isDropTarget && "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40",
+            isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
             // NOTE: the disabled dim is NOT applied here. It used to be
             // (`disabled && "opacity-60"` on this shell), and it faded the
             // whole composer — footer pills, the agent switcher, and every
@@ -1901,7 +1896,7 @@ export function MessageInput({
             </div>
           )}
           {isDropTarget && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
               <span className="rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow">
                 Drop files to attach
               </span>
@@ -1924,7 +1919,7 @@ export function MessageInput({
               // Focus treatment at HALF strength: the full border-focus +
               // /20 accent ring read far too loud on the nested surface.
               "focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))]",
-              "focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10",
+              "focus-within:ring-1 focus-within:ring-[var(--primary)]/10",
               // The disabled dim, scoped to the field the lock actually
               // applies to (see the shell above). No red tint — the send
               // button is already disabled and submit()/Cmd+Enter are gated

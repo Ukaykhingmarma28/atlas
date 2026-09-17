@@ -35,7 +35,7 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
       : pill.tint === "warn"
         ? "text-[var(--status-warning)]"
         : pill.state === "compacting"
-          ? "text-[var(--accent-primary)]"
+          ? "text-[var(--primary)]"
           : "text-[var(--text-tertiary)]";
 
   return (

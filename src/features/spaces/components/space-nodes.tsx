@@ -67,7 +67,7 @@ export const SpaceNoteNode = memo(function SpaceNoteNode({ id, data, selected }:
         "group relative flex h-full w-full flex-col overflow-visible rounded-2xl",
         "bg-[var(--bg-secondary)]/70 backdrop-blur-3xl backdrop-saturate-150",
         "border shadow-2xl transition-colors",
-        selected ? "border-[var(--accent-primary)]/60" : "border-white/10 hover:border-white/20",
+        selected ? "border-[var(--primary)]/60" : "border-white/10 hover:border-white/20",
       )}
     >
       <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/5 to-transparent opacity-60" />
@@ -108,7 +108,7 @@ export const SpaceTextNode = memo(function SpaceTextNode({ id, data, selected }:
     <div
       className={cn(
         "group relative h-full w-full rounded",
-        selected && "outline outline-1 outline-[var(--accent-primary)]/50",
+        selected && "outline outline-1 outline-[var(--primary)]/50",
       )}
     >
       <NodeHandles selected={selected} />
@@ -118,7 +118,7 @@ export const SpaceTextNode = memo(function SpaceTextNode({ id, data, selected }:
         onChange={text.onChange}
         readOnly={text.readOnly}
         placeholder="Text"
-        className="nodrag h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-[15px] leading-snug text-[var(--text-primary)] caret-[var(--accent-primary)] outline-none placeholder:text-text-tertiary"
+        className="nodrag h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-[15px] leading-snug text-[var(--text-primary)] caret-[var(--primary)] outline-none placeholder:text-text-tertiary"
       />
       <SpaceResizer id={id} selected={selected} minWidth={80} minHeight={40} />
     </div>
@@ -161,7 +161,7 @@ export const SpaceShapeNode = memo(function SpaceShapeNode({ id, data, selected 
   const d = data as SpaceNodeCommonData;
   // Web parity: a shape's label is its `title` field, centered.
   const title = useMergedField(id, "title", d.title);
-  const stroke = selected ? "var(--accent-primary)" : "rgba(255,255,255,0.25)";
+  const stroke = selected ? "var(--primary)" : "rgba(255,255,255,0.25)";
 
   return (
     <div className="group relative h-full w-full">
@@ -175,7 +175,7 @@ export const SpaceShapeNode = memo(function SpaceShapeNode({ id, data, selected 
           onChange={title.onChange}
           readOnly={title.readOnly}
           rows={1}
-          className="nodrag max-h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent text-center text-[12px] leading-snug text-[var(--text-primary)] caret-[var(--accent-primary)] outline-none"
+          className="nodrag max-h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent text-center text-[12px] leading-snug text-[var(--text-primary)] caret-[var(--primary)] outline-none"
         />
       </div>
     </div>
@@ -194,7 +194,7 @@ export const SpaceGroupNode = memo(function SpaceGroupNode({ id, data, selected 
     <div
       className={cn(
         "group relative h-full w-full rounded-xl border-2 border-dashed",
-        selected ? "border-[var(--accent-primary)]/50" : "border-white/15",
+        selected ? "border-[var(--primary)]/50" : "border-white/15",
         "bg-white/[0.02]",
       )}
     >
@@ -252,7 +252,7 @@ export const SpaceMediaNode = memo(function SpaceMediaNode({ id, data, selected 
       <div
         className={cn(
           "h-full w-full overflow-hidden rounded-xl border transition-colors",
-          selected ? "border-[var(--accent-primary)]/60" : "border-white/10",
+          selected ? "border-[var(--primary)]/60" : "border-white/10",
           "bg-black/30",
         )}
       >
@@ -299,8 +299,8 @@ function SpaceResizer({
       isVisible={!!selected}
       minWidth={minWidth}
       minHeight={minHeight}
-      lineClassName="!border-[var(--accent-primary)]/70"
-      handleClassName="!bg-[var(--accent-primary)] !border-white/60 !w-2 !h-2 !rounded-sm"
+      lineClassName="!border-[var(--primary)]/70"
+      handleClassName="!bg-[var(--primary)] !border-white/60 !w-2 !h-2 !rounded-sm"
       onResize={(_, p) => {
         const d = doc();
         if (!d || !id) return;

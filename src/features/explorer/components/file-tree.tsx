@@ -683,7 +683,7 @@ export function FileTree() {
             className={cn(
               "flex-1 overflow-auto hide-scrollbar px-1.5 pb-2 relative",
               dropTargetPath === ROOT_DROP &&
-                "bg-[var(--accent-primary-muted)] ring-1 ring-inset ring-accent/40",
+                "bg-[var(--atlas-element-primary-muted)] ring-1 ring-inset ring-primary/40",
             )}
             onMouseDown={onContainerMouseDown}
             // Esc clears the multi-selection (keydown bubbles up from the

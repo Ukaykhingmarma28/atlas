@@ -7,6 +7,11 @@ import { installGlobalErrorHandlers } from "./features/telemetry/error-handlers"
 import { initTelemetry } from "./features/telemetry/posthog-client";
 import "./styles/globals.css";
 
+if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+  const { installMockBackend } = await import("./dev/mock-backend");
+  installMockBackend();
+}
+
 // Opt-in crash reporting. Handlers are installed unconditionally (cheap); they
 // only transmit once the user has opted in and a PostHog key resolved in Rust.
 installGlobalErrorHandlers();

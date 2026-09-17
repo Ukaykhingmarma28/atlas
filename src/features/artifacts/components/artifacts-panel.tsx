@@ -514,7 +514,7 @@ export function ArtifactsPanel() {
             className={cn(
               "absolute top-0 z-40 w-px cursor-col-resize transition-colors",
               "after:absolute after:inset-y-0 after:-left-[3px] after:-right-[3px] after:content-['']",
-              resizing && "bg-[var(--accent-primary)]",
+              resizing && "bg-[var(--primary)]",
             )}
             style={{
               bottom: CARD_INSET,

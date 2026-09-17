@@ -156,7 +156,7 @@ export function SpaceHeaderPill({
                 >
                   <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
                   {p.id === activePageId && (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-primary)]" />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />
                   )}
                 </button>
               ))}
@@ -331,7 +331,7 @@ export function SpaceActionPill({
                     className={cn(
                       "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
                       riding &&
-                        "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--accent-primary)]",
+                        "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--primary)]",
                     )}
                     style={{ ["--tw-ring-color" as string]: a.colour }}
                   >
@@ -365,7 +365,7 @@ export function SpaceActionPill({
         {followers.length > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--accent-primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--accent-primary)]">
+              <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--primary)]">
                 <Eye size={10} />
                 {followers.length}
               </span>

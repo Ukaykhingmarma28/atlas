@@ -40,7 +40,8 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
   const memberList = useCommsStore.use.members();
   const me = useCommsStore.use.me();
   const members = useMemo(() => new Map(memberList.map((m) => [m.id, m])), [memberList]);
-  const themeId = useProjectStore((s) => s.settings.codeEditorTheme);
+  const themeId = useProjectStore((s) => s.settings.theme);
+  const [themeRevision, setThemeRevision] = useState(0);
 
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -58,7 +59,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
         EditorView.lineWrapping,
         keymap.of([...historyKeymap, ...defaultKeymap]),
         cmPlaceholder("Write together…"),
-        editorThemeExtensions(themeId),
+        editorThemeExtensions(),
         yCollab(ytext, null),
         remoteCaretField,
         EditorState.readOnly.of(sent),
@@ -78,7 +79,13 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
     };
     // Recreated only on identity-level changes; yCollab owns doc content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, ytext, sent, themeId]);
+  }, [ready, ytext, sent, themeId, themeRevision]);
+
+  useEffect(() => {
+    const onTheme = () => setThemeRevision((revision) => revision + 1);
+    window.addEventListener("atlas:theme-applied", onTheme);
+    return () => window.removeEventListener("atlas:theme-applied", onTheme);
+  }, []);
 
   // Push peer carets into the editor as decorations whenever they move.
   useEffect(() => {

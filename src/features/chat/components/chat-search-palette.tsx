@@ -122,10 +122,10 @@ export function ChatSearchPalette({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--accent-primary-muted)]",
+                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--atlas-element-primary-muted)]",
                       )}
                     >
-                      <User size={10} className="text-[var(--accent-primary)]" />
+                      <User size={10} className="text-[var(--primary)]" />
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

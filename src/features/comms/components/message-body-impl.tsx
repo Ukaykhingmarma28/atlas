@@ -236,7 +236,7 @@ const COMPONENTS: Components = {
         checked={!!props.checked}
         disabled
         readOnly
-        className="mr-1.5 align-[-1px] accent-[var(--accent-primary)] pointer-events-none"
+        className="mr-1.5 align-[-1px] accent-[var(--primary)] pointer-events-none"
       />
     ) : null,
 

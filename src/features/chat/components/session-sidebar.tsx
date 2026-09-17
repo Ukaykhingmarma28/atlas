@@ -761,7 +761,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     }
                   >
                     {isRunning ? (
-                      <AtlasLoader size={8} className="text-[var(--accent-primary)]" />
+                      <AtlasLoader size={8} className="text-[var(--primary)]" />
                     ) : item.kind === "agent" ? (
                       item.agent === "codex" ? (
                         <CodexIcon className="size-3" />
@@ -781,7 +781,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                         <AgentMonogram label={agentMeta(item.agent).label} size={12} />
                       )
                     ) : (
-                      <MessageSquare size={11} className="text-[var(--accent-primary)]" />
+                      <MessageSquare size={11} className="text-[var(--primary)]" />
                     )}
                   </span>
                   <span className="text-[11px] leading-snug line-clamp-2 flex-1">{item.title}</span>
@@ -866,7 +866,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       {!asDropdown && (
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -right-px w-px h-full bg-border-default hover:bg-accent transition-colors cursor-col-resize"
+          className="absolute top-0 -right-px w-px h-full bg-border-default hover:bg-primary transition-colors cursor-col-resize"
           title="Drag to resize"
         />
       )}

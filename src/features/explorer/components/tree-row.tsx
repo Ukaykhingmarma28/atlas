@@ -166,7 +166,7 @@ export function TreeRow({
         // Atlas's monochromatic surfaces: a muted accent fill with a
         // hairline inset accent ring, not a heavy outline.
         isDropTarget &&
-          "bg-[var(--accent-primary-muted)] ring-1 ring-inset ring-accent/40 text-text-primary",
+          "bg-[var(--atlas-element-primary-muted)] ring-1 ring-inset ring-primary/40 text-text-primary",
         // Source row dimmed while drag is in flight.
         isDragging && "opacity-40",
         isCut && "opacity-50",

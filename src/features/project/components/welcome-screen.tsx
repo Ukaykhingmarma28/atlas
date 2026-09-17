@@ -36,7 +36,7 @@ export function WelcomeScreen() {
           onClick={handleOpenFolder}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)] transition-colors text-left group"
         >
-          <FolderOpen size={14} className="text-[var(--accent-primary)] shrink-0" />
+          <FolderOpen size={14} className="text-[var(--primary)] shrink-0" />
           <span className="text-[12px] font-medium text-[var(--text-primary)]">Open Folder</span>
           <span className="text-[10px] text-[var(--text-tertiary)] ml-auto font-mono">⌘O</span>
         </button>
@@ -57,7 +57,7 @@ export function WelcomeScreen() {
                   className="group flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
                   onClick={() => openProject(project.path)}
                 >
-                  <Folder size={14} className="text-[var(--accent-primary)] shrink-0" />
+                  <Folder size={14} className="text-[var(--primary)] shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium text-[var(--text-primary)] truncate">
                       {project.name}

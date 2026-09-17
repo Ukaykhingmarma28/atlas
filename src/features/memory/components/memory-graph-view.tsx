@@ -75,7 +75,7 @@ export function MemoryGraphView() {
           </div>
           <button
             onClick={() => void download()}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--accent-primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Download size={13} />
             Download model
@@ -102,7 +102,7 @@ export function MemoryGraphView() {
             <p className="text-[12px] text-[var(--text-primary)]">Downloading model…</p>
             <div className="h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
               <div
-                className="h-full bg-[var(--accent-primary)] transition-[width] duration-200"
+                className="h-full bg-[var(--primary)] transition-[width] duration-200"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -401,7 +401,7 @@ function GraphReady({
                   const v = Number(e.target.value);
                   setCutoff(v >= maxTs ? null : v);
                 }}
-                className="w-[220px] h-1 accent-[var(--accent-primary)] cursor-pointer"
+                className="w-[220px] h-1 accent-[var(--primary)] cursor-pointer"
               />
               <span className="text-[10px] tabular-nums text-[var(--text-tertiary)] w-[78px] text-right">
                 {cutoff ? fmtDate(cutoff) : "All time"}
@@ -492,7 +492,7 @@ function SourceDot({ source }: { source: string }) {
           ? "var(--agent-cursor-chip)"
           : source === "kilo"
             ? "var(--agent-kilo-chip)"
-            : "var(--accent-primary)";
+            : "var(--primary)";
   return <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />;
 }
 

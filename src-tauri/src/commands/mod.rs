@@ -70,5 +70,6 @@ pub mod skills;
 pub mod telemetry;
 pub mod tool_stats;
 pub mod terminal;
+pub mod themes;
 pub mod updater;
 pub mod window;

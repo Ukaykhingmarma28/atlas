@@ -24,7 +24,6 @@ import { clampScale, SCALE_STEP, MIN_SCALE, MAX_SCALE, DEFAULT_SCALE } from "../
 import { AtlasIcon } from "@/components/atlas-icon";
 import { ProvidersSettings } from "./providers-settings";
 import { LayoutsSettings } from "./layouts-settings";
-import { CodeEditorThemesSettings } from "./code-editor-themes-settings";
 import { AtlasThemesSettings } from "./atlas-themes-settings";
 import { SkillsAndPacks } from "./skills-and-packs";
 import { AgentsMarketplace } from "./agents-marketplace/agents-marketplace";
@@ -517,17 +516,9 @@ function GeneralSettings() {
   );
 }
 
-type AppearanceTab = "theme" | "accent";
-
-const APPEARANCE_TABS: { id: AppearanceTab; label: string }[] = [
-  { id: "accent", label: "Interface Theme" },
-  { id: "theme", label: "Editor Theme" },
-];
-
 function AppearanceSettings() {
   const settings = useProjectStore.use.settings();
   const { updateSettings } = useProjectStore.use.actions();
-  const [tab, setTab] = useState<AppearanceTab>("accent");
 
   const scalePct = Math.round(settings.uiScale * 100);
   const setScale = (next: number) => updateSettings({ uiScale: clampScale(next) });
@@ -537,16 +528,9 @@ function AppearanceSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header — Skills-style underline tabs (no title), zoom on the right. */}
+      {/* One theme controls the interface, editor, terminal, diffs, and syntax. */}
       <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border-default px-2">
-        {APPEARANCE_TABS.map((t) => (
-          <UnderlineTab
-            key={t.id}
-            active={tab === t.id}
-            onClick={() => setTab(t.id)}
-            label={t.label}
-          />
-        ))}
+        <span className="px-2.5 text-[11px] font-medium text-text-primary">Theme</span>
 
         {/* Interface zoom — right-aligned control (like Skills' scope control). */}
         <div className="ml-auto flex items-center gap-1 pr-0.5">
@@ -591,35 +575,9 @@ function AppearanceSettings() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {tab === "theme" ? <CodeEditorThemesSettings /> : <AtlasThemesSettings />}
+        <AtlasThemesSettings />
       </div>
     </div>
-  );
-}
-
-/** Underline tab — copied from the Skills header (`skills-and-packs.tsx`). */
-function UnderlineTab({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-[29px] items-center gap-1.5 px-2.5 text-[11px] font-medium transition-colors border-b-2 -mb-px cursor-pointer",
-        active
-          ? "text-text-primary border-b-[var(--accent-primary)]"
-          : "text-text-secondary hover:text-text-primary border-b-transparent",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -814,7 +772,7 @@ export function Toggle({
         "relative inline-flex h-5 w-9 shrink-0 items-center",
         "rounded-full border-2 border-transparent transition-colors",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
-        value ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]",
+        value ? "bg-[var(--primary)]" : "bg-[var(--bg-elevated)]",
       )}
     >
       <span

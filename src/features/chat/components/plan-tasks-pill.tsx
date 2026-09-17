@@ -175,7 +175,7 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
         )}
         title="Implementation plan"
       >
-        <span className="text-[var(--accent-primary)]">
+        <span className="text-[var(--primary)]">
           <ArcRing frac={plan.length ? completed / plan.length : 0} />
         </span>
         <span className="tabular-nums">

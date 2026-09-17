@@ -200,7 +200,7 @@ export function SearchOverlay({
               >
                 <div className="flex items-center gap-2">
                   <FileCode size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                  <span className="text-[11px] text-[var(--accent-primary)] font-mono truncate">
+                  <span className="text-[11px] text-[var(--primary)] font-mono truncate">
                     {result.file_path}
                   </span>
                   <span className="text-[10px] text-[var(--text-tertiary)] font-mono shrink-0">

@@ -42,6 +42,7 @@ members = [
   "crates/atlas-process",
   "crates/atlas-redact",
   "crates/atlas-terminal",
+  "crates/atlas-theme",
   "crates/atlas-thread-metadata",
   "src-tauri",
 
@@ -788,6 +789,8 @@ opt-level = 1
 [profile.dev.package.atlas-redact]
 opt-level = 1
 [profile.dev.package.atlas-terminal]
+opt-level = 1
+[profile.dev.package.atlas-theme]
 opt-level = 1
 [profile.dev.package.atlas-thread-metadata]
 opt-level = 1

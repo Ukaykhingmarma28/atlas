@@ -467,7 +467,7 @@ function CanvasSurface({
           >
             {preview && (
               <div
-                className="absolute rounded border border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 pointer-events-none"
+                className="absolute rounded border border-[var(--primary)] bg-[var(--primary)]/10 pointer-events-none"
                 style={{
                   left: preview.left,
                   top: preview.top,

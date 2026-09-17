@@ -97,3 +97,13 @@ trivially compliant.
 - **Atlas may claim its own modifications (§4).** Permitted, and it is not the same act as
   stripping upstream's — an added Atlas copyright line sits beside upstream's, never replacing
   it.
+## Theming
+
+- **Theme** — one named, shareable description of how Atlas looks, covering the whole app: chrome, editor, terminal, diffs and syntax. Holds a dark and/or light **variant**. There is exactly one active theme; there is no separate editor theme. *Avoid*: interface theme, editor theme, colour scheme.
+- **Variant** — the dark or light half of a theme. A theme may ship only one.
+- **Base tokens** — the required colours of a variant, named exactly as shadcn/ui names them, so any shadcn or tweakcn theme is a valid set of base tokens. *Avoid*: shadcn tokens.
+- **Palette** — an optional small set of named hues (red, orange, yellow, green, cyan, blue, purple, pink) in a variant, from which syntax, terminal and status colours are derived when not set explicitly.
+- **Theme keys** — optional, Atlas-specific colours in a variant, named by role in Zed's dotted style (`element.hover`, `terminal.ansi.red`, `syntax.keyword`). Any key a theme omits is derived from the palette, then the base tokens, then Atlas's defaults.
+- **Theme override** — a user's settings-level patch of keys on top of the active theme. Changes that user's Atlas only; it is not a theme.
+- **Theme import** — a one-time conversion of a shadcn/tweakcn, Zed or VS Code theme into an Atlas theme. The result is an ordinary Atlas theme; the source is not read again.
+- **Icon theme** — a named mapping from files and folders (by name, extension or language) to icons, in VS Code's icon-theme format so VS Code icon themes can be used as-is. Chosen independently of the colour theme. *Avoid*: file icon pack, icon set.

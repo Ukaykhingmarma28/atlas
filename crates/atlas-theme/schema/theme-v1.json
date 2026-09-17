@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "ThemeKeyStyle": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "font_style": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "color"
+      ],
+      "type": "object"
+    },
+    "ThemeKeyValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ThemeKeyStyle"
+        }
+      ]
+    },
+    "ThemeVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "keys": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ThemeKeyValue"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "palette": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "type": "object"
+    },
+    "ThemeWarning": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "author": {
+      "type": "string"
+    },
+    "dark": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThemeVariant"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "light": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThemeVariant"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "schema": {
+      "format": "uint32",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/definitions/ThemeWarning"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "author",
+    "id",
+    "license",
+    "name",
+    "schema"
+  ],
+  "title": "Theme",
+  "type": "object"
+}

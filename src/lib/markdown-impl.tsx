@@ -69,7 +69,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
                 {...props}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[var(--accent-primary)] underline hover:opacity-80"
+                className="text-[var(--primary)] underline hover:opacity-80"
               />
             );
           },

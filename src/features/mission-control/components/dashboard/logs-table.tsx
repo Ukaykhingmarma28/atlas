@@ -41,7 +41,7 @@ function parseJsonl(raw: string): LogEntry[] {
 
 const SOURCE_COLOR: Record<string, string> = {
   atlas: "var(--text-primary)",
-  agent: "var(--accent-primary)",
+  agent: "var(--primary)",
   chat: "#5fb39a",
   git: "#7aa7e8",
   knowledge: "#b8a3df",

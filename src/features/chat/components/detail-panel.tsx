@@ -92,7 +92,7 @@ export function DetailPanel({ tabId, messages }: { tabId: string; messages: Chat
     >
       <div
         onMouseDown={onResizeStart}
-        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border-default transition-colors hover:bg-accent"
+        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border-default transition-colors hover:bg-primary"
         title="Drag to resize"
       />
       <PanelBody target={target} byId={byId} onClose={onClose} />

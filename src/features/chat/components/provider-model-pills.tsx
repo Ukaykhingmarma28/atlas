@@ -204,10 +204,7 @@ export function ProviderModelPills({
         className="flex w-full items-center gap-2 px-2.5 h-[26px] text-left text-[11px] font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none"
       >
         {starred && (
-          <Star
-            size={10}
-            className="shrink-0 fill-[var(--accent-primary)] text-[var(--accent-primary)]"
-          />
+          <Star size={10} className="shrink-0 fill-[var(--primary)] text-[var(--primary)]" />
         )}
         <span className="min-w-0 flex-1 truncate">{id}</span>
         <span

@@ -329,7 +329,7 @@ export function MemoryTimelineCalendar({
                     isToday
                       ? // `w-6 h-6` (was w-5) so two-digit dates (10–31) aren't
                         // cramped/clipped inside the today circle.
-                        "text-[var(--bg-base)] bg-[var(--accent-primary)] rounded-full w-6 h-6 flex items-center justify-center font-semibold mt-0.5"
+                        "text-[var(--bg-base)] bg-[var(--primary)] rounded-full w-6 h-6 flex items-center justify-center font-semibold mt-0.5"
                       : "text-[var(--text-secondary)]",
                   )}
                 >

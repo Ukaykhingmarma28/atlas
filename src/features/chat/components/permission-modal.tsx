@@ -244,7 +244,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
             )}
           >
             <div className="flex items-start gap-3 border-b border-border-default px-4 py-3">
-              <ClipboardList className="mt-0.5 size-4 text-accent" />
+              <ClipboardList className="mt-0.5 size-4 text-primary" />
               <div className="flex-1">
                 <Dialog.Title className="text-sm font-medium">Review plan</Dialog.Title>
                 <Dialog.Description className="mt-0.5 text-xs text-text-secondary">
@@ -378,7 +378,7 @@ function PermissionOption({
   const label = relabelAgentBrand(option.name, agentType);
 
   const tone = isPrimary
-    ? "border-transparent bg-[var(--accent-primary)] text-[var(--bg-base)] hover:bg-[var(--accent-primary-hover)]"
+    ? "border-transparent bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-element-primary-hover)]"
     : reject
       ? "border-border-default bg-bg-base text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
       : "border-border-default bg-bg-base text-text-primary hover:bg-bg-hover";

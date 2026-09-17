@@ -434,7 +434,7 @@ function Starters({ disabled, onPick }: { disabled: boolean; onPick: (question: 
             aria-hidden
             className="pointer-events-none absolute left-1/2 top-1/2 -z-10 size-[200px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.16]"
             style={{
-              background: "radial-gradient(circle, var(--accent-primary) 0%, transparent 68%)",
+              background: "radial-gradient(circle, var(--primary) 0%, transparent 68%)",
             }}
           />
           <AtlasIcon

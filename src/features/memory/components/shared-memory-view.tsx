@@ -564,7 +564,7 @@ function FilterOption({
       )}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {active && <Check size={11} className="shrink-0 text-[var(--accent-primary)]" />}
+      {active && <Check size={11} className="shrink-0 text-[var(--primary)]" />}
     </button>
   );
 }

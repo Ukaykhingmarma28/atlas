@@ -137,7 +137,7 @@ export function ProvidersSettings() {
             className={cn(
               "flex items-center gap-1.5 px-2.5 h-[40px] text-[11px] font-medium transition-colors border-b-2 -mb-px",
               category === t.id
-                ? "text-text-primary border-b-[var(--accent-primary)]"
+                ? "text-text-primary border-b-[var(--primary)]"
                 : "text-text-secondary hover:text-text-primary border-b-transparent",
             )}
           >
@@ -451,7 +451,7 @@ function ProviderEditor({
                 disabled={busy || !draft.trim()}
                 className={cn(
                   "flex items-center gap-1.5 h-7 rounded-md px-3 text-[11px] font-medium",
-                  "bg-[var(--accent-primary)] text-[var(--bg-base)]",
+                  "bg-[var(--primary)] text-[var(--bg-base)]",
                   "hover:opacity-90 transition-opacity",
                   "disabled:opacity-40 disabled:cursor-not-allowed",
                 )}

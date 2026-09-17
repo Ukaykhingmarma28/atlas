@@ -103,7 +103,7 @@ export function CommandSuggestions({
                 size={11}
                 className={cn(
                   "shrink-0",
-                  s.kind === "dir" ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
+                  s.kind === "dir" ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]",
                 )}
               />
               <span className="truncate">

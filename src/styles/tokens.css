@@ -1,195 +1,191 @@
 :root {
-  --radius: 0.375rem;
-
-  /* === Enterprise Dark — AMOLED black, monochromatic === */
-  --bg-base: #000000;
-  /* Sidebar rail color — used by chat history, knowledge sidebar, and
-     anything else that wants the "slightly off-pure-black" rail surface
-     from the Claude design handoff. */
-  --bg-sidebar: #0a0a0a;
-  --bg-surface: #000000;
-  --bg-raised: #0f0f0f;
-  --bg-overlay: #1c1c1c;
-  --bg-input: #0a0a0a;
-  --bg-tab-active: #171717;
-  --bg-tab-inactive: transparent;
-  --bg-hover: rgba(255, 255, 255, 0.04);
-  --bg-selected: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.08);
-  /* Text-selection highlight (::selection). Kept separate from --bg-selected
-     (list/row "selected" UI state) even though both started at 6% white —
-     they're unrelated concepts that happened to share a value, and text
-     selection needs more contrast to stay legible on near-black surfaces. */
-  --selection-bg: rgba(255, 255, 255, 0.18);
-
-  /* Knowledge / editor surfaces from the Claude Design handoff
-     (atlas-knowledge.jsx). Distinct from --bg-base so we get the
-     subtle ladder between rail (#0a) / canvas (#0a) / panel (#0f)
-     that the design relies on. */
-  --bg-canvas: #0a0a0a;
-  --bg-rail: #0a0a0a;
-  --bg-elevated-2: #161616; /* card/elevated above --bg-raised */
-
-  /* Compat aliases */
-  --bg-primary: var(--bg-surface);
-  --bg-secondary: var(--bg-raised);
-  --bg-tertiary: var(--bg-overlay);
-  --bg-elevated: #0f0f0f;
-
-  /* Side-panel surface backgrounds — the workspace rail, the left file-tree
-     panel and the right source-control panel. Defined as vars (defaults =
-     their historical near-black hexes) so the Atlas interface-theme picker can
-     recolor them per theme. `applyAtlasTheme` overrides these at runtime; the
-     Atlas Black theme clears the overrides so these defaults apply verbatim. */
-  --panel-rail-bg: #0f0f0f; /* workspace sidebar (<aside>, rendered at /80) */
-  --panel-bg: #060706; /* left panel — file tree / explorer */
-  --panel-bg-2: #0d0e0d; /* right panel — source control AND team chat */
-  --comms-outer: #0f0f0f; /* team chat — backdrop the surface floats on */
-  --comms-surface: #000000; /* team chat — the interface card, pure black */
-
-  /* === Team chat (comms) ===
-     The transcript is LINEAR (Discord/Slack), not bubbles — the panel is ~390px
-     wide and a max-width bubble wrapped nearly every sentence. The former
-     `--comms-bubble-*` fills are gone with it.
-     A mention of *you* — deliberately warmer than a mention of anyone else. */
-  --comms-mention-bg: rgba(255, 255, 255, 0.16);
-  --comms-mention-text: #ffffff;
-  --comms-mention-other-bg: rgba(255, 255, 255, 0.08);
-  --comms-mention-other-text: #cfcfcf;
-  /* The team-chat green: unread counts, the tab-strip dot, and the presence dot
-     on an avatar. Green rather than the bubble blue — a blue pill sat too close
-     to the own-message bubble colour to read as a *count*.
-     As a DOT this is ideal: 10.5:1 against the panel. Carrying white digits it
-     is not — white on it is 1.84:1 — so the badge grades to `-deep` and the
-     digits take a dark text-shadow, the usual candy-pill treatment. Black text
-     would measure 11.4:1 if legibility ever matters more than the look. */
-  /* Monochrome by house preference — signal strength is carried by SHADE
-     (white = mention, mid-gray = unread/active), never by hue. */
-  --comms-unread: #b8b8b8;
-  --comms-unread-deep: #8a8a8a;
-  /* The Connect call-to-action on an unconnected org. Chromatic for the same
-     reason `--capture-live` is, and NOT `--status-success` (deliberately grey):
-     this is the only action on an otherwise empty panel, so it has to read as
-     the way forward rather than as ordinary chrome.
-     Darker than `--stat-added`'s #3fb950 on purpose — this one carries a label,
-     and white on the lighter green is ~2.3:1. At this value it clears 4.5:1,
-     which is what makes the text legible rather than merely present. */
-
-  /* === Text — monochromatic grays === */
-  --text-primary: #ffffff;
-  --text-secondary: #aaaaaa;
-  --text-tertiary: #777777;
-  --text-ghost: #333333;
-  --text-inverse: #000000;
-  --text-accent: #ffff00;
-  --text-muted: #585858;
-
-  /* === Borders === */
-  --border-default: #1e1e1e;
-  --border-subtle: #141414;
-  --border-strong: #3d3d3d;
-  --border-focus: #3d3d3d;
-  --border-variant: #141414;
-
-  /* === Accent — minimal, yellow only for functions === */
-  --accent-primary: #ffffff;
-  --accent-primary-hover: #cccccc;
-  --accent-primary-muted: rgba(255, 255, 255, 0.06);
-  --accent-secondary: #777777;
-
-  /* === Per-agent identity chips (Claude Design tokens) ============
-     `--agent` stays neutral so text/borders read monochrome; only the
-     chip square gets a faint per-agent tint. Surface via .agent-*
-     utility classes below (so `<span class="agent-claude">` exposes
-     --agent, --agent-bg, --agent-chip locally). */
-  --agent-claude-chip: #c98263;
-  --agent-claude-chip-bg: rgba(201, 130, 99, 0.1);
-  --agent-gpt-chip: #5fb39a;
-  --agent-gpt-chip-bg: rgba(95, 179, 154, 0.1);
-  --agent-gemini-chip: #7aa7e8;
-  --agent-gemini-chip-bg: rgba(122, 167, 232, 0.1);
-  --agent-local-chip: #b8a3df;
-  --agent-local-chip-bg: rgba(184, 163, 223, 0.1);
-  --agent-cursor-chip: #d9b56e;
-  --agent-cursor-chip-bg: rgba(217, 181, 110, 0.1);
-  --agent-amp-chip: #d68aae;
-  --agent-amp-chip-bg: rgba(214, 138, 174, 0.1);
-  --agent-codex-chip: #10a37f;
-  --agent-codex-chip-bg: rgba(16, 163, 127, 0.1);
-  --agent-opencode-chip: #9ca3af;
-  --agent-opencode-chip-bg: rgba(156, 163, 175, 0.1);
-  --agent-kilo-chip: #f0c53d;
-  --agent-kilo-chip-bg: rgba(240, 197, 61, 0.1);
-
-  /* === Semantic status === */
-  --status-success: #4d4d4d;
-  --status-success-muted: rgba(77, 77, 77, 0.12);
-  --status-warning: #cd9731;
-  --status-warning-muted: rgba(205, 151, 49, 0.12);
-  --status-error: #f44747;
-  --status-error-muted: rgba(244, 71, 71, 0.12);
-  --status-info: #6796e6;
-  --status-info-muted: rgba(103, 150, 230, 0.12);
-  --status-purple: #999999;
-  --status-orange: #cd9731;
-
-  /* Session line counts — the one deliberately chromatic pair in the
-     Artifacts surface. The app's diff views stay monochrome; a session's
-     +N/-N is a summary statistic read at a glance, and the reference
-     surfaces established green/red as its vocabulary. */
-  --stat-added: #3fb950;
-  --stat-removed: #f85149;
-
-  /* Session capture's "recording" green — the dot in the titlebar pill and the
-     radar sweep in its popover. Chromatic on purpose and NOT `--status-success`,
-     which is deliberately grey (#4d4d4d) because success is the ordinary case
-     everywhere else in the chrome. This is the one signal that has to read as
-     *on*, so it borrows the Artifacts surface's green rather than the neutral. */
-  --capture-live: #3fb950;
-
-  /* === Diff — monochromatic === */
-  --diff-added-bg: rgba(77, 77, 77, 0.08);
-  --diff-added-text: #3fb950;
-  --diff-removed-bg: rgba(119, 119, 119, 0.08);
-  --diff-removed-text: #777777;
-  --diff-modified-bg: rgba(192, 192, 192, 0.08);
-
-  /* === shadcn compat === */
-  --background: var(--bg-base);
-  --foreground: var(--text-primary);
-  --card: var(--bg-raised);
-  --card-foreground: var(--text-primary);
-  --popover: var(--bg-overlay);
-  --popover-foreground: var(--text-primary);
-  --primary: var(--accent-primary);
-  --primary-foreground: var(--text-inverse);
-  --secondary: var(--bg-raised);
-  --secondary-foreground: var(--text-secondary);
+  /* Base tokens are the source of truth. The active variant overwrites this
+     complete set through the resolved-theme style element. */
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0f0f0f;
+  --card-foreground: #ffffff;
+  --popover: #1c1c1c;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #0f0f0f;
+  --secondary-foreground: #aaaaaa;
   --muted: #171717;
-  --muted-foreground: var(--text-muted);
+  --muted-foreground: #585858;
   --accent: #171717;
-  --accent-foreground: var(--text-primary);
-  --destructive: var(--status-error);
-  --destructive-foreground: #fff;
-  --border: var(--border-default);
-  --input: var(--border-default);
+  --accent-foreground: #ffffff;
+  --destructive: #f44747;
+  --destructive-foreground: #ffffff;
+  --border: #1e1e1e;
+  --input: #1e1e1e;
   --ring: #3d3d3d;
-
-  /* === Typography === */
-  --font-ui: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --chart-1: #61afef;
+  --chart-2: #98c379;
+  --chart-3: #d19a66;
+  --chart-4: #c678dd;
+  --chart-5: #e06c75;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #0f0f0f;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #141414;
+  --sidebar-ring: #3d3d3d;
+  --radius: 0.375rem;
+  --font-sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
   --font-mono: "SF Mono", "Geist Mono", "JetBrains Mono", "Fira Code", monospace;
-  --font-sans: var(--font-ui);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.65);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.75);
+  --shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.82);
+  --shadow-2xl: 0 16px 48px rgba(0, 0, 0, 0.9);
+
+  /* Legacy aliases retained through PR 4. They point only at base tokens or
+     resolved schema-1 theme keys; no legacy value is independently themed. */
+  --bg-base: var(--background);
+  --bg-surface: var(--background);
+  --bg-primary: var(--background);
+  --bg-sidebar: var(--sidebar);
+  --bg-raised: var(--card);
+  --bg-secondary: var(--card);
+  --bg-overlay: var(--popover);
+  --bg-tertiary: var(--popover);
+  --bg-input: var(--atlas-panel-input-background);
+  --bg-tab-active: var(--atlas-tab-active-background);
+  --bg-tab-inactive: var(--atlas-tab-inactive-background);
+  --bg-hover: var(--atlas-element-hover);
+  --bg-selected: var(--atlas-element-selected);
+  --bg-active: var(--atlas-element-active);
+  --selection-bg: var(--atlas-selection-background);
+  --bg-canvas: var(--atlas-panel-background);
+  --bg-rail: var(--atlas-panel-rail-background);
+  --bg-elevated: var(--card);
+  --bg-elevated-2: var(--atlas-panel-elevated-background);
+  --panel-rail-bg: var(--atlas-panel-rail-background);
+  --panel-bg: var(--atlas-panel-background);
+  --panel-bg-2: var(--atlas-panel-elevated-background);
+
+  --text-primary: var(--foreground);
+  --text-secondary: var(--secondary-foreground);
+  --text-tertiary: var(--muted-foreground);
+  --text-ghost: var(--atlas-text-disabled);
+  --text-inverse: var(--primary-foreground);
+  --text-accent: var(--atlas-text-accent);
+  --text-muted: var(--atlas-text-muted);
+
+  --border-default: var(--atlas-border-default);
+  --border-subtle: var(--atlas-border-subtle);
+  --border-strong: var(--atlas-border-strong);
+  --border-focus: var(--atlas-border-focus);
+  --border-variant: var(--atlas-border-variant);
+
+  --accent-primary: var(--primary);
+  --accent-primary-hover: var(--atlas-element-primary-hover);
+  --accent-primary-muted: var(--atlas-element-primary-muted);
+  --accent-secondary: var(--muted-foreground);
+
+  --status-success: var(--atlas-status-success-foreground);
+  --status-success-muted: var(--atlas-status-success-background);
+  --status-success-bg: var(--atlas-status-success-background);
+  --status-warning: var(--atlas-status-warning-foreground);
+  --status-warning-muted: var(--atlas-status-warning-background);
+  --status-error: var(--atlas-status-error-foreground);
+  --status-error-muted: var(--atlas-status-error-background);
+  --status-info: var(--atlas-status-info-foreground);
+  --status-info-muted: var(--atlas-status-info-background);
+  --status-purple: var(--atlas-status-purple-foreground);
+  --status-orange: var(--atlas-status-orange-foreground);
+  --danger: var(--destructive);
+  --warning: var(--atlas-status-warning-foreground);
+  --stat-added: var(--atlas-stat-added);
+  --stat-removed: var(--atlas-stat-removed);
+  --capture-live: var(--atlas-capture-live);
+
+  --diff-added-bg: var(--atlas-diff-added-background);
+  --diff-added-text: var(--atlas-diff-added-text);
+  --diff-removed-bg: var(--atlas-diff-removed-background);
+  --diff-removed-text: var(--atlas-diff-removed-text);
+  --diff-modified-bg: var(--atlas-diff-modified-background);
+  --diff-add-line-bg: var(--atlas-diff-add-line-background);
+  --diff-remove-line-bg: var(--atlas-diff-remove-line-background);
+  --diff-context-bg: var(--atlas-diff-context-background);
+  --diff-add-side-bg: var(--atlas-diff-add-side-background);
+  --diff-remove-side-bg: var(--atlas-diff-remove-side-background);
+  --diff-emph-add-bg: var(--atlas-diff-emphasis-added-background);
+  --diff-emph-remove-bg: var(--atlas-diff-emphasis-removed-background);
+
+  --cm-bg: var(--atlas-editor-background);
+  --cm-fg: var(--atlas-editor-foreground);
+  --cm-caret: var(--atlas-editor-caret);
+  --cm-gutter-bg: var(--atlas-editor-gutter-background);
+  --cm-gutter-fg: var(--atlas-editor-gutter-foreground);
+  --cm-active-gutter-fg: var(--atlas-editor-active-line-gutter-foreground);
+  --cm-active-line-bg: var(--atlas-editor-active-line-background);
+  --cm-selection-bg: var(--atlas-editor-selection-background);
+  --cm-bracket-bg: var(--atlas-editor-match-bracket-background);
+  --cm-bracket-outline: var(--atlas-editor-match-bracket-border);
+  --cm-fold-bg: var(--atlas-editor-fold-background);
+  --cm-fold-border: var(--atlas-editor-fold-border);
+  --cm-fold-fg: var(--atlas-editor-fold-foreground);
+  --cm-comment: var(--atlas-syntax-comment);
+  --cm-keyword: var(--atlas-syntax-keyword);
+  --cm-string: var(--atlas-syntax-string);
+  --cm-number: var(--atlas-syntax-number);
+  --cm-type: var(--atlas-syntax-type);
+  --cm-func: var(--atlas-syntax-function);
+  --cm-variable: var(--atlas-syntax-variable);
+  --cm-tag: var(--atlas-syntax-tag);
+  --cm-attr: var(--atlas-syntax-attribute);
+  --cm-constant: var(--atlas-syntax-constant);
+  --cm-regexp: var(--atlas-syntax-regexp);
+  --cm-property: var(--atlas-syntax-property);
+  --cm-meta: var(--atlas-syntax-meta);
+
+  --comms-outer: var(--atlas-comms-outer-background);
+  --comms-surface: var(--atlas-comms-surface-background);
+  --comms-mention-bg: var(--atlas-comms-mention-background);
+  --comms-mention-text: var(--atlas-comms-mention-foreground);
+  --comms-mention-other-bg: var(--atlas-comms-other-mention-background);
+  --comms-mention-other-text: var(--atlas-comms-other-mention-foreground);
+  --comms-unread: var(--atlas-comms-unread-foreground);
+  --comms-unread-deep: var(--atlas-comms-unread-strong-foreground);
+
+  --agent-claude-chip: var(--atlas-agent-claude-foreground);
+  --agent-claude-chip-bg: var(--atlas-agent-claude-background);
+  --agent-gpt-chip: var(--atlas-agent-gpt-foreground);
+  --agent-gpt-chip-bg: var(--atlas-agent-gpt-background);
+  --agent-gemini-chip: var(--atlas-agent-gemini-foreground);
+  --agent-gemini-chip-bg: var(--atlas-agent-gemini-background);
+  --agent-local-chip: var(--atlas-agent-local-foreground);
+  --agent-local-chip-bg: var(--atlas-agent-local-background);
+  --agent-cursor-chip: var(--atlas-agent-cursor-foreground);
+  --agent-cursor-chip-bg: var(--atlas-agent-cursor-background);
+  --agent-amp-chip: var(--atlas-agent-amp-foreground);
+  --agent-amp-chip-bg: var(--atlas-agent-amp-background);
+  --agent-codex-chip: var(--atlas-agent-codex-foreground);
+  --agent-codex-chip-bg: var(--atlas-agent-codex-background);
+  --agent-opencode-chip: var(--atlas-agent-opencode-foreground);
+  --agent-opencode-chip-bg: var(--atlas-agent-opencode-background);
+  --agent-kilo-chip: var(--atlas-agent-kilo-foreground);
+  --agent-kilo-chip-bg: var(--atlas-agent-kilo-background);
+
+  --font-ui: var(--font-sans);
   --font-display: -apple-system, "SF Pro Display", system-ui, sans-serif;
+  --font-size-xxs: 10px;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
 
-  --text-xxs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-
-  /* === Spacing (4px grid) === */
   --space-0: 0px;
   --space-px: 1px;
   --space-0h: 2px;
@@ -203,19 +199,13 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* === Radius === */
-  --radius-sm: 3px;
+  --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-full: 9999px;
+  --shadow-overlay: var(--shadow-2xl);
 
-  /* === Shadows — very subtle on pure black === */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.8);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.9);
-  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.95);
-
-  /* === Z-Index === */
+  --atlas-ants-color: var(--atlas-atlas-ants);
   --z-dropdown: 50;
   --z-sticky: 60;
   --z-overlay: 100;

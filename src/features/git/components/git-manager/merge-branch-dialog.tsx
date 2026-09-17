@@ -186,7 +186,7 @@ export function MergeBranchDialog({
             <Dialog.Title className="text-[13px] font-semibold text-text-primary flex items-center gap-1.5">
               <GitMerge size={13} className="text-text-secondary shrink-0" />
               <span>
-                Merge into <span className="font-mono text-accent">{branch || "—"}</span>
+                Merge into <span className="font-mono text-primary">{branch || "—"}</span>
               </span>
             </Dialog.Title>
             <Dialog.Description className="text-[11px] text-text-tertiary mt-1">
@@ -226,7 +226,7 @@ export function MergeBranchDialog({
                 >
                   <Check
                     size={12}
-                    className={cn("shrink-0", isSel ? "text-accent" : "opacity-0")}
+                    className={cn("shrink-0", isSel ? "text-primary" : "opacity-0")}
                   />
                   <span className="truncate flex-1 font-mono">{b.name}</span>
                   {b.isRemote && (
@@ -304,7 +304,7 @@ export function MergeBranchDialog({
                 className={cn(
                   "flex items-center gap-1.5 px-3 h-7 rounded text-[11px] font-medium transition-colors",
                   canMerge
-                    ? "text-text-inverse bg-accent hover:opacity-90"
+                    ? "text-text-inverse bg-primary hover:opacity-90"
                     : "text-text-tertiary bg-bg-hover cursor-not-allowed",
                 )}
               >
