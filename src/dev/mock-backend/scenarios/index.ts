@@ -4,6 +4,7 @@
 import type { Scenario } from "../types";
 import { commsIncomingMessage } from "../fixtures/comms";
 import { chatTools } from "./chat-tools";
+import { designSystem } from "./design-system";
 import { gitConflict } from "./git-conflict";
 import { knowledge } from "./knowledge";
 
@@ -18,6 +19,7 @@ const all: Scenario[] = [
   chatTools,
   gitConflict,
   knowledge,
+  designSystem,
 ];
 
 export const scenarios: Record<string, Scenario> = Object.fromEntries(all.map((s) => [s.name, s]));
