@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { Markdown } from "@/lib/markdown";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { type PlanRecord, formatPlanTimestamp, planTimeAgo } from "../lib/plans";
 
 interface PlansPanelProps {
@@ -22,7 +22,7 @@ interface PlansPanelProps {
 export function PlansPanel({ onClose }: PlansPanelProps) {
   const plansPanel = useLayoutStore.use.plansPanel();
   const { setPlansPanelWidth } = useLayoutStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
 
   const [plans, setPlans] = useState<PlanRecord[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

@@ -4,7 +4,7 @@ import type { ActionId } from "@/features/keybindings/lib/actions";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { AtlasIcon } from "@/components/atlas-icon";
 import {
   Globe,
@@ -67,7 +67,7 @@ export function CommandPalette({
     focusAdjacentGroup,
     closeGroup,
   } = useLayoutStore.use.actions();
-  const { openProject } = useProjectStore.use.actions();
+  const { openProject } = useAppStore.use.actions();
 
   const handleOpenFolder = async () => {
     try {

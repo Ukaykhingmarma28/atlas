@@ -2,13 +2,13 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import type { ActionId } from "@/features/keybindings/lib/actions";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { MessageSquare, Terminal, Globe, Settings, Copy, RefreshCw } from "lucide-react";
 
 export function AppContextMenu({ children }: { children: React.ReactNode }) {
   const { addTab } = useLayoutStore.use.actions();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   return (
     <ContextMenu.Root>

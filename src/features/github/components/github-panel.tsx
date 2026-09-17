@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Popover from "@radix-ui/react-popover";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import {
   Check,
   ChevronDown,
@@ -388,7 +388,7 @@ export function GithubPanel() {
   const [error, setError] = useState<string | null>(null);
   const [cloning, setCloning] = useState<Set<string>>(new Set());
   const [cloned, setCloned] = useState<Set<string>>(new Set());
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   const projectPath = currentProject?.path ?? null;
 
   // ── What is already on disk ───────────────────────────────────────────

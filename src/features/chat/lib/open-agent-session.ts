@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { emit } from "@tauri-apps/api/event";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { ensureAgent, getAgentSync } from "./agents-api";
 import { errInfo } from "./agent-signin";
@@ -18,7 +18,7 @@ import { resumeSessionFast } from "./resume-session";
 /** Active project root, preferring the legacy `currentProject` but falling back
  *  to the active workspace path (mirrors the sidebar's `cwd` resolution). */
 function activeCwd(): string {
-  const project = useProjectStore.getState().currentProject;
+  const project = useAppStore.getState().currentProject;
   const ws = useWorkspaceStore.getState();
   return project?.path ?? ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.path ?? "";
 }

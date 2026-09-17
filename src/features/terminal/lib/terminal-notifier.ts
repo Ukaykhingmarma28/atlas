@@ -28,7 +28,6 @@ import { create } from "zustand";
 import { useNotificationsStore } from "@/features/notifications/stores/notifications-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { workspaceIdForTab } from "@/features/chat/lib/tab-workspace";
 import { terminalNotificationPrefs } from "@/features/settings/lib/app-settings";
 import { isWindowFocused, lastInteraction } from "@/lib/window-focus";
@@ -52,6 +51,7 @@ import {
   type NotifierEnv,
   type TerminalCtx,
 } from "./terminal-notifier-rules";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 // ── Live attention state (drives the bell's pulsing dot) ───────────────────
 
@@ -147,7 +147,7 @@ function handleEvent(e: TerminalEvent, base: { terminalId: string; tabId: string
     useTerminalAttention.getState().actions.set(base.terminalId, e.kind);
   }
 
-  const prefs = terminalNotificationPrefs(useProjectStore.getState().settings);
+  const prefs = terminalNotificationPrefs(useSettingsStore.getState().settings);
   if (!prefs.enabled) return;
 
   const ws = useWorkspaceStore.getState();

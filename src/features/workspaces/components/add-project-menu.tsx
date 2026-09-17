@@ -10,15 +10,15 @@
 import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Folder, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { pickAndAddWorkspace } from "../lib/pick-workspace";
 import { Hint } from "@/ui/tooltip";
 
 export function AddProjectMenu() {
   const { addWorkspace } = useWorkspaceStore.use.actions();
-  const recentProjects = useProjectStore.use.recentProjects();
-  const { clearRecents } = useProjectStore.use.actions();
+  const recentProjects = useAppStore.use.recentProjects();
+  const { clearRecents } = useAppStore.use.actions();
   const [query, setQuery] = useState("");
   const filtered = recentProjects.filter(
     (p) =>

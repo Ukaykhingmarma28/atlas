@@ -1,4 +1,4 @@
-import { useProjectStore } from "../stores/project-store";
+import { useAppStore } from "../stores/app-store";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { FolderOpen, Clock, X, Folder } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
@@ -6,8 +6,8 @@ import { Hint } from "@/ui/tooltip";
 
 export function WelcomeScreen() {
   const paletteHint = useActionShortcut("nav.commandPalette")?.label ?? "⌘K";
-  const recentProjects = useProjectStore.use.recentProjects();
-  const { openProject, removeRecent } = useProjectStore.use.actions();
+  const recentProjects = useAppStore.use.recentProjects();
+  const { openProject, removeRecent } = useAppStore.use.actions();
 
   const handleOpenFolder = async () => {
     try {

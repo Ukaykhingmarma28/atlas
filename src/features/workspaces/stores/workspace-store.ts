@@ -7,10 +7,10 @@ import { flushAll } from "../lib/flush-registry";
 import { captureSnapshot, restoreSnapshot, evictSnapshot } from "../lib/workspace-snapshot";
 import { revalidateWorkspace } from "../lib/workspace-revalidate";
 import {
-  useProjectStore,
+  useAppStore,
   scheduleAppStateSave,
   loadProjectStores,
-} from "@/features/project/stores/project-store";
+} from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
@@ -416,7 +416,7 @@ export const useWorkspaceStore = createSelectors(
         if (id === activeWorkspaceId) {
           // Already active — make sure currentProject reflects it (covers
           // the very first switch after boot) but skip the flush dance.
-          useProjectStore.getState().actions.setActiveProject({
+          useAppStore.getState().actions.setActiveProject({
             name: target.name,
             path: target.path,
           });
@@ -441,7 +441,7 @@ export const useWorkspaceStore = createSelectors(
           //    fire-and-forget. We do NOT reset chat/editor/terminal — they
           //    stay resident across switches so nothing remounts.
           const layout = useLayoutStore.getState().actions;
-          const outgoingPath = useProjectStore.getState().currentProject?.path ?? null;
+          const outgoingPath = useAppStore.getState().currentProject?.path ?? null;
           if (activeWorkspaceId) {
             layout.commitWorkspaceView(activeWorkspaceId);
             // Flush the OUTGOING workspace's pending writes (notably the KB
@@ -470,7 +470,7 @@ export const useWorkspaceStore = createSelectors(
           //    `currentProject`, which the App-level effects observe to drive
           //    the per-workspace Rust lifecycle (file index, git watch,
           //    recent files) keyed by `activeWorkspaceId`.
-          useProjectStore.getState().actions.setActiveProject({
+          useAppStore.getState().actions.setActiveProject({
             name: target.name,
             path: target.path,
           });
@@ -566,7 +566,7 @@ export const useWorkspaceStore = createSelectors(
             await get().actions.switchTo(next.id);
           } else {
             set({ activeWorkspaceId: null });
-            useProjectStore.getState().actions.setActiveProject(null);
+            useAppStore.getState().actions.setActiveProject(null);
           }
         }
         scheduleAppStateSave();

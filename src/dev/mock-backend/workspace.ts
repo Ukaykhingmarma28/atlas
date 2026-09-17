@@ -5,7 +5,7 @@
 // so `read_directory` and `read_file_content` can never disagree about which
 // files exist.
 
-import type { AppStateWire } from "@/features/project/stores/project-store";
+import type { AppStateWire } from "@/features/app/stores/app-store";
 import type { Workspace } from "@/features/workspaces/stores/workspace-store";
 
 export const MOCK_ORG_ID = "org-mock";

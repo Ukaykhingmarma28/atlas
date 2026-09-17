@@ -12,7 +12,7 @@ import Matter from "matter-js";
 import { invoke } from "@tauri-apps/api/core";
 import { forceLayout } from "@/lib/graph-layout";
 import { GraphRuler, type Viewport } from "@/components/graph-ruler";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useKnowledgeStore } from "../stores/knowledge-store";
 import { useKnowledgeMetaStore } from "../stores/knowledge-meta-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -84,7 +84,7 @@ export interface GraphLayout {
 }
 
 export function KnowledgeGraph() {
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   const { bind, unbind } = useKnowledgeGraphStore.use.actions();
   const { addTab } = useLayoutStore.use.actions();
   const { selectEntry } = useKnowledgeStore.use.actions();

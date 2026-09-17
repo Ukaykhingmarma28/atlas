@@ -34,7 +34,6 @@ import { AtlasIcon } from "@/components/atlas-icon";
 
 import { ChatInput, type ChatInputHandle } from "@/features/chat/components/chat-input";
 import { ProviderModelPills } from "@/features/chat/components/provider-model-pills";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { CHAT_PROVIDERS } from "@/features/settings/lib/providers";
 import { useByokStore } from "@/features/settings/stores/byok-store";
 import { cn } from "@/lib/utils";
@@ -46,6 +45,7 @@ import type { SessionDetail as Detail, TimelineEntry } from "../types";
 import { CheckpointScopePicker, defaultScope } from "./checkpoint-scope-picker";
 import { SessionChatMessage } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /**
  * The questions worth putting in front of someone who has never used this.
@@ -514,7 +514,7 @@ function Composer({
 }) {
   const inputRef = useRef<ChatInputHandle>(null);
   const [hasText, setHasText] = useState(false);
-  const enterToSend = useProjectStore((s) => s.settings.enterToSend);
+  const enterToSend = useSettingsStore((s) => s.settings.enterToSend);
   const ready = !!thread.provider && !!thread.model;
 
   const submit = () => {

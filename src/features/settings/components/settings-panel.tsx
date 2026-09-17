@@ -31,13 +31,13 @@ import { ModelsManager } from "./models-manager";
 import { KeybindingsSettings } from "./keybindings-settings";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { useModelPricingStore } from "../stores/model-pricing-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { setEnabled as setTelemetryEnabled } from "@/features/telemetry/posthog-client";
 import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { updater } from "@/features/updater/lib/updater-api";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 const SECTIONS: Array<{
   id: SettingsSection;
@@ -198,9 +198,9 @@ interface CliStatus {
 }
 
 function GeneralSettings() {
-  const settings = useProjectStore.use.settings();
-  const configError = useProjectStore.use.configError();
-  const { updateSettings, clearConfigError, resetConfig } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const configError = useSettingsStore.use.configError();
+  const { updateSettings, clearConfigError, resetConfig } = useSettingsStore.use.actions();
   const [cli, setCli] = useState<CliStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [resettingConfig, setResettingConfig] = useState(false);
@@ -517,8 +517,8 @@ function GeneralSettings() {
 }
 
 function AppearanceSettings() {
-  const settings = useProjectStore.use.settings();
-  const { updateSettings } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const { updateSettings } = useSettingsStore.use.actions();
 
   const scalePct = Math.round(settings.uiScale * 100);
   const setScale = (next: number) => updateSettings({ uiScale: clampScale(next) });
@@ -582,8 +582,8 @@ function AppearanceSettings() {
 }
 
 function UpdatesSettings() {
-  const settings = useProjectStore.use.settings();
-  const { updateSettings } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const { updateSettings } = useSettingsStore.use.actions();
   const phase = useUpdaterStore.use.phase();
   const version = useUpdaterStore.use.version();
   const progress = useUpdaterStore.use.progress();

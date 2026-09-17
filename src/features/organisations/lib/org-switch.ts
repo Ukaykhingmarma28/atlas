@@ -10,10 +10,10 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useSpacesStore } from "@/features/spaces/stores/spaces-store";
 import { ORG_SCOPED_TYPES } from "@/lib/constants";
 import {
-  useProjectStore,
+  useAppStore,
   flushAppStateSave,
   scheduleAppStateSave,
-} from "@/features/project/stores/project-store";
+} from "@/features/app/stores/app-store";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { auth } from "@/features/auth/lib/auth-api";
@@ -91,9 +91,9 @@ export async function switchOrg(id: string): Promise<void> {
     }
 
     const wsActions = useWorkspaceStore.getState().actions;
-    const projectActions = useProjectStore.getState().actions;
+    const projectActions = useAppStore.getState().actions;
     const outgoingActiveWs = useWorkspaceStore.getState().activeWorkspaceId;
-    const outgoingPath = useProjectStore.getState().currentProject?.path ?? null;
+    const outgoingPath = useAppStore.getState().currentProject?.path ?? null;
 
     // 1) Remember the outgoing org's active workspace so switching back
     //    restores the user where they left off.

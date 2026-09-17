@@ -4,17 +4,17 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 // Light variants are loadable and persistable in schema 1, but the setting is
 // intentionally hidden until PR 4 finishes the app-wide light appearance QA.
 const ENABLE_LIGHT_MODE = false;
 
 export function AtlasThemesSettings() {
-  const settings = useProjectStore.use.settings();
-  const { updateSettings } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const { updateSettings } = useSettingsStore.use.actions();
   const themes = useThemeStore.use.themes();
   const loading = useThemeStore.use.loading();
   const error = useThemeStore.use.error();

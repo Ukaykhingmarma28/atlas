@@ -16,7 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import * as Dialog from "@radix-ui/react-dialog";
 import { StickyNote } from "lucide-react";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useCanvasStore, type CanvasNode, type ShapeType } from "../stores/canvas-store";
 import { canvasMediaUpload } from "../lib/canvas-api";
 import { NoteNode } from "./note-node";
@@ -81,7 +81,7 @@ function CanvasSurface({
   fullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const projectPath = project?.path ?? null;
 
   const storeProjectPath = useCanvasStore.use.projectPath();

@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
@@ -137,7 +137,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
   const [searchOpen, setSearchOpen] = useState(false);
   const [embedError, setEmbedError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   /** Previous frame's rect — drives the "geometry has settled" counter only. */
   const prevRectRef = useRef<EmbedRect | null>(null);

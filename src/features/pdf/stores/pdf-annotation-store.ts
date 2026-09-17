@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import { invoke } from "@tauri-apps/api/core";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 
 /** Active annotation tool. `none` = read/select (PDF stays interactive). */
 export type PdfTool = "none" | "highlight" | "pencil" | "note" | "erase";
@@ -132,7 +132,7 @@ export const usePdfAnnotationStore = createSelectors(
           scheduleSave(pdfPath);
         },
         load: async (pdfPath) => {
-          const projectPath = useProjectStore.getState().currentProject?.path;
+          const projectPath = useAppStore.getState().currentProject?.path;
           if (!projectPath) return;
           try {
             const anns = await invoke<PdfAnnotation[]>("pdf_annotations_load", {
@@ -148,7 +148,7 @@ export const usePdfAnnotationStore = createSelectors(
           }
         },
         save: async (pdfPath) => {
-          const projectPath = useProjectStore.getState().currentProject?.path;
+          const projectPath = useAppStore.getState().currentProject?.path;
           if (!projectPath) return;
           const annotations = get().byPath[pdfPath] ?? [];
           try {

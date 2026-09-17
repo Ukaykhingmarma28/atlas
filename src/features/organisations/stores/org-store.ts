@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { logEvent } from "@/features/log/lib/log";
-import { scheduleAppStateSave } from "@/features/project/stores/project-store";
+import { scheduleAppStateSave } from "@/features/app/stores/app-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
 import type { Organisation } from "../types";

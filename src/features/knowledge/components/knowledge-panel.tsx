@@ -12,7 +12,7 @@ import {
   useBacklinks,
   useReferencesLabel,
 } from "../stores/knowledge-links-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { registerFlush } from "@/features/workspaces/lib/flush-registry";
@@ -56,7 +56,7 @@ export function KnowledgePanel() {
     deleteEntry,
     createDir,
   } = useKnowledgeStore.use.actions();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   const editorRef = useRef<TiptapEditorHandle>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -195,7 +195,7 @@ export function KnowledgePanel() {
     const md = await editorRef.current.flush();
     if (md === null) return;
     // Workspace switched or the active note changed while flushing → abort.
-    const live = useProjectStore.getState().currentProject;
+    const live = useAppStore.getState().currentProject;
     if (!live || live.path !== proj) return;
     if (useKnowledgeStore.getState().activeEntryId !== id) return;
     setEditContent(md);

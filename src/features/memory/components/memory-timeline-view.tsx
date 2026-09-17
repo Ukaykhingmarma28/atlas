@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Loader2, RotateCw, GitBranch, Search, X, ArrowUp } from "lucide-react";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useMemoryStore } from "../stores/memory-store";
 import { MemoryTimelineCalendar } from "./memory-timeline-calendar";
@@ -97,7 +97,7 @@ function affectingItems(selectedId: string, chain: Chain, t: MemoryTimeline): Pa
 }
 
 export function MemoryTimelineView() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const isRepo = useGitStore.use.isRepo();
   const timeline = useMemoryStore.use.timeline();
   const loading = useMemoryStore.use.timelineLoading();

@@ -651,8 +651,8 @@ async function capturePlanIfPresent(
     }
   }
 
-  const { useProjectStore } = await import("@/features/project/stores/project-store");
-  const projectPath = useProjectStore.getState().currentProject?.path;
+  const { useAppStore } = await import("@/features/app/stores/app-store");
+  const projectPath = useAppStore.getState().currentProject?.path;
   if (!projectPath) return;
 
   const record: PlanRecord = {

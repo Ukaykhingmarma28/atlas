@@ -10,7 +10,7 @@ import {
   type TreeNode,
 } from "../stores/explorer-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { FolderPlus, FoldVertical, UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,7 @@ export function FileTree() {
     endNewEntry,
     ensureExpanded,
   } = useExplorerStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const activeTabId = useLayoutStore.use.activeTabId();
   const tabs = useLayoutStore.use.tabs();
   const { closeTab } = useLayoutStore.use.actions();

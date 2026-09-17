@@ -5,8 +5,8 @@ import { Hint } from "@/ui/tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useSessionStore } from "@/features/project/stores/session-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useSessionStore } from "@/features/app/stores/session-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { Search, FileCode, Clock, X } from "lucide-react";
 
 interface SearchResult {
@@ -35,7 +35,7 @@ export function SearchOverlay({
   const session = useSessionStore.use.session();
   const { addSearchHistory, removeSearchHistory, clearSearchHistory, saveSession } =
     useSessionStore.use.actions();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   useEffect(() => {
     if (!open) {

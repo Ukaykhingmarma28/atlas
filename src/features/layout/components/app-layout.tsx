@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { useLayoutStore } from "../stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { WorkspaceSidebar } from "@/features/workspaces/components/workspace-sidebar";
 import { useWorkspaceGitPrefetch } from "@/features/workspaces/lib/use-workspace-prefetch";
@@ -21,7 +21,7 @@ const MAIN_LAYOUT_ID = "atlas-main-layout";
 export function AppLayout() {
   const leftPanel = useLayoutStore.use.leftPanel();
   const rightPanel = useLayoutStore.use.rightPanel();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
   const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
   const { setSidebarOpen } = useWorkspaceStore.use.actions();

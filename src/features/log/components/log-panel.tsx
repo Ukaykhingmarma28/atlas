@@ -34,7 +34,7 @@ import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { timeAgo } from "@/lib/time-ago";
 import { useLogStore, type LogEntry, type LogSource } from "../stores/log-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 
 const SOURCES: LogSource[] = [
@@ -126,7 +126,7 @@ export function LogPanel() {
   const { loadPinned, loadProject, pin, unpin, clearBuffer, clearPinned } =
     useLogStore.use.actions();
 
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
 
   const [search, setSearch] = useState("");

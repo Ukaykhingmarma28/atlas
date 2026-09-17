@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { openFileOrReveal } from "@/lib/open-file";
 import { markScrollHot } from "@/lib/scroll-hot";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { linkifySegments, normalizeUrl } from "../lib/linkify-paths";
 import type { ResolvedLine } from "../lib/line-emulator";
 import { perfBegin } from "../lib/term-perf";
@@ -132,7 +132,7 @@ export const BlockTerminal = memo(function BlockTerminal({
     () =>
       terminalSessions.acquire(terminalKey, {
         tabId,
-        cwd: useProjectStore.getState().currentProject?.path ?? "~",
+        cwd: useAppStore.getState().currentProject?.path ?? "~",
       }),
     [terminalKey, tabId],
   );

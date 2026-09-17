@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { AtlasIcon } from "@/components/atlas-icon";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import type { Scope } from "@/features/skills/lib/types";
 
 import { SkillsMarketplace } from "./marketplace/skills-marketplace";
@@ -24,7 +24,7 @@ const TABS: { id: SubTab; label: string }[] = [
 export function SkillsAndPacks() {
   const [tab, setTab] = useState<SubTab>("discover");
   const [scope, setScope] = useState<Scope>("global");
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const hasProject = projectPath != null;
 
   return (

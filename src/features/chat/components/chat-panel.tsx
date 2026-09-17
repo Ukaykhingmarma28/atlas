@@ -29,6 +29,7 @@ import {
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
 import { bindFailureAction, errInfo, promptSignIn } from "../lib/agent-signin";
 import { toast } from "sonner";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /** Tab+agent pairs whose bind failure has already been surfaced, so the
  *  focus-triggered retry doesn't re-toast the same error on every focus.
@@ -146,7 +147,7 @@ import { DitherField } from "@/ui/dither-field";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 
 interface ChatPanelProps {
@@ -175,7 +176,7 @@ async function rebindDisconnectedSession(tabId: string): Promise<boolean> {
     const cwd =
       sess.workingDirectory ||
       workspacePathForTab(tabId) ||
-      useProjectStore.getState().currentProject?.path ||
+      useAppStore.getState().currentProject?.path ||
       "/";
     let key: SessionKey;
     if (sess.acpSessionId) {
@@ -247,7 +248,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<TurnDiffRequest>).detail;
       if (!detail?.turnId) return;
-      const repo = useProjectStore.getState().currentProject?.path ?? "";
+      const repo = useAppStore.getState().currentProject?.path ?? "";
       const messages = useChatStore.getState().sessions[tabId]?.messages ?? [];
       const next = collectTurnEdits(messages, detail.turnId, repo, detail.file);
       // Start the diff BEFORE the modal exists. The viewer would otherwise wait
@@ -404,7 +405,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         // would otherwise create the session against the WRONG repo — and a
         // "/" fallback would dodge the running-workspace eviction guard.
         const cwd =
-          workspacePathForTab(tabId) ?? useProjectStore.getState().currentProject?.path ?? "/";
+          workspacePathForTab(tabId) ?? useAppStore.getState().currentProject?.path ?? "/";
         const init = await watchStall(
           withDeadline(
             agents.newSession(agent.agent_id, cwd),
@@ -1264,7 +1265,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // the live session context, so the suggestions are better than a separate
     // model's. Appended to the WIRE prompt only (not the visible message); the
     // directive + the block are stripped from the thread. Gated on the setting.
-    if (useProjectStore.getState().settings.adaptiveSuggestions !== "off") {
+    if (useSettingsStore.getState().settings.adaptiveSuggestions !== "off") {
       wirePrompt = appendNextStepsDirective(wirePrompt);
     }
 
@@ -1434,7 +1435,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           <GitDiffModal
             open
             onOpenChange={(o) => !o && setTurnDiff(null)}
-            repoPath={useProjectStore.getState().currentProject?.path ?? ""}
+            repoPath={useAppStore.getState().currentProject?.path ?? ""}
             files={turnDiff.files}
             initialFile={turnDiff.initial}
             textSources={turnDiff.sources}

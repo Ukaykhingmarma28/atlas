@@ -4,7 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Image as ImageIcon, Film, Music, FileCode, FileX, RotateCw } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import {
   fileIndex,
   ensureFileIndex,
@@ -33,7 +33,7 @@ interface FilePickerProps {
  * palette stays snappy on huge repos.
  */
 export function FilePicker({ open, onOpenChange }: FilePickerProps) {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileMatch[]>([]);
   const [selected, setSelected] = useState(0);

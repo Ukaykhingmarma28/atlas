@@ -5,7 +5,7 @@ import { MemoryPolicyView } from "./memory-policy-view";
 import { MemoryTimelineView } from "./memory-timeline-view";
 import { MemorySharingControls } from "./memory-sharing-controls";
 import { SharedMemoryView } from "./shared-memory-view";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useMemoryStore } from "../stores/memory-store";
 
 // ── Panel shell ─────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ import { useMemoryStore } from "../stores/memory-store";
 //     the hand-rolled agent list it was built against.
 
 export function MemoryPanel() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const sub = useMemoryStore.use.subTab();
   const { setSubTab } = useMemoryStore.use.actions();
 

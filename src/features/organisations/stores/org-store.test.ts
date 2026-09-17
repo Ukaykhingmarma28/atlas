@@ -7,7 +7,7 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/features/log/lib/log", () => ({ logEvent: () => {} }));
 const scheduleAppStateSave = vi.fn();
-vi.mock("@/features/project/stores/project-store", () => ({
+vi.mock("@/features/app/stores/app-store", () => ({
   scheduleAppStateSave: () => scheduleAppStateSave(),
 }));
 vi.mock("@/features/workspaces/stores/workspace-store", () => ({

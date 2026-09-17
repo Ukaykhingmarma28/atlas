@@ -21,7 +21,7 @@ import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store"
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
 import { ChatPanel } from "@/features/chat/components/chat-panel";
-import { WelcomeScreen } from "@/features/project/components/welcome-screen";
+import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
@@ -94,7 +94,7 @@ const CanvasPanel = lazy(() =>
 const MemoryPanel = lazy(() =>
   import("@/features/memory/components/memory-panel").then((m) => ({ default: m.MemoryPanel })),
 );
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useChatStore } from "@/features/chat/stores/chat-store";
@@ -192,7 +192,7 @@ const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set([
  * column. The single-column case is the normal IDE.
  */
 export function CenterPanel() {
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   // Render ONLY the bounded HOT set, not the full project registry — keeps
   // memory/DOM bounded at 100+ projects (Chrome tab-discard model). Resolve ids
   // to workspaces, preserving registry order for stable React keys.

@@ -7,7 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { RefreshCw, GitBranch, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { CommitRowView } from "./commit-node";
@@ -19,7 +19,7 @@ const DEFAULT_LIMIT = 1000;
 const scrollPositionCache = new Map<string, number>();
 
 export function GitGraphPanel() {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const isRepo = useGitStore.use.isRepo();
   const path = project?.path ?? "";
 

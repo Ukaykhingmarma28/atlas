@@ -16,7 +16,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
 import { editorThemeExtensions } from "@/features/editor/themes/build-cm-theme";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { yCollab } from "y-codemirror.next";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -26,6 +25,7 @@ import { useDraftSession } from "../lib/use-draft-session";
 import { avatarHue } from "../lib/derive";
 import { useCommsStore } from "../stores/comms-store";
 import type { ChatConversation, PromptDraft } from "../types";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /**
  * The realtime Prompt Draft editor: one shared Y.Doc, everyone types at
@@ -40,7 +40,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
   const memberList = useCommsStore.use.members();
   const me = useCommsStore.use.me();
   const members = useMemo(() => new Map(memberList.map((m) => [m.id, m])), [memberList]);
-  const themeId = useProjectStore((s) => s.settings.theme);
+  const themeId = useSettingsStore((s) => s.settings.theme);
   const [themeRevision, setThemeRevision] = useState(0);
 
   const host = useRef<HTMLDivElement>(null);

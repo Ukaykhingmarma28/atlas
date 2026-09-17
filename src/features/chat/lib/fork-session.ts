@@ -5,7 +5,7 @@ import { errInfo } from "./agent-signin";
 import { openAgentSession } from "./open-agent-session";
 import { workspacePathForTab } from "./tab-workspace";
 import { useChatStore } from "../stores/chat-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 
 /**
  * Fork the tab's bound session and open the branch in a new tab, so the
@@ -35,7 +35,7 @@ export function forkSessionToNewTab(tabId: string): void {
         cwd:
           sess.workingDirectory ||
           workspacePathForTab(tabId) ||
-          useProjectStore.getState().currentProject?.path ||
+          useAppStore.getState().currentProject?.path ||
           "",
         agentType: sess.agentType,
       });

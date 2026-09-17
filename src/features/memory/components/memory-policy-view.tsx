@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { ClaudeIcon, CodexIcon } from "@/components/agent-icons";
 import { memoryPolicy, type Policy } from "../lib/memory-policy-api";
@@ -36,7 +36,7 @@ const COL = {
 const TABLE_MIN_W = 180 + 280 + 150 + 64 + 40;
 
 export function MemoryPolicyView() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   // Cached in the module-level memory store so jumping sub-tabs / leaving and
   // returning doesn't re-run the (expensive) policy indexing.
   const phase = useMemoryStore.use.policyPhase();

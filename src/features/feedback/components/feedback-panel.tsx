@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { useFeedbackStore } from "../stores/feedback-store";
 import { CATEGORIES } from "../lib/feedback-api";
 import { DISCORD_URL, issueUrl, openExternal } from "../lib/feedback-links";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /** Inset from the window's bottom-right corner. The status bar the panel
  *  used to sit above is gone (2026-09-16); the feedback entry is now the
@@ -38,7 +38,7 @@ export function FeedbackPanel() {
   const a = useFeedbackStore.use.actions();
 
   const snapshot = useAuthStore.use.snapshot();
-  const settings = useProjectStore.use.settings();
+  const settings = useSettingsStore.use.settings();
 
   const user = snapshot.status === "signed-in" ? snapshot.user : null;
   const signedIn = !!user;

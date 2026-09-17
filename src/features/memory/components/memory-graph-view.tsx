@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useMemoryGraphStore } from "../stores/memory-graph-store";
 import { MemoryGraphCanvas } from "./memory-graph-canvas";
 import { MemoryTreeView } from "./memory-tree-view";
@@ -26,7 +26,7 @@ const VIEW_KEY = "atlas-memory-graph-view-mode";
 const MODEL_LABEL = "all-MiniLM-L6-v2 · ~90 MB";
 
 export function MemoryGraphView() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const phase = useMemoryGraphStore.use.phase();
   const progress = useMemoryGraphStore.use.progress();
   const error = useMemoryGraphStore.use.error();

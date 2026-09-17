@@ -22,7 +22,7 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { AtlasLoader } from "@/components/atlas-loader";
 import { timeAgo } from "@/lib/time-ago";
 import { ThreadHistoryView } from "./thread-history-view";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
@@ -170,7 +170,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   const sidebarHint = useActionShortcut("panels.agentSidebar")?.label;
   const asDropdown = variant === "dropdown";
   const queryClient = useQueryClient();
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   // `currentProject` is a legacy field that's transiently null during boot and
   // workspace switches (it's repopulated by a fire-and-forget `void switchTo`).
   // When it's null, `cwd` was "" → every history query (gated on

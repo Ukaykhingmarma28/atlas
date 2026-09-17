@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import * as Popover from "@radix-ui/react-popover";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
 import {
@@ -73,7 +73,7 @@ function useTauriWindow() {
 }
 
 export function Titlebar() {
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   // The label name is read from the WORKSPACE store (matched by path), not from
   // `currentProject.name`. `currentProject` only re-syncs after a slow Rust
   // AppState round-trip, so a workspace rename took ~3-4s to show here; the

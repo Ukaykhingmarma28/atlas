@@ -14,7 +14,7 @@ import {
 } from "@/features/keybindings/stores/keybindings-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
-import { useProjectStore, type AppStateWire } from "@/features/project/stores/project-store";
+import { useAppStore, type AppStateWire } from "@/features/app/stores/app-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import {
   listenAgents,
@@ -78,6 +78,7 @@ import {
   markOrgReconciled,
 } from "@/features/organisations/lib/org-reconciliation";
 import { comms, listenComms, type CommsEnvelope } from "@/features/comms/lib/comms-api";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { commsActions, pruneTyping } from "@/features/comms/stores/comms-store";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import {
@@ -110,13 +111,13 @@ const AUTH_WAKE_REFRESH_MS = 5 * 60_000;
 // Interface-zoom helpers (⌘+/⌘-/⌘0). They read + write the persisted
 // `uiScale` setting; `updateSettings` applies it to the native WebView zoom.
 function stepZoom(delta: number) {
-  const { settings, actions } = useProjectStore.getState();
+  const { settings, actions } = useSettingsStore.getState();
   actions.updateSettings({ uiScale: clampScale(settings.uiScale + delta) });
 }
 const zoomIn = () => stepZoom(SCALE_STEP);
 const zoomOut = () => stepZoom(-SCALE_STEP);
 const zoomReset = () =>
-  useProjectStore.getState().actions.updateSettings({ uiScale: DEFAULT_SCALE });
+  useSettingsStore.getState().actions.updateSettings({ uiScale: DEFAULT_SCALE });
 
 export function App() {
   // Own model download listeners at app scope so completion notifications are
@@ -180,7 +181,7 @@ export function App() {
         status: "success",
         payload: { path },
       });
-      void useProjectStore.getState().actions.openProject(path);
+      void useAppStore.getState().actions.openProject(path);
     });
     return () => {
       void unlisten.then((off) => off());
@@ -401,7 +402,7 @@ export function App() {
         const payload = await invoke<AppStateWire>("bootstrap_app_state");
         if (cancelled) return;
         startTransition(() => {
-          useProjectStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
+          useAppStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
           // Hydration replaces the org list wholesale, so re-apply any server
           // orgs from a snapshot that may have already arrived — otherwise a
           // sign-in that landed before this bootstrap would be overwritten.
@@ -414,7 +415,7 @@ export function App() {
         console.warn("bootstrap_app_state failed; starting empty:", e);
         if (!cancelled) {
           startTransition(() => {
-            useProjectStore.getState().actions.hydrate(
+            useAppStore.getState().actions.hydrate(
               {
                 currentProject: null,
                 recentProjects: [],
@@ -434,7 +435,7 @@ export function App() {
               status: "success",
               payload: { path: cliPath },
             });
-            await useProjectStore
+            await useAppStore
               .getState()
               .actions.openProject(cliPath)
               .catch((err) => {
@@ -545,7 +546,7 @@ export function App() {
       focusTerminalSoon(newTabId);
     }
   };
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   // Global agent event bus. One listener routes atlas-agents SessionDelta
   // events into the chat-store, queues permission requests for the
@@ -639,7 +640,7 @@ export function App() {
       const byPath = useWorkspaceStore
         .getState()
         .workspaces.find((w) => w.path === sess?.workingDirectory)?.name;
-      return byPath ?? useProjectStore.getState().currentProject?.name ?? "Atlas";
+      return byPath ?? useAppStore.getState().currentProject?.name ?? "Atlas";
     };
     const notifyAgentDone = (acpSessionId: string) =>
       sendNativeNotification({
@@ -1287,7 +1288,7 @@ export function App() {
   useEffect(() => {
     const onBeforeUnload = () => {
       const wsId = useWorkspaceStore.getState().activeWorkspaceId;
-      const path = useProjectStore.getState().currentProject?.path ?? null;
+      const path = useAppStore.getState().currentProject?.path ?? null;
       // Capture first so the flush dedup compares against the CURRENT state
       // (not a stale capture from the last switch-away).
       if (wsId) captureSnapshot(wsId);

@@ -78,6 +78,7 @@ import {
   exceedsBudget,
   targetDimensions,
 } from "../lib/image-policy";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { ComposerAddMenu } from "./composer-add-menu";
 import type { GithubRepo } from "@/features/github/types";
 import { metaFromSearch } from "@/features/github/types";
@@ -92,7 +93,7 @@ import type {
 } from "../lib/mentions";
 import { toast } from "sonner";
 import { useComposerFileDrop } from "../hooks/use-composer-file-drop";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import type { MentionTrigger } from "../lib/cm-mention-extension";
 import type { SlashTrigger } from "../lib/cm-slash-extension";
 // Value import — MUST come from the CodeMirror-free module, not from
@@ -232,7 +233,7 @@ interface CodebaseIndexStatus {
  *  `search_memory`. Shows file count (or "Index memory" when unbuilt), flips to
  *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
 function CerseiMemoryPill() {
-  const projectPath = useProjectStore((s) => s.currentProject?.path ?? null);
+  const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [status, setStatus] = useState<CodebaseIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
 
@@ -868,7 +869,7 @@ export function MessageInput({
   const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "claude-code");
   // Settings → General → "Enter to send". Narrow selector so a toggle flip
   // only re-renders composers, not the whole settings surface.
-  const enterToSend = useProjectStore((s) => s.settings.enterToSend);
+  const enterToSend = useSettingsStore((s) => s.settings.enterToSend);
   // `agentType` normalised for the composer sub-components (session scope,
   // agent switcher) + the label lookup. This used to be a hardcoded list of the
   // six first-party agents with everything else falling through to
@@ -1094,7 +1095,7 @@ export function MessageInput({
   }, [tabId, disabled]);
 
   // ── Mention picker orchestration ──────────────────────────────────────
-  const projectPath = useProjectStore((s) => s.currentProject?.path ?? null);
+  const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [trigger, setTrigger] = useState<MentionTrigger | null>(null);
   const pickerRef = useRef<MentionPickerHandle>(null);
   const triggerRef = useRef<MentionTrigger | null>(null);
@@ -1341,7 +1342,7 @@ export function MessageInput({
         // Let the "+" menu fully close first so it (and any dropdown) isn't caught
         // in a whole-desktop capture.
         await new Promise((r) => setTimeout(r, 250));
-        const proj = useProjectStore.getState().currentProject?.path ?? null;
+        const proj = useAppStore.getState().currentProject?.path ?? null;
         const res = await invoke<{
           path: string;
           mimeType: string;
@@ -1373,7 +1374,7 @@ export function MessageInput({
   // explores it (compose_prompt turns that chip into an "explore this repo"
   // block pointing at the absolute path).
   const handleCloneRepo = useCallback(async (repo: GithubRepo) => {
-    const proj = useProjectStore.getState().currentProject?.path;
+    const proj = useAppStore.getState().currentProject?.path;
     if (!proj) {
       toast.error("Open a project before cloning a repo.");
       return;
@@ -2051,7 +2052,7 @@ export function MessageInput({
                 // footer read as dead while the fix (switch agent, request a
                 // grant) is one row away.
                 disabled={disabledProp || githubSyncing !== null}
-                projectPath={useProjectStore.getState().currentProject?.path ?? null}
+                projectPath={useAppStore.getState().currentProject?.path ?? null}
                 agentId={switchableAgent}
                 imageSupported={imageSupported}
                 onAddFilesOrPhotos={() => void pickFilesOrPhotos()}

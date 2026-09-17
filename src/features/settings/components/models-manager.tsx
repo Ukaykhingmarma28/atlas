@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Search, Download, Check, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useModelsStore } from "../stores/models-store";
 import { models, type ModelStatus } from "../lib/models-api";
 
@@ -25,7 +25,7 @@ export function ModelsManager() {
   const downloading = useModelsStore.use.downloading();
   const pending = useModelsStore.use.pending();
   const actions = useModelsStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
 
   const [query, setQuery] = useState("");
   const [confirm, setConfirm] = useState<{ id: string; name: string } | null>(null);

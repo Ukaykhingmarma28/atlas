@@ -1,5 +1,5 @@
 import { useLogStore, type LogSource } from "../stores/log-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 interface LogEventInput {
   source: LogSource;
@@ -25,7 +25,7 @@ interface LogEventInput {
 export function logEvent(entry: LogEventInput): void {
   try {
     if (entry.source === "atlas") {
-      const enabled = useProjectStore.getState().settings.enableAtlasLogs;
+      const enabled = useSettingsStore.getState().settings.enableAtlasLogs;
       if (!enabled) return;
     }
     const { status, payload, ...rest } = entry;

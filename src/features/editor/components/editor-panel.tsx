@@ -12,7 +12,7 @@ import { bracketMatching, foldGutter, indentOnInput } from "@codemirror/language
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { editorThemeExtensions } from "../themes/build-cm-theme";
 import { useEditorStore } from "../stores/editor-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -25,6 +25,7 @@ import { loadLanguageExtension } from "../lib/languages";
 import { gitBlameFile } from "@/features/git/lib/git-blame-api";
 import { MarkdownFile } from "@/lib/markdown-fileviewer";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 const TOOLBAR_HEIGHT = 32;
 const DIRTY_CHECK_DEBOUNCE = 300; // ms — only check dirty state, not sync content
@@ -49,7 +50,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const buffer = useEditorStore((s) => s.buffers[path]);
   const { openBuffer, setDirty, markSaved, reloadBuffer, markExternallyChanged } =
     useEditorStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? "";
+  const projectPath = useAppStore.use.currentProject()?.path ?? "";
   const layoutActions = useLayoutStore.use.actions();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -200,7 +201,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const refreshBlame = useCallback(() => {
     const view = viewRef.current;
     if (!view || isUntitled || !projectPath) return;
-    if (!useProjectStore.getState().settings.gitBlameInline) return;
+    if (!useSettingsStore.getState().settings.gitBlameInline) return;
     if (!path.startsWith(projectPath + "/")) return;
     if (useEditorStore.getState().buffers[path]?.dirty) return;
     const rel = path.slice(projectPath.length + 1);
@@ -339,7 +340,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
           lineNumbers(),
           diffGutter(),
           blameCompartment.of(
-            useProjectStore.getState().settings.gitBlameInline ? blameInline() : [],
+            useSettingsStore.getState().settings.gitBlameInline ? blameInline() : [],
           ),
           highlightActiveLine(),
           drawSelection(),
@@ -403,7 +404,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   // Live-reskin the editor when the persisted theme changes — reconfigure the
   // theme compartment in place so the buffer/undo history survive.
-  const theme = useProjectStore.use.settings().theme;
+  const theme = useSettingsStore.use.settings().theme;
   useEffect(() => {
     const refreshTheme = () => {
       const view = viewRef.current;
@@ -417,7 +418,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   // Live-toggle inline blame: reconfigure the compartment in place; turning it
   // on also fetches a fresh snapshot (the extension starts empty).
-  const gitBlameInline = useProjectStore.use.settings().gitBlameInline;
+  const gitBlameInline = useSettingsStore.use.settings().gitBlameInline;
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;

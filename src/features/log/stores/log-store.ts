@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 
 export type LogSource =
@@ -89,7 +89,7 @@ export const useLogStore = createSelectors(
       ready: false,
       actions: {
         append: (entry) => {
-          const project = useProjectStore.getState().currentProject;
+          const project = useAppStore.getState().currentProject;
           const orgId = useOrgStore.getState().activeOrganisationId ?? undefined;
           const projectPath = entry.projectPath ?? project?.path ?? undefined;
           const projectName =
@@ -161,7 +161,7 @@ export const useLogStore = createSelectors(
           }
         },
         clearBuffer: () => {
-          const project = useProjectStore.getState().currentProject?.path;
+          const project = useAppStore.getState().currentProject?.path;
           set((s) => {
             // Keep entries from OTHER projects; clear the current project's.
             s.buffer = project ? s.buffer.filter((e) => e.projectPath !== project) : [];

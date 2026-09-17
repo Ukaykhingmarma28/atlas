@@ -49,7 +49,7 @@ import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
 import { AtlasLoader } from "@/components/atlas-loader";
 import { AgentIcons } from "@/components/agent-icons";
 import { useRecentChatsStore, type RecentChat } from "../stores/recent-chats-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { useActiveOrgWorkspaces, useActiveOrgGroups } from "../lib/org-scope";
 import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
@@ -650,7 +650,7 @@ export function WorkspaceSidebar() {
   const rightMode = useLayoutStore((s) => (s.rightPanel.visible ? s.rightPanel.mode : null));
   // Source control needs a project (app-layout hides the slot without one), so
   // the item says so instead of toggling a panel that never appears.
-  const hasProject = useProjectStore((s) => !!s.currentProject);
+  const hasProject = useAppStore((s) => !!s.currentProject);
   // Team chat and the member roster are SERVER features: every route names a
   // server org id, so a local-only organisation has nothing to talk to. Same
   // test comms-panel.tsx applies before it connects.
@@ -699,8 +699,8 @@ export function WorkspaceSidebar() {
       data: {},
     });
   }, []);
-  const recentProjects = useProjectStore.use.recentProjects();
-  const { clearRecents } = useProjectStore.use.actions();
+  const recentProjects = useAppStore.use.recentProjects();
+  const { clearRecents } = useAppStore.use.actions();
   const recentChats = useRecentChatsStore.use.items();
   const { remove: removeChat } = useRecentChatsStore.use.actions();
   const runningChatKeys = useRunningChatKeys();

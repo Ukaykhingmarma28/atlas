@@ -21,7 +21,7 @@ import { hunkWireLines, type DiffHunk } from "../../lib/diff";
 import { GitOpOutput } from "./git-op-output";
 import { ConflictsView } from "./conflicts-view";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { DiffView } from "../diff-view";
 import { classifyFile } from "@/lib/file-types";
 import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
@@ -176,7 +176,7 @@ export function ChangesView() {
   const repoPath = useGitStore.use.repoPath();
   const actions = useGitStore.use.actions();
   const { addTab } = useLayoutStore.use.actions();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   // This is the only reader of the whole-working-tree `diff` — the store
   // skips refreshing it while nothing is retaining (see retainGitDiff).
