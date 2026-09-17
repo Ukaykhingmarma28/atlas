@@ -125,12 +125,12 @@ Before your message reaches the agent, Atlas assembles context around it:
 | **Survives history rewrites** | Links re-point through amend and rebase by patch-id reconciliation. When a squash makes the link genuinely ambiguous, it orphans instead of guessing |
 | **Transcript import** | Backfills your existing Claude Code history, so the record starts before you installed Atlas |
 | **Secrets scrubbed on write** | Redaction runs before anything is persisted, so the local store is never itself a disclosure risk |
-| **Capture health** | One signal per workspace, OK, Degraded, or Stopped, each with a reason and the next step |
+| **Capture health** | One signal per project, OK, Degraded, or Stopped, each with a reason and the next step |
 | **Mission control** | Dashboard for agent activity: usage over time, consumption breakdown, timelines, and a filterable log table |
 
 Works with no account and no network.
 
-### The workspace
+### The project
 
 | Capability | Description | Link |
 |---|---|---|

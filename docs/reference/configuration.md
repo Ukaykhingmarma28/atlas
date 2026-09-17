@@ -39,7 +39,7 @@ editing:
 
 | Stays in `app_config_dir()` | Why |
 |---|---|
-| `state.json` | Workspaces, recents, orgs — machine-managed. |
+| `state.json` | Projects, recents, orgs — machine-managed. (Its keys still say `workspaces` / `activeWorkspaceId`: storage keys, not the concept.) |
 | `device.json` | Telemetry identity; see the exclusions below. |
 | `telemetry.json` | Self-hosted PostHog override. |
 | `models-pricing.json`, `byok-usage.jsonl` | Caches. |
@@ -321,7 +321,7 @@ the user's preferences at that point.
 That copy is protected from the other end too. The typed `AppState` has no
 `settings` field any more, so serializing it over `state.json` wholesale
 would delete the legacy object — and `state.json` gets saved for reasons
-that have nothing to do with settings (a rotated telemetry id, a workspace
+that have nothing to do with settings (a rotated telemetry id, a project
 change). `AppState::save` therefore merges over whatever the file already
 holds rather than replacing it, and drops the legacy `settings` key only
 once `settingsConfigMigrated` is `true`. It writes through a uniquely-named
