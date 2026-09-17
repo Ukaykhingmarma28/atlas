@@ -14,6 +14,14 @@ localhost:1420/                     # the rich default scenario
 localhost:1420/?scenario=git-conflict
 ```
 
+`install.ts` also exports `installMockBackend(scenario?)` and
+`resetStores()` (from `reset-stores.ts`). Neither is used by `bun run dev` —
+they are decision 41's two affordances, so that a future Storybook decorator can
+pick a scenario without a URL and isolate stores without fighting Zustand's
+module singletons. Storybook itself is not in scope; `resetStores()` is callable
+today as `__atlasMock.resetStores()`, and its first call is the one that defines
+"clean".
+
 The badge bottom-right counts **unmocked** commands. Click it to list them, or
 run `__atlasMock.unmocked()` in the console. An unmocked command resolves
 `null`, so an empty or broken panel is usually a missing fake here, not a UI
