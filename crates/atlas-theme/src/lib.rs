@@ -619,6 +619,6 @@ mod tests {
     #[test]
     fn browser_mock_snapshot_is_current() {
         let expected = serde_json::to_string_pretty(&built_in_themes().unwrap()).unwrap() + "\n";
-        assert_eq!(include_str!("../../../src/dev/mock-backend/builtin-themes.json"), expected);
+        assert_eq!(include_str!("../../../src/dev/mock-backend/fixtures/builtin-themes.json"), expected);
     }
 }

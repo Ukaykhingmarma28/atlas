@@ -24,11 +24,17 @@ import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-s
 import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
 import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
+import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
+import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
 import { appState, listDir, MOCK_WORKSPACE } from "../workspace";
 
 const nothing = () => null;
+
+// Generated from the TOML themes by the atlas-theme crate; `cargo test -p
+// atlas-theme` fails when this snapshot is stale.
+const builtinThemes = builtinThemesJson as Theme[];
 
 // Inline `invoke<…>` result types in the knowledge panel / footer, restated
 // here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
@@ -42,6 +48,24 @@ export interface KbServerExport {
 }
 
 export const baseHandlers: MockHandlers = {
+  // ── theme ──────────────────────────────────────────────────────────────
+  list_themes: (): ThemeSummary[] =>
+    builtinThemes.map((theme) => ({
+      id: theme.id,
+      name: theme.name,
+      author: theme.author,
+      license: theme.license,
+      hasDark: Boolean(theme.dark),
+      hasLight: Boolean(theme.light),
+      builtIn: true,
+      warnings: theme.warnings ?? [],
+    })),
+  get_theme: (a): Theme => {
+    const theme = builtinThemes.find((candidate) => candidate.id === a.id);
+    if (!theme) throw new Error(`theme '${String(a.id)}' was not found`);
+    return theme;
+  },
+
   // ── boot ────────────────────────────────────────────────────────────────
   bootstrap_app_state: () => appState(),
   cli_take_initial_project_path: nothing,

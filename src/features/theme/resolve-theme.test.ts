@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import builtinThemes from "@/dev/mock-backend/builtin-themes.json";
+import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
 import { parseColor } from "./color";
 import { resolveTheme } from "./resolve-theme";
 import { THEME_KEY_REGISTRY } from "./theme-key-registry";
