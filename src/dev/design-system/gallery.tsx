@@ -350,7 +350,7 @@ function ElevationSection() {
           <div className="inset-highlight mb-2 flex h-20 items-center justify-center rounded-md bg-bg-elevated">
             <span className="code text-text-secondary">inset-highlight</span>
           </div>
-          <div className="caption">The white top edge.</div>
+          <div className="caption">The top edge, from the `element.highlight` key.</div>
         </div>
         <div className="w-56">
           <div className="backdrop-blur-glass mb-2 flex h-20 items-center justify-center rounded-md border border-border-default">
