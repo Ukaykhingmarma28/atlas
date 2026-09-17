@@ -785,6 +785,57 @@ mod tests {
         }
     }
 
+    /// `chart-1..5` are five *series*, so the only thing they must do is stay
+    /// tellable apart. Seven variants shipped with an outright repeated value
+    /// (Rosé Pine drew `chart-1` and `chart-2` in the same pine), and three
+    /// more were a couple of RGB steps apart — two tans in Chyral, a tan and a
+    /// salmon in Atlas, an orange and a salmon in Mirage. Either way adjacent
+    /// series render as one line. A plain RGB distance is crude, but it is
+    /// blind to *how* two colours are close, which is the point: it catches a
+    /// pair that differs only in lightness as readily as one that differs only
+    /// in hue, and the latter is what red/green colour blindness collapses.
+    #[test]
+    fn chart_series_are_tellable_apart() {
+        /// Below this Euclidean distance in 0–255 RGB, two series read as one.
+        const FLOOR: f64 = 40.0;
+        const CHART_KEYS: &[&str] = &["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
+
+        fn rgb(hex: &str) -> [f64; 3] {
+            let hex = hex.strip_prefix('#').expect("chart token is a hex colour");
+            assert_eq!(hex.len(), 6, "chart token is #rrggbb, got {hex}");
+            [0, 2, 4].map(|index| {
+                f64::from(u8::from_str_radix(&hex[index..index + 2], 16).expect("hex digits"))
+            })
+        }
+
+        for theme in built_in_themes().unwrap() {
+            for (appearance, variant) in
+                [("dark", theme.dark.as_ref()), ("light", theme.light.as_ref())]
+            {
+                let Some(variant) = variant else { continue };
+                for (index, key) in CHART_KEYS.iter().enumerate() {
+                    for other in &CHART_KEYS[index + 1..] {
+                        let (left, right) = (rgb(&variant.base[*key]), rgb(&variant.base[*other]));
+                        let distance = left
+                            .iter()
+                            .zip(right.iter())
+                            .map(|(a, b)| (a - b).powi(2))
+                            .sum::<f64>()
+                            .sqrt();
+                        assert!(
+                            distance >= FLOOR,
+                            "{}: {appearance}.base.{key} ({}) and {other} ({}) are {distance:.0} \
+                             apart; adjacent chart series will read as one",
+                            theme.id,
+                            variant.base[*key],
+                            variant.base[*other],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// A light appearance that copies its shadow ramp byte-for-byte from
     /// dark renders pure-black halos on a light surface: dark's alphas run
     /// up to 0.9, which reads as a heavy ring rather than a soft lift once
