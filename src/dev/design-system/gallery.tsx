@@ -585,7 +585,7 @@ function PrimitiveSection() {
       <Section
         title="Button"
         decision="decision 32 · src/ui/button.tsx"
-        note="Six variants × four sizes, sized on the control heights. Shaped like shadcn's base-style Button so later `shadcn add` output drops in; it has no asChild, because that would need a second new dependency."
+        note="Six variants × four sizes, sized on the control heights. Shaped like shadcn's base-style Button so later `shadcn add` output drops in; it has no asChild — the overlay primitives take Base UI's `render` prop, but the button stays a plain element."
       >
         {BUTTON_SIZES.map((size) => (
           <Row key={size} name={`size="${size}"`}>

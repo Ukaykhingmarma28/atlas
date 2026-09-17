@@ -13,10 +13,13 @@ import { cn } from "@/lib/utils";
  *  - **Sizes are Atlas control heights**, not shadcn's 32/36/40px. Atlas is a
  *    dense, px-based UI; `md` (26px) is the compact control the audit found
  *    everywhere, and it is the default.
- *  - **No `asChild`.** shadcn's version leans on `@radix-ui/react-slot`, and
- *    `class-variance-authority` is the only new dependency Foundations may add.
- *    Compose with `buttonVariants({ variant, size })` on the element instead:
- *    `<a className={buttonVariants({ variant: "ghost" })}>`.
+ *  - **No `asChild`.** shadcn's version leans on a Slot primitive, and
+ *    `class-variance-authority` was the only new dependency Foundations could
+ *    add. Compose with `buttonVariants({ variant, size })` on the element
+ *    instead: `<a className={buttonVariants({ variant: "ghost" })}>`. Base UI
+ *    now ships a Button primitive that takes `render`, so this could change —
+ *    but it is an API change to a primitive with hundreds of call sites, and
+ *    belongs to its own decision rather than to the Base UI migration.
  *  - **Hover uses real tokens**, not `/90` opacity modifiers, which Tailwind v4
  *    compiles to `color-mix()`.
  */
