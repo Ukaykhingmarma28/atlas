@@ -3,7 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type ThemeAppearance = "dark" | "light";
-export type ThemeKeyStyle = { color: string; font_style?: string };
+/** The table spelling of a theme key. Rust rejects a `font_style` here:
+ *  nothing between a theme key and CodeMirror, highlight.js or the markdown
+ *  renderer can carry one, so accepting it would render upright in silence. */
+export type ThemeKeyStyle = { color: string };
 export type ThemeKeyValue = string | ThemeKeyStyle;
 
 export interface ThemeVariant {

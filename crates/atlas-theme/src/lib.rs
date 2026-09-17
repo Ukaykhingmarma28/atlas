@@ -128,12 +128,20 @@ impl ThemeKeyValue {
     }
 }
 
+/// The table spelling of a theme key: `keyword = { color = "#c678dd" }`.
+///
+/// It carried a `font_style` too, which the schema accepted, the TS type
+/// mirrored and *nothing* read — so `font_style = "italic"` parsed, validated,
+/// shipped, and rendered upright. A theme author had no way to tell that from
+/// a bug in their own file. Atlas has no path from a theme key to a font
+/// style: CodeMirror, highlight.js and the markdown renderer each take a
+/// colour from the resolved key and nothing else. Until all three can honour
+/// one, the field is rejected at load with a message that says so, which is
+/// the only answer that cannot be mistaken for the feature working.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeKeyStyle {
     pub color: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub font_style: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -457,7 +465,7 @@ fn flatten_keys(
         let dotted = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
         if let Some(string) = value.as_str() {
             insert_leaf(out, dotted, ThemeKeyValue::Color(string.to_string()), origin)?;
-        } else if let Some(style) = parse_style(value) {
+        } else if let Some(style) = parse_style(value, &dotted).map_err(|message| validation(origin, message))? {
             insert_leaf(out, dotted, ThemeKeyValue::Styled(style), origin)?;
         } else if value.is_table() {
             flatten_keys(value, &dotted, out, origin, field)?;
@@ -468,14 +476,22 @@ fn flatten_keys(
     Ok(())
 }
 
-fn parse_style(value: &toml::Value) -> Option<ThemeKeyStyle> {
-    let table = value.as_table()?;
-    let color = table.get("color")?.as_str()?.to_string();
-    if table.keys().any(|key| !matches!(key.as_str(), "color" | "font_style")) {
-        return None;
+/// `Ok(None)` means "not a style table" — the caller then tries to descend
+/// into it as a nested group of keys. `Err` is reserved for a table that is
+/// unmistakably meant as a style and cannot be honoured.
+fn parse_style(value: &toml::Value, key: &str) -> Result<Option<ThemeKeyStyle>, String> {
+    let Some(table) = value.as_table() else { return Ok(None) };
+    let Some(color) = table.get("color").and_then(toml::Value::as_str) else { return Ok(None) };
+    if table.contains_key("font_style") {
+        return Err(format!(
+            "{key} sets font_style, which Atlas does not apply — a theme key is a colour. \
+             Remove it; leaving it in would silently render upright."
+        ));
     }
-    let font_style = table.get("font_style").and_then(toml::Value::as_str).map(ToOwned::to_owned);
-    Some(ThemeKeyStyle { color, font_style })
+    if table.keys().any(|key| key != "color") {
+        return Ok(None);
+    }
+    Ok(Some(ThemeKeyStyle { color: color.to_string() }))
 }
 
 fn insert_leaf<T>(
@@ -651,6 +667,24 @@ mod tests {
     fn rejects_leaf_prefix_conflicts() {
         let source = minimal_theme("[dark.keys]\nsyntax = \"#fff\"\n[dark.keys.syntax]\nkeyword = \"#000\"");
         assert!(parse_theme(&source, "test").is_err());
+    }
+
+    /// Accepted-and-ignored is the worst of the three options: the author
+    /// gets no error and no italics, and nothing tells them which it is.
+    #[test]
+    fn font_style_is_rejected_rather_than_silently_dropped() {
+        let source =
+            minimal_theme("[dark.keys]\nsyntax.keyword = { color = \"#c678dd\", font_style = \"italic\" }");
+        let error = parse_theme(&source, "test").unwrap_err().to_string();
+        assert!(error.contains("font_style"), "{error}");
+        assert!(error.contains("syntax.keyword"), "{error}");
+
+        // The table spelling itself stays valid without it.
+        let plain = minimal_theme("[dark.keys]\nsyntax.keyword = { color = \"#c678dd\" }");
+        assert_eq!(
+            parse_theme(&plain, "test").unwrap().dark.unwrap().keys["syntax.keyword"].color(),
+            "#c678dd"
+        );
     }
 
     #[test]

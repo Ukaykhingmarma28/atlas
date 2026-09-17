@@ -9,7 +9,15 @@ and transforms (alpha, lightening, or mixing) are the checked registry in
 
 An explicit key is written as a dotted TOML key (or as nested tables). A key
 may not also be a prefix, so use `terminal.ansi.red`, never both `terminal`
-and `terminal.ansi.red`.
+and `terminal.ansi.red`. A key's value is a colour, either bare
+(`syntax.keyword = "#c678dd"`) or as a one-field table
+(`syntax.keyword = { color = "#c678dd" }`). There are **135** keys in all.
+
+A theme key carries no font style. `font_style` was accepted by the schema
+and read by nothing, so `font_style = "italic"` loaded cleanly and rendered
+upright; the loader now rejects it by name. Nothing between a resolved key
+and CodeMirror, highlight.js or the markdown renderer can carry one, and a
+field that only sometimes works is worse than one that does not exist.
 
 ## Full key list and derivation sources
 
@@ -37,13 +45,13 @@ transform after choosing the source.
 | `terminal.foreground`, `terminal.cursor` | B:foreground → D |
 | `terminal.background` | B:background → D |
 | `terminal.ansi.black` | B:background → D (lighten) |
-| `terminal.ansi.red`, `terminal.ansi.bright_red` | P:red → D |
-| `terminal.ansi.green`, `terminal.ansi.bright_green` | P:green → D |
-| `terminal.ansi.yellow`, `terminal.ansi.bright_yellow` | P:yellow → D |
-| `terminal.ansi.blue`, `terminal.ansi.bright_blue` | P:blue → D |
-| `terminal.ansi.magenta`, `terminal.ansi.bright_magenta` | P:purple → D |
-| `terminal.ansi.cyan`, `terminal.ansi.bright_cyan` | P:cyan → D |
-| `terminal.ansi.white`, `terminal.ansi.bright_white` | B:foreground → D |
+| `terminal.ansi.red`, `terminal.ansi.bright_red` | P:red → D (bright lightens) |
+| `terminal.ansi.green`, `terminal.ansi.bright_green` | P:green → D (bright lightens) |
+| `terminal.ansi.yellow`, `terminal.ansi.bright_yellow` | P:yellow → D (bright lightens) |
+| `terminal.ansi.blue`, `terminal.ansi.bright_blue` | P:blue → D (bright lightens) |
+| `terminal.ansi.magenta`, `terminal.ansi.bright_magenta` | P:purple → D (bright lightens) |
+| `terminal.ansi.cyan`, `terminal.ansi.bright_cyan` | P:cyan → D (bright lightens) |
+| `terminal.ansi.white`, `terminal.ansi.bright_white` | B:foreground → D (bright lightens) |
 | `terminal.ansi.bright_black` | B:muted-foreground → D |
 | `syntax.comment`, `syntax.punctuation` | B:muted-foreground → D |
 | `syntax.keyword` | P:purple → D |
@@ -64,7 +72,7 @@ transform after choosing the source.
 | `editor.fold.background` | B:secondary → D |
 | `editor.fold.border` | B:border → D |
 | `scrollbar.track.background` | B:background → D |
-| `scrollbar.thumb.background`, `scrollbar.thumb.hover` | B:foreground → D (alpha/lighten) |
+| `scrollbar.thumb.background`, `scrollbar.thumb.hover` | B:foreground → D (alpha 0.16 / 0.26) |
 | `tab.active.background` | B:accent → D |
 | `tab.inactive.background` | B:sidebar → D |
 | `tab.active.border` | B:primary → D |
@@ -79,7 +87,7 @@ transform after choosing the source.
 | `comms.surface.background` | B:background → D |
 | `comms.mention.background`, `comms.mention.foreground`, `comms.other_mention.background` | B:foreground → D (mention backgrounds use alpha) |
 | `comms.other_mention.foreground` | B:muted-foreground → D |
-| `comms.unread.foreground`, `comms.unread_strong.foreground` | P:green → D |
+| `comms.unread.foreground`, `comms.unread_strong.foreground` | P:green → D (`unread_strong` mixes toward the background) |
 | `agent.claude.foreground`, `agent.claude.background` | P:orange → D (background alpha) |
 | `agent.gpt.foreground`, `agent.gpt.background`, `agent.codex.foreground`, `agent.codex.background` | P:green → D (background alpha) |
 | `agent.gemini.foreground`, `agent.gemini.background` | P:blue → D (background alpha) |
@@ -129,5 +137,5 @@ After intentionally changing their Rust shape, regenerate them with:
 
 ```bash
 cargo run -p atlas-theme --example generate_schema > crates/atlas-theme/schema/theme-v1.json
-cargo run -p atlas-theme --example generate_builtins > src/dev/mock-backend/builtin-themes.json
+cargo run -p atlas-theme --example generate_builtins > src/dev/mock-backend/fixtures/builtin-themes.json
 ```
