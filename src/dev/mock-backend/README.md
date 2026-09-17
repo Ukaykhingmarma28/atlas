@@ -27,11 +27,16 @@ them, and a change that touches one has to be checked in `bun run dev:app`:
 
 - **The Browser tab.** It is a real child `WebviewWindow` positioned over the
   panel by the native window server. In the browser the panel draws its own
-  chrome — tab strip, address bar, reader pane — around an empty area where the
-  page would be. The `browser_embed_*` commands are answered as no-ops in
-  `fixtures/misc.ts` so the badge stays honest about what is _missing_ rather
-  than about what is _native_; `fetch_readable` is faked, because reader mode is
-  ordinary themed HTML that Rust produces and the webview does not.
+  chrome — tab strip, address bar, reader pane — and, where the page would be, a
+  labelled **"Native-only surface"** placeholder (decision 39) naming what it is
+  and where to check it. That placeholder is `NativeOnlyNotice` in
+  `browser-panel.tsx`, gated on `isBrowserMock` (`src/lib/env.ts`) so it is
+  dead-code-eliminated from production and never appears in `dev:app`; the
+  normal start page is suppressed under the mock so the two do not stack. The
+  `browser_embed_*` commands are answered as no-ops in `fixtures/misc.ts` so the
+  badge stays honest about what is _missing_ rather than about what is _native_;
+  `fetch_readable` is faked, because reader mode is ordinary themed HTML that
+  Rust produces and the webview does not.
 - **Finder drag-and-drop.** Dropping files onto the window, and pasting files
   from Finder, arrive through Tauri's native drag-drop channel and the
   `clipboard_file_paths` command reading the macOS pasteboard. The browser's own

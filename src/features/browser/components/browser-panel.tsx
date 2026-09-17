@@ -6,6 +6,7 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
+import { isBrowserMock } from "@/lib/env";
 import { safeUnlistenPromise } from "@/lib/safe-unlisten";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useBrowserOverlayStore } from "../stores/browser-overlay-store";
@@ -703,6 +704,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
       {/* ── Live mode: placeholder the native webview is positioned over ── */}
       {isLive && (
         <div ref={placeholderRef} className="flex-1 relative bg-bg-base">
+          <NativeOnlyNotice />
           {/* Safe fallback UI when native webview containment or creation fails */}
           {embedError && (
             <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-auto bg-bg-base z-10">
@@ -784,7 +786,10 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
               </div>
             </div>
           )}
-          {!createdRef.current && !initialUrl && (
+          {/* The start page is suppressed under the browser mock: there is no
+              webview for a quick link to load, and `NativeOnlyNotice` occupies
+              the same box saying exactly that. */}
+          {!createdRef.current && !initialUrl && !isBrowserMock && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center space-y-3">
                 <Globe size={32} className="text-text-tertiary mx-auto" />
@@ -933,6 +938,46 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           </ContextMenu.Portal>
         </ContextMenu.Root>
       )}
+    </div>
+  );
+}
+
+/**
+ * The Browser tab's native-only placeholder (decision 39).
+ *
+ * Live mode is a real child `WebviewWindow` that the macOS window server parks
+ * over this div — there is no `invoke()` behind it, so `src/dev/mock-backend/`
+ * cannot fake it and never will. Without this, `bun run dev` drew the full
+ * chrome (tab strip, address bar, reader toggle) around an empty rectangle,
+ * which reads as a start page that has finished loading. A reviewer then
+ * reports "the Browser tab is blank" as a defect, or worse signs the surface
+ * off having never seen it.
+ *
+ * So it says what it is, in the place the page would be. Renders only under
+ * `bun run dev` in an ordinary browser: `isBrowserMock` is a build-time
+ * constant, so the whole component is eliminated from production, and inside
+ * `dev:app` the real webview covers this div anyway.
+ */
+function NativeOnlyNotice() {
+  if (!isBrowserMock) return null;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-6">
+      <div className="flex max-w-[380px] flex-col items-center gap-4 text-center">
+        <div className="flex size-control-lg items-center justify-center rounded-full border border-border-default bg-bg-secondary">
+          <AppWindow size={16} className="text-text-tertiary" />
+        </div>
+        <div className="space-y-1.5">
+          <p className="heading">Native-only surface</p>
+          <p className="body text-text-tertiary">
+            The live browser is a native webview the window server draws over this panel, not HTML.
+            Nothing in the mock backend can stand in for it.
+          </p>
+          <p className="caption pt-1">
+            Check it in <span className="code text-text-secondary">bun run dev:app</span>. Reader
+            mode is ordinary themed HTML and does work here.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
