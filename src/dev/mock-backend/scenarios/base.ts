@@ -22,11 +22,11 @@ import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge
 import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
 import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
-import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
 import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
 import { fsHandlers, listDir } from "../fixtures/files";
+import { gitHandlers } from "../fixtures/git";
 import { logHandlers } from "../fixtures/log";
 import { settingsHandlers } from "../fixtures/settings";
 import { appState, MOCK_WORKSPACE } from "../workspace";
@@ -143,32 +143,10 @@ export const baseHandlers: MockHandlers = {
     pendingRows: 0,
   }),
 
-  // ── git (clean repo; git scenarios override) ────────────────────────────
-  git_watch_start: nothing,
-  git_workspace_summary: (): GitSummary => ({
-    isRepo: true,
-    branch: "main",
-    headSubject: "Initial commit",
-    dirty: false,
-    additions: 0,
-    deletions: 0,
-  }),
-  git_snapshot: () => ({
-    isRepo: true,
-    branch: "main",
-    detached: false,
-    upstream: "origin/main",
-    ahead: 0,
-    behind: 0,
-    files: [],
-    branches: [],
-    stashes: [],
-    inProgress: null,
-  }),
-  git_log: () => [],
-  git_diff_all: () => "",
-  git_remotes: () => [{ name: "origin", url: "git@github.com:acme/acme-app.git" }],
-  git_tags: () => [],
+  // ── git ─────────────────────────────────────────────────────────────────
+  // A dirty working tree with a branch list, a stash stack, a commit graph and
+  // real per-file diffs. `git-conflict` overrides the status half of this.
+  ...gitHandlers,
 
   // ── agents ──────────────────────────────────────────────────────────────
   agents_catalog: (): AgentCatalog => ({
