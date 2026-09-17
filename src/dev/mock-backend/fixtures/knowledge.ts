@@ -1,15 +1,37 @@
-// Seed content for the `knowledge` scenario: the notes, page metadata and
-// cloned repos of the fake `acme-app` project.
+// The Knowledge tab and the knowledge-graph tab, for every scenario.
 //
-// Notes are keyed by entry id — the path under `.atlas/knowledge/` without
-// `.md`, so `architecture/overview` is a note inside the `architecture` folder.
-// Links use the syntax the Rust backlinks engine parses
-// (`commands/knowledge_links.rs`): `[[entry-id]]`, `@note:<id>`, and the HTML
-// mention chip the editor round-trips (`data-mention-kind` BEFORE `data-id`,
-// which is the order the Rust scanner looks for).
+// A populated knowledge base: ten linked notes across three folders, with
+// page metadata (icons, covers, status, tags). Held in memory so the panel
+// can be clicked through: new, edited and deleted notes, new folders, meta
+// patches and graph drags all show up in later answers, until the page
+// reloads. Backlinks, link counts and the graph are derived from the current
+// note bodies the same way `commands/knowledge_links.rs` does it.
+//
+// Cloned repos (the Knowledge sidebar's other section) are a separate
+// surface shared with the GitHub panel — see `fixtures/integrations.ts`.
+//
+// `knowledgeHandlers` is spread into `baseHandlers` (`scenarios/base.ts`), so
+// every scenario opens onto this same populated base. `scenarios/knowledge.ts`
+// only adds what is genuinely scenario-specific on top of it: opening the
+// Knowledge tab on mount, and the console triggers that simulate work
+// happening outside the panel.
 
-import type { ClonedRepo } from "@/features/github/types";
-import type { RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
+import { emit } from "@tauri-apps/api/event";
+import type { MentionData, MentionKnowledge } from "@/features/chat/lib/mentions";
+import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
+import type {
+  GraphEdge,
+  GraphNode,
+  ProjectGraph,
+} from "@/features/knowledge/stores/knowledge-graph-store";
+import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
+import type {
+  MetaFile,
+  PageMetaPatch,
+  RustPageMeta,
+} from "@/features/knowledge/stores/knowledge-meta-store";
+import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
+import type { MockHandlers } from "../types";
 import { MOCK_WORKSPACE } from "../workspace";
 
 const F = "```";
@@ -420,71 +442,6 @@ export const SEED_META: Record<string, RustPageMeta> = {
   },
 };
 
-const reposDir = `${MOCK_WORKSPACE.path}/.atlas/repos`;
-
-export const SEED_REPOS: ClonedRepo[] = [
-  {
-    name: "acme-design-tokens",
-    display_name: "acme/design-tokens",
-    path: `${reposDir}/acme-design-tokens`,
-    has_readme: true,
-    branch: "main",
-    meta: {
-      description: "Colour, type and spacing tokens shared by every Acme front end.",
-      language: "TypeScript",
-      stars: 128,
-      forks: 14,
-      html_url: "https://github.com/acme/design-tokens",
-      updated_at: "2026-09-10T08:30:00Z",
-    },
-  },
-  {
-    name: "tokio-rs-mini-redis",
-    display_name: "tokio-rs/mini-redis",
-    path: `${reposDir}/tokio-rs-mini-redis`,
-    has_readme: false,
-    branch: null,
-    meta: null,
-  },
-];
-
-export const SEED_READMES: Record<string, string> = {
-  "acme-design-tokens": `# @acme/design-tokens
-
-Colour, type and spacing tokens shared by every Acme front end, generated from one source of truth.
-
-## Install
-
-${F}bash
-bun add @acme/design-tokens
-${F}
-
-## Usage
-
-${F}ts
-import { color, space } from "@acme/design-tokens";
-
-export const card = { padding: space[4], background: color.surface.raised };
-${F}
-
-## Tokens
-
-| Group | Example | Notes |
-| --- | --- | --- |
-| \`color\` | \`color.text.primary\` | Light and dark values |
-| \`space\` | \`space[4]\` → \`16px\` | 4px grid |
-| \`radius\` | \`radius.md\` → \`8px\` | |
-
-## Contributing
-
-1. Edit \`tokens/*.json\`.
-2. Run \`bun run build\` to regenerate the CSS and TS outputs.
-3. Open a PR; the visual diff job posts screenshots.
-
-> Tokens are versioned with semver. Renaming a token is a breaking change.
-`,
-};
-
 /** A stand-in cover image: an SVG landscape whose hue comes from the ref, so
  *  different covers look different. Rust would return the real file's bytes. */
 export function coverSvgDataUrl(ref: string): string {
@@ -502,3 +459,331 @@ export function coverSvgDataUrl(ref: string): string {
 </svg>`;
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
+
+// ── result types ─────────────────────────────────────────────────────────
+//
+// Inline `invoke<…>` result types in the knowledge panel / footer, restated
+// here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
+
+export interface KbImportResult {
+  notes_imported: number;
+  files_copied: number;
+}
+export interface KbServerExport {
+  binaryPath: string;
+  noteCount: number;
+}
+
+// ── state ─────────────────────────────────────────────────────────────────
+
+const PROJECT = MOCK_WORKSPACE.path;
+const KB_DIR = `${PROJECT}/.atlas/knowledge`;
+
+interface Note {
+  content: string;
+  updatedAt: string;
+}
+
+let notes = new Map<string, Note>();
+let dirs = new Set<string>();
+let meta: Record<string, RustPageMeta> = {};
+let layout: GraphLayout = { positions: {} };
+
+/** Restore the seed data. Called once at module load so every scenario opens
+ *  on the populated base, and again by the `knowledge` scenario's `reset`
+ *  console action. */
+export function resetKnowledgeStore(): void {
+  notes = new Map(SEED_NOTES.map((n) => [n.id, { content: n.content, updatedAt: ago(n.age) }]));
+  dirs = new Set(SEED_EMPTY_DIRS);
+  meta = structuredClone(SEED_META);
+  layout = { positions: {} };
+}
+resetKnowledgeStore();
+
+const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00");
+
+/** Rust sends the filename stem as the title; `_meta.json` titles win client-side. */
+const stem = (id: string) => id.split("/").pop() ?? id;
+
+/** Same path rule as Rust's `kb_rel`: relative, no `..`, no backslashes. */
+function kbRel(fragment: unknown): string {
+  const f = String(fragment ?? "");
+  if (
+    !f ||
+    f.includes("\\") ||
+    f.startsWith("/") ||
+    f.split("/").some((p) => !p || p === "." || p === "..")
+  ) {
+    throw new Error("invalid knowledge path");
+  }
+  return f;
+}
+
+/** Every note, newest first — the same shape `list_knowledge` answers with.
+ *  Exported so the `knowledge` scenario's console actions can read current
+ *  content without reaching into this module's private state. */
+export function listKnowledgeEntries(): KnowledgeEntry[] {
+  return [...notes]
+    .map(([id, n]) => ({
+      id,
+      title: stem(id),
+      content: n.content,
+      source: stem(id).startsWith("paper-")
+        ? "paper"
+        : stem(id).startsWith("chat-")
+          ? "chat"
+          : "note",
+      file_path: `${KB_DIR}/${id}.md`,
+      updated_at: n.updatedAt,
+    }))
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+}
+
+// ── events ────────────────────────────────────────────────────────────────
+
+const linksChanged = () => emit("atlas:knowledge:links-changed", { projectPath: PROJECT });
+
+// Rust debounces meta writes by 300 ms and emits once the file is on disk.
+let metaTimer: ReturnType<typeof setTimeout> | null = null;
+/** Exported so the `knowledge` scenario's `reset` action can announce a
+ *  wholesale meta replacement the same way a single patch does. */
+export function scheduleKnowledgeMetaChanged(): void {
+  if (metaTimer) clearTimeout(metaTimer);
+  metaTimer = setTimeout(() => {
+    metaTimer = null;
+    void emit("atlas:knowledge:meta-changed", { projectPath: PROJECT });
+  }, 300);
+}
+
+/** Re-read the note list the way the panel does after a write it made itself
+ *  (a console action, rather than a save that went through the store). */
+export async function reloadKnowledgeEntries(): Promise<void> {
+  const { useKnowledgeStore } = await import("@/features/knowledge/stores/knowledge-store");
+  await useKnowledgeStore.getState().actions.loadEntries(PROJECT);
+}
+
+// ── links (port of knowledge_links.rs) ──────────────────────────────────────
+
+interface RefHit {
+  target: string;
+  start: number;
+  end: number;
+}
+
+function findRefs(body: string): RefHit[] {
+  const out: RefHit[] = [];
+  // [[wikilinks]]
+  for (let i = 0; i + 1 < body.length;) {
+    if (body.startsWith("[[", i)) {
+      const close = body.indexOf("]]", i + 2);
+      if (close !== -1) {
+        const inner = body.slice(i + 2, close);
+        if (inner && !inner.includes("\n") && inner.length < 200) {
+          out.push({ target: inner, start: i, end: close + 2 });
+        }
+        i = close + 2;
+        continue;
+      }
+    }
+    i++;
+  }
+  // @knowledge:id / @note:id / @page:id
+  for (const m of body.matchAll(/@(?:knowledge|note|page):([^\s,;)\]}"'`]+)/g)) {
+    out.push({ target: m[1], start: m.index, end: m.index + m[0].length });
+  }
+  // HTML mention chips: data-mention-kind first, data-id within 400 chars after.
+  for (const m of body.matchAll(/data-mention-kind=(["'])(.*?)\1/g)) {
+    if (!["knowledge", "note", "page"].includes(m[2])) continue;
+    const window = body.slice(m.index, m.index + 400);
+    const id = /data-id=(["'])(.*?)\1/.exec(window)?.[2];
+    if (id) out.push({ target: id, start: m.index, end: m.index + 1 });
+  }
+  return out;
+}
+
+const SNIPPET_RADIUS = 90;
+
+function snippet(body: string, start: number, end: number): string {
+  const lo = Math.max(0, start - SNIPPET_RADIUS);
+  const hi = Math.min(body.length, end + SNIPPET_RADIUS);
+  const flat = (s: string) => s.replaceAll("\n", " ");
+  const text = `${flat(body.slice(lo, start))}{{ ${flat(body.slice(start, end))} }}${flat(body.slice(end, hi))}`;
+  return `${lo > 0 ? "…" : ""}${text.trim()}${hi < body.length ? "…" : ""}`;
+}
+
+interface LinkGraph {
+  backlinks: Map<string, Backlink[]>;
+  forward: Map<string, string[]>;
+}
+
+function buildGraph(): LinkGraph {
+  const backlinks = new Map<string, Backlink[]>();
+  const forward = new Map<string, string[]>();
+  for (const [from, { content }] of notes) {
+    const targets: string[] = [];
+    for (const hit of findRefs(content)) {
+      if (hit.target === from) continue;
+      const list = backlinks.get(hit.target) ?? [];
+      list.push({
+        fromEntryId: from,
+        fromTitle: stem(from),
+        snippet: snippet(content, hit.start, hit.end),
+      });
+      backlinks.set(hit.target, list);
+      if (!targets.includes(hit.target)) targets.push(hit.target);
+    }
+    forward.set(from, targets);
+  }
+  return { backlinks, forward };
+}
+
+function projectGraph(): ProjectGraph {
+  const g = buildGraph();
+  // Referenced-but-missing ids become nodes too, titled by their id.
+  const titles = new Map<string, string>([...notes.keys()].map((id) => [id, stem(id)]));
+  for (const id of [...g.backlinks.keys(), ...g.forward.keys()]) {
+    if (!titles.has(id)) titles.set(id, id);
+  }
+  const edges: GraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const [from, targets] of g.forward) {
+    for (const to of targets) {
+      const key = from < to ? `${from}\0${to}` : `${to}\0${from}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from, to });
+    }
+  }
+  const nodes: GraphNode[] = [...titles]
+    .map(([id, title]) => ({
+      id,
+      title,
+      inDegree: g.backlinks.get(id)?.length ?? 0,
+      outDegree: g.forward.get(id)?.length ?? 0,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return { nodes, edges };
+}
+
+// ── handlers ─────────────────────────────────────────────────────────────
+
+export const knowledgeHandlers: MockHandlers = {
+  // ── notes ──
+  list_knowledge: (): KnowledgeEntry[] => listKnowledgeEntries(),
+  save_knowledge_note: ({ id, content }): string => {
+    const rel = kbRel(id);
+    notes.set(rel, { content: String(content), updatedAt: now() });
+    return `${KB_DIR}/${rel}.md`;
+  },
+  delete_knowledge_note: ({ id }) => {
+    notes.delete(kbRel(id));
+    return null;
+  },
+  create_knowledge_dir: ({ dirName }) => {
+    dirs.add(kbRel(dirName));
+    return null;
+  },
+  import_into_knowledge: ({ sources }): KbImportResult => {
+    let imported = 0;
+    for (const src of sources as string[]) {
+      const name = src
+        .split("/")
+        .pop()
+        ?.replace(/\.(md|markdown)$/i, "");
+      if (!name) continue;
+      notes.set(name, { content: `# ${name}\n\nImported from \`${src}\`.\n`, updatedAt: now() });
+      imported += 1;
+    }
+    return { notes_imported: imported, files_copied: 0 };
+  },
+
+  // ── metadata ──
+  knowledge_meta_load: (): MetaFile => ({ version: 1, pages: structuredClone(meta) }),
+  knowledge_meta_patch: ({ entryId, patch }): RustPageMeta => {
+    const p = patch as PageMetaPatch;
+    const page: RustPageMeta = (meta[entryId] ??= {});
+    page.created_at ??= now();
+    for (const key of ["icon", "cover", "title", "status", "tags", "owner"] as const) {
+      if (p[key] !== undefined) Object.assign(page, { [key]: p[key] });
+    }
+    page.updated_at = now();
+    scheduleKnowledgeMetaChanged();
+    return structuredClone(page);
+  },
+  knowledge_meta_delete: ({ entryId }) => {
+    delete meta[entryId];
+    scheduleKnowledgeMetaChanged();
+    return null;
+  },
+
+  // ── links + graph ──
+  knowledge_backlinks: ({ entryId }): Backlink[] => buildGraph().backlinks.get(entryId) ?? [],
+  knowledge_link_counts: ({ entryId }): LinkCounts => {
+    const g = buildGraph();
+    return {
+      backlinks: g.backlinks.get(entryId)?.length ?? 0,
+      forwardlinks: g.forward.get(entryId)?.length ?? 0,
+    };
+  },
+  knowledge_links_graph: (): ProjectGraph => projectGraph(),
+  knowledge_links_invalidate: async () => {
+    await linksChanged();
+    return null;
+  },
+  knowledge_graph_layout_load: (): GraphLayout => structuredClone(layout),
+  knowledge_graph_layout_save: ({ layout: next }) => {
+    layout = next as GraphLayout;
+    return null;
+  },
+
+  // ── covers ──
+  // Rust hands gradient refs back untouched; everything else is a real file.
+  knowledge_cover_data_url: ({ cover }): string => {
+    if (String(cover).startsWith("gradient:")) return cover;
+    return coverSvgDataUrl(kbRel(cover));
+  },
+  knowledge_cover_upload: ({ entryId, srcPath }): string => {
+    const ext = String(srcPath).split(".").pop()?.toLowerCase() ?? "jpg";
+    return `covers/${String(entryId).replaceAll("/", "__")}.${ext}`;
+  },
+  // The browser has no native file picker; the cover-upload button asks for
+  // one, so answer as if a PNG had been chosen and cancel every other picker.
+  "plugin:dialog|open": ({ options }) => {
+    const images = (options?.filters ?? []).some((f: { extensions: string[] }) =>
+      f.extensions.includes("png"),
+    );
+    return images ? "/Users/dev/Pictures/cover.png" : null;
+  },
+
+  // ── editor `@` / `~` picker: knowledge results ──
+  mention_search: ({ query, scope }): MentionData[] => {
+    if (scope !== null && scope !== "knowledge") return [];
+    const q = String(query ?? "").toLowerCase();
+    return listKnowledgeEntries()
+      .map((e): MentionKnowledge => {
+        const slash = e.id.lastIndexOf("/");
+        return {
+          kind: "knowledge",
+          id: e.id,
+          displayName: meta[e.id]?.title?.trim() || e.title,
+          icon: meta[e.id]?.icon ?? null,
+          filePath: e.file_path,
+          source: e.source,
+          folder: slash > 0 ? e.id.slice(0, slash) : null,
+        };
+      })
+      .filter((m) => !q || m.displayName.toLowerCase().includes(q) || m.id.includes(q))
+      .slice(0, 20);
+  },
+
+  // Cloned repos (`list_cloned_repos` / `read_repo_readme` / `delete_cloned_repo`)
+  // are the same surface the GitHub panel uses and are already answered for
+  // every scenario by `integrationsHandlers` (`fixtures/integrations.ts`,
+  // seeded with three repos for exactly this reason) — not duplicated here.
+
+  // ── export ──
+  knowledge_export_server: (): KbServerExport => ({
+    binaryPath: "/Users/dev/Downloads/atlas-kb-server",
+    noteCount: notes.size,
+  }),
+};

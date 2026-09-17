@@ -7,13 +7,7 @@
 import type { KeybindingsLoadResult } from "@/features/keybindings/lib/keybindings-api";
 import { DEFAULT_KEYBINDINGS_FILE } from "@/features/keybindings/lib/types";
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
-import type { MentionData } from "@/features/chat/lib/mentions";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
-import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
-import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-store";
-import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
-import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
-import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
 import type { Theme, ThemeSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
 import builtinThemesJson from "../fixtures/builtin-themes.json";
@@ -24,6 +18,7 @@ import { commsHandlers } from "../fixtures/comms";
 import { fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
 import { integrationsHandlers } from "../fixtures/integrations";
+import { knowledgeHandlers } from "../fixtures/knowledge";
 import { logHandlers } from "../fixtures/log";
 import { memoryHandlers } from "../fixtures/memory";
 import { miscHandlers } from "../fixtures/misc";
@@ -31,24 +26,13 @@ import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
 import { spacesHandlers } from "../fixtures/spaces";
 import { terminalHandlers } from "../fixtures/terminal";
-import { appState, MOCK_WORKSPACE } from "../workspace";
+import { appState } from "../workspace";
 
 const nothing = () => null;
 
 // Generated from the TOML themes by the atlas-theme crate; `cargo test -p
 // atlas-theme` fails when this snapshot is stale.
 const builtinThemes = builtinThemesJson as Theme[];
-
-// Inline `invoke<…>` result types in the knowledge panel / footer, restated
-// here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
-export interface KbImportResult {
-  notes_imported: number;
-  files_copied: number;
-}
-export interface KbServerExport {
-  binaryPath: string;
-  noteCount: number;
-}
 
 export const baseHandlers: MockHandlers = {
   // ── theme ──────────────────────────────────────────────────────────────
@@ -103,29 +87,15 @@ export const baseHandlers: MockHandlers = {
   load_project_session: () => "{}",
   read_directory: ({ path }): FileEntry[] => listDir(path),
   codebase_index_status: () => ({ indexed: false, fileCount: 0, summaryCount: 0, builtAtMs: 0 }),
-  // Knowledge: an empty base. Writes are accepted and forgotten; the
-  // `knowledge` scenario overrides all of these with a live in-memory store.
-  list_knowledge: (): KnowledgeEntry[] => [],
-  knowledge_meta_load: (): MetaFile => ({ version: 1, pages: {} }),
-  knowledge_meta_patch: ({ patch }): RustPageMeta => ({ ...patch }),
-  knowledge_meta_delete: nothing,
-  save_knowledge_note: ({ id }) => `${MOCK_WORKSPACE.path}/.atlas/knowledge/${id}.md`,
-  delete_knowledge_note: nothing,
-  create_knowledge_dir: nothing,
-  import_into_knowledge: (): KbImportResult => ({ notes_imported: 0, files_copied: 0 }),
   log_interaction: nothing,
-  knowledge_backlinks: (): Backlink[] => [],
-  knowledge_link_counts: (): LinkCounts => ({ backlinks: 0, forwardlinks: 0 }),
-  knowledge_links_graph: (): ProjectGraph => ({ nodes: [], edges: [] }),
-  knowledge_links_invalidate: nothing,
-  knowledge_graph_layout_load: (): GraphLayout => ({ positions: {} }),
-  knowledge_graph_layout_save: nothing,
-  // Rust hands gradient refs back untouched; there are no image covers here.
-  knowledge_cover_data_url: ({ cover }): string => {
-    if (String(cover).startsWith("gradient:")) return cover;
-    throw new Error("cover not found");
-  },
-  knowledge_cover_upload: ({ entryId }): string => `covers/${entryId.replace(/\//g, "__")}.png`,
+
+  // ── knowledge ───────────────────────────────────────────────────────────
+  // A populated knowledge base (notes, meta, backlinks, graph) so Knowledge
+  // and the knowledge-graph tab render for every scenario; see
+  // `fixtures/knowledge.ts`. The `knowledge` scenario adds only its own
+  // console actions on top of this. Cloned repos are a separate surface,
+  // answered below by `integrationsHandlers`.
+  ...knowledgeHandlers,
 
   // ── git ─────────────────────────────────────────────────────────────────
   // A dirty working tree with a branch list, a stash stack, a commit graph and
@@ -160,16 +130,10 @@ export const baseHandlers: MockHandlers = {
   recent_files_close_project: nothing,
   mention_cache_clear: nothing,
   mention_cache_set_knowledge: nothing,
-  // The unscoped `@` picker spreads this result, so `null` would throw.
-  mention_search: (): MentionData[] => [],
   knowledge_export_note_md: nothing,
   knowledge_export_note_html: nothing,
   knowledge_export_workspace_md: nothing,
   knowledge_export_workspace_html: nothing,
-  knowledge_export_server: (): KbServerExport => ({
-    binaryPath: "/Users/dev/Downloads/atlas-kb-server",
-    noteCount: 0,
-  }),
   telemetry_set_org: nothing,
 
   // ── Tauri plugins ───────────────────────────────────────────────────────
