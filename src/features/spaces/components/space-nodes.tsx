@@ -161,7 +161,7 @@ export const SpaceShapeNode = memo(function SpaceShapeNode({ id, data, selected 
   const d = data as SpaceNodeCommonData;
   // Web parity: a shape's label is its `title` field, centered.
   const title = useMergedField(id, "title", d.title);
-  const stroke = selected ? "var(--primary)" : "rgba(255,255,255,0.25)";
+  const stroke = selected ? "var(--primary)" : "var(--atlas-border-strong)";
 
   return (
     <div className="group relative h-full w-full">

@@ -187,7 +187,7 @@ function SpaceSurface({
       sourceHandle: ANCHOR_TO_HANDLE[e.sourceAnchor],
       targetHandle: ANCHOR_TO_HANDLE[e.targetAnchor],
       type: "smoothstep",
-      style: { stroke: e.color ?? "rgba(255,255,255,0.25)", strokeWidth: 1.5 },
+      style: { stroke: e.color ?? "var(--atlas-border-strong)", strokeWidth: 1.5 },
     }));
   }, [revision, session.doc]);
 
