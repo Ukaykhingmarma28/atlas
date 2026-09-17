@@ -30,7 +30,9 @@ import { fileURLToPath } from "node:url";
  *
  * Scope is `src/features/**` and `src/components/**`: the app's own surfaces.
  * `src/ui` and `src/styles` are the design system itself and define these
- * values; `src/dev` is the dev-only mock backend and never ships.
+ * values; `src/dev` is the dev-only mock backend and never ships. A handful of
+ * files inside the scanned roots are design-system definitions too — see
+ * `DEFINITION_FILES`.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -87,6 +89,23 @@ const RULES: Rule[] = [
   },
 ];
 
+/**
+ * Files inside the scanned roots that DEFINE the values instead of consuming
+ * them. `src/ui` and `src/styles` are excluded wholesale for this reason; these
+ * live in a feature folder only because that is where the theme feature lives.
+ *
+ * `theme-key-registry.ts` is the whole argument: it is the one table of Atlas's
+ * per-appearance default for every theme key, so every entry is a colour
+ * literal BY CONSTRUCTION — 271 of them, 37% of the whole count, which the
+ * sweep can never remove and which "use a theme key instead" cannot apply to,
+ * since this file is what a theme key resolves through. Leaving them in made
+ * the target unreachable and every real movement in the number invisible.
+ *
+ * Add to this list only for a file that is itself a definition of the scale.
+ * "It has a lot of them" is not a reason.
+ */
+const DEFINITION_FILES = new Set(["src/features/theme/theme-key-registry.ts"]);
+
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -111,8 +130,9 @@ function scan(): { counts: Record<string, number>; worst: Record<string, string[
   }
 
   for (const file of files) {
-    const source = readFileSync(file, "utf8");
     const where = path.relative(REPO_ROOT, file);
+    if (DEFINITION_FILES.has(where)) continue;
+    const source = readFileSync(file, "utf8");
     for (const rule of RULES) {
       const hits = source.match(rule.pattern)?.length ?? 0;
       if (hits === 0) continue;
