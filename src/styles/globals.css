@@ -27,6 +27,10 @@
   --color-accent-muted: var(--muted);
   --color-accent-secondary: var(--secondary);
   --color-accent-foreground: var(--accent-foreground);
+  /* The hover face of `primary`, so a filled control can change on hover
+     without an opacity modifier (which Tailwind compiles to `color-mix`). */
+  --color-primary-hover: var(--accent-primary-hover);
+  --color-primary-muted: var(--accent-primary-muted);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
@@ -65,20 +69,39 @@
   --color-warning: var(--status-warning);
   --color-error: var(--status-error);
   --color-info: var(--status-info);
+  /* The tinted fill behind a status foreground — what a Badge sits on. */
+  --color-success-muted: var(--status-success-muted);
+  --color-warning-muted: var(--status-warning-muted);
+  --color-error-muted: var(--status-error-muted);
+  --color-info-muted: var(--status-info-muted);
 
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono);
 
-  /* Theme authors own --radius, but these utility values preserve the values
-     Atlas rendered before the namespace cleanup. Foundations owns changes. */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
+  /* Radius (decision 26). Theme authors own `--radius`; the four steps derive
+     from it through `--radius-base`, so `rounded-*` moves with the theme rather
+     than being baked in. `inline` is what keeps the `calc()` in the utility
+     instead of resolving it once at build time. tokens.css has the scale, when
+     to use which, and why `--radius-base` exists at all. */
+  --radius-sm: calc(var(--radius-base) - 4px);
+  --radius-md: calc(var(--radius-base) - 2px);
+  --radius-lg: var(--radius-base);
+  --radius-xl: calc(var(--radius-base) + 4px);
+  --radius-full: 9999px;
+
+  /* Elevation (decision 27). Tailwind rewrites a `--shadow-*` value at build
+     time to thread `--tw-shadow-color` through it, so the only way a
+     theme-supplied shadow reaches `shadow-md` is to point the namespace at a
+     variable OUTSIDE it — hence `--elevation-*` in tokens.css. `xl` and `2xl`
+     are pointed at the dialog level too: left alone they render Tailwind's
+     10%-black default, which is invisible on Atlas's near-black chrome (the
+     bug the audit found on 47 existing call sites). */
+  --shadow-sm: var(--elevation-raised);
+  --shadow-md: var(--elevation-menu);
+  --shadow-lg: var(--elevation-dialog);
+  --shadow-xl: var(--elevation-dialog);
+  --shadow-2xl: var(--elevation-dialog);
+  --inset-shadow-highlight: var(--inset-highlight);
 
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
@@ -138,20 +161,252 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Global focus-outline opt-out.
-   The browser's default blue / system focus ring looks like a bug against
-   Atlas's monochrome chrome — and on `role="tab"` / `tabIndex=0` host
-   elements (custom tabs, accordion headers, etc.) it sticks around after
-   a click and reads as a stuck selection.
-   Disable everywhere by default. Surfaces that genuinely need a focus
-   indicator (form inputs, accessibility-critical buttons) opt in with
-   Tailwind's `focus-visible:ring-…` / `focus:ring-…` utilities, which
-   declare `box-shadow` rather than `outline` so they're unaffected by
-   this rule.
+   Type scale (decision 24) and the remaining non-colour scales.
+
+   NOT `inline`: these are literals, and emitting them as real custom
+   properties is what lets the named text styles below — and any hand-written
+   CSS — say `var(--text-2xs)` instead of repeating a number.
+
+   9 / 10 / 11 / 12 / 13 / 14 / 16 / 20 / 24. Half-pixel sizes round UP to the
+   next step: the audit found ~130 of them (9.5, 10.5, 11.5, 12.5) and they are
+   the reason `text-[…]` outnumbers the scale 20 to 1. Only two weights are
+   allowed anywhere: 500 (`font-medium`) and 600 (`font-semibold`).
    ────────────────────────────────────────────────────────────────────────── */
-:focus,
-:focus-visible {
-  outline: none;
+@theme {
+  --text-3xs: 9px;
+  --text-3xs--line-height: 12px;
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 11px;
+  --text-xs--line-height: 15px;
+  --text-sm: 12px;
+  --text-sm--line-height: 16px;
+  --text-base: 13px;
+  --text-base--line-height: 18px;
+  --text-md: 14px;
+  --text-md--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 20px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 30px;
+
+  /* One glass blur. `backdrop-blur-glass` replaces the 81 assorted
+     `backdrop-blur-xl` / `-2xl` sites during the sweep. */
+  --blur-glass: 24px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Named text styles (decision 24).
+
+   Six, and they cover the panel chrome. Reach for one of these before reaching
+   for a size plus a weight plus a colour: `eyebrow` is the section header,
+   `label` the text on and beside a control, `body` running prose, `caption`
+   the dimmed line under something, `code` any monospace run, `heading` a panel
+   or dialog title.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+@utility body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+@utility caption {
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+@utility code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 500;
+  font-feature-settings: "zero", "ss02";
+}
+
+@utility heading {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--text-md--line-height);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Control heights (decision 25) and the two named layout constants.
+   Tailwind's `h-*` reads `--spacing` and `--container-*`, not a height scale,
+   so each step is its own utility rather than a theme namespace.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility h-control-xs {
+  height: var(--control-xs);
+}
+@utility h-control-sm {
+  height: var(--control-sm);
+}
+@utility h-control-md {
+  height: var(--control-md);
+}
+@utility h-control-lg {
+  height: var(--control-lg);
+}
+/* The square an icon-only control occupies — one control height on both axes. */
+@utility size-control-xs {
+  width: var(--control-xs);
+  height: var(--control-xs);
+}
+@utility size-control-sm {
+  width: var(--control-sm);
+  height: var(--control-sm);
+}
+@utility size-control-md {
+  width: var(--control-md);
+  height: var(--control-md);
+}
+@utility size-control-lg {
+  width: var(--control-lg);
+  height: var(--control-lg);
+}
+
+@utility h-titlebar {
+  height: var(--titlebar-height);
+}
+@utility h-tab-strip {
+  height: var(--tab-strip-height);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Z-index layers (decision 28). `z-<number>` only takes numbers, so the layers
+   are named utilities. Nothing outside this file should write a z-index.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility z-panel {
+  z-index: var(--z-panel);
+}
+@utility z-titlebar {
+  z-index: var(--z-titlebar);
+}
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
+@utility z-popover {
+  z-index: var(--z-popover);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
+}
+@utility z-tooltip {
+  z-index: var(--z-tooltip);
+}
+@utility z-drag {
+  z-index: var(--z-drag);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Motion (decision 29). Tailwind's `duration-*` is numeric-only, same as
+   `z-*`. The easings are already a theme namespace, so `ease-out-strong`,
+   `ease-in-out-strong` and `ease-drawer` come for free — and are the only
+   three curves allowed.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility duration-instant {
+  --tw-duration: var(--duration-instant);
+  transition-duration: var(--duration-instant);
+}
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--duration-base);
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  --tw-duration: var(--duration-slow);
+  transition-duration: var(--duration-slow);
+}
+
+/* The 1px top highlight on raised glass — 17 inline copies in the audit.
+   Delegates to Tailwind's own inset-shadow utility, so `inset-highlight
+   shadow-md` composes instead of one overwriting the other's box-shadow. */
+@utility inset-highlight {
+  @apply inset-shadow-highlight;
+}
+
+/* The one disabled treatment (decision 31), for elements that cannot carry
+   `:disabled` (a div acting as a control). Form controls use the pair
+   `disabled:opacity-50 disabled:cursor-not-allowed` — which is what every
+   `src/ui` primitive does. */
+@utility disabled-look {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Opt out of the global focus ring below, for a control that draws its own. */
+@utility focus-ring-none {
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+/* Bare `rounded` = `rounded-sm` (decision 26). Tailwind's own `rounded` is a
+   static 0.25rem that no theme value can reach, so it is redeclared here — in
+   the utilities layer, AFTER the generated rules, which is the only placement
+   that both wins against `.rounded` and still loses to `.rounded-lg` on an
+   element that carries both. */
+@layer utilities {
+  .rounded {
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Focus and disabled (decision 31).
+
+   Atlas used to remove the outline everywhere, which left it with no keyboard
+   focus indicator at all. `:focus` stays bare — a mouse click should not draw
+   a ring, and on `role="tab"` / `tabIndex=0` hosts a sticky `:focus` outline
+   reads as a stuck selection. `:focus-visible` is the keyboard case, and it
+   gets one ring: 2px of `--ring`, which every theme sets to its accent.
+
+   A control that draws its own indicator opts out with `focus-ring-none`, or
+   with Tailwind's `focus-visible:outline-none`. Both live in the utilities
+   layer, which is why these two rules have to sit in `@layer base` — an
+   unlayered rule would outrank every utility no matter its specificity.
+   ────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
 }
 
 /* ── Chat input — CodeMirror host + mention chips ────────────────────────────

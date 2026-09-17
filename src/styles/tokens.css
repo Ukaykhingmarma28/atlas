@@ -19,7 +19,10 @@
   --destructive-foreground: #ffffff;
   --border: #1e1e1e;
   --input: #1e1e1e;
-  --ring: #3d3d3d;
+  /* A real accent, not the strong border (decision 31). Every built-in theme
+     already sets `ring` to its `primary`; this fallback matches, so the focus
+     ring reads as focus even before a theme has been resolved. */
+  --ring: #ffffff;
   --chart-1: #61afef;
   --chart-2: #98c379;
   --chart-3: #d19a66;
@@ -33,10 +36,11 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #141414;
   --sidebar-ring: #3d3d3d;
-  --radius: 0.375rem;
   --font-sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
   --font-mono: "SF Mono", "Geist Mono", "JetBrains Mono", "Fira Code", monospace;
+  /* Decision 26's default. Deliberately px, not rem — see `--radius-base`. */
+  --radius: 8px;
   --tracking-normal: 0em;
   --spacing: 0.25rem;
   --shadow-2xs: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -186,32 +190,83 @@
   --font-size-lg: 16px;
   --font-size-xl: 20px;
 
-  --space-0: 0px;
-  --space-px: 1px;
-  --space-0h: 2px;
-  --space-1: 4px;
-  --space-1h: 6px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
+  /* Spacing is Tailwind's `--spacing` multiplier (above). The former
+     `--space-*` ladder had 0 references and is gone (decision 19). */
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  /* Radius (decision 26). Derived from the theme's `--radius`, so a theme that
+     ships a rounder look moves the whole scale at once. Use `sm` for controls,
+     `md` for cards, `lg` for popovers, `xl` for dialogs. globals.css maps the
+     Tailwind `rounded-*` utilities onto exactly these four.
+
+     `--radius-base`, and its floor, are a BRIDGE — delete both when the theme
+     files are fixed. Atlas sets its root font-size to 13px (globals.css,
+     `@layer base`), so `rem` here is 13px, not 16px. All 16 built-in theme
+     files ship `radius = "0.375rem"`, which their authors drew as 6px and
+     which lands as 4.875px — and `r − 4px` then collapses to 0.875px, i.e.
+     square. Flooring at the 8px default keeps every theme on decision 26's
+     intended 4 / 6 / 8 / 12 until those files ship a px `radius`, at which
+     point this becomes `--radius-base: var(--radius)`.
+
+     The cost while it stands: a theme can go rounder than 8px but not
+     squarer. */
+  --radius-base: max(var(--radius), 8px);
+  --radius-sm: calc(var(--radius-base) - 4px);
+  --radius-md: calc(var(--radius-base) - 2px);
+  --radius-lg: var(--radius-base);
+  --radius-xl: calc(var(--radius-base) + 4px);
   --radius-full: 9999px;
-  --shadow-overlay: var(--shadow-2xl);
+
+  /* Elevation (decision 27). Three levels. Each points at one of the theme's
+     shadcn shadow tokens, so the shadow COLOUR comes from the theme; globals.css
+     maps `shadow-sm` / `shadow-md` / `shadow-lg` onto these three.
+     These names sit outside Tailwind's `--shadow-*` namespace on purpose: a
+     `@theme inline` entry that pointed `--shadow-sm` back at `--shadow-sm`
+     would make Tailwind re-emit the variable and close the loop. */
+  --elevation-raised: var(--shadow-sm);
+  --elevation-menu: var(--shadow-2xl);
+  --elevation-dialog: var(--shadow-2xl);
+  /* Legacy alias for the 83 `shadow-[var(--shadow-overlay)]` sites; the sweep
+     replaces them with `shadow-md`. */
+  --shadow-overlay: var(--elevation-menu);
+  /* The 1px white top edge on raised glass. Composed as Tailwind's
+     `--tw-inset-shadow`, so `inset-highlight shadow-md` stacks correctly. */
+  --inset-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+
+  /* Control heights (decision 25). 22 / 28 / 30 snap to the nearest step. */
+  --control-xs: 20px;
+  --control-sm: 24px;
+  --control-md: 26px;
+  --control-lg: 32px;
+  /* Named layout constants — not controls, so they are not on the scale. */
+  --titlebar-height: 30px;
+  --tab-strip-height: 36px;
+
+  /* Motion (decision 29). Four durations; the three easings live in the
+     `--ease-*` theme namespace in globals.css and are the only curves allowed.
+     `src/ui/tooltip-timing.ts` is the model for a component specifying its
+     own motion on top of these. */
+  --duration-instant: 80ms;
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
 
   --atlas-ants-color: var(--atlas-atlas-ants);
-  --z-dropdown: 50;
-  --z-sticky: 60;
+
+  /* Z-index layers (decision 28). Every floating surface names a layer; nothing
+     writes a number. `popover` sits ABOVE `modal` so a menu opened inside a
+     dialog is not clipped behind it. */
+  --z-panel: 10;
+  --z-titlebar: 40;
   --z-overlay: 100;
-  --z-modal: 200;
+  --z-modal: 110;
+  --z-popover: 200;
   --z-toast: 300;
   --z-tooltip: 400;
+  --z-drag: 500;
+  /* Legacy z aliases, removed by the sweep. `--z-max` is the 9999–100000 band
+     the audit found; it stays until each of its 28 sites picks a layer. */
+  --z-dropdown: var(--z-popover);
+  --z-sticky: var(--z-titlebar);
   --z-max: 9999;
 }
 
@@ -221,18 +276,9 @@
    keyboard hints / pill badges). Self-contained — no JS dependency.
    ========================================================================== */
 
-/* Section-header treatment. Matches the project file-tree's
-   `text-[10px] font-semibold text-text-tertiary uppercase tracking-wider`
-   so panel chrome reads as one consistent Atlas system instead of the
-   handoff design's heavier mono eyebrow. */
-.eyebrow {
-  font-family: var(--font-ui);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  font-weight: 600;
-}
+/* `.eyebrow` moved to globals.css as `@utility eyebrow`, one of the six named
+   text styles of decision 24. Same rendering; it now sits in the utilities
+   layer so a class next to it can override a single property. */
 
 .mono {
   font-family: var(--font-mono);
