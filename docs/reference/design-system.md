@@ -1,0 +1,324 @@
+# Design system
+
+The non-colour half of Atlas's design system: the scales, what they are called,
+which primitive to reach for, and the test that stops the app drifting back off
+them. Colour is the other half and lives in [`theme-keys.md`](./theme-keys.md).
+
+Everything here is defined in two files:
+
+| file | holds |
+|---|---|
+| `src/styles/tokens.css` | the raw custom properties on `:root` — control heights, layout constants, radius derivation, elevation, motion durations, z-index layers, and the legacy aliases the sweep still has to remove |
+| `src/styles/globals.css` | the Tailwind namespaces (`@theme`), the named utilities (`@utility`), and the global focus rule |
+
+Primitives live in `src/ui/`. The gallery that renders all of it is the dev-only
+mock scenario **`localhost:1420/?scenario=design-system`** — open it before and
+after any change to this page.
+
+## Naming rules
+
+1. **Use a Tailwind namespace if one exists.** Type is `--text-*`, radius is
+   `--radius-*`, elevation is `--shadow-*`, easing is `--ease-*`, blur is
+   `--blur-*`, spacing is Tailwind's `--spacing` multiplier. Only z-index,
+   control heights and durations are custom, because Tailwind's equivalents take
+   bare numbers and cannot be given names.
+2. **A scale step is named, never measured.** `text-xs`, not `text-[11px]`;
+   `z-popover`, not `z-[9999]`. The number belongs in `tokens.css` exactly once.
+3. **A token is a role, not a value.** There are no 12-step colour ramps and no
+   per-component colour tokens. A theme key exists only when a theme author
+   needs that surface to differ from the base tokens.
+4. **Legacy names stay until the sweep.** `--bg-*`, `--text-*` (the colour ones),
+   `--shadow-overlay`, `--z-max` and friends are aliases of real tokens. Do not
+   add a new one; do not remove an old one outside the sweep.
+
+## Type
+
+Nine steps (decision 24). Half-pixel sizes — the audit found ~130 of them —
+round **up** to the next step.
+
+| utility | px | line-height | typical use |
+|---|---|---|---|
+| `text-3xs` | 9 | 12 | a badge on a dense row |
+| `text-2xs` | 10 | 14 | eyebrows, captions, keycaps |
+| `text-xs` | 11 | 15 | control text; the most common size in Atlas |
+| `text-sm` | 12 | 16 | list rows, secondary chrome |
+| `text-base` | 13 | 18 | body text, chat messages |
+| `text-md` | 14 | 20 | panel and dialog titles |
+| `text-lg` | 16 | 22 | page headings |
+| `text-xl` | 20 | 26 | empty-state headlines |
+| `text-2xl` | 24 | 30 | the largest thing in the app |
+
+**Two weights only**: `font-medium` (500) and `font-semibold` (600). Nothing
+lighter, nothing heavier — the app is a dense monochrome UI and 400 disappears
+against it.
+
+### Named text styles
+
+Six `@utility` classes. Reach for one of these *before* reaching for a size plus
+a weight plus a colour — that combination is how the 1,335 arbitrary sizes got
+there.
+
+| utility | what it is |
+|---|---|
+| `eyebrow` | the section header above a group of rows — 10px, 600, uppercase, tracked |
+| `label` | the text on and beside a control — 11px, 500 |
+| `body` | running prose: a description, a message — 13px, 500 |
+| `caption` | the dimmed second line under something — 10px, 500, muted |
+| `code` | any monospace run: a path, a hash, a command — 12px, 500 |
+| `heading` | a panel or dialog title — 14px, 600 |
+
+## Control heights
+
+Four steps (decision 25). The heights the audit found at 22, 28 and 30 snap to
+the nearest step.
+
+| utility | px | use |
+|---|---|---|
+| `h-control-xs` | 20 | inline chip, keycap |
+| `h-control-sm` | 24 | dense toolbar control |
+| `h-control-md` | 26 | **the default control** |
+| `h-control-lg` | 32 | primary action, search field |
+
+`size-control-xs … size-control-lg` give the same value on both axes, for an
+icon-only control.
+
+Two named layout constants, which are **not** controls and are not on the scale:
+`h-titlebar` (30px) and `h-tab-strip` (36px, the centre tab strip).
+
+## Radius
+
+Derived from the theme's `--radius` (decision 26), so one number in a theme file
+moves the whole scale:
+
+```
+sm = r − 4    md = r − 2    lg = r    xl = r + 4    full = 9999px
+```
+
+| utility | use |
+|---|---|
+| `rounded` | alias of `rounded-sm` — bare `rounded` is the control radius |
+| `rounded-sm` | controls: buttons, inputs, keycaps |
+| `rounded-md` | cards and rows |
+| `rounded-lg` | popovers and menus |
+| `rounded-xl` | dialogs |
+| `rounded-full` | pills and avatars |
+
+Rendered today: **4 / 6 / 8 / 12**. Before Foundations it was 2 / 4 / 6 with no
+`xl`, and bare `rounded` was 4px. Two things to know:
+
+- **Bare `rounded` changed.** Tailwind's own `rounded` is a static `0.25rem`
+  that no theme value can reach, so `globals.css` redeclares it in the utilities
+  layer, after the generated rules. It therefore beats `.rounded` and still
+  loses to `.rounded-lg` on an element carrying both.
+- **The scale reads `--radius-base`, not `--radius` directly, and that is a
+  temporary bridge.** Atlas sets its root font-size to 13px (`globals.css`,
+  `@layer base`), so `rem` in this app is 13px. All 16 built-in theme files ship
+  `radius = "0.375rem"`, which their authors drew as 6px and which lands as
+  4.875px — and `r − 4px` then collapses to 0.875px, i.e. square.
+  `--radius-base` floors the theme's value at the 8px default, which puts every
+  theme on the intended scale. When the theme files ship a px `radius`, this
+  becomes `--radius-base: var(--radius)` and the floor goes away. While it
+  stands, a theme can go rounder than 8px but not squarer.
+
+## Elevation
+
+Three levels (decision 27). The shadow **colour comes from the theme**: each
+level points at one of the theme's shadcn `--shadow-*` tokens through an
+`--elevation-*` variable in `tokens.css`.
+
+| utility | level |
+|---|---|
+| `shadow-sm` | raised off the surface |
+| `shadow-md` | menus and popovers |
+| `shadow-lg` | dialogs |
+
+`shadow-xl` and `shadow-2xl` are pointed at the dialog level as well, because
+left alone they render Tailwind's 10%-black default, which is invisible on
+Atlas's near-black chrome. Do not introduce a fourth level.
+
+Two more utilities belong here:
+
+- `inset-highlight` — the 1px white top edge on raised glass. It delegates to
+  Tailwind's own inset-shadow utility, so `inset-highlight shadow-md` composes
+  instead of one replacing the other.
+- `backdrop-blur-glass` — the one glass blur (`--blur-glass`, 24px).
+
+Two caveats, both waiting on a theme change rather than a code one:
+
+- **`shadow-md` and `shadow-lg` resolve to the same rung today.** `md` is pinned
+  to the theme's `--shadow-2xl`, which is exactly what `--shadow-overlay`
+  renders, so the sweep can replace all 83 `shadow-[var(--shadow-overlay)]`
+  sites with `shadow-md` and move nothing. The shadcn scale tops out there, so
+  `lg` has nowhere higher to point until a theme ships a distinct dialog shadow.
+- **`inset-highlight` is a white edge** (`rgb(255 255 255 / 0.06)` in
+  `tokens.css`), so it is invisible in a light variant. It is not a theme key
+  yet; light QA in PR 4 decides whether it becomes one.
+
+## Z-index
+
+Eight named layers (decision 28). Nothing outside `globals.css` writes a
+z-index — not a class, not an inline style.
+
+| utility | value | what sits there |
+|---|---|---|
+| `z-panel` | 10 | in-panel stacking: sticky headers, resize handles |
+| `z-titlebar` | 40 | the titlebar and its dock |
+| `z-overlay` | 100 | a dialog's scrim |
+| `z-modal` | 110 | the dialog itself |
+| `z-popover` | 200 | menus, popovers, comboboxes |
+| `z-toast` | 300 | toasts |
+| `z-tooltip` | 400 | tooltips |
+| `z-drag` | 500 | whatever is under the cursor mid-drag |
+
+`popover` sits **above** `modal` deliberately: a menu opened inside a dialog has
+to escape it. That is the ordering bug the audit found, where everything shared
+9999.
+
+## Motion
+
+Four durations and exactly three easing curves (decision 29). No new curve gets
+added without a decision.
+
+| utility | value | |
+|---|---|---|
+| `duration-instant` | 80ms | a state flip the user should not perceive as motion |
+| `duration-fast` | 120ms | hover and focus transitions |
+| `duration-base` | 180ms | the default: menus, popovers, tabs |
+| `duration-slow` | 260ms | panels and drawers travelling a long way |
+
+| easing | use |
+|---|---|
+| `ease-out-strong` | entrances; the default |
+| `ease-in-out-strong` | two-way state changes |
+| `ease-drawer` | panels and drawers sliding in |
+
+`src/ui/tooltip-timing.ts` is the model for a component that needs more than a
+duration — a shared open delay, a warm-start window, reduced-motion handling.
+Copy its shape rather than scattering timers.
+
+## Icons
+
+One wrapper: `src/ui/icon.tsx` (decision 30).
+
+```tsx
+import { Search } from "lucide-react";
+import { Icon } from "@/ui/icon";
+
+<Icon icon={Search} size="sm" />;
+```
+
+Five sizes — `xs` 10, `sm` 12, `md` 14 (the default), `lg` 16, `xl` 20 — and one
+stroke width, **1.75**. Lucide's own default of 2 reads heavy at these sizes.
+
+The sweep maps the 903 existing `size={n}` call sites onto the scale:
+
+```
+9 → 10 (xs)   10 → 10 (xs)   11 → 12 (sm)   12 → 12 (sm)
+13 → 14 (md)  14 → 14 (md)   16 → 16 (lg)   20 → 20 (xl)
+```
+
+Foundations ships the wrapper and uses it in the `src/ui` primitives only;
+migrating the call sites is the sweep's job.
+
+## States
+
+**Focus** (decision 31). There is one keyboard focus indicator: a 2px
+`var(--ring)` outline on `:focus-visible`, offset 1px, declared in `@layer base`
+in `globals.css`. `:focus` stays bare, so a mouse click never draws a ring and a
+`role="tab"` host never looks stuck.
+
+A control that draws its own indicator opts out with `focus-ring-none` (or
+Tailwind's `focus-visible:outline-none`). Both are utilities, which is why the
+global rule has to live in `@layer base` — an unlayered rule would outrank every
+utility regardless of specificity.
+
+`--ring` is a real accent: every built-in theme sets it to its `primary`, and the
+pre-theme fallback in `tokens.css` matches. It used to equal `--border-strong`,
+which is why a focus ring was indistinguishable from a border.
+
+**Disabled** (decision 31). One treatment, everywhere:
+`disabled:opacity-50 disabled:cursor-not-allowed`. Every `src/ui` primitive
+carries exactly that pair. For an element that cannot take `:disabled` — a `div`
+acting as a control — use the `disabled-look` utility. Do not invent a third
+opacity; the audit found five (30 / 40 / 45 / 50 / 60).
+
+## Primitives
+
+`src/ui/` (decision 32). Variants come from `class-variance-authority`, which is
+the only dependency Foundations added.
+
+Each file is shaped like shadcn's **base-style** component — same file name, same
+exported `<name>Variants`, same `variant` / `size` prop pair, same `data-slot` —
+so later `shadcn add` output drops in with the classes swapped rather than the
+structure rewritten. Two deliberate departures:
+
+- **Sizes are Atlas control heights**, not shadcn's 32/36/40px.
+- **No `asChild`.** shadcn's buttons lean on `@radix-ui/react-slot`, and
+  Foundations was allowed one new dependency. Compose instead:
+  `<a className={buttonVariants({ variant: "ghost" })}>`.
+
+| primitive | reach for it when |
+|---|---|
+| `Button` | the control has a visible text label. Six variants: `default`, `destructive`, `outline`, `secondary`, `ghost`, `link`. `md` (26px) is the default size. |
+| `IconButton` | the control is a glyph and nothing else. `label` is **required** and becomes the `aria-label`; wrap it in `Tooltip` to show the same string. The square is a control height and the glyph is one step below it. |
+| `Input` | a single-line text field. It keeps the global focus ring and lifts its border to `--border-focus`. For a secret, `SecretInput` already wraps it. |
+| `Badge` | a short status word. Seven variants, four of them the status roles (`destructive`, `success`, `warning`, `info`). Not a control, so not on the control-height scale. |
+| `Kbd` | the content is a keystroke. `KbdCombo combo="⌘⇧F"` and `KbdKeys keys={[…]}` are the two forms the app uses. |
+
+Dialog, Popover, Menu, ContextMenu and Tooltip are **not** here yet — they arrive
+with the Base UI migration (decision 16), which builds them on these same tokens.
+
+Hover colour comes from real tokens (`bg-primary-hover`), never from a `/90`
+opacity modifier: Tailwind v4 compiles those to `color-mix()`, and decision 14
+puts the floor at macOS 11 / WKWebView.
+
+## The ratchet
+
+`tests/design-system-ratchet.test.ts` is the eleventh contract suite. Nothing
+else in the toolchain can see this drift — a new `text-[11.5px]` type-checks,
+lints and renders.
+
+**What it counts**, across `src/features/**` and `src/components/**`:
+
+| rule | pattern |
+|---|---|
+| `arbitrary-text-size` | `text-[…px]` and friends |
+| `arbitrary-z-index` | `z-[…]` |
+| `arbitrary-shadow` | `shadow-[…]`, including `shadow-[var(--shadow-overlay)]` |
+| `arbitrary-radius` | `rounded-[…]`, any corner |
+| `colour-literal` | `#rrggbb`, `rgb(`, `rgba(`, `hsl(`, `hsla(` |
+| `bg-white-black` | `bg-white`, `bg-black`, with or without an opacity modifier |
+| `inline-numeric-style` | inline `zIndex:`, `fontSize:`, `boxShadow:` with a literal |
+
+`src/ui` and `src/styles` are out of scope — they *define* these values.
+`src/dev` is out of scope — it never ships.
+
+**How it behaves.** The current counts are committed in
+`tests/design-system-ratchet.baseline.json`:
+
+```json
+{
+  "arbitrary-text-size": 1335,
+  "arbitrary-z-index": 77,
+  "arbitrary-shadow": 106,
+  "arbitrary-radius": 29,
+  "colour-literal": 737,
+  "bg-white-black": 156,
+  "inline-numeric-style": 140
+}
+```
+
+It fails when a count goes **up**, and it also fails when a count goes **down**
+without the baseline being re-committed — that second half is what makes each
+win permanent instead of something the next commit can spend. To re-commit:
+
+```bash
+UPDATE_RATCHET_BASELINE=1 bun run test
+```
+
+**It ends at zero.** The colour-and-scale sweep (PR 4) drives every count to 0,
+one feature folder at a time, checking each against
+`?scenario=design-system`. When it lands, delete the baseline file and turn the
+`<=` assertions into `=== 0` plus whatever allowlist survives. Until then, do not
+fix a violation you happen to walk past — a scattered half-migration is harder to
+review than the whole sweep.
