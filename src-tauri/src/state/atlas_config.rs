@@ -907,11 +907,25 @@ pub fn settings_from_legacy_json(raw: Option<&serde_json::Value>) -> AppSettings
     settings
 }
 
+/// What the OLD editor-theme picker wrote when nobody had touched it.
+///
+/// `default_code_editor_theme()` returned `"atlas"` unconditionally — the same
+/// answer for every chrome theme — and it was serialized into every fresh
+/// `config.toml`. So the value sitting on disk says nothing about what its
+/// owner chose, and reading it as a deliberate choice forced Atlas's
+/// black/white/yellow `editor.*` / `syntax.*` / `diff.*` keys into the
+/// `themeOverrides` of every chyral / mirage / rosé-pine / phosphor user who
+/// had simply never opened the editor picker. One theme means one theme
+/// (decision 7): an untouched editor picker migrates to nothing.
+const LEGACY_EDITOR_DEFAULT: &str = "atlas";
+
+/// Fold the two old pickers (`atlasTheme` + `codeEditorTheme`) into one theme
+/// id plus, where the user really did diverge, a `themeOverrides` block.
 fn migrate_legacy_theme(
     old_atlas: Option<&str>,
     old_editor: Option<&str>,
 ) -> (String, ThemeOverride) {
-    let mapped_theme = match old_atlas.filter(|id| !id.trim().is_empty()) {
+    let mapped_theme = match old_atlas.map(str::trim).filter(|id| !id.is_empty()) {
         Some("atlas-black") | None => default_theme(),
         Some(id) => id.to_string(),
     };
@@ -921,17 +935,16 @@ fn migrate_legacy_theme(
         tracing::warn!(target: "atlas::themes", theme = %mapped_theme, "unknown migrated theme id; falling back to atlas");
         default_theme()
     };
-    let expected_editor = match theme.as_str() {
-        "atlas" => Some("atlas"),
-        "one-dark" => Some("one-dark"),
-        _ => None,
-    };
-    let Some(editor_id) = old_editor.filter(|id| !id.trim().is_empty()) else {
+    // Overrides are written only for an editor theme that was GENUINELY
+    // CHOSEN and that DIFFERS from the theme the chrome picker migrated to:
+    // absent, blank, the picker's untouched default, or simply the same theme
+    // under both pickers all mean "nothing to preserve".
+    let Some(editor_id) = old_editor
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && *id != LEGACY_EDITOR_DEFAULT && *id != theme.as_str())
+    else {
         return (theme, ThemeOverride::default());
     };
-    if expected_editor == Some(editor_id) {
-        return (theme, ThemeOverride::default());
-    }
     let Ok(editor_theme) = atlas_theme::get_theme(editor_id) else {
         tracing::warn!(target: "atlas::themes", theme = %editor_id, "unknown legacy editor theme; syntax override was not migrated");
         return (theme, ThemeOverride::default());
@@ -1849,6 +1862,86 @@ someFutureKey = \"left alone\"
         assert!(!manager.last_raw.contains("atlasTheme"));
         assert!(!manager.last_raw.contains("codeEditorTheme"));
         assert!(manager.last_raw.contains("themeOverrides"));
+    }
+
+    /// The six themes the OLD `atlasTheme` picker could hold, and the schema-1
+    /// theme each one migrates to. `atlas-black` is the only rename.
+    const LEGACY_CHROME_THEMES: [(&str, &str); 6] = [
+        ("atlas-black", "atlas"),
+        ("chyral", "chyral"),
+        ("mirage", "mirage"),
+        ("rose-pine", "rose-pine"),
+        ("one-dark", "one-dark"),
+        ("phosphor", "phosphor"),
+    ];
+
+    /// The regression this guards: `default_code_editor_theme()` returned
+    /// `"atlas"` for everyone, so `codeEditorTheme = "atlas"` is what an
+    /// UNTOUCHED editor picker left on disk — for all six chrome themes, not
+    /// just the two that happened to share a name with an editor theme.
+    /// Reading it as "deliberately diverging" pinned Atlas's black/white/yellow
+    /// editor colours onto chyral, mirage, rosé-pine and phosphor users who had
+    /// never opened that picker.
+    #[test]
+    fn untouched_legacy_editor_picker_migrates_to_no_overrides() {
+        for (old_chrome, expected) in LEGACY_CHROME_THEMES {
+            for old_editor in [None, Some(""), Some("  "), Some(LEGACY_EDITOR_DEFAULT)] {
+                let (theme, overrides) = migrate_legacy_theme(Some(old_chrome), old_editor);
+                assert_eq!(theme, expected, "chrome {old_chrome}");
+                assert!(
+                    overrides.is_empty(),
+                    "chrome {old_chrome} with editor {old_editor:?} must not diverge, got {overrides:?}"
+                );
+            }
+        }
+    }
+
+    /// The other half of the same rule: an editor theme that really was picked,
+    /// and really is a different theme, still carries its colours over.
+    #[test]
+    fn chosen_legacy_editor_theme_migrates_its_syntax_keys() {
+        for (old_chrome, expected) in LEGACY_CHROME_THEMES {
+            let (theme, overrides) = migrate_legacy_theme(Some(old_chrome), Some("dracula"));
+            assert_eq!(theme, expected, "chrome {old_chrome}");
+            assert!(
+                overrides.keys.contains_key("syntax.keyword"),
+                "chrome {old_chrome} lost its chosen editor theme"
+            );
+            assert!(overrides.base.is_empty() && overrides.palette.is_empty());
+            assert!(
+                overrides.keys.keys().all(|key| key.starts_with("editor.")
+                    || key.starts_with("syntax.")
+                    || key.starts_with("diff.")),
+                "only editor-facing keys migrate: {:?}",
+                overrides.keys.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// Both pickers naming the same theme is not a divergence either.
+    #[test]
+    fn legacy_editor_theme_equal_to_the_chrome_theme_writes_no_overrides() {
+        for id in ["one-dark", "phosphor", "rose-pine"] {
+            let (theme, overrides) = migrate_legacy_theme(Some(id), Some(id));
+            assert_eq!(theme, id);
+            assert!(overrides.is_empty(), "{id} diverged from itself: {overrides:?}");
+        }
+    }
+
+    /// End to end through `config.toml`: the untouched default leaves no
+    /// `themeOverrides` table behind at all.
+    #[test]
+    fn config_theme_migration_writes_no_overrides_for_the_untouched_editor_default() {
+        let path = tmp_config_path();
+        let raw =
+            "schemaVersion = 1\n\n[settings]\natlasTheme = \"chyral\"\ncodeEditorTheme = \"atlas\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
+
+        assert_eq!(manager.effective().theme, "chyral");
+        assert!(manager.effective().theme_overrides.is_empty());
+        assert!(!manager.last_raw.contains("themeOverrides"));
+        assert!(!manager.last_raw.contains("atlasTheme"));
+        assert!(!manager.last_raw.contains("codeEditorTheme"));
     }
 
     #[test]
