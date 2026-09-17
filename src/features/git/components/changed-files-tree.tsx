@@ -181,7 +181,10 @@ function statusColor(status: string): string {
       return "var(--status-error, #ef4444)";
     case "R":
     case "C":
-      return "var(--accent, #6ea8fe)";
+      // `primary`, not `accent`: shadcn's `accent` is a hover SURFACE, so the
+      // rename left this badge painting near-black-on-black — and the blue
+      // fallback never fired, because `--accent` has always been defined.
+      return "var(--primary)";
     default:
       return "var(--text-tertiary)";
   }

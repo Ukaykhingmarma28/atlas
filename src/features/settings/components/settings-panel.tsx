@@ -108,7 +108,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
                   "w-full flex items-center h-[32px] whitespace-nowrap text-[11px] font-medium transition-colors border-l-2 cursor-pointer",
                   navCollapsed ? "justify-center px-0" : "gap-2 px-4",
                   activeSection === s.id
-                    ? "text-text-primary bg-bg-selected border-l-accent"
+                    ? "text-text-primary bg-bg-selected border-l-primary"
                     : "text-text-secondary hover:bg-bg-hover border-l-transparent",
                 )}
               >
