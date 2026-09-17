@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { RefreshCw, GitBranch, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -119,18 +119,18 @@ export function GitGraphPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay
+        <Dialog.Backdrop
           className="fixed inset-0 bg-black/60"
           style={{ zIndex: "var(--z-overlay)" as unknown as number }}
         />
-        <Dialog.Content
+        <Dialog.Popup
           aria-describedby={undefined}
           className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">Git Graph</Dialog.Title>
           {inner}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

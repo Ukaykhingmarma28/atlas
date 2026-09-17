@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
   Check,
   ChevronDown,
@@ -588,8 +588,8 @@ function DeleteOrgDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-max)] bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-max)] bg-black/60 backdrop-blur-sm" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
@@ -640,7 +640,7 @@ function DeleteOrgDialog({
               {deleting ? "Deleting…" : "Delete organisation"}
             </button>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

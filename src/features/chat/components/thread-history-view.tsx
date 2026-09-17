@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Archive, Download, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -81,8 +81,8 @@ export function ThreadHistoryView({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
@@ -188,7 +188,7 @@ export function ThreadHistoryView({
               ))
             )}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
       <ImportThreadsModal open={importOpen} onOpenChange={setImportOpen} />
     </Dialog.Root>

@@ -1,4 +1,4 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AtlasIcon } from "@/components/atlas-icon";
@@ -37,8 +37,8 @@ export function UpdateAvailableModal() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[var(--z-overlay)]" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)]",
@@ -108,7 +108,7 @@ export function UpdateAvailableModal() {
               "Later" installs the update automatically the next time you quit Atlas.
             </p>
           )}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

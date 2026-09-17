@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
@@ -79,8 +79,8 @@ export function MediaLightbox() {
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && close()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-black/80 animate-fade-in" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-modal)] bg-black/80 animate-fade-in" />
+        <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={onKeyDown}
           className={cn(
@@ -157,7 +157,7 @@ export function MediaLightbox() {
               </>
             )}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

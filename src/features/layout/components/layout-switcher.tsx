@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "../stores/layout-store";
 import { LAYOUT_TEMPLATES, type LayoutTemplate } from "../templates";
@@ -53,15 +53,14 @@ export function LayoutSwitcher({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[var(--z-overlay)]" />
+        <Dialog.Popup
           ref={contentRef}
           tabIndex={-1}
           onKeyDown={handleKey}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            contentRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={contentRef}
           aria-describedby={undefined}
           className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)] w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-[var(--shadow-overlay)] p-5 outline-none"
         >
@@ -101,7 +100,7 @@ export function LayoutSwitcher({
             <Hint k="⏎" label="apply" />
             <Hint k="esc" label="close" />
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

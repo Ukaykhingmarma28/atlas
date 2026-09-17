@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { AlertTriangle, Check, Copy } from "lucide-react";
 import { useGitStore } from "../../stores/git-store";
 import { gitErrorTitle } from "../../lib/git-errors";
@@ -30,8 +30,8 @@ export function GitErrorDialog() {
   return (
     <Dialog.Root open={payload !== null} onOpenChange={(o) => !o && actions.dismissErrorDialog()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content className="fixed left-1/2 top-[24%] -translate-x-1/2 z-[var(--z-modal)] w-[440px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border-default shadow-[var(--shadow-overlay)] flex flex-col">
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-[var(--z-modal)] w-[440px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border-default shadow-[var(--shadow-overlay)] flex flex-col">
           {payload && (
             <>
               <div className="px-4 pt-3.5 pb-3 border-b border-border-default">
@@ -94,7 +94,7 @@ export function GitErrorDialog() {
               </div>
             </>
           )}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

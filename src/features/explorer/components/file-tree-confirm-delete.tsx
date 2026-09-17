@@ -1,4 +1,4 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 
 interface ConfirmDeleteProps {
@@ -40,8 +40,8 @@ export function FileTreeConfirmDelete({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-[30%] -translate-x-1/2 z-[var(--z-modal)]",
@@ -99,7 +99,7 @@ export function FileTreeConfirmDelete({
               {confirmLabel}
             </button>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

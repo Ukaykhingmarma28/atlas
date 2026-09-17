@@ -27,7 +27,7 @@
 //                contract), and Atlas holds no agent tokens.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
   Check,
   ChevronRight,
@@ -446,25 +446,43 @@ function AgentOAuthModal({
   const centred = centerX != null ? { left: centerX } : undefined;
 
   return (
-    <Dialog.Root open modal={!docked} onOpenChange={(o) => !o && dismiss()}>
+    <Dialog.Root
+      open
+      modal={!docked}
+      // Base UI folds Radix's per-interaction dismiss callbacks into
+      // onOpenChange: the reason says which one fired and `cancel()` is the
+      // old `event.preventDefault()`. Both rules below used to live on the
+      // docked Popup as onInteractOutside / onEscapeKeyDown.
+      onOpenChange={(open, details) => {
+        if (open) return;
+        // A click outside is not a dismissal while docked — the dock has no
+        // overlay, so "outside" is the whole app, and clicking into the very
+        // terminal it is about would silently kill the sign-in.
+        if (docked && (details.reason === "outside-press" || details.reason === "focus-out")) {
+          details.cancel();
+          return;
+        }
+        // Escape closes it, EXCEPT while a login is being driven in the
+        // terminal, where Esc is a key the TUI itself uses; there the ✕ is
+        // the way out.
+        if (details.reason === "escape-key" && phase.kind === "terminal") {
+          details.cancel();
+          return;
+        }
+        dismiss();
+      }}
+    >
       <Dialog.Portal>
         {!docked && (
-          <Dialog.Overlay className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
+          <Dialog.Backdrop className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
         )}
         {docked ? (
-          <Dialog.Content
+          <Dialog.Popup
             // Never take the keyboard: the terminal behind this is what the
-            // user is typing into. Nor is a click outside a dismissal — the
-            // dock has no overlay, so "outside" is the whole app, and clicking
-            // into the very terminal it is about would silently kill the
-            // sign-in. Escape closes it, EXCEPT while a login is being driven
-            // in the terminal, where Esc is a key the TUI itself uses; there
-            // the ✕ is the way out.
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onInteractOutside={(e) => e.preventDefault()}
-            onEscapeKeyDown={(e) => {
-              if (phase.kind === "terminal") e.preventDefault();
-            }}
+            // user is typing into. The outside-press and Escape rules that
+            // used to sit here are now reasons handled on the Root's
+            // onOpenChange.
+            initialFocus={false}
             className="fixed bottom-12 left-1/2 z-[var(--z-modal)] max-w-[92vw] -translate-x-1/2"
             style={centred}
           >
@@ -491,9 +509,9 @@ function AgentOAuthModal({
                 </>
               )}
             </SignInDock>
-          </Dialog.Content>
+          </Dialog.Popup>
         ) : (
-          <Dialog.Content
+          <Dialog.Popup
             className={cn(
               "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
               "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
@@ -613,7 +631,7 @@ function AgentOAuthModal({
                 </div>
               )}
             </div>
-          </Dialog.Content>
+          </Dialog.Popup>
         )}
       </Dialog.Portal>
     </Dialog.Root>

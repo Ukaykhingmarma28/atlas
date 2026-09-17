@@ -12,7 +12,7 @@
 // two "expand this into the whole window" surfaces behave identically.
 
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 // Imported DIRECTLY, not lazily. This module is itself lazy-loaded by the chat,
 // so a second `lazy()` here made opening a diff two SEQUENTIAL chunk fetches —
@@ -54,16 +54,16 @@ export function GitDiffModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 bg-black/60 data-[state=open]:animate-fade-in"
+        <Dialog.Backdrop
+          className="fixed inset-0 bg-black/60 data-open:animate-fade-in"
           style={{ zIndex: "var(--z-overlay)" as unknown as number }}
         />
-        <Dialog.Content
+        <Dialog.Popup
           aria-describedby={undefined}
           // Scales in from 95%. Without it the modal simply blinked into
           // existence, and an abrupt appearance reads as a slow one — there is
           // no motion to tell the eye that anything is arriving.
-          className="fixed top-8.5 left-4 right-4 bottom-6 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] focus:outline-none data-[state=open]:animate-scale-in"
+          className="fixed top-8.5 left-4 right-4 bottom-6 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] focus:outline-none data-open:animate-scale-in"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">{title ?? "Changes"}</Dialog.Title>
@@ -95,7 +95,7 @@ export function GitDiffModal({
               onOpenInEditor={() => onOpenChange(false)}
             />
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

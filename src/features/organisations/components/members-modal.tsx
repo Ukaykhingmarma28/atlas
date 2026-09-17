@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Check,
@@ -170,11 +170,11 @@ export function MembersModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
+        <Dialog.Backdrop
           className="fixed inset-0 bg-black/60"
           style={{ zIndex: "var(--z-overlay)" as unknown as number }}
         />
-        <Dialog.Content
+        <Dialog.Popup
           aria-describedby={undefined}
           className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
@@ -340,7 +340,7 @@ export function MembersModal({
               </div>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

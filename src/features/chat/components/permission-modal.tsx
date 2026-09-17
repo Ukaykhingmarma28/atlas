@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { CheckCircle2, XCircle, AlertTriangle, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { useChatStore } from "../stores/chat-store";
@@ -231,8 +231,8 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
     return (
       <Dialog.Root open onOpenChange={(open) => !open && cancel()}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-          <Dialog.Content
+          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+          <Dialog.Popup
             className={cn(
               // Anchor near the top (not vertically centered) with a viewport
               // cap, so a long plan never pushes the modal — and its Cancel
@@ -296,7 +296,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                 </div>
               </aside>
             </div>
-          </Dialog.Content>
+          </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
     );

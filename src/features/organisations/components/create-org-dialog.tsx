@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Building2, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -168,8 +168,8 @@ export function CreateOrgDialog({
         {/* Strong dim + blur, same language as the unpinned project scrim —
             the frosted panel above it needs a hidden, low-contrast backdrop to
             read as a focus transition rather than a floating card. */}
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
+        <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={(e) => {
             if (e.key === "Enter" && canSubmit) {
@@ -358,7 +358,7 @@ export function CreateOrgDialog({
               </button>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

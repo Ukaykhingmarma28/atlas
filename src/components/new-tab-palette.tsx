@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ElementType } from "react";
 import { ActionKbd } from "@/features/keybindings/components/action-kbd";
 import type { ActionId } from "@/features/keybindings/lib/actions";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
   Map,
   Terminal,
@@ -171,8 +171,8 @@ export function NewTabPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
@@ -181,10 +181,9 @@ export function NewTabPalette({
             "shadow-[var(--shadow-overlay)]",
             "flex flex-col",
           )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Open module</Dialog.Title>
           <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
@@ -228,7 +227,7 @@ export function NewTabPalette({
               );
             })}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

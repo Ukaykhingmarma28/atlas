@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { invoke } from "@tauri-apps/api/core";
@@ -99,8 +99,8 @@ export function SearchOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60" style={{ zIndex: 99998 }} />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60" style={{ zIndex: 99998 }} />
+        <Dialog.Popup
           className={cn(
             "fixed top-[15%] left-1/2 -translate-x-1/2",
             "w-[600px] max-h-[500px] rounded-xl overflow-hidden",
@@ -109,10 +109,9 @@ export function SearchOverlay({
             "flex flex-col",
           )}
           style={{ zIndex: 99999 }}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
             <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
@@ -213,7 +212,7 @@ export function SearchOverlay({
               </button>
             ))}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

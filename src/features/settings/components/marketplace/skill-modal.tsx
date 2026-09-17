@@ -4,7 +4,7 @@
 // Skills (projection / promote / uninstall). One skill collapses to a single
 // description; a pack lists its skills + descriptions.
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Loader2, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -32,8 +32,8 @@ export function SkillModalShell({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             // Centered in the viewport.
@@ -68,7 +68,7 @@ export function SkillModalShell({
               {actions}
             </aside>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

@@ -1,4 +1,4 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRemoveAgentConfirmStore } from "../lib/remove-agent-confirm";
@@ -20,8 +20,8 @@ export function RemoveAgentDialog() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && settle(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
@@ -62,7 +62,7 @@ export function RemoveAgentDialog() {
               </button>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

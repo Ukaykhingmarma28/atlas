@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { toast } from "sonner";
 import { Check, Search, Loader2, GitMerge, AlertTriangle, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -174,13 +174,12 @@ export function MergeBranchDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Popup
           className="fixed left-1/2 top-[22%] -translate-x-1/2 z-[var(--z-modal)] w-[420px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border-default shadow-[var(--shadow-overlay)] flex flex-col"
-          onOpenAutoFocus={(e) => {
-            // Keep focus on the filter input (rendered below), not the list.
-            e.preventDefault();
-          }}
+          // Keep focus on the filter input (rendered below), not the list.
+          // `false` is Base UI's spelling of Radix's preventDefault() here.
+          initialFocus={false}
         >
           <div className="px-4 pt-3.5 pb-3 border-b border-border-default">
             <Dialog.Title className="text-[13px] font-semibold text-text-primary flex items-center gap-1.5">
@@ -313,7 +312,7 @@ export function MergeBranchDialog({
               </button>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

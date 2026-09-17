@@ -17,7 +17,7 @@
 // use.
 
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { HelpCircle, ExternalLink } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
@@ -87,8 +87,8 @@ export function ElicitationModal({
   return (
     <Dialog.Root open onOpenChange={(o) => !o && void respond("cancel")}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
+        <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
             "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
@@ -215,7 +215,7 @@ export function ElicitationModal({
               </button>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

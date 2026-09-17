@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Image as ImageIcon, Film, Music, FileCode, FileX, RotateCw } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
@@ -174,8 +174,8 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+        <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[18%] z-50 -translate-x-1/2",
             "w-[640px] max-w-[92vw] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-2xl",
@@ -263,7 +263,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
             </div>
             <span>↑↓ navigate · ↵ open · esc close</span>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

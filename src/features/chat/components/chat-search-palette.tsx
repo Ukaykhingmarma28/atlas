@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Search, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Kbd, KbdGroup } from "@/ui/kbd";
@@ -65,8 +65,8 @@ export function ChatSearchPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Popup
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
             "w-[560px] max-h-[440px] rounded-xl overflow-hidden",
@@ -74,10 +74,9 @@ export function ChatSearchPalette({
             "shadow-[var(--shadow-overlay)]",
             "flex flex-col",
           )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Find user message</Dialog.Title>
           <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border-default)] shrink-0">
@@ -160,7 +159,7 @@ export function ChatSearchPalette({
               <span>close</span>
             </KbdGroup>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

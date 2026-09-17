@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Check, Copy, Loader2, MonitorSmartphone } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -61,8 +61,8 @@ export function ConnectDialog() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
+        <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
             "w-[440px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
@@ -161,7 +161,7 @@ export function ConnectDialog() {
               {done ? "Close" : "Cancel"}
             </button>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

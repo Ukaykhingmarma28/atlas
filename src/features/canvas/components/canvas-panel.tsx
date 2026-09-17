@@ -14,7 +14,7 @@ import {
   type EdgeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { StickyNote } from "lucide-react";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useCanvasStore, type CanvasNode, type ShapeType } from "../stores/canvas-store";
@@ -57,18 +57,18 @@ export function CanvasPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay
+        <Dialog.Backdrop
           className="fixed inset-0 bg-black/60"
           style={{ zIndex: "var(--z-overlay)" as unknown as number }}
         />
-        <Dialog.Content
+        <Dialog.Popup
           aria-describedby={undefined}
           className="fixed top-12 left-6 right-6 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">Spaces</Dialog.Title>
           {surface}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
