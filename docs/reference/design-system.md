@@ -110,15 +110,14 @@ Rendered today: **4 / 6 / 8 / 12**. Before Foundations it was 2 / 4 / 6 with no
   that no theme value can reach, so `globals.css` redeclares it in the utilities
   layer, after the generated rules. It therefore beats `.rounded` and still
   loses to `.rounded-lg` on an element carrying both.
-- **The scale reads `--radius-base`, not `--radius` directly, and that is a
-  temporary bridge.** Atlas sets its root font-size to 13px (`globals.css`,
-  `@layer base`), so `rem` in this app is 13px. All 16 built-in theme files ship
-  `radius = "0.375rem"`, which their authors drew as 6px and which lands as
-  4.875px — and `r − 4px` then collapses to 0.875px, i.e. square.
-  `--radius-base` floors the theme's value at the 8px default, which puts every
-  theme on the intended scale. When the theme files ship a px `radius`, this
-  becomes `--radius-base: var(--radius)` and the floor goes away. While it
-  stands, a theme can go rounder than 8px but not squarer.
+- **The scale reads `--radius-base`, which is now plain `var(--radius)`.** It
+  briefly carried a `max(…, 8px)` floor: Atlas sets its root font-size to 13px
+  (`globals.css`, `@layer base`), so a `rem` here is 13px, and every built-in
+  theme file shipped `radius = "0.375rem"` — 4.875px, with `r − 4px` collapsing
+  to 0.875px, i.e. square everywhere whatever the theme asked for. The theme
+  files now ship `radius = "8px"`, the floor is gone, and a theme that wants to
+  be **squarer** than 8px finally can be. A theme file is the only place the
+  scale is set; do not reintroduce a floor.
 
 ## Elevation
 
@@ -138,21 +137,22 @@ Atlas's near-black chrome. Do not introduce a fourth level.
 
 Two more utilities belong here:
 
-- `inset-highlight` — the 1px white top edge on raised glass. It delegates to
+- `inset-highlight` — the 1px top edge on raised glass. It delegates to
   Tailwind's own inset-shadow utility, so `inset-highlight shadow-md` composes
-  instead of one replacing the other.
+  instead of one replacing the other. Its colour is the `element.highlight`
+  theme key — the theme's foreground at 6% — so a light variant gets a dark
+  edge instead of the white-on-white one a hardcoded highlight would give it.
 - `backdrop-blur-glass` — the one glass blur (`--blur-glass`, 24px).
 
-Two caveats, both waiting on a theme change rather than a code one:
+One thing to keep in mind:
 
-- **`shadow-md` and `shadow-lg` resolve to the same rung today.** `md` is pinned
-  to the theme's `--shadow-2xl`, which is exactly what `--shadow-overlay`
-  renders, so the sweep can replace all 83 `shadow-[var(--shadow-overlay)]`
-  sites with `shadow-md` and move nothing. The shadcn scale tops out there, so
-  `lg` has nowhere higher to point until a theme ships a distinct dialog shadow.
-- **`inset-highlight` is a white edge** (`rgb(255 255 255 / 0.06)` in
-  `tokens.css`), so it is invisible in a light variant. It is not a theme key
-  yet; light QA in PR 4 decides whether it becomes one.
+- **`shadow-md` is pinned to the theme's `--shadow-2xl`**, which is exactly what
+  `--shadow-overlay` renders, so the sweep can replace all 83
+  `shadow-[var(--shadow-overlay)]` sites with `shadow-md` and move nothing. Do
+  not repoint it. `shadow-lg` stacks the theme's `--shadow-xl` under its
+  `--shadow-2xl` to get a rung of its own — the shadcn scale has no fourth
+  step, and `md` and `lg` resolving to the same value made every dialog read as
+  a popover.
 
 ## Z-index
 

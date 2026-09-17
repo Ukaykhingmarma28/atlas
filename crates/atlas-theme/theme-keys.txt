@@ -6,6 +6,7 @@ border.variant
 element.hover
 element.selected
 element.active
+element.highlight
 element.primary_hover
 element.primary_muted
 ghost_element.hover

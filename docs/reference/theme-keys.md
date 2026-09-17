@@ -23,7 +23,7 @@ transform after choosing the source.
 | `border.default` | B:border → D |
 | `border.subtle`, `border.variant` | B:sidebar-border → D |
 | `border.strong`, `border.focus` | B:ring → D |
-| `element.hover`, `element.selected`, `element.active`; `ghost_element.hover`, `ghost_element.selected`, `ghost_element.active` | B:foreground → D (alpha overlay) |
+| `element.hover`, `element.selected`, `element.active`, `element.highlight`; `ghost_element.hover`, `ghost_element.selected`, `ghost_element.active` | B:foreground → D (alpha overlay) |
 | `element.primary_hover`, `element.primary_muted` | B:primary → D (lighten/alpha) |
 | `text.muted`, `text.placeholder`, `text.disabled` | B:muted-foreground → D (placeholder/disabled mix toward background) |
 | `text.accent` | P:yellow → B:primary → D |

@@ -123,6 +123,16 @@ export const THEME_KEY_REGISTRY = [
     light: "rgba(0,0,0,0.08)",
     description: "Pressed overlay for ordinary elements.",
   }),
+  /** The 1px top edge on raised glass — `inset-highlight` in globals.css. It
+   *  is the theme's own foreground at 6%, so a light variant gets a dark edge
+   *  instead of the white-on-white one a hardcoded highlight would give it. */
+  define("element.highlight", {
+    base: "foreground",
+    transform: alpha(0.06),
+    dark: "rgba(255,255,255,0.06)",
+    light: "rgba(0,0,0,0.06)",
+    description: "Top-edge highlight on a raised surface.",
+  }),
   define("element.primary_hover", {
     base: "primary",
     transform: lighter(0.15),

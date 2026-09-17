@@ -116,6 +116,43 @@ function Swatch({
   );
 }
 
+/**
+ * The swatches above read each token as an inline `var()`, which works whether
+ * or not Tailwind knows it exists. These are the Tailwind UTILITIES, spelled
+ * out as literal class strings so the scanner actually emits them — the only
+ * way to see a missing `@theme inline` entry, which is silent everywhere else:
+ * `chart-1..5` and all eight `sidebar-*` had no `--color-*` mapping at all, so
+ * `bg-sidebar` and `text-chart-1` generated no rule and stock shadcn markup
+ * would have rendered transparent the moment PR 3 landed it.
+ *
+ * A bar here that shows as the page background is an unmapped token.
+ */
+function UtilityCheck() {
+  return (
+    <div className="mt-4 border-t border-border-default pt-3">
+      <div className="eyebrow mb-2">Tailwind utilities</div>
+      <div className="flex gap-1">
+        <div className="h-control-sm flex-1 rounded bg-chart-1" title="bg-chart-1" />
+        <div className="h-control-sm flex-1 rounded bg-chart-2" title="bg-chart-2" />
+        <div className="h-control-sm flex-1 rounded bg-chart-3" title="bg-chart-3" />
+        <div className="h-control-sm flex-1 rounded bg-chart-4" title="bg-chart-4" />
+        <div className="h-control-sm flex-1 rounded bg-chart-5" title="bg-chart-5" />
+      </div>
+      <div className="mt-1 flex items-center gap-2 rounded border border-sidebar-border bg-sidebar px-2 py-1.5">
+        <span className="label text-sidebar-foreground">bg-sidebar</span>
+        <span className="rounded bg-sidebar-primary px-1.5 text-sidebar-primary-foreground label">
+          primary
+        </span>
+        <span className="rounded bg-sidebar-accent px-1.5 text-sidebar-accent-foreground label">
+          accent
+        </span>
+        <span className="ml-auto size-control-xs rounded-full ring-2 ring-sidebar-ring" />
+      </div>
+      <div className="mt-1 font-serif text-text-tertiary caption">font-serif</div>
+    </div>
+  );
+}
+
 const COLOUR_VARS = [
   ...BASE_COLOR_TOKENS.map((token) => `--${token}`),
   ...THEME_KEY_REGISTRY.map((definition) => definition.cssVar as string),
@@ -144,6 +181,7 @@ function ColourSections() {
             <Swatch key={token} cssVar={`--${token}`} label={token} value={values[`--${token}`]} />
           ))}
         </div>
+        <UtilityCheck />
       </Section>
 
       {groups.map(([prefix, definitions]) => (

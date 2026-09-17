@@ -194,43 +194,56 @@
      `--space-*` ladder had 0 references and is gone (decision 19). */
 
   /* Radius (decision 26). Derived from the theme's `--radius`, so a theme that
-     ships a rounder look moves the whole scale at once. Use `sm` for controls,
-     `md` for cards, `lg` for popovers, `xl` for dialogs. globals.css maps the
-     Tailwind `rounded-*` utilities onto exactly these four.
+     ships a rounder — or squarer — look moves the whole scale at once. Use `sm`
+     for controls, `md` for cards, `lg` for popovers, `xl` for dialogs.
+     globals.css maps the Tailwind `rounded-*` utilities onto exactly these
+     four, and bare `rounded` onto `sm`.
 
-     `--radius-base`, and its floor, are a BRIDGE — delete both when the theme
-     files are fixed. Atlas sets its root font-size to 13px (globals.css,
-     `@layer base`), so `rem` here is 13px, not 16px. All 16 built-in theme
-     files ship `radius = "0.375rem"`, which their authors drew as 6px and
-     which lands as 4.875px — and `r − 4px` then collapses to 0.875px, i.e.
-     square. Flooring at the 8px default keeps every theme on decision 26's
-     intended 4 / 6 / 8 / 12 until those files ship a px `radius`, at which
-     point this becomes `--radius-base: var(--radius)`.
-
-     The cost while it stands: a theme can go rounder than 8px but not
-     squarer. */
-  --radius-base: max(var(--radius), 8px);
+     `--radius-base` is the seam the scale derives from, and it is now plain
+     `var(--radius)`. It briefly carried a `max(…, 8px)` floor because every
+     built-in theme file shipped `radius = "0.375rem"`: Atlas sets its root
+     font-size to 13px, so that rem landed as 4.875px and `r − 4px` collapsed to
+     0.875px — square, everywhere, whatever the theme asked for. The theme files
+     now ship `radius = "8px"`, so the floor is gone and a theme that wants to
+     be squarer than 8px finally can be. */
+  --radius-base: var(--radius);
   --radius-sm: calc(var(--radius-base) - 4px);
   --radius-md: calc(var(--radius-base) - 2px);
   --radius-lg: var(--radius-base);
   --radius-xl: calc(var(--radius-base) + 4px);
   --radius-full: 9999px;
 
-  /* Elevation (decision 27). Three levels. Each points at one of the theme's
-     shadcn shadow tokens, so the shadow COLOUR comes from the theme; globals.css
-     maps `shadow-sm` / `shadow-md` / `shadow-lg` onto these three.
+  /* Elevation (decision 27). Three rungs, and they must READ as three: raised,
+     menus/popovers, dialogs. Each is built from the theme's own shadcn shadow
+     tokens, so the shadow colour and weight come from the theme and a light
+     variant gets a light shadow for free. globals.css maps `shadow-sm` /
+     `shadow-md` / `shadow-lg` onto these three.
+
      These names sit outside Tailwind's `--shadow-*` namespace on purpose: a
      `@theme inline` entry that pointed `--shadow-sm` back at `--shadow-sm`
      would make Tailwind re-emit the variable and close the loop. */
   --elevation-raised: var(--shadow-sm);
   --elevation-menu: var(--shadow-2xl);
-  --elevation-dialog: var(--shadow-2xl);
+  /* A dialog sits above the menus, so it cannot share their shadow — `md` and
+     `lg` resolved to the same value and every dialog read as a popover. Two of
+     the theme's own shadows stacked: the widest one for the spread, with the
+     next one down under it for the contact edge. Still entirely theme-derived,
+     and still one step up from `--elevation-menu` in every theme. */
+  --elevation-dialog: var(--shadow-xl), var(--shadow-2xl);
   /* Legacy alias for the 83 `shadow-[var(--shadow-overlay)]` sites; the sweep
-     replaces them with `shadow-md`. */
+     replaces them with `shadow-md`. It stays pinned to the MENU rung, so those
+     sites move to `shadow-md` with no visual change at all. */
   --shadow-overlay: var(--elevation-menu);
-  /* The 1px white top edge on raised glass. Composed as Tailwind's
-     `--tw-inset-shadow`, so `inset-highlight shadow-md` stacks correctly. */
-  --inset-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  /* The 1px top edge on raised glass, composed as Tailwind's
+     `--tw-inset-shadow` so `inset-highlight shadow-md` stacks correctly.
+
+     The colour is the `element.highlight` theme key, not a hardcoded white:
+     white at 6% is the DARK-appearance reading of "this edge catches the
+     light", and on a light variant it is white on near-white, i.e. nothing at
+     all. The key resolves to the theme's own foreground at 6%, so dark keeps
+     exactly today's value and light gets the dark edge it wanted — and a theme
+     author who disagrees can set it. */
+  --inset-highlight: inset 0 1px 0 0 var(--atlas-element-highlight);
 
   /* Control heights (decision 25). 22 / 28 / 30 snap to the nearest step. */
   --control-xs: 20px;
