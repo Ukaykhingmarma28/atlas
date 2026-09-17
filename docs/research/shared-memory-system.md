@@ -109,44 +109,40 @@ Code volume for the surface: ~5.7k lines of Tauri commands, ~6.0k lines across
 
 ## 3. Data flow per agent kind
 
-```mermaid
-flowchart LR
-  subgraph Foreign["Foreign stores (read-only)"]
-    CM["~/.claude/projects/*/memory + CLAUDE.md"]
-    CX["~/.codex/state_*.sqlite + AGENTS.md"]
-  end
-  subgraph Atlas["App-owned stores  <project>/.atlas/"]
-    EV["shared-memory/events.jsonl + state.json"]
-    ME["memory/ (HNSW + docstore + graph + extracted/*.md)"]
-    CI["codebase-index/docs.json"]
-    KB["knowledge/"]
-    CAP["capture (transcripts, every agent)"]
-  end
-  GL["~/.atlas/memory (global promoted)"]
+```text
+ Foreign stores (read-only)                 App-owned stores   <project>/.atlas/
+ ┌──────────────────────────┐               ┌─────────────────────────────────────────────┐
+ │ ~/.claude/…/memory/*.md  │               │ shared-memory/events.jsonl + state.json      │◄─ memory_delta::ingest
+ │ CLAUDE.md (proj + global)│               │                                             │   (plan · file edits · marker phrases,
+ │ ~/.codex/state_*.sqlite  │               │                                             │    every delta)
+ │ AGENTS.md                │               │                                             │◄─ TurnFinished → memory_compile
+ └───────────┬──────────────┘               │                                             │   (BYOK only, default path)
+             │                              │ memory/  hnsw.usearch + docstore.json       │◄─ TurnFinished → Job::ExtractSession
+             │                              │          + graph/ + extracted/<session>.md  │   (BYOK only, env flag OFF)
+             │                              │ codebase-index/docs.json                    │◄─ TurnFinished → enqueue_index
+             │                              │ knowledge/   (user notes)                   │
+             │                              │ capture      (transcripts, every agent)     │
+             │                              └───────────────┬─────────────────────────────┘
+             └───────────── collect_corpus ─────────────────┤
+                                                            ▼
+                                       MemoryEngine  (MiniLM embed → HNSW + graph, RRF fuse)
+                                              │                              │
+                                 consolidate → promote                  retrieve (RAG)
+                                 (preference/constraint,                     │
+                                  ≥2 projects)                               │
+                                              ▼                              │
+                                   ~/.atlas/memory  (global) ─ blend when sparse ─┘
 
-  CM & CX & CI & KB & CAP & EV -->|collect_corpus| ME
-  ME -->|consolidate → promote| GL
-  GL -.->|blend when sparse| ME
-
-  subgraph Write["Write triggers (TauriDeltaSink::emit)"]
-    D1["memory_delta::ingest (plan / file edits / marker phrases)"] --> EV
-    D2["TurnFinished → memory_compile (BYOK, default)"] --> EV
-    D3["TurnFinished → Job::ExtractSession (BYOK, env flag OFF)"] --> ME
-    D4["TurnFinished → enqueue_index"] --> ME
-  end
-
-  subgraph Send["agents_send (all sessions)"]
-    B1["--- SHARED MEMORY --- (delta by sync clock)"]
-    B2["--- RELEVANT PROJECT MEMORY --- (RAG top-3)"]
-    B3["--- PROJECT MEMORY --- + --- RECENT SESSION --- (first send)"]
-  end
-  EV --> B1
-  ME --> B2
-  ME & CAP --> B3
-  B1 & B2 & B3 -->|prepended to user text| NA["Native agent (Codex fork)"]
-  B1 & B2 & B3 -->|prepended to user text| ACP["ACP agents"]
-  ME -->|search_memory dynamic tool| NA
-  ACP -.->|mcpServers = [] · no tool| X["(no pull path)"]
+ agents_send   (one path for native AND ACP sessions; bare send if sharing off or slash command)
+   ┌ --- SHARED MEMORY ---              delta since this session's sync clock      ◄── events.jsonl
+   │ --- RELEVANT PROJECT MEMORY ---    top-3 RAG on the user's text, ≤1400 chars  ◄── MemoryEngine
+   │ --- PROJECT MEMORY ---             curated pack, first send only, ≤8000 chars ◄── corpus
+   │ --- RECENT SESSION ---             tail of last *Claude* session, first send  ◄── ~/.claude/projects/*.jsonl
+   └─► prepended to the user's message text
+                    │                                            │
+                    ▼                                            ▼
+      Native agent (Codex fork)                     ACP agents (Claude Code · Codex · Gemini · …)
+      push  +  search_memory dynamic tool           push only  ·  mcpServers = []  ·  no pull path
 ```
 
 ### 3.1 The push path (both kinds)
@@ -365,42 +361,47 @@ One store, one reach mechanism, one write discipline.
 
 ### 10.1 Target-state diagram (final, reflects §11–§12)
 
-```mermaid
-flowchart TB
-  UI["Memory panel — Shared (provenance · edit · forget · live) · Graph · Tree · Policy · Timeline"]
+```text
+                     MEMORY PANEL   Shared (provenance · edit · forget · live) · Graph · Tree · Policy · Timeline
+                                    ▲                                      │
+                 five existing commands + atlas:memory-changed event        │ user edits · consented import
+                                    │                                      ▼
+ ┌──────────────────────────────────┴──────────────────────────────────────────────────────────────┐
+ │  ATLAS MEMORY STORE   one per repository (main worktree via git common dir) · backend-only writer│
+ │                                                                                                 │
+ │  <scope root>/.atlas/memory/memory.sqlite (WAL)    entries · events · sessions                  │
+ │  hnsw.usearch                                       vectors, on-device MiniLM, keyed by entry id │
+ │  capture                                            raw transcripts, every agent                 │
+ │                                                                                                 │
+ │  entries: id · kind · key · content · source · agent · session · confidence ·                    │
+ │           created_at · updated_at · last_used_at · uses · content_hash                          │
+ │  caps = index display limits · nothing auto-deleted · every write through atlas-redact          │
+ └───────▲──────────▲──────────────▲──────────────▲───────────────────────────┬────────────────────┘
+         │          │              │              │                           │ Facts ≥0.8 in ≥2 repos
+   delta capture  memory_remember  extractor      read-only sources           ▼
+   plan · files   (tool, new)      turn-finished  CLAUDE.md · AGENTS.md    ~/.atlas/memory (global)
+   marker phrases                  session-end    Claude memory dir
+   (unchanged)                     gateway | BYOK Codex threads · Knowledge · Codebase index
+                                                  (atlas-memory tag stripped at the reader)
 
-  subgraph Store["ATLAS MEMORY STORE — one per repository (main worktree), backend-only writer"]
-    REC["memory.sqlite (WAL): entries · events · sessions"]
-    VEC["HNSW vectors (on-device MiniLM)"]
-    CAP["capture transcripts (raw archive, every agent)"]
-    GL["~/.atlas/memory — promoted Facts (≥0.8, ≥2 repos)"]
-  end
-  UI <-->|"five existing commands + atlas:memory-changed"| Store
-  REC --> GL
-
-  subgraph Writers["WRITERS (all through atlas-redact)"]
-    W1["Delta capture: plan · file edits · marker phrases (unchanged)"]
-    W2["memory_remember tool (new)"]
-    W3["Extractor on turn-finished / session-end — gateway or BYOK"]
-    W4["User edits · consented imports (Claude auto-memory, previewed)"]
-  end
-  Writers --> Store
-
-  subgraph Sources["READ-ONLY SOURCES (atlas-memory tag stripped at the reader)"]
-    S1["CLAUDE.md · AGENTS.md · Claude memory dir · Codex threads"]
-    S2["Knowledge notes · Codebase index"]
-  end
-  Sources -->|collect_corpus| VEC
-
-  subgraph Reach["REACH"]
-    MCP["In-process MCP server, streamable HTTP on 127.0.0.1, per-session token: memory_search · memory_remember · memory_forget · memory_list"]
-    PUSH["Tagged push (atlas-memory tag): session-start index (working memory + ranked durable index + pack + handoff) · per-turn RAG with short-prompt floor · sync-clock deltas"]
-  end
-  Store --> Reach
-  MCP -->|"session/new mcpServers, only if mcpCapabilities.http"| ACP["ACP agents"]
-  MCP -->|"mcp_servers.atlas_memory (StreamableHttp) override"| NA["Native agent (Codex fork)"]
-  PUSH --> ACP & NA
-  ACP -.->|"no http capability → push only, as today"| PUSH
+ ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │  REACH                                                                                          │
+ │                                                                                                 │
+ │  A. In-process MCP server · streamable HTTP on 127.0.0.1 · per-session bearer token             │
+ │     tools: memory_search · memory_remember · memory_forget · memory_list                        │
+ │       ├─► ACP agents      session/new mcpServers   — only when agent advertises mcpCapabilities.http
+ │       └─► Native agent    mcp_servers.atlas_memory (StreamableHttp) config override             │
+ │                                                                                                 │
+ │  B. Tagged push  <atlas-memory> … </atlas-memory>  with a do-not-persist line                   │
+ │     first send : working memory + ranked durable index (recency · uses · confidence,            │
+ │                  today's caps and char budgets) + pack + agent-neutral handoff                   │
+ │     every turn : RELEVANT PROJECT MEMORY (RAG, skipped on short/continuation prompts)           │
+ │                  + SHARED MEMORY delta by sync clock                                             │
+ └───────────────┬────────────────────────────────────────────┬────────────────────────────────────┘
+                 ▼                                            ▼
+   Native agent (Codex fork)                     ACP agents (Claude Code · Codex · Gemini · …)
+   tools + push                                  tools + push  — or push only, exactly as today,
+                                                 when the agent has no HTTP MCP capability
 ```
 
 Versus today, four things change and nothing is removed: every agent that
