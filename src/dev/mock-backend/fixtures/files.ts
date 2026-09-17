@@ -10,8 +10,11 @@
 //
 // Writes land here too: `write_file_content` mutates the map and bumps the
 // mtime, so save → reload → diff behaves like a real round trip for the rest of
-// the session.
+// the session. The explorer's context menu writes through the same map — create,
+// rename, delete, copy, duplicate — so a file created in the tree is a file
+// `read_directory`, Cmd+P and the editor all agree exists.
 
+import { emit } from "@tauri-apps/api/event";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type {
   FileIndexStatus,
@@ -528,8 +531,26 @@ VITE_SENTRY_DSN=
 VITE_FEATURE_V2_USERS=true
 `;
 
+const GITIGNORE = `node_modules/
+dist/
+.atlas/
+
+# Local env files
+.env.local
+.env.*.local
+`;
+
 const LOGO_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABS0lEQVR42u3cwW3DMAwAQA5R5NUZO1F2TTYI6ogUJfkAPmOZuOgji2T8PH7FhwgEgAABAgQIECBAAhAgQIAAAfpf/D1fV+MWQF+49ErFXjTzmWJHmplMsS/NHKbYnaaaKY7RKTKKk3QqjOIkmgqmOFIn0ShO1ckyAlQPtKxOilEseIBYyih6dVZ70UJA679uFCgr1/Tf5xpF+xevoqeagRLzq3swxWgS0MhSc9LIBMpNq/rxQaNyoPHVJuczCpT+j00GumoUvdsnBah0EwFKBWo5RjTmBqgPKHHN3vQAAQIECNDdgHLX7M3QDgIECBAgQICc5gH5oghoPaA73mq4F3Oz6m5edUc/kPogFWZqFFW59gOpk1Zpr1cDkH6xHfrFdBzqWdX1rG/e5AWzO86b3WH6i/lBJlCZUgYIECBAgAABAiQAAQIECNBm8QYWuraEwe75dgAAAABJRU5ErkJggg==";
+
+// A real two-page PDF, not a stub: react-pdf renders through pdf.js, which
+// refuses anything that is not a parseable document, so invented bytes would
+// leave the PDF tab stuck on its error state instead of showing pages. Two
+// pages (so paging and the page-count readout have something to do), Helvetica
+// text for the annotation layer to highlight over, and a couple of colour
+// swatches so a theme change is visibly NOT applied to the document.
+const SPEC_PDF_BASE64 =
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUiA1IDAgUl0gL0NvdW50IDIgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA3IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1OTYgPj4Kc3RyZWFtCkJUIC9GMSAyMiBUZiA3MiA3MjAgVGQgKEFjbWUgZGVzaWduIHRva2VucykgVGogRVQKQlQgL0YxIDExIFRmIDcyIDY5MCBUZCAoSW50ZXJuYWwgc3BlY2lmaWNhdGlvbiAtIHJldmlzaW9uIDQpIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2NTAgVGQgKEV2ZXJ5IGNvbG91ciBpbiB0aGUgYWRtaW4gYXBwIHJlc29sdmVzIHRvIGEgdG9rZW4gZGVjbGFyZWQgaW4pIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2MzQgVGQgKHNyYy9zdHlsZXMvdG9rZW5zLmNzcy4gTm8gaGV4IGxpdGVyYWwgbWF5IGFwcGVhciBpbiBKU1guKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjAyIFRkICgxLiBCYXNlIHRva2VucyBjYXJyeSB0aGUgcmF3IHJhbXAuKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNTg2IFRkICgyLiBTZW1hbnRpYyB0b2tlbnMgbmFtZSBhIHJvbGUsIG5ldmVyIGEgY29sb3VyLikgVGogRVQKQlQgL0YxIDExIFRmIDcyIDU3MCBUZCAoMy4gRGFyayBtb2RlIHJlZGVmaW5lcyB0aGUgYmFzZSwgbmV2ZXIgdGhlIHNlbWFudGljcy4pIFRqIEVUCjAuNDMgMC42MSAxIHJnIDcyIDUyMCAyMDAgMjQgcmUgZgowLjY5IDAuNDggMSByZyAyODggNTIwIDIwMCAyNCByZSBmCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDcgMCBSID4+ID4+IC9Db250ZW50cyA2IDAgUiA+PgplbmRvYmoKNiAwIG9iago8PCAvTGVuZ3RoIDM5NyA+PgpzdHJlYW0KQlQgL0YxIDIyIFRmIDcyIDcyMCBUZCAoT3BlbiBxdWVzdGlvbnMpIFRqIEVUCkJUIC9GMSAxMSBUZiA3MiA2ODYgVGQgKEFDTUUtMTE4NCBtb3ZlcyAvdXNlcnMgdG8gL3YyL3VzZXJzLiBUaGUgdG9rZW4gcmFtcCkgVGogRVQKQlQgL0YxIDExIFRmIDcyIDY3MCBUZCAocmVnZW5lcmF0aW9uIGxhbmRzIGluIHRoZSBzYW1lIHJlbGVhc2UuKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjM4IFRkIChIaWdobGlnaHRpbmcgdGhpcyBwYXJhZ3JhcGggaXMgdGhlIGZhc3Rlc3Qgd2F5IHRvIHNlZSB3aGV0aGVyKSBUaiBFVApCVCAvRjEgMTEgVGYgNzIgNjIyIFRkIChhbiBhbm5vdGF0aW9uIHN1cnZpdmVzIGEgcGFnZSByb3RhdGUuKSBUaiBFVAowLjk1IDAuMzMgMC4zNSByZyA3MiA1NjAgNDE2IDIgcmUgZgplbmRzdHJlYW0KZW5kb2JqCjcgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nID4+CmVuZG9iagp4cmVmCjAgOAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTIxIDAwMDAwIG4gCjAwMDAwMDAyNDcgMDAwMDAgbiAKMDAwMDAwMDg5NCAwMDAwMCBuIAowMDAwMDAxMDIwIDAwMDAwIG4gCjAwMDAwMDE0NjggMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA4IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgoxNTY1CiUlRU9GCg==";
 
 /** Working-tree content, keyed by path relative to the workspace root. */
 const SEED: Record<string, MockFile> = {
@@ -552,6 +573,16 @@ const SEED: Record<string, MockFile> = {
     mime: "image/png",
     mtimeMs: T0 - 1_209_600_000,
   },
+  "docs/spec.pdf": {
+    text: null,
+    base64: SPEC_PDF_BASE64,
+    mime: "application/pdf",
+    mtimeMs: T0 - 5_400_000,
+  },
+  // Seeded so `fs_add_to_gitignore` lands on its dedupe branch — the one every
+  // project open hits — instead of always creating the file. Delete it in the
+  // explorer to reach the create branch.
+  ".gitignore": { text: GITIGNORE, mtimeMs: T0 - 604_800_000 },
 };
 
 /**
@@ -562,14 +593,66 @@ const files = new Map<string, MockFile>(
   Object.entries(SEED).map(([rel, file]) => [abs(rel), { ...file }]),
 );
 
+/**
+ * Directories the user created that hold no file yet. Every other directory in
+ * this fixture is synthesised from the paths of the files inside it, which is
+ * exactly the state a brand-new empty folder cannot express — without this set
+ * "New Folder" would vanish from the tree the moment the rename input closed.
+ * Entries are absolute, and one is kept per level (`fs_create_dir` is
+ * `create_dir_all`, so every missing ancestor comes into being too).
+ */
+const emptyDirs = new Set<string>();
+
+const ROOT = MOCK_WORKSPACE.path;
+
+/** Path relative to the workspace root, or the path itself when it is outside. */
+function relOf(absPath: string): string {
+  return absPath.startsWith(`${ROOT}/`) ? absPath.slice(ROOT.length + 1) : absPath;
+}
+
+/** Absolute parent directory, or null once there is nothing left to strip. */
+function parentOf(absPath: string): string | null {
+  const slash = absPath.lastIndexOf("/");
+  return slash > 0 ? absPath.slice(0, slash) : null;
+}
+
+/** A directory exists when something lives under it, or it was created empty. */
+function isDir(absPath: string): boolean {
+  if (absPath === ROOT || emptyDirs.has(absPath)) return true;
+  const prefix = `${absPath}/`;
+  for (const key of files.keys()) {
+    if (key.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/** What Rust's `Path::exists` answers — the guard every mutation starts with. */
+function pathExists(absPath: string): boolean {
+  return files.has(absPath) || isDir(absPath);
+}
+
+/** `absPath` itself when it is a file, plus every file beneath it. */
+function subtree(absPath: string): string[] {
+  const prefix = `${absPath}/`;
+  return [...files.keys()].filter((key) => key === absPath || key.startsWith(prefix));
+}
+
 /** Working-tree text of a seeded file, by workspace-relative path. */
 export function fileText(rel: string): string {
   return files.get(abs(rel))?.text ?? "";
 }
 
-/** Every file path in the fake tree, relative to the workspace root. */
+/**
+ * Every file path in the tree as it stands now, relative to the workspace root
+ * — the live map, not `SEED`, so a file created from the explorer is findable
+ * in Cmd+P and a deleted one stops being offered.
+ */
 export function mockFilePaths(): string[] {
-  return Object.keys(SEED);
+  const paths: string[] = [];
+  for (const key of files.keys()) {
+    if (key.startsWith(`${ROOT}/`)) paths.push(relOf(key));
+  }
+  return paths;
 }
 
 function byteLength(file: MockFile): number {
@@ -586,6 +669,9 @@ function byteLength(file: MockFile): number {
 export function listDir(absPath: string): FileEntry[] {
   const root = MOCK_WORKSPACE.path;
   if (absPath !== root && !absPath.startsWith(`${root}/`)) return [];
+  // Rust refuses a path that is not a directory outright, and the explorer's
+  // collision probe leans on that failing rather than returning nothing.
+  if (files.has(absPath)) throw new Error(`Not a directory: ${absPath}`);
   const rel = absPath === root ? "" : `${absPath.slice(root.length + 1).replace(/\/$/, "")}/`;
 
   const dirs = new Set<string>();
@@ -608,6 +694,15 @@ export function listDir(absPath: string): FileEntry[] {
     } else {
       dirs.add(tail.slice(0, slash));
     }
+  }
+  for (const dir of emptyDirs) {
+    if (!dir.startsWith(`${root}/`)) continue;
+    const dirRel = relOf(dir);
+    if (!dirRel.startsWith(rel)) continue;
+    const tail = dirRel.slice(rel.length);
+    if (!tail) continue;
+    const slash = tail.indexOf("/");
+    dirs.add(slash === -1 ? tail : tail.slice(0, slash));
   }
 
   const dirEntries: FileEntry[] = [...dirs].sort().map((name) => ({
@@ -660,13 +755,132 @@ function dirPaths(): string[] {
     const parts = path.split("/").slice(0, -1);
     for (let i = 1; i <= parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
   }
+  for (const dir of emptyDirs) {
+    if (dir.startsWith(`${ROOT}/`)) dirs.add(relOf(dir));
+  }
   return [...dirs].sort();
 }
+
+/**
+ * Empty-directory records at or under `absPath`, as an array: every caller
+ * re-keys the set while walking it.
+ */
+function emptyDirsUnder(absPath: string): string[] {
+  const prefix = `${absPath}/`;
+  return Array.from(emptyDirs).filter((dir) => dir === absPath || dir.startsWith(prefix));
+}
+
+/**
+ * Move every file and empty-directory record under `src` to sit under `dst`.
+ * `fs::rename` is one syscall on a real filesystem; here a directory is only
+ * the set of paths that mention it, so the whole set has to be re-keyed.
+ */
+function moveTree(src: string, dst: string): void {
+  for (const key of subtree(src)) {
+    const file = files.get(key);
+    if (!file) continue;
+    files.delete(key);
+    files.set(dst + key.slice(src.length), file);
+  }
+  for (const dir of emptyDirsUnder(src)) {
+    emptyDirs.delete(dir);
+    emptyDirs.add(dst + dir.slice(src.length));
+  }
+}
+
+/** The `copy_dir_recursive` / `fs::copy` half of the same re-keying. */
+function copyTree(src: string, dst: string): void {
+  const now = Date.now();
+  // A directory copy runs `create_dir_all(dst)` first, so copying an empty
+  // folder still produces a folder.
+  if (isDir(src)) emptyDirs.add(dst);
+  for (const key of subtree(src)) {
+    const file = files.get(key);
+    if (!file) continue;
+    files.set(dst + key.slice(src.length), { ...file, mtimeMs: now });
+  }
+  for (const dir of emptyDirsUnder(src)) {
+    emptyDirs.add(dst + dir.slice(src.length));
+  }
+}
+
+/**
+ * Rust's `Path::file_stem` / `Path::extension` split, which `fs_duplicate`
+ * names its copies from: a leading dot is part of the stem, so `.env.local`
+ * duplicates to `.env copy.local` and `.gitignore` to `.gitignore copy`.
+ */
+function stemAndExt(name: string): { stem: string; ext: string | null } {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return { stem: name, ext: null };
+  return { stem: name.slice(0, dot), ext: name.slice(dot + 1) };
+}
+
+/**
+ * Declared inline in `components/search-overlay.tsx` (Rust: `SearchResult` in
+ * `commands/search.rs`, serialised snake_case), so it is restated here.
+ */
+interface SearchResult {
+  file_path: string;
+  line: number;
+  content: string;
+  match_start: number;
+  match_end: number;
+}
+
+/** The extension allowlist `search.rs` walks, and the names it refuses to enter. */
+const SEARCHABLE_EXTS = new Set([
+  "rs",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "py",
+  "go",
+  "rb",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "hpp",
+  "swift",
+  "kt",
+  "css",
+  "scss",
+  "html",
+  "json",
+  "toml",
+  "yaml",
+  "yml",
+  "md",
+  "sh",
+  "bash",
+  "zsh",
+  "sql",
+  "xml",
+  "svg",
+  "txt",
+  "cfg",
+  "ini",
+  "env",
+  "lock",
+]);
+const SEARCH_SKIPPED = new Set(["node_modules", "target", "dist", "build", "__pycache__"]);
 
 /**
  * The "recently opened" queue Rust owns. Seeded, because the `@` picker's
  * first section is Recents and an empty one hides that whole row group.
  */
+/**
+ * What Rust emits after every queue mutation. `recent_files_rename`'s caller
+ * throws the return value away, so this event is the only thing that keeps the
+ * `@` picker from offering a path that was just renamed.
+ */
+function emitRecentFilesChanged(workspaceId: string): void {
+  void emit("atlas:recent-files-changed", { workspaceId, project: ROOT, items: recents }).catch(
+    () => {},
+  );
+}
+
 let recents: RecentFile[] = [
   { absPath: abs("src/lib/api.ts"), rel: "src/lib/api.ts", touchedAt: T0 },
   { absPath: abs("src/styles/tokens.css"), rel: "src/styles/tokens.css", touchedAt: T0 - 600_000 },
@@ -707,6 +921,34 @@ export const fsHandlers: MockHandlers = {
     recents = [];
     return null;
   },
+  // Re-points the queue after a rename so the `@` picker stops offering a path
+  // that no longer exists. The caller discards the return value, so — like Rust
+  // — the updated list only reaches the store through the change event.
+  recent_files_rename: ({ oldPath, newPath, workspaceId }): RecentFile[] => {
+    // Rust takes `workspace_id: String`, so Tauri rejects a call that omits it
+    // before the command body ever runs. `file-tree.tsx`'s drag-move does omit
+    // it; faking a success there would hide that.
+    if (workspaceId === undefined) {
+      throw new Error(
+        "invalid args `workspaceId` for command `recent_files_rename`: command recent_files_rename missing required key workspaceId",
+      );
+    }
+    // An unknown workspace has no queue registered: Rust returns an empty list
+    // and emits nothing.
+    if (String(workspaceId) !== MOCK_WORKSPACE.id) return [];
+
+    const from = String(oldPath);
+    const to = String(newPath);
+    const prefix = `${from}/`;
+    recents = recents.map((entry) => {
+      if (entry.absPath === from) return { ...entry, absPath: to, rel: relOf(to) };
+      if (!entry.absPath.startsWith(prefix)) return entry;
+      const moved = to + entry.absPath.slice(from.length);
+      return { ...entry, absPath: moved, rel: relOf(moved) };
+    });
+    emitRecentFilesChanged(String(workspaceId));
+    return recents;
+  },
 
   read_file_content: ({ path }): string => {
     const file = files.get(String(path));
@@ -745,5 +987,144 @@ export const fsHandlers: MockHandlers = {
       mtimeMs: Date.now(),
     });
     return null;
+  },
+
+  // ── explorer context menu ───────────────────────────────────────────────
+  // Every one of these mutates the same map `read_directory` and the editor
+  // read from, so the tree, Cmd+P and any open tab stay in agreement. The
+  // failure cases matter more than the happy path here: each one is a toast the
+  // explorer renders and nothing else in the app can produce.
+
+  // Rust creates the parent chain (`create_dir_all`) and then an EMPTY file,
+  // which is why the new tab opens on a blank editor rather than failing to
+  // read.
+  fs_create_file: ({ path }): null => {
+    const key = String(path);
+    if (pathExists(key)) throw new Error(`Already exists: ${key}`);
+    files.set(key, { text: "", mtimeMs: Date.now() });
+    return null;
+  },
+  fs_create_dir: ({ path }): null => {
+    const key = String(path);
+    if (pathExists(key)) throw new Error(`Already exists: ${key}`);
+    // `create_dir_all`: record every ancestor that did not exist either, or the
+    // level above would not list the new folder.
+    for (let dir: string | null = key; dir !== null && !isDir(dir); dir = parentOf(dir)) {
+      emptyDirs.add(dir);
+    }
+    return null;
+  },
+  fs_rename: ({ from, to }): null => {
+    const src = String(from);
+    const dst = String(to);
+    // Checked before the move, so renaming onto a sibling that already exists
+    // fails instead of silently clobbering it.
+    if (pathExists(dst)) throw new Error(`Target already exists: ${dst}`);
+    if (!pathExists(src)) {
+      throw new Error("Failed to rename: No such file or directory (os error 2)");
+    }
+    moveTree(src, dst);
+    return null;
+  },
+  // Deleting something already gone is `Ok(())` in Rust, not an error — two
+  // rows of the same multi-selection can name the same subtree.
+  fs_delete: ({ path }): null => {
+    const key = String(path);
+    for (const file of subtree(key)) files.delete(file);
+    for (const dir of emptyDirsUnder(key)) emptyDirs.delete(dir);
+    return null;
+  },
+  fs_copy: ({ from, to }): null => {
+    const src = String(from);
+    const dst = String(to);
+    if (pathExists(dst)) throw new Error(`Target already exists: ${dst}`);
+    // A source outside the fake tree is the Finder drag-and-drop case, which a
+    // browser cannot produce anyway; it reads as the missing-file error Rust
+    // would return.
+    if (!pathExists(src)) {
+      throw new Error("Failed to copy: No such file or directory (os error 2)");
+    }
+    copyTree(src, dst);
+    return null;
+  },
+  // The one fs command that answers with a value rather than `()`: the name it
+  // settled on. `foo.ts` → `foo copy.ts` → `foo copy 2.ts`, first free slot
+  // wins, which is what makes duplicating twice in a row look right.
+  fs_duplicate: ({ path }): string => {
+    const src = String(path);
+    if (!pathExists(src)) throw new Error(`Not found: ${src}`);
+    const parent = parentOf(src);
+    if (parent === null) throw new Error("No parent dir");
+    const { stem, ext } = stemAndExt(src.slice(parent.length + 1));
+    for (let n = 1; n < 1000; n++) {
+      const suffix = n === 1 ? "copy" : `copy ${n}`;
+      const candidate = `${parent}/${stem} ${suffix}${ext === null ? "" : `.${ext}`}`;
+      if (pathExists(candidate)) continue;
+      copyTree(src, candidate);
+      return candidate;
+    }
+    throw new Error("Too many duplicates");
+  },
+  fs_add_to_gitignore: ({ projectPath, pattern }): null => {
+    const trimmed = String(pattern).trim();
+    if (!trimmed) throw new Error("Empty gitignore pattern");
+    const key = `${String(projectPath)}/.gitignore`;
+    const existing = files.get(key);
+    if (!existing || existing.text === null) {
+      files.set(key, { text: `${trimmed}\n`, mtimeMs: Date.now() });
+      return null;
+    }
+    // Idempotent: a pattern already listed uncommented is left alone, and the
+    // explorer still reports success.
+    const listed = existing.text
+      .split("\n")
+      .map((line) => line.trim())
+      .some((line) => line !== "" && !line.startsWith("#") && line === trimmed);
+    if (listed) return null;
+    const prefix =
+      existing.text.endsWith("\n") || existing.text === "" ? existing.text : `${existing.text}\n`;
+    files.set(key, { ...existing, text: `${prefix}${trimmed}\n`, mtimeMs: Date.now() });
+    return null;
+  },
+  // Rust shells out to `open -a Terminal` and reports success; a browser has no
+  // Terminal to hand the folder to, so the honest answer is the same silent
+  // success — the menu item is deliberately the one that shows nothing.
+  fs_open_in_terminal: (): null => null,
+
+  // Cmd+Shift+F. Kept here because it reads the same in-memory files, and
+  // because the overlay renders `results.length` straight from the result.
+  search_in_files: ({ path, query, maxResults }): SearchResult[] => {
+    const root = String(path);
+    if (!isDir(root)) throw new Error("Not a directory");
+    const max = Number(maxResults ?? 100);
+    const needle = String(query).toLowerCase();
+    const results: SearchResult[] = [];
+    for (const rel of mockFilePaths().sort()) {
+      if (results.length >= max) break;
+      const segments = rel.split("/");
+      // Rust refuses to enter (or read) anything hidden or vendored, so
+      // `.env.local` and `.gitignore` never appear in results.
+      if (segments.some((name) => name.startsWith(".") || SEARCH_SKIPPED.has(name))) continue;
+      const { ext } = stemAndExt(segments[segments.length - 1] ?? rel);
+      if (ext === null || !SEARCHABLE_EXTS.has(ext)) continue;
+      const text = files.get(abs(rel))?.text;
+      if (text === undefined || text === null) continue;
+      // `str::lines()`, so a trailing newline does not invent a final line.
+      const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
+      for (const [index, line] of lines.entries()) {
+        if (results.length >= max) break;
+        // Rust reports the FIRST hit on a line, not every one.
+        const at = line.toLowerCase().indexOf(needle);
+        if (at === -1) continue;
+        results.push({
+          file_path: rel,
+          line: index + 1,
+          content: line,
+          match_start: at,
+          match_end: at + needle.length,
+        });
+      }
+    }
+    return results;
   },
 };
