@@ -1,43 +1,66 @@
 import * as React from "react";
-import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
+import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Atlas-themed shadcn-flavored context menu primitive built on
- * `@radix-ui/react-context-menu`. Used by the file-tree row menu and
- * any future surface that needs right-click actions.
+ * Atlas-themed shadcn base-style context menu built on
+ * `@base-ui/react/context-menu`. Used by the file-tree row menu, the
+ * keybindings table and any future surface that needs right-click actions.
  *
- * Styling tokens: `--bg-overlay` for popover bg, `--border-default`
- * for border, `--text-{primary,secondary,tertiary,muted}` for text,
- * `--bg-hover` for focus/hover, `--status-error` for destructive
- * variant. Atlas is dark-only so the shadcn `dark:` variants are
- * dropped.
+ * Anatomy is Base UI's: `Portal > Positioner > Popup`. The positioning props
+ * are declared on `ContextMenuContent` and forwarded to the Positioner — left
+ * in `...props` they would land on the Popup, which is the wrong node, and
+ * nothing would type-error.
+ *
+ * Styling is the house scale: `rounded-lg` (menus), `shadow-md`
+ * (`--elevation-menu`), the `z-popover` layer — which sits *above* `z-modal` on
+ * purpose, so a menu opened inside a dialog escapes it — and `duration-base`
+ * with `ease-out-strong` for the entrance.
  */
 
 const ContextMenu = ContextMenuPrimitive.Root;
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 const ContextMenuGroup = ContextMenuPrimitive.Group;
 const ContextMenuPortal = ContextMenuPrimitive.Portal;
-const ContextMenuSub = ContextMenuPrimitive.Sub;
+const ContextMenuSub = ContextMenuPrimitive.SubmenuRoot;
 const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
+
+/** The shared popup surface, so Content and SubContent cannot drift apart. */
+const POPUP = [
+  "min-w-[11rem] overflow-hidden rounded-lg p-0.5",
+  "bg-bg-overlay border border-border-default text-text-primary shadow-md",
+  "origin-[var(--transform-origin)] animate-scale-in",
+];
+
+type PositionerProps = Pick<
+  ContextMenuPrimitive.Positioner.Props,
+  "align" | "alignOffset" | "side" | "sideOffset"
+>;
 
 function ContextMenuContent({
   className,
+  align,
+  alignOffset,
+  side,
+  sideOffset,
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
+}: ContextMenuPrimitive.Popup.Props & PositionerProps) {
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Content
-        className={cn(
-          "z-[9999] min-w-[11rem] overflow-hidden rounded-md p-0.5",
-          "bg-black border border-[var(--border-default)]",
-          "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
-          "text-[var(--text-primary)]",
-          className,
-        )}
-        {...props}
-      />
+      <ContextMenuPrimitive.Positioner
+        className="isolate z-popover outline-none"
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <ContextMenuPrimitive.Popup
+          data-slot="context-menu-content"
+          className={cn(POPUP, className)}
+          {...props}
+        />
+      </ContextMenuPrimitive.Positioner>
     </ContextMenuPrimitive.Portal>
   );
 }
@@ -47,25 +70,26 @@ function ContextMenuItem({
   inset,
   variant = "default",
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.Item> & {
+}: ContextMenuPrimitive.Item.Props & {
   inset?: boolean;
   variant?: "default" | "destructive";
 }) {
   return (
     <ContextMenuPrimitive.Item
+      data-slot="context-menu-item"
       data-inset={inset ? "" : undefined}
       data-variant={variant}
       className={cn(
         "group/context-menu-item relative flex items-center gap-2 rounded px-2 py-1",
-        "text-[11.5px] cursor-pointer select-none outline-none",
-        "text-[var(--text-secondary)]",
-        "focus:bg-[var(--bg-hover)] focus:text-[var(--text-primary)]",
+        "text-xs cursor-pointer select-none outline-none",
+        "text-text-secondary",
+        "focus:bg-bg-hover focus:text-text-primary",
         "data-[inset]:pl-6",
         // `destructive` variant kept for completeness but rendered the
         // same as default — per UX feedback, file-tree Delete reads as
         // a regular item; the confirm dialog is where the destructive
         // affordance lives.
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        "data-disabled:pointer-events-none data-disabled:opacity-50",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
@@ -79,18 +103,19 @@ function ContextMenuSubTrigger({
   inset,
   children,
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.SubTrigger> & {
+}: ContextMenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean;
 }) {
   return (
-    <ContextMenuPrimitive.SubTrigger
+    <ContextMenuPrimitive.SubmenuTrigger
+      data-slot="context-menu-sub-trigger"
       data-inset={inset ? "" : undefined}
       className={cn(
-        "flex items-center gap-2 rounded px-2 py-1 text-[11.5px]",
+        "flex items-center gap-2 rounded px-2 py-1 text-xs",
         "cursor-pointer select-none outline-none",
-        "text-[var(--text-secondary)]",
-        "focus:bg-[var(--bg-hover)] focus:text-[var(--text-primary)]",
-        "data-[state=open]:bg-[var(--bg-hover)] data-[state=open]:text-[var(--text-primary)]",
+        "text-text-secondary",
+        "focus:bg-bg-hover focus:text-text-primary",
+        "data-popup-open:bg-bg-hover data-popup-open:text-text-primary",
         "data-[inset]:pl-6",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -99,23 +124,32 @@ function ContextMenuSubTrigger({
     >
       {children}
       <ChevronRight className="ml-auto" />
-    </ContextMenuPrimitive.SubTrigger>
+    </ContextMenuPrimitive.SubmenuTrigger>
   );
 }
 
+/**
+ * Composes the public Content wrapper rather than rebuilding from primitives.
+ * The `align`/`alignOffset`/`side`/`sideOffset` quartet is the submenu's
+ * visual alignment with its parent item and is load-bearing — Radix's
+ * SubContent implied them, Base UI's Positioner does not.
+ */
 function ContextMenuSubContent({
   className,
+  align = "start",
+  alignOffset = 4,
+  side = "right",
+  sideOffset = 0,
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
+}: React.ComponentProps<typeof ContextMenuContent>) {
   return (
-    <ContextMenuPrimitive.SubContent
-      className={cn(
-        "z-[9999] min-w-[10rem] overflow-hidden rounded-md p-0.5",
-        "bg-black border border-[var(--border-default)]",
-        "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
-        "text-[var(--text-primary)]",
-        className,
-      )}
+    <ContextMenuContent
+      data-slot="context-menu-sub-content"
+      align={align}
+      alignOffset={alignOffset}
+      side={side}
+      sideOffset={sideOffset}
+      className={cn("min-w-[10rem]", className)}
       {...props}
     />
   );
@@ -127,27 +161,28 @@ function ContextMenuCheckboxItem({
   checked,
   inset,
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.CheckboxItem> & {
+}: ContextMenuPrimitive.CheckboxItem.Props & {
   inset?: boolean;
 }) {
   return (
     <ContextMenuPrimitive.CheckboxItem
+      data-slot="context-menu-checkbox-item"
       data-inset={inset ? "" : undefined}
       className={cn(
-        "relative flex items-center gap-2 rounded-md py-1.5 pr-8 pl-7 text-[12px]",
+        "relative flex items-center gap-2 rounded-md py-1.5 pr-8 pl-7 text-sm",
         "cursor-default select-none outline-none",
-        "text-[var(--text-secondary)]",
-        "focus:bg-[var(--bg-hover)] focus:text-[var(--text-primary)]",
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        "text-text-secondary",
+        "focus:bg-bg-hover focus:text-text-primary",
+        "data-disabled:pointer-events-none data-disabled:opacity-50",
         className,
       )}
       checked={checked}
       {...props}
     >
       <span className="pointer-events-none absolute left-2 inline-flex h-3 w-3 items-center justify-center">
-        <ContextMenuPrimitive.ItemIndicator>
+        <ContextMenuPrimitive.CheckboxItemIndicator>
           <Check size={12} />
-        </ContextMenuPrimitive.ItemIndicator>
+        </ContextMenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
     </ContextMenuPrimitive.CheckboxItem>
@@ -158,17 +193,14 @@ function ContextMenuLabel({
   className,
   inset,
   ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.Label> & {
+}: ContextMenuPrimitive.GroupLabel.Props & {
   inset?: boolean;
 }) {
   return (
-    <ContextMenuPrimitive.Label
+    <ContextMenuPrimitive.GroupLabel
+      data-slot="context-menu-label"
       data-inset={inset ? "" : undefined}
-      className={cn(
-        "px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]",
-        "data-[inset]:pl-7",
-        className,
-      )}
+      className={cn("eyebrow px-2 py-1 text-text-tertiary", "data-[inset]:pl-7", className)}
       {...props}
     />
   );
@@ -180,7 +212,8 @@ function ContextMenuSeparator({
 }: React.ComponentProps<typeof ContextMenuPrimitive.Separator>) {
   return (
     <ContextMenuPrimitive.Separator
-      className={cn("-mx-1 my-1 h-px bg-[var(--border-default)]", className)}
+      data-slot="context-menu-separator"
+      className={cn("-mx-1 my-1 h-px bg-border-default", className)}
       {...props}
     />
   );
@@ -189,9 +222,10 @@ function ContextMenuSeparator({
 function ContextMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
+      data-slot="context-menu-shortcut"
       className={cn(
-        "ml-auto pl-3 text-[9.5px] text-[var(--text-muted)]",
-        "group-focus/context-menu-item:text-[var(--text-secondary)]",
+        "ml-auto pl-3 text-3xs text-text-ghost",
+        "group-focus/context-menu-item:text-text-secondary",
         className,
       )}
       {...props}

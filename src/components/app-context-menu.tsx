@@ -1,4 +1,4 @@
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { ContextMenu } from "@base-ui/react/context-menu";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import type { ActionId } from "@/features/keybindings/lib/actions";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -6,88 +6,92 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { MessageSquare, Terminal, Globe, Settings, Copy, RefreshCw } from "lucide-react";
 
-export function AppContextMenu({ children }: { children: React.ReactNode }) {
+/** `children` is the single element the menu is attached to — Base UI's
+ * `render` clones it, the way Radix's `asChild` merged onto it. */
+export function AppContextMenu({ children }: { children: React.ReactElement }) {
   const { addTab } = useLayoutStore.use.actions();
   const currentProject = useAppStore.use.currentProject();
 
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Trigger render={children} />
       <ContextMenu.Portal>
-        <ContextMenu.Content
-          className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1"
-          style={{ zIndex: 99999 }}
-        >
-          {currentProject && (
-            <>
-              <MenuItem
-                icon={<MessageSquare size={12} />}
-                label="New Chat"
-                actionId="tabs.newChat"
-                onClick={() => openNewAgentChat()}
-              />
-              <MenuItem
-                icon={<Terminal size={12} />}
-                label="New Terminal"
-                actionId="tabs.newTerminal"
-                onClick={() =>
-                  addTab({
-                    id: `terminal-${Date.now()}`,
-                    type: "terminal",
-                    title: "Terminal",
-                    closable: true,
-                    dirty: false,
-                    data: {},
-                  })
-                }
-              />
-              <MenuItem
-                icon={<Globe size={12} />}
-                label="New Browser"
-                onClick={() =>
-                  addTab({
-                    id: `browser-${Date.now()}`,
-                    type: "browser",
-                    title: "Browser",
-                    closable: true,
-                    dirty: false,
-                    data: {},
-                  })
-                }
-              />
-              <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
-            </>
-          )}
-          <MenuItem
-            icon={<Copy size={12} />}
-            label="Copy"
-            shortcut="⌘C"
-            onClick={() => document.execCommand("copy")}
-          />
-          <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
-          <MenuItem
-            icon={<RefreshCw size={12} />}
-            label="Reload Window"
-            onClick={() => window.location.reload()}
-          />
-          {currentProject && (
+        {/* Base UI positions the Popup through a Positioner, and the Popup is
+            static inside it — the z-index has to sit on the Positioner or it
+            does nothing. */}
+        <ContextMenu.Positioner style={{ zIndex: 99999 }}>
+          <ContextMenu.Popup className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1">
+            {currentProject && (
+              <>
+                <MenuItem
+                  icon={<MessageSquare size={12} />}
+                  label="New Chat"
+                  actionId="tabs.newChat"
+                  onClick={() => openNewAgentChat()}
+                />
+                <MenuItem
+                  icon={<Terminal size={12} />}
+                  label="New Terminal"
+                  actionId="tabs.newTerminal"
+                  onClick={() =>
+                    addTab({
+                      id: `terminal-${Date.now()}`,
+                      type: "terminal",
+                      title: "Terminal",
+                      closable: true,
+                      dirty: false,
+                      data: {},
+                    })
+                  }
+                />
+                <MenuItem
+                  icon={<Globe size={12} />}
+                  label="New Browser"
+                  onClick={() =>
+                    addTab({
+                      id: `browser-${Date.now()}`,
+                      type: "browser",
+                      title: "Browser",
+                      closable: true,
+                      dirty: false,
+                      data: {},
+                    })
+                  }
+                />
+                <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+              </>
+            )}
             <MenuItem
-              icon={<Settings size={12} />}
-              label="Settings"
-              actionId="app.settings"
-              onClick={() =>
-                addTab({
-                  id: "settings",
-                  type: "settings",
-                  title: "Settings",
-                  closable: true,
-                  dirty: false,
-                  data: {},
-                })
-              }
+              icon={<Copy size={12} />}
+              label="Copy"
+              shortcut="⌘C"
+              onClick={() => document.execCommand("copy")}
             />
-          )}
-        </ContextMenu.Content>
+            <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+            <MenuItem
+              icon={<RefreshCw size={12} />}
+              label="Reload Window"
+              onClick={() => window.location.reload()}
+            />
+            {currentProject && (
+              <MenuItem
+                icon={<Settings size={12} />}
+                label="Settings"
+                actionId="app.settings"
+                onClick={() =>
+                  addTab({
+                    id: "settings",
+                    type: "settings",
+                    title: "Settings",
+                    closable: true,
+                    dirty: false,
+                    data: {},
+                  })
+                }
+              />
+            )}
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
       </ContextMenu.Portal>
     </ContextMenu.Root>
   );

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { ContextMenu } from "@base-ui/react/context-menu";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { logEvent } from "@/features/log/lib/log";
@@ -819,122 +819,123 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
       {/* ── Reader mode: sanitized content ── */}
       {!isLive && (
         <ContextMenu.Root>
-          <ContextMenu.Trigger asChild>
-            <div
-              className="flex-1 overflow-auto hide-scrollbar"
-              onContextMenu={(e) => e.stopPropagation()}
-            >
-              {loading && (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 size={20} className="animate-spin text-primary" />
-                </div>
-              )}
-
-              {error && (
-                <div className="px-6 py-8 text-center">
-                  <p className="text-[12px] text-error">{error}</p>
-                  <button
-                    onClick={() => fetchPage(inputUrl)}
-                    className="mt-2 text-[11px] text-primary underline cursor-pointer"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {!loading && !error && page && (
-                <div className="select-text">
-                  <div className="px-4 py-3 border-b border-border-default">
-                    <h1 className="text-[15px] font-semibold text-text-primary leading-snug">
-                      {page.title}
-                    </h1>
-                    <span className="text-[10px] text-text-tertiary font-mono">{page.url}</span>
+          <ContextMenu.Trigger
+            render={
+              <div
+                className="flex-1 overflow-auto hide-scrollbar"
+                onContextMenu={(e) => e.stopPropagation()}
+              >
+                {loading && (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 size={20} className="animate-spin text-primary" />
                   </div>
-                  <div
-                    ref={contentRef}
-                    className="reader-content px-4 py-4"
-                    onClick={handleContentClick}
-                    dangerouslySetInnerHTML={{ __html: page.html }}
-                  />
-                </div>
-              )}
-
-              {!loading && !error && !page && (
-                <div className="h-full flex items-center justify-center py-16">
-                  <div className="text-center space-y-3">
-                    <BookText size={32} className="text-text-tertiary mx-auto" />
-                    <p className="text-sm text-text-secondary">
-                      Reader mode — enter a URL for a clean, JS-free view
-                    </p>
-                    <div className="flex flex-wrap gap-2 justify-center max-w-[300px] pt-2">
-                      {[
-                        "arxiv.org",
-                        "github.com",
-                        "news.ycombinator.com",
-                        "developer.mozilla.org",
-                      ].map((site) => (
-                        <button
-                          key={site}
-                          onClick={() => fetchPage(`https://${site}`)}
-                          className="px-2.5 py-1 rounded border border-border-default bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
-                        >
-                          {site}
-                        </button>
-                      ))}
+                )}
+                {error && (
+                  <div className="px-6 py-8 text-center">
+                    <p className="text-[12px] text-error">{error}</p>
+                    <button
+                      onClick={() => fetchPage(inputUrl)}
+                      className="mt-2 text-[11px] text-primary underline cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {!loading && !error && page && (
+                  <div className="select-text">
+                    <div className="px-4 py-3 border-b border-border-default">
+                      <h1 className="text-[15px] font-semibold text-text-primary leading-snug">
+                        {page.title}
+                      </h1>
+                      <span className="text-[10px] text-text-tertiary font-mono">{page.url}</span>
+                    </div>
+                    <div
+                      ref={contentRef}
+                      className="reader-content px-4 py-4"
+                      onClick={handleContentClick}
+                      dangerouslySetInnerHTML={{ __html: page.html }}
+                    />
+                  </div>
+                )}
+                {!loading && !error && !page && (
+                  <div className="h-full flex items-center justify-center py-16">
+                    <div className="text-center space-y-3">
+                      <BookText size={32} className="text-text-tertiary mx-auto" />
+                      <p className="text-sm text-text-secondary">
+                        Reader mode — enter a URL for a clean, JS-free view
+                      </p>
+                      <div className="flex flex-wrap gap-2 justify-center max-w-[300px] pt-2">
+                        {[
+                          "arxiv.org",
+                          "github.com",
+                          "news.ycombinator.com",
+                          "developer.mozilla.org",
+                        ].map((site) => (
+                          <button
+                            key={site}
+                            onClick={() => fetchPage(`https://${site}`)}
+                            className="px-2.5 py-1 rounded border border-border-default bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
+                          >
+                            {site}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </ContextMenu.Trigger>
+                )}
+              </div>
+            }
+          />
           <ContextMenu.Portal>
-            <ContextMenu.Content
-              className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1"
-              style={{ zIndex: 99999 }}
-            >
-              <ContextMenu.Item
-                onClick={copySelection}
-                className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-              >
-                <Copy size={11} className="text-[#555]" /> Copy Selection
-              </ContextMenu.Item>
-              <ContextMenu.Item
-                onClick={copyLink}
-                className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-              >
-                <Globe size={11} className="text-[#555]" /> Copy Link
-              </ContextMenu.Item>
-              <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
-              <ContextMenu.Item
-                onClick={() => setSearchOpen(true)}
-                className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-              >
-                <Search size={11} className="text-[#555]" /> Find in Page
-              </ContextMenu.Item>
-              <ContextMenu.Item
-                onClick={openBrowserWindow}
-                className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-              >
-                <AppWindow size={11} className="text-[#555]" /> Open in Browser Window
-              </ContextMenu.Item>
-              <ContextMenu.Item
-                onClick={openExternal}
-                className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-              >
-                <ExternalLink size={11} className="text-[#555]" /> Open in System Browser
-              </ContextMenu.Item>
-              {page && currentProject && (
-                <>
-                  <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
-                  <ContextMenu.Item
-                    onClick={saveToKnowledge}
-                    className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
-                  >
-                    <BookOpen size={11} className="text-[#555]" /> Save to Knowledge
-                  </ContextMenu.Item>
-                </>
-              )}
-            </ContextMenu.Content>
+            {/* Base UI positions the Popup through a Positioner, and the Popup
+                is static inside it — the z-index has to sit on the Positioner
+                or it does nothing. */}
+            <ContextMenu.Positioner style={{ zIndex: 99999 }}>
+              <ContextMenu.Popup className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1">
+                <ContextMenu.Item
+                  onClick={copySelection}
+                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                >
+                  <Copy size={11} className="text-[#555]" /> Copy Selection
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  onClick={copyLink}
+                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                >
+                  <Globe size={11} className="text-[#555]" /> Copy Link
+                </ContextMenu.Item>
+                <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+                <ContextMenu.Item
+                  onClick={() => setSearchOpen(true)}
+                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                >
+                  <Search size={11} className="text-[#555]" /> Find in Page
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  onClick={openBrowserWindow}
+                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                >
+                  <AppWindow size={11} className="text-[#555]" /> Open in Browser Window
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  onClick={openExternal}
+                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                >
+                  <ExternalLink size={11} className="text-[#555]" /> Open in System Browser
+                </ContextMenu.Item>
+                {page && currentProject && (
+                  <>
+                    <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+                    <ContextMenu.Item
+                      onClick={saveToKnowledge}
+                      className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                    >
+                      <BookOpen size={11} className="text-[#555]" /> Save to Knowledge
+                    </ContextMenu.Item>
+                  </>
+                )}
+              </ContextMenu.Popup>
+            </ContextMenu.Positioner>
           </ContextMenu.Portal>
         </ContextMenu.Root>
       )}
