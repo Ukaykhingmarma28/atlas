@@ -12,8 +12,12 @@ afterEach(() => {
 });
 
 const content = () => document.querySelector("[data-slot='tooltip-content']");
+// Base UI opens on a native `mouseenter` listener (Radix watched `pointermove`),
+// so the synthetic event the test fires changed with the library. What is being
+// asserted — the shared delay, the warm window, the entrance — did not.
 const point = (el: Element) => {
-  fireEvent.pointerMove(el, { pointerType: "mouse" });
+  fireEvent.pointerEnter(el, { pointerType: "mouse" });
+  fireEvent.mouseEnter(el);
   act(() => vi.advanceTimersByTime(0));
 };
 

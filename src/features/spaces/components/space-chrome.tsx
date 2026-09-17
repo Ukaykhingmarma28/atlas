@@ -46,20 +46,22 @@ export type SyncState = "synced" | "syncing" | "offline";
 function SyncDot({ sync }: { sync: SyncState }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-          {sync === "syncing" ? (
-            <Loader2 size={11} className="animate-spin text-text-tertiary" />
-          ) : (
-            <span
-              className={cn(
-                "h-[7px] w-[7px] rounded-full",
-                sync === "synced" ? "bg-[#22c55e]" : "bg-[var(--status-error,#f66)]",
-              )}
-            />
-          )}
-        </span>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+            {sync === "syncing" ? (
+              <Loader2 size={11} className="animate-spin text-text-tertiary" />
+            ) : (
+              <span
+                className={cn(
+                  "h-[7px] w-[7px] rounded-full",
+                  sync === "synced" ? "bg-[#22c55e]" : "bg-[var(--status-error,#f66)]",
+                )}
+              />
+            )}
+          </span>
+        }
+      />
       <TooltipContent side="bottom" sideOffset={4}>
         {sync === "synced"
           ? "Live — every change is shared as you make it"
@@ -202,15 +204,17 @@ function ZoomReadout() {
         </button>
       </Hint>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => void rf.zoomTo(1, { duration: 200 })}
-            className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-[10.5px] tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            {pct}%
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => void rf.zoomTo(1, { duration: 200 })}
+              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-[10.5px] tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+            >
+              {pct}%
+            </button>
+          }
+        />
         <TooltipContent side="bottom" sideOffset={4}>
           Reset zoom to 100%
         </TooltipContent>
@@ -320,24 +324,26 @@ export function SpaceActionPill({
             const riding = following === a.id;
             return (
               <Tooltip key={a.id}>
-                <TooltipTrigger asChild>
-                  {/* The avatar IS the follow toggle (the web's roster): one
-                      press rides their camera, another hands it back. */}
-                  <button
-                    type="button"
-                    aria-pressed={riding}
-                    aria-label={`Follow ${nameOf(a)}`}
-                    onClick={() => onFollow(riding ? null : a.id)}
-                    className={cn(
-                      "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
-                      riding &&
-                        "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--primary)]",
-                    )}
-                    style={{ ["--tw-ring-color" as string]: a.colour }}
-                  >
-                    <CommsAvatar member={memberOf(a.id)} size={18} className="rounded-full" />
-                  </button>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    /* The avatar IS the follow toggle (the web's roster): one
+                      press rides their camera, another hands it back. */
+                    <button
+                      type="button"
+                      aria-pressed={riding}
+                      aria-label={`Follow ${nameOf(a)}`}
+                      onClick={() => onFollow(riding ? null : a.id)}
+                      className={cn(
+                        "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
+                        riding &&
+                          "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--primary)]",
+                      )}
+                      style={{ ["--tw-ring-color" as string]: a.colour }}
+                    >
+                      <CommsAvatar member={memberOf(a.id)} size={18} className="rounded-full" />
+                    </button>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {riding ? `Stop following ${nameOf(a)}` : `Follow ${nameOf(a)}`}
                 </TooltipContent>
@@ -345,15 +351,17 @@ export function SpaceActionPill({
             );
           })}
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <CommsAvatar
-                  member={me ? memberOf(me) : null}
-                  size={18}
-                  className="rounded-full ring-2 ring-[var(--bg-secondary)]"
-                />
-              </span>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <span className="inline-flex">
+                  <CommsAvatar
+                    member={me ? memberOf(me) : null}
+                    size={18}
+                    className="rounded-full ring-2 ring-[var(--bg-secondary)]"
+                  />
+                </span>
+              }
+            />
             <TooltipContent side="bottom" sideOffset={4}>
               You
             </TooltipContent>
@@ -364,12 +372,14 @@ export function SpaceActionPill({
         )}
         {followers.length > 0 && (
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--primary)]">
-                <Eye size={10} />
-                {followers.length}
-              </span>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--primary)]">
+                  <Eye size={10} />
+                  {followers.length}
+                </span>
+              }
+            />
             <TooltipContent side="bottom" sideOffset={4}>
               {followers.length === 1
                 ? `${nameOf(followers[0])} is following you`

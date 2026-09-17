@@ -281,9 +281,11 @@ function Row({
             )}
             {row.invalid.length > 0 && (
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <AlertTriangle size={11} className="shrink-0 text-[var(--status-error)]" />
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <AlertTriangle size={11} className="shrink-0 text-[var(--status-error)]" />
+                  }
+                />
                 <TooltipContent>
                   Invalid in keybindings.json: {row.invalid.join(", ")}
                 </TooltipContent>
@@ -291,26 +293,28 @@ function Row({
             )}
             {worst && (
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Show conflicting bindings"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (firstCombo) onShowSame(firstCombo);
-                    }}
-                    className="flex shrink-0 cursor-pointer"
-                  >
-                    <AlertTriangle
-                      size={11}
-                      className={
-                        worst === "hard"
-                          ? "text-[var(--status-error)]"
-                          : "text-[var(--status-warning)]"
-                      }
-                    />
-                  </button>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Show conflicting bindings"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (firstCombo) onShowSame(firstCombo);
+                      }}
+                      className="flex shrink-0 cursor-pointer"
+                    >
+                      <AlertTriangle
+                        size={11}
+                        className={
+                          worst === "hard"
+                            ? "text-[var(--status-error)]"
+                            : "text-[var(--status-warning)]"
+                        }
+                      />
+                    </button>
+                  }
+                />
                 <TooltipContent>
                   {worst === "hard" ? "Also bound in the same context: " : "Also bound elsewhere: "}
                   {[...new Set(shown.map((b) => ACTION_BY_ID[b.actionId].title))].join(", ")}

@@ -86,23 +86,25 @@ export const CallActivity = memo(function CallActivity({
               affordance now lives on text that is always there, so nothing
               moves — the tooltip is what says it is clickable. */}
           <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => void copyShareLink(orgId, call)}
-                className="group/link cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-              >
-                {/* Both halves brighten together: the name carries its own
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => void copyShareLink(orgId, call)}
+                  className="group/link cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {/* Both halves brighten together: the name carries its own
                     colour, so a hover rule on the button alone would lift the
                     verb and leave the name behind. */}
-                <span className="text-text-secondary transition-colors group-hover/link:text-text-primary">
-                  {who}
-                </span>{" "}
-                <span className="transition-colors group-hover/link:text-text-primary">
-                  {verb} a {kind}
-                </span>
-              </button>
-            </TooltipTrigger>
+                  <span className="text-text-secondary transition-colors group-hover/link:text-text-primary">
+                    {who}
+                  </span>{" "}
+                  <span className="transition-colors group-hover/link:text-text-primary">
+                    {verb} a {kind}
+                  </span>
+                </button>
+              }
+            />
             <TooltipContent side="top">
               {call.join_slug !== null
                 ? "Click to copy the guest link"

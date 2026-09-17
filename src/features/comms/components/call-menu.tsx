@@ -68,22 +68,24 @@ export function CallMenu({ convId, mode }: { convId: string; mode: CallMode }) {
       {/* Tooltip OUTSIDE the popover trigger: both want `asChild`, and this
           nesting order is the one that keeps a single button element. */}
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Popover.Trigger asChild>
-            <button
-              type="button"
-              aria-label={mode === "video" ? "Start video call" : "Start voice call"}
-              className={cn(
-                "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors",
-                open
-                  ? "bg-bg-selected text-text-primary"
-                  : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
-              )}
-            >
-              <Icon size={13} />
-            </button>
-          </Popover.Trigger>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                aria-label={mode === "video" ? "Start video call" : "Start voice call"}
+                className={cn(
+                  "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors",
+                  open
+                    ? "bg-bg-selected text-text-primary"
+                    : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+                )}
+              >
+                <Icon size={13} />
+              </button>
+            </Popover.Trigger>
+          }
+        />
         <TooltipContent side="bottom" sideOffset={4}>
           {mode === "video" ? "Start video call" : "Start voice call"}
         </TooltipContent>

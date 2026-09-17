@@ -19,8 +19,12 @@ function walk(directory: string): string[] {
   });
 }
 
-/** CSS engine variables are supplied by Radix at runtime, not Atlas. */
+/** CSS engine variables are supplied by the popup engine at runtime, not Atlas. */
 const CSS_VAR_ALLOWLIST: Record<string, string> = {
+  "--transform-origin": "Base UI runtime positioning",
+  "--anchor-width": "Base UI runtime positioning",
+  "--available-height": "Base UI runtime positioning",
+  "--available-width": "Base UI runtime positioning",
   "--fg": "component-local gradient foreground",
   "--diff-sx": "component-local diff transform",
   "--i": "component-local animation index",

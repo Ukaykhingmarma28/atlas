@@ -31,6 +31,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",

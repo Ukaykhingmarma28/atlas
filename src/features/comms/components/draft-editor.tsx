@@ -150,30 +150,34 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
           <div className="flex items-center -space-x-1.5">
             {peerList.slice(0, 3).map((p) => (
               <Tooltip key={p.userId}>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <CommsAvatar
-                      member={members.get(p.userId) ?? null}
-                      size={16}
-                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                    />
-                  </span>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <span className="inline-flex">
+                      <CommsAvatar
+                        member={members.get(p.userId) ?? null}
+                        size={16}
+                        className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                      />
+                    </span>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {members.get(p.userId)?.name ?? "Unknown"} · editing
                 </TooltipContent>
               </Tooltip>
             ))}
             <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <CommsAvatar
-                    member={members.get(me) ?? null}
-                    size={16}
-                    className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                  />
-                </span>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <span className="inline-flex">
+                    <CommsAvatar
+                      member={members.get(me) ?? null}
+                      size={16}
+                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                    />
+                  </span>
+                }
+              />
               <TooltipContent side="bottom" sideOffset={4}>
                 You
               </TooltipContent>

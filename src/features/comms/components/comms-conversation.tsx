@@ -645,17 +645,19 @@ function ConversationHeader({
           <div className="flex items-center -space-x-1.5 pl-1">
             {others.slice(0, 3).map((id) => (
               <Tooltip key={id}>
-                <TooltipTrigger asChild>
-                  {/* Wrapped: the trigger needs an element that takes a ref
-                      and the ring must stay on the avatar itself. */}
-                  <span className="inline-flex">
-                    <CommsAvatar
-                      member={members.get(id) ?? null}
-                      size={18}
-                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                    />
-                  </span>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    /* Wrapped: the trigger needs an element that takes a ref
+                      and the ring must stay on the avatar itself. */
+                    <span className="inline-flex">
+                      <CommsAvatar
+                        member={members.get(id) ?? null}
+                        size={18}
+                        className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                      />
+                    </span>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {members.get(id)?.name ?? "Unknown"}
                 </TooltipContent>

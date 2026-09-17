@@ -295,14 +295,16 @@ export function SpacePages({
                 {/* The author, where this client can actually know it. */}
                 {author && renamingId !== page.id && (
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="flex min-w-0 shrink-0 items-center gap-1">
-                        <CommsAvatar member={author} size={16} />
-                        <span className="max-w-[64px] truncate text-[9.5px] text-text-tertiary">
-                          {firstName(author.name)}
+                    <TooltipTrigger
+                      render={
+                        <span className="flex min-w-0 shrink-0 items-center gap-1">
+                          <CommsAvatar member={author} size={16} />
+                          <span className="max-w-[64px] truncate text-[9.5px] text-text-tertiary">
+                            {firstName(author.name)}
+                          </span>
                         </span>
-                      </span>
-                    </TooltipTrigger>
+                      }
+                    />
                     <TooltipContent side="top" sideOffset={4}>
                       Created by {author.name}
                     </TooltipContent>
