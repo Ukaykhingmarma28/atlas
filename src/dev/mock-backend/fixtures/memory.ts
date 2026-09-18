@@ -527,19 +527,35 @@ interface GraphLayout {
  * the canvas opens on something arranged rather than on a force simulation
  * settling. The last three nodes are deliberately absent — an unsaved node has
  * no stored position and has to fall back to the force layout.
+ *
+ * Rust's `memory_graph_layout_save` is a pure passthrough (`commands/memory_graph.rs`)
+ * — it persists whatever px positions the frontend's Matter world already had,
+ * which are always canvas-relative (0,0 at the canvas's top-left corner, per
+ * `memory-graph-canvas.tsx`'s wall bodies) and therefore always on-screen. A
+ * real saved layout can never be centred on (0,0) the way an origin-centred
+ * scheme would produce, because nothing in the live simulation would ever push
+ * a node to a negative coordinate and leave it there. Band/row offsets here
+ * are centred on a nominal on-canvas point instead, so this fake stays a
+ * layout the real backend could actually have saved.
  */
 function seedLayout(): GraphLayout {
   const bands = ["index", "instruction", "project", "reference", "feedback", "user", "thread"];
+  const columns = bands.length + 1; // +1 for the "kind not in `bands`" overflow column
+  const CENTER_X = 460;
+  const CENTER_Y = 300;
+  const COLUMN_W = 100;
+  const ROW_H = 65;
   const positions: Record<string, { x: number; y: number }> = {};
   const placed = GRAPH.nodes.slice(0, GRAPH.nodes.length - 3);
   const perBand = new Map<string, number>();
   for (const node of placed) {
     const band = bands.indexOf(node.kind);
+    const column = band === -1 ? bands.length : band;
     const row = perBand.get(node.kind) ?? 0;
     perBand.set(node.kind, row + 1);
     positions[node.id] = {
-      x: (band === -1 ? bands.length : band) * 190 - 640,
-      y: row * 120 - 300 + (band % 2) * 40,
+      x: CENTER_X + (column - (columns - 1) / 2) * COLUMN_W,
+      y: CENTER_Y + row * ROW_H - 100 + (band % 2) * 25,
     };
   }
   return { positions };
