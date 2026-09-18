@@ -11,6 +11,7 @@ import {
 import Matter from "matter-js";
 import { invoke } from "@tauri-apps/api/core";
 import { forceLayout } from "@/lib/graph-layout";
+import { destroyPixiApp, registerPixiApp } from "@/lib/pixi-app";
 import { GraphRuler, type Viewport } from "@/components/graph-ruler";
 import { graphPalette, type GraphPalette } from "@/components/graph-palette";
 import { onThemeApplied } from "@/features/theme/theme-values";
@@ -282,6 +283,7 @@ function Scene({
     host.appendChild(canvas);
 
     const app = new Application();
+    registerPixiApp(app);
     createdApp = app;
     void app
       .init({
@@ -297,7 +299,7 @@ function Scene({
       .then(() => {
         if (disposed) {
           try {
-            app.destroy(true, { children: true });
+            destroyPixiApp(app);
           } catch {
             /* ignore */
           }
@@ -341,7 +343,7 @@ function Scene({
       }
       if (createdApp) {
         try {
-          createdApp.destroy(true, { children: true });
+          destroyPixiApp(createdApp);
         } catch {
           /* ignore */
         }
