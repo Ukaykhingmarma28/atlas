@@ -202,23 +202,23 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
 
   if (failed) {
     return (
-      <details className="rounded-md border border-border-subtle bg-[var(--bg-elevated)]/30 p-2 text-text-tertiary">
+      <details className="rounded-md border border-border-subtle bg-[var(--card)]/30 p-2 text-muted-foreground">
         <summary className="cursor-pointer text-xs">
           Diagram couldn't be rendered — show source
         </summary>
-        <pre className="mt-1.5 text-2xs font-mono text-text-secondary overflow-auto whitespace-pre-wrap">
+        <pre className="mt-1.5 text-2xs font-mono text-secondary-foreground overflow-auto whitespace-pre-wrap">
           {code}
         </pre>
       </details>
     );
   }
   if (!svg) {
-    return <div className="p-3 text-xs text-text-tertiary">Rendering diagram…</div>;
+    return <div className="p-3 text-xs text-muted-foreground">Rendering diagram…</div>;
   }
   if (!controls) {
     return (
       <div
-        className="overflow-auto rounded-md border border-border bg-[var(--bg-base)] p-2 [&_svg]:h-auto [&_svg]:max-w-full"
+        className="overflow-auto rounded-md border border-border bg-[var(--background)] p-2 [&_svg]:h-auto [&_svg]:max-w-full"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
@@ -281,7 +281,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
 
   return (
-    <div className="group/diagram relative overflow-hidden rounded-md border border-border bg-[var(--bg-base)]">
+    <div className="group/diagram relative overflow-hidden rounded-md border border-border bg-[var(--background)]">
       <div className="hide-scrollbar max-h-[420px] overflow-auto p-2">
         <div
           // `top left` so zooming grows into the scrollable area rather than
@@ -294,7 +294,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
 
       {/* Revealed on hover: at rest the diagram is the content, not a widget. */}
       <HintGroup>
-        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--card)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
           <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
             <Minus size={12} />
           </IconButton>
@@ -302,7 +302,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
             <button
               type="button"
               onClick={() => setZoom(1)}
-              className="cursor-pointer px-1 font-mono text-2xs tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+              className="cursor-pointer px-1 font-mono text-2xs tabular-nums text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -316,7 +316,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
           </IconButton>
           <IconButton label="Copy diagram source" onClick={copy}>
             {copied ? (
-              <Check size={11} className="text-[var(--capture-live)]" />
+              <Check size={11} className="text-[var(--atlas-status-success-foreground)]" />
             ) : (
               <Copy size={11} />
             )}
@@ -377,10 +377,10 @@ function Fullscreen({
     <div
       role="dialog"
       aria-label="Diagram"
-      className="animate-fade-in fixed inset-0 z-modal flex flex-col bg-[var(--bg-base)]/95 backdrop-blur-2xl"
+      className="animate-fade-in fixed inset-0 z-modal flex flex-col bg-[var(--background)]/95 backdrop-blur-2xl"
     >
       <header className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--border)] px-3">
-        <span className="text-sm text-[var(--text-secondary)]">Diagram</span>
+        <span className="text-sm text-[var(--secondary-foreground)]">Diagram</span>
         <div className="flex-1" />
         <HintGroup>
           <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
@@ -390,7 +390,7 @@ function Fullscreen({
             <button
               type="button"
               onClick={() => setZoom(1)}
-              className="cursor-pointer px-1.5 font-mono text-xs tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+              className="cursor-pointer px-1.5 font-mono text-xs tabular-nums text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -401,7 +401,7 @@ function Fullscreen({
           <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border)]" />
           <IconButton label="Copy diagram source" onClick={onCopy}>
             {copied ? (
-              <Check size={12} className="text-[var(--capture-live)]" />
+              <Check size={12} className="text-[var(--atlas-status-success-foreground)]" />
             ) : (
               <Copy size={12} />
             )}
@@ -447,8 +447,8 @@ function IconButton({
         className={cn(
           "flex size-5 items-center justify-center rounded-full transition-colors",
           disabled
-            ? "cursor-default text-[var(--text-ghost)]"
-            : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+            ? "cursor-default text-[var(--atlas-text-disabled)]"
+            : "cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
         )}
       >
         {children}

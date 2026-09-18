@@ -52,7 +52,7 @@ function DropdownMenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
 const POPUP = [
   "max-h-(--available-height) min-w-[11rem] overflow-y-auto overflow-x-hidden",
   "rounded-lg p-0.5",
-  "bg-bg-overlay border border-border text-text-primary shadow-md",
+  "bg-popover border border-border text-foreground shadow-md",
   "origin-[var(--transform-origin)] animate-scale-in outline-none",
 ];
 
@@ -97,7 +97,7 @@ function DropdownMenuLabel({
     <MenuPrimitive.GroupLabel
       data-slot="dropdown-menu-label"
       data-inset={inset ? "" : undefined}
-      className={cn("eyebrow px-2 py-1 text-text-tertiary", "data-[inset]:pl-7", className)}
+      className={cn("eyebrow px-2 py-1 text-muted-foreground", "data-[inset]:pl-7", className)}
       {...props}
     />
   );
@@ -106,8 +106,8 @@ function DropdownMenuLabel({
 const ITEM = [
   "group/dropdown-menu-item relative flex items-center gap-2 rounded px-2 py-1",
   "text-xs cursor-pointer select-none outline-none",
-  "text-text-secondary",
-  "focus:bg-bg-hover focus:text-text-primary",
+  "text-secondary-foreground",
+  "focus:bg-element-hover focus:text-foreground",
   "data-[inset]:pl-6",
   "data-[variant=destructive]:text-error data-[variant=destructive]:focus:text-error",
   "data-disabled:pointer-events-none data-disabled:opacity-50",
@@ -146,7 +146,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset ? "" : undefined}
       className={cn(
         ITEM,
-        "data-popup-open:bg-bg-hover data-popup-open:text-text-primary",
+        "data-popup-open:bg-element-hover data-popup-open:text-foreground",
         className,
       )}
       {...props}
@@ -186,8 +186,8 @@ function DropdownMenuSubContent({
 const MARKED_ITEM = [
   "relative flex items-center gap-2 rounded py-1 pr-2 pl-7",
   "text-xs cursor-pointer select-none outline-none",
-  "text-text-secondary",
-  "focus:bg-bg-hover focus:text-text-primary",
+  "text-secondary-foreground",
+  "focus:bg-element-hover focus:text-foreground",
   "data-disabled:pointer-events-none data-disabled:opacity-50",
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
 ];
@@ -250,8 +250,8 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"spa
     <span
       data-slot="dropdown-menu-shortcut"
       className={cn(
-        "ml-auto pl-3 text-3xs text-text-ghost",
-        "group-focus/dropdown-menu-item:text-text-secondary",
+        "ml-auto pl-3 text-3xs text-disabled",
+        "group-focus/dropdown-menu-item:text-secondary-foreground",
         className,
       )}
       {...props}

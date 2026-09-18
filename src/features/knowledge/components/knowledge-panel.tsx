@@ -465,7 +465,7 @@ export function KnowledgePanel() {
 
   if (!currentProject) {
     return (
-      <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         Open a project first
       </div>
     );
@@ -489,7 +489,11 @@ export function KnowledgePanel() {
   );
 
   return (
-    <div ref={rootRef} className="relative h-full flex" style={{ background: "var(--bg-canvas)" }}>
+    <div
+      ref={rootRef}
+      className="relative h-full flex"
+      style={{ background: "var(--atlas-panel-background)" }}
+    >
       {finderOpen && (
         <KnowledgeFinder
           entries={sidebarEntries}
@@ -543,7 +547,7 @@ export function KnowledgePanel() {
       )}
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0" style={{ background: "var(--bg-base)" }}>
+      <main className="flex-1 flex flex-col min-w-0" style={{ background: "var(--background)" }}>
         {activeRepoName ? (
           <>
             <RepoTopbar
@@ -590,7 +594,7 @@ export function KnowledgePanel() {
                 this parent. */}
             <div
               className="flex-1 min-h-0 overflow-y-auto"
-              style={{ background: "var(--bg-base)" }}
+              style={{ background: "var(--background)" }}
             >
               <div
                 style={{
@@ -628,8 +632,8 @@ export function KnowledgePanel() {
                     style={{
                       marginTop: 32,
                       padding: "14px 16px",
-                      background: "var(--bg-elevated-2)",
-                      border: "1px solid var(--border-subtle)",
+                      background: "var(--card)",
+                      border: "1px solid var(--atlas-border-subtle)",
                       borderRadius: 10,
                     }}
                   >
@@ -660,22 +664,22 @@ export function KnowledgePanel() {
                           style={{
                             padding: "8px 10px",
                             borderRadius: 7,
-                            background: "var(--bg-base)",
-                            border: "1px solid var(--border-subtle)",
+                            background: "var(--background)",
+                            border: "1px solid var(--atlas-border-subtle)",
                             textAlign: "left",
                             cursor: "pointer",
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "var(--bg-hover)";
+                            e.currentTarget.style.background = "var(--atlas-element-hover)";
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "var(--bg-base)";
+                            e.currentTarget.style.background = "var(--background)";
                           }}
                         >
                           <div
                             className="text-sm"
                             style={{
-                              color: "var(--text-primary)",
+                              color: "var(--foreground)",
                               fontWeight: 500,
                               marginBottom: 4,
                               overflow: "hidden",
@@ -688,7 +692,7 @@ export function KnowledgePanel() {
                           <div
                             className="text-sm"
                             style={{
-                              color: "var(--text-tertiary)",
+                              color: "var(--muted-foreground)",
                               lineHeight: 1.5,
                               display: "-webkit-box",
                               WebkitLineClamp: 2,
@@ -713,7 +717,7 @@ export function KnowledgePanel() {
             />
           </>
         ) : (
-          <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+          <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
             Select or create a note
           </div>
         )}
@@ -845,11 +849,11 @@ function PageHeaderWithIcon({
           style={{
             height: 180,
             borderRadius: 10,
-            border: "1px solid var(--border-subtle)",
+            border: "1px solid var(--atlas-border-subtle)",
             margin: "0 0 14px",
             background:
               gradient ??
-              (coverUrl ? `center / cover no-repeat url("${coverUrl}")` : "var(--bg-elevated)"),
+              (coverUrl ? `center / cover no-repeat url("${coverUrl}")` : "var(--card)"),
             position: "relative",
             cursor: "pointer",
           }}
@@ -863,7 +867,7 @@ function PageHeaderWithIcon({
         style={{
           display: "flex",
           gap: 12,
-          color: "var(--text-muted)",
+          color: "var(--muted-foreground)",
           opacity: 0.85,
           marginBottom: 4,
         }}
@@ -877,7 +881,7 @@ function PageHeaderWithIcon({
               background: "transparent",
               border: 0,
               padding: 0,
-              color: "var(--text-muted)",
+              color: "var(--muted-foreground)",
               cursor: "pointer",
               display: "inline-flex",
               alignItems: "center",
@@ -898,8 +902,8 @@ function PageHeaderWithIcon({
               width: 44,
               height: 44,
               borderRadius: 9,
-              background: "var(--bg-elevated-2)",
-              border: "1px solid var(--border-subtle)",
+              background: "var(--card)",
+              border: "1px solid var(--atlas-border-subtle)",
               lineHeight: 1,
               display: "inline-flex",
               alignItems: "center",
@@ -934,9 +938,9 @@ function PageHeaderWithIcon({
               lineHeight: 1.15,
               margin: "2px 0 0",
               letterSpacing: "-0.03em",
-              color: "var(--text-primary)",
+              color: "var(--foreground)",
               fontWeight: 600,
-              fontFamily: "var(--font-display)",
+              fontFamily: "var(--font-sans)",
               background: "transparent",
               border: 0,
               padding: 0,
@@ -984,21 +988,23 @@ function RepoTopbar({
   return (
     <div
       className="flex items-center shrink-0 border-b border-border-subtle"
-      style={{ height: 36, gap: 8, padding: "0 14px", background: "var(--bg-canvas)" }}
+      style={{ height: 36, gap: 8, padding: "0 14px", background: "var(--atlas-panel-background)" }}
     >
       {onToggleSidebar && (
         <Hint label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}>
           <button
             onClick={onToggleSidebar}
-            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22, marginLeft: -6 }}
           >
             <PanelLeft size={12} />
           </button>
         </Hint>
       )}
-      <GitBranch size={12} className="text-text-tertiary shrink-0" />
-      <span className="font-mono text-text-secondary truncate flex-1 min-w-0 text-sm">{name}</span>
+      <GitBranch size={12} className="text-muted-foreground shrink-0" />
+      <span className="font-mono text-secondary-foreground truncate flex-1 min-w-0 text-sm">
+        {name}
+      </span>
       <span className="pill pill-bare text-2xs" style={{ height: 18, padding: "0 6px" }}>
         REPO
       </span>
@@ -1006,7 +1012,7 @@ function RepoTopbar({
         <HintItem label="Copy path">
           <button
             onClick={() => navigator.clipboard.writeText(path)}
-            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
+            className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer"
             style={{ width: 22, height: 22 }}
           >
             <Copy size={11} />
@@ -1015,7 +1021,7 @@ function RepoTopbar({
         <HintItem label="Toggle inspector">
           <button
             onClick={onToggleInspector}
-            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22 }}
           >
             <PanelRight size={12} />
@@ -1033,14 +1039,14 @@ function RepoEmpty({ path }: { path: string }) {
     void useProjectStore.getState().actions.addProject(path);
   };
   return (
-    <div className="h-full flex flex-col items-center justify-center gap-3 text-text-tertiary">
+    <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
       <p className="text-sm">No README.md found</p>
       <div className="flex items-center gap-2">
         <button
           onClick={open}
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded border border-border",
-            "text-2xs text-text-secondary hover:bg-bg-hover cursor-pointer",
+            "text-2xs text-secondary-foreground hover:bg-element-hover cursor-pointer",
           )}
         >
           <ExternalLink size={10} /> Open in new window
@@ -1049,7 +1055,7 @@ function RepoEmpty({ path }: { path: string }) {
           onClick={() => navigator.clipboard.writeText(path)}
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded border border-border",
-            "text-2xs text-text-secondary hover:bg-bg-hover cursor-pointer",
+            "text-2xs text-secondary-foreground hover:bg-element-hover cursor-pointer",
           )}
         >
           <Copy size={10} /> Copy path

@@ -160,7 +160,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
   return (
     <div
       ref={boxRef}
-      className="relative shrink-0 cursor-pointer overflow-hidden border-l border-[var(--border)] bg-[var(--bg-secondary)]"
+      className="relative shrink-0 cursor-pointer overflow-hidden border-l border-[var(--border)] bg-[var(--card)]"
       style={{ width: WIDTH }}
       title="Code map — click or drag to scroll"
       onPointerDown={(e) => {

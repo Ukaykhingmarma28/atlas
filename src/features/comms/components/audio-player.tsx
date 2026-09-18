@@ -141,7 +141,7 @@ export const AudioPlayer = memo(function AudioPlayer({
 
   return (
     <HintGroup>
-      <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2.5 py-2">
+      <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2">
         {src && (
           <audio
             ref={audioRef}
@@ -164,10 +164,10 @@ export const AudioPlayer = memo(function AudioPlayer({
             type="button"
             onClick={toggle}
             disabled={buffering}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-active text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-element-active text-foreground transition-colors hover:bg-element-hover cursor-pointer"
           >
             {buffering ? (
-              <span className="text-[var(--status-success)]">
+              <span className="text-[var(--atlas-status-success-foreground)]">
                 <ArcProgress got={bufferProgress?.got ?? 0} total={bufferProgress?.total ?? 0} />
               </span>
             ) : playing ? (
@@ -198,7 +198,7 @@ export const AudioPlayer = memo(function AudioPlayer({
                   key={i}
                   className={cn(
                     "min-w-0 flex-1 rounded-full transition-colors duration-100",
-                    played ? "bg-[var(--status-success)]" : "bg-border-strong",
+                    played ? "bg-[var(--atlas-status-success-foreground)]" : "bg-border-strong",
                   )}
                   style={{ height: `${Math.round(4 + p * 18)}px` }}
                 />
@@ -206,10 +206,10 @@ export const AudioPlayer = memo(function AudioPlayer({
             })}
           </div>
           <div className="flex items-center justify-between pt-0.5">
-            <span className="text-2xs tabular-nums text-text-ghost">
+            <span className="text-2xs tabular-nums text-disabled">
               {formatTime(time)} / {formatTime(duration)}
             </span>
-            {subtitle && <span className="text-2xs text-text-ghost">{subtitle}</span>}
+            {subtitle && <span className="text-2xs text-disabled">{subtitle}</span>}
           </div>
         </div>
 
@@ -218,7 +218,7 @@ export const AudioPlayer = memo(function AudioPlayer({
             <button
               type="button"
               onClick={() => setMuted((v) => !v)}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
             >
               {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
             </button>
@@ -228,7 +228,7 @@ export const AudioPlayer = memo(function AudioPlayer({
               <button
                 type="button"
                 onClick={onDownload}
-                className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
               >
                 <Download size={12} />
               </button>

@@ -91,7 +91,7 @@ export function TimelineResults({
           that does not state its own terms leaves you guessing why a session
           you know exists is missing. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-3 pt-3.5">
-        <span className="text-base text-[var(--text-primary)]">
+        <span className="text-base text-[var(--foreground)]">
           {sessions.length} {sessions.length === 1 ? "result" : "results"}
         </span>
         {query && <Chip label={`“${query}”`} onClear={onClearQuery} />}
@@ -111,7 +111,7 @@ export function TimelineResults({
       <div
         className={cn(
           GRID,
-          "h-7 shrink-0 border-y border-[var(--border-subtle)] font-mono text-2xs uppercase tracking-[0.08em] text-[var(--text-tertiary)]",
+          "h-7 shrink-0 border-y border-[var(--atlas-border-subtle)] font-mono text-2xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]",
         )}
       >
         <span>Session</span>
@@ -126,7 +126,7 @@ export function TimelineResults({
       </div>
 
       {sessions.length === 0 ? (
-        <p className="px-4 py-10 text-center text-sm text-[var(--text-tertiary)]">
+        <p className="px-4 py-10 text-center text-sm text-[var(--muted-foreground)]">
           Nothing matches. Try a shorter term, or clear a filter above.
         </p>
       ) : (
@@ -173,7 +173,7 @@ function Row({
       title={title ?? undefined}
       className={cn(
         GRID,
-        "h-full w-full cursor-pointer border-b border-[var(--border-subtle)] text-left transition-colors hover:bg-[var(--bg-active)]",
+        "h-full w-full cursor-pointer border-b border-[var(--atlas-border-subtle)] text-left transition-colors hover:bg-[var(--atlas-element-active)]",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -185,31 +185,35 @@ function Row({
         <span
           className={cn(
             "min-w-0 truncate text-base",
-            title ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]",
+            title ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]",
           )}
         >
           {title ?? "Untitled session"}
         </span>
       </span>
-      <span className="truncate text-sm text-[var(--text-secondary)]">{session.projectName}</span>
-      <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">
+      <span className="truncate text-sm text-[var(--secondary-foreground)]">
+        {session.projectName}
+      </span>
+      <span className="truncate font-mono text-xs text-[var(--muted-foreground)]">
         {prettyModel(session.model) ?? "—"}
       </span>
-      <span className="text-right font-mono text-xs tabular-nums text-[var(--text-tertiary)]">
+      <span className="text-right font-mono text-xs tabular-nums text-[var(--muted-foreground)]">
         {session.totalTokens > 0 ? formatTokens(session.totalTokens) : "—"}
       </span>
       <span
         className={cn(
           "text-right font-mono text-xs tabular-nums",
-          live ? "text-[var(--capture-live)]" : "text-[var(--text-secondary)]",
+          live
+            ? "text-[var(--atlas-status-success-foreground)]"
+            : "text-[var(--secondary-foreground)]",
         )}
       >
         {formatDuration(session.activeSeconds)}
       </span>
-      <span className="text-right font-mono text-xs tabular-nums text-[var(--text-ghost)]">
+      <span className="text-right font-mono text-xs tabular-nums text-[var(--atlas-text-disabled)]">
         {timeAgo(session.lastActivityAt)}
       </span>
-      <ChevronRight size={13} className="text-[var(--text-ghost)]" />
+      <ChevronRight size={13} className="text-[var(--atlas-text-disabled)]" />
     </button>
   );
 }
@@ -226,14 +230,14 @@ function Chip({
   onClear: () => void;
 }) {
   return (
-    <span className="flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-base)] pl-2.5 pr-1.5 text-xs text-[var(--text-secondary)]">
-      {field && <span className="shrink-0 text-[var(--text-ghost)]">{field}</span>}
+    <span className="flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--background)] pl-2.5 pr-1.5 text-xs text-[var(--secondary-foreground)]">
+      {field && <span className="shrink-0 text-[var(--atlas-text-disabled)]">{field}</span>}
       <span className="min-w-0 truncate">{label}</span>
       <Hint label={`Clear ${field ?? "search"}`}>
         <button
           type="button"
           onClick={onClear}
-          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
         >
           <X size={10} />
         </button>

@@ -138,7 +138,7 @@ export const UserRowView = memo(function UserRowView({
         {row.contextBlocks > 0 && (
           <button
             type="button"
-            className="mt-1 flex items-center gap-1 text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer transition-colors"
+            className="mt-1 flex items-center gap-1 text-2xs text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
             title="Context attached with @-mentions"
           >
             <Paperclip size={10} />
@@ -181,7 +181,7 @@ function ExpandToggle({
     <button
       type="button"
       onClick={() => onToggleExpand(row.id)}
-      className="mt-0.5 h-[18px] text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer transition-colors"
+      className="mt-0.5 h-[18px] text-2xs text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
     >
       {row.expanded ? "Show less" : "Show more"}
     </button>
@@ -235,13 +235,13 @@ export const ProseRowView = memo(function ProseRowView({
           degrades to a bare timestamp with no provenance at all. */}
       {row.showHeader && (
         <div className="flex h-[22px] items-center gap-1.5">
-          <span className="min-w-0 truncate font-mono text-2xs text-[var(--text-tertiary)]">
+          <span className="min-w-0 truncate font-mono text-2xs text-[var(--muted-foreground)]">
             {row.model || agentLabel}
           </span>
-          <span aria-hidden className="shrink-0 text-2xs text-[var(--text-ghost)]">
+          <span aria-hidden className="shrink-0 text-2xs text-[var(--atlas-text-disabled)]">
             ·
           </span>
-          <span className="shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
+          <span className="shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
             {new Date(row.timestamp).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -283,7 +283,7 @@ export const ThinkingRowView = memo(function ThinkingRowView({
       <button
         type="button"
         onClick={() => onToggleExpand(row.id)}
-        className="flex h-[26px] w-full items-center gap-2 text-left text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer transition-colors"
+        className="flex h-[26px] w-full items-center gap-2 text-left text-xs text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
       >
         <Brain size={11} className={cn(row.streaming && "atlas-marker-running")} />
         <span>{row.streaming ? "Thinking…" : "Thought process"}</span>
@@ -294,7 +294,7 @@ export const ThinkingRowView = memo(function ThinkingRowView({
       </button>
       {row.expanded && (
         <div className="pb-3 pl-[19px]">
-          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[19px] text-[var(--text-tertiary)] select-text">
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[19px] text-[var(--muted-foreground)] select-text">
             {row.text}
           </pre>
         </div>
@@ -342,7 +342,7 @@ function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) 
     <Icon
       size={15}
       className={cn(
-        state === "failed" && "text-[var(--status-error)]",
+        state === "failed" && "text-[var(--atlas-status-error-foreground)]",
         state === "running" && "text-[var(--primary)]",
       )}
     />
@@ -381,8 +381,8 @@ export const MarkerRowView = memo(function MarkerRowView({
       disabled={!clickable}
       onClick={clickable ? onClick : undefined}
       className={cn(
-        "atlas-marker w-full min-w-0 text-left text-base text-[var(--text-secondary)]",
-        clickable && "cursor-pointer hover:text-[var(--text-primary)]",
+        "atlas-marker w-full min-w-0 text-left text-base text-[var(--secondary-foreground)]",
+        clickable && "cursor-pointer hover:text-[var(--foreground)]",
         row.state === "running" && "atlas-marker-running",
       )}
       title={
@@ -396,9 +396,11 @@ export const MarkerRowView = memo(function MarkerRowView({
       {row.detail && <span className="min-w-0 truncate font-mono">{row.detail}</span>}
       {(row.added > 0 || row.removed > 0) && (
         <span className="ml-auto shrink-0 font-mono text-2xs tabular-nums">
-          {row.added > 0 && <span className="text-[var(--diff-added-text)]">+{row.added}</span>}
+          {row.added > 0 && (
+            <span className="text-[var(--atlas-diff-added-text)]">+{row.added}</span>
+          )}
           {row.removed > 0 && (
-            <span className="ml-1 text-[var(--status-error)]">−{row.removed}</span>
+            <span className="ml-1 text-[var(--atlas-status-error-foreground)]">−{row.removed}</span>
           )}
         </span>
       )}
@@ -435,7 +437,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
         aria-expanded={row.open}
         aria-controls={`${row.id}:actions`}
         onClick={() => onExpandTurn(row.id)}
-        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-base text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-base text-[var(--secondary-foreground)] hover:text-[var(--foreground)]"
       >
         <span className="flex w-5 shrink-0 justify-center">
           <MarkerGlyph state="done" tool={row.liveTool ?? row.tool} />
@@ -473,9 +475,9 @@ export const SeparatorRowView = memo(function SeparatorRowView({ row }: { row: S
   return (
     <Column className="flex h-[34px] items-center">
       <div className="flex w-full select-none items-center gap-2">
-        <span className="h-px flex-1 bg-[var(--border-subtle)]" />
-        <span className="shrink-0 text-2xs text-[var(--text-tertiary)]">{row.label}</span>
-        <span className="h-px flex-1 bg-[var(--border-subtle)]" />
+        <span className="h-px flex-1 bg-[var(--atlas-border-subtle)]" />
+        <span className="shrink-0 text-2xs text-[var(--muted-foreground)]">{row.label}</span>
+        <span className="h-px flex-1 bg-[var(--atlas-border-subtle)]" />
       </div>
     </Column>
   );
@@ -513,8 +515,10 @@ export const TurnFooterRowView = memo(function TurnFooterRowView({
           <span className="label">{label}</span>
           {(added > 0 || removed > 0) && (
             <span className="font-mono text-2xs tabular-nums">
-              {added > 0 && <span className="text-[var(--diff-added-text)]">+{added}</span>}
-              {removed > 0 && <span className="ml-1 text-[var(--status-error)]">−{removed}</span>}
+              {added > 0 && <span className="text-[var(--atlas-diff-added-text)]">+{added}</span>}
+              {removed > 0 && (
+                <span className="ml-1 text-[var(--atlas-status-error-foreground)]">−{removed}</span>
+              )}
             </span>
           )}
           <div className="ml-auto flex items-center gap-1.5">
@@ -542,21 +546,25 @@ export const TurnFooterRowView = memo(function TurnFooterRowView({
                   "w-3 shrink-0 text-center font-mono text-2xs font-semibold",
                   f.kind === "edit"
                     ? f.created
-                      ? "text-[var(--diff-added-text)]"
-                      : "text-[var(--status-warning)]"
-                    : "text-[var(--text-tertiary)]",
+                      ? "text-[var(--atlas-diff-added-text)]"
+                      : "text-[var(--atlas-status-warning-foreground)]"
+                    : "text-[var(--muted-foreground)]",
                 )}
               >
                 {f.kind === "edit" ? (f.created ? "A" : "M") : "R"}
               </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]">
+              <span className="min-w-0 flex-1 truncate font-mono text-[var(--secondary-foreground)]">
                 {baseName(f.path)}
               </span>
               {f.kind === "edit" && (f.added > 0 || f.removed > 0) && (
                 <span className="shrink-0 font-mono text-2xs tabular-nums">
-                  {f.added > 0 && <span className="text-[var(--diff-added-text)]">+{f.added}</span>}
+                  {f.added > 0 && (
+                    <span className="text-[var(--atlas-diff-added-text)]">+{f.added}</span>
+                  )}
                   {f.removed > 0 && (
-                    <span className="ml-1 text-[var(--status-error)]">−{f.removed}</span>
+                    <span className="ml-1 text-[var(--atlas-status-error-foreground)]">
+                      −{f.removed}
+                    </span>
                   )}
                 </span>
               )}
@@ -566,7 +574,7 @@ export const TurnFooterRowView = memo(function TurnFooterRowView({
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="flex h-[20px] cursor-pointer items-center gap-1 text-2xs text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
+              className="flex h-[20px] cursor-pointer items-center gap-1 text-2xs text-[var(--muted-foreground)] transition-colors hover:text-[var(--secondary-foreground)]"
             >
               <ChevronDown
                 size={10}
@@ -610,7 +618,7 @@ function FooterPill({
         "text-2xs font-medium leading-none transition-colors",
         primary
           ? "border-[var(--primary)]/40 bg-[var(--atlas-primary-muted)] text-[var(--primary)] hover:bg-[var(--primary)]/20"
-          : "border-border bg-[var(--atlas-element-hover)] text-[var(--text-secondary)] hover:bg-[var(--atlas-element-active)] hover:text-[var(--text-primary)]",
+          : "border-border bg-[var(--atlas-element-hover)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-active)] hover:text-[var(--foreground)]",
       )}
     >
       {icon}

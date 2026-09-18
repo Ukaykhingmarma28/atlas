@@ -142,7 +142,9 @@ export function CoverPicker({
               borderRadius: 6,
               background: g.css,
               border:
-                value === g.id ? "2px solid var(--text-primary)" : "1px solid var(--border-subtle)",
+                value === g.id
+                  ? "2px solid var(--foreground)"
+                  : "1px solid var(--atlas-border-subtle)",
               cursor: "pointer",
             }}
           />
@@ -156,10 +158,10 @@ export function CoverPicker({
         style={{
           width: "100%",
           height: 28,
-          background: "var(--bg-elevated-2)",
-          border: "1px solid var(--border-subtle)",
+          background: "var(--card)",
+          border: "1px solid var(--atlas-border-subtle)",
           borderRadius: 6,
-          color: "var(--text-secondary)",
+          color: "var(--secondary-foreground)",
           cursor: "pointer",
           display: "inline-flex",
           alignItems: "center",
@@ -189,7 +191,7 @@ export function CoverPicker({
             height: 24,
             background: "transparent",
             border: 0,
-            color: "var(--text-tertiary)",
+            color: "var(--muted-foreground)",
             cursor: "pointer",
             display: "inline-flex",
             alignItems: "center",

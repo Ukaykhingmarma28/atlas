@@ -255,7 +255,7 @@ export function CenterPanel() {
     // the CONTENT, not the window — see `use-center-panel-x.ts`. A `fixed
     // left-1/2` pill drifts off-centre by half the width of whichever side
     // panel is open.
-    <div data-atlas-center-panel className="h-full w-full bg-bg-surface relative">
+    <div data-atlas-center-panel className="h-full w-full bg-background relative">
       {projects.map((ws) => {
         const isActive = ws.id === activeProjectId;
         const view = isActive ? mirrorView : viewsByWs[ws.id];
@@ -306,7 +306,7 @@ const ProjectColumns = memo(function ProjectColumns({
       orientation="horizontal"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
-      className="h-full bg-bg-surface"
+      className="h-full bg-background"
     >
       {view.groupOrder.map((gid, i) => (
         <Fragment key={gid}>
@@ -383,13 +383,13 @@ const TabColumn = memo(function TabColumn({
 
   return (
     <div
-      className={cn("h-full flex flex-col overflow-hidden bg-bg-surface")}
+      className={cn("h-full flex flex-col overflow-hidden bg-background")}
       onMouseDownCapture={() => setFocusedGroup(groupId)}
     >
       {tabBarVisible && (
         <div
           className={cn(
-            "flex items-stretch h-[29px] shrink-0 bg-bg-base border-b border-border transition-opacity",
+            "flex items-stretch h-[29px] shrink-0 bg-background border-b border-border transition-opacity",
             // When split, dim the UNFOCUSED columns' tab bars so the focused
             // one stands out (the focused pane also shows a white dot, below).
             !soloColumn && !isFocused && "opacity-45",
@@ -404,8 +404,8 @@ const TabColumn = memo(function TabColumn({
                   className={cn(
                     "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
                     canGoBack
-                      ? "text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-                      : "text-text-tertiary/40 cursor-not-allowed",
+                      ? "text-secondary-foreground hover:text-foreground hover:bg-element-hover cursor-pointer"
+                      : "text-muted-foreground/40 cursor-not-allowed",
                   )}
                 >
                   <ChevronLeft size={13} />
@@ -418,8 +418,8 @@ const TabColumn = memo(function TabColumn({
                   className={cn(
                     "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
                     canGoForward
-                      ? "text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-                      : "text-text-tertiary/40 cursor-not-allowed",
+                      ? "text-secondary-foreground hover:text-foreground hover:bg-element-hover cursor-pointer"
+                      : "text-muted-foreground/40 cursor-not-allowed",
                   )}
                 >
                   <ChevronRight size={13} />
@@ -450,8 +450,8 @@ const TabColumn = memo(function TabColumn({
                     "transition-[background-color,color] duration-150",
                     tab.closable ? "pr-7" : "pr-3",
                     isActive
-                      ? "text-text-primary bg-bg-surface"
-                      : "text-text-tertiary bg-bg-base hover:text-text-secondary hover:bg-bg-hover",
+                      ? "text-foreground bg-background"
+                      : "text-muted-foreground bg-background hover:text-secondary-foreground hover:bg-element-hover",
                   )}
                 >
                   {isRunning ? (
@@ -463,7 +463,7 @@ const TabColumn = memo(function TabColumn({
                       size={12}
                       className={cn(
                         "shrink-0",
-                        isActive ? "text-text-secondary" : "text-text-tertiary",
+                        isActive ? "text-secondary-foreground" : "text-muted-foreground",
                       )}
                     />
                   )}
@@ -482,8 +482,8 @@ const TabColumn = memo(function TabColumn({
                         className={cn(
                           "absolute right-1.5 top-1/2 -translate-y-1/2",
                           "inline-flex items-center justify-center w-4 h-4 rounded-full",
-                          "text-text-tertiary opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                          "hover:bg-bg-hover hover:text-text-primary transition-[opacity,transform] duration-150",
+                          "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                          "hover:bg-element-hover hover:text-foreground transition-[opacity,transform] duration-150",
                         )}
                       >
                         <X size={10} strokeWidth={2.2} />
@@ -505,7 +505,7 @@ const TabColumn = memo(function TabColumn({
               <div
                 aria-hidden
                 className="pointer-events-none absolute right-full top-0 h-full w-8"
-                style={{ background: "linear-gradient(to right, transparent, var(--bg-base))" }}
+                style={{ background: "linear-gradient(to right, transparent, var(--background))" }}
               />
               {/* Selected-pane indicator: a white dot before the +/x actions. */}
               {!soloColumn && isFocused && (
@@ -520,7 +520,7 @@ const TabColumn = memo(function TabColumn({
                 <HintItem label={splitNewHint ? `Split right (${splitNewHint})` : "Split right"}>
                   <button
                     onClick={addGroup}
-                    className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
+                    className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
                   >
                     <Columns2 size={13} />
                   </button>
@@ -532,7 +532,7 @@ const TabColumn = memo(function TabColumn({
                 >
                   <button
                     onClick={() => closeGroup(groupId)}
-                    className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
+                    className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
                   >
                     <X size={13} />
                   </button>
@@ -637,7 +637,7 @@ const TabContentContainer = memo(function TabContentContainer({
       <div
         ref={ref}
         style={{ flex: "1 1 0%", minHeight: 0, overflow: "hidden" }}
-        className="flex items-center justify-center text-sm text-text-tertiary"
+        className="flex items-center justify-center text-sm text-muted-foreground"
       >
         Empty split — open a tab with +{newTabHint ? ` or ${newTabHint}` : ""}
       </div>
@@ -771,8 +771,8 @@ function ProjectlessCenter() {
   const active = atHome ? null : (allowed.find((t) => t.id === storeActive) ?? null);
 
   return (
-    <div className="flex h-full w-full flex-col bg-bg-surface">
-      <div className="flex h-9 shrink-0 items-stretch border-b border-border bg-bg-base">
+    <div className="flex h-full w-full flex-col bg-background">
+      <div className="flex h-9 shrink-0 items-stretch border-b border-border bg-background">
         {/* Home is a pseudo-tab, not a store tab: it cannot close and it is
             simply "no allowed tab selected". */}
         <div
@@ -785,8 +785,8 @@ function ProjectlessCenter() {
           className={cn(
             "flex items-center gap-1.5 border-r border-border px-3 text-sm font-medium cursor-pointer select-none",
             active === null
-              ? "bg-bg-surface text-text-primary"
-              : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
+              ? "bg-background text-foreground"
+              : "bg-background text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
           )}
         >
           <House size={12} className="shrink-0" />
@@ -817,8 +817,8 @@ function ProjectlessCenter() {
                 "transition-[background-color,color] duration-150",
                 tab.closable ? "pr-7" : "pr-3",
                 isActive
-                  ? "bg-bg-surface text-text-primary"
-                  : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
+                  ? "bg-background text-foreground"
+                  : "bg-background text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
               )}
             >
               {tabFilePath ? (
@@ -828,7 +828,7 @@ function ProjectlessCenter() {
                   size={12}
                   className={cn(
                     "shrink-0",
-                    isActive ? "text-text-secondary" : "text-text-tertiary",
+                    isActive ? "text-secondary-foreground" : "text-muted-foreground",
                   )}
                 />
               )}
@@ -843,8 +843,8 @@ function ProjectlessCenter() {
                     className={cn(
                       "absolute right-1.5 top-1/2 -translate-y-1/2",
                       "inline-flex h-4 w-4 items-center justify-center rounded-full",
-                      "text-text-tertiary opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                      "transition-[opacity,transform] duration-150 hover:bg-bg-hover hover:text-text-primary",
+                      "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                      "transition-[opacity,transform] duration-150 hover:bg-element-hover hover:text-foreground",
                     )}
                   >
                     <X size={10} strokeWidth={2.2} />
@@ -926,12 +926,12 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
   return (
     <div className="h-full flex items-center justify-center">
       <div className="text-center space-y-3">
-        <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border flex items-center justify-center mx-auto">
-          <Icon size={24} className="text-text-tertiary" />
+        <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center mx-auto">
+          <Icon size={24} className="text-muted-foreground" />
         </div>
         <div>
-          <p className="text-sm font-medium text-text-primary">{tab.title}</p>
-          <p className="text-xs text-text-tertiary mt-1">Coming soon</p>
+          <p className="text-sm font-medium text-foreground">{tab.title}</p>
+          <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
         </div>
       </div>
     </div>
@@ -978,7 +978,7 @@ function NewTabDropdown({
       <HintItem label="New tab">
         <DropdownMenu.Trigger
           render={
-            <button className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
+            <button className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
               <Plus size={14} />
             </button>
           }
@@ -986,14 +986,14 @@ function NewTabDropdown({
       </HintItem>
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border bg-bg-secondary shadow-lg py-1">
+          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border bg-card shadow-lg py-1">
             {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
               <DropdownMenu.Item
                 key={type}
                 onClick={() => handleAdd(type, label)}
-                className="flex items-center gap-2 px-3 h-[30px] text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
+                className="flex items-center gap-2 px-3 h-[30px] text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-default outline-none"
               >
-                <Icon size={12} className="text-text-tertiary" />
+                <Icon size={12} className="text-muted-foreground" />
                 {label}
               </DropdownMenu.Item>
             ))}

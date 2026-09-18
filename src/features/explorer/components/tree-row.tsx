@@ -171,15 +171,15 @@ export function TreeRow({
         // Selection fill (multi-select) takes visual priority over the
         // active-file pill; callers make the two mutually exclusive.
         isSelected
-          ? "bg-bg-selected text-text-primary"
+          ? "bg-element-selected text-foreground"
           : isActive
-            ? "bg-[var(--bg-elevated)] text-text-primary"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            ? "bg-[var(--card)] text-foreground"
+            : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
         // Drop-target highlight — kept deliberately subtle to match
         // Atlas's monochromatic surfaces: a muted accent fill with a
         // hairline inset accent ring, not a heavy outline.
         isDropTarget &&
-          "bg-[var(--atlas-primary-muted)] ring-1 ring-inset ring-primary/40 text-text-primary",
+          "bg-[var(--atlas-primary-muted)] ring-1 ring-inset ring-primary/40 text-foreground",
         // Source row dimmed while drag is in flight.
         isDragging && "opacity-40",
         isCut && "opacity-50",
@@ -202,7 +202,7 @@ export function TreeRow({
         <ChevronRight
           size={12}
           className={cn(
-            "shrink-0 text-text-tertiary transition-transform",
+            "shrink-0 text-muted-foreground transition-transform",
             isExpanded && "rotate-90",
           )}
           strokeWidth={2}
@@ -231,12 +231,12 @@ export function TreeRow({
         />
       ) : isDir ? (
         isExpanded ? (
-          <FolderOpen size={13} className="shrink-0 text-text-tertiary" strokeWidth={1.5} />
+          <FolderOpen size={13} className="shrink-0 text-muted-foreground" strokeWidth={1.5} />
         ) : (
-          <Folder size={13} className="shrink-0 text-text-tertiary" strokeWidth={1.5} />
+          <Folder size={13} className="shrink-0 text-muted-foreground" strokeWidth={1.5} />
         )
       ) : (
-        <LeafIcon size={13} className="shrink-0 text-text-tertiary" strokeWidth={1.5} />
+        <LeafIcon size={13} className="shrink-0 text-muted-foreground" strokeWidth={1.5} />
       )}
 
       {isEditing ? (
@@ -262,15 +262,15 @@ export function TreeRow({
             else onCancel?.();
           }}
           className={cn(
-            "flex-1 min-w-0 font-mono text-xs leading-4 bg-bg-input border border-border rounded px-1 py-0.5",
-            "text-text-primary outline-none focus:border-border-strong",
+            "flex-1 min-w-0 font-mono text-xs leading-4 bg-panel-input border border-border rounded px-1 py-0.5",
+            "text-foreground outline-none focus:border-border-strong",
           )}
         />
       ) : (
         <span
           className={cn(
             "truncate font-mono text-xs leading-4 flex-1 min-w-0",
-            isDir && "text-text-primary",
+            isDir && "text-foreground",
           )}
           style={!isDir && gitColor ? { color: gitColor } : undefined}
         >

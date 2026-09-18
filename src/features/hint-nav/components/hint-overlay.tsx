@@ -165,8 +165,7 @@ export function HintOverlay() {
   return (
     <div
       {...{ [HINT_OVERLAY_ATTR]: "" }}
-      className="pointer-events-none fixed inset-0 overflow-hidden"
-      style={{ zIndex: "var(--z-max)" }}
+      className="pointer-events-none fixed inset-0 z-drag overflow-hidden"
     >
       {targets.map((t, i) => {
         const label = labels[i];
@@ -216,16 +215,16 @@ export function HintOverlay() {
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 8px 28px rgba(0,0,0,0.55)",
           }}
         >
-          <span className="font-mono text-[12px] text-[var(--text-primary)]">
+          <span className="font-mono text-[12px] text-[var(--foreground)]">
             {typed ? (
               <span className="tracking-widest">{typed.toUpperCase()}</span>
             ) : (
-              <span className="text-[var(--text-tertiary)]">
+              <span className="text-[var(--muted-foreground)]">
                 {targets.length} targets — type the letters
               </span>
             )}
           </span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)]">
+          <span className="flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
             <Kbd>⌥</Kbd> focus
             <Kbd>esc</Kbd> close
           </span>

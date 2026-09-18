@@ -39,7 +39,7 @@ export const Markdown = memo(function Markdown({ children, className }: Markdown
         // occupies about its final height and is readable immediately.
         <div
           className={cn(
-            "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text whitespace-pre-wrap",
+            "prose-chat text-[var(--foreground)] leading-relaxed break-words select-text whitespace-pre-wrap",
             className,
           )}
         >

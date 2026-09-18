@@ -298,7 +298,7 @@ function PaneView({
         isActivePane && groupFocused && "ring-1 ring-[var(--atlas-element-hover)] ring-inset",
       )}
     >
-      <div className="flex items-center h-control-lg shrink-0 border-b border-border bg-bg-primary px-1 gap-0.5">
+      <div className="flex items-center h-control-lg shrink-0 border-b border-border bg-background px-1 gap-0.5">
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto hide-scrollbar">
           {pane.terminals.map((ptyId) => (
             <div
@@ -310,8 +310,8 @@ function PaneView({
               className={cn(
                 "group flex items-center gap-1 px-1.5 h-5 rounded text-2xs font-mono cursor-pointer shrink-0",
                 ptyId === activePty
-                  ? "text-text-primary bg-bg-selected"
-                  : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
+                  ? "text-foreground bg-element-selected"
+                  : "text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover",
               )}
             >
               {busy[ptyId] ? (
@@ -327,7 +327,7 @@ function PaneView({
                       e.stopPropagation();
                       closeTerminalInPane(tabId, pane.id, ptyId);
                     }}
-                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
                   >
                     <X size={8} />
                   </button>
@@ -339,7 +339,7 @@ function PaneView({
         <HintGroup>
           <div className="flex items-center gap-0.5 shrink-0">
             {zoomed && (
-              <span className="mr-1 rounded bg-bg-selected px-1.5 py-px text-3xs text-text-tertiary">
+              <span className="mr-1 rounded bg-element-selected px-1.5 py-px text-3xs text-muted-foreground">
                 zoomed
               </span>
             )}
@@ -349,7 +349,7 @@ function PaneView({
                   addTerminalToPane(tabId, pane.id);
                   setActivePane(tabId, pane.id);
                 }}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Plus size={11} />
               </button>
@@ -357,7 +357,7 @@ function PaneView({
             <HintItem label="Split right">
               <button
                 onClick={() => splitPane(tabId, pane.id, "horizontal")}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Columns2 size={11} />
               </button>
@@ -365,7 +365,7 @@ function PaneView({
             <HintItem label="Split down">
               <button
                 onClick={() => splitPane(tabId, pane.id, "vertical")}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Rows2 size={11} />
               </button>
@@ -375,8 +375,10 @@ function PaneView({
                 <button
                   onClick={() => toggleZoom(tabId, pane.id)}
                   className={cn(
-                    "flex items-center justify-center w-5 h-5 rounded hover:bg-bg-hover transition-colors cursor-pointer",
-                    zoomed ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
+                    "flex items-center justify-center w-5 h-5 rounded hover:bg-element-hover transition-colors cursor-pointer",
+                    zoomed
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-secondary-foreground",
                   )}
                 >
                   <Maximize2 size={11} />
@@ -387,7 +389,7 @@ function PaneView({
               <HintItem label="Close pane">
                 <button
                   onClick={() => closePane(tabId, pane.id)}
-                  className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+                  className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors cursor-pointer"
                 >
                   <X size={11} />
                 </button>

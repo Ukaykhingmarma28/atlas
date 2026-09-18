@@ -659,7 +659,7 @@ export const SessionSidebar = memo(function SessionSidebar({
         "relative flex flex-col",
         asDropdown
           ? "h-[min(420px,60vh)] w-[340px]"
-          : "shrink-0 h-full border-r border-[var(--border)] bg-[var(--bg-sidebar)]",
+          : "shrink-0 h-full border-r border-[var(--border)] bg-[var(--sidebar)]",
       )}
     >
       {/* Search — full-width row matching the GitHub panel's search */}
@@ -670,16 +670,16 @@ export const SessionSidebar = memo(function SessionSidebar({
           // here would punch a solid rectangle through the blur.
           asDropdown
             ? "border-b border-[var(--atlas-element-hover)]"
-            : "border-b border-border bg-bg-primary",
+            : "border-b border-border bg-background",
         )}
       >
-        <Search size={11} className="text-text-tertiary shrink-0" />
+        <Search size={11} className="text-muted-foreground shrink-0" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search sessions"
           placeholder="Search…"
-          className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
+          className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground min-w-0"
         />
         {/* Everything ever, archived included — and where import lives. */}
         {!asDropdown && (
@@ -688,7 +688,7 @@ export const SessionSidebar = memo(function SessionSidebar({
               type="button"
               onClick={() => setHistoryOpen(true)}
               aria-label="All history"
-              className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+              className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
             >
               <History size={11} />
             </button>
@@ -707,9 +707,11 @@ export const SessionSidebar = memo(function SessionSidebar({
 
       {/* List */}
       <div className="flex-1 overflow-y-auto hide-scrollbar">
-        {isLoading && <div className="text-xs text-[var(--text-tertiary)] px-3 py-2">Loading…</div>}
+        {isLoading && (
+          <div className="text-xs text-[var(--muted-foreground)] px-3 py-2">Loading…</div>
+        )}
         {showEmpty && (
-          <div className="text-xs text-[var(--text-tertiary)] px-3 py-3 leading-relaxed">
+          <div className="text-xs text-[var(--muted-foreground)] px-3 py-3 leading-relaxed">
             {/* Names the scope: the list is this project's, so an empty one
                 means "nothing here yet", not "no chats anywhere". Other
                 projects' chats are behind the History button in the header. */}
@@ -726,7 +728,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 // The project a run of rows belongs to. Threads from other
                 // worktrees are listed here too, and resume into their own
                 // worktree — that is what an app-level store is for.
-                <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-text-tertiary truncate">
+                <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-muted-foreground truncate">
                   {item.projectHeading}
                 </div>
               )}
@@ -740,8 +742,8 @@ export const SessionSidebar = memo(function SessionSidebar({
                 className={cn(
                   "group relative w-full text-left px-3 py-3 transition-colors flex flex-col gap-1 cursor-pointer select-none",
                   active
-                    ? "bg-[var(--bg-selected)] text-[var(--text-primary)] opacity-100"
-                    : "text-[var(--text-secondary)] opacity-80 hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                    ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)] opacity-100"
+                    : "text-[var(--secondary-foreground)] opacity-80 hover:opacity-100 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
                   !isLast && "border-b border-[var(--border)]",
                 )}
               >
@@ -754,7 +756,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     first line ran right up under the archive button. */}
                 <div className="flex items-start gap-2 min-w-0 pr-12">
                   <span
-                    className="shrink-0 inline-flex h-[15px] items-center justify-center text-[var(--text-secondary)]"
+                    className="shrink-0 inline-flex h-[15px] items-center justify-center text-[var(--secondary-foreground)]"
                     title={
                       item.kind !== "agent"
                         ? "AI Chat"
@@ -788,12 +790,12 @@ export const SessionSidebar = memo(function SessionSidebar({
                   <span className="text-xs leading-snug line-clamp-2 flex-1">{item.title}</span>
                 </div>
                 <div className="pl-[18px] flex items-center gap-1.5">
-                  <span className="text-3xs text-[var(--text-tertiary)]">
+                  <span className="text-3xs text-[var(--muted-foreground)]">
                     {timeAgo(item.lastUpdated, { suffix: true })}
                   </span>
                   {item.elsewhere && (
                     <span
-                      className="text-3xs text-[var(--text-tertiary)] truncate"
+                      className="text-3xs text-[var(--muted-foreground)] truncate"
                       title={item.cwd}
                     >
                       · {item.projectName}
@@ -808,7 +810,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       onClick={(e) => handleArchiveAgent(e, item)}
                       aria-label="Archive session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]"
                     >
                       <Archive size={10} />
                     </button>
@@ -817,7 +819,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       onClick={(e) => handleDeleteAgent(e, item)}
                       aria-label="Delete session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--status-error)] hover:bg-[var(--bg-elevated)]"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] hover:bg-[var(--card)]"
                     >
                       <X size={10} />
                     </button>
@@ -840,13 +842,13 @@ export const SessionSidebar = memo(function SessionSidebar({
             // solid strip through the picker's blurred panel.
             asDropdown
               ? "border-t border-[var(--atlas-element-hover)]"
-              : "border-t border-[var(--border)] bg-[var(--bg-sidebar)]",
+              : "border-t border-[var(--border)] bg-[var(--sidebar)]",
           )}
         >
           <HintItem label={sidebarHint ? `Hide sidebar (${sidebarHint})` : "Hide sidebar"}>
             <button
               onClick={toggleChatSidebar}
-              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
             >
               <PanelLeft size={12} />
             </button>
@@ -854,7 +856,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           <HintItem label="New chat">
             <button
               onClick={handleNewChat}
-              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
             >
               <Plus size={12} />
             </button>

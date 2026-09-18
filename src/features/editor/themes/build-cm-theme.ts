@@ -192,7 +192,7 @@ export function buildHighlightStyle(theme: ResolvedTheme | null): HighlightStyle
     // `atom` is what several grammars use where others use bool/null.
     { tag: tags.atom, color: c.constant },
     // Shebangs, pragmas, front-matter fences. Uses `attributeName` because
-    // that is what `--cm-meta` already resolves to for the diff viewer's
+    // that is what `--atlas-syntax-attribute` already resolves to for the diff viewer's
     // `.hljs-meta` (see apply-editor-theme.ts) — one concept, one color across
     // both code surfaces.
     { tag: tags.meta, color: c.attributeName },

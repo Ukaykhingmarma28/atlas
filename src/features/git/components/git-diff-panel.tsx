@@ -187,11 +187,11 @@ function SideCell({
   const bg = sideBg(side, isLeft);
   return (
     <div className="flex min-w-0">
-      <span className="w-8 shrink-0 select-none border-r border-[var(--border-subtle)] pr-[3px] pl-[3px] text-right font-mono text-2xs leading-[18px] text-[var(--text-tertiary)]">
+      <span className="w-8 shrink-0 select-none border-r border-[var(--atlas-border-subtle)] pr-[3px] pl-[3px] text-right font-mono text-2xs leading-[18px] text-[var(--muted-foreground)]">
         {side?.lineNo ?? ""}
       </span>
       <code
-        className="diff-syntax block flex-1 overflow-hidden whitespace-pre pl-2 pr-2 font-mono leading-[18px] text-[var(--text-secondary)]"
+        className="diff-syntax block flex-1 overflow-hidden whitespace-pre pl-2 pr-2 font-mono leading-[18px] text-[var(--secondary-foreground)]"
         style={{
           fontSize: FONT_PX,
           background: bg,
@@ -225,19 +225,19 @@ function CenterMarker({ row }: { row: DiffRow }) {
   const lc = isLeftChange(row);
   const rc = isRightChange(row);
   let char = "";
-  let color = "var(--text-tertiary)";
+  let color = "var(--muted-foreground)";
   if (lc && rc) {
     char = "›";
   } else if (rc) {
     char = "»";
-    color = "var(--status-success)";
+    color = "var(--atlas-status-success-foreground)";
   } else if (lc) {
     char = "«";
-    color = "var(--status-error)";
+    color = "var(--atlas-status-error-foreground)";
   }
   return (
     <div
-      className="flex items-center justify-center border-x border-[var(--border-subtle)] font-mono text-xs leading-[18px] select-none"
+      className="flex items-center justify-center border-x border-[var(--atlas-border-subtle)] font-mono text-xs leading-[18px] select-none"
       style={{ color }}
     >
       {char}
@@ -357,7 +357,7 @@ export function GitDiffPanel({
   // `hlMap` changes identity. Keyed by file + a content signature so an edit
   // (refetch) rebuilds rather than reusing stale tokens.
   const hlKey = data
-    ? `${repoPath} ${file} ${staged} ${commit ?? ""} ${data.rows.length}:${data.stats.additions}:${data.stats.deletions}`
+    ? `${repoPath}\x00${file}\x00${staged}\x00${commit ?? ""}\x00${data.rows.length}:${data.stats.additions}:${data.stats.deletions}`
     : "";
   const [hlMap, setHlMap] = useState<LineTokens | null>(null);
   useEffect(() => {
@@ -456,7 +456,7 @@ export function GitDiffPanel({
       orientation="horizontal"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
-      className="h-full bg-[var(--bg-primary)]"
+      className="h-full bg-[var(--background)]"
     >
       {/* Left: resizable + collapsible tree of changed files (+ commit picker) */}
       {/* Sizes are percentages: v4 reads bare numbers as PIXELS and unit-less
@@ -495,36 +495,40 @@ export function GitDiffPanel({
               <HintItem label={treeCollapsed ? "Show changed files" : "Hide changed files"}>
                 <button
                   onClick={toggleTree}
-                  className="-ml-1 rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="-ml-1 rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                 >
                   {treeCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
                 </button>
               </HintItem>
-              <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-              <span className="truncate font-mono text-xs text-[var(--text-secondary)]">
+              <FileCode2 size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+              <span className="truncate font-mono text-xs text-[var(--secondary-foreground)]">
                 {file || "Git Diff"}
               </span>
               {staged && (
-                <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-px text-3xs uppercase tracking-wide text-[var(--text-tertiary)]">
+                <span className="shrink-0 rounded bg-[var(--card)] px-1.5 py-px text-3xs uppercase tracking-wide text-[var(--muted-foreground)]">
                   staged
                 </span>
               )}
               {stats && (
                 <span className="shrink-0 font-mono text-2xs">
-                  <span className="text-[var(--status-success)]">+{stats.additions}</span>{" "}
-                  <span className="text-[var(--status-error)]">-{stats.deletions}</span>
+                  <span className="text-[var(--atlas-status-success-foreground)]">
+                    +{stats.additions}
+                  </span>{" "}
+                  <span className="text-[var(--atlas-status-error-foreground)]">
+                    -{stats.deletions}
+                  </span>
                 </span>
               )}
               {!!file && (
                 <div className="ml-auto flex items-center gap-0.5">
-                  <span className="mr-1 font-mono text-2xs text-[var(--text-tertiary)] tabular-nums">
+                  <span className="mr-1 font-mono text-2xs text-[var(--muted-foreground)] tabular-nums">
                     {diffCount} diff{diffCount !== 1 ? "s" : ""}
                   </span>
                   <HintItem label="Previous change">
                     <button
                       onClick={() => jump(-1)}
                       disabled={diffCount === 0}
-                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
+                      className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:opacity-30 cursor-pointer"
                     >
                       <ChevronUp size={12} />
                     </button>
@@ -533,7 +537,7 @@ export function GitDiffPanel({
                     <button
                       onClick={() => jump(1)}
                       disabled={diffCount === 0}
-                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30 cursor-pointer"
+                      className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:opacity-30 cursor-pointer"
                     >
                       <ChevronDown size={12} />
                     </button>
@@ -541,7 +545,7 @@ export function GitDiffPanel({
                   <HintItem label="Refresh">
                     <button
                       onClick={() => void refetch()}
-                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                      className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                     >
                       <RefreshCw size={11} />
                     </button>
@@ -552,7 +556,7 @@ export function GitDiffPanel({
                         void openFile(`${repoPath}/${file}`);
                         onOpenInEditor?.();
                       }}
-                      className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                      className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                     >
                       <ExternalLink size={11} />
                     </button>
@@ -564,19 +568,19 @@ export function GitDiffPanel({
 
           {/* Body */}
           {!file ? (
-            <div className="flex flex-1 items-center justify-center px-3 text-center text-xs text-[var(--text-tertiary)]">
+            <div className="flex flex-1 items-center justify-center px-3 text-center text-xs text-[var(--muted-foreground)]">
               Pick a file from the left to view its diff — or choose a commit to browse.
             </div>
           ) : isLoading ? (
-            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--muted-foreground)]">
               Loading diff…
             </div>
           ) : data?.isBinary ? (
-            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--muted-foreground)]">
               Binary file — no text diff to show.
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--muted-foreground)]">
               No changes.
             </div>
           ) : (

@@ -22,15 +22,15 @@ export function ChartCard({
       // the layer instead of repainting the SVG chart each frame (WKWebView).
       style={{ transform: "translateZ(0)" }}
       className={cn(
-        "rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col min-w-0",
+        "rounded-lg border border-[var(--border)] bg-[var(--card)] flex flex-col min-w-0",
         className,
       )}
     >
       <div className="flex items-center justify-between px-3.5 pt-3 pb-1 shrink-0">
         <div className="min-w-0">
-          <div className="text-sm font-medium text-[var(--text-primary)] truncate">{title}</div>
+          <div className="text-sm font-medium text-[var(--foreground)] truncate">{title}</div>
           {subtitle && (
-            <div className="text-2xs text-[var(--text-tertiary)] truncate">{subtitle}</div>
+            <div className="text-2xs text-[var(--muted-foreground)] truncate">{subtitle}</div>
           )}
         </div>
         {right}

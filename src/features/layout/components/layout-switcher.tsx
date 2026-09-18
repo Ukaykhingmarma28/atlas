@@ -62,12 +62,12 @@ export function LayoutSwitcher({
           // preventDefault + focus(): hand it the element to land on.
           initialFocus={contentRef}
           aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-modal w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-md p-5 outline-none"
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-modal w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-xl shadow-md p-5 outline-none"
         >
-          <Dialog.Title className="text-base font-semibold text-[var(--text-primary)] mb-0.5">
+          <Dialog.Title className="text-base font-semibold text-[var(--foreground)] mb-0.5">
             Choose a layout
           </Dialog.Title>
-          <p className="text-xs text-[var(--text-tertiary)] mb-4">
+          <p className="text-xs text-[var(--muted-foreground)] mb-4">
             Rearranges panels and tabs into a ready-made project.
           </p>
 
@@ -80,20 +80,20 @@ export function LayoutSwitcher({
                 className={cn(
                   "text-left rounded-xl border p-2.5 transition-colors outline-none",
                   i === selected
-                    ? "border-[var(--primary)] bg-[var(--bg-active)]"
-                    : "border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
+                    ? "border-[var(--primary)] bg-[var(--atlas-element-active)]"
+                    : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--atlas-border-strong)]",
                 )}
               >
                 <LayoutThumbnail template={t} />
-                <div className="mt-2 text-sm font-medium text-[var(--text-primary)]">{t.name}</div>
-                <div className="text-2xs text-[var(--text-tertiary)] leading-snug line-clamp-2">
+                <div className="mt-2 text-sm font-medium text-[var(--foreground)]">{t.name}</div>
+                <div className="text-2xs text-[var(--muted-foreground)] leading-snug line-clamp-2">
                   {t.description}
                 </div>
               </button>
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-center gap-3 text-2xs text-[var(--text-tertiary)]">
+          <div className="mt-4 flex items-center justify-center gap-3 text-2xs text-[var(--muted-foreground)]">
             <Hint k="↑ ↓ ← →" label="navigate" />
             <Hint k="⏎" label="apply" />
             <Hint k="esc" label="close" />
@@ -107,7 +107,7 @@ export function LayoutSwitcher({
 function Hint({ k, label }: { k: string; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border)] font-mono text-3xs text-[var(--text-secondary)]">
+      <kbd className="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] font-mono text-3xs text-[var(--secondary-foreground)]">
         {k}
       </kbd>
       {label}

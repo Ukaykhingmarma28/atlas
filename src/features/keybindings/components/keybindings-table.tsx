@@ -111,8 +111,8 @@ export function KeybindingsTable({
       <div
         className={cn(
           GRID,
-          "sticky top-0 z-10 h-[26px] border-b border-border bg-bg-primary px-2",
-          "text-[10px] font-semibold uppercase tracking-wider text-text-tertiary",
+          "sticky top-0 z-10 h-[26px] border-b border-border bg-background px-2",
+          "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
         )}
       >
         <span />
@@ -123,7 +123,7 @@ export function KeybindingsTable({
       </div>
 
       {flat.length === 0 && (
-        <div className="flex h-24 items-center justify-center text-[11px] text-text-tertiary">
+        <div className="flex h-24 items-center justify-center text-[11px] text-muted-foreground">
           {emptyHint ?? "No matching keybindings"}
         </div>
       )}
@@ -159,7 +159,7 @@ export function KeybindingsTable({
             Unknown commands
           </div>
           {unknownIds.map((id) => (
-            <div key={id} className={cn(GRID, "h-[28px] px-2 text-[11px] text-text-tertiary")}>
+            <div key={id} className={cn(GRID, "h-[28px] px-2 text-[11px] text-muted-foreground")}>
               <span />
               <span className="truncate font-mono text-[10.5px]">{id}</span>
               <span className="text-text-muted">not in this version of Atlas</span>
@@ -168,7 +168,7 @@ export function KeybindingsTable({
                 type="button"
                 onClick={() => removeUnknown(id)}
                 disabled={locked}
-                className="text-[10.5px] text-text-secondary hover:text-text-primary disabled:opacity-40 cursor-pointer text-left"
+                className="text-[10.5px] text-secondary-foreground hover:text-foreground disabled:opacity-40 cursor-pointer text-left"
               >
                 Remove
               </button>
@@ -237,7 +237,7 @@ function Row({
             className={cn(
               GRID,
               "group h-[28px] px-2 text-[11px] border-b border-border-subtle cursor-default select-none",
-              selected ? "bg-bg-selected" : "hover:bg-bg-hover",
+              selected ? "bg-element-selected" : "hover:bg-element-hover",
             )}
           >
             <Hint label="Change keybinding">
@@ -248,7 +248,7 @@ function Row({
                   onRecord("change");
                 }}
                 className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:text-text-primary transition-opacity cursor-pointer",
+                  "flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground transition-opacity cursor-pointer",
                   selected
                     ? "opacity-100"
                     : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
@@ -262,8 +262,8 @@ function Row({
                 className={cn(
                   "truncate",
                   selected
-                    ? "text-text-primary"
-                    : "text-text-secondary group-hover:text-text-primary",
+                    ? "text-foreground"
+                    : "text-secondary-foreground group-hover:text-foreground",
                 )}
               >
                 {row.def.title}
@@ -282,7 +282,10 @@ function Row({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <AlertTriangle size={11} className="shrink-0 text-[var(--status-error)]" />
+                      <AlertTriangle
+                        size={11}
+                        className="shrink-0 text-[var(--atlas-status-error-foreground)]"
+                      />
                     }
                   />
                   <TooltipContent>
@@ -307,8 +310,8 @@ function Row({
                           size={11}
                           className={
                             worst === "hard"
-                              ? "text-[var(--status-error)]"
-                              : "text-[var(--status-warning)]"
+                              ? "text-[var(--atlas-status-error-foreground)]"
+                              : "text-[var(--atlas-status-warning-foreground)]"
                           }
                         />
                       </button>
@@ -323,13 +326,13 @@ function Row({
                 </Tooltip>
               )}
             </div>
-            <span className="truncate font-mono text-[10px] text-text-tertiary">
+            <span className="truncate font-mono text-[10px] text-muted-foreground">
               {WHEN_LABELS[row.def.when] || <span className="text-text-muted">—</span>}
             </span>
             <span
               className={cn(
                 "text-[10.5px]",
-                row.overridden ? "text-text-primary" : "text-text-tertiary",
+                row.overridden ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {source}

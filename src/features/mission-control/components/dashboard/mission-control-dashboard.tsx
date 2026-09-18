@@ -52,7 +52,7 @@ export function MissionControlDashboard() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-base)]">
+    <div className="h-full flex flex-col bg-[var(--background)]">
       <DashboardHeader
         range={range}
         onRange={setRange}
@@ -63,15 +63,17 @@ export function MissionControlDashboard() {
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {!data && loading && (
-          <div className="p-6 text-sm text-[var(--text-tertiary)]">Loading metrics…</div>
+          <div className="p-6 text-sm text-[var(--muted-foreground)]">Loading metrics…</div>
         )}
         {error && (
-          <div className="p-6 text-sm text-[var(--status-error)]">Failed to load: {error}</div>
+          <div className="p-6 text-sm text-[var(--atlas-status-error-foreground)]">
+            Failed to load: {error}
+          </div>
         )}
         {data && (
           <div className="p-4 space-y-4">
             {/* Captured region for image/PDF export. */}
-            <div ref={captureRef} className="space-y-4 bg-[var(--bg-base)]">
+            <div ref={captureRef} className="space-y-4 bg-[var(--background)]">
               <StatCards data={data} />
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-2">

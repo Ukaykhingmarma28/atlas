@@ -26,7 +26,7 @@ export function UsageBarChart({ data }: { data: MissionControlUsage }) {
     <ChartCard title="By project" subtitle="Tokens by source">
       <div className="h-[240px]">
         {rows.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)]">
+          <div className="h-full flex items-center justify-center text-xs text-[var(--muted-foreground)]">
             No data.
           </div>
         ) : (

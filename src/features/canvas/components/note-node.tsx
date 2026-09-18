@@ -23,7 +23,7 @@ export const NoteNode = memo(function NoteNode({ data, selected }: NodeProps) {
       className={cn(
         "group relative rounded-2xl overflow-visible",
         "min-w-[260px] max-w-[360px]",
-        "bg-[var(--bg-secondary)]/70 backdrop-blur-3xl backdrop-saturate-150",
+        "bg-[var(--card)]/70 backdrop-blur-3xl backdrop-saturate-150",
         "border shadow-lg transition-colors",
         selected ? "border-[var(--primary)]/60" : "border-border-subtle hover:border-border",
       )}
@@ -36,18 +36,18 @@ export const NoteNode = memo(function NoteNode({ data, selected }: NodeProps) {
 
       {/* Header */}
       <div className="relative flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-bg-hover shrink-0">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-element-hover shrink-0">
           {d.icon ? (
             <span className="text-lg leading-none">{d.icon}</span>
           ) : (
-            <StickyNote size={13} className="text-text-secondary" />
+            <StickyNote size={13} className="text-secondary-foreground" />
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-base font-semibold text-[var(--text-primary)] truncate">
+          <div className="text-base font-semibold text-[var(--foreground)] truncate">
             {d.title || "Untitled"}
           </div>
-          <div className="text-2xs text-[var(--text-tertiary)]">
+          <div className="text-2xs text-[var(--muted-foreground)]">
             {timeAgo(d.updatedAt, { suffix: true })}
           </div>
         </div>
@@ -56,11 +56,11 @@ export const NoteNode = memo(function NoteNode({ data, selected }: NodeProps) {
       {/* Body preview */}
       <div className="relative px-3 py-2.5 max-h-[180px] overflow-hidden rounded-b-2xl">
         {isEmpty ? (
-          <div className="text-xs text-[var(--text-tertiary)] italic">
+          <div className="text-xs text-[var(--muted-foreground)] italic">
             Empty note — open to edit.
           </div>
         ) : (
-          <div className="text-sm leading-relaxed text-[var(--text-secondary)] [&_*]:!my-1 [&_p]:!my-0">
+          <div className="text-sm leading-relaxed text-[var(--secondary-foreground)] [&_*]:!my-1 [&_p]:!my-0">
             <Markdown>{d.body}</Markdown>
           </div>
         )}
@@ -71,7 +71,7 @@ export const NoteNode = memo(function NoteNode({ data, selected }: NodeProps) {
             className="absolute left-0 right-0 bottom-0 h-8 pointer-events-none"
             style={{
               background:
-                "linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg-secondary) 85%, transparent))",
+                "linear-gradient(to bottom, transparent, color-mix(in srgb, var(--card) 85%, transparent))",
             }}
           />
         )}

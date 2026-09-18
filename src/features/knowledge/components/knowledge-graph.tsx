@@ -151,7 +151,7 @@ export function KnowledgeGraph() {
 
   if (!currentProject) {
     return (
-      <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         Open a project first
       </div>
     );
@@ -161,14 +161,14 @@ export function KnowledgeGraph() {
     <div
       ref={containerRef}
       className="h-full w-full relative"
-      style={{ background: "var(--bg-canvas)" }}
+      style={{ background: "var(--atlas-panel-background)" }}
     >
       {loading ? (
         <LoadingState />
       ) : graph.nodes.length === 0 ? (
         <EmptyState />
       ) : graph.nodes.length > NODE_CAP ? (
-        <div className="h-full w-full flex items-center justify-center text-text-tertiary text-sm">
+        <div className="h-full w-full flex items-center justify-center text-muted-foreground text-sm">
           Graph too large — {graph.nodes.length} nodes (cap {NODE_CAP}).
         </div>
       ) : size.width > 0 && size.height > 0 && layout !== undefined ? (
@@ -876,7 +876,7 @@ function buildScene(
 
 function LoadingState() {
   return (
-    <div className="h-full w-full flex items-center justify-center text-text-tertiary">
+    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
       <span className="text-xs">Building graph…</span>
     </div>
   );
@@ -884,7 +884,7 @@ function LoadingState() {
 
 function EmptyState() {
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center text-text-tertiary gap-2">
+    <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-2">
       <div className="text-sm">No notes yet — create some and reference them with</div>
       <div className="mono text-xs text-text-muted">[[note-id]]</div>
       <div className="text-sm">to see them connect here.</div>

@@ -72,22 +72,22 @@ export function ChatPinnedMenu({
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-          <Popover.Popup className="overflow-hidden rounded-xl select-none inset-highlight shadow-md border border-[var(--atlas-element-active)] bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl">
+          <Popover.Popup className="overflow-hidden rounded-xl select-none inset-highlight shadow-md border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl">
             <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
               <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-[var(--atlas-element-hover)] px-3">
-                <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search pins…"
                   aria-label="Search pinned messages"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                 />
               </div>
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && (
-                  <div className="py-6 text-center text-xs text-[var(--text-ghost)]">
+                  <div className="py-6 text-center text-xs text-[var(--atlas-text-disabled)]">
                     No pins match.
                   </div>
                 )}
@@ -95,7 +95,7 @@ export function ChatPinnedMenu({
                   <div
                     key={pin.messageId}
                     className={cn(
-                      "group/pin flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--bg-hover)]",
+                      "group/pin flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--atlas-element-hover)]",
                       i === filtered.length - 1
                         ? ""
                         : "border-b border-[var(--atlas-element-hover)]",
@@ -109,10 +109,10 @@ export function ChatPinnedMenu({
                       }}
                       className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
                     >
-                      <span className="line-clamp-2 text-xs leading-snug text-[var(--text-secondary)]">
+                      <span className="line-clamp-2 text-xs leading-snug text-[var(--secondary-foreground)]">
                         {pin.text || "…"}
                       </span>
-                      <span className="text-3xs text-[var(--text-tertiary)]">
+                      <span className="text-3xs text-[var(--muted-foreground)]">
                         Pinned {timeAgo(pin.at, { suffix: true })}
                       </span>
                     </button>
@@ -123,7 +123,7 @@ export function ChatPinnedMenu({
                         onClick={() =>
                           useChatPinsStore.getState().actions.unpin(pinScopeKey, pin.messageId)
                         }
-                        className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/pin:opacity-100 focus-visible:opacity-100"
+                        className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--muted-foreground)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover/pin:opacity-100 focus-visible:opacity-100"
                       >
                         <PinOff size={11} />
                       </button>

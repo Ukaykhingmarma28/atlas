@@ -35,7 +35,7 @@ export function SkillsAndPacks() {
       <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="flex items-center gap-1.5 px-1.5">
           <AtlasIcon size={13} />
-          <span className="text-sm font-semibold text-text-primary">Skills</span>
+          <span className="text-sm font-semibold text-foreground">Skills</span>
         </div>
         <span className="mx-1 h-3.5 w-px bg-border" />
         {TABS.map((t) => (
@@ -100,9 +100,9 @@ function UnderlineTab({
       className={cn(
         "flex h-[29px] items-center gap-1.5 px-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px cursor-pointer",
         active
-          ? "text-text-primary border-b-[var(--primary)]"
-          : "text-text-secondary hover:text-text-primary border-b-transparent",
-        disabled && "cursor-not-allowed opacity-40 hover:text-text-secondary",
+          ? "text-foreground border-b-[var(--primary)]"
+          : "text-secondary-foreground hover:text-foreground border-b-transparent",
+        disabled && "cursor-not-allowed opacity-40 hover:text-secondary-foreground",
       )}
     >
       {label}

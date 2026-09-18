@@ -82,7 +82,7 @@ export function NewDmMenu() {
           render={
             <button
               type="button"
-              className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
             >
               <Plus size={11} />
             </button>
@@ -91,23 +91,23 @@ export function NewDmMenu() {
       </Hint>
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
+          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
             <div className="flex max-h-[min(380px,55vh)] w-[260px] flex-col">
               <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
-                <Search size={11} className="shrink-0 text-text-tertiary" />
+                <Search size={11} className="shrink-0 text-muted-foreground" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search people…"
                   aria-label="Search people"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </div>
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto py-1">
                 {candidates.length === 0 && (
-                  <div className="py-5 text-center text-xs text-text-ghost">
+                  <div className="py-5 text-center text-xs text-disabled">
                     {memberList.length <= 1 ? "Nobody else is here yet." : "Nobody matches."}
                   </div>
                 )}
@@ -118,18 +118,18 @@ export function NewDmMenu() {
                       key={m.id}
                       type="button"
                       onClick={() => toggle(m.id)}
-                      className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-[var(--bg-hover)] cursor-pointer"
+                      className="flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors hover:bg-[var(--atlas-element-hover)] cursor-pointer"
                     >
                       <CommsAvatar member={m} size={20} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs text-text-primary">{m.name}</span>
-                        <span className="block truncate text-2xs text-text-ghost">{m.email}</span>
+                        <span className="block truncate text-xs text-foreground">{m.name}</span>
+                        <span className="block truncate text-2xs text-disabled">{m.email}</span>
                       </span>
                       <Check
                         size={12}
                         className={cn(
                           "shrink-0 transition-opacity",
-                          selected ? "text-text-primary opacity-100" : "opacity-0",
+                          selected ? "text-foreground opacity-100" : "opacity-0",
                         )}
                       />
                     </button>
@@ -142,7 +142,7 @@ export function NewDmMenu() {
                   type="button"
                   disabled={picked.size === 0 || pending}
                   onClick={() => void start()}
-                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--atlas-element-active)] text-xs font-medium text-text-primary transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
+                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--atlas-element-active)] text-xs font-medium text-foreground transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
                 >
                   {pending && <Loader2 size={11} className="animate-spin" />}
                   Message

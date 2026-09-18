@@ -42,7 +42,7 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
               // Keeps the textarea selection alive so the emoji lands where the
               // caret was, not at the end.
               onMouseDown={(e) => e.preventDefault()}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
             >
               <Smile size={14} />
             </button>
@@ -55,17 +55,17 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
             // Radix's onOpenAutoFocus + preventDefault + focus() is one
             // Base UI prop: hand initialFocus the element to land on.
             initialFocus={searchRef}
-            className="w-[292px] rounded-lg border border-border bg-bg-overlay shadow-md origin-[var(--transform-origin)] animate-scale-in"
+            className="w-[292px] rounded-lg border border-border bg-popover shadow-md origin-[var(--transform-origin)] animate-scale-in"
           >
             <div className="border-b border-border p-1.5">
-              <div className="flex items-center gap-1.5 rounded-md border border-border bg-bg-input px-2 py-1 focus-within:border-border-strong">
-                <Search size={11} className="shrink-0 text-text-ghost" />
+              <div className="flex items-center gap-1.5 rounded-md border border-border bg-panel-input px-2 py-1 focus-within:border-border-strong">
+                <Search size={11} className="shrink-0 text-disabled" />
                 <input
                   ref={searchRef}
                   value={query}
                   onChange={(ev) => setQuery(ev.target.value)}
                   placeholder="Search emoji…"
-                  className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-ghost"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-disabled"
                 />
               </div>
             </div>
@@ -75,14 +75,14 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
                 results.length ? (
                   <Grid entries={results.map((r) => r.char)} onPick={pick} />
                 ) : (
-                  <div className="px-1 py-6 text-center text-xs text-text-tertiary">
+                  <div className="px-1 py-6 text-center text-xs text-muted-foreground">
                     No emoji matches “{query.trim()}”.
                   </div>
                 )
               ) : (
                 EMOJI_CATEGORIES.map((cat) => (
                   <div key={cat.name} className="mb-1.5 last:mb-0">
-                    <div className="px-1 pb-1 pt-0.5 text-2xs font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+                    <div className="px-1 pb-1 pt-0.5 text-2xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       {cat.name}
                     </div>
                     <Grid entries={cat.emoji.map((x) => x.char)} onPick={pick} />
@@ -106,7 +106,7 @@ function Grid({ entries, onPick }: { entries: string[]; onPick: (c: string) => v
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onPick(char)}
-          className="flex h-control-lg items-center justify-center rounded text-lg leading-none transition-colors hover:bg-bg-hover cursor-pointer"
+          className="flex h-control-lg items-center justify-center rounded text-lg leading-none transition-colors hover:bg-element-hover cursor-pointer"
         >
           {char}
         </button>

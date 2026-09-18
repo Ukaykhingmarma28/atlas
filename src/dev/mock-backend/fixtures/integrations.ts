@@ -378,7 +378,7 @@ bun add @acme/design-tokens
 \`\`\`ts
 import { tokens } from "@acme/design-tokens";
 
-document.documentElement.style.setProperty("--bg-base", tokens.color.bg.base);
+document.documentElement.style.setProperty("--background", tokens.color.bg.base);
 \`\`\`
 
 ## Layers

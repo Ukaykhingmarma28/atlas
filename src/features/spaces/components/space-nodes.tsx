@@ -65,7 +65,7 @@ export const SpaceNoteNode = memo(function SpaceNoteNode({ id, data, selected }:
     <div
       className={cn(
         "group relative flex h-full w-full flex-col overflow-visible rounded-2xl",
-        "bg-[var(--bg-secondary)]/70 backdrop-blur-3xl backdrop-saturate-150",
+        "bg-[var(--card)]/70 backdrop-blur-3xl backdrop-saturate-150",
         "border shadow-lg transition-colors",
         selected ? "border-[var(--primary)]/60" : "border-border-subtle hover:border-border",
       )}
@@ -73,8 +73,8 @@ export const SpaceNoteNode = memo(function SpaceNoteNode({ id, data, selected }:
       <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-[var(--atlas-element-highlight)] to-transparent opacity-60" />
       <NodeHandles selected={selected} />
       <div className="relative flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-bg-hover">
-          <StickyNote size={12} className="text-text-secondary" />
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-element-hover">
+          <StickyNote size={12} className="text-secondary-foreground" />
         </div>
         <input
           ref={title.ref}
@@ -82,7 +82,7 @@ export const SpaceNoteNode = memo(function SpaceNoteNode({ id, data, selected }:
           onChange={title.onChange}
           readOnly={title.readOnly}
           placeholder="Untitled"
-          className="nodrag min-w-0 flex-1 bg-transparent text-base font-semibold text-[var(--text-primary)] outline-none placeholder:text-text-tertiary"
+          className="nodrag min-w-0 flex-1 bg-transparent text-base font-semibold text-[var(--foreground)] outline-none placeholder:text-muted-foreground"
         />
       </div>
       <textarea
@@ -91,7 +91,7 @@ export const SpaceNoteNode = memo(function SpaceNoteNode({ id, data, selected }:
         onChange={body.onChange}
         readOnly={body.readOnly}
         placeholder="Write something…"
-        className="nodrag relative min-h-0 flex-1 resize-none rounded-b-2xl bg-transparent px-3 py-2.5 text-sm leading-relaxed text-[var(--text-secondary)] outline-none placeholder:italic placeholder:text-text-tertiary"
+        className="nodrag relative min-h-0 flex-1 resize-none rounded-b-2xl bg-transparent px-3 py-2.5 text-sm leading-relaxed text-[var(--secondary-foreground)] outline-none placeholder:italic placeholder:text-muted-foreground"
       />
       <SpaceResizer id={id} selected={selected} minWidth={160} minHeight={100} />
     </div>
@@ -118,7 +118,7 @@ export const SpaceTextNode = memo(function SpaceTextNode({ id, data, selected }:
         onChange={text.onChange}
         readOnly={text.readOnly}
         placeholder="Text"
-        className="nodrag h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-lg leading-snug text-[var(--text-primary)] caret-[var(--primary)] outline-none placeholder:text-text-tertiary"
+        className="nodrag h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-lg leading-snug text-[var(--foreground)] caret-[var(--primary)] outline-none placeholder:text-muted-foreground"
       />
       <SpaceResizer id={id} selected={selected} minWidth={80} minHeight={40} />
     </div>
@@ -131,7 +131,7 @@ export const SpaceTextNode = memo(function SpaceTextNode({ id, data, selected }:
  *  100×100 viewBox stretched to the box; non-scaling stroke. */
 function ShapeSvg({ type, stroke }: { type: SpaceShapeType; stroke: string }) {
   const common = {
-    fill: "var(--bg-secondary)",
+    fill: "var(--card)",
     fillOpacity: 0.7,
     stroke,
     strokeWidth: 1.5,
@@ -175,7 +175,7 @@ export const SpaceShapeNode = memo(function SpaceShapeNode({ id, data, selected 
           onChange={title.onChange}
           readOnly={title.readOnly}
           rows={1}
-          className="nodrag max-h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent text-center text-sm leading-snug text-[var(--text-primary)] caret-[var(--primary)] outline-none"
+          className="nodrag max-h-full w-full resize-none whitespace-pre-wrap break-words bg-transparent text-center text-sm leading-snug text-[var(--foreground)] caret-[var(--primary)] outline-none"
         />
       </div>
     </div>
@@ -205,7 +205,7 @@ export const SpaceGroupNode = memo(function SpaceGroupNode({ id, data, selected 
         onChange={title.onChange}
         readOnly={title.readOnly}
         placeholder="Group"
-        className="nodrag absolute -top-6 left-1 bg-transparent text-xs font-medium text-text-tertiary outline-none placeholder:text-text-tertiary/60"
+        className="nodrag absolute -top-6 left-1 bg-transparent text-xs font-medium text-muted-foreground outline-none placeholder:text-muted-foreground/60"
       />
       <SpaceResizer id={id} selected={selected} minWidth={120} minHeight={80} />
     </div>
@@ -253,16 +253,16 @@ export const SpaceMediaNode = memo(function SpaceMediaNode({ id, data, selected 
         className={cn(
           "h-full w-full overflow-hidden rounded-xl border transition-colors",
           selected ? "border-[var(--primary)]/60" : "border-border-subtle",
-          "bg-[var(--bg-secondary)]",
+          "bg-[var(--card)]",
         )}
       >
         {failed ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground">
             <ImageOff size={16} />
             <span className="text-2xs">Media unavailable</span>
           </div>
         ) : url === null ? (
-          <div className="flex h-full w-full items-center justify-center text-text-tertiary">
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
             <Loader2 size={16} className="animate-spin" />
           </div>
         ) : d.mediaKind === "video" ? (

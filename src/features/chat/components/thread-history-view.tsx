@@ -88,14 +88,12 @@ export function ThreadHistoryView({
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border bg-bg-elevated shadow-md animate-scale-in",
+            "border border-border bg-card shadow-md animate-scale-in",
           )}
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-            <Dialog.Title className="text-base font-semibold text-text-primary">
-              History
-            </Dialog.Title>
-            <span className="text-xs font-mono text-text-tertiary">
+            <Dialog.Title className="text-base font-semibold text-foreground">History</Dialog.Title>
+            <span className="text-xs font-mono text-muted-foreground">
               {threads.length} {threads.length === 1 ? "thread" : "threads"}
             </span>
             <button
@@ -104,8 +102,8 @@ export function ThreadHistoryView({
               className={cn(
                 "ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs transition-colors cursor-pointer",
                 archivedOnly
-                  ? "bg-bg-selected text-text-primary"
-                  : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+                  ? "bg-element-selected text-foreground"
+                  : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
               )}
             >
               <Archive size={10} />
@@ -114,13 +112,13 @@ export function ThreadHistoryView({
             <button
               type="button"
               onClick={() => setImportOpen(true)}
-              className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+              className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
             >
               <Download size={10} />
               Import
             </button>
             <Dialog.Close
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
               aria-label="Close"
             >
               <X size={13} />
@@ -128,25 +126,25 @@ export function ThreadHistoryView({
           </div>
 
           <div className="flex items-center gap-1.5 border-b border-border px-3 h-[32px] shrink-0">
-            <Search size={11} className="shrink-0 text-text-tertiary" />
+            <Search size={11} className="shrink-0 text-muted-foreground" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search history"
               placeholder="Search…"
-              className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+              className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
             />
           </div>
 
           <div className="flex-1 overflow-auto hide-scrollbar">
             {buckets.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-text-tertiary">
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                 {search.trim() ? "Nothing matches your search." : "No threads yet."}
               </div>
             ) : (
               buckets.map(([label, rows]) => (
                 <div key={label}>
-                  <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-text-tertiary">
+                  <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-muted-foreground">
                     {label}
                   </div>
                   {rows.map((thread) => (
@@ -156,19 +154,19 @@ export function ThreadHistoryView({
                         onOpenThread(thread);
                         onOpenChange(false);
                       }}
-                      className="group flex cursor-pointer select-none items-center gap-2 border-b border-border-subtle px-3 py-2 transition-colors last:border-b-0 hover:bg-bg-hover"
+                      className="group flex cursor-pointer select-none items-center gap-2 border-b border-border-subtle px-3 py-2 transition-colors last:border-b-0 hover:bg-element-hover"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs text-text-primary">
+                        <span className="block truncate text-xs text-foreground">
                           {thread.title}
                         </span>
-                        <span className="block truncate text-3xs text-text-tertiary">
+                        <span className="block truncate text-3xs text-muted-foreground">
                           {thread.projectName} · {agentMeta(thread.agentId).label} ·{" "}
                           {timeAgo(thread.updatedAt, { suffix: true })}
                         </span>
                       </span>
                       {thread.archived && (
-                        <Archive size={10} className="shrink-0 text-text-tertiary" />
+                        <Archive size={10} className="shrink-0 text-muted-foreground" />
                       )}
                       <Hint label="Delete thread">
                         <button
@@ -178,7 +176,7 @@ export function ThreadHistoryView({
                             void remove(thread);
                           }}
                           aria-label="Delete thread"
-                          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary opacity-0 transition-opacity hover:bg-bg-elevated hover:text-[var(--status-error)] group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-card hover:text-[var(--atlas-status-error-foreground)] group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
                         >
                           <Trash2 size={10} />
                         </button>

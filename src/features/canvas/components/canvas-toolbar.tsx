@@ -64,7 +64,7 @@ export function CanvasToolbar({
     <div
       className={cn(
         "absolute left-3 top-1/2 -translate-y-1/2 z-panel flex flex-col items-center gap-1 p-1",
-        "rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-md",
+        "rounded-xl border border-border-subtle bg-[var(--card)]/70 backdrop-blur-2xl shadow-md",
       )}
     >
       {TOOLS.map((t) => (
@@ -92,7 +92,7 @@ export function CanvasToolbar({
         <button
           type="button"
           onClick={onInsertMedia}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
         >
           <ImageIcon size={16} />
         </button>
@@ -104,7 +104,7 @@ export function CanvasToolbar({
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Undo2 size={16} />
         </button>
@@ -114,7 +114,7 @@ export function CanvasToolbar({
           type="button"
           onClick={onRedo}
           disabled={!canRedo}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Redo2 size={16} />
         </button>
@@ -141,7 +141,7 @@ function ToolButton({
           "flex h-8 w-8 items-center justify-center rounded-lg transition-colors cursor-pointer",
           active
             ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
         )}
       >
         <def.icon size={16} />

@@ -37,17 +37,17 @@ export function CommsNotConnected({ org }: { org: Organisation | null }) {
   return (
     <div className="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-2.5 overflow-hidden px-8 text-center">
       <DitherBackdrop />
-      <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-bg-elevated text-text-secondary">
+      <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-card text-secondary-foreground">
         <MessageCircle size={16} />
       </span>
       {/* Text hierarchy is one rung brighter than the chrome's default. This is
-          the only content on the panel, so `--text-ghost` — the dim rung for
+          the only content on the panel, so `--atlas-text-disabled` — the dim rung for
           decoration and disabled state — left the one explanation unreadable
           against the near-black surface. */}
-      <div className="relative text-sm font-medium text-text-primary">
+      <div className="relative text-sm font-medium text-foreground">
         {org ? `${org.name} isn't connected` : "No organisation selected"}
       </div>
-      <p className="relative max-w-[220px] text-xs leading-relaxed text-text-secondary">
+      <p className="relative max-w-[220px] text-xs leading-relaxed text-secondary-foreground">
         {org
           ? "Team chat needs this organisation synced to your Atlas account."
           : "Select an organisation to use team chat."}
@@ -62,7 +62,7 @@ export function CommsNotConnected({ org }: { org: Organisation | null }) {
           // one element — the vibrant-panel rule bans transform ANIMATION near
           // blur, not a still frosted control (the drop overlay already blurs
           // inside this panel).
-          className="relative mt-1 flex h-control-lg items-center gap-1.5 rounded-full border border-border-strong bg-[var(--atlas-element-active)] px-4 text-sm font-medium text-text-primary inset-highlight backdrop-blur-md transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+          className="relative mt-1 flex h-control-lg items-center gap-1.5 rounded-full border border-border-strong bg-[var(--atlas-element-active)] px-4 text-sm font-medium text-foreground inset-highlight backdrop-blur-md transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
         >
           {syncing ? (
             <Loader2 size={12} className="shrink-0 animate-spin" />

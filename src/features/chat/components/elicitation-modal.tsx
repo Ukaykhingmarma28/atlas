@@ -92,15 +92,15 @@ export function ElicitationModal({
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
-            "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
-            "shadow-md text-text-primary",
+            "w-[480px] max-w-[92vw] rounded-lg border border-border bg-card",
+            "shadow-md text-foreground",
           )}
         >
           <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
-            <HelpCircle className="mt-0.5 size-4 text-text-tertiary" />
+            <HelpCircle className="mt-0.5 size-4 text-muted-foreground" />
             <div className="min-w-0">
               <Dialog.Title className="text-sm font-medium">The agent has a question</Dialog.Title>
-              <Dialog.Description className="mt-0.5 text-xs text-text-secondary break-words">
+              <Dialog.Description className="mt-0.5 text-xs text-secondary-foreground break-words">
                 {pending.message}
               </Dialog.Description>
             </div>
@@ -110,9 +110,9 @@ export function ElicitationModal({
             {pending.mode === "url" && pending.url && (
               <button
                 onClick={() => void openUrl(pending.url!)}
-                className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                className="flex w-full items-center gap-2 rounded-sm border border-border bg-background px-2.5 py-1.5 text-left text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
               >
-                <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
+                <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">Open page</span>
               </button>
             )}
@@ -121,19 +121,19 @@ export function ElicitationModal({
               fields.length === 0 && (
                 // A form with nothing to fill is still answerable — the agent may
                 // just want a yes/no. Saying so beats an empty box.
-                <p className="px-0.5 text-xs text-text-secondary">
+                <p className="px-0.5 text-xs text-secondary-foreground">
                   Confirm to continue, or decline to tell the agent no.
                 </p>
               )}
 
             {fields.map((f) => (
               <div key={f.name} className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-text-primary">
+                <label className="text-xs font-medium text-foreground">
                   {f.title}
-                  {f.required && <span className="ml-1 text-text-tertiary">*</span>}
+                  {f.required && <span className="ml-1 text-muted-foreground">*</span>}
                 </label>
                 {f.description && (
-                  <p className="text-2xs leading-snug text-text-tertiary">{f.description}</p>
+                  <p className="text-2xs leading-snug text-muted-foreground">{f.description}</p>
                 )}
                 {f.kind === "boolean" ? (
                   <button
@@ -141,8 +141,8 @@ export function ElicitationModal({
                     className={cn(
                       "flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs transition-colors",
                       values[f.name]
-                        ? "bg-bg-selected text-text-primary"
-                        : "text-text-secondary hover:bg-bg-hover",
+                        ? "bg-element-selected text-foreground"
+                        : "text-secondary-foreground hover:bg-element-hover",
                     )}
                   >
                     {values[f.name] ? "Yes" : "No"}
@@ -175,8 +175,8 @@ export function ElicitationModal({
                           className={cn(
                             "rounded-sm border border-border px-2 py-1 text-xs transition-colors",
                             picked
-                              ? "bg-bg-selected text-text-primary"
-                              : "text-text-secondary hover:bg-bg-hover",
+                              ? "bg-element-selected text-foreground"
+                              : "text-secondary-foreground hover:bg-element-hover",
                           )}
                         >
                           {c.label}
@@ -193,7 +193,7 @@ export function ElicitationModal({
                     }
                     spellCheck={false}
                     autoComplete="off"
-                    className="h-8 w-full rounded-sm border border-border bg-bg-base px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-strong"
+                    className="h-8 w-full rounded-sm border border-border bg-background px-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
                   />
                 )}
               </div>
@@ -203,14 +203,14 @@ export function ElicitationModal({
               <button
                 disabled={busy || !complete}
                 onClick={() => void respond("accept", pending.mode === "form" ? values : {})}
-                className="h-7 rounded-sm border border-border px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+                className="h-7 rounded-sm border border-border px-2.5 text-xs text-foreground hover:bg-element-hover disabled:opacity-50 disabled:hover:bg-transparent"
               >
                 {pending.mode === "url" ? "I'm done" : "Send"}
               </button>
               <button
                 disabled={busy}
                 onClick={() => void respond("decline")}
-                className="h-7 rounded-sm px-2 text-xs text-text-tertiary hover:text-text-primary"
+                className="h-7 rounded-sm px-2 text-xs text-muted-foreground hover:text-foreground"
               >
                 Decline
               </button>

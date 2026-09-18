@@ -66,7 +66,7 @@ function DialogContent({
         className={cn(
           "fixed top-1/2 left-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
           "flex w-full max-w-[min(32rem,calc(100vw-2rem))] flex-col gap-3 p-4",
-          "rounded-xl border border-border bg-bg-elevated text-text-primary shadow-lg",
+          "rounded-xl border border-border bg-card text-foreground shadow-lg",
           "outline-none",
           "data-open:animate-scale-in data-closed:animate-scale-out",
           className,
@@ -107,7 +107,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("heading text-text-primary", className)}
+      className={cn("heading text-foreground", className)}
       {...props}
     />
   );
@@ -117,7 +117,7 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("body text-text-secondary", className)}
+      className={cn("body text-secondary-foreground", className)}
       {...props}
     />
   );

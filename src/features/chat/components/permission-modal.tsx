@@ -240,20 +240,20 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
               // footer — below the window. The plan panel scrolls internally.
               "fixed left-1/2 top-[5vh] z-50 -translate-x-1/2",
               "flex max-h-[90vh] w-[880px] max-w-[94vw] flex-col overflow-hidden",
-              "rounded-md border border-border bg-bg-elevated",
-              "shadow-md animate-scale-in text-text-primary",
+              "rounded-md border border-border bg-card",
+              "shadow-md animate-scale-in text-foreground",
             )}
           >
             <div className="flex items-start gap-3 border-b border-border px-4 py-3">
               <ClipboardList className="mt-0.5 size-4 text-primary" />
               <div className="flex-1">
                 <Dialog.Title className="text-sm font-medium">Review plan</Dialog.Title>
-                <Dialog.Description className="mt-0.5 text-xs text-text-secondary">
+                <Dialog.Description className="mt-0.5 text-xs text-secondary-foreground">
                   The agent proposed a plan before continuing. Review it, then approve or reject.
                 </Dialog.Description>
               </div>
               {queueNote && (
-                <span className="shrink-0 rounded-sm bg-bg-base px-2 py-0.5 text-xs text-text-secondary">
+                <span className="shrink-0 rounded-sm bg-background px-2 py-0.5 text-xs text-secondary-foreground">
                   {queueNote}
                 </span>
               )}
@@ -273,13 +273,13 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                       onClick={() => resolve(bypassOptionId, "bypassPermissions")}
                       className={cn(
                         "mt-2 flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-left",
-                        "text-sm text-text-primary transition-colors hover:bg-bg-base",
+                        "text-sm text-foreground transition-colors hover:bg-background",
                       )}
                     >
-                      <AlertTriangle className="size-3.5 shrink-0 text-[var(--status-error)]" />
+                      <AlertTriangle className="size-3.5 shrink-0 text-[var(--atlas-status-error-foreground)]" />
                       <span className="flex-1">
                         Yes, and bypass permissions
-                        <span className="block text-xs text-text-secondary">
+                        <span className="block text-xs text-secondary-foreground">
                           Approve the plan and stop asking for the rest of this session.
                         </span>
                       </span>
@@ -290,7 +290,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                   <button
                     type="button"
                     onClick={cancel}
-                    className="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-base hover:text-text-primary transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs text-secondary-foreground hover:bg-background hover:text-foreground transition-colors"
                   >
                     Cancel <Kbd>esc</Kbd>
                   </button>
@@ -325,13 +325,15 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   // Standard case — inline card above the composer.
   return (
     <div className="px-4 pt-2">
-      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md">
+      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md">
         <div className="flex items-start gap-2 px-3 pt-3">
           <div className="flex-1 min-w-0">
-            <div className="text-base font-medium leading-snug text-text-primary">
-              The agent wants to run <span className="font-mono text-text-primary">{title}</span>?
+            <div className="text-base font-medium leading-snug text-foreground">
+              The agent wants to run <span className="font-mono text-foreground">{title}</span>?
             </div>
-            {queueNote && <div className="mt-0.5 text-xs text-text-secondary">{queueNote}</div>}
+            {queueNote && (
+              <div className="mt-0.5 text-xs text-secondary-foreground">{queueNote}</div>
+            )}
           </div>
         </div>
 
@@ -352,7 +354,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
             }}
             rows={1}
             placeholder="Tell the agent what to do instead…"
-            className="w-full resize-none rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-strong)]"
+            className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-[var(--atlas-border-strong)]"
           />
         </div>
       </div>
@@ -379,10 +381,10 @@ function PermissionOption({
   const label = relabelAgentBrand(option.name, agentType);
 
   const tone = isPrimary
-    ? "border-transparent bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-primary-hover)]"
+    ? "border-transparent bg-[var(--primary)] text-[var(--background)] hover:bg-[var(--atlas-primary-hover)]"
     : reject
-      ? "border-border bg-bg-base text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
-      : "border-border bg-bg-base text-text-primary hover:bg-bg-hover";
+      ? "border-border bg-background text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-background)]"
+      : "border-border bg-background text-foreground hover:bg-element-hover";
 
   return (
     <button
@@ -398,8 +400,8 @@ function PermissionOption({
           className={cn(
             "flex h-4 w-4 shrink-0 items-center justify-center rounded text-2xs font-semibold",
             isPrimary
-              ? "bg-[var(--bg-base)]/15 text-[var(--bg-base)]"
-              : "bg-bg-elevated text-text-secondary",
+              ? "bg-[var(--background)]/15 text-[var(--background)]"
+              : "bg-card text-secondary-foreground",
           )}
         >
           {index}
@@ -408,7 +410,7 @@ function PermissionOption({
       <Icon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 font-medium break-words">{label}</span>
       {isPrimary && (
-        <Kbd className="border-[var(--bg-base)]/20 bg-[var(--bg-base)]/10 text-[var(--bg-base)]">
+        <Kbd className="border-[var(--background)]/20 bg-[var(--background)]/10 text-[var(--background)]">
           ↵
         </Kbd>
       )}
@@ -422,8 +424,8 @@ function ToolCallPreview({ tc }: { tc: PendingPermission["toolCall"] }) {
   const formatted = inputValue !== undefined ? safeStringify(inputValue, 2) : null;
   if (!formatted) return null;
   return (
-    <div className="mx-3 mt-2 rounded-md border border-border bg-bg-base px-3 py-2">
-      <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-xs leading-snug text-text-secondary">
+    <div className="mx-3 mt-2 rounded-md border border-border bg-background px-3 py-2">
+      <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-xs leading-snug text-secondary-foreground">
         {formatted}
       </pre>
     </div>

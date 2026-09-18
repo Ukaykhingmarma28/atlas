@@ -42,14 +42,14 @@ export function EditorTopbar({
         height: 36,
         gap: 8,
         padding: "0 14px",
-        background: "var(--bg-canvas)",
+        background: "var(--atlas-panel-background)",
       }}
     >
       {onToggleSidebar && (
         <Hint label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}>
           <button
             onClick={onToggleSidebar}
-            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22, marginLeft: -6 }}
           >
             <PanelLeft size={12} />
@@ -59,7 +59,7 @@ export function EditorTopbar({
       {/* Breadcrumbs */}
       <div
         className="flex items-center min-w-0 text-sm"
-        style={{ gap: 6, color: "var(--text-tertiary)" }}
+        style={{ gap: 6, color: "var(--muted-foreground)" }}
       >
         {breadcrumbs.map((segment, i) => (
           <span key={i} className="flex items-center" style={{ gap: 6 }}>
@@ -68,7 +68,7 @@ export function EditorTopbar({
             <ChevronRight size={10} className="text-text-muted shrink-0" />
           </span>
         ))}
-        <span className="flex items-center text-text-primary truncate" style={{ gap: 5 }}>
+        <span className="flex items-center text-foreground truncate" style={{ gap: 5 }}>
           <span className="leading-none">{icon ?? "📄"}</span>
           <span className="truncate">{title}</span>
         </span>
@@ -83,7 +83,7 @@ export function EditorTopbar({
       {isDirty && (
         <span
           className="dot"
-          style={{ background: "var(--text-primary)", width: 6, height: 6 }}
+          style={{ background: "var(--foreground)", width: 6, height: 6 }}
           title="Unsaved changes"
         />
       )}
@@ -91,7 +91,7 @@ export function EditorTopbar({
         <Hint label="Toggle inspector">
           <button
             onClick={onToggleInspector}
-            className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22 }}
           >
             <PanelRight size={12} />

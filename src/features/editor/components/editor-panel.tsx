@@ -430,7 +430,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   if (!buffer) {
     return (
-      <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         Loading...
       </div>
     );
@@ -441,12 +441,12 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   return (
     <div
-      className="bg-bg-primary"
+      className="bg-background"
       style={{ height: containerHeight || "100%", overflow: "hidden" }}
     >
       {/* Breadcrumb toolbar */}
       <div
-        className="flex items-center px-3 border-b border-border bg-bg-primary overflow-hidden"
+        className="flex items-center px-3 border-b border-border bg-background overflow-hidden"
         style={{ height: TOOLBAR_HEIGHT }}
       >
         <Breadcrumbs filePath={path} projectPath={projectPath} />
@@ -462,21 +462,21 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
               type="button"
               onClick={() => void forceReload()}
               title="This file changed on disk. Reload discards your unsaved edits."
-              className="inline-flex items-center gap-1 h-control-xs px-2 rounded-full border border-border bg-bg-elevated text-2xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+              className="inline-flex items-center gap-1 h-control-xs px-2 rounded-full border border-border bg-card text-2xs font-medium text-secondary-foreground hover:text-foreground hover:bg-element-hover transition-colors shrink-0"
             >
               <RefreshCw size={10} /> Disk changed · Reload
             </button>
           )}
           {isMarkdownFile && (
-            <div className="inline-flex items-center h-control-xs rounded-full border border-border bg-bg-elevated p-[2px] text-2xs font-medium shrink-0">
+            <div className="inline-flex items-center h-control-xs rounded-full border border-border bg-card p-[2px] text-2xs font-medium shrink-0">
               <button
                 type="button"
                 onClick={() => setRenderMode("editor")}
                 className={cn(
                   "px-2 h-full rounded-full transition-colors",
                   renderMode === "editor"
-                    ? "bg-bg-hover text-text-primary"
-                    : "text-text-secondary hover:text-text-primary",
+                    ? "bg-element-hover text-foreground"
+                    : "text-secondary-foreground hover:text-foreground",
                 )}
               >
                 Edit
@@ -487,8 +487,8 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
                 className={cn(
                   "px-2 h-full rounded-full transition-colors",
                   renderMode === "preview"
-                    ? "bg-bg-hover text-text-primary"
-                    : "text-text-secondary hover:text-text-primary",
+                    ? "bg-element-hover text-foreground"
+                    : "text-secondary-foreground hover:text-foreground",
                 )}
               >
                 Preview
@@ -511,7 +511,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         {/* Mounted on demand, not display:none — a hidden mount would still
             markdown-parse every non-markdown buffer on open (see above). */}
         {effectiveMode === "preview" && (
-          <div style={{ height: editorHeight }} className="overflow-auto bg-bg-primary px-4 py-3">
+          <div style={{ height: editorHeight }} className="overflow-auto bg-background px-4 py-3">
             {buffer && (
               <MarkdownFile trusted={true} className="max-w-none">
                 {buffer.originalContent}
@@ -537,9 +537,9 @@ function Breadcrumbs({ filePath, projectPath }: { filePath: string; projectPath:
         const isLast = i === segments.length - 1;
         return (
           <span key={i} className="flex items-center shrink-0">
-            {i > 0 && <ChevronRight size={10} className="text-text-tertiary mx-0.5 shrink-0" />}
+            {i > 0 && <ChevronRight size={10} className="text-muted-foreground mx-0.5 shrink-0" />}
             <span
-              className={`text-xs font-mono ${isLast ? "text-text-primary" : "text-text-tertiary"}`}
+              className={`text-xs font-mono ${isLast ? "text-foreground" : "text-muted-foreground"}`}
             >
               {segment}
             </span>

@@ -169,7 +169,7 @@ let plans: PlanRecord[] = [
     plan: `## Token ramp
 
 - Derive every step from \`--accent\`; no hand-picked hexes.
-- Keep \`--danger\` out of the ramp: it is a role, not a step.
+- Keep \`--destructive\` out of the ramp: it is a role, not a step.
 `,
     timestamp: ago(26 * 3_600_000),
   },

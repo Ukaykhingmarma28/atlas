@@ -54,8 +54,8 @@ export function PageProperties({
     <div
       style={{
         marginTop: 14,
-        borderTop: "1px solid var(--border-subtle)",
-        borderBottom: "1px solid var(--border-subtle)",
+        borderTop: "1px solid var(--atlas-border-subtle)",
+        borderBottom: "1px solid var(--atlas-border-subtle)",
       }}
     >
       <button
@@ -70,7 +70,7 @@ export function PageProperties({
           padding: "8px 0",
           background: "transparent",
           border: 0,
-          color: "var(--text-tertiary)",
+          color: "var(--muted-foreground)",
           textAlign: "left",
           cursor: "pointer",
         }}
@@ -79,7 +79,7 @@ export function PageProperties({
           size={12}
           strokeWidth={1.7}
           style={{
-            color: "var(--text-muted)",
+            color: "var(--muted-foreground)",
             transform: open ? "rotate(90deg)" : "rotate(0deg)",
             transition: "transform 120ms",
             flex: "none",
@@ -87,7 +87,7 @@ export function PageProperties({
         />
         <span
           className="text-2xs font-semibold uppercase tracking-wider"
-          style={{ color: "var(--text-tertiary)" }}
+          style={{ color: "var(--muted-foreground)" }}
         >
           Properties
         </span>
@@ -95,7 +95,7 @@ export function PageProperties({
           <span
             className="text-sm"
             style={{
-              color: "var(--text-muted)",
+              color: "var(--muted-foreground)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -128,17 +128,17 @@ export function PageProperties({
             <TagsEditor tags={meta.tags ?? []} onChange={(tags) => patch(entryId, { tags })} />
           </Row>
           <Row icon={Calendar} label="Created">
-            <span style={{ color: "var(--text-secondary)" }}>
+            <span style={{ color: "var(--secondary-foreground)" }}>
               {formatDate(meta.createdAt ?? null) ?? "—"}
             </span>
           </Row>
           <Row icon={Clock} label="Last edited">
-            <span style={{ color: "var(--text-secondary)" }}>
+            <span style={{ color: "var(--secondary-foreground)" }}>
               {formatDate(meta.updatedAt ?? fallbackUpdatedAt ?? null) ?? "—"}
             </span>
           </Row>
           <Row icon={LinkIcon} label="References">
-            <span className="mono text-sm" style={{ color: "var(--text-secondary)" }}>
+            <span className="mono text-sm" style={{ color: "var(--secondary-foreground)" }}>
               {referencesLabel}
             </span>
           </Row>
@@ -172,7 +172,7 @@ function Row({
           display: "flex",
           alignItems: "center",
           gap: 7,
-          color: "var(--text-tertiary)",
+          color: "var(--muted-foreground)",
         }}
       >
         <Icon size={12} className="text-text-muted" strokeWidth={1.5} />
@@ -212,9 +212,9 @@ function StatusEditor({
         className="pill text-xs"
         style={{
           height: 22,
-          color: value ? "var(--text-primary)" : "var(--text-tertiary)",
-          background: value ? "var(--bg-elevated-2)" : "transparent",
-          borderColor: "var(--border-subtle)",
+          color: value ? "var(--foreground)" : "var(--muted-foreground)",
+          background: value ? "var(--card)" : "transparent",
+          borderColor: "var(--atlas-border-subtle)",
           cursor: "pointer",
         }}
       >
@@ -223,7 +223,7 @@ function StatusEditor({
           style={{
             width: 6,
             height: 6,
-            background: value ? "var(--text-primary)" : "var(--text-muted)",
+            background: value ? "var(--foreground)" : "var(--muted-foreground)",
           }}
         />
         {value ?? "Add status"}
@@ -252,7 +252,7 @@ function StatusEditor({
               }
             }}
             placeholder="Status…"
-            className="bg-bg-input text-text-primary text-sm"
+            className="bg-panel-input text-foreground text-sm"
             style={{
               width: "100%",
               height: 26,
@@ -275,7 +275,7 @@ function StatusEditor({
                 style={{
                   height: 20,
                   cursor: "pointer",
-                  borderColor: "var(--border-subtle)",
+                  borderColor: "var(--atlas-border-subtle)",
                 }}
               >
                 {p}
@@ -290,7 +290,7 @@ function StatusEditor({
                 }}
                 className="text-xs"
                 style={{
-                  color: "var(--text-tertiary)",
+                  color: "var(--muted-foreground)",
                   cursor: "pointer",
                   padding: "0 4px",
                 }}
@@ -341,7 +341,7 @@ function TextEditor({
           background: "transparent",
           border: 0,
           outline: "none",
-          color: "var(--text-primary)",
+          color: "var(--foreground)",
           padding: 0,
           minWidth: 100,
         }}
@@ -352,7 +352,10 @@ function TextEditor({
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className={cn("text-base", value ? "text-text-secondary" : "text-text-tertiary italic")}
+      className={cn(
+        "text-base",
+        value ? "text-secondary-foreground" : "text-muted-foreground italic",
+      )}
       style={{
         background: "transparent",
         border: 0,
@@ -390,7 +393,7 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
           className="pill pill-bare text-xs"
           style={{
             height: 20,
-            borderColor: "var(--border-subtle)",
+            borderColor: "var(--atlas-border-subtle)",
             paddingRight: 4,
             display: "inline-flex",
             alignItems: "center",
@@ -406,7 +409,7 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
                 background: "transparent",
                 border: 0,
                 padding: 0,
-                color: "var(--text-muted)",
+                color: "var(--muted-foreground)",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -436,11 +439,11 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
           className="text-xs"
           style={{
             background: "transparent",
-            border: "1px dashed var(--border-subtle)",
+            border: "1px dashed var(--atlas-border-subtle)",
             borderRadius: 9999,
             padding: "0 8px",
             height: 20,
-            color: "var(--text-primary)",
+            color: "var(--foreground)",
             outline: "none",
             width: 80,
           }}
@@ -451,7 +454,7 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
           onClick={() => setAdding(true)}
           className="text-sm"
           style={{
-            color: "var(--text-muted)",
+            color: "var(--muted-foreground)",
             padding: "0 6px",
             background: "transparent",
             border: 0,

@@ -15,7 +15,7 @@ const MAX_DIM = 4096; // cap the longest side (px) to keep files/memory sane
 
 /** Canvas background (matches the app) — used for formats without alpha. */
 function canvasBg(): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue("--bg-base").trim();
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
   return v || "#0a0a0a";
 }
 

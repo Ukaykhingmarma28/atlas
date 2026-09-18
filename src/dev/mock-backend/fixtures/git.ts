@@ -195,7 +195,7 @@ const HEAD_LIB_RS = () =>
 const HEAD_TOKENS_CSS = () =>
   atHead("src/styles/tokens.css", [
     [`  --accent: #6e9cff;`, `  --accent: #4f7fe0;`],
-    [`  --danger: #f2555a;\n`, ``],
+    [`  --destructive: #f2555a;\n`, ``],
     [`  --font-mono: "JetBrains Mono", ui-monospace, monospace;\n`, ``],
     [`.card[data-state="disabled"] {\n  opacity: 0.45;\n  pointer-events: none;\n}\n`, ``],
   ]);

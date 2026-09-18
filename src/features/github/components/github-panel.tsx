@@ -39,7 +39,7 @@ import { metaFromSearch, type ClonedRepo, type GithubRepo } from "@/features/git
 /** One cell of the row's action pill — the same 24px dock as the titlebar's
  *  (`titlebar-dock.tsx`): a `bg-card` pill with a hairline, 20px round cells. */
 const GROUP_BUTTON =
-  "flex size-5 items-center justify-center rounded-full text-text-tertiary hover:text-text-primary hover:bg-bg-active cursor-pointer disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent";
+  "flex size-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-element-active cursor-pointer disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent";
 const GROUP = "flex items-center gap-px rounded-full border border-border-subtle bg-card p-0.5";
 
 /** Top/bottom edge fades on a scroll container, only while there is more to scroll. */
@@ -71,12 +71,12 @@ function ScrollFade({ at, visible }: { at: "top" | "bottom"; visible: boolean })
     <div
       aria-hidden
       className={cn(
-        // The right panel paints `--panel-bg-2`, not `--bg-primary`; fading
+        // The right panel paints `--card`, not `--background`; fading
         // from the wrong colour was a faint grey wash over black, invisible.
         "pointer-events-none absolute inset-x-0 z-10 h-14 transition-opacity duration-200",
         at === "top"
-          ? "top-0 bg-gradient-to-b from-[var(--panel-bg-2)] via-[var(--panel-bg-2)]/80 to-transparent"
-          : "bottom-0 bg-gradient-to-t from-[var(--panel-bg-2)] via-[var(--panel-bg-2)]/80 to-transparent",
+          ? "top-0 bg-gradient-to-b from-[var(--card)] via-[var(--card)]/80 to-transparent"
+          : "bottom-0 bg-gradient-to-t from-[var(--card)] via-[var(--card)]/80 to-transparent",
         visible ? "opacity-100" : "opacity-0",
       )}
     />
@@ -141,7 +141,7 @@ function BranchPicker({
           <button
             type="button"
             disabled={busy}
-            className="flex items-center gap-1 text-2xs text-text-tertiary hover:text-text-primary cursor-pointer disabled:cursor-default"
+            className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground cursor-pointer disabled:cursor-default"
             title="Switch to another remote branch"
           >
             <GitBranch size={9} />
@@ -153,13 +153,13 @@ function BranchPicker({
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="start" sideOffset={4}>
           <Popover.Popup
-            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md"
+            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md"
             // Land in the filter box, not on the first row. Base UI's
             // initialFocus replaces Radix's onOpenAutoFocus + preventDefault.
             initialFocus={filterRef}
           >
             <div className="flex items-center gap-1.5 h-control-lg px-2.5 border-b border-[var(--border)]">
-              <Search size={10} className="shrink-0 text-text-tertiary" />
+              <Search size={10} className="shrink-0 text-muted-foreground" />
               <input
                 ref={filterRef}
                 value={filter}
@@ -168,21 +168,21 @@ function BranchPicker({
                   if (e.key === "Enter" && shown[0]) onSwitch(shown[0]);
                 }}
                 placeholder="Filter branches"
-                className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary"
+                className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground"
               />
               {branches ? (
-                <span className="text-3xs tabular-nums text-text-tertiary">{shown.length}</span>
+                <span className="text-3xs tabular-nums text-muted-foreground">{shown.length}</span>
               ) : null}
             </div>
             <div className="max-h-64 overflow-y-auto hide-scrollbar py-1">
               {error ? (
                 <div className="px-3 py-1.5 text-2xs text-error">{error}</div>
               ) : !branches ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 text-2xs text-text-tertiary">
+                <div className="flex items-center gap-2 px-3 py-1.5 text-2xs text-muted-foreground">
                   <Loader2 size={10} className="animate-spin" /> Fetching branches
                 </div>
               ) : shown.length === 0 ? (
-                <div className="px-3 py-1.5 text-2xs text-text-tertiary">
+                <div className="px-3 py-1.5 text-2xs text-muted-foreground">
                   {filter ? "No branch matches" : "No branches"}
                 </div>
               ) : (
@@ -201,8 +201,8 @@ function BranchPicker({
                       className={cn(
                         "flex w-full items-center gap-2 px-3 h-control-md text-xs text-left cursor-pointer outline-none",
                         current
-                          ? "text-[var(--text-primary)]"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--bg-hover)]",
+                          ? "text-[var(--foreground)]"
+                          : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:bg-[var(--atlas-element-hover)]",
                       )}
                     >
                       <span className="truncate flex-1">{b}</span>
@@ -295,19 +295,19 @@ function ClonedRow({
   return (
     <div
       data-testid="cloned-repo"
-      className="px-3 py-3 border-b border-border hover:bg-bg-hover group"
+      className="px-3 py-3 border-b border-border hover:bg-element-hover group"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-2xs font-medium text-text-primary truncate">{repo.display_name}</div>
+          <div className="text-2xs font-medium text-foreground truncate">{repo.display_name}</div>
           {meta?.description ? (
-            <p className="text-2xs leading-snug text-text-tertiary mt-1 line-clamp-2">
+            <p className="text-2xs leading-snug text-muted-foreground mt-1 line-clamp-2">
               {meta.description}
             </p>
           ) : null}
           <div className="flex items-center gap-3 mt-2">
             {busy === "switch" ? (
-              <span className="flex items-center gap-1 text-2xs text-text-tertiary">
+              <span className="flex items-center gap-1 text-2xs text-muted-foreground">
                 <Loader2 size={9} className="animate-spin" /> Switching…
               </span>
             ) : (
@@ -319,14 +319,14 @@ function ClonedRow({
               />
             )}
             {meta?.language ? (
-              <span className="text-3xs text-text-tertiary">{meta.language}</span>
+              <span className="text-3xs text-muted-foreground">{meta.language}</span>
             ) : null}
             {meta ? (
               <>
-                <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
+                <span className="flex items-center gap-0.5 text-3xs text-muted-foreground">
                   <Star size={8} /> {meta.stars.toLocaleString()}
                 </span>
-                <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
+                <span className="flex items-center gap-0.5 text-3xs text-muted-foreground">
                   <GitFork size={8} /> {meta.forks.toLocaleString()}
                 </span>
               </>
@@ -506,8 +506,8 @@ export function GithubPanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Search */}
-      <div className="flex items-center gap-1.5 h-control-lg shrink-0 border-b border-border bg-bg-primary px-3">
-        <Search size={11} className="text-text-tertiary shrink-0" />
+      <div className="flex items-center gap-1.5 h-control-lg shrink-0 border-b border-border bg-background px-3">
+        <Search size={11} className="text-muted-foreground shrink-0" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -515,7 +515,7 @@ export function GithubPanel() {
             if (e.key === "Enter") handleSearch();
           }}
           placeholder="Search GitHub repositories..."
-          className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary"
+          className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground"
         />
       </div>
 
@@ -555,13 +555,13 @@ export function GithubPanel() {
 
           {!loading && !error && results.length === 0 && !searching && repos.length === 0 && (
             <div className="px-3 py-8 text-center">
-              <GithubIcon size={16} className="text-text-tertiary mx-auto mb-2" />
-              <p className="text-xs text-text-tertiary">Search for repositories</p>
+              <GithubIcon size={16} className="text-muted-foreground mx-auto mb-2" />
+              <p className="text-xs text-muted-foreground">Search for repositories</p>
             </div>
           )}
 
           {!loading && !error && results.length === 0 && searching && (
-            <div className="px-3 py-6 text-center text-xs text-text-tertiary">
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
               No repositories found
             </div>
           )}
@@ -572,7 +572,7 @@ export function GithubPanel() {
             return (
               <div
                 key={repo.full_name}
-                className="px-3 py-2.5 border-b border-border hover:bg-bg-hover group"
+                className="px-3 py-2.5 border-b border-border hover:bg-element-hover group"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -582,18 +582,18 @@ export function GithubPanel() {
                       </span>
                     </div>
                     {repo.description && (
-                      <p className="text-2xs text-text-tertiary mt-0.5 line-clamp-2">
+                      <p className="text-2xs text-muted-foreground mt-0.5 line-clamp-2">
                         {repo.description}
                       </p>
                     )}
                     <div className="flex items-center gap-3 mt-1">
                       {repo.language && (
-                        <span className="text-3xs text-text-tertiary">{repo.language}</span>
+                        <span className="text-3xs text-muted-foreground">{repo.language}</span>
                       )}
-                      <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
+                      <span className="flex items-center gap-0.5 text-3xs text-muted-foreground">
                         <Star size={8} /> {repo.stars.toLocaleString()}
                       </span>
-                      <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
+                      <span className="flex items-center gap-0.5 text-3xs text-muted-foreground">
                         <GitFork size={8} /> {repo.forks.toLocaleString()}
                       </span>
                     </div>
@@ -604,7 +604,7 @@ export function GithubPanel() {
                       <HintItem label="Open on GitHub">
                         <button
                           onClick={() => openInBrowser(repo.html_url)}
-                          className="p-1 rounded hover:bg-bg-active text-text-tertiary hover:text-text-primary cursor-pointer"
+                          className="p-1 rounded hover:bg-element-active text-muted-foreground hover:text-foreground cursor-pointer"
                         >
                           <ExternalLink size={11} />
                         </button>
@@ -628,7 +628,7 @@ export function GithubPanel() {
                                 ? "text-success"
                                 : isCloning
                                   ? "text-primary"
-                                  : "text-text-tertiary hover:text-text-primary hover:bg-bg-active",
+                                  : "text-muted-foreground hover:text-foreground hover:bg-element-active",
                             )}
                           >
                             {isCloning ? (

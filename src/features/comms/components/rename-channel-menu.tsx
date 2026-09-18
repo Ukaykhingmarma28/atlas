@@ -57,10 +57,10 @@ export function RenameChannelMenu({
       <Popover.Trigger render={children} />
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
-          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
+          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
             <div className="flex w-[240px] flex-col">
               <div className="flex h-[32px] items-center gap-1.5 border-b border-white/5 px-3">
-                <Hash size={11} className="shrink-0 text-text-tertiary" />
+                <Hash size={11} className="shrink-0 text-muted-foreground" />
                 <input
                   autoFocus
                   value={name}
@@ -74,7 +74,7 @@ export function RenameChannelMenu({
                     }
                   }}
                   aria-label="Channel name"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </div>
               <div className="p-2">
@@ -82,7 +82,7 @@ export function RenameChannelMenu({
                   type="button"
                   disabled={!name.trim() || pending}
                   onClick={() => void save()}
-                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--atlas-element-active)] text-xs font-medium text-text-primary transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
+                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--atlas-element-active)] text-xs font-medium text-foreground transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
                 >
                   {pending && <Loader2 size={11} className="animate-spin" />}
                   Rename

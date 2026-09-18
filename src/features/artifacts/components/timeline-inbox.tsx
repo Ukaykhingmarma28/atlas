@@ -35,12 +35,12 @@ export function TimelineInbox({
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center px-8">
-      <Layers size={26} strokeWidth={1.2} className="text-[var(--text-ghost)]" />
-      <p className="mt-3 text-base text-[var(--text-secondary)]">Select a session</p>
+      <Layers size={26} strokeWidth={1.2} className="text-[var(--atlas-text-disabled)]" />
+      <p className="mt-3 text-base text-[var(--secondary-foreground)]">Select a session</p>
 
       {recent.length > 0 && (
         <div className="mt-9 w-full max-w-[460px]">
-          <p className="px-3 pb-2 font-mono text-2xs uppercase tracking-[0.08em] text-[var(--text-ghost)]">
+          <p className="px-3 pb-2 font-mono text-2xs uppercase tracking-[0.08em] text-[var(--atlas-text-disabled)]">
             Recent
           </p>
           <div className="flex flex-col gap-0.5">
@@ -53,7 +53,7 @@ export function TimelineInbox({
                   type="button"
                   onClick={() => onOpen(session.id, session.projectPath)}
                   title={title ?? undefined}
-                  className="flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-left transition-colors hover:bg-[var(--bg-active)]"
+                  className="flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-left transition-colors hover:bg-[var(--atlas-element-active)]"
                 >
                   {session.agent ? (
                     <AgentGlyph agent={session.agent} mono />
@@ -63,7 +63,9 @@ export function TimelineInbox({
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-base leading-tight",
-                      title ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
+                      title
+                        ? "text-[var(--secondary-foreground)]"
+                        : "text-[var(--muted-foreground)]",
                     )}
                   >
                     {title ?? "Untitled session"}
@@ -71,7 +73,9 @@ export function TimelineInbox({
                   <span
                     className={cn(
                       "shrink-0 font-mono text-xs tabular-nums",
-                      live ? "text-[var(--capture-live)]" : "text-[var(--text-ghost)]",
+                      live
+                        ? "text-[var(--atlas-status-success-foreground)]"
+                        : "text-[var(--atlas-text-disabled)]",
                     )}
                   >
                     {formatDuration(session.activeSeconds)}

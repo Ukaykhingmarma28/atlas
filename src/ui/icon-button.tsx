@@ -32,9 +32,9 @@ const iconButtonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary-hover",
         destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
-        outline: "border-border bg-transparent text-text-primary hover:bg-bg-hover",
-        secondary: "bg-bg-elevated text-text-primary hover:bg-bg-hover",
-        ghost: "bg-transparent text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+        outline: "border-border bg-transparent text-foreground hover:bg-element-hover",
+        secondary: "bg-card text-foreground hover:bg-element-hover",
+        ghost: "bg-transparent text-muted-foreground hover:bg-element-hover hover:text-foreground",
       },
       size: {
         xs: "size-control-xs",

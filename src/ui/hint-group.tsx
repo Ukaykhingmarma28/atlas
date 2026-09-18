@@ -242,7 +242,7 @@ export function HintGroup({
             <div
               className={cn(
                 "flex w-max",
-                "bg-[var(--bg-overlay)] text-text-primary",
+                "bg-[var(--popover)] text-foreground",
                 "outline outline-1 outline-[var(--border)]",
                 "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
               )}

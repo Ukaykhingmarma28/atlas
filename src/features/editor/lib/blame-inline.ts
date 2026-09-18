@@ -155,7 +155,7 @@ const blameDecorations = ViewPlugin.fromClass(
 const blameTheme = EditorView.baseTheme({
   ".cm-blame-inline": {
     marginLeft: "2em",
-    color: "var(--text-tertiary)",
+    color: "var(--muted-foreground)",
     opacity: "0.65",
     fontStyle: "italic",
     fontSize: BLAME_FONT_SIZE,

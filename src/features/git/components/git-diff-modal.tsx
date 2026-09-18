@@ -60,15 +60,15 @@ export function GitDiffModal({
           // Scales in from 95%. Without it the modal simply blinked into
           // existence, and an abrupt appearance reads as a slow one — there is
           // no motion to tell the eye that anything is arriving.
-          className="fixed top-8.5 left-4 right-4 bottom-6 z-modal flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-sidebar)] shadow-md focus:outline-none data-open:animate-scale-in"
+          className="fixed top-8.5 left-4 right-4 bottom-6 z-modal flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--sidebar)] shadow-md focus:outline-none data-open:animate-scale-in"
         >
           <Dialog.Title className="sr-only">{title ?? "Changes"}</Dialog.Title>
           <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
-            <span className="truncate text-xs font-medium text-[var(--text-secondary)]">
+            <span className="truncate text-xs font-medium text-[var(--secondary-foreground)]">
               {title ?? "Changes"}
             </span>
             <Dialog.Close
-              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
               aria-label="Close"
             >
               <X size={13} />

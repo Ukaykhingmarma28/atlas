@@ -233,7 +233,7 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
       {/* Note editor popover for the selected note on this page. */}
       {selectedNote && (
         <div
-          className="absolute z-10 w-56 rounded-md border border-border bg-bg-elevated p-2 shadow-[var(--shadow-overlay)]"
+          className="absolute z-10 w-56 rounded-md border border-border bg-card p-2 shadow-md"
           style={{
             left: Math.min(selectedNote.x * pageW + 12, pageW - 230),
             top: selectedNote.y * pageH + 12,
@@ -245,20 +245,20 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
             value={selectedNote.text}
             onChange={(e) => updateNoteText(pdfPath, selectedNote.id, e.target.value)}
             placeholder="Write a note…"
-            className="h-20 w-full resize-none rounded-sm border border-border bg-bg-base p-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary"
+            className="h-20 w-full resize-none rounded-sm border border-border bg-background p-1.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="mt-1.5 flex items-center justify-between">
             <button
               type="button"
               onClick={() => remove(pdfPath, selectedNote.id)}
-              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-background)]"
             >
               <Trash2 size={11} /> Delete
             </button>
             <button
               type="button"
               onClick={() => select(null)}
-              className="rounded-sm px-2 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              className="rounded-sm px-2 py-0.5 text-[11px] text-secondary-foreground hover:bg-element-hover hover:text-foreground"
             >
               Done
             </button>

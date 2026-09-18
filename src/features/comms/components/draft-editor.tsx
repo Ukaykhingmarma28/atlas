@@ -117,8 +117,8 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border px-1.5">
-        <span className="flex min-w-0 items-center gap-1 pl-1 text-xs font-medium text-text-secondary">
-          <Hash size={11} className="shrink-0 text-text-tertiary" />
+        <span className="flex min-w-0 items-center gap-1 pl-1 text-xs font-medium text-secondary-foreground">
+          <Hash size={11} className="shrink-0 text-muted-foreground" />
           <span className="truncate">{conv.name ?? "conversation"}</span>
         </span>
 
@@ -184,13 +184,13 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
             </Tooltip>
           </div>
           {peerList.length > 3 && (
-            <span className="pl-1 text-2xs text-text-tertiary">+{peerList.length - 3}</span>
+            <span className="pl-1 text-2xs text-muted-foreground">+{peerList.length - 3}</span>
           )}
         </div>
       </div>
 
       {sent && (
-        <div className="shrink-0 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-text-tertiary">
+        <div className="shrink-0 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-muted-foreground">
           Sent to an agent — this draft is read-only now.
         </div>
       )}
@@ -201,7 +201,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="h-[10px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                className="h-[10px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
                 style={{ width: `${60 - i * 12}%` }}
               />
             ))}
@@ -231,10 +231,10 @@ function PillButton({
         disabled={disabled}
         onClick={onClick}
         className={cn(
-          "flex h-[22px] w-8 items-center justify-center text-text-secondary transition-colors",
+          "flex h-[22px] w-8 items-center justify-center text-secondary-foreground transition-colors",
           disabled
-            ? "cursor-not-allowed text-text-ghost"
-            : "hover:bg-[var(--atlas-element-active)] hover:text-text-primary cursor-pointer",
+            ? "cursor-not-allowed text-disabled"
+            : "hover:bg-[var(--atlas-element-active)] hover:text-foreground cursor-pointer",
         )}
       >
         {children}

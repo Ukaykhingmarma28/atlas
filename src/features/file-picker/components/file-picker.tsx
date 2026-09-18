@@ -179,7 +179,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[18%] z-50 -translate-x-1/2",
-            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-2xl",
+            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-2xl",
             "flex flex-col overflow-hidden",
           )}
         >
@@ -190,11 +190,11 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={project ? "Search files by name or path…" : "Open a project first"}
             disabled={!project}
-            className="px-4 h-11 bg-transparent border-b border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+            className="px-4 h-11 bg-transparent border-b border-[var(--border)] text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
           />
           <div ref={scrollRef} className="max-h-[420px] overflow-y-auto hide-scrollbar">
             {showEmpty ? (
-              <div className="px-4 py-3 text-[11px] text-[var(--text-tertiary)]">
+              <div className="px-4 py-3 text-[11px] text-[var(--muted-foreground)]">
                 {!project
                   ? "Open a project to enable Cmd+P."
                   : indexing
@@ -232,8 +232,8 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                       className={cn(
                         "flex items-center gap-2 px-3 text-left cursor-pointer transition-colors",
                         active
-                          ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                          ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                          : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
                       )}
                     >
                       <FileIcon path={m.path} size={12} fallback={kindIcon(classifyFile(m.path))} />
@@ -244,7 +244,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-[10px] text-[var(--text-tertiary)] font-mono">
+          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-[10px] text-[var(--muted-foreground)] font-mono">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleReindex}
@@ -252,7 +252,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                 title="Rebuild the file index"
                 className={cn(
                   "flex items-center gap-1 rounded px-1 -ml-1 transition-colors",
-                  "hover:text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-default cursor-pointer outline-none",
+                  "hover:text-[var(--secondary-foreground)] disabled:opacity-40 disabled:cursor-default cursor-pointer outline-none",
                 )}
               >
                 <RotateCw size={10} className={cn(reindexing && "animate-spin")} />

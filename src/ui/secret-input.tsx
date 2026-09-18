@@ -55,7 +55,7 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
     <HintGroup>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-md border border-border bg-bg-elevated",
+          "group flex items-center gap-1 rounded-md border border-border bg-card",
           "px-2 h-8 transition-colors focus-within:border-primary",
           className,
         )}
@@ -70,7 +70,7 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
           autoComplete="off"
           className={cn(
             "flex-1 min-w-0 bg-transparent outline-none text-[11px]",
-            "text-text-primary placeholder:text-text-tertiary font-mono",
+            "text-foreground placeholder:text-muted-foreground font-mono",
           )}
           onChange={(e) => {
             onValueChange?.(e.target.value);
@@ -110,7 +110,7 @@ function IconBtn({
         type="button"
         tabIndex={-1}
         onClick={onClick}
-        className="shrink-0 grid place-items-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+        className="shrink-0 grid place-items-center h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors"
       >
         {children}
       </button>

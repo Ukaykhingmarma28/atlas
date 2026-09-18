@@ -31,7 +31,7 @@ export function DashboardHeader({
   return (
     <div className="flex items-center gap-2 px-3 h-control-lg shrink-0 border-b border-[var(--border)]">
       <AtlasIcon size={14} className="rounded" />
-      <span className="text-sm font-semibold text-[var(--text-primary)]">Console</span>
+      <span className="text-sm font-semibold text-[var(--foreground)]">Console</span>
       <div className="flex-1" />
 
       {/* Time range segmented control */}
@@ -43,8 +43,8 @@ export function DashboardHeader({
             className={cn(
               "px-2.5 h-control-md text-xs transition-colors",
               r === range
-                ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                ? "bg-[var(--atlas-element-active)] text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
             )}
           >
             {r === "all" ? "All" : r}
@@ -56,7 +56,7 @@ export function DashboardHeader({
         <button
           onClick={onRefresh}
           className={cn(
-            "flex items-center justify-center size-control-md rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] transition-colors",
+            "flex items-center justify-center size-control-md rounded-md text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--secondary-foreground)] transition-colors",
             loading && "animate-spin",
           )}
         >
@@ -67,15 +67,15 @@ export function DashboardHeader({
       <DropdownMenu.Root>
         <DropdownMenu.Trigger
           render={
-            <button className="flex items-center gap-1.5 h-control-md px-2.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none">
+            <button className="flex items-center gap-1.5 h-control-md px-2.5 rounded-md border border-[var(--border)] text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors outline-none">
               <Download size={12} /> Export{" "}
-              <ChevronDown size={11} className="text-[var(--text-tertiary)]" />
+              <ChevronDown size={11} className="text-[var(--muted-foreground)]" />
             </button>
           }
         />
         <DropdownMenu.Portal>
           <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
-            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border)] bg-popover py-1.5 shadow-xl text-sm text-[var(--text-secondary)]">
+            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border)] bg-popover py-1.5 shadow-xl text-sm text-[var(--secondary-foreground)]">
               <Item
                 icon={<FileType2 size={13} />}
                 label="PDF report"
@@ -116,9 +116,9 @@ function Item({
   return (
     <DropdownMenu.Item
       onClick={onSelect}
-      className="flex items-center gap-2.5 px-3 h-control-md outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+      className="flex items-center gap-2.5 px-3 h-control-md outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-default"
     >
-      <span className="text-[var(--text-tertiary)]">{icon}</span>
+      <span className="text-[var(--muted-foreground)]">{icon}</span>
       {label}
     </DropdownMenu.Item>
   );

@@ -138,20 +138,24 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-raised)]",
+        "overflow-hidden rounded-lg border border-[var(--atlas-border-subtle)] bg-[var(--card)]",
         className,
       )}
     >
-      <div className="group/head flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
-        <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text-secondary)]">
+      <div className="group/head flex items-center gap-2 border-b border-[var(--atlas-border-subtle)] bg-[var(--card)] px-3 py-1.5">
+        <FileCode2 size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--secondary-foreground)]">
           {path ?? label ?? "Payload"}
         </span>
         {added > 0 && (
-          <span className="shrink-0 font-mono text-xs text-[var(--stat-added)]">+{added}</span>
+          <span className="shrink-0 font-mono text-xs text-[var(--atlas-diff-added-text)]">
+            +{added}
+          </span>
         )}
         {removed > 0 && (
-          <span className="shrink-0 font-mono text-xs text-[var(--stat-removed)]">−{removed}</span>
+          <span className="shrink-0 font-mono text-xs text-[var(--atlas-diff-removed-text)]">
+            −{removed}
+          </span>
         )}
         {/* The *original* text, not the parsed lines: a `Read` result is worth
          *  copying with its line numbers, and a diff with its signs. Stripping
@@ -166,8 +170,8 @@ export function CodeBlock({
             key={i}
             className={cn(
               "relative flex min-w-max font-mono text-sm leading-[1.6]",
-              line.sign === "add" && "bg-[var(--stat-added)]/[0.07]",
-              line.sign === "del" && "bg-[var(--stat-removed)]/[0.07]",
+              line.sign === "add" && "bg-[var(--atlas-diff-added-text)]/[0.07]",
+              line.sign === "del" && "bg-[var(--atlas-diff-removed-text)]/[0.07]",
             )}
           >
             {/* The 2px marker: at a 7% tint the row colour alone is not reliable
@@ -178,14 +182,16 @@ export function CodeBlock({
                 aria-hidden
                 className={cn(
                   "absolute inset-y-0 left-0 w-[2px]",
-                  line.sign === "add" ? "bg-[var(--stat-added)]" : "bg-[var(--stat-removed)]",
+                  line.sign === "add"
+                    ? "bg-[var(--atlas-diff-added-text)]"
+                    : "bg-[var(--atlas-diff-removed-text)]",
                 )}
               />
             )}
             {gutter && (
               <span
                 aria-hidden
-                className="sticky left-0 z-10 w-[52px] shrink-0 select-none bg-[var(--bg-raised)] pr-3 text-right text-[var(--text-ghost)]"
+                className="sticky left-0 z-10 w-[52px] shrink-0 select-none bg-[var(--card)] pr-3 text-right text-[var(--atlas-text-disabled)]"
               >
                 {line.number ?? (line.sign === "add" ? "+" : line.sign === "del" ? "−" : "")}
               </span>
@@ -197,7 +203,7 @@ export function CodeBlock({
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-xs text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
           >
             Show remaining {capped.toLocaleString()} lines
           </button>
@@ -234,12 +240,12 @@ export function CopyButton({ text, className }: { text: string; className?: stri
         type="button"
         onClick={() => void copyText(text).then((ok) => setDone(ok))}
         className={cn(
-          "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:opacity-100",
+          "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--atlas-text-disabled)] opacity-0 transition-all duration-150 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:opacity-100",
           className ?? "group-hover/head:opacity-100",
         )}
       >
         {done ? (
-          <Check size={11} className="text-[var(--capture-live)]" />
+          <Check size={11} className="text-[var(--atlas-status-success-foreground)]" />
         ) : (
           <Copy size={11} strokeWidth={1.7} />
         )}
@@ -264,7 +270,7 @@ function Code({
   colour: boolean;
 }) {
   const tokens = colour ? highlightDiffLine(language, content) : null;
-  const base = "min-w-0 flex-1 whitespace-pre px-3 text-[var(--text-secondary)]";
+  const base = "min-w-0 flex-1 whitespace-pre px-3 text-[var(--secondary-foreground)]";
   if (!tokens) return <span className={base}>{content}</span>;
   return (
     <span className={cn("diff-syntax", base)}>

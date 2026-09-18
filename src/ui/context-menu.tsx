@@ -29,7 +29,7 @@ const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 /** The shared popup surface, so Content and SubContent cannot drift apart. */
 const POPUP = [
   "min-w-[11rem] overflow-hidden rounded-lg p-0.5",
-  "bg-bg-overlay border border-border text-text-primary shadow-md",
+  "bg-popover border border-border text-foreground shadow-md",
   "origin-[var(--transform-origin)] animate-scale-in",
 ];
 
@@ -82,8 +82,8 @@ function ContextMenuItem({
       className={cn(
         "group/context-menu-item relative flex items-center gap-2 rounded px-2 py-1",
         "text-xs cursor-pointer select-none outline-none",
-        "text-text-secondary",
-        "focus:bg-bg-hover focus:text-text-primary",
+        "text-secondary-foreground",
+        "focus:bg-element-hover focus:text-foreground",
         "data-[inset]:pl-6",
         // `destructive` variant kept for completeness but rendered the
         // same as default — per UX feedback, file-tree Delete reads as
@@ -113,9 +113,9 @@ function ContextMenuSubTrigger({
       className={cn(
         "flex items-center gap-2 rounded px-2 py-1 text-xs",
         "cursor-pointer select-none outline-none",
-        "text-text-secondary",
-        "focus:bg-bg-hover focus:text-text-primary",
-        "data-popup-open:bg-bg-hover data-popup-open:text-text-primary",
+        "text-secondary-foreground",
+        "focus:bg-element-hover focus:text-foreground",
+        "data-popup-open:bg-element-hover data-popup-open:text-foreground",
         "data-[inset]:pl-6",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -171,8 +171,8 @@ function ContextMenuCheckboxItem({
       className={cn(
         "relative flex items-center gap-2 rounded-md py-1.5 pr-8 pl-7 text-sm",
         "cursor-default select-none outline-none",
-        "text-text-secondary",
-        "focus:bg-bg-hover focus:text-text-primary",
+        "text-secondary-foreground",
+        "focus:bg-element-hover focus:text-foreground",
         "data-disabled:pointer-events-none data-disabled:opacity-50",
         className,
       )}
@@ -200,7 +200,7 @@ function ContextMenuLabel({
     <ContextMenuPrimitive.GroupLabel
       data-slot="context-menu-label"
       data-inset={inset ? "" : undefined}
-      className={cn("eyebrow px-2 py-1 text-text-tertiary", "data-[inset]:pl-7", className)}
+      className={cn("eyebrow px-2 py-1 text-muted-foreground", "data-[inset]:pl-7", className)}
       {...props}
     />
   );
@@ -224,8 +224,8 @@ function ContextMenuShortcut({ className, ...props }: React.ComponentProps<"span
     <span
       data-slot="context-menu-shortcut"
       className={cn(
-        "ml-auto pl-3 text-3xs text-text-ghost",
-        "group-focus/context-menu-item:text-text-secondary",
+        "ml-auto pl-3 text-3xs text-disabled",
+        "group-focus/context-menu-item:text-secondary-foreground",
         className,
       )}
       {...props}

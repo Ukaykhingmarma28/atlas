@@ -14,7 +14,7 @@ export interface ShapeNodeData extends Record<string, unknown> {
  *  keeps the border an even width regardless of the box's aspect ratio. */
 function ShapeSvg({ type, stroke }: { type: ShapeType; stroke: string }) {
   const common = {
-    fill: "var(--bg-secondary)",
+    fill: "var(--card)",
     fillOpacity: 0.7,
     stroke,
     strokeWidth: 1.5,
@@ -92,7 +92,7 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected }: NodePro
           ref={ref}
           className={cn(
             "max-w-full whitespace-pre-wrap break-words text-center outline-none",
-            "text-sm leading-snug text-[var(--text-primary)] caret-[var(--primary)]",
+            "text-sm leading-snug text-[var(--foreground)] caret-[var(--primary)]",
             // An empty contentEditable has no line box, so the caret can't render;
             // a min line-height gives it one when the shape has no text yet.
             "min-h-[1.25em] min-w-[2px]",

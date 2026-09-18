@@ -280,7 +280,7 @@ export function InstalledSkills({
 
   if (projectMissing) {
     return (
-      <div className="grid h-full place-items-center px-6 text-center text-xs text-text-tertiary">
+      <div className="grid h-full place-items-center px-6 text-center text-xs text-muted-foreground">
         Open a project to manage project skills.
       </div>
     );
@@ -298,7 +298,7 @@ export function InstalledSkills({
 
       <div className="min-h-0 flex-1 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-2xs uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground">
             <span className={COL.name}>Name</span>
             <span className={COL.origin}>Origin</span>
             <span className={COL.tools}>Tools</span>
@@ -306,7 +306,7 @@ export function InstalledSkills({
           </div>
 
           {empty ? (
-            <div className="grid h-[180px] place-items-center text-xs text-text-tertiary">
+            <div className="grid h-[180px] place-items-center text-xs text-muted-foreground">
               Nothing installed in this scope. Browse Discover to add skills.
             </div>
           ) : (
@@ -318,23 +318,26 @@ export function InstalledSkills({
                   <button
                     key={`pack:${p.pack.name}`}
                     onClick={() => setTarget({ kind: "pack", pack: p })}
-                    className="flex w-full items-center h-[40px] border-b border-border-subtle px-3 text-left transition-colors hover:bg-bg-hover"
+                    className="flex w-full items-center h-[40px] border-b border-border-subtle px-3 text-left transition-colors hover:bg-element-hover"
                   >
                     <span className={cn(COL.name, "flex items-center gap-2 min-w-0")}>
-                      <Package size={13} className="shrink-0 text-text-tertiary" />
-                      <span className="truncate text-sm text-text-primary">{p.pack.name}</span>
+                      <Package size={13} className="shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm text-foreground">{p.pack.name}</span>
                     </span>
                     <span
-                      className={cn(COL.origin, "truncate font-mono text-2xs text-text-tertiary")}
+                      className={cn(
+                        COL.origin,
+                        "truncate font-mono text-2xs text-muted-foreground",
+                      )}
                     >
                       {p.source}
                     </span>
-                    <span className={cn(COL.tools, "truncate text-2xs text-text-tertiary")}>
+                    <span className={cn(COL.tools, "truncate text-2xs text-muted-foreground")}>
                       {proj.size > 0
                         ? `${proj.size} tool${proj.size > 1 ? "s" : ""}`
                         : kindCounts(p.pack.components) || "—"}
                     </span>
-                    <span className={cn(COL.chevron, "flex justify-end text-text-tertiary")}>
+                    <span className={cn(COL.chevron, "flex justify-end text-muted-foreground")}>
                       <ChevronRight size={14} />
                     </span>
                   </button>
@@ -357,23 +360,25 @@ export function InstalledSkills({
                   <button
                     key={`skill:${s.pack ?? ""}:${s.name}`}
                     onClick={onClick}
-                    className="flex w-full items-center min-h-[44px] py-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-bg-hover"
+                    className="flex w-full items-center min-h-[44px] py-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-element-hover"
                   >
                     <span className={cn(COL.name, "min-w-0 pr-6")}>
-                      <span className="block truncate text-sm text-text-primary">{s.name}</span>
+                      <span className="block truncate text-sm text-foreground">{s.name}</span>
                       {s.description && (
-                        <span className="mt-0.5 text-2xs leading-snug text-text-tertiary line-clamp-2">
+                        <span className="mt-0.5 text-2xs leading-snug text-muted-foreground line-clamp-2">
                           {s.description}
                         </span>
                       )}
                     </span>
-                    <span className={cn(COL.origin, "truncate text-xs text-text-tertiary")}>
+                    <span className={cn(COL.origin, "truncate text-xs text-muted-foreground")}>
                       {origin}
                     </span>
-                    <span className={cn(COL.tools, "text-xs text-text-secondary tabular-nums")}>
+                    <span
+                      className={cn(COL.tools, "text-xs text-secondary-foreground tabular-nums")}
+                    >
                       {onCount > 0 ? `${onCount} on` : "off"}
                     </span>
-                    <span className={cn(COL.chevron, "flex justify-end text-text-tertiary")}>
+                    <span className={cn(COL.chevron, "flex justify-end text-muted-foreground")}>
                       <ChevronRight size={14} />
                     </span>
                   </button>
@@ -442,7 +447,7 @@ function OnOff({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-bg-elevated p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
       {([true, false] as const).map((v) => (
         <button
           key={String(v)}
@@ -452,8 +457,8 @@ function OnOff({
           className={cn(
             "flex h-[18px] min-w-[34px] items-center justify-center rounded-full px-2 text-2xs font-medium transition-colors",
             on === v
-              ? "bg-bg-selected text-text-primary"
-              : "text-text-tertiary hover:text-text-secondary",
+              ? "bg-element-selected text-foreground"
+              : "text-muted-foreground hover:text-secondary-foreground",
           )}
         >
           {v ? "On" : "Off"}
@@ -480,7 +485,7 @@ function ToolToggles({
 }) {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="text-2xs uppercase tracking-wider text-text-tertiary">Deliver to</div>
+      <div className="text-2xs uppercase tracking-wider text-muted-foreground">Deliver to</div>
       {tools.map((t) => {
         const status = statusFor(t);
         const detected = detectedFor(t);
@@ -488,13 +493,13 @@ function ToolToggles({
         const readOnly = status === "pack" || status === "conflict";
         return (
           <div key={t.id} className="flex items-center justify-between">
-            <span className="text-sm text-text-secondary">{t.displayName}</span>
+            <span className="text-sm text-secondary-foreground">{t.displayName}</span>
             {!detected ? (
-              <span className="text-2xs text-text-ghost" title="Tool not detected in this scope">
+              <span className="text-2xs text-disabled" title="Tool not detected in this scope">
                 n/a
               </span>
             ) : readOnly ? (
-              <span className="text-2xs text-text-tertiary capitalize">{status}</span>
+              <span className="text-2xs text-muted-foreground capitalize">{status}</span>
             ) : (
               <OnOff
                 on={on}
@@ -718,7 +723,7 @@ function PackUpdate({
   };
 
   const base =
-    "flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary";
+    "flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground";
   if (state === "checking")
     return (
       <span className={base}>

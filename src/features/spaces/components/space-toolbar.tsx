@@ -88,7 +88,7 @@ export function SpaceToolbar({
         <div
           className={cn(
             "absolute z-panel flex items-center gap-1 p-1",
-            "rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 shadow-md backdrop-blur-2xl",
+            "rounded-xl border border-border-subtle bg-[var(--card)]/70 shadow-md backdrop-blur-2xl",
             horizontal
               ? "bottom-3 left-1/2 -translate-x-1/2 flex-row"
               : "top-1/2 -translate-y-1/2 flex-col",
@@ -122,7 +122,7 @@ export function SpaceToolbar({
             <button
               type="button"
               onClick={onInsertMedia}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
             >
               <ImageIcon size={16} />
             </button>
@@ -134,7 +134,7 @@ export function SpaceToolbar({
               type="button"
               onClick={onUndo}
               disabled={!canUndo}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
             >
               <Undo2 size={16} />
             </button>
@@ -144,7 +144,7 @@ export function SpaceToolbar({
               type="button"
               onClick={onRedo}
               disabled={!canRedo}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
             >
               <Redo2 size={16} />
             </button>
@@ -213,7 +213,7 @@ function DockMenu({
                 "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
                 open
                   ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
-                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+                  : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
               )}
             >
               <Settings2 size={16} />
@@ -228,9 +228,9 @@ function DockMenu({
           align="end"
           sideOffset={8}
         >
-          <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--bg-elevated)]/95 backdrop-blur-2xl">
+          <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 backdrop-blur-2xl">
             <div className="flex w-[168px] flex-col py-1">
-              <div className="px-3 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
+              <div className="px-3 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Dock position
               </div>
               {DOCKS.map((d) => (
@@ -242,11 +242,11 @@ function DockMenu({
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-hover)]",
-                    dock === d.dock ? "text-text-primary" : "text-text-secondary",
+                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--atlas-element-hover)]",
+                    dock === d.dock ? "text-foreground" : "text-secondary-foreground",
                   )}
                 >
-                  <d.icon size={12} className="shrink-0 text-text-tertiary" />
+                  <d.icon size={12} className="shrink-0 text-muted-foreground" />
                   {d.label}
                   {dock === d.dock && (
                     <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
@@ -279,7 +279,7 @@ function ToolButton({
           "flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors",
           active
             ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
         )}
       >
         <def.icon size={16} />

@@ -119,7 +119,7 @@ function ExternalLink({
         e.preventDefault();
         if (isOpenable(href)) void openUrl(href).catch(() => {});
       }}
-      className={cn("underline underline-offset-2 text-text-primary", className)}
+      className={cn("underline underline-offset-2 text-foreground", className)}
     >
       {children}
     </a>
@@ -159,7 +159,7 @@ const COMPONENTS: Components = {
     if (!className) {
       return (
         <code
-          className="rounded px-1 py-px font-mono text-xs bg-[var(--atlas-element-selected)] text-text-primary"
+          className="rounded px-1 py-px font-mono text-xs bg-[var(--atlas-element-selected)] text-foreground"
           {...rest}
         >
           {children}
@@ -210,14 +210,14 @@ const COMPONENTS: Components = {
   // `[&_ul]` keeps a nested list — newly possible — from stacking margins or
   // marching off the right edge of a narrow panel.
   ul: (props) => (
-    <ul className="my-1 space-y-0.5 pl-4 list-disc marker:text-text-tertiary [&_ul]:my-0.5 [&_ol]:my-0.5 [&_ul]:pl-3.5 [&_ol]:pl-3.5">
+    <ul className="my-1 space-y-0.5 pl-4 list-disc marker:text-muted-foreground [&_ul]:my-0.5 [&_ol]:my-0.5 [&_ul]:pl-3.5 [&_ol]:pl-3.5">
       {props.children}
     </ul>
   ),
   ol: (props) => (
     <ol
       start={props.start}
-      className="my-1 space-y-0.5 pl-4 list-decimal marker:text-text-tertiary [&_ul]:my-0.5 [&_ol]:my-0.5 [&_ul]:pl-3.5 [&_ol]:pl-3.5"
+      className="my-1 space-y-0.5 pl-4 list-decimal marker:text-muted-foreground [&_ul]:my-0.5 [&_ol]:my-0.5 [&_ul]:pl-3.5 [&_ol]:pl-3.5"
     >
       {props.children}
     </ol>
@@ -249,22 +249,28 @@ const COMPONENTS: Components = {
   // A chat bubble is not a document: headings step down in weight and spacing,
   // not up to document sizes. h4-h6 stop growing and go quiet instead.
   h1: (props) => (
-    <h1 className="mt-2 mb-1 text-md font-semibold text-text-primary">{props.children}</h1>
+    <h1 className="mt-2 mb-1 text-md font-semibold text-foreground">{props.children}</h1>
   ),
   h2: (props) => (
-    <h2 className="mt-2 mb-1 text-base font-semibold text-text-primary">{props.children}</h2>
+    <h2 className="mt-2 mb-1 text-base font-semibold text-foreground">{props.children}</h2>
   ),
   h3: (props) => (
-    <h3 className="mt-1.5 mb-0.5 text-base font-semibold text-text-primary">{props.children}</h3>
+    <h3 className="mt-1.5 mb-0.5 text-base font-semibold text-foreground">{props.children}</h3>
   ),
   h4: (props) => (
-    <h4 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h4>
+    <h4 className="mt-1.5 mb-0.5 text-base font-semibold text-secondary-foreground">
+      {props.children}
+    </h4>
   ),
   h5: (props) => (
-    <h5 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h5>
+    <h5 className="mt-1.5 mb-0.5 text-base font-semibold text-secondary-foreground">
+      {props.children}
+    </h5>
   ),
   h6: (props) => (
-    <h6 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h6>
+    <h6 className="mt-1.5 mb-0.5 text-base font-semibold text-secondary-foreground">
+      {props.children}
+    </h6>
   ),
 
   hr: () => <hr className="my-2 border-0 border-t border-border-subtle" />,
@@ -279,7 +285,7 @@ const COMPONENTS: Components = {
   ),
   thead: (props) => <thead className="bg-[var(--atlas-element-hover)]">{props.children}</thead>,
   th: (props) => (
-    <th className="whitespace-nowrap border-b border-border-subtle px-2 py-1 text-left text-2xs font-semibold text-text-secondary">
+    <th className="whitespace-nowrap border-b border-border-subtle px-2 py-1 text-left text-2xs font-semibold text-secondary-foreground">
       {props.children}
     </th>
   ),
@@ -287,7 +293,7 @@ const COMPONENTS: Components = {
     <tr className="border-b border-border-subtle last:border-b-0">{props.children}</tr>
   ),
   td: (props) => (
-    <td className="whitespace-nowrap px-2 py-1 align-top text-text-primary">{props.children}</td>
+    <td className="whitespace-nowrap px-2 py-1 align-top text-foreground">{props.children}</td>
   ),
 
   strong: (props) => <strong className="font-semibold">{props.children}</strong>,

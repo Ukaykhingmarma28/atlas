@@ -96,13 +96,13 @@ const CLOUD_UNAVAILABLE_REASON = "Cloud capture isn't available yet";
  * earn its keep. If a third appears, extract then.
  */
 const FIELD =
-  "h-8 w-full rounded-lg border border-border bg-bg-input px-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition-colors focus:border-border-strong";
+  "h-8 w-full rounded-lg border border-border bg-panel-input px-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none transition-colors focus:border-border-strong";
 
 /** Section heading above a group of controls. */
-const SECTION_LABEL = "text-xs font-medium text-[var(--text-secondary)]";
+const SECTION_LABEL = "text-xs font-medium text-[var(--secondary-foreground)]";
 
 /** Hint under a group — the sentence that explains what was just chosen. */
-const HINT = "mt-1 text-2xs text-[var(--text-tertiary)]";
+const HINT = "mt-1 text-2xs text-[var(--muted-foreground)]";
 
 /** A read-only group of facts (detection, disclosure lines). */
 const GROUP =
@@ -113,10 +113,10 @@ function pillClass(state: "on" | "off" | "disabled") {
   return cn(
     "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs leading-none transition-colors",
     state === "disabled"
-      ? "cursor-not-allowed border-border bg-bg-input text-[var(--text-tertiary)] opacity-40"
+      ? "cursor-not-allowed border-border bg-panel-input text-[var(--muted-foreground)] opacity-40"
       : state === "on"
-        ? "cursor-pointer border-border-strong bg-accent text-[var(--text-primary)]"
-        : "cursor-pointer border-border bg-bg-input text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+        ? "cursor-pointer border-border-strong bg-accent text-[var(--foreground)]"
+        : "cursor-pointer border-border bg-panel-input text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
   );
 }
 
@@ -265,7 +265,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
         // the enter animation transforms. Splitting them across a wrapper would
         // isolate the compositing layer and flatten the blur to flat
         // transparency (see the note beside the keyframes in globals.css).
-        "border border-[var(--atlas-element-active)] bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+        "border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl",
         "atlas-panel-in-tl",
       )}
     >
@@ -410,7 +410,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
         )}
 
         {error && (
-          <p className="mt-2 rounded-lg bg-[var(--status-error-muted)] px-2.5 py-1.5 text-xs text-[var(--status-error)]">
+          <p className="mt-2 rounded-lg bg-[var(--atlas-status-error-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-error-foreground)]">
             {error}
           </p>
         )}
@@ -452,15 +452,15 @@ function DisclosureStep({
 }) {
   return (
     <div className="atlas-fade-in space-y-2.5">
-      <p className="text-sm font-medium text-[var(--text-primary)]">{title}</p>
+      <p className="text-sm font-medium text-[var(--foreground)]">{title}</p>
       <ul className={cn(GROUP, "space-y-1")}>
         {lines.map((line) => (
-          <li key={line} className="text-xs text-[var(--text-secondary)]">
+          <li key={line} className="text-xs text-[var(--secondary-foreground)]">
             {line}
           </li>
         ))}
       </ul>
-      <p className="text-2xs text-[var(--text-tertiary)]">
+      <p className="text-2xs text-[var(--muted-foreground)]">
         This makes the above visible to your Organisation. Nothing is sent until you confirm.
       </p>
       <div className="flex justify-end gap-2 pt-0.5">
@@ -508,7 +508,9 @@ function HealthDetail({
   if (!health || health.issues.length === 0) return null;
 
   const stopped = health.state === "stopped";
-  const tone = stopped ? "var(--status-error)" : "var(--status-warning)";
+  const tone = stopped
+    ? "var(--atlas-status-error-foreground)"
+    : "var(--atlas-status-warning-foreground)";
 
   const retry = async () => {
     if (retrying) return;
@@ -540,7 +542,9 @@ function HealthDetail({
         "hover:opacity-90 disabled:cursor-wait",
       )}
       style={{
-        backgroundColor: stopped ? "var(--status-error-muted)" : "var(--status-warning-muted)",
+        backgroundColor: stopped
+          ? "var(--atlas-status-error-background)"
+          : "var(--atlas-status-warning-background)",
         ["--atlas-ants-color" as string]: `color-mix(in oklab, ${tone} 55%, transparent)`,
       }}
     >
@@ -553,8 +557,8 @@ function HealthDetail({
             className={cn(
               "flex items-center gap-1.5 text-xs",
               issue.state === "stopped"
-                ? "text-[var(--status-error)]"
-                : "text-[var(--status-warning)]",
+                ? "text-[var(--atlas-status-error-foreground)]"
+                : "text-[var(--atlas-status-warning-foreground)]",
             )}
           >
             {index === 0 &&
@@ -628,10 +632,10 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
 
   const tone =
     health?.state === "stopped"
-      ? "var(--status-error)"
+      ? "var(--atlas-status-error-foreground)"
       : health?.state === "degraded"
-        ? "var(--status-warning)"
-        : "var(--capture-live)";
+        ? "var(--atlas-status-warning-foreground)"
+        : "var(--atlas-status-success-foreground)";
 
   const active = blipAt(RADAR_BLIPS[blip]);
 
@@ -708,13 +712,13 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
           so the origin of every ring is visibly a thing rather than a corner. */}
       <span
         aria-hidden
-        className="absolute size-[92px] rounded-full border border-[var(--atlas-element-selected)] bg-[var(--bg-elevated)]"
+        className="absolute size-[92px] rounded-full border border-[var(--atlas-element-selected)] bg-[var(--card)]"
         style={{ left: RADAR_ORIGIN_X - 46, top: RADAR_HEIGHT - 46 }}
       />
 
       <span className="absolute bottom-3 left-3.5 flex items-center gap-1.5">
         <CaptureDot live={live} tone={live ? "success" : "idle"} />
-        <span className="text-3xs font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+        <span className="text-3xs font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
           {live ? "Capturing" : "Paused"}
         </span>
       </span>
@@ -794,14 +798,14 @@ function BoundState({
        *  nothing, forever, on purpose. Say so where it can be resolved. */}
       {binding.mode === "cloud" && !binding.importApproved && (
         <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--atlas-element-active)] px-2.5 py-1.5">
-          <span className="text-xs text-[var(--text-secondary)]">
+          <span className="text-xs text-[var(--secondary-foreground)]">
             History import is waiting for your review.
           </span>
           <button
             type="button"
             disabled={busy || !importPreview}
             onClick={onReviewImport}
-            className="shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-xs text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
           >
             Review
           </button>
@@ -810,15 +814,15 @@ function BoundState({
 
       {/* Failed rows: the retry is a deliberate human action, never automatic. */}
       {failed > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5">
-          <span className="text-xs text-[var(--status-warning)]">
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5">
+          <span className="text-xs text-[var(--atlas-status-warning-foreground)]">
             {failed} record{failed === 1 ? "" : "s"} could not be sent.
           </span>
           <button
             type="button"
             disabled={busy}
             onClick={() => void run(() => invoke("capture_retry_failed", { projectPath }))}
-            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RefreshCw size={10} />
             Retry
@@ -829,7 +833,7 @@ function BoundState({
       <div className="flex items-center gap-2 pt-1">
         {/* Where this Project's Sessions live. A label, not a control — the
          *  way to change it is the Sync button beside it. */}
-        <span className="mr-auto flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+        <span className="mr-auto flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
           {binding.mode === "cloud" ? <Cloud size={11} /> : <Laptop size={11} />}
           {binding.mode === "cloud" ? "Cloud" : "Local"}
         </span>
@@ -844,7 +848,7 @@ function BoundState({
               type="button"
               disabled
               title={cloudReason}
-              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--text-tertiary)] opacity-40"
+              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--muted-foreground)] opacity-40"
             >
               <Cloud size={11} />
               Sync
@@ -854,7 +858,7 @@ function BoundState({
               type="button"
               disabled={busy}
               onClick={onPromote}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--atlas-element-selected)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-selected)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ArrowUpRight size={11} />
               Sync
@@ -879,7 +883,7 @@ function BoundState({
       </div>
 
       {!binding.enabled && (
-        <p className="text-xs text-[var(--text-tertiary)]">
+        <p className="text-xs text-[var(--muted-foreground)]">
           Paused. Nothing already recorded has been deleted.
         </p>
       )}
@@ -1023,14 +1027,14 @@ function UnboundState({
           {/* The preview read failed: Continue has nothing to disclose, so say
            *  so where it blocks, with the retry right there. */}
           {mode === "cloud" && importPreview === null && (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5">
-              <span className="text-xs text-[var(--status-warning)]">
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5">
+              <span className="text-xs text-[var(--atlas-status-warning-foreground)]">
                 Couldn't read this Project's history.
               </span>
               <button
                 type="button"
                 onClick={onRetryPreview}
-                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline"
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline"
               >
                 <RefreshCw size={10} />
                 Retry
@@ -1111,10 +1115,10 @@ function Tabs({
             className={cn(
               "h-6 rounded-full border px-2.5 text-xs transition-colors",
               disabled
-                ? "cursor-not-allowed border-[var(--atlas-element-hover)] bg-[var(--atlas-element-hover)] text-[var(--text-tertiary)] opacity-40"
+                ? "cursor-not-allowed border-[var(--atlas-element-hover)] bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] opacity-40"
                 : on
-                  ? "cursor-pointer border-[var(--atlas-element-active)] bg-[var(--atlas-element-active)] text-[var(--text-primary)]"
-                  : "cursor-pointer border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] text-[var(--text-tertiary)] hover:bg-[var(--atlas-element-selected)] hover:text-[var(--text-secondary)]",
+                  ? "cursor-pointer border-[var(--atlas-element-active)] bg-[var(--atlas-element-active)] text-[var(--foreground)]"
+                  : "cursor-pointer border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-selected)] hover:text-[var(--secondary-foreground)]",
             )}
             onClick={() => onTabChange(id)}
           >
@@ -1196,14 +1200,16 @@ function CloudFields({
        *  tenant you are not looking at, and the mistake only shows up later in
        *  someone else's timeline. */}
       <div className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-xs text-[var(--text-tertiary)]">Organisation</span>
-        <span className="truncate text-xs text-[var(--text-secondary)]">
+        <span className="w-[70px] shrink-0 text-xs text-[var(--muted-foreground)]">
+          Organisation
+        </span>
+        <span className="truncate text-xs text-[var(--secondary-foreground)]">
           {cloudOrgs[0]?.name ?? "—"}
         </span>
       </div>
 
       <label className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-xs text-[var(--text-tertiary)]">Slug</span>
+        <span className="w-[70px] shrink-0 text-xs text-[var(--muted-foreground)]">Slug</span>
         <input
           value={slug}
           onChange={(e) => onSlugChange(e.target.value)}
@@ -1225,29 +1231,31 @@ function SlugStatus({ state }: { state: SlugState }) {
     <p className="flex items-center gap-1 pl-[78px] text-2xs">
       {state.kind === "checking" && (
         <>
-          <Loader2 size={10} className="animate-spin text-[var(--text-tertiary)]" />
-          <span className="text-[var(--text-tertiary)]">checking…</span>
+          <Loader2 size={10} className="animate-spin text-[var(--muted-foreground)]" />
+          <span className="text-[var(--muted-foreground)]">checking…</span>
         </>
       )}
       {state.kind === "available" && (
         <>
-          <Check size={10} className="text-[var(--text-secondary)]" />
-          <span className="text-[var(--text-secondary)]">available</span>
+          <Check size={10} className="text-[var(--secondary-foreground)]" />
+          <span className="text-[var(--secondary-foreground)]">available</span>
         </>
       )}
       {state.kind === "taken" && (
         <>
-          <X size={10} className="text-[var(--status-error)]" />
-          <span className="text-[var(--status-error)]">taken in this Organisation</span>
+          <X size={10} className="text-[var(--atlas-status-error-foreground)]" />
+          <span className="text-[var(--atlas-status-error-foreground)]">
+            taken in this Organisation
+          </span>
         </>
       )}
       {state.kind === "unknown" && (
         <>
-          <span className="text-[var(--status-warning)]">couldn't check</span>
+          <span className="text-[var(--atlas-status-warning-foreground)]">couldn't check</span>
           <button
             type="button"
             onClick={state.retry}
-            className="cursor-pointer text-[var(--text-secondary)] underline underline-offset-2 transition-colors duration-150 hover:text-[var(--text-primary)]"
+            className="cursor-pointer text-[var(--secondary-foreground)] underline underline-offset-2 transition-colors duration-150 hover:text-[var(--foreground)]"
           >
             retry
           </button>
@@ -1308,7 +1316,7 @@ function ConnectTab({
 
   if (cloudReason) {
     return (
-      <p className={cn(GROUP, "flex items-start gap-1.5 text-xs text-[var(--text-tertiary)]")}>
+      <p className={cn(GROUP, "flex items-start gap-1.5 text-xs text-[var(--muted-foreground)]")}>
         <Lock size={11} className="mt-px shrink-0" />
         {cloudReason}
       </p>
@@ -1320,22 +1328,22 @@ function ConnectTab({
   return (
     <div className="space-y-2">
       {options === undefined ? (
-        <p className="flex items-center gap-1.5 py-2 text-xs text-[var(--text-tertiary)]">
+        <p className="flex items-center gap-1.5 py-2 text-xs text-[var(--muted-foreground)]">
           <Loader2 size={11} className="animate-spin" />
           Fetching this Organisation's Projects…
         </p>
       ) : options === null ? (
-        <p className="rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5 text-xs text-[var(--status-warning)]">
+        <p className="rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-warning-foreground)]">
           Could not reach the server. Check the connection and reopen this tab.
         </p>
       ) : options.workspaces.length === 0 ? (
-        <p className={cn(GROUP, "text-xs text-[var(--text-tertiary)]")}>
+        <p className={cn(GROUP, "text-xs text-[var(--muted-foreground)]")}>
           This Organisation has no Projects yet. Create one from the Create tab instead.
         </p>
       ) : (
         <>
           {options.warning && (
-            <p className="rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5 text-xs text-[var(--status-warning)]">
+            <p className="rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-warning-foreground)]">
               {options.warning}
             </p>
           )}
@@ -1360,17 +1368,17 @@ function ConnectTab({
               >
                 <span className="shrink-0">
                   {selected === remote.id ? (
-                    <Check size={11} className="text-[var(--text-primary)]" />
+                    <Check size={11} className="text-[var(--foreground)]" />
                   ) : (
-                    <span className="block h-[11px] w-[11px] rounded-full border border-[var(--border-strong)]" />
+                    <span className="block h-[11px] w-[11px] rounded-full border border-[var(--atlas-border-strong)]" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-mono text-xs text-[var(--text-primary)]">
+                  <span className="block truncate font-mono text-xs text-[var(--foreground)]">
                     {remote.slug}
                   </span>
                   {remote.gitUrl && (
-                    <span className="block truncate text-2xs text-[var(--text-tertiary)]">
+                    <span className="block truncate text-2xs text-[var(--muted-foreground)]">
                       {remote.gitUrl}
                     </span>
                   )}
@@ -1437,8 +1445,8 @@ function PromoteForm({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-[var(--text-primary)]">Promote to Cloud</p>
-      <p className="text-xs text-[var(--text-tertiary)]">
+      <p className="text-sm font-medium text-[var(--foreground)]">Promote to Cloud</p>
+      <p className="text-xs text-[var(--muted-foreground)]">
         Everything captured here joins your Organisation's timeline. You'll see exactly what before
         anything is sent.
       </p>
@@ -1459,7 +1467,7 @@ function PromoteForm({
 /**
  * The one affirmative action per view.
  *
- * Atlas has no accent *background* token — `--accent-primary` is white, meant
+ * Atlas has no accent *background* token — `--primary` is white, meant
  * for text and rules — so the primary action inverts, matching the app.
  */
 function PrimaryButton({
@@ -1478,7 +1486,7 @@ function PrimaryButton({
       type="button"
       disabled={busy || disabled}
       onClick={onClick}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {busy && <Loader2 size={11} className="animate-spin" />}
       {label}
@@ -1500,7 +1508,7 @@ function GhostButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {label}
     </button>
@@ -1543,7 +1551,7 @@ function ModeOption({
       {disabled ? (
         <Lock size={10} />
       ) : (
-        selected && <Check size={10} className="text-[var(--text-primary)]" />
+        selected && <Check size={10} className="text-[var(--foreground)]" />
       )}
       {label}
     </button>
@@ -1578,7 +1586,7 @@ function Detected({
 
   return (
     <div className={cn(GROUP, "space-y-1.5")}>
-      <p className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+      <p className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
         This project
       </p>
 
@@ -1650,18 +1658,21 @@ function StatusRow({
       <Icon
         size={11}
         strokeWidth={1.75}
-        className={cn("shrink-0", ok ? "text-[var(--text-secondary)]" : "text-[var(--text-ghost)]")}
+        className={cn(
+          "shrink-0",
+          ok ? "text-[var(--secondary-foreground)]" : "text-[var(--atlas-text-disabled)]",
+        )}
       />
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-xs",
           mono && "font-mono",
-          ok ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]",
+          ok ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]",
         )}
       >
         {value}
       </span>
-      <span className="shrink-0 text-3xs uppercase tracking-[0.08em] text-[var(--text-ghost)]">
+      <span className="shrink-0 text-3xs uppercase tracking-[0.08em] text-[var(--atlas-text-disabled)]">
         {caption}
       </span>
     </div>
@@ -1689,11 +1700,11 @@ function TimelinePreview() {
   return (
     <div className={cn(GROUP, "overflow-hidden")}>
       <div className="flex items-center gap-1.5">
-        <Layers size={10} className="text-[var(--text-tertiary)]" />
-        <span className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+        <Layers size={10} className="text-[var(--muted-foreground)]" />
+        <span className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
           Timeline
         </span>
-        <span className="ml-auto text-3xs text-[var(--text-ghost)]">preview</span>
+        <span className="ml-auto text-3xs text-[var(--atlas-text-disabled)]">preview</span>
       </div>
 
       <div className="relative mt-2">
@@ -1704,7 +1715,7 @@ function TimelinePreview() {
             offset every time the row height changed. */}
         <span className="absolute bottom-[7px] left-[3px] top-[7px] w-px bg-[var(--atlas-element-active)]" />
         <span
-          className="atlas-timeline-beam absolute left-[2px] top-[3px] h-2.5 w-[3px] rounded-full bg-[var(--capture-live)]"
+          className="atlas-timeline-beam absolute left-[2px] top-[3px] h-2.5 w-[3px] rounded-full bg-[var(--atlas-status-success-foreground)]"
           style={{ "--atlas-beam-travel": "42px" } as React.CSSProperties}
         />
 
@@ -1719,27 +1730,29 @@ function TimelinePreview() {
                 className={cn(
                   "relative size-[7px] shrink-0 rounded-full border",
                   row.dot === "commit"
-                    ? "border-[var(--capture-live)] bg-[var(--capture-live)]"
-                    : "border-border-strong bg-[var(--bg-elevated)]",
+                    ? "border-[var(--atlas-status-success-foreground)] bg-[var(--atlas-status-success-foreground)]"
+                    : "border-border-strong bg-[var(--card)]",
                 )}
               />
               <span
                 className={cn(
                   "min-w-0 flex-1 truncate text-2xs",
                   row.dot === "commit"
-                    ? "font-mono text-[var(--text-secondary)]"
-                    : "text-[var(--text-secondary)]",
+                    ? "font-mono text-[var(--secondary-foreground)]"
+                    : "text-[var(--secondary-foreground)]",
                 )}
               >
                 {row.text}
               </span>
-              <span className="shrink-0 text-3xs text-[var(--text-ghost)]">{row.meta}</span>
+              <span className="shrink-0 text-3xs text-[var(--atlas-text-disabled)]">
+                {row.meta}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
-      <p className="mt-2 text-2xs text-[var(--text-tertiary)]">
+      <p className="mt-2 text-2xs text-[var(--muted-foreground)]">
         Every prompt, tool call and commit, kept on one thread you can reopen months later.
       </p>
     </div>
@@ -1756,9 +1769,9 @@ function TimelinePreview() {
 function GitInitOffer({ busy, onGitInit }: { busy: boolean; onGitInit: () => void }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-dashed border-[var(--atlas-element-active)] px-2.5 py-2">
-      <GitBranch size={12} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
+      <GitBranch size={12} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
       <div className="min-w-0">
-        <p className="text-xs text-[var(--text-secondary)]">
+        <p className="text-xs text-[var(--secondary-foreground)]">
           Sessions are recorded here already. Initialise git to also link them to the commits they
           produce.
         </p>
@@ -1766,7 +1779,7 @@ function GitInitOffer({ busy, onGitInit }: { busy: boolean; onGitInit: () => voi
           type="button"
           disabled={busy}
           onClick={onGitInit}
-          className="mt-1 cursor-pointer text-xs text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-1 cursor-pointer text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           Initialise git
         </button>

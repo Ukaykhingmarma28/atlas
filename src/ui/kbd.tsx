@@ -17,7 +17,7 @@ import { splitGlyphCombo } from "@/features/keybindings/lib/combo";
 const kbdVariants = cva(
   [
     "pointer-events-none inline-flex w-fit items-center justify-center gap-1 select-none",
-    "rounded border border-border bg-bg-elevated text-text-tertiary",
+    "rounded border border-border bg-card text-muted-foreground",
     "px-1.5 font-sans leading-none",
     "[&_svg:not([class*='size-'])]:size-3",
   ],

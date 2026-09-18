@@ -47,7 +47,7 @@ export function FileTreeConfirmDelete({
           className={cn(
             "fixed left-1/2 top-[30%] -translate-x-1/2 z-modal",
             "w-[380px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border)]",
+            "bg-[var(--card)] border border-[var(--border)]",
             "shadow-md",
             "p-4 flex flex-col gap-3",
           )}
@@ -58,20 +58,20 @@ export function FileTreeConfirmDelete({
             }
           }}
         >
-          <Dialog.Title className="text-base font-semibold text-text-primary">
+          <Dialog.Title className="text-base font-semibold text-foreground">
             {title ?? (multi ? `Delete ${count} items?` : `Delete ${isDir ? "folder" : "file"}?`)}
           </Dialog.Title>
-          <p className="text-sm text-text-secondary leading-relaxed">
+          <p className="text-sm text-secondary-foreground leading-relaxed">
             {body ??
               (multi ? (
                 <>
-                  <span className="font-mono text-text-primary">{name}</span> and {count - 1} other{" "}
+                  <span className="font-mono text-foreground">{name}</span> and {count - 1} other{" "}
                   {count - 1 === 1 ? "item" : "items"} will be permanently deleted. This can't be
                   undone.
                 </>
               ) : (
                 <>
-                  <span className="font-mono text-text-primary">{name}</span> will be permanently{" "}
+                  <span className="font-mono text-foreground">{name}</span> will be permanently{" "}
                   {isDir ? "removed along with everything inside it" : "deleted"}. This can't be
                   undone.
                 </>
@@ -83,7 +83,7 @@ export function FileTreeConfirmDelete({
               onClick={() => onOpenChange(false)}
               className={cn(
                 "px-3 h-7 rounded text-xs",
-                "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+                "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
               )}
             >
               Cancel
@@ -94,7 +94,7 @@ export function FileTreeConfirmDelete({
               onClick={onConfirm}
               className={cn(
                 "px-3 h-7 rounded text-xs font-medium",
-                "text-destructive-foreground bg-[var(--status-error)] hover:opacity-90",
+                "text-destructive-foreground bg-[var(--atlas-status-error-foreground)] hover:opacity-90",
               )}
             >
               {confirmLabel}

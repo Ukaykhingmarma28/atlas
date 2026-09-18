@@ -96,7 +96,7 @@ export function FileIcon({ path, kind = "file", size = 14, className, fallback }
   }
 
   const Fallback = fallback ?? defaultFallback(kind);
-  return <Fallback size={size} className={cn("shrink-0 text-text-tertiary", className)} />;
+  return <Fallback size={size} className={cn("shrink-0 text-muted-foreground", className)} />;
 }
 
 function PreparedImage({

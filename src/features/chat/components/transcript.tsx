@@ -223,13 +223,13 @@ function StallNotice({
   onCopyDiagnostics?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-xs leading-[16px] text-[var(--text-tertiary)]">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-xs leading-[16px] text-[var(--muted-foreground)]">
       <span className="select-text">Still starting… this can take a few minutes on first run.</span>
       {onRestart && (
         <button
           type="button"
           onClick={onRestart}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Restart agent
         </button>
@@ -238,7 +238,7 @@ function StallNotice({
         <button
           type="button"
           onClick={onSwitch}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Switch agent
         </button>
@@ -247,7 +247,7 @@ function StallNotice({
         <button
           type="button"
           onClick={onCopyDiagnostics}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Copy diagnostics
         </button>
@@ -895,7 +895,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           }}
         >
           {rows.length === 0 && !isStreaming && (
-            <div className="flex h-full items-center justify-center text-xs text-[var(--text-tertiary)]">
+            <div className="flex h-full items-center justify-center text-xs text-[var(--muted-foreground)]">
               No messages yet.
             </div>
           )}
@@ -925,7 +925,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         // Mostly-opaque behind the bar itself, ramping to clear below it.
         // Without a tint the header read as a transparent pane over live text;
         // `color-mix` keeps it theme-correct rather than hardcoding black.
-        tint="color-mix(in srgb, var(--bg-surface) 90%, transparent)"
+        tint="color-mix(in srgb, var(--background) 90%, transparent)"
         className="z-panel"
       />
 
@@ -950,7 +950,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           // band just above the composer let white text ghost through the
           // seam (subtle but visible on AMOLED black).
           background:
-            "linear-gradient(to bottom, transparent, var(--bg-surface) 72%, var(--bg-surface))",
+            "linear-gradient(to bottom, transparent, var(--background) 72%, var(--background))",
         }}
       />
     </div>

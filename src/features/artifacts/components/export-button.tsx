@@ -52,7 +52,7 @@ export function ExportButton({ detail }: { detail: Detail }) {
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-          <Popover.Popup className="w-[184px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 p-1 shadow-md backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+          <Popover.Popup className="w-[184px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]/90 p-1 shadow-md backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
             <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
             <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
           </Popover.Popup>
@@ -75,11 +75,11 @@ function ExportItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
     >
       {label}
       <span className="flex-1" />
-      <span className="font-mono text-2xs text-[var(--text-ghost)]">{hint}</span>
+      <span className="font-mono text-2xs text-[var(--atlas-text-disabled)]">{hint}</span>
     </button>
   );
 }

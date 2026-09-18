@@ -24,7 +24,7 @@ const BASE =
 /** Addressed to you, or to everyone — the brighter of the two. */
 const SELF = "border-white/20 bg-[var(--atlas-element-emphasis)] text-[var(--foreground)]";
 /** Someone else: the same neutral surface every other pill in the app uses. */
-const OTHER = "border-border bg-bg-elevated text-text-secondary";
+const OTHER = "border-border bg-card text-secondary-foreground";
 
 export function mentionPillClass(highlight: boolean): string {
   return `${BASE} ${highlight ? SELF : OTHER}`;

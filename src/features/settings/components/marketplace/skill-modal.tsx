@@ -39,22 +39,22 @@ export function SkillModalShell({
             // Centered in the viewport.
             "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[86vh] w-[760px] max-w-[94vw] flex-col overflow-hidden",
-            "rounded-lg border border-border bg-bg-elevated",
-            "shadow-lg animate-scale-in text-text-primary",
+            "rounded-lg border border-border bg-card",
+            "shadow-lg animate-scale-in text-foreground",
           )}
         >
           <div className="flex items-start gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0 flex-1">
               <Dialog.Title className="truncate text-sm font-semibold">{title}</Dialog.Title>
               {subtitle && (
-                <div className="mt-0.5 truncate font-mono text-xs text-text-tertiary">
+                <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                   {subtitle}
                 </div>
               )}
             </div>
             <Dialog.Close
               aria-label="Close"
-              className="shrink-0 rounded p-1 text-text-tertiary hover:bg-bg-hover hover:text-text-primary"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-element-hover hover:text-foreground"
             >
               <X size={14} />
             </Dialog.Close>
@@ -85,24 +85,26 @@ export function SkillDescriptions({
 }) {
   if (skills.length === 0) {
     return (
-      <div className="text-sm text-text-tertiary">{fallback ?? "No description published."}</div>
+      <div className="text-sm text-muted-foreground">{fallback ?? "No description published."}</div>
     );
   }
   if (skills.length === 1) {
     const s = skills[0];
     return s.description ? (
-      <p className="text-base leading-relaxed text-text-secondary">{s.description}</p>
+      <p className="text-base leading-relaxed text-secondary-foreground">{s.description}</p>
     ) : (
-      <div className="text-sm text-text-tertiary">{fallback ?? "No description published."}</div>
+      <div className="text-sm text-muted-foreground">{fallback ?? "No description published."}</div>
     );
   }
   return (
     <div className="flex flex-col gap-3.5">
       {skills.map((s) => (
         <div key={s.name}>
-          <div className="text-sm font-medium text-text-primary">{s.name}</div>
+          <div className="text-sm font-medium text-foreground">{s.name}</div>
           {s.description && (
-            <div className="mt-0.5 text-sm leading-relaxed text-text-tertiary">{s.description}</div>
+            <div className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
+              {s.description}
+            </div>
           )}
         </div>
       ))}
@@ -134,10 +136,10 @@ export function ModalAction({
       className={cn(
         "flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-sm font-medium transition-colors disabled:opacity-50",
         variant === "primary"
-          ? "border-border text-text-primary hover:bg-bg-hover"
+          ? "border-border text-foreground hover:bg-element-hover"
           : variant === "danger"
             ? "border-error/40 text-error hover:bg-error/10"
-            : "border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            : "border-border text-secondary-foreground hover:bg-element-hover hover:text-foreground",
       )}
     >
       {busy ? (

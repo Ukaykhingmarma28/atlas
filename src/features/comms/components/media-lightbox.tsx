@@ -94,16 +94,16 @@ export function MediaLightbox() {
             // would be overwritten for the length of the animation and the
             // panel would fly in from the viewport's centre-bottom-right.
             "fixed inset-0 z-modal m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
-            "flex flex-col overflow-hidden rounded-xl border border-border bg-bg-base",
+            "flex flex-col overflow-hidden rounded-xl border border-border bg-background",
             "shadow-lg animate-scale-in outline-none",
           )}
         >
           <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
-            <Dialog.Title className="min-w-0 flex-1 truncate text-sm text-text-secondary">
+            <Dialog.Title className="min-w-0 flex-1 truncate text-sm text-secondary-foreground">
               {item?.filename ?? ""}
             </Dialog.Title>
             {count > 1 && (
-              <span className="shrink-0 text-xs tabular-nums text-text-ghost">
+              <span className="shrink-0 text-xs tabular-nums text-disabled">
                 {index + 1} / {count}
               </span>
             )}
@@ -113,14 +113,14 @@ export function MediaLightbox() {
                   <a
                     href={convertFileSrc(path)}
                     download={item.filename}
-                    className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
                   >
                     <Download size={13} />
                   </a>
                 </HintItem>
               )}
               <HintItem label="Close">
-                <Dialog.Close className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer">
+                <Dialog.Close className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer">
                   <X size={13} />
                 </Dialog.Close>
               </HintItem>
@@ -141,7 +141,7 @@ export function MediaLightbox() {
                 <ImageZoomView key={item.id} src={convertFileSrc(path)} alt={item.filename} fill />
               )
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-text-ghost">
+              <div className="flex h-full w-full items-center justify-center text-xs text-disabled">
                 {failed ? (
                   "Could not load this file."
                 ) : (
@@ -188,8 +188,8 @@ function NavButton({
         onClick={onClick}
         className={cn(
           "absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
-          "border border-white/10 bg-[var(--bg-secondary)]/70 text-text-secondary backdrop-blur-xl",
-          "transition-opacity hover:text-text-primary cursor-pointer",
+          "border border-white/10 bg-[var(--card)]/70 text-secondary-foreground backdrop-blur-xl",
+          "transition-opacity hover:text-foreground cursor-pointer",
           "disabled:cursor-default disabled:opacity-0",
           side === "left" ? "left-3" : "right-3",
         )}

@@ -104,7 +104,7 @@ export function PdfViewer({ filePath, tabId }: PdfViewerProps) {
   }, [save, saving]);
 
   return (
-    <div className="flex h-full w-full flex-col bg-[var(--bg-base)]">
+    <div className="flex h-full w-full flex-col bg-[var(--background)]">
       <PdfToolbar
         fileName={fileName}
         zoom={zoom}
@@ -115,10 +115,12 @@ export function PdfViewer({ filePath, tabId }: PdfViewerProps) {
 
       <div
         ref={scrollRef}
-        className="flex flex-1 justify-center overflow-auto bg-[var(--bg-canvas)] p-8"
+        className="flex flex-1 justify-center overflow-auto bg-[var(--atlas-panel-background)] p-8"
       >
         {error ? (
-          <div className="mt-20 text-[12px] text-[var(--status-error)]">{error}</div>
+          <div className="mt-20 text-[12px] text-[var(--atlas-status-error-foreground)]">
+            {error}
+          </div>
         ) : pdfFile ? (
           <Document
             file={pdfFile}
@@ -126,7 +128,7 @@ export function PdfViewer({ filePath, tabId }: PdfViewerProps) {
             onLoadError={(e) => setError(e.message || "Failed to load PDF document.")}
             loading={<PdfSpinner label="Loading PDF" />}
             error={
-              <div className="mt-20 text-[12px] text-[var(--status-error)]">
+              <div className="mt-20 text-[12px] text-[var(--atlas-status-error-foreground)]">
                 Failed to load PDF document.
               </div>
             }
@@ -169,7 +171,7 @@ function PdfPage({
             className="flex items-center justify-center bg-white"
             style={{ width, height: width * 1.29 }}
           >
-            <Loader2 size={16} className="animate-spin text-[var(--text-tertiary)]" />
+            <Loader2 size={16} className="animate-spin text-[var(--muted-foreground)]" />
           </div>
         }
       />
@@ -182,7 +184,7 @@ function PdfPage({
 
 function PdfSpinner({ label }: { label: string }) {
   return (
-    <div className="mt-20 flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
+    <div className="mt-20 flex flex-col items-center gap-2 text-[var(--muted-foreground)]">
       <Loader2 size={18} className="animate-spin" />
       <span className="text-[11px]">{label}</span>
     </div>

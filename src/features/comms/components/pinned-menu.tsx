@@ -82,7 +82,7 @@ export function PinnedMenu({
           render={
             <button
               type="button"
-              className="flex h-5 items-center gap-1 rounded px-1.5 text-2xs text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className="flex h-5 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
             >
               <Pin size={10} />
               <span className="tabular-nums">{count}</span>
@@ -92,28 +92,28 @@ export function PinnedMenu({
       </Hint>
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
+          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
             <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
               <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
-                <Search size={11} className="shrink-0 text-text-tertiary" />
+                <Search size={11} className="shrink-0 text-muted-foreground" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search pins…"
                   aria-label="Search pinned messages"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </div>
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
                 {rows === null && (
-                  <div className="flex items-center justify-center gap-1.5 py-6 text-xs text-text-tertiary">
+                  <div className="flex items-center justify-center gap-1.5 py-6 text-xs text-muted-foreground">
                     <Loader2 size={11} className="animate-spin" />
                     Loading pins…
                   </div>
                 )}
                 {rows !== null && filtered.length === 0 && (
-                  <div className="py-6 text-center text-xs text-text-ghost">
+                  <div className="py-6 text-center text-xs text-disabled">
                     {rows.length === 0 ? "Nothing pinned yet." : "No pins match."}
                   </div>
                 )}
@@ -129,20 +129,20 @@ export function PinnedMenu({
                         if (msg) onJump(msg.id);
                       }}
                       className={
-                        "flex w-full cursor-pointer flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]" +
+                        "flex w-full cursor-pointer flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)]" +
                         (i === filtered.length - 1 ? "" : " border-b border-white/5")
                       }
                     >
                       <div className="flex min-w-0 items-center gap-1.5">
                         <CommsAvatar member={author} size={16} />
-                        <span className="min-w-0 truncate text-xs font-medium text-text-primary">
+                        <span className="min-w-0 truncate text-xs font-medium text-foreground">
                           {author?.name ?? "Unknown"}
                         </span>
-                        <span className="ml-auto shrink-0 text-3xs text-[var(--text-tertiary)]">
+                        <span className="ml-auto shrink-0 text-3xs text-[var(--muted-foreground)]">
                           {timeAgo(new Date(pin.at).toISOString(), { suffix: true })}
                         </span>
                       </div>
-                      <span className="line-clamp-2 pl-[22px] text-xs leading-snug text-text-secondary">
+                      <span className="line-clamp-2 pl-[22px] text-xs leading-snug text-secondary-foreground">
                         {(msg && toPlainText(msg.body, members)) ||
                           (msg?.attachments?.length ? "(attachment)" : "…")}
                       </span>

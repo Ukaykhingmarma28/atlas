@@ -148,7 +148,7 @@ export function Titlebar() {
       onMouseDown={handleDrag}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        "relative z-titlebar flex h-titlebar select-none items-center bg-[var(--bg-base)] border-b border-border",
+        "relative z-titlebar flex h-titlebar select-none items-center bg-[var(--background)] border-b border-border",
         isWindows ? "pr-0" : "pr-3",
         isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
       )}
@@ -216,7 +216,7 @@ function WindowControls() {
   }, []);
 
   const button =
-    "flex h-[29px] w-[46px] items-center justify-center text-text-tertiary transition-colors duration-100";
+    "flex h-[29px] w-[46px] items-center justify-center text-muted-foreground transition-colors duration-100";
 
   return (
     <HintGroup>
@@ -224,7 +224,7 @@ function WindowControls() {
         <HintItem label="Minimize">
           <button
             onClick={() => void windowRef.current?.minimize()}
-            className={cn(button, "hover:bg-bg-hover hover:text-text-primary")}
+            className={cn(button, "hover:bg-element-hover hover:text-foreground")}
           >
             <Minus size={14} strokeWidth={1.25} />
           </button>
@@ -232,7 +232,7 @@ function WindowControls() {
         <HintItem label={isMaximized ? "Restore" : "Maximize"}>
           <button
             onClick={() => void windowRef.current?.toggleMaximize()}
-            className={cn(button, "hover:bg-bg-hover hover:text-text-primary")}
+            className={cn(button, "hover:bg-element-hover hover:text-foreground")}
           >
             {isMaximized ? (
               <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
@@ -340,19 +340,19 @@ function ProjectLabel({
               // inherited line-height the label spans set a taller line box than
               // the dot, and `items-center` centred the dot against *that* — which
               // is why it sat visibly high.
-              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border-subtle bg-bg-elevated px-2 text-xs leading-none font-medium transition-colors hover:bg-bg-hover"
+              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border-subtle bg-card px-2 text-xs leading-none font-medium transition-colors hover:bg-element-hover"
               title={health?.summary ?? "Session capture"}
               aria-label={health?.summary ?? "Session capture"}
             >
               {orgName && (
                 <>
-                  <span className="min-w-0 shrink truncate text-[var(--text-tertiary)]">
+                  <span className="min-w-0 shrink truncate text-[var(--muted-foreground)]">
                     {orgName}
                   </span>
-                  <span className="shrink-0 text-[var(--text-tertiary)] opacity-50">/</span>
+                  <span className="shrink-0 text-[var(--muted-foreground)] opacity-50">/</span>
                 </>
               )}
-              <span className="min-w-0 truncate text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
+              <span className="min-w-0 truncate text-[var(--secondary-foreground)] transition-colors group-hover:text-[var(--foreground)]">
                 {name}
               </span>
               {/* Only once capture is on. An always-present grey dot on every
@@ -397,7 +397,7 @@ function ProjectLabel({
  * The one saturated element in a monochrome titlebar, which is the point: it
  * must be impossible to mistake a dev window for the shipped app. Blue rather
  * than the old purple because purple appears nowhere else in Atlas, while blue
- * is already the app's informational hue (`--status-info`).
+ * is already the app's informational hue (`--atlas-status-info-foreground`).
  *
  * Built from three stacked layers rather than a flat fill — a vertical
  * gradient body, a blurred crown highlight, and an inset rim — so it reads as
@@ -461,14 +461,14 @@ function ProjectToggle() {
       <button
         onClick={toggleSidebar}
         className={cn(
-          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-bg-hover transition-all duration-150",
-          sidebarOpen ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
+          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-element-hover transition-all duration-150",
+          sidebarOpen ? "text-foreground" : "text-muted-foreground hover:text-secondary-foreground",
         )}
         aria-label={sidebarOpen ? "Hide projects" : "Show projects"}
       >
         <Layers size={14} />
         {count > 1 && (
-          <span className="absolute -bottom-0.5 -right-0.5 text-3xs font-mono text-text-primary">
+          <span className="absolute -bottom-0.5 -right-0.5 text-3xs font-mono text-foreground">
             {count}
           </span>
         )}
@@ -485,7 +485,7 @@ function LeftPanelToggle() {
     <HintItem label={leftPanel.visible ? "Hide left panel" : "Show left panel"}>
       <button
         onClick={toggleLeftPanel}
-        className="flex items-center justify-center w-6 h-6 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-all duration-150"
+        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-all duration-150"
       >
         <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
       </button>
@@ -615,9 +615,9 @@ function useNotificationItem(): DockItem {
           // Priority: error > needs-attention (green) > plain unread.
           className={cn(
             hasError
-              ? "bg-[var(--status-error)]"
+              ? "bg-[var(--atlas-status-error-foreground)]"
               : needsAttention
-                ? "bg-[var(--status-success)] animate-pulse"
+                ? "bg-[var(--atlas-status-success-foreground)] animate-pulse"
                 : "bg-foreground",
           )}
           label={needsAttention ? "Something needs your attention" : "Unread notifications"}
@@ -644,7 +644,7 @@ function DockBadge({ className, label }: { className?: string; label?: string })
     <span
       className={cn(
         "pointer-events-none absolute right-[3px] top-[3px] size-[6px] rounded-full",
-        "ring-1 ring-[var(--bg-elevated)]",
+        "ring-1 ring-[var(--card)]",
         className,
       )}
       aria-label={label}

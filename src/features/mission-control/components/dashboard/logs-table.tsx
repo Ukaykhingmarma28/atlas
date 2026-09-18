@@ -40,7 +40,7 @@ function parseJsonl(raw: string): LogEntry[] {
 }
 
 const SOURCE_COLOR: Record<string, string> = {
-  atlas: "var(--text-primary)",
+  atlas: "var(--foreground)",
   agent: "var(--primary)",
   chat: "var(--chart-2)",
   git: "var(--chart-1)",
@@ -121,19 +121,19 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
   });
 
   return (
-    <div className="h-full flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] overflow-hidden">
+    <div className="h-full flex flex-col rounded-lg border border-[var(--border)] bg-[var(--card)] overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-2.5 h-[38px] shrink-0 border-b border-[var(--border)]">
-        <span className="text-sm font-medium text-[var(--text-primary)] mr-1">Activity log</span>
-        <span className="text-2xs text-[var(--text-tertiary)]">{filtered.length}</span>
+        <span className="text-sm font-medium text-[var(--foreground)] mr-1">Activity log</span>
+        <span className="text-2xs text-[var(--muted-foreground)]">{filtered.length}</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-1.5 h-control-md rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 w-[180px]">
-          <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
+        <div className="flex items-center gap-1.5 h-control-md rounded-md border border-[var(--border)] bg-[var(--background)] px-2 w-[180px]">
+          <Search size={11} className="text-[var(--muted-foreground)] shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search logs…"
-            className="flex-1 bg-transparent outline-none text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)]"
+            className="flex-1 bg-transparent outline-none text-xs text-[var(--secondary-foreground)] placeholder:text-[var(--muted-foreground)]"
           />
         </div>
         <Select
@@ -153,7 +153,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
       </div>
 
       {/* Header */}
-      <div className="flex items-center h-control-md shrink-0 border-b border-[var(--border)] px-3 text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+      <div className="flex items-center h-control-md shrink-0 border-b border-[var(--border)] px-3 text-3xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
         <span className="w-[120px] shrink-0">Time</span>
         <span className="w-[80px] shrink-0">Source</span>
         <span className="w-[150px] shrink-0">Project</span>
@@ -164,7 +164,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
       {/* Body */}
       <div ref={parentRef} className="flex-1 min-h-0 overflow-auto">
         {rows.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-[var(--text-tertiary)]">No log entries.</div>
+          <div className="px-3 py-4 text-xs text-[var(--muted-foreground)]">No log entries.</div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualizer.getVirtualItems().map((v) => {
@@ -181,25 +181,25 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
                     height: ROW_H,
                     transform: `translateY(${v.start}px)`,
                   }}
-                  className="flex items-center px-3 text-xs border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]"
+                  className="flex items-center px-3 text-xs border-b border-[var(--atlas-border-subtle)] hover:bg-[var(--atlas-element-hover)]"
                 >
-                  <span className="w-[120px] shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
+                  <span className="w-[120px] shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
                     {fmtTime(e.timestamp)}
                   </span>
                   <span
                     className="w-[80px] shrink-0 truncate"
-                    style={{ color: SOURCE_COLOR[e.source] ?? "var(--text-secondary)" }}
+                    style={{ color: SOURCE_COLOR[e.source] ?? "var(--secondary-foreground)" }}
                   >
                     {e.source}
                   </span>
-                  <span className="w-[150px] shrink-0 truncate text-[var(--text-tertiary)]">
+                  <span className="w-[150px] shrink-0 truncate text-[var(--muted-foreground)]">
                     {e.projectName ?? "—"}
                   </span>
-                  <span className="w-[140px] shrink-0 truncate font-mono text-[var(--text-tertiary)]">
+                  <span className="w-[140px] shrink-0 truncate font-mono text-[var(--muted-foreground)]">
                     {e.kind}
                   </span>
                   <span
-                    className="flex-1 min-w-0 truncate text-[var(--text-secondary)]"
+                    className="flex-1 min-w-0 truncate text-[var(--secondary-foreground)]"
                     title={e.summary}
                   >
                     {e.summary}
@@ -213,7 +213,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
 
       {/* Pagination footer */}
       {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
+        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border)] text-2xs text-[var(--muted-foreground)]">
           <span className="font-mono tabular-nums">
             {clampedPage * PAGE_SIZE + 1}–{Math.min(filtered.length, (clampedPage + 1) * PAGE_SIZE)}{" "}
             of {filtered.length}
@@ -222,7 +222,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={clampedPage === 0}
-              className="px-2 h-control-sm rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              className="px-2 h-control-sm rounded text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               Prev
             </button>
@@ -232,7 +232,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
             <button
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
               disabled={clampedPage >= pageCount - 1}
-              className="px-2 h-control-sm rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              className="px-2 h-control-sm rounded text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               Next
             </button>
@@ -259,7 +259,7 @@ function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "h-control-md rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 text-xs text-[var(--text-secondary)] outline-none max-w-[150px]",
+        "h-control-md rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--secondary-foreground)] outline-none max-w-[150px]",
       )}
     >
       {options.map((o) => (

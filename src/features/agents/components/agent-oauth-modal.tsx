@@ -496,8 +496,8 @@ function AgentOAuthModal({
                 <span className="text-sm text-success">Signed in to {label}.</span>
               ) : (
                 <>
-                  <Loader2 size={13} className="shrink-0 animate-spin text-text-tertiary" />
-                  <span className="text-sm text-text-secondary">
+                  <Loader2 size={13} className="shrink-0 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-secondary-foreground">
                     {phase.kind === "running" ? phase.label : `Starting ${label}…`}
                   </span>
                 </>
@@ -508,16 +508,16 @@ function AgentOAuthModal({
           <Dialog.Popup
             className={cn(
               "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
-              "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
-              "shadow-md text-text-primary",
+              "w-[480px] max-w-[92vw] rounded-lg border border-border bg-card",
+              "shadow-md text-foreground",
             )}
             style={centred}
           >
             <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
-              <Info className="mt-0.5 size-4 text-text-tertiary" />
+              <Info className="mt-0.5 size-4 text-muted-foreground" />
               <div>
                 <Dialog.Title className="text-sm font-medium">Sign in to {label}</Dialog.Title>
-                <Dialog.Description className="mt-0.5 text-xs text-text-secondary">
+                <Dialog.Description className="mt-0.5 text-xs text-secondary-foreground">
                   {label} needs credentials before it can start a session.
                 </Dialog.Description>
               </div>
@@ -539,7 +539,7 @@ function AgentOAuthModal({
                   <p className="px-2 text-xs text-error break-words">{phase.message}</p>
                   {phase.manualCommand && (
                     <div className="px-2 space-y-1.5">
-                      <p className="text-xs text-text-secondary">
+                      <p className="text-xs text-secondary-foreground">
                         You can also finish this in a terminal:
                       </p>
                       <button
@@ -548,7 +548,7 @@ function AgentOAuthModal({
                           toast.success("Command copied.");
                         }}
                         title="Copy — then run it in a terminal and try again."
-                        className="w-full rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left font-mono text-xs text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                        className="w-full rounded-sm border border-border bg-background px-2.5 py-1.5 text-left font-mono text-xs text-secondary-foreground break-all hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
                       >
                         {phase.manualCommand}
                       </button>
@@ -556,7 +556,7 @@ function AgentOAuthModal({
                   )}
                   <button
                     onClick={() => setNonce((n) => n + 1)}
-                    className="ml-2 rounded-sm border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                    className="ml-2 rounded-sm border border-border px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
                   >
                     Try again
                   </button>
@@ -576,7 +576,7 @@ function AgentOAuthModal({
               {phase.kind === "choose" && (
                 <div className="flex flex-col gap-1.5">
                   {phase.methods.length === 0 && (
-                    <p className="px-2 py-4 text-xs text-text-secondary">
+                    <p className="px-2 py-4 text-xs text-secondary-foreground">
                       {label} asked for credentials but did not say what it needs, and offered no
                       sign-in method Atlas can run. If it reads a provider API key from the
                       environment, export that variable in your shell profile and {label} will pick
@@ -591,19 +591,19 @@ function AgentOAuthModal({
                             ? setPhase({ kind: "env", method: m, methods: phase.methods })
                             : void run(m)
                         }
-                        className="group flex items-center gap-3 rounded-sm border border-border bg-bg-base px-3 py-2.5 text-left transition-colors hover:bg-bg-hover"
+                        className="group flex items-center gap-3 rounded-sm border border-border bg-background px-3 py-2.5 text-left transition-colors hover:bg-element-hover"
                       >
                         <span className="flex-1 min-w-0">
-                          <span className="block text-xs font-medium text-text-primary">
+                          <span className="block text-xs font-medium text-foreground">
                             {m.name}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-xs text-text-secondary">
+                            <span className="mt-0.5 block text-xs text-secondary-foreground">
                               {m.description}
                             </span>
                           )}
                         </span>
-                        <ChevronRight className="size-3.5 shrink-0 text-text-tertiary group-hover:text-text-primary transition-colors" />
+                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
                       </button>
                       {/* No separate "run this in a terminal" any more: for a
                         method with a CLI, choosing it IS the terminal
@@ -613,7 +613,7 @@ function AgentOAuthModal({
                   {supportsLogout && (
                     <button
                       onClick={() => void signOut()}
-                      className="mt-0.5 flex items-center gap-2 self-start rounded-sm px-2 py-1 text-xs text-text-tertiary transition-colors hover:text-text-primary"
+                      className="mt-0.5 flex items-center gap-2 self-start rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <LogOut className="size-3.5" /> Sign out of {label}
                     </button>
@@ -641,22 +641,22 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
 
   return (
     <div className="space-y-2.5 px-2 py-3">
-      <div className="flex items-center gap-2 text-xs text-text-secondary">
+      <div className="flex items-center gap-2 text-xs text-secondary-foreground">
         <Loader2 size={14} className="animate-spin" /> {label}
       </div>
       {url && (
         <button
           onClick={() => void openUrl(url)}
-          className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex w-full items-center gap-2 rounded-sm border border-border bg-background px-2.5 py-1.5 text-left text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
         >
-          <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">Open sign-in page</span>
         </button>
       )}
       {tail.length > 0 && (
-        <div className="max-h-28 overflow-y-auto rounded-sm border border-border bg-bg-base px-2.5 py-1.5">
+        <div className="max-h-28 overflow-y-auto rounded-sm border border-border bg-background px-2.5 py-1.5">
           {tail.map((line, i) => (
-            <p key={i} className="font-mono text-xs text-text-tertiary break-all">
+            <p key={i} className="font-mono text-xs text-muted-foreground break-all">
               {line}
             </p>
           ))}
@@ -710,8 +710,8 @@ function TerminalHandoffDockBody({
 }) {
   return (
     <>
-      <TerminalIcon className="size-3.5 shrink-0 text-text-tertiary" />
-      <span className="shrink-0 text-sm text-text-primary">Finish signing in in the terminal</span>
+      <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 text-sm text-foreground">Finish signing in in the terminal</span>
 
       <button
         onClick={() => {
@@ -719,7 +719,7 @@ function TerminalHandoffDockBody({
           toast.success("Command copied.");
         }}
         title={`Copy — ${command}`}
-        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-xs leading-none text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
+        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-xs leading-none text-muted-foreground transition-colors hover:bg-white/[0.1] hover:text-foreground"
       >
         <span className="min-w-0 max-w-[220px] truncate">{command}</span>
         <Copy className="size-3 shrink-0" />
@@ -729,7 +729,7 @@ function TerminalHandoffDockBody({
           (`chat-panel.tsx`) — same radius and weight, sized to this row. */}
       <button
         onClick={onDone}
-        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium leading-none text-text-primary transition-colors hover:bg-white/[0.14]"
+        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium leading-none text-foreground transition-colors hover:bg-white/[0.14]"
       >
         I've finished signing in
       </button>
@@ -737,7 +737,7 @@ function TerminalHandoffDockBody({
       <Hint label="Dismiss" side="top">
         <button
           onClick={onDismiss}
-          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
+          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/[0.1] hover:text-foreground"
         >
           <X className="size-3.5" />
         </button>
@@ -768,27 +768,27 @@ function EnvPhase({
   const blocked = useMemo(() => methodBlockedReason(method, env), [method, env]);
   return (
     <div className="flex flex-col gap-2.5 px-2 py-1">
-      <p className="text-xs text-text-secondary">
+      <p className="text-xs text-secondary-foreground">
         {agentLabel} reads these from your environment. Export them in your shell profile (
-        <code className="text-xs text-text-primary">~/.zshrc</code>) and they are picked up on its
+        <code className="text-xs text-foreground">~/.zshrc</code>) and they are picked up on its
         next start.
       </p>
       <div className="flex flex-col gap-1">
         {env.map((v) => (
           <div
             key={v.name}
-            className="flex items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5"
+            className="flex items-center gap-2 rounded-sm border border-border bg-background px-2.5 py-1.5"
           >
             <Check
               className={cn(
                 "size-3.5 shrink-0",
-                v.satisfied ? "text-success" : "text-text-tertiary opacity-40",
+                v.satisfied ? "text-success" : "text-muted-foreground opacity-40",
               )}
             />
-            <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
               {v.name}
             </code>
-            <span className="shrink-0 text-xs text-text-tertiary">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {v.satisfied
                 ? v.source === "shell-env"
                   ? "from shell profile"
@@ -803,7 +803,7 @@ function EnvPhase({
       {method.link && (
         <button
           onClick={() => void openUrl(method.link!)}
-          className="flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          className="flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
         >
           <ExternalLink className="size-3.5" /> Get API key
         </button>
@@ -813,13 +813,13 @@ function EnvPhase({
           onClick={onContinue}
           disabled={blocked !== null}
           title={blocked ?? undefined}
-          className="h-7 rounded-sm border border-border px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+          className="h-7 rounded-sm border border-border px-2.5 text-xs text-foreground hover:bg-element-hover disabled:opacity-50 disabled:hover:bg-transparent"
         >
           Continue
         </button>
         <button
           onClick={onBack}
-          className="h-7 rounded-sm px-2 text-xs text-text-tertiary hover:text-text-primary"
+          className="h-7 rounded-sm px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           Other sign-in options
         </button>

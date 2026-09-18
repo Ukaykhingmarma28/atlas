@@ -17,7 +17,7 @@ interface Props {
  */
 export const ReadmeView = memo(function ReadmeView({ source }: Props) {
   return (
-    <div className="atlas-readme text-md leading-relaxed text-[var(--text-primary)] break-words select-text">
+    <div className="atlas-readme text-md leading-relaxed text-[var(--foreground)] break-words select-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeHighlight]}
@@ -28,7 +28,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
             </h1>
           ),
           h2: (p) => (
-            <h2 className="text-xl font-semibold tracking-tight mt-7 mb-3 pb-1.5 border-b border-[var(--border-subtle)]">
+            <h2 className="text-xl font-semibold tracking-tight mt-7 mb-3 pb-1.5 border-b border-[var(--atlas-border-subtle)]">
               {p.children}
             </h2>
           ),
@@ -59,7 +59,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
             if (isInline) {
               return (
                 <code
-                  className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-base font-mono"
+                  className="px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--foreground)] text-base font-mono"
                   {...rest}
                 >
                   {children}
@@ -74,44 +74,46 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
           },
           pre: (p) => (
             <pre
-              className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-base my-4 overflow-x-auto"
+              className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4 text-base my-4 overflow-x-auto"
               style={{ whiteSpace: "pre", wordBreak: "normal" }}
             >
               {p.children}
             </pre>
           ),
           blockquote: (p) => (
-            <blockquote className="border-l-2 border-[var(--border)] pl-4 my-3 text-[var(--text-secondary)]">
+            <blockquote className="border-l-2 border-[var(--border)] pl-4 my-3 text-[var(--secondary-foreground)]">
               {p.children}
             </blockquote>
           ),
-          hr: () => <hr className="my-6 border-[var(--border-subtle)]" />,
+          hr: () => <hr className="my-6 border-[var(--atlas-border-subtle)]" />,
           table: (p) => (
             <div className="my-4 rounded-md border border-[var(--border)] overflow-x-auto">
               <table className="w-full text-base border-collapse">{p.children}</table>
             </div>
           ),
-          thead: (p) => <thead className="bg-[var(--bg-elevated)]">{p.children}</thead>,
+          thead: (p) => <thead className="bg-[var(--card)]">{p.children}</thead>,
           th: (p) => (
-            <th className="px-3 py-2 text-left text-sm font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
+            <th className="px-3 py-2 text-left text-sm font-semibold text-[var(--secondary-foreground)] border-b border-[var(--border)] border-r last:border-r-0">
               {p.children}
             </th>
           ),
           tr: (p) => (
-            <tr className="border-b border-[var(--border-subtle)] last:border-b-0">{p.children}</tr>
+            <tr className="border-b border-[var(--atlas-border-subtle)] last:border-b-0">
+              {p.children}
+            </tr>
           ),
           td: (p) => (
-            <td className="px-3 py-2 align-top text-base text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
+            <td className="px-3 py-2 align-top text-base text-[var(--foreground)] border-r border-[var(--atlas-border-subtle)] last:border-r-0 break-words">
               {p.children}
             </td>
           ),
           details: (p) => (
-            <details className="my-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
+            <details className="my-3 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
               {p.children}
             </details>
           ),
           summary: (p) => (
-            <summary className="cursor-pointer font-medium text-[var(--text-primary)] py-1">
+            <summary className="cursor-pointer font-medium text-[var(--foreground)] py-1">
               {p.children}
             </summary>
           ),

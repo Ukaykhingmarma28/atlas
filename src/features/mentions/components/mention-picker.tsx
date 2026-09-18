@@ -573,10 +573,10 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
         }}
       >
         {rows.length === 0 || (rows.length === 1 && rows[0].type === "header") ? (
-          <div className="flex-1 px-3 py-6 text-center text-[11px] text-text-tertiary leading-snug">
+          <div className="flex-1 px-3 py-6 text-center text-[11px] text-muted-foreground leading-snug">
             {indexing && (scope === null || scope === "file" || scope === "folder") ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-text-tertiary animate-pulse" />
+                <span className="size-1.5 rounded-full bg-muted-foreground animate-pulse" />
                 Indexing files…
               </span>
             ) : (
@@ -600,13 +600,13 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
           />
         )}
         <div className="border-t border-white/10 px-3 h-[34px] flex items-center justify-between shrink-0">
-          <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+          <span className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
             <Kbd>↑↓</Kbd>
             <span>navigate</span>
             <Kbd>↵</Kbd>
             <span>select</span>
           </span>
-          <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+          <span className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
             <Kbd>esc</Kbd>
             <span>close</span>
           </span>
@@ -773,8 +773,8 @@ const PickerRow = memo(function PickerRow({
     className: cn(
       "text-left px-3 flex items-center gap-2 text-[11.5px]",
       isActive
-        ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+        ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+        : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
     ),
   };
   if (row.type === "category") {
@@ -794,7 +794,7 @@ const PickerRow = memo(function PickerRow({
           <MessageSquare size={11} />
         </span>
         <span className="truncate flex-1 min-w-0">{row.session.title}</span>
-        <span className="text-[10px] text-text-tertiary shrink-0">
+        <span className="text-[10px] text-muted-foreground shrink-0">
           {row.session.messageCount} msgs
         </span>
       </button>
@@ -811,7 +811,7 @@ const PickerRow = memo(function PickerRow({
         )}
       </span>
       <span className="truncate min-w-0">{primaryLabel(m)}</span>
-      <span className="flex-1 min-w-0 text-[10px] text-text-tertiary truncate">
+      <span className="flex-1 min-w-0 text-[10px] text-muted-foreground truncate">
         {row.recentLabel ?? secondaryLabel(m)}
       </span>
     </button>

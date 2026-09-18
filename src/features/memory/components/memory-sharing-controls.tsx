@@ -57,8 +57,8 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
         className={cn(
           "flex items-center gap-1 h-6 px-2 rounded-full border text-2xs font-medium transition-colors cursor-pointer outline-none",
           enabled
-            ? "border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
-            : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+            ? "border-[var(--border)] bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+            : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
         )}
       >
         <Share2 size={11} />
@@ -72,7 +72,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
             render={
               <button
                 type="button"
-                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer"
               >
                 <SlidersHorizontal size={12} />
               </button>
@@ -81,14 +81,14 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
         </Hint>
         <Popover.Portal>
           <Popover.Positioner className="z-popover" align="end" side="bottom" sideOffset={6}>
-            <Popover.Popup className="w-[300px] rounded-md border border-border bg-bg-elevated p-3 shadow-md">
+            <Popover.Popup className="w-[300px] rounded-md border border-border bg-card p-3 shadow-md">
               <div className="eyebrow mb-2">Recent-session handoff</div>
-              <p className="mb-2.5 text-xs leading-snug text-text-tertiary">
+              <p className="mb-2.5 text-xs leading-snug text-muted-foreground">
                 How the previous session's tail is summarized before it is injected into the next
                 agent.
               </p>
 
-              <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-bg-elevated p-0.5">
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
                 <ModeSeg
                   active={pref.mode === "raw"}
                   label="Raw"
@@ -123,7 +123,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
                       onModel={(model) => void setPref({ ...pref, model })}
                     />
                   ) : (
-                    <p className="text-xs text-text-tertiary">
+                    <p className="text-xs text-muted-foreground">
                       Add a provider key in Settings to use provider summaries.
                     </p>
                   )}
@@ -131,7 +131,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
               )}
 
               {pref.mode === "raw" && (
-                <p className="mt-2.5 text-xs text-text-tertiary">
+                <p className="mt-2.5 text-xs text-muted-foreground">
                   Injecting the last turns verbatim — no model call, no latency.
                 </p>
               )}
@@ -165,14 +165,14 @@ function ModeSeg({
       className={cn(
         "flex items-center gap-1 h-[22px] px-2 rounded-full text-2xs font-medium transition-colors",
         active
-          ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+          ? "bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+          : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
         !enabled && "opacity-40 cursor-not-allowed",
       )}
     >
       <Icon size={11} />
       {label}
-      {active && <Check size={10} className="text-text-primary" />}
+      {active && <Check size={10} className="text-foreground" />}
     </button>
   );
 }

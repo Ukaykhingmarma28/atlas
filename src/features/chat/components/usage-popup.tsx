@@ -58,8 +58,8 @@ function useMounted(): boolean {
   return mounted;
 }
 
-const CAPTION = "text-2xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
-const VALUE = "text-xs tabular-nums text-[var(--text-primary)]";
+const CAPTION = "text-2xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]";
+const VALUE = "text-xs tabular-nums text-[var(--foreground)]";
 
 function Card({
   index,
@@ -73,7 +73,7 @@ function Card({
   return (
     <section
       data-section={section}
-      className="atlas-usage-in rounded-lg border border-[var(--atlas-element-selected)] bg-[var(--bg-elevated-2)] px-2.5 py-2"
+      className="atlas-usage-in rounded-lg border border-[var(--atlas-element-selected)] bg-[var(--card)] px-2.5 py-2"
       style={{ "--i": index } as CSSProperties}
     >
       {children}
@@ -84,10 +84,10 @@ function Card({
 function StatusPill({ status }: { status: "ok" | "warn" | "full" }) {
   const tone =
     status === "full"
-      ? "border-[var(--status-error)]/40 text-[var(--status-error)]"
+      ? "border-[var(--atlas-status-error-foreground)]/40 text-[var(--atlas-status-error-foreground)]"
       : status === "warn"
-        ? "border-[var(--status-warning)]/40 text-[var(--status-warning)]"
-        : "border-[var(--atlas-element-active)] text-[var(--text-secondary)]";
+        ? "border-[var(--atlas-status-warning-foreground)]/40 text-[var(--atlas-status-warning-foreground)]"
+        : "border-[var(--atlas-element-active)] text-[var(--secondary-foreground)]";
   return (
     <span
       className={cn(
@@ -112,9 +112,9 @@ function Headline({ view }: { view: SessionUsageView }) {
           Context · {fmtTokens(h.used)} / {fmtTokens(h.size)}
         </div>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {value.toFixed(value >= 10 ? 0 : 1)}
-            <span className="ml-0.5 text-md font-medium text-[var(--text-tertiary)]">%</span>
+            <span className="ml-0.5 text-md font-medium text-[var(--muted-foreground)]">%</span>
           </span>
           <StatusPill status={h.status} />
         </div>
@@ -140,7 +140,7 @@ function Headline({ view }: { view: SessionUsageView }) {
     return (
       <Card index={0} section="tokens-total">
         <div className={CAPTION}>Tokens · this session</div>
-        <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+        <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmtTokens(Math.round(value))}
         </div>
       </Card>
@@ -149,7 +149,7 @@ function Headline({ view }: { view: SessionUsageView }) {
   return (
     <Card index={0} section="cost-total">
       <div className={CAPTION}>Cost · this session{h.estimated ? " · est." : ""}</div>
-      <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+      <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
         {fmtCost(value)}
       </div>
     </Card>
@@ -159,7 +159,7 @@ function Headline({ view }: { view: SessionUsageView }) {
 function Bar({
   frac,
   mounted,
-  color = "var(--text-secondary)",
+  color = "var(--secondary-foreground)",
 }: {
   frac: number;
   mounted: boolean;
@@ -187,7 +187,7 @@ function TokenRows({ rows, index }: { rows: MetricRow[]; index: number }) {
       <div className="flex flex-col">
         {rows.map((r) => (
           <div key={r.key} className="flex h-6 items-center gap-2.5">
-            <span className="w-[76px] shrink-0 truncate text-xs text-[var(--text-secondary)]">
+            <span className="w-[76px] shrink-0 truncate text-xs text-[var(--secondary-foreground)]">
               {r.label}
             </span>
             <span className="min-w-0 flex-1">
@@ -207,11 +207,11 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
       <div className="flex items-baseline justify-between">
         <span className={CAPTION}>Cost</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-lg leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-lg leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {fmtCost(cost.total)}
           </span>
           {cost.estimated ? (
-            <span className="rounded-full border border-[var(--atlas-element-active)] px-1 text-3xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+            <span className="rounded-full border border-[var(--atlas-element-active)] px-1 text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
               est.
             </span>
           ) : null}
@@ -221,8 +221,8 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
         <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5">
           {cost.rows.map((r) => (
             <div key={r.key} className="flex items-baseline justify-between">
-              <span className="text-2xs text-[var(--text-tertiary)]">{r.label}</span>
-              <span className="text-2xs tabular-nums text-[var(--text-secondary)]">
+              <span className="text-2xs text-[var(--muted-foreground)]">{r.label}</span>
+              <span className="text-2xs tabular-nums text-[var(--secondary-foreground)]">
                 {fmtCost(r.cost ?? 0)}
               </span>
             </div>
@@ -264,11 +264,11 @@ function QuotaRow({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-xs text-[var(--text-secondary)]">{label}</span>
+        <span className="text-xs text-[var(--secondary-foreground)]">{label}</span>
         <span className={VALUE}>
           {Math.round(pct)}%
           {when ? (
-            <span className="ml-1.5 text-2xs text-[var(--text-tertiary)]">{when}</span>
+            <span className="ml-1.5 text-2xs text-[var(--muted-foreground)]">{when}</span>
           ) : null}
         </span>
       </div>
@@ -277,10 +277,10 @@ function QuotaRow({
         mounted={mounted}
         color={
           pct >= 90
-            ? "var(--status-error)"
+            ? "var(--atlas-status-error-foreground)"
             : pct >= 70
-              ? "var(--status-warning)"
-              : "var(--capture-live)"
+              ? "var(--atlas-status-warning-foreground)"
+              : "var(--atlas-status-success-foreground)"
         }
       />
     </div>
@@ -347,9 +347,13 @@ function Session({
     cells.push([
       "Lines",
       <span key="lines">
-        <span className="text-[var(--capture-live)]">+{session.insertions ?? 0}</span>
-        <span className="mx-0.5 text-[var(--text-tertiary)]">/</span>
-        <span className="text-[var(--status-error)]">−{session.deletions ?? 0}</span>
+        <span className="text-[var(--atlas-status-success-foreground)]">
+          +{session.insertions ?? 0}
+        </span>
+        <span className="mx-0.5 text-[var(--muted-foreground)]">/</span>
+        <span className="text-[var(--atlas-status-error-foreground)]">
+          −{session.deletions ?? 0}
+        </span>
       </span>,
     ]);
   }
@@ -362,7 +366,7 @@ function Session({
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         {cells.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-2">
-            <span className="text-2xs text-[var(--text-tertiary)]">{label}</span>
+            <span className="text-2xs text-[var(--muted-foreground)]">{label}</span>
             <span className={VALUE}>{value}</span>
           </div>
         ))}
@@ -381,7 +385,7 @@ export function UsagePopup({ view }: { view: SessionUsageView }) {
       {empty ? (
         <Card index={0} section="empty">
           <div className="label">Nothing yet</div>
-          <p className="mt-0.5 text-2xs leading-snug text-[var(--text-tertiary)]">
+          <p className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
             Usage shows up after the first turn — what this agent reports, and what Atlas records.
           </p>
         </Card>

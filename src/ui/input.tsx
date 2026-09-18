@@ -11,14 +11,14 @@ import { cn } from "@/lib/utils";
  *
  * It keeps the global `:focus-visible` ring rather than drawing its own: one
  * focus indicator across the whole app is the point of decision 31. The border
- * still lifts to `--border-strong` on focus, which is the "this field is live"
+ * still lifts to `--atlas-border-strong` on focus, which is the "this field is live"
  * signal a ring alone does not give a mouse user.
  */
 const inputVariants = cva(
   [
-    "w-full min-w-0 rounded border bg-bg-input text-text-primary",
+    "w-full min-w-0 rounded border bg-panel-input text-foreground",
     "border-border transition-colors duration-fast ease-out-strong",
-    "placeholder:text-text-tertiary",
+    "placeholder:text-muted-foreground",
     "focus:border-border-strong",
     "disabled:cursor-not-allowed disabled:opacity-50",
     "aria-invalid:border-destructive",

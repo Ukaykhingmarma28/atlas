@@ -571,12 +571,12 @@ function SpaceSurface({
     <SpaceCanvasContext.Provider value={ctx}>
       <div
         ref={wrapperRef}
-        className="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-bg-base"
+        className="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-background"
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
       >
         {!ready && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-text-tertiary">
+          <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-muted-foreground">
             Loading…
           </div>
         )}
@@ -641,7 +641,7 @@ function SpaceSurface({
         )}
 
         {uploading && (
-          <div className="absolute bottom-3 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border-subtle bg-[var(--bg-secondary)]/80 px-3 py-1 text-xs text-text-secondary backdrop-blur-xl">
+          <div className="absolute bottom-3 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border-subtle bg-[var(--card)]/80 px-3 py-1 text-xs text-secondary-foreground backdrop-blur-xl">
             Uploading media…
           </div>
         )}
@@ -654,7 +654,7 @@ function SpaceSurface({
             isDropTarget ? "opacity-100" : "opacity-0"
           }`}
         >
-          <span className="rounded-full border border-[var(--primary)]/40 bg-bg-elevated px-3 py-1 text-xs font-medium text-text-secondary shadow">
+          <span className="rounded-full border border-[var(--primary)]/40 bg-card px-3 py-1 text-xs font-medium text-secondary-foreground shadow">
             Drop images or video to add them
           </span>
         </div>

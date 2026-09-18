@@ -231,13 +231,13 @@ function TooltipContent({
           data-slot="tooltip-content"
           style={
             {
-              "--color-background": "var(--bg-overlay)",
+              "--color-background": "var(--popover)",
               "--color-border": "var(--border)",
             } as React.CSSProperties
           }
           className={cn(
             "group w-fit text-balance rounded-md px-2.5 py-1 text-xs",
-            "bg-[var(--bg-overlay)] text-text-primary",
+            "bg-[var(--popover)] text-foreground",
             "outline outline-1 outline-[var(--border)]",
             "animate-scale-in origin-[var(--transform-origin)]",
             instant && "animate-none",
@@ -338,7 +338,7 @@ function Hint({
       />
       <TooltipContent side={side} align={align} sideOffset={sideOffset}>
         {label}
-        {shortcut != null && <span className="ml-1.5 text-text-tertiary">{shortcut}</span>}
+        {shortcut != null && <span className="ml-1.5 text-muted-foreground">{shortcut}</span>}
       </TooltipContent>
     </Tooltip>
   );

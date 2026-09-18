@@ -67,33 +67,33 @@ const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string
     border: "border-[var(--primary)]/30",
   },
   git: {
-    text: "text-[var(--status-warning)]",
-    bg: "bg-[var(--status-warning)]/15",
-    border: "border-[var(--status-warning)]/30",
+    text: "text-[var(--atlas-status-warning-foreground)]",
+    bg: "bg-[var(--atlas-status-warning-foreground)]/15",
+    border: "border-[var(--atlas-status-warning-foreground)]/30",
   },
   knowledge: {
-    text: "text-[var(--status-info)]",
-    bg: "bg-[var(--status-info)]/15",
-    border: "border-[var(--status-info)]/30",
+    text: "text-[var(--atlas-status-info-foreground)]",
+    bg: "bg-[var(--atlas-status-info-foreground)]/15",
+    border: "border-[var(--atlas-status-info-foreground)]/30",
   },
   github: {
-    text: "text-[var(--text-primary)]",
-    bg: "bg-[var(--bg-elevated)]",
+    text: "text-[var(--foreground)]",
+    bg: "bg-[var(--card)]",
     border: "border-[var(--border)]",
   },
   editor: {
-    text: "text-[var(--status-success)]",
-    bg: "bg-[var(--status-success)]/15",
-    border: "border-[var(--status-success)]/30",
+    text: "text-[var(--atlas-status-success-foreground)]",
+    bg: "bg-[var(--atlas-status-success-foreground)]/15",
+    border: "border-[var(--atlas-status-success-foreground)]/30",
   },
   project: {
-    text: "text-[var(--text-secondary)]",
-    bg: "bg-[var(--bg-elevated)]",
+    text: "text-[var(--secondary-foreground)]",
+    bg: "bg-[var(--card)]",
     border: "border-[var(--border)]",
   },
   system: {
-    text: "text-[var(--text-tertiary)]",
-    bg: "bg-[var(--bg-elevated)]",
+    text: "text-[var(--muted-foreground)]",
+    bg: "bg-[var(--card)]",
     border: "border-[var(--border)]",
   },
   atlas: {
@@ -224,7 +224,7 @@ export function LogPanel() {
                   e.stopPropagation();
                   toggleExpanded(row.original.id);
                 }}
-                className="p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="p-0.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
               >
                 {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
               </button>
@@ -239,7 +239,7 @@ export function LogPanel() {
         cell: ({ row }) => (
           <span
             title={new Date(row.original.timestamp).toLocaleString()}
-            className="text-2xs font-mono text-[var(--text-tertiary)]"
+            className="text-2xs font-mono text-[var(--muted-foreground)]"
           >
             {timeAgo(row.original.timestamp, { suffix: true, seconds: true })}
           </span>
@@ -270,7 +270,7 @@ export function LogPanel() {
         id: "kind",
         header: "Kind",
         cell: ({ row }) => (
-          <span className="text-2xs font-mono text-[var(--text-secondary)] truncate inline-block max-w-[120px]">
+          <span className="text-2xs font-mono text-[var(--secondary-foreground)] truncate inline-block max-w-[120px]">
             {row.original.kind}
           </span>
         ),
@@ -280,7 +280,7 @@ export function LogPanel() {
         id: "project",
         header: "Project",
         cell: ({ row }) => (
-          <span className="text-2xs font-mono text-[var(--text-tertiary)] truncate inline-block max-w-[140px]">
+          <span className="text-2xs font-mono text-[var(--muted-foreground)] truncate inline-block max-w-[140px]">
             {row.original.projectName ?? "—"}
           </span>
         ),
@@ -290,7 +290,7 @@ export function LogPanel() {
         id: "summary",
         header: "Summary",
         cell: ({ row }) => (
-          <span className="text-sm text-[var(--text-primary)] truncate inline-block max-w-full">
+          <span className="text-sm text-[var(--foreground)] truncate inline-block max-w-full">
             {row.original.summary}
           </span>
         ),
@@ -312,10 +312,10 @@ export function LogPanel() {
                       else pin(e.id);
                     }}
                     className={cn(
-                      "p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer transition-colors",
+                      "p-1 rounded hover:bg-[var(--atlas-element-hover)] cursor-pointer transition-colors",
                       e.pinned
                         ? "text-[var(--primary)] hover:text-[var(--atlas-primary-hover)]"
-                        : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+                        : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
                     )}
                   >
                     {e.pinned ? <PinOff size={11} /> : <Pin size={11} />}
@@ -327,7 +327,7 @@ export function LogPanel() {
                       ev.stopPropagation();
                       handleCopy(e);
                     }}
-                    className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+                    className="p-1 rounded hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
                   >
                     {copiedId === e.id ? <Check size={11} /> : <Copy size={11} />}
                   </button>
@@ -338,7 +338,7 @@ export function LogPanel() {
                       ev.stopPropagation();
                       handleCopyLine(e);
                     }}
-                    className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    className="p-1 rounded hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                   >
                     {copiedLineId === e.id ? <Check size={11} /> : <ClipboardCopy size={11} />}
                   </button>
@@ -367,16 +367,16 @@ export function LogPanel() {
   });
 
   return (
-    <div className="h-full flex flex-col bg-bg-base">
+    <div className="h-full flex flex-col bg-background">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 h-[34px] shrink-0 border-b border-border">
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-bg-elevated px-2 min-w-[240px] focus-within:border-[var(--border-strong)]">
-          <Search size={11} className="text-text-tertiary shrink-0" />
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-card px-2 min-w-[240px] focus-within:border-[var(--atlas-border-strong)]">
+          <Search size={11} className="text-muted-foreground shrink-0" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search activity…"
-            className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
+            className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground min-w-0"
           />
         </div>
 
@@ -394,7 +394,7 @@ export function LogPanel() {
             "flex items-center gap-1 px-2 h-6 rounded text-2xs cursor-pointer outline-none transition-colors",
             showPinnedOnly
               ? "text-[var(--primary)] bg-[var(--atlas-primary-muted)]"
-              : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover",
+              : "text-muted-foreground hover:text-foreground hover:bg-element-hover",
           )}
           title="Pinned only"
         >
@@ -404,7 +404,7 @@ export function LogPanel() {
 
         <div className="flex-1" />
 
-        <span className="text-2xs text-text-tertiary font-mono">
+        <span className="text-2xs text-muted-foreground font-mono">
           {filtered.length} / {merged.length}
         </span>
 
@@ -413,7 +413,7 @@ export function LogPanel() {
             if (showPinnedOnly) clearPinned();
             else clearBuffer();
           }}
-          className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-[var(--status-error)] hover:bg-bg-hover cursor-pointer transition-colors"
+          className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-muted-foreground hover:text-[var(--atlas-status-error-foreground)] hover:bg-element-hover cursor-pointer transition-colors"
           title={showPinnedOnly ? "Clear pinned" : "Clear buffer"}
         >
           <Trash2 size={11} />
@@ -422,7 +422,7 @@ export function LogPanel() {
       </div>
 
       {/* Header row */}
-      <div className="flex items-center h-6 shrink-0 border-b border-border-subtle bg-bg-base px-3 text-2xs uppercase tracking-wider text-text-tertiary font-medium">
+      <div className="flex items-center h-6 shrink-0 border-b border-border-subtle bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground font-medium">
         {table.getHeaderGroups().map((hg) => (
           <div key={hg.id} className="flex items-center w-full">
             {hg.headers.map((h) => (
@@ -437,7 +437,7 @@ export function LogPanel() {
       {/* Virtualized rows */}
       <div ref={parentRef} className="flex-1 min-h-0 overflow-auto hide-scrollbar">
         {rows.length === 0 ? (
-          <div className="px-3 py-6 text-xs text-text-tertiary text-center">
+          <div className="px-3 py-6 text-xs text-muted-foreground text-center">
             {merged.length === 0
               ? "No events yet — start chatting or making changes."
               : "No matches."}
@@ -469,8 +469,8 @@ export function LogPanel() {
                   <div
                     onClick={() => toggleExpanded(row.original.id)}
                     className={cn(
-                      "group flex items-center px-3 cursor-pointer border-b border-[var(--border-subtle)] hover:bg-bg-hover",
-                      isExpanded && "bg-[var(--bg-elevated)]/40",
+                      "group flex items-center px-3 cursor-pointer border-b border-[var(--atlas-border-subtle)] hover:bg-element-hover",
+                      isExpanded && "bg-[var(--card)]/40",
                     )}
                     style={{ height: 32 }}
                   >
@@ -485,8 +485,8 @@ export function LogPanel() {
                     ))}
                   </div>
                   {isExpanded && (
-                    <div className="px-3 pb-3 pt-1 bg-[var(--bg-elevated)]/40 border-b border-[var(--border-subtle)]">
-                      <pre className="text-2xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)] p-2 max-h-[200px] overflow-auto">
+                    <div className="px-3 pb-3 pt-1 bg-[var(--card)]/40 border-b border-[var(--atlas-border-subtle)]">
+                      <pre className="text-2xs font-mono text-[var(--secondary-foreground)] whitespace-pre-wrap break-words rounded bg-[var(--background)] border border-[var(--atlas-border-subtle)] p-2 max-h-[200px] overflow-auto">
                         {JSON.stringify(row.original, null, 2)}
                       </pre>
                     </div>
@@ -520,7 +520,7 @@ function SourceFilter({
       <DropdownMenu.Trigger
         render={
           <button
-            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-muted-foreground hover:text-foreground hover:bg-element-hover cursor-pointer outline-none transition-colors"
             title="Filter sources"
           >
             <ListFilter size={11} />
@@ -530,7 +530,7 @@ function SourceFilter({
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md py-1 min-w-[160px]">
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md py-1 min-w-[160px]">
             {SOURCES.map((s) => {
               const checked = active.has(s);
               return (
@@ -543,7 +543,7 @@ function SourceFilter({
                     else next.delete(s);
                     onChange(next);
                   }}
-                  className="flex items-center gap-2 px-3 h-6 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none capitalize"
+                  className="flex items-center gap-2 px-3 h-6 text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer outline-none capitalize"
                 >
                   <span
                     className={cn(
@@ -580,7 +580,7 @@ function ProjectScopeFilter({
       <DropdownMenu.Trigger
         render={
           <button
-            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-muted-foreground hover:text-foreground hover:bg-element-hover cursor-pointer outline-none transition-colors"
             title="Project scope"
           >
             {value === "all" ? "All projects" : "Current project"}
@@ -589,7 +589,7 @@ function ProjectScopeFilter({
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md py-1 min-w-[160px]">
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md py-1 min-w-[160px]">
             {(
               [
                 { v: "all", label: "All projects" },
@@ -603,8 +603,8 @@ function ProjectScopeFilter({
                 className={cn(
                   "flex items-center gap-2 px-3 h-6 text-xs cursor-pointer outline-none",
                   value === v
-                    ? "text-[var(--text-primary)] bg-[var(--bg-selected)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                    ? "text-[var(--foreground)] bg-[var(--atlas-element-selected)]"
+                    : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
                   v === "current" && !hasProject && "opacity-50 cursor-not-allowed",
                 )}
               >

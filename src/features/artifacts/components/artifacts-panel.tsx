@@ -118,8 +118,8 @@ function PeriodPill({
           className={cn(
             "flex h-full cursor-pointer items-center rounded-full px-2 text-xs leading-none outline-none transition-colors",
             period === p.value
-              ? "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              ? "bg-[var(--atlas-element-active)] font-medium text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
           )}
         >
           {p.label}
@@ -471,9 +471,9 @@ export function ArtifactsPanel() {
     // the whole reason for the colour step and the rounded tops — a header that
     // shares its background with the list under it needs a rule to separate
     // them, and a curve says it better than a line.
-    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-elevated-2)]">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--card)]">
       {error && (
-        <p className="shrink-0 bg-[var(--status-error-muted)] px-4 py-1.5 text-xs text-[var(--status-error)]">
+        <p className="shrink-0 bg-[var(--atlas-status-error-background)] px-4 py-1.5 text-xs text-[var(--atlas-status-error-foreground)]">
           {error}
         </p>
       )}
@@ -521,7 +521,7 @@ export function ArtifactsPanel() {
               left: CARD_INSET + sidebarWidth,
               background: resizing
                 ? undefined
-                : "color-mix(in srgb, var(--border-strong) 30%, var(--border))",
+                : "color-mix(in srgb, var(--atlas-border-strong) 30%, var(--border))",
             }}
           />
         )}
@@ -535,7 +535,7 @@ export function ArtifactsPanel() {
                 className="flex h-full shrink-0 items-center gap-2 px-1.5"
                 style={{ width: sidebarWidth }}
               >
-                <span className="flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">
+                <span className="flex-1 truncate text-sm font-semibold text-[var(--foreground)]">
                   Timeline
                 </span>
                 {/* Grain. It changes what the rows under it are grouped INTO,
@@ -601,7 +601,7 @@ export function ArtifactsPanel() {
         </div>
 
         <div
-          className="relative flex min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--bg-base)]"
+          className="relative flex min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--background)]"
           style={{
             marginInline: CARD_INSET,
             marginBottom: CARD_INSET,
@@ -635,14 +635,14 @@ export function ArtifactsPanel() {
               {/* Say what is being left out. A nav that silently stops at the
                *  newest few hundred reads as "this is everything". */}
               {capped && (
-                <p className="shrink-0 border-t border-[var(--border-subtle)] px-3 py-1.5 text-xs leading-snug text-[var(--text-tertiary)]">
+                <p className="shrink-0 border-t border-[var(--atlas-border-subtle)] px-3 py-1.5 text-xs leading-snug text-[var(--muted-foreground)]">
                   Showing the newest {BOARD_LIMIT} sessions — filter by project for a full history.
                 </p>
               )}
             </aside>
           )}
 
-          <main className="min-w-0 flex-1 bg-[var(--bg-surface)]">
+          <main className="min-w-0 flex-1 bg-[var(--background)]">
             {open ? (
               detail === undefined ? (
                 <Centered>Reading the session…</Centered>
@@ -720,8 +720,12 @@ export function ArtifactsPanel() {
  */
 function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
   return (
-    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-strong)]">
-      <Search size={13} strokeWidth={1.6} className="block shrink-0 text-[var(--text-tertiary)]" />
+    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 transition-colors focus-within:border-[var(--atlas-border-strong)]">
+      <Search
+        size={13}
+        strokeWidth={1.6}
+        className="block shrink-0 text-[var(--muted-foreground)]"
+      />
       <input
         value={query}
         onChange={(e) => onQuery(e.target.value)}
@@ -731,14 +735,14 @@ function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) =
         placeholder="Search sessions…"
         spellCheck={false}
         aria-label="Search sessions"
-        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-none text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-none text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
       />
       {query && (
         <Hint label="Clear search">
           <button
             type="button"
             onClick={() => onQuery("")}
-            className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
           >
             <X size={11} />
           </button>
@@ -789,16 +793,16 @@ function Breadcrumb({
   return (
     <span
       title={projectPath}
-      className="flex min-w-0 items-center gap-1 text-sm text-[var(--text-tertiary)]"
+      className="flex min-w-0 items-center gap-1 text-sm text-[var(--muted-foreground)]"
     >
       <button
         type="button"
         onClick={onBack}
-        className="cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         Sessions
       </button>
-      <span aria-hidden className="text-[var(--text-ghost)]">
+      <span aria-hidden className="text-[var(--atlas-text-disabled)]">
         /
       </span>
       <button
@@ -810,7 +814,7 @@ function Breadcrumb({
           flash.current = setTimeout(() => setCopied(false), 1200);
         }}
         title={`Copy ${sessionId}`}
-        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         {copied ? "copied" : label}
       </button>
@@ -886,7 +890,7 @@ function BoardFilter({
                 values are inside the menu, and a funnel that looks identical
                 either way hides an empty board behind a control nobody checks. */}
               {active > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-3xs font-medium text-[var(--text-inverse)]">
+                <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--foreground)] px-[3px] font-mono text-3xs font-medium text-[var(--primary-foreground)]">
                   {active}
                 </span>
               )}
@@ -899,7 +903,7 @@ function BoardFilter({
           <Popover.Popup className="flex max-h-[420px] w-[262px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-popover shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
             {active > 0 && (
               <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
-                <span className="font-mono text-2xs text-[var(--text-tertiary)]">
+                <span className="font-mono text-2xs text-[var(--muted-foreground)]">
                   {active} active
                 </span>
                 <Popover.Close
@@ -907,7 +911,7 @@ function BoardFilter({
                     <button
                       type="button"
                       onClick={onClear}
-                      className="cursor-pointer font-mono text-2xs uppercase tracking-[0.06em] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)]"
+                      className="cursor-pointer font-mono text-2xs uppercase tracking-[0.06em] text-[var(--secondary-foreground)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--foreground)]"
                     >
                       Clear all
                     </button>
@@ -921,7 +925,7 @@ function BoardFilter({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects…"
-              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
             />
 
             <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
@@ -945,7 +949,7 @@ function BoardFilter({
                 />
               ))}
               {shownProjects.length === 0 && (
-                <p className="px-2 py-2 text-center text-xs text-[var(--text-tertiary)]">
+                <p className="px-2 py-2 text-center text-xs text-[var(--muted-foreground)]">
                   No project matches “{query.trim()}”.
                 </p>
               )}
@@ -974,7 +978,7 @@ function BoardFilter({
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+    <p className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
       {children}
     </p>
   );
@@ -1005,8 +1009,8 @@ function Option({
       title={title}
       onClick={onSelect}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]",
-        selected && "bg-[var(--bg-selected)]",
+        "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)]",
+        selected && "bg-[var(--atlas-element-selected)]",
       )}
     >
       {lead}
@@ -1014,7 +1018,9 @@ function Option({
         <span
           className={cn(
             "block truncate text-xs leading-tight",
-            selected ? "font-medium text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
+            selected
+              ? "font-medium text-[var(--foreground)]"
+              : "text-[var(--secondary-foreground)]",
           )}
         >
           {label}
@@ -1022,11 +1028,11 @@ function Option({
         {sub}
       </span>
       {selected ? (
-        <Check size={11} className="shrink-0 text-[var(--text-primary)]" />
+        <Check size={11} className="shrink-0 text-[var(--foreground)]" />
       ) : (
         (trail ??
         (count !== undefined ? (
-          <span className="shrink-0 font-mono text-2xs tabular-nums text-[var(--text-tertiary)]">
+          <span className="shrink-0 font-mono text-2xs tabular-nums text-[var(--muted-foreground)]">
             {count}
           </span>
         ) : null))
@@ -1045,8 +1051,8 @@ function Option({
 function NotEnabled() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <h2 className="text-md font-medium text-[var(--text-primary)]">Nothing captured yet</h2>
-      <p className="mt-1.5 max-w-[420px] text-sm leading-relaxed text-[var(--text-tertiary)]">
+      <h2 className="text-md font-medium text-[var(--foreground)]">Nothing captured yet</h2>
+      <p className="mt-1.5 max-w-[420px] text-sm leading-relaxed text-[var(--muted-foreground)]">
         Turn capture on for a project and Atlas records what you asked, what the agent did, and
         which commits came out of it — stored on this machine, with secrets scrubbed before anything
         is written.
@@ -1054,7 +1060,7 @@ function NotEnabled() {
       {/* The control is deliberately not repeated here. Capture is per project
        *  and this board spans all of them, so the honest place to switch it on
        *  is the project pill in the titlebar, which names the one it applies to. */}
-      <p className="mt-3 max-w-[420px] text-xs text-[var(--text-ghost)]">
+      <p className="mt-3 max-w-[420px] text-xs text-[var(--atlas-text-disabled)]">
         Click the project name in the titlebar to turn it on.
       </p>
     </div>
@@ -1066,11 +1072,11 @@ function NotEnabled() {
 function NotFound({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <p className="text-base text-[var(--text-secondary)]">This session no longer exists.</p>
+      <p className="text-base text-[var(--secondary-foreground)]">This session no longer exists.</p>
       <button
         type="button"
         onClick={onBack}
-        className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         Back to sessions
       </button>
@@ -1080,7 +1086,7 @@ function NotFound({ onBack }: { onBack: () => void }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-[var(--text-tertiary)]">
+    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-[var(--muted-foreground)]">
       {children}
     </div>
   );

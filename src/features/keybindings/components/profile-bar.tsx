@@ -19,11 +19,11 @@ import { useKeybindingsStore } from "../stores/keybindings-store";
 // Same recipe as the account menu so every Atlas dropdown reads alike.
 const CONTENT_CLASS =
   "min-w-[200px] max-w-[280px] rounded-md border border-[var(--border)] " +
-  "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
+  "bg-[var(--card)] shadow-md py-1";
 const ITEM_CLASS =
   "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-pointer outline-none " +
-  "text-[var(--text-secondary)] data-[highlighted]:bg-[var(--bg-hover)] " +
-  "data-[highlighted]:text-[var(--text-primary)]";
+  "text-[var(--secondary-foreground)] data-[highlighted]:bg-[var(--atlas-element-hover)] " +
+  "data-[highlighted]:text-[var(--foreground)]";
 
 /** The three ways the inline name field is used. */
 type NamingMode = "create" | "duplicate" | "rename";
@@ -97,7 +97,7 @@ export function ProfileBar() {
     <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
       {naming ? (
         <div className="flex items-center gap-1.5 px-2">
-          <span className="text-[11px] font-normal text-text-tertiary">Profile</span>
+          <span className="text-[11px] font-normal text-muted-foreground">Profile</span>
           <input
             ref={inputRef}
             value={draft}
@@ -112,8 +112,8 @@ export function ProfileBar() {
               e.stopPropagation();
             }}
             className={cn(
-              "h-6 w-[200px] rounded-md border border-border-strong bg-bg-elevated px-2 text-[11px]",
-              "text-text-primary outline-none placeholder:text-text-muted",
+              "h-6 w-[200px] rounded-md border border-border-strong bg-card px-2 text-[11px]",
+              "text-foreground outline-none placeholder:text-text-muted",
             )}
           />
         </div>
@@ -125,18 +125,18 @@ export function ProfileBar() {
                 type="button"
                 className={cn(
                   "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium",
-                  "text-text-primary hover:bg-bg-hover transition-colors cursor-pointer",
+                  "text-foreground hover:bg-element-hover transition-colors cursor-pointer",
                 )}
               >
-                <span className="text-text-tertiary font-normal">Profile</span>
+                <span className="text-muted-foreground font-normal">Profile</span>
                 <span className="max-w-[180px] truncate">{active.name}</span>
-                {locked && <Lock size={10} className="text-text-tertiary" />}
-                <ChevronDown size={11} className="text-text-tertiary" />
+                {locked && <Lock size={10} className="text-muted-foreground" />}
+                <ChevronDown size={11} className="text-muted-foreground" />
               </button>
             }
           />
           <DropdownMenu.Portal>
-            <DropdownMenu.Positioner className="z-[var(--z-max)]" align="start" sideOffset={4}>
+            <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
               <DropdownMenu.Popup
                 className={CONTENT_CLASS}
                 // Base UI replaces Radix's onCloseAutoFocus with finalFocus:
@@ -155,7 +155,7 @@ export function ProfileBar() {
                     </span>
                     <span className="flex-1 truncate">{p.name}</span>
                     {p.builtIn ? (
-                      <Lock size={10} className="text-text-tertiary" />
+                      <Lock size={10} className="text-muted-foreground" />
                     ) : (
                       <span className="text-[9.5px] tabular-nums text-text-muted">
                         {Object.keys(p.bindings).length || ""}
@@ -195,7 +195,7 @@ export function ProfileBar() {
       )}
 
       {!locked && overrideCount > 0 && (
-        <span className="text-[10px] tabular-nums text-text-tertiary">
+        <span className="text-[10px] tabular-nums text-muted-foreground">
           {overrideCount} {overrideCount === 1 ? "override" : "overrides"}
         </span>
       )}
@@ -264,8 +264,8 @@ export function IconButton({
         className={cn(
           "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
           active
-            ? "bg-bg-selected text-text-primary"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            ? "bg-element-selected text-foreground"
+            : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
           disabled ? "opacity-35 cursor-not-allowed" : "cursor-pointer",
         )}
       >

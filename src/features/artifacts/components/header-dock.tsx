@@ -52,11 +52,11 @@ export function HeaderDock({ children }: { children: React.ReactNode }) {
  */
 export const DOCK_TRIGGER =
   "relative flex size-5 cursor-pointer items-center justify-center rounded-full outline-none " +
-  "text-[var(--text-tertiary)] transition-colors duration-150 hover:bg-bg-active hover:text-[var(--text-primary)] " +
-  "data-popup-open:bg-bg-active data-popup-open:text-[var(--text-primary)]";
+  "text-[var(--muted-foreground)] transition-colors duration-150 hover:bg-element-active hover:text-[var(--foreground)] " +
+  "data-popup-open:bg-element-active data-popup-open:text-[var(--foreground)]";
 
 /** Applied on top of {@link DOCK_TRIGGER} when the control's mode is on. */
-export const DOCK_ACTIVE = "bg-bg-active text-[var(--text-primary)]";
+export const DOCK_ACTIVE = "bg-element-active text-[var(--foreground)]";
 
 /**
  * A plain button inside the dock. Its tooltip comes from the enclosing

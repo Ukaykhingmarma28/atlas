@@ -59,7 +59,7 @@ export function ThemeImportPanel({ themes, onClose, onImported }: Props) {
   const [mode, setMode] = useState<"import" | "export">("import");
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-tab-strip shrink-0 items-center gap-1 border-b border-border bg-bg-primary px-2">
+      <div className="flex h-tab-strip shrink-0 items-center gap-1 border-b border-border bg-background px-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
           <Icon icon={ArrowLeft} size="sm" />
           Themes
@@ -156,8 +156,8 @@ function ImportView({ onImported }: { onImported: (id: string) => void }) {
             spellCheck={false}
             rows={8}
             className={cn(
-              "w-full resize-y rounded border border-border bg-bg-input p-2",
-              "code text-text-primary outline-none placeholder:text-text-tertiary",
+              "w-full resize-y rounded border border-border bg-panel-input p-2",
+              "code text-foreground outline-none placeholder:text-muted-foreground",
               "focus:border-border-strong",
             )}
           />
@@ -183,7 +183,7 @@ function ImportView({ onImported }: { onImported: (id: string) => void }) {
               <Button size="sm" variant="outline" onClick={() => void chooseFile()}>
                 Choose file…
               </Button>
-              {path && <span className="code truncate text-text-secondary">{path}</span>}
+              {path && <span className="code truncate text-secondary-foreground">{path}</span>}
             </div>
             <p className="caption">
               The only source that can follow a VS Code <span className="code">include</span>, since
@@ -206,7 +206,7 @@ function ImportView({ onImported }: { onImported: (id: string) => void }) {
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive bg-error-muted p-2">
             <Icon icon={AlertTriangle} size="sm" className="mt-px text-error" />
-            <p className="text-xs break-words text-text-primary">{error}</p>
+            <p className="text-xs break-words text-foreground">{error}</p>
           </div>
         )}
 
@@ -245,9 +245,9 @@ function CandidateCard({
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-md border border-border bg-bg-secondary p-3">
+    <section className="flex flex-col gap-2 rounded-md border border-border bg-card p-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="heading truncate text-text-primary">{candidate.report.sourceName}</span>
+        <span className="heading truncate text-foreground">{candidate.report.sourceName}</span>
         <FidelityBadge report={candidate.report} />
         {candidate.variants.map((variant) => (
           <Badge key={variant} size="sm" variant="outline" className="capitalize">
@@ -308,7 +308,7 @@ function Field({
 }) {
   return (
     <label className={cn("flex flex-col gap-1", className)}>
-      <span className="eyebrow text-text-tertiary">{label}</span>
+      <span className="eyebrow text-muted-foreground">{label}</span>
       <Input value={value} onChange={(event) => onChange(event.target.value)} spellCheck={false} />
     </label>
   );
@@ -334,12 +334,9 @@ function Counts({ report }: { report: ThemeImportReport }) {
   return (
     <div className="grid grid-cols-3 gap-2">
       {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded border border-border-subtle bg-bg-elevated px-2 py-1.5"
-        >
-          <div className="text-md font-semibold tabular-nums text-text-primary">{item.value}</div>
-          <div className="eyebrow text-text-tertiary">{item.label}</div>
+        <div key={item.label} className="rounded border border-border-subtle bg-card px-2 py-1.5">
+          <div className="text-md font-semibold tabular-nums text-foreground">{item.value}</div>
+          <div className="eyebrow text-muted-foreground">{item.label}</div>
           <div className="caption">{item.hint}</div>
         </div>
       ))}
@@ -357,10 +354,10 @@ function IgnoredByCategory({ report }: { report: ThemeImportReport }) {
           const reason = report.ignored.find((entry) => entry.category === category)?.reason ?? "";
           return (
             <li key={category} className="flex items-baseline gap-2">
-              <span className="w-8 shrink-0 text-right text-xs tabular-nums text-text-primary">
+              <span className="w-8 shrink-0 text-right text-xs tabular-nums text-foreground">
                 {count}
               </span>
-              <span className="text-xs text-text-secondary">{category}</span>
+              <span className="text-xs text-secondary-foreground">{category}</span>
               <span className="caption truncate">{reason}</span>
             </li>
           );
@@ -391,7 +388,7 @@ function KeyTable({ rows }: { rows: [string, string, string][] }) {
       {rows.map(([target, source, value]) => (
         <div key={`${target}:${source}`} className="flex items-center gap-2">
           <Swatch value={value} />
-          <span className="code truncate text-text-primary">{target}</span>
+          <span className="code truncate text-foreground">{target}</span>
           <span className="caption ml-auto truncate">{source}</span>
         </div>
       ))}
@@ -418,8 +415,8 @@ function Swatch({ value }: { value: string }) {
 
 function Details({ summary, children }: { summary: string; children: React.ReactNode }) {
   return (
-    <details className="group rounded border border-border-subtle bg-bg-elevated">
-      <summary className="label cursor-pointer select-none px-2 py-1 text-text-secondary hover:text-text-primary">
+    <details className="group rounded border border-border-subtle bg-card">
+      <summary className="label cursor-pointer select-none px-2 py-1 text-secondary-foreground hover:text-foreground">
         {summary}
       </summary>
       <div className="border-t border-border-subtle p-2">{children}</div>
@@ -480,9 +477,9 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
         {error && <p className="text-xs text-error">{error}</p>}
 
         {result && (
-          <section className="flex flex-col gap-2 rounded-md border border-border bg-bg-secondary p-3">
+          <section className="flex flex-col gap-2 rounded-md border border-border bg-card p-3">
             <div className="flex items-center gap-1.5">
-              <span className="heading text-text-primary">{result.name}</span>
+              <span className="heading text-foreground">{result.name}</span>
               <Badge size="sm" variant="secondary">
                 {result.report.exported} tokens
               </Badge>
@@ -499,7 +496,7 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
                 {note}
               </p>
             ))}
-            <pre className="code max-h-72 overflow-auto rounded border border-border-subtle bg-bg-elevated p-2 text-text-secondary">
+            <pre className="code max-h-72 overflow-auto rounded border border-border-subtle bg-card p-2 text-secondary-foreground">
               {result.json}
             </pre>
           </section>

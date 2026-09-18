@@ -101,7 +101,10 @@ function highlightMatches(text: string, query: string) {
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <mark key={i} className="bg-[var(--bg-selected)] text-[var(--text-primary)] rounded-sm">
+      <mark
+        key={i}
+        className="bg-[var(--atlas-element-selected)] text-[var(--foreground)] rounded-sm"
+      >
         {part}
       </mark>
     ) : (
@@ -206,7 +209,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
         className={cn(
           "atlas-slash-picker",
           "rounded-lg overflow-hidden",
-          "bg-[var(--bg-secondary)] border border-[var(--border)]",
+          "bg-[var(--card)] border border-[var(--border)]",
           "shadow-md",
           "flex flex-col",
           "z-popover",
@@ -222,7 +225,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
       >
         <div className="flex-1 overflow-y-auto py-1">
           {rows.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-[var(--text-tertiary)] leading-snug">
+            <div className="px-3 py-6 text-center text-xs text-[var(--muted-foreground)] leading-snug">
               {loading ? "Loading commands…" : `No commands match "/${query}".`}
             </div>
           ) : (
@@ -240,20 +243,20 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
                   className={cn(
                     "w-full text-left px-3 h-[26px] flex items-center gap-2 text-sm",
                     isActive
-                      ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                      ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                      : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
                   )}
                   title={cmd.description}
                 >
-                  <span className="font-mono text-[var(--text-primary)] shrink-0 min-w-[80px]">
+                  <span className="font-mono text-[var(--foreground)] shrink-0 min-w-[80px]">
                     /{highlightMatches(cmd.name, query)}
                   </span>
-                  <span className="truncate text-xs text-[var(--text-tertiary)] min-w-0 flex-1">
+                  <span className="truncate text-xs text-[var(--muted-foreground)] min-w-0 flex-1">
                     {highlightMatches(cmd.description, query)}
                   </span>
                   {needsArgs && (
                     <span
-                      className="shrink-0 text-3xs uppercase tracking-wider text-[var(--text-tertiary)] border border-[var(--border)] rounded-full px-1.5 py-px"
+                      className="shrink-0 text-3xs uppercase tracking-wider text-[var(--muted-foreground)] border border-[var(--border)] rounded-full px-1.5 py-px"
                       title="This command takes arguments — type them after the command, then press Enter."
                     >
                       {argsHint(cmd)}
@@ -269,13 +272,13 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
               advertised its commands yet, read as loading rather than as a
               list with just one entry. */}
           {loading && rows.length > 0 && (
-            <div className="px-3 h-[24px] flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)]">
+            <div className="px-3 h-[24px] flex items-center gap-1.5 text-2xs text-[var(--muted-foreground)]">
               <Loader2 size={10} className="animate-spin shrink-0" />
               Loading agent commands…
             </div>
           )}
         </div>
-        <div className="border-t border-[var(--border)] px-3 h-[24px] flex items-center justify-between text-3xs text-[var(--text-tertiary)] uppercase tracking-wider shrink-0">
+        <div className="border-t border-[var(--border)] px-3 h-[24px] flex items-center justify-between text-3xs text-[var(--muted-foreground)] uppercase tracking-wider shrink-0">
           <span>{footerLabel ?? "Commands"}</span>
           <span>↑↓ · ↵ run · ⎋ close</span>
         </div>

@@ -27,11 +27,11 @@ export function composerPillClass(open: boolean, opts: { disabled?: boolean } = 
   return cn(
     "flex h-6.5 items-center rounded-full border px-1.5 text-2xs font-medium leading-none transition-colors",
     open
-      ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-      : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
+      ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+      : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)]",
     opts.disabled
       ? "cursor-default"
-      : "cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+      : "cursor-pointer hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
   );
 }
 
@@ -126,7 +126,7 @@ export function ComposerDropup({
   return (
     <div
       aria-hidden={!open}
-      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
+      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
       style={{
         width,
         height: open ? panelHeight : 0,

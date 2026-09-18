@@ -96,33 +96,33 @@ export function ImportThreadsModal({
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border bg-bg-elevated shadow-md animate-scale-in",
+            "border border-border bg-card shadow-md animate-scale-in",
           )}
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-            <Dialog.Title className="text-base font-semibold text-text-primary">
+            <Dialog.Title className="text-base font-semibold text-foreground">
               Import sessions
             </Dialog.Title>
             <Dialog.Close
-              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
               aria-label="Close"
             >
               <X size={13} />
             </Dialog.Close>
           </div>
 
-          <p className="px-4 pt-3 text-xs leading-relaxed text-text-tertiary">
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
             Bring in sessions your agents kept for themselves — started in a terminal, or in another
             client. Imported sessions land in your history rather than the active list.
           </p>
 
           <div className="flex-1 overflow-auto hide-scrollbar px-2 py-2">
             {candidates === null ? (
-              <div className="px-2 py-6 text-center text-xs text-text-tertiary">
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
                 Asking your agents…
               </div>
             ) : candidates.length === 0 ? (
-              <div className="px-2 py-6 text-center text-xs text-text-tertiary">
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
                 No agents installed. Install one from the Marketplace first.
               </div>
             ) : (
@@ -138,7 +138,7 @@ export function ImportThreadsModal({
           </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
-            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
               Cancel
             </Dialog.Close>
             <button
@@ -147,7 +147,7 @@ export function ImportThreadsModal({
               onClick={() => void runImport()}
               className={cn(
                 "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
-                "bg-primary text-text-inverse hover:bg-primary",
+                "bg-primary text-primary-foreground hover:bg-primary",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >
@@ -179,14 +179,14 @@ function CandidateRow({
       className={cn(
         "flex items-center gap-1.5 w-full rounded px-2 py-1.5 text-left transition-colors",
         !selectable && "cursor-not-allowed opacity-60",
-        selectable && (checked ? "bg-bg-selected" : "cursor-pointer hover:bg-bg-hover"),
+        selectable && (checked ? "bg-element-selected" : "cursor-pointer hover:bg-element-hover"),
       )}
     >
-      <span className="flex-1 min-w-0 truncate text-xs text-text-primary">
+      <span className="flex-1 min-w-0 truncate text-xs text-foreground">
         {candidate.displayName}
       </span>
       <CandidateStatus status={candidate.status} />
-      {checked && <Check size={12} className="text-text-secondary shrink-0" />}
+      {checked && <Check size={12} className="text-secondary-foreground shrink-0" />}
     </button>
   );
 }
@@ -194,7 +194,7 @@ function CandidateRow({
 function CandidateStatus({ status }: { status: ImportCandidate["status"] }) {
   if (status.kind === "ready") {
     return (
-      <span className="shrink-0 text-2xs font-mono tabular-nums text-text-tertiary">
+      <span className="shrink-0 text-2xs font-mono tabular-nums text-muted-foreground">
         {status.importable === 0
           ? "nothing new"
           : `${status.importable} ${status.importable === 1 ? "session" : "sessions"}`}
@@ -206,7 +206,7 @@ function CandidateStatus({ status }: { status: ImportCandidate["status"] }) {
   // would never appear.
   const reason = status.kind === "unsupported" ? "no session/list support" : status.message;
   return (
-    <span className="flex min-w-0 shrink items-center gap-1 text-2xs text-text-tertiary">
+    <span className="flex min-w-0 shrink items-center gap-1 text-2xs text-muted-foreground">
       <AlertTriangle size={10} className="shrink-0" />
       <span className="truncate" title={reason}>
         {reason}

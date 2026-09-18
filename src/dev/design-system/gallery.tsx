@@ -133,8 +133,8 @@ function Section({
 function Row({ name, value, children }: { name: string; value?: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-4 py-1.5">
-      <code className="code w-44 shrink-0 text-text-secondary">{name}</code>
-      <code className="code w-28 shrink-0 text-text-tertiary">{value ?? ""}</code>
+      <code className="code w-44 shrink-0 text-secondary-foreground">{name}</code>
+      <code className="code w-28 shrink-0 text-muted-foreground">{value ?? ""}</code>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -160,7 +160,7 @@ function Swatch({
         style={{ background: `var(${cssVar})` }}
       />
       <div className="min-w-0">
-        <div className="code truncate text-text-primary">{label}</div>
+        <div className="code truncate text-foreground">{label}</div>
         <div className="caption truncate" title={derivation}>
           {value || "—"}
           {derivation ? ` · ${derivation}` : ""}
@@ -202,7 +202,7 @@ function UtilityCheck() {
         </span>
         <span className="ml-auto size-control-xs rounded-full ring-2 ring-sidebar-ring" />
       </div>
-      <div className="mt-1 font-serif text-text-tertiary caption">font-serif</div>
+      <div className="mt-1 font-serif text-muted-foreground caption">font-serif</div>
     </div>
   );
 }
@@ -303,7 +303,7 @@ function TypeSection() {
       >
         {TYPE_SCALE.map((step) => (
           <Row key={step.name} name={step.utility} value={values[`--text-${step.name}`]}>
-            <span className={cn(step.utility, "font-medium text-text-primary")}>
+            <span className={cn(step.utility, "font-medium text-foreground")}>
               Atlas renders dense chrome at {step.px}px
             </span>
           </Row>
@@ -343,9 +343,7 @@ function ControlHeightSection() {
       {CONTROL_HEIGHTS.map((height) => (
         <Row key={height.name} name={height.utility} value={values[height.cssVar]}>
           <div className="flex items-center gap-3">
-            <div
-              className={cn(height.utility, "w-40 rounded border border-border bg-bg-elevated")}
-            />
+            <div className={cn(height.utility, "w-40 rounded border border-border bg-card")} />
             <span className="caption">{height.use}</span>
           </div>
         </Row>
@@ -372,10 +370,8 @@ function RadiusSection() {
       <div className="flex flex-wrap gap-6">
         {RADII.map((radius) => (
           <div key={radius.name} className="w-44">
-            <div
-              className={cn(radius.name, "mb-2 h-16 w-full border border-border bg-bg-elevated")}
-            />
-            <div className="code text-text-secondary">{radius.name}</div>
+            <div className={cn(radius.name, "mb-2 h-16 w-full border border-border bg-card")} />
+            <div className="code text-secondary-foreground">{radius.name}</div>
             <div className="caption">{values[radius.cssVar] || "—"}</div>
             <div className="caption">{radius.use}</div>
           </div>
@@ -399,10 +395,10 @@ function ElevationSection() {
             <div
               className={cn(
                 elevation.utility,
-                "mb-2 flex h-20 items-center justify-center rounded-md bg-bg-elevated",
+                "mb-2 flex h-20 items-center justify-center rounded-md bg-card",
               )}
             >
-              <span className="code text-text-secondary">{elevation.utility}</span>
+              <span className="code text-secondary-foreground">{elevation.utility}</span>
             </div>
             <div className="caption truncate" title={values[elevation.cssVar]}>
               {values[elevation.cssVar] || "—"}
@@ -411,14 +407,14 @@ function ElevationSection() {
           </div>
         ))}
         <div className="w-56">
-          <div className="inset-highlight mb-2 flex h-20 items-center justify-center rounded-md bg-bg-elevated">
-            <span className="code text-text-secondary">inset-highlight</span>
+          <div className="inset-highlight mb-2 flex h-20 items-center justify-center rounded-md bg-card">
+            <span className="code text-secondary-foreground">inset-highlight</span>
           </div>
           <div className="caption">The top edge, from the `element.highlight` key.</div>
         </div>
         <div className="w-56">
           <div className="backdrop-blur-glass mb-2 flex h-20 items-center justify-center rounded-md border border-border">
-            <span className="code text-text-secondary">backdrop-blur-glass</span>
+            <span className="code text-secondary-foreground">backdrop-blur-glass</span>
           </div>
           <div className="caption">The one glass blur.</div>
         </div>
@@ -452,11 +448,11 @@ function ZIndexSection() {
               key={layer.name}
               className={cn(
                 layer.utility,
-                "absolute flex h-8 w-40 items-center rounded-md border border-border bg-bg-elevated px-2 shadow-md",
+                "absolute flex h-8 w-40 items-center rounded-md border border-border bg-card px-2 shadow-md",
               )}
               style={{ top: i * 14, left: i * 12 }}
             >
-              <span className="code text-text-secondary">{layer.name}</span>
+              <span className="code text-secondary-foreground">{layer.name}</span>
             </div>
           ))}
         </div>
@@ -479,7 +475,7 @@ function MotionSection() {
       </Button>
       {DURATIONS.map((duration) => (
         <Row key={duration.name} name={duration.utility} value={values[duration.cssVar]}>
-          <div className="h-6 rounded bg-bg-elevated">
+          <div className="h-6 rounded bg-card">
             <div
               className={cn(
                 duration.utility,
@@ -493,11 +489,11 @@ function MotionSection() {
       {EASINGS.map((easing) => (
         <Row key={easing.name} name={easing.name}>
           <div className="flex items-center gap-3">
-            <div className="h-6 flex-1 rounded bg-bg-elevated">
+            <div className="h-6 flex-1 rounded bg-card">
               <div
                 className={cn(
                   easing.name,
-                  "duration-slow h-6 w-6 rounded bg-text-tertiary transition-transform",
+                  "duration-slow h-6 w-6 rounded bg-muted-foreground transition-transform",
                 )}
                 style={{ transform: on ? "translateX(220px)" : "translateX(0)" }}
               />
@@ -521,14 +517,14 @@ function IconSection() {
       <div className="flex items-end gap-8">
         {sizes.map((size) => (
           <div key={size} className="flex flex-col items-center gap-2">
-            <Icon icon={Search} size={size} className="text-text-primary" />
-            <span className="code text-text-secondary">{size}</span>
+            <Icon icon={Search} size={size} className="text-foreground" />
+            <span className="code text-secondary-foreground">{size}</span>
             <span className="caption">{ICON_SIZES[size]}px</span>
           </div>
         ))}
         <div className="flex items-center gap-3">
           {[Settings, Plus, Trash2, ChevronRight, Check, Copy, X].map((glyph, i) => (
-            <Icon key={i} icon={glyph} size="md" className="text-text-tertiary" />
+            <Icon key={i} icon={glyph} size="md" className="text-muted-foreground" />
           ))}
         </div>
       </div>
@@ -552,7 +548,7 @@ function StateSection() {
         <Input size="sm" placeholder="Focusable field" className="w-48" />
         <button
           type="button"
-          className="focus-ring-none rounded border border-border px-2 py-1 text-xs text-text-secondary"
+          className="focus-ring-none rounded border border-border px-2 py-1 text-xs text-secondary-foreground"
         >
           focus-ring-none (opts out)
         </button>
@@ -875,7 +871,7 @@ function OverlaySection() {
           <ContextMenu>
             <ContextMenuTrigger
               render={
-                <div className="flex h-24 w-full max-w-md items-center justify-center rounded-md border border-dashed border-border bg-bg-surface">
+                <div className="flex h-24 w-full max-w-md items-center justify-center rounded-md border border-dashed border-border bg-background">
                   <span className="caption">Right-click anywhere in here</span>
                 </div>
               }
@@ -1011,7 +1007,7 @@ function Header() {
   };
 
   return (
-    <header className="z-titlebar sticky top-0 -mx-8 mb-2 flex items-center gap-3 border-b border-border bg-bg-base px-8 py-3 backdrop-blur-glass">
+    <header className="z-titlebar sticky top-0 -mx-8 mb-2 flex items-center gap-3 border-b border-border bg-background px-8 py-3 backdrop-blur-glass">
       <div>
         <div className="heading">Atlas design system</div>
         <div className="caption">
@@ -1022,7 +1018,7 @@ function Header() {
       <label className="label flex items-center gap-2">
         Theme
         <select
-          className="h-control-md rounded border border-border bg-bg-input px-2 text-xs text-text-primary"
+          className="h-control-md rounded border border-border bg-panel-input px-2 text-xs text-foreground"
           value={themeId}
           onChange={(e) => apply(e.target.value, mode)}
         >
@@ -1037,7 +1033,7 @@ function Header() {
       <label className="label flex items-center gap-2">
         Mode
         <select
-          className="h-control-md rounded border border-border bg-bg-input px-2 text-xs text-text-primary"
+          className="h-control-md rounded border border-border bg-panel-input px-2 text-xs text-foreground"
           value={mode}
           onChange={(e) => apply(themeId, e.target.value as ThemeMode)}
         >
@@ -1054,7 +1050,7 @@ function Header() {
 
 export function DesignSystemGallery() {
   return (
-    <div className="h-full overflow-y-auto bg-bg-base px-8 pb-24 text-text-primary">
+    <div className="h-full overflow-y-auto bg-background px-8 pb-24 text-foreground">
       <Header />
       <TypeSection />
       <ControlHeightSection />

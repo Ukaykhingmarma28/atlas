@@ -1487,8 +1487,8 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
     !agentCatalogEntry(pluginId)?.installed;
   if (removed) return null;
   return (
-    <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-sm">
-      <span className="select-text text-[var(--text-secondary)]">
+    <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm">
+      <span className="select-text text-[var(--secondary-foreground)]">
         {bindError
           ? `The agent exited while starting (${bindError.slice(0, 160)}). Your message is back in the queue — restart to try again.`
           : "The agent process exited. Your conversation is safe — restart to continue where you left off."}
@@ -1503,7 +1503,7 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
             setRestarting(false);
           }
         }}
-        className="shrink-0 px-2.5 h-6 rounded-md bg-[var(--text-primary)] text-[var(--bg-primary)] text-xs font-medium hover:bg-[var(--text-secondary)] disabled:opacity-50 cursor-pointer"
+        className="shrink-0 px-2.5 h-6 rounded-md bg-[var(--foreground)] text-[var(--background)] text-xs font-medium hover:bg-[var(--secondary-foreground)] disabled:opacity-50 cursor-pointer"
       >
         {restarting ? "Restarting…" : "Restart agent"}
       </button>
@@ -1588,10 +1588,10 @@ const ChatComposer = memo(function ChatComposer({
                   style={{ backdropFilter: "blur(4px)" }}
                   className={cn(
                     "atlas-pill-in inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full",
-                    "border border-[var(--border)] bg-[var(--bg-elevated)]",
-                    "text-xs leading-none font-medium text-[var(--text-secondary)]",
+                    "border border-[var(--border)] bg-[var(--card)]",
+                    "text-xs leading-none font-medium text-[var(--secondary-foreground)]",
                     "shadow-sm cursor-pointer transition-colors",
-                    "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                    "hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
                   )}
                 >
                   <ChevronDown size={11} />
@@ -1663,7 +1663,7 @@ function WelcomeState() {
         <h2 className="bg-gradient-to-b from-white to-white/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
           Atlas
         </h2>
-        <p className="mt-1.5 text-base text-[var(--text-tertiary)]">
+        <p className="mt-1.5 text-base text-[var(--muted-foreground)]">
           Code with Agents. Tools, plans, and edits all live.
         </p>
 
@@ -1674,18 +1674,18 @@ function WelcomeState() {
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text } }))
               }
-              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-md cursor-pointer"
+              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--atlas-border-strong)] hover:bg-[var(--card)] hover:shadow-md cursor-pointer"
             >
               <div className="flex items-center justify-between">
-                <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)] transition-colors group-hover:text-[var(--text-primary)]">
+                <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--atlas-border-subtle)] bg-[var(--card)] text-[var(--muted-foreground)] transition-colors group-hover:text-[var(--foreground)]">
                   <Icon size={13} />
                 </span>
                 <ArrowRight
                   size={13}
-                  className="-translate-x-1 text-[var(--text-ghost)] opacity-0 transition-all group-hover:translate-x-0 group-hover:text-[var(--text-secondary)] group-hover:opacity-100"
+                  className="-translate-x-1 text-[var(--atlas-text-disabled)] opacity-0 transition-all group-hover:translate-x-0 group-hover:text-[var(--secondary-foreground)] group-hover:opacity-100"
                 />
               </div>
-              <span className="text-sm font-medium leading-snug text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
+              <span className="text-sm font-medium leading-snug text-[var(--secondary-foreground)] transition-colors group-hover:text-[var(--foreground)]">
                 {text}
               </span>
             </button>

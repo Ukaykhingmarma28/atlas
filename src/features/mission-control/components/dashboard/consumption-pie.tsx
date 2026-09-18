@@ -16,7 +16,7 @@ export function ConsumptionPie({ data }: { data: MissionControlUsage }) {
     <ChartCard title="Consumption" subtitle="Token share by project">
       <div className="h-[240px] flex items-center gap-2">
         {shares.length === 0 ? (
-          <div className="flex-1 text-center text-xs text-[var(--text-tertiary)]">No data.</div>
+          <div className="flex-1 text-center text-xs text-[var(--muted-foreground)]">No data.</div>
         ) : (
           <>
             <div className="relative h-full w-[160px] shrink-0">
@@ -40,10 +40,10 @@ export function ConsumptionPie({ data }: { data: MissionControlUsage }) {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-md font-mono text-[var(--text-primary)]">
+                <span className="text-md font-mono text-[var(--foreground)]">
                   {fmtTokens(total)}
                 </span>
-                <span className="text-3xs uppercase tracking-wide text-[var(--text-tertiary)]">
+                <span className="text-3xs uppercase tracking-wide text-[var(--muted-foreground)]">
                   total
                 </span>
               </div>
@@ -55,10 +55,10 @@ export function ConsumptionPie({ data }: { data: MissionControlUsage }) {
                     className="h-1.5 w-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: projectColor(i) }}
                   />
-                  <span className="flex-1 min-w-0 truncate text-[var(--text-secondary)]">
+                  <span className="flex-1 min-w-0 truncate text-[var(--secondary-foreground)]">
                     {s.name}
                   </span>
-                  <span className="font-mono tabular-nums text-[var(--text-tertiary)]">
+                  <span className="font-mono tabular-nums text-[var(--muted-foreground)]">
                     {total > 0 ? Math.round((s.value / total) * 100) : 0}%
                   </span>
                 </div>
@@ -84,9 +84,9 @@ function PieTip({
   const p = payload[0];
   const v = Number(p.value) || 0;
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-xs">
-      <div className="text-[var(--text-secondary)]">{p.payload?.name ?? p.name}</div>
-      <div className="font-mono text-[var(--text-primary)]">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 text-xs">
+      <div className="text-[var(--secondary-foreground)]">{p.payload?.name ?? p.name}</div>
+      <div className="font-mono text-[var(--foreground)]">
         {fmtTokens(v)} · {total > 0 ? Math.round((v / total) * 100) : 0}%
       </div>
     </div>

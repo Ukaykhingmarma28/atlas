@@ -44,24 +44,24 @@ export function UpdateAvailableModal() {
             "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)]",
             "w-[300px] rounded-2xl overflow-hidden",
             // macOS-style vibrancy: translucent panel over a blurred backdrop.
-            "bg-[var(--bg-elevated)]/70 backdrop-blur-2xl border border-white/10",
-            "shadow-[var(--shadow-overlay)]",
+            "bg-[var(--card)]/70 backdrop-blur-2xl border border-white/10",
+            "shadow-md",
             "px-5 pt-6 pb-5 flex flex-col items-center text-center",
           )}
         >
           {isError ? (
             <div className="w-[52px] h-[52px] rounded-2xl bg-white/10 border border-white/10 grid place-items-center">
-              <AlertTriangle size={24} className="text-[var(--status-error)]" />
+              <AlertTriangle size={24} className="text-[var(--atlas-status-error-foreground)]" />
             </div>
           ) : (
             <AtlasIcon size={52} className="rounded-2xl" />
           )}
 
-          <Dialog.Title className="mt-3 text-[15px] font-semibold text-text-primary">
+          <Dialog.Title className="mt-3 text-[15px] font-semibold text-foreground">
             {isError ? "Update failed" : "Update Ready"}
           </Dialog.Title>
 
-          <p className="mt-1 text-[12px] text-text-secondary leading-relaxed px-1">
+          <p className="mt-1 text-[12px] text-secondary-foreground leading-relaxed px-1">
             {isError ? (
               (error ?? "Something went wrong while installing the update.")
             ) : (
@@ -72,14 +72,14 @@ export function UpdateAvailableModal() {
           </p>
 
           {applying ? (
-            <div className="mt-4 w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-text-tertiary">
+            <div className="mt-4 w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
               <Loader2 size={12} className="animate-spin" /> Restarting…
             </div>
           ) : isError ? (
             <button
               type="button"
               onClick={dismissModal}
-              className="mt-4 w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 transition-opacity"
+              className="mt-4 w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
             >
               Close
             </button>
@@ -89,14 +89,14 @@ export function UpdateAvailableModal() {
                 type="button"
                 autoFocus
                 onClick={restartNow}
-                className="w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 transition-opacity"
+                className="w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
               >
                 Restart now
               </button>
               <button
                 type="button"
                 onClick={dismissModal}
-                className="w-full h-9 rounded-lg text-[12px] font-medium bg-white/10 text-text-primary border border-white/10 hover:bg-white/[0.15] transition-colors"
+                className="w-full h-9 rounded-lg text-[12px] font-medium bg-white/10 text-foreground border border-white/10 hover:bg-white/[0.15] transition-colors"
               >
                 Later
               </button>
@@ -104,7 +104,7 @@ export function UpdateAvailableModal() {
           )}
 
           {!applying && !isError && (
-            <p className="mt-3 text-[10px] text-text-tertiary leading-relaxed px-1">
+            <p className="mt-3 text-[10px] text-muted-foreground leading-relaxed px-1">
               "Later" installs the update automatically the next time you quit Atlas.
             </p>
           )}

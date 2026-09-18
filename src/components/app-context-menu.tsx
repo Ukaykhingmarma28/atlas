@@ -117,11 +117,11 @@ function MenuItem({
   return (
     <ContextMenu.Item
       onClick={onClick}
-      className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
+      className="flex items-center gap-2 px-3 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-default outline-none"
     >
-      <span className="text-text-tertiary">{icon}</span>
+      <span className="text-muted-foreground">{icon}</span>
       <span className="flex-1">{label}</span>
-      {hint && <span className="text-3xs text-text-tertiary font-mono">{hint}</span>}
+      {hint && <span className="text-3xs text-muted-foreground font-mono">{hint}</span>}
     </ContextMenu.Item>
   );
 }

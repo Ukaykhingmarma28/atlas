@@ -17,7 +17,7 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-3 flex flex-col gap-1.5",
+        "rounded-lg border border-[var(--border)] bg-[var(--card)] px-3.5 py-3 flex flex-col gap-1.5",
         className,
       )}
     >
@@ -25,14 +25,14 @@ export function StatCard({
         {accent && (
           <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
         )}
-        <span className="text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+        <span className="text-3xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           {label}
         </span>
       </div>
-      <span className="text-xl font-mono tabular-nums text-[var(--text-primary)] leading-none">
+      <span className="text-xl font-mono tabular-nums text-[var(--foreground)] leading-none">
         {value}
       </span>
-      {sub && <span className="text-2xs text-[var(--text-tertiary)] font-mono">{sub}</span>}
+      {sub && <span className="text-2xs text-[var(--muted-foreground)] font-mono">{sub}</span>}
     </div>
   );
 }

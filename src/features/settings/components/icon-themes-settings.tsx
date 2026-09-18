@@ -54,9 +54,9 @@ export function IconThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border bg-bg-primary px-3 py-2">
+      <div className="shrink-0 border-b border-border bg-background px-3 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
+          <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
             Preview
           </span>
           <div className="flex items-center gap-2.5">
@@ -81,19 +81,19 @@ export function IconThemesSettings() {
                     toast.success(`Applied “${theme.name}” icons`);
                   }}
                   className={cn(
-                    "group flex min-h-20 flex-col justify-between rounded-lg border bg-bg-secondary p-3 text-left transition-colors",
+                    "group flex min-h-20 flex-col justify-between rounded-lg border bg-card p-3 text-left transition-colors",
                     selected ? "border-primary" : "border-border hover:border-border-strong",
                   )}
                 >
                   <div className="flex w-full items-start gap-1.5">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-text-primary">
+                        <span className="truncate text-sm font-medium text-foreground">
                           {theme.name}
                         </span>
                         {selected && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
                       </div>
-                      <p className="mt-1 truncate text-xs text-text-tertiary">
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         {theme.author} · {theme.license}
                       </p>
                     </div>
@@ -120,7 +120,9 @@ export function IconThemesSettings() {
             })}
           </div>
 
-          {loading && <div className="py-4 text-center text-xs text-text-tertiary">Loading…</div>}
+          {loading && (
+            <div className="py-4 text-center text-xs text-muted-foreground">Loading…</div>
+          )}
           {error && <div className="py-4 text-center text-xs text-error">{error}</div>}
 
           <OpenVsxSection />
@@ -160,7 +162,7 @@ function RemoveButton({ id, name }: { id: string; name: string }) {
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
         }}
-        className="shrink-0 cursor-pointer rounded p-0.5 text-text-tertiary opacity-0 transition-opacity hover:text-error group-hover:opacity-100"
+        className="shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-error group-hover:opacity-100"
       >
         {busy ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
       </span>
@@ -204,14 +206,14 @@ function OpenVsxSection() {
   return (
     <div className="mt-4 border-t border-border pt-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
+        <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
           Install from Open VSX
         </span>
         <span className="text-2xs text-text-muted">open-vsx.org</span>
       </div>
 
-      <div className="flex h-[28px] items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2">
-        <Search size={11} className="shrink-0 text-text-tertiary" />
+      <div className="flex h-[28px] items-center gap-1.5 rounded-md border border-border bg-card px-2">
+        <Search size={11} className="shrink-0 text-muted-foreground" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -220,7 +222,7 @@ function OpenVsxSection() {
           }}
           placeholder="Search VS Code icon themes, then press Enter…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
         {query && (
           <Hint label="Clear">
@@ -230,7 +232,7 @@ function OpenVsxSection() {
                 setQuery("");
                 setState({ phase: "idle" });
               }}
-              className="shrink-0 cursor-pointer text-text-tertiary hover:text-text-primary"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
             >
               <X size={11} />
             </button>
@@ -239,7 +241,7 @@ function OpenVsxSection() {
       </div>
 
       {state.phase === "searching" && (
-        <div className="flex items-center justify-center gap-2 py-4 text-xs text-text-tertiary">
+        <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
           <Loader2 size={11} className="animate-spin" />
           Searching Open VSX…
         </div>
@@ -259,7 +261,7 @@ function OpenVsxSection() {
       )}
 
       {state.phase === "done" && state.results.length === 0 && (
-        <div className="py-4 text-center text-xs text-text-tertiary">
+        <div className="py-4 text-center text-xs text-muted-foreground">
           No icon themes on Open VSX match “{query}”.
         </div>
       )}
@@ -272,18 +274,18 @@ function OpenVsxSection() {
             return (
               <div
                 key={hit.id}
-                className="flex items-center gap-2 rounded-md border border-border bg-bg-secondary px-2 py-1.5"
+                className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="truncate text-sm font-medium text-text-primary">
+                    <span className="truncate text-sm font-medium text-foreground">
                       {hit.displayName}
                     </span>
                     <span className="shrink-0 text-2xs text-text-muted">
                       {hit.namespace} · {hit.license}
                     </span>
                   </div>
-                  <p className="truncate text-2xs text-text-tertiary">{hit.description}</p>
+                  <p className="truncate text-2xs text-muted-foreground">{hit.description}</p>
                 </div>
                 <button
                   type="button"
@@ -291,7 +293,7 @@ function OpenVsxSection() {
                   onClick={() => install(hit)}
                   className={cn(
                     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-2 text-2xs font-medium transition-colors",
-                    "border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+                    "border border-border text-secondary-foreground hover:bg-element-hover hover:text-foreground",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                 >

@@ -105,7 +105,7 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
       />
       <div
         style={{ width: bashPanel.width }}
-        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-md animate-slide-in-right"
+        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--sidebar)] shadow-md animate-slide-in-right"
       >
         {/* Left-edge resize handle */}
         <div
@@ -117,14 +117,16 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
         {/* Header */}
         <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border)] shrink-0">
           <div className="flex items-center gap-1.5">
-            <TerminalSquare size={11} className="text-[var(--text-tertiary)]" />
-            <span className="text-xs font-medium text-[var(--text-secondary)]">Bash calls</span>
-            <span className="text-2xs text-[var(--text-tertiary)]">· {entries.length}</span>
+            <TerminalSquare size={11} className="text-[var(--muted-foreground)]" />
+            <span className="text-xs font-medium text-[var(--secondary-foreground)]">
+              Bash calls
+            </span>
+            <span className="text-2xs text-[var(--muted-foreground)]">· {entries.length}</span>
           </div>
           <Hint label="Hide bash history">
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+              className="p-1 rounded hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
             >
               <ChevronRight size={12} />
             </button>
@@ -134,7 +136,7 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
         {/* Virtualized list */}
         <div ref={parentRef} className="flex-1 overflow-y-auto hide-scrollbar">
           {entries.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-[var(--text-tertiary)] leading-relaxed">
+            <div className="px-3 py-3 text-xs text-[var(--muted-foreground)] leading-relaxed">
               No bash commands in this chat yet.
             </div>
           ) : (
@@ -165,8 +167,8 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
                       onClick={() => onJump(e.messageIndex)}
                       className={cn(
                         "group w-full text-left px-3 py-2 transition-colors flex flex-col gap-1 cursor-pointer",
-                        "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] opacity-80 hover:opacity-100",
-                        !isLast && "border-b border-[var(--border-subtle)]",
+                        "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] opacity-80 hover:opacity-100",
+                        !isLast && "border-b border-[var(--atlas-border-subtle)]",
                       )}
                       title={e.command}
                     >
@@ -175,13 +177,13 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         {e.description ? (
-                          <span className="text-3xs text-[var(--text-tertiary)] truncate flex-1">
+                          <span className="text-3xs text-[var(--muted-foreground)] truncate flex-1">
                             {e.description}
                           </span>
                         ) : (
                           <span className="flex-1" />
                         )}
-                        <span className="text-3xs text-[var(--text-tertiary)] shrink-0">
+                        <span className="text-3xs text-[var(--muted-foreground)] shrink-0">
                           {timeAgo(e.timestamp)}
                         </span>
                       </div>

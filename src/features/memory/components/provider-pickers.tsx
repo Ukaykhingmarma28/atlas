@@ -45,14 +45,14 @@ function PickerDropdown({
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         render={
-          <button className="flex min-w-0 items-center gap-1.5 h-control-md rounded-full border border-border bg-bg-elevated px-2 text-2xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
+          <button className="flex min-w-0 items-center gap-1.5 h-control-md rounded-full border border-border bg-card px-2 text-2xs font-medium text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors outline-none cursor-pointer">
             {trigger}
           </button>
         }
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
-          <DropdownMenu.Popup className="max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border bg-bg-elevated py-1 shadow-md">
+          <DropdownMenu.Popup className="max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border bg-card py-1 shadow-md">
             {children}
           </DropdownMenu.Popup>
         </DropdownMenu.Positioner>
@@ -89,32 +89,32 @@ function ModelCombo({
     >
       <Popover.Trigger
         render={
-          <button className="flex min-w-0 items-center gap-1.5 h-control-md rounded-full border border-border bg-bg-elevated px-2 text-2xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
-            {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
+          <button className="flex min-w-0 items-center gap-1.5 h-control-md rounded-full border border-border bg-card px-2 text-2xs font-medium text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors outline-none cursor-pointer">
+            {loading && <Loader2 size={11} className="animate-spin text-muted-foreground" />}
             <span className="max-w-[160px] truncate font-mono">
               {value || (loading ? "Loading…" : "Select model")}
             </span>
-            <ChevronDown size={11} className="text-text-tertiary" />
+            <ChevronDown size={11} className="text-muted-foreground" />
           </button>
         }
       />
       <Popover.Portal>
         <Popover.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
-          <Popover.Popup className="w-[260px] overflow-hidden rounded-md border border-border bg-bg-elevated shadow-md">
+          <Popover.Popup className="w-[260px] overflow-hidden rounded-md border border-border bg-card shadow-md">
             <div className="flex items-center gap-1.5 h-8 border-b border-border-subtle px-2.5">
-              <Search size={12} className="shrink-0 text-text-tertiary" />
+              <Search size={12} className="shrink-0 text-muted-foreground" />
               <input
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search models…"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
               />
             </div>
             <div className="max-h-[300px] overflow-y-auto hide-scrollbar py-1">
               {filtered.length === 0 ? (
-                <div className="px-2.5 py-2 text-xs text-text-tertiary">
+                <div className="px-2.5 py-2 text-xs text-muted-foreground">
                   {loading ? "Loading…" : "No models"}
                 </div>
               ) : (
@@ -125,10 +125,10 @@ function ModelCombo({
                       onSelect(id);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-2.5 h-control-md text-left text-xs font-mono text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                    className="flex w-full items-center gap-2 px-2.5 h-control-md text-left text-xs font-mono text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
                   >
                     <span className="flex-1 truncate">{id}</span>
-                    {id === value && <Check size={11} className="text-text-primary" />}
+                    {id === value && <Check size={11} className="text-foreground" />}
                   </button>
                 ))
               )}
@@ -192,7 +192,7 @@ export function ProviderModelSelector({
             <span className="max-w-[100px] truncate">
               {provider ? (providerById(provider)?.name ?? provider) : "Provider"}
             </span>
-            <ChevronDown size={11} className="text-text-tertiary" />
+            <ChevronDown size={11} className="text-muted-foreground" />
           </>
         }
       >
@@ -200,11 +200,11 @@ export function ProviderModelSelector({
           <DropdownMenu.Item
             key={p.id}
             onClick={() => onProvider(p.id)}
-            className="flex items-center gap-2 px-2.5 h-[28px] text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+            className="flex items-center gap-2 px-2.5 h-[28px] text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
           >
             <ProviderLogo id={p.id} size={14} />
             <span className="flex-1 truncate">{p.name}</span>
-            {p.id === provider && <Check size={12} className="text-text-primary" />}
+            {p.id === provider && <Check size={12} className="text-foreground" />}
           </DropdownMenu.Item>
         ))}
       </PickerDropdown>

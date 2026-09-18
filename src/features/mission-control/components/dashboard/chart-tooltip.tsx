@@ -20,9 +20,11 @@ export function ChartTooltip({ active, payload, label }: TipProps) {
   if (rows.length === 0) return null;
   const total = rows.reduce((n, p) => n + (Number(p.value) || 0), 0);
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-2 shadow-lg text-xs min-w-[150px]">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 shadow-lg text-xs min-w-[150px]">
       {label != null && (
-        <div className="text-2xs text-[var(--text-tertiary)] mb-1 font-mono">{String(label)}</div>
+        <div className="text-2xs text-[var(--muted-foreground)] mb-1 font-mono">
+          {String(label)}
+        </div>
       )}
       {rows.slice(0, 8).map((p) => (
         <div key={String(p.dataKey)} className="flex items-center gap-2">
@@ -30,16 +32,18 @@ export function ChartTooltip({ active, payload, label }: TipProps) {
             className="h-1.5 w-1.5 rounded-full shrink-0"
             style={{ backgroundColor: (p.color as string) ?? p.fill }}
           />
-          <span className="flex-1 min-w-0 truncate text-[var(--text-secondary)]">{p.name}</span>
-          <span className="font-mono tabular-nums text-[var(--text-primary)]">
+          <span className="flex-1 min-w-0 truncate text-[var(--secondary-foreground)]">
+            {p.name}
+          </span>
+          <span className="font-mono tabular-nums text-[var(--foreground)]">
             {fmtTokens(Number(p.value) || 0)}
           </span>
         </div>
       ))}
       {rows.length > 1 && (
-        <div className="mt-1 pt-1 border-t border-[var(--border-subtle)] flex items-center justify-between">
-          <span className="text-[var(--text-tertiary)]">Total</span>
-          <span className="font-mono tabular-nums text-[var(--text-primary)]">
+        <div className="mt-1 pt-1 border-t border-[var(--atlas-border-subtle)] flex items-center justify-between">
+          <span className="text-[var(--muted-foreground)]">Total</span>
+          <span className="font-mono tabular-nums text-[var(--foreground)]">
             {fmtTokens(total)}
           </span>
         </div>

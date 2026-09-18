@@ -69,12 +69,12 @@ function OrgAvatar({
   if (plain) {
     return (
       <span
-        className="flex shrink-0 items-center justify-center rounded-md font-semibold text-[var(--text-primary)]"
+        className="flex shrink-0 items-center justify-center rounded-md font-semibold text-[var(--foreground)]"
         style={{
           width: size,
           height: size,
           fontSize: Math.max(8, Math.round(size * 0.42)),
-          background: org.color ?? "var(--bg-hover)",
+          background: org.color ?? "var(--atlas-element-hover)",
         }}
       >
         {initials(org.name)}
@@ -240,12 +240,12 @@ export function OrgSwitcher() {
         <DropdownMenu.Trigger
           render={
             <button
-              className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer min-w-0"
+              className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-sm font-medium text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer min-w-0"
               title="Switch organisation"
             >
               <OrgAvatar org={active} size={18} />
               <span className="text-left truncate">{active.name}</span>
-              <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
+              <ChevronDown size={11} className="text-[var(--muted-foreground)] shrink-0" />
             </button>
           }
         />
@@ -261,7 +261,7 @@ export function OrgSwitcher() {
           <Hint label="Search" shortcut={paletteHint}>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+              className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer"
             >
               <Search size={13} />
             </button>
@@ -278,20 +278,20 @@ export function OrgSwitcher() {
               // No inset top highlight: on a card this size it draws a bright
               // line across the whole head of the menu, which reads as a second
               // border above the first.
-              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 shadow-md backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--text-secondary)]"
+              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--card)]/95 shadow-md backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--secondary-foreground)]"
             >
               {/* Head: a filter field with the refresh beside it, no rule under
                   it — the same row the chat session picker opens with. The list
                   below is short enough that a label would only cost a row. */}
               <div className="flex h-[30px] shrink-0 items-center gap-1.5 px-2.5">
-                <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.stopPropagation()}
                   placeholder="Search organisations…"
                   aria-label="Search organisations"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                 />
                 {/* Manual re-sync — only meaningful with a credential to pull
                     with. Silent on failure: Rust keeps the last-known list. */}
@@ -312,7 +312,7 @@ export function OrgSwitcher() {
                           setRefreshing(false);
                         }
                       }}
-                      className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer disabled:opacity-50"
+                      className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer disabled:opacity-50"
                     >
                       <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
                     </button>
@@ -322,7 +322,7 @@ export function OrgSwitcher() {
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pb-1">
                 {filteredOrgs.length === 0 && (
-                  <div className="px-2.5 py-3 text-center text-xs text-[var(--text-ghost)]">
+                  <div className="px-2.5 py-3 text-center text-xs text-[var(--atlas-text-disabled)]">
                     No organisations match.
                   </div>
                 )}
@@ -347,7 +347,7 @@ export function OrgSwitcher() {
                             if (e.key === "Escape") setEditingId(null);
                           }}
                           onBlur={submitRename}
-                          className="flex-1 min-w-0 bg-transparent outline-none text-sm text-[var(--text-primary)]"
+                          className="flex-1 min-w-0 bg-transparent outline-none text-sm text-[var(--foreground)]"
                         />
                       </div>
                     );
@@ -367,9 +367,9 @@ export function OrgSwitcher() {
                         // stripes: the highlight then reads as a chip inside the
                         // card, which is what the chat menus do.
                         "group/org mx-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-sm outline-none transition-colors",
-                        isActive && "bg-[var(--bg-active)] text-[var(--text-primary)]",
+                        isActive && "bg-[var(--atlas-element-active)] text-[var(--foreground)]",
                         access.ok
-                          ? "cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                          ? "cursor-pointer hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
                           : "cursor-not-allowed opacity-40",
                       )}
                     >
@@ -390,7 +390,7 @@ export function OrgSwitcher() {
                               e.stopPropagation();
                               beginRename(org.id, org.name);
                             }}
-                            className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-[var(--text-primary)] group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
+                            className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] opacity-0 hover:bg-[var(--card)] hover:text-[var(--foreground)] group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
                           >
                             <Pencil size={11} />
                           </button>
@@ -407,17 +407,17 @@ export function OrgSwitcher() {
                               setConfirmDelete(org);
                               setOpen(false);
                             }}
-                            className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 hover:bg-[var(--bg-elevated-2)] hover:text-error group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
+                            className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] opacity-0 hover:bg-[var(--card)] hover:text-error group-hover/org:opacity-100 focus-visible:opacity-100 cursor-pointer transform-gpu [backface-visibility:hidden]"
                           >
                             <Trash2 size={11} />
                           </button>
                         </Hint>
                       )}
                       {!access.ok ? (
-                        <Lock size={11} className="text-[var(--text-tertiary)] shrink-0" />
+                        <Lock size={11} className="text-[var(--muted-foreground)] shrink-0" />
                       ) : (
                         isActive && (
-                          <Check size={13} className="shrink-0 text-[var(--text-primary)]" />
+                          <Check size={13} className="shrink-0 text-[var(--foreground)]" />
                         )
                       )}
                     </DropdownMenu.Item>
@@ -434,9 +434,9 @@ export function OrgSwitcher() {
                   setOpen(false);
                   setCreateOpen(true);
                 }}
-                className="mx-1 mt-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="mx-1 mt-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
               >
-                <Plus size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Plus size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                 <span className="flex-1 text-left">Create organisation…</span>
               </DropdownMenu.Item>
 
@@ -448,9 +448,9 @@ export function OrgSwitcher() {
                     setOpen(false);
                     setMembersOpen(true);
                   }}
-                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                 >
-                  <Users size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <Users size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                   <span className="flex-1 text-left">Invite &amp; Manage members</span>
                 </DropdownMenu.Item>
               ) : (
@@ -458,7 +458,7 @@ export function OrgSwitcher() {
                   title={
                     activeIsSynced ? "Sign in to manage members" : "Turn on sync to manage members"
                   }
-                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] opacity-40 select-none"
+                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--secondary-foreground)] opacity-40 select-none"
                 >
                   <Users size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Invite &amp; Manage members</span>
@@ -477,15 +477,15 @@ export function OrgSwitcher() {
                     else toast.error("Could not copy the organisation ID");
                   }}
                   title={copyableOrgId}
-                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                 >
-                  <Copy size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <Copy size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                   <span className="flex-1 text-left">Copy organisation ID</span>
                 </DropdownMenu.Item>
               ) : (
                 <div
                   title="Turn on sync to give this organisation an ID"
-                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] opacity-40 select-none"
+                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--secondary-foreground)] opacity-40 select-none"
                 >
                   <Copy size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Copy organisation ID</span>
@@ -500,22 +500,22 @@ export function OrgSwitcher() {
               {syncing ? (
                 <div
                   title="Syncing…"
-                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] select-none"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--secondary-foreground)] select-none"
                 >
                   <Loader2
                     size={12}
-                    className="shrink-0 animate-spin text-[var(--text-tertiary)]"
+                    className="shrink-0 animate-spin text-[var(--muted-foreground)]"
                   />
                   <span className="flex-1 text-left truncate">Syncing {active.name}…</span>
                 </div>
               ) : isSyncedOrg(active) ? (
                 <div
                   title="This organisation is synced with your Atlas account"
-                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] select-none"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--secondary-foreground)] select-none"
                 >
-                  <Cloud size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <Cloud size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                   <span className="flex-1 text-left truncate">{active.name} is synced</span>
-                  <Check size={12} className="shrink-0 text-[var(--text-secondary)]" />
+                  <Check size={12} className="shrink-0 text-[var(--secondary-foreground)]" />
                 </div>
               ) : (
                 <DropdownMenu.Item
@@ -538,7 +538,7 @@ export function OrgSwitcher() {
                       ? "Create this organisation in your Atlas account"
                       : "Sign in to sync this organisation"
                   }
-                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--secondary-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                 >
                   <Cloud size={12} className="shrink-0" />
                   <span className="flex-1 text-left truncate">Turn on sync for {active.name}…</span>
@@ -591,19 +591,19 @@ function DeleteOrgDialog({
           className={cn(
             "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "w-[400px] max-w-[92vw] rounded-lg border border-border",
-            "bg-[var(--bg-elevated)] p-5 shadow-lg animate-scale-in",
+            "bg-[var(--card)] p-5 shadow-lg animate-scale-in",
           )}
         >
-          <Dialog.Title className="text-md font-medium text-[var(--text-primary)]">
+          <Dialog.Title className="text-md font-medium text-[var(--foreground)]">
             Delete “{org?.name}”?
           </Dialog.Title>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+          <p className="mt-2 text-sm leading-relaxed text-[var(--secondary-foreground)]">
             This permanently removes the organisation
             {projectCount > 0 && (
               <>
                 {" "}
                 and its{" "}
-                <span className="text-[var(--text-primary)]">
+                <span className="text-[var(--foreground)]">
                   {projectCount} project{projectCount === 1 ? "" : "s"}
                 </span>{" "}
                 (plus their chats)
@@ -615,7 +615,7 @@ function DeleteOrgDialog({
             <button
               onClick={onClose}
               disabled={deleting}
-              className="px-3 h-8 rounded-md text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 h-8 rounded-md text-sm text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-active)] hover:text-[var(--foreground)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>

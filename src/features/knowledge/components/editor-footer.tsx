@@ -135,8 +135,13 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
 
   return (
     <div
-      className="flex items-center shrink-0 border-t border-border-subtle text-text-tertiary text-2xs"
-      style={{ height: 24, gap: 14, padding: "0 14px", background: "var(--bg-canvas)" }}
+      className="flex items-center shrink-0 border-t border-border-subtle text-muted-foreground text-2xs"
+      style={{
+        height: 24,
+        gap: 14,
+        padding: "0 14px",
+        background: "var(--atlas-panel-background)",
+      }}
     >
       <span>
         <span className="mono tnum">{wordCount.toLocaleString("en-US")}</span> words
@@ -156,9 +161,9 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
               disabled={isBusy}
               className={cn(
                 "inline-flex items-center gap-1 h-5 px-2 rounded-full",
-                "border border-border bg-bg-elevated text-[var(--text-primary)]",
+                "border border-border bg-card text-[var(--foreground)]",
                 "text-2xs font-medium leading-none cursor-pointer",
-                "hover:bg-bg-hover transition-colors",
+                "hover:bg-element-hover transition-colors",
                 "shadow-sm",
                 isBusy && "opacity-80 cursor-wait",
               )}
@@ -186,7 +191,7 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
                 "min-w-[200px] rounded-md p-0.5",
                 "bg-popover border border-border",
                 "shadow-md",
-                "text-text-primary",
+                "text-foreground",
               )}
             >
               <ExportMenuItem
@@ -239,12 +244,12 @@ function ExportMenuItem({
       onClick={() => void onSelect()}
       className={cn(
         "flex items-center gap-2 rounded px-2 py-1 outline-none cursor-pointer",
-        "text-sm text-text-secondary",
-        "focus:bg-bg-hover focus:text-text-primary",
+        "text-sm text-secondary-foreground",
+        "focus:bg-element-hover focus:text-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
       )}
     >
-      <Icon size={11} className="text-text-tertiary" />
+      <Icon size={11} className="text-muted-foreground" />
       {label}
     </DropdownMenu.Item>
   );

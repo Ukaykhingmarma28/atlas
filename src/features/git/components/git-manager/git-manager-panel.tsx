@@ -57,7 +57,9 @@ export function GitManagerPanel() {
 
   if (!isRepo) {
     return (
-      <div className="px-3 py-8 text-center text-xs text-text-tertiary">Not a git repository</div>
+      <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+        Not a git repository
+      </div>
     );
   }
 
@@ -82,7 +84,7 @@ export function GitManagerPanel() {
           <HintItem label={`Merge a branch into ${current?.name ?? "the current branch"}`}>
             <button
               onClick={() => setMergeOpen(true)}
-              className="flex items-center justify-center w-6 h-6 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer shrink-0"
+              className="flex items-center justify-center w-6 h-6 rounded text-secondary-foreground hover:text-foreground hover:bg-element-hover transition-colors cursor-pointer shrink-0"
             >
               <GitMerge size={12} />
             </button>
@@ -170,12 +172,12 @@ function ToolbarBtn({
       disabled={busy}
       // A labelled button explains itself; its title only adds the detail.
       title={label ? title : undefined}
-      className="flex items-center gap-1 h-6 px-1.5 rounded text-2xs font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50"
+      className="flex items-center gap-1 h-6 px-1.5 rounded text-2xs font-medium text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors disabled:opacity-50"
     >
       {busy ? <Loader2 size={12} className="animate-spin" /> : icon}
       {label && <span>{label}</span>}
       {badge !== undefined && (
-        <span className="font-mono text-3xs text-text-secondary">{badge}</span>
+        <span className="font-mono text-3xs text-secondary-foreground">{badge}</span>
       )}
     </button>
   );
@@ -197,8 +199,8 @@ function ViewTab({
       className={cn(
         "px-2 h-6 rounded text-xs font-medium transition-colors",
         active
-          ? "text-text-primary bg-bg-selected"
-          : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
+          ? "text-foreground bg-element-selected"
+          : "text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover",
       )}
     >
       {children}

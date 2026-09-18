@@ -120,8 +120,8 @@ export function FeedbackPanel() {
       }}
     >
       <div className="flex items-center gap-2 px-3.5 h-9 border-b border-border-subtle">
-        <MessageCircleQuestion size={13} strokeWidth={1.5} className="text-text-secondary" />
-        <span className="text-3xs font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+        <MessageCircleQuestion size={13} strokeWidth={1.5} className="text-secondary-foreground" />
+        <span className="text-3xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Send feedback
         </span>
         <div className="flex-1" />
@@ -130,7 +130,7 @@ export function FeedbackPanel() {
             type="button"
             onClick={a.closePanel}
             aria-label="Close feedback"
-            className="grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-selected transition-colors cursor-pointer"
+            className="grid h-5 w-5 place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-element-selected transition-colors cursor-pointer"
           >
             <X size={12} />
           </button>
@@ -139,14 +139,18 @@ export function FeedbackPanel() {
 
       {sent ? (
         <div role="status" className="flex flex-col items-center gap-2 px-6 py-7">
-          <div className="grid h-9 w-9 place-items-center rounded-full border border-border-subtle bg-bg-hover">
-            <Check size={16} strokeWidth={1.75} className="text-[var(--status-success)]" />
+          <div className="grid h-9 w-9 place-items-center rounded-full border border-border-subtle bg-element-hover">
+            <Check
+              size={16}
+              strokeWidth={1.75}
+              className="text-[var(--atlas-status-success-foreground)]"
+            />
           </div>
-          <p className="text-sm text-text-primary">Thanks — we got it.</p>
+          <p className="text-sm text-foreground">Thanks — we got it.</p>
           <button
             type="button"
             onClick={a.dismissSent}
-            className="mt-1 h-6 rounded-full px-3 text-xs text-text-tertiary hover:text-text-primary hover:bg-bg-selected transition-colors cursor-pointer"
+            className="mt-1 h-6 rounded-full px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-element-selected transition-colors cursor-pointer"
           >
             Send another
           </button>
@@ -171,8 +175,8 @@ export function FeedbackPanel() {
                 className={cn(
                   "h-6 rounded-full px-2.5 text-xs border transition-colors cursor-pointer",
                   category === c.id
-                    ? "border-border bg-bg-active text-text-primary"
-                    : "border-border-subtle bg-bg-hover text-text-tertiary hover:text-text-secondary hover:bg-bg-selected",
+                    ? "border-border bg-element-active text-foreground"
+                    : "border-border-subtle bg-element-hover text-muted-foreground hover:text-secondary-foreground hover:bg-element-selected",
                 )}
               >
                 {c.label}
@@ -188,7 +192,7 @@ export function FeedbackPanel() {
             maxLength={4000}
             aria-label="Your feedback"
             placeholder={active.placeholder}
-            className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed text-text-primary placeholder:text-text-ghost outline-none select-text"
+            className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed text-foreground placeholder:text-disabled outline-none select-text"
           />
 
           <div className="flex items-center gap-2 px-3.5 pb-2.5">
@@ -220,7 +224,7 @@ export function FeedbackPanel() {
                 type="button"
                 onClick={() => void a.attachScreenshot()}
                 title="Drag a region — or press Space, then click the Atlas window."
-                className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border-subtle bg-bg-hover px-2 text-xs text-text-tertiary hover:bg-bg-selected hover:text-text-primary transition-colors cursor-pointer"
+                className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border-subtle bg-element-hover px-2 text-xs text-muted-foreground hover:bg-element-selected hover:text-foreground transition-colors cursor-pointer"
               >
                 <Camera size={11} strokeWidth={1.75} />
                 Attach screenshot
@@ -229,7 +233,10 @@ export function FeedbackPanel() {
           </div>
 
           {error && (
-            <p role="alert" className="px-3.5 pb-2 text-2xs text-[var(--status-error)]">
+            <p
+              role="alert"
+              className="px-3.5 pb-2 text-2xs text-[var(--atlas-status-error-foreground)]"
+            >
               {error}
             </p>
           )}
@@ -238,7 +245,7 @@ export function FeedbackPanel() {
             // Say it plainly rather than in a tooltip: this is the one path that
             // transmits with usage data switched off, and the user pressed a
             // button labelled "Send".
-            <p className="px-3.5 pb-2 text-2xs leading-snug text-text-ghost">
+            <p className="px-3.5 pb-2 text-2xs leading-snug text-disabled">
               Usage data is off. This feedback is still sent, because you asked for it to be.
             </p>
           )}
@@ -251,7 +258,7 @@ export function FeedbackPanel() {
                 title={
                   anonymous ? "Send with your Atlas account instead" : "Send anonymously instead"
                 }
-                className="inline-flex min-w-0 items-center gap-1.5 text-2xs text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
+                className="inline-flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground hover:text-secondary-foreground transition-colors cursor-pointer"
               >
                 {/* The face is the point: at a glance you can tell whether this
                     report will be attributable to you. Anonymous swaps it for a
@@ -267,7 +274,7 @@ export function FeedbackPanel() {
                 </span>
               </button>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-2xs text-text-ghost">
+              <span className="inline-flex items-center gap-1.5 text-2xs text-disabled">
                 <EyeOff size={11} strokeWidth={1.75} className="shrink-0" />
                 Sending anonymously
               </span>
@@ -281,7 +288,7 @@ export function FeedbackPanel() {
                 "inline-flex h-6 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors",
                 canSubmit
                   ? "bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 cursor-pointer"
-                  : "bg-bg-selected text-text-ghost cursor-not-allowed",
+                  : "bg-element-selected text-disabled cursor-not-allowed",
               )}
             >
               {submitting ? "Sending…" : "Send"}
@@ -294,7 +301,7 @@ export function FeedbackPanel() {
         <button
           type="button"
           onClick={() => void openExternal(issueUrl(category, message))}
-          className="inline-flex items-center gap-1.5 text-2xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <GithubIcon size={10} />
           Open a GitHub issue
@@ -303,7 +310,7 @@ export function FeedbackPanel() {
         <button
           type="button"
           onClick={() => void openExternal(DISCORD_URL)}
-          className="inline-flex items-center gap-1.5 text-2xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <MessagesSquare size={10} />
           Join the community

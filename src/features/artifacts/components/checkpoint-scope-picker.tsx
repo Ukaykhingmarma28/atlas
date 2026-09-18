@@ -32,7 +32,7 @@ import type { TimelineEntry } from "../types";
  */
 const STRIP =
   "relative z-0 mx-2 -mb-3.5 flex items-center justify-between gap-3 rounded-t-xl " +
-  "bg-[var(--bg-tertiary)] px-3.5 pt-1.5 pb-5 text-xs";
+  "bg-[var(--popover)] px-3.5 pt-1.5 pb-5 text-xs";
 
 /** Checkpoints of one Session, newest first. */
 function sessionCheckpoints(entries: TimelineEntry[]): TimelineEntry[] {
@@ -104,10 +104,10 @@ export function CheckpointScopePicker({
     return (
       <div className={STRIP}>
         <span className="flex min-w-0 items-center gap-2 truncate">
-          <Layers size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+          <Layers size={12} className="shrink-0 text-[var(--muted-foreground)]" />
           <span className="truncate">
-            <span className="font-semibold text-[var(--text-primary)]">Full timeline</span>
-            <span className="text-[var(--text-tertiary)]"> · no checkpoints</span>
+            <span className="font-semibold text-[var(--foreground)]">Full timeline</span>
+            <span className="text-[var(--muted-foreground)]"> · no checkpoints</span>
           </span>
         </span>
       </div>
@@ -125,18 +125,21 @@ export function CheckpointScopePicker({
               className="flex min-w-0 items-center gap-2 truncate text-left cursor-pointer outline-none"
             >
               {isFull ? (
-                <Layers size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Layers size={12} className="shrink-0 text-[var(--muted-foreground)]" />
               ) : (
-                <GitCommitHorizontal size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <GitCommitHorizontal
+                  size={12}
+                  className="shrink-0 text-[var(--muted-foreground)]"
+                />
               )}
               <span className="truncate">
-                <span className="font-semibold text-[var(--text-primary)]">{label}</span>
-                {detailText && <span className="text-[var(--text-tertiary)]">{detailText}</span>}
+                <span className="font-semibold text-[var(--foreground)]">{label}</span>
+                {detailText && <span className="text-[var(--muted-foreground)]">{detailText}</span>}
               </span>
               <ChevronDown
                 size={11}
                 className={cn(
-                  "shrink-0 text-[var(--text-tertiary)] transition-transform",
+                  "shrink-0 text-[var(--muted-foreground)] transition-transform",
                   open && "rotate-180",
                 )}
               />
@@ -150,7 +153,7 @@ export function CheckpointScopePicker({
                 "flex max-h-[380px] w-[340px] flex-col overflow-hidden rounded-xl select-none",
                 // Border, fill, blur and animation on ONE element — splitting them
                 // isolates the layer and flattens the backdrop blur.
-                "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+                "border border-white/10 bg-[var(--card)]/95 backdrop-blur-2xl",
                 "inset-highlight shadow-md",
                 "origin-[var(--transform-origin)] data-open:animate-scale-in",
               )}
@@ -159,20 +162,20 @@ export function CheckpointScopePicker({
                   carry dozens of Checkpoints and the one you want is remembered by
                   its subject, not its position. */}
               <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.07] px-3 py-2">
-                <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search…"
                   aria-label="Search checkpoints"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                 />
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto hide-scrollbar">
                 {shown.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-[var(--text-tertiary)]">
+                  <p className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
                     No checkpoint matches.
                   </p>
                 ) : (
@@ -197,16 +200,16 @@ export function CheckpointScopePicker({
               <button
                 type="button"
                 onClick={() => onChange(null)}
-                className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 py-2 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+                className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 py-2 text-left transition-colors hover:bg-element-hover cursor-pointer"
               >
-                <Layers size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-primary)]">
+                <Layers size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+                <span className="min-w-0 flex-1 truncate text-xs text-[var(--foreground)]">
                   Full timeline
                 </span>
-                <span className="shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
+                <span className="shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
                   {checkpoints.length} checkpoints
                 </span>
-                {isFull && <Check size={12} className="shrink-0 text-[var(--text-primary)]" />}
+                {isFull && <Check size={12} className="shrink-0 text-[var(--foreground)]" />}
               </button>
             </Popover.Popup>
           </Popover.Positioner>
@@ -221,8 +224,8 @@ export function CheckpointScopePicker({
           className={cn(
             "shrink-0 rounded p-0.5 transition-colors",
             isFull
-              ? "cursor-default text-[var(--text-tertiary)]/30"
-              : "cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+              ? "cursor-default text-[var(--muted-foreground)]/30"
+              : "cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
           )}
         >
           <X size={12} />
@@ -259,20 +262,22 @@ function Row({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-2 border-b border-white/[0.04] px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-start gap-2 border-b border-white/[0.04] px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-element-hover cursor-pointer"
     >
-      <span className="mt-px shrink-0 text-[var(--text-tertiary)]">{icon}</span>
+      <span className="mt-px shrink-0 text-[var(--muted-foreground)]">{icon}</span>
       <span className="min-w-0 flex-1">
         {/* Subject on its own line: it is what gets scanned. The sha, branch and
             diffstat are supporting detail and belong under it. */}
-        <span className="block truncate text-xs text-[var(--text-primary)]">{title}</span>
-        <span className="flex items-center gap-1.5 font-mono text-2xs text-[var(--text-tertiary)]">
+        <span className="block truncate text-xs text-[var(--foreground)]">{title}</span>
+        <span className="flex items-center gap-1.5 font-mono text-2xs text-[var(--muted-foreground)]">
           <span className="min-w-0 truncate">{meta}</span>
-          {added > 0 && <span className="text-[var(--diff-added-text)]">+{added}</span>}
-          {removed > 0 && <span className="text-[var(--status-error)]">−{removed}</span>}
+          {added > 0 && <span className="text-[var(--atlas-diff-added-text)]">+{added}</span>}
+          {removed > 0 && (
+            <span className="text-[var(--atlas-status-error-foreground)]">−{removed}</span>
+          )}
         </span>
       </span>
-      {checked && <Check size={12} className="mt-px shrink-0 text-[var(--text-primary)]" />}
+      {checked && <Check size={12} className="mt-px shrink-0 text-[var(--foreground)]" />}
     </button>
   );
 }

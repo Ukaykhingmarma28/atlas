@@ -96,15 +96,15 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                         void setAcpConfigOption(tabId, opt.id, !opt.value);
                         close();
                       }}
-                      className="flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer hover:bg-[var(--bg-hover)]"
+                      className="flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer hover:bg-[var(--atlas-element-hover)]"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--foreground)]">
                           {opt.name}
                           {opt.value && <Check size={11} className="text-[var(--primary)]" />}
                         </span>
                         {opt.description && (
-                          <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)]">
+                          <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)]">
                             {opt.description}
                           </span>
                         )}
@@ -112,7 +112,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                     </button>
                   ) : (
                     <>
-                      <div className="px-2 pb-0.5 pt-1.5 text-3xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                      <div className="px-2 pb-0.5 pt-1.5 text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
                         {opt.name}
                       </div>
                       {opt.choices.map((c) => {
@@ -126,16 +126,18 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
                             }}
                             className={cn(
                               "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                              active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                              active
+                                ? "bg-[var(--atlas-element-selected)]"
+                                : "hover:bg-[var(--atlas-element-hover)]",
                             )}
                           >
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+                              <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--foreground)]">
                                 {c.name}
                                 {active && <Check size={11} className="text-[var(--primary)]" />}
                               </span>
                               {c.description && (
-                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)]">
+                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)]">
                                   {c.description}
                                 </span>
                               )}
@@ -150,8 +152,8 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
             </div>
           ) : (
             <div className="px-3 py-2.5">
-              <div className="text-xs font-medium text-[var(--text-primary)]">Default</div>
-              <p className="mt-0.5 text-2xs leading-snug text-[var(--text-tertiary)]">
+              <div className="text-xs font-medium text-[var(--foreground)]">Default</div>
+              <p className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
                 Agent loaded with default configuration.
               </p>
             </div>
@@ -176,9 +178,9 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
             content swaps without animation. */}
         <span className="flex items-center">
           {loading ? (
-            <Loader2 size={11} className="shrink-0 animate-spin text-[var(--text-tertiary)]" />
+            <Loader2 size={11} className="shrink-0 animate-spin text-[var(--muted-foreground)]" />
           ) : (
-            <SlidersHorizontal size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+            <SlidersHorizontal size={11} className="shrink-0 text-[var(--muted-foreground)]" />
           )}
           {/* While loading the label is "Options", not "Default": "Default" is a
               settled answer, and pairing it with a spinner would state a verdict
@@ -192,7 +194,7 @@ export const ComposerOptionsPill = memo(function ComposerOptionsPill({ tabId }: 
               nudge the plan pill sideways. */}
           <ChevronDown
             size={10}
-            className={cn("ml-0.5 shrink-0 text-[var(--text-tertiary)]", loading && "opacity-0")}
+            className={cn("ml-0.5 shrink-0 text-[var(--muted-foreground)]", loading && "opacity-0")}
           />
         </span>
       </button>

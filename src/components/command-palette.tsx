@@ -392,7 +392,7 @@ export function CommandPalette({
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[520px] max-h-[400px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border)]",
+            "bg-[var(--card)] border border-[var(--border)]",
             "shadow-md",
             "flex flex-col",
           )}
@@ -405,20 +405,20 @@ export function CommandPalette({
               search bar when the list overflows `max-h` (the command list is
               long), making it render at half height. */}
           <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border)]">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a command..."
-              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
           </div>
 
           <div ref={listRef} className="overflow-y-auto flex-1 py-1">
             {filtered.length === 0 && (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 No commands found
               </div>
             )}
@@ -430,7 +430,7 @@ export function CommandPalette({
               return (
                 <Fragment key={cmd.id}>
                   {showHeader && (
-                    <div className="px-4 pt-2.5 pb-1 text-2xs font-medium uppercase tracking-wider text-[var(--text-tertiary)] select-none">
+                    <div className="px-4 pt-2.5 pb-1 text-2xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] select-none">
                       {cmd.category}
                     </div>
                   )}
@@ -441,11 +441,11 @@ export function CommandPalette({
                     className={cn(
                       "w-full flex items-center gap-3 px-4 h-[36px] text-left text-sm transition-colors",
                       i === selectedIndex
-                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                        : "text-[var(--text-secondary)]",
+                        ? "bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+                        : "text-[var(--secondary-foreground)]",
                     )}
                   >
-                    <Icon size={14} className="shrink-0 text-[var(--text-tertiary)]" />
+                    <Icon size={14} className="shrink-0 text-[var(--muted-foreground)]" />
                     <span className="flex-1 truncate">{cmd.label}</span>
                     {cmd.actionId && <ActionKbd id={cmd.actionId} />}
                   </button>

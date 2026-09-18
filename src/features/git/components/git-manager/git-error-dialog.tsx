@@ -31,21 +31,24 @@ export function GitErrorDialog() {
     <Dialog.Root open={payload !== null} onOpenChange={(o) => !o && actions.dismissErrorDialog()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
-        <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-modal w-[440px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border shadow-md flex flex-col">
+        <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-modal w-[440px] rounded-xl overflow-hidden bg-[var(--card)] border border-border shadow-md flex flex-col">
           {payload && (
             <>
               <div className="px-4 pt-3.5 pb-3 border-b border-border">
-                <Dialog.Title className="text-base font-semibold text-text-primary flex items-center gap-1.5">
-                  <AlertTriangle size={13} className="text-[var(--status-error)] shrink-0" />
+                <Dialog.Title className="text-base font-semibold text-foreground flex items-center gap-1.5">
+                  <AlertTriangle
+                    size={13}
+                    className="text-[var(--atlas-status-error-foreground)] shrink-0"
+                  />
                   {gitErrorTitle(payload)}
                 </Dialog.Title>
-                <Dialog.Description className="text-xs text-text-secondary mt-1.5">
+                <Dialog.Description className="text-xs text-secondary-foreground mt-1.5">
                   {payload.message}
                 </Dialog.Description>
                 {payload.files && payload.files.length > 0 && (
                   <div className="mt-2 max-h-[96px] overflow-y-auto hide-scrollbar">
                     {payload.files.map((f) => (
-                      <div key={f} className="font-mono text-2xs text-text-tertiary truncate">
+                      <div key={f} className="font-mono text-2xs text-muted-foreground truncate">
                         {f}
                       </div>
                     ))}
@@ -54,8 +57,8 @@ export function GitErrorDialog() {
               </div>
 
               {payload.rawStderr && (
-                <div className="max-h-[180px] overflow-y-auto hide-scrollbar bg-[var(--bg-base)] px-3 py-2">
-                  <pre className="font-mono text-2xs leading-[15px] text-text-secondary whitespace-pre-wrap break-all">
+                <div className="max-h-[180px] overflow-y-auto hide-scrollbar bg-[var(--background)] px-3 py-2">
+                  <pre className="font-mono text-2xs leading-[15px] text-secondary-foreground whitespace-pre-wrap break-all">
                     {payload.rawStderr}
                   </pre>
                 </div>
@@ -64,7 +67,7 @@ export function GitErrorDialog() {
               <div className="border-t border-border px-3 py-2.5 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex items-center gap-2">
                   {payload.command && (
-                    <span className="truncate font-mono text-2xs text-text-tertiary">
+                    <span className="truncate font-mono text-2xs text-muted-foreground">
                       {payload.command}
                     </span>
                   )}
@@ -73,7 +76,7 @@ export function GitErrorDialog() {
                   {payload.rawStderr && (
                     <button
                       onClick={() => onCopy(payload.rawStderr)}
-                      className="flex items-center gap-1 px-2 h-7 rounded text-xs text-text-secondary hover:bg-bg-hover transition-colors"
+                      className="flex items-center gap-1 px-2 h-7 rounded text-xs text-secondary-foreground hover:bg-element-hover transition-colors"
                       title="Copy git output"
                     >
                       {copied ? <Check size={11} /> : <Copy size={11} />}
@@ -82,11 +85,11 @@ export function GitErrorDialog() {
                   )}
                   <button
                     onClick={() => actions.dismissErrorDialog()}
-                    // `text-text-inverse`, never `text-white`: `--accent-primary`
+                    // `text-primary-foreground`, never `text-white`: `--primary`
                     // IS white in this theme, so a white label on it renders an
                     // empty button. Every other filled accent button in the app
                     // pairs the fill with the inverse token for this reason.
-                    className="px-3 h-7 rounded text-xs font-medium text-text-inverse bg-primary hover:opacity-90 transition-colors"
+                    className="px-3 h-7 rounded text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 transition-colors"
                   >
                     Dismiss
                   </button>

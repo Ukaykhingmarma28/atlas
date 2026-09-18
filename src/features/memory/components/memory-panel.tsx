@@ -28,7 +28,7 @@ export function MemoryPanel() {
   const { setSubTab } = useMemoryStore.use.actions();
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-base)]">
+    <div className="h-full flex flex-col bg-[var(--background)]">
       {/* Header: nav (left) · sharing controls (right) */}
       <div className="flex items-center h-[32px] shrink-0 border-b border-[var(--border)] px-2">
         <PillGroup>
@@ -74,7 +74,7 @@ export function MemoryPanel() {
           <SharedMemoryView projectPath={projectPath} />
         ) : (
           <Centered>
-            <p className="text-sm text-[var(--text-tertiary)]">
+            <p className="text-sm text-[var(--muted-foreground)]">
               Open a project to view shared memory.
             </p>
           </Centered>
@@ -87,7 +87,7 @@ export function MemoryPanel() {
 /** Rounded container that groups the segmented nav pills. */
 function PillGroup({ children }: { children: React.ReactNode }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--card,var(--card))] p-0.5">
       {children}
     </div>
   );
@@ -110,8 +110,8 @@ function PillSeg({
       className={cn(
         "flex items-center gap-1.5 h-control-xs px-2.5 rounded-full text-xs font-medium outline-none transition-colors cursor-pointer",
         active
-          ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+          ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+          : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
       )}
     >
       {icon}

@@ -110,13 +110,13 @@ export function CommsHome() {
       <div className="shrink-0 px-2 pt-2 pb-1">
         {/* Radius matches the surface card it sits in (CommsSurface's
             `rounded-xl`) — a tighter corner read as a different family. */}
-        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-input px-2.5 py-[5px] focus-within:border-border-strong">
-          <Search size={12} className="shrink-0 text-text-ghost" />
+        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-panel-input px-2.5 py-[5px] focus-within:border-border-strong">
+          <Search size={12} className="shrink-0 text-disabled" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Jump to a channel or person…"
-            className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-ghost"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-disabled"
           />
         </div>
       </div>
@@ -139,10 +139,10 @@ export function CommsHome() {
         {rosterPending &&
           [0, 1, 2].map((i) => (
             <div key={`sk${i}`} className="flex items-center gap-2.5 py-[5px] pl-3.5 pr-2.5">
-              <div className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50 atlas-marker-running" />
+              <div className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--card)] opacity-50 atlas-marker-running" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div
-                  className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                  className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
                   style={{ width: 88 + ((i * 37) % 60) }}
                 />
               </div>
@@ -194,7 +194,7 @@ export function CommsHome() {
             <button
               type="button"
               onClick={() => setShowDiscover((v) => !v)}
-              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-text-secondary transition-colors hover:text-text-primary cursor-pointer"
+              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-secondary-foreground transition-colors hover:text-foreground cursor-pointer"
             >
               <ChevronRight
                 size={10}
@@ -207,7 +207,7 @@ export function CommsHome() {
               discover.map((c) => (
                 <div
                   key={c.id}
-                  className="group/disc flex items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-text-tertiary"
+                  className="group/disc flex items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-muted-foreground"
                 >
                   <RowIcon>
                     <Hash size={13} className="opacity-60" />
@@ -218,7 +218,7 @@ export function CommsHome() {
                   <button
                     type="button"
                     onClick={() => actions.joinChannel(c.id)}
-                    className="shrink-0 rounded px-1.5 py-px text-xs font-medium text-text-secondary opacity-0 transition-opacity hover:bg-bg-hover hover:text-text-primary group-hover/disc:opacity-100 cursor-pointer"
+                    className="shrink-0 rounded px-1.5 py-px text-xs font-medium text-secondary-foreground opacity-0 transition-opacity hover:bg-element-hover hover:text-foreground group-hover/disc:opacity-100 cursor-pointer"
                   >
                     Join
                   </button>
@@ -249,7 +249,7 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-text-secondary">
+    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-secondary-foreground">
       <Icon size={12} className="shrink-0" />
       {label}
       {action && <span className="ml-auto flex items-center">{action}</span>}
@@ -278,7 +278,7 @@ function RowDivider() {
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <div className="py-1 pl-[50px] pr-2.5 text-xs text-text-tertiary">{text}</div>;
+  return <div className="py-1 pl-[50px] pr-2.5 text-xs text-muted-foreground">{text}</div>;
 }
 
 function ChannelRow({
@@ -296,19 +296,19 @@ function ChannelRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover cursor-pointer"
     >
       <RowIcon>
         {conv.visibility === "private" ? (
-          <Lock size={12} className="text-text-ghost" />
+          <Lock size={12} className="text-disabled" />
         ) : (
-          <Hash size={13} className="text-text-ghost" />
+          <Hash size={13} className="text-disabled" />
         )}
       </RowIcon>
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-sm",
-          unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
+          unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
         )}
       >
         {conv.name}
@@ -349,11 +349,11 @@ function DirectRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover cursor-pointer"
     >
       <RowIcon>
         {isGroup ? (
-          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-bg-elevated text-text-tertiary">
+          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-card text-muted-foreground">
             <Users size={13} />
           </span>
         ) : (
@@ -368,12 +368,12 @@ function DirectRow({
         <span
           className={cn(
             "block truncate text-sm leading-[1.35]",
-            unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
+            unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
           )}
         >
           {title}
         </span>
-        <span className="block truncate text-xs leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
           {isGroup ? `${others.length + 1} members` : (counterpart?.email ?? "")}
         </span>
       </span>
@@ -399,20 +399,20 @@ function ContactRow({
       type="button"
       disabled={starting}
       onClick={onStart}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover disabled:opacity-60 cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover disabled:opacity-60 cursor-pointer"
     >
       <RowIcon>
         <CommsAvatar member={member} size={26} online={online} />
       </RowIcon>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm leading-[1.35] text-text-secondary">
+        <span className="block truncate text-sm leading-[1.35] text-secondary-foreground">
           {member.name}
         </span>
-        <span className="block truncate text-xs leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
           {member.email}
         </span>
       </span>
-      {starting && <Loader2 size={12} className="shrink-0 animate-spin text-text-tertiary" />}
+      {starting && <Loader2 size={12} className="shrink-0 animate-spin text-muted-foreground" />}
     </button>
   );
 }
@@ -445,7 +445,7 @@ function Badges({ unread, mentions }: { unread: number; mentions: number }) {
  *
  * It used to be the hint-overlay keycap verbatim: a hand-mixed dark gradient,
  * a white hairline and a three-layer inset shadow. `src/ui/kbd.tsx` has since
- * moved that look onto `border-border` + `bg-bg-elevated` + the elevation
+ * moved that look onto `border-border` + `bg-card` + the elevation
  * scale, so copying the old recipe no longer matched the thing it was copying.
  * It also could not survive a light theme: the cap was hardcoded dark while
  * the ink follows `--foreground`, which is dark ON a light theme — dark on
@@ -460,7 +460,7 @@ function Badges({ unread, mentions }: { unread: number; mentions: number }) {
 function KeycapBadge({ ink, label }: { ink: string; label: string }) {
   return (
     <span
-      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full border border-border bg-bg-elevated px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide shadow-sm"
+      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full border border-border bg-card px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide shadow-sm"
       style={{ color: ink }}
     >
       {label}

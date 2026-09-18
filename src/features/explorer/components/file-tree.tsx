@@ -653,7 +653,7 @@ export function FileTree() {
           line across the file tree and the tab bar. No refresh button — the
           file-tree updates live off the filesystem watcher. */}
       <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border">
-        <span className="text-2xs font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
+        <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider truncate flex-1">
           {rootPath ? basename(rootPath) : "Files"}
         </span>
         <HintGroup>
@@ -666,7 +666,7 @@ export function FileTree() {
             <HintItem label="Open folder">
               <button
                 onClick={handlePickFolder}
-                className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+                className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
               >
                 <FolderPlus size={11} />
               </button>
@@ -700,7 +700,9 @@ export function FileTree() {
               {loading ? (
                 <PanelSkeleton rows={10} className="p-2 gap-1.5" />
               ) : flat.length === 0 ? (
-                <div className="px-3 py-4 text-xs text-text-tertiary text-center">Empty folder</div>
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  Empty folder
+                </div>
               ) : (
                 <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
                   {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -846,7 +848,7 @@ function FoldExpandButton({
     <HintItem label={anyExpanded ? "Collapse all" : "Expand all"}>
       <button
         onClick={anyExpanded ? onCollapseAll : onExpandAll}
-        className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+        className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
       >
         {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
       </button>

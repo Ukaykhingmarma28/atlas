@@ -36,10 +36,11 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary-hover",
         destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
-        outline: "border-border bg-transparent text-text-primary hover:bg-bg-hover",
-        secondary: "bg-bg-elevated text-text-primary hover:bg-bg-hover",
-        ghost: "bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary",
-        link: "bg-transparent text-text-primary underline-offset-2 hover:underline",
+        outline: "border-border bg-transparent text-foreground hover:bg-element-hover",
+        secondary: "bg-card text-foreground hover:bg-element-hover",
+        ghost:
+          "bg-transparent text-secondary-foreground hover:bg-element-hover hover:text-foreground",
+        link: "bg-transparent text-foreground underline-offset-2 hover:underline",
       },
       size: {
         xs: "h-control-xs gap-1 px-1.5 text-2xs",

@@ -291,7 +291,7 @@ export function MemoryTreeView({
                     <rect x={-6} y={-8} width={16} height={16} fill="transparent" />
                     <path
                       d={collapsed.has(t.id) ? "M0 -4 L5 0 L0 4 Z" : "M-4 -1.5 L4 -1.5 L0 3.5 Z"}
-                      fill={lit ? HL : "var(--text-tertiary)"}
+                      fill={lit ? HL : "var(--muted-foreground)"}
                     />
                   </g>
                 )}
@@ -304,7 +304,7 @@ export function MemoryTreeView({
                   const lines = wrapLabel(t.label + suffix, maxChars, 3);
                   const lineH = fontSize + 2.5;
                   const top = CARD_H / 2 - ((lines.length - 1) * lineH) / 2;
-                  const textColor = lit ? "var(--text-primary)" : "var(--text-secondary)";
+                  const textColor = lit ? "var(--foreground)" : "var(--secondary-foreground)";
                   return (
                     <>
                       <rect
@@ -313,12 +313,12 @@ export function MemoryTreeView({
                         width={CARD_W}
                         height={CARD_H}
                         rx={6}
-                        fill={lit ? "var(--bg-selected)" : "var(--bg-elevated)"}
+                        fill={lit ? "var(--atlas-element-selected)" : "var(--card)"}
                         stroke={
                           lit
                             ? HL
                             : isRoot || t.id === hoverId
-                              ? "var(--border-strong)"
+                              ? "var(--atlas-border-strong)"
                               : "var(--border)"
                         }
                         strokeWidth={1}
@@ -334,7 +334,7 @@ export function MemoryTreeView({
                       )}
                       <text
                         x={textX}
-                        fontFamily="var(--font-ui)"
+                        fontFamily="var(--font-sans)"
                         fontSize={fontSize}
                         fontWeight={isRoot || isCat ? 600 : 400}
                         fill={textColor}

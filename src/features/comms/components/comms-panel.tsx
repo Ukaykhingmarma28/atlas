@@ -152,7 +152,7 @@ export function CommsPanel() {
     return (
       <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
         <div className="flex h-[38px] shrink-0 items-center pl-2">
-          <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-text-primary select-none">
+          <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-foreground select-none">
             <MessagesSquare size={11} className="shrink-0 opacity-70" />
             Chats
           </div>
@@ -210,7 +210,7 @@ export function CommsPanel() {
             <button
               type="button"
               onClick={() => actions.newTab()}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none cursor-pointer"
             >
               <Plus size={14} />
             </button>
@@ -322,8 +322,8 @@ function TabButton({
         "transition-[background-color,color] duration-150",
         "pr-6",
         active
-          ? "bg-[var(--atlas-element-selected)] text-text-primary"
-          : "text-text-tertiary hover:bg-[var(--atlas-element-hover)] hover:text-text-secondary",
+          ? "bg-[var(--atlas-element-selected)] text-foreground"
+          : "text-muted-foreground hover:bg-[var(--atlas-element-hover)] hover:text-secondary-foreground",
       )}
     >
       {icon}
@@ -332,7 +332,7 @@ function TabButton({
       {mentions > 0 ? (
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--foreground)]" />
       ) : unread > 0 ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-success)]" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--atlas-status-success-foreground)]" />
       ) : null}
 
       <Hint label="Close tab">
@@ -345,8 +345,8 @@ function TabButton({
           className={cn(
             "absolute right-1 top-1/2 -translate-y-1/2",
             "inline-flex h-4 w-4 items-center justify-center rounded-full",
-            "text-text-tertiary opacity-0 scale-90 group-hover/tab:opacity-100 group-hover/tab:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-            "transition-[opacity,transform] duration-150 hover:bg-[var(--atlas-element-emphasis)] hover:text-text-primary cursor-pointer",
+            "text-muted-foreground opacity-0 scale-90 group-hover/tab:opacity-100 group-hover/tab:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+            "transition-[opacity,transform] duration-150 hover:bg-[var(--atlas-element-emphasis)] hover:text-foreground cursor-pointer",
           )}
         >
           <X size={10} strokeWidth={2.2} />
@@ -371,8 +371,8 @@ function CommsConnecting({
   if (state === "unavailable") {
     return (
       <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-        <div className="text-sm font-medium text-text-primary">Chat is unavailable</div>
-        <p className="max-w-[220px] text-xs leading-relaxed text-text-secondary">
+        <div className="text-sm font-medium text-foreground">Chat is unavailable</div>
+        <p className="max-w-[220px] text-xs leading-relaxed text-secondary-foreground">
           {reason === "not_a_member"
             ? "Your account isn't a member of this organisation's chat."
             : reason === "evicted"
@@ -382,7 +382,7 @@ function CommsConnecting({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-1 flex h-[26px] items-center rounded-md border border-border bg-bg-hover px-3 text-xs font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+          className="mt-1 flex h-[26px] items-center rounded-md border border-border bg-element-hover px-3 text-xs font-medium text-foreground transition-colors hover:bg-element-active cursor-pointer"
         >
           Try again
         </button>
@@ -391,8 +391,8 @@ function CommsConnecting({
   }
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-      <Loader2 size={16} className="animate-spin text-text-tertiary" />
-      <div className="text-sm text-text-secondary">
+      <Loader2 size={16} className="animate-spin text-muted-foreground" />
+      <div className="text-sm text-secondary-foreground">
         {state === "backoff" ? "Reconnecting…" : "Connecting to team chat…"}
       </div>
     </div>

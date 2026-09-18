@@ -62,9 +62,9 @@ export function AtlasThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-primary px-3">
-        <span className="text-xs font-medium text-text-secondary">Mode</span>
-        <div className="flex rounded-md border border-border bg-bg-secondary p-0.5">
+      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3">
+        <span className="text-xs font-medium text-secondary-foreground">Mode</span>
+        <div className="flex rounded-md border border-border bg-card p-0.5">
           {modes.map((mode) => (
             <button
               key={mode}
@@ -74,7 +74,7 @@ export function AtlasThemesSettings() {
                 "rounded px-2 py-1 text-2xs capitalize transition-colors",
                 settings.themeMode === mode
                   ? "bg-primary text-primary-foreground"
-                  : "text-text-tertiary hover:text-text-primary",
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {mode}
@@ -83,21 +83,21 @@ export function AtlasThemesSettings() {
         </div>
       </div>
 
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-bg-primary px-3">
-        <Search size={11} className="shrink-0 text-text-tertiary" />
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-background px-3">
+        <Search size={11} className="shrink-0 text-muted-foreground" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search themes…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
         {query && (
           <Hint label="Clear search">
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="shrink-0 cursor-pointer text-text-tertiary hover:text-text-primary"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
             >
               <X size={11} />
             </button>
@@ -120,7 +120,7 @@ export function AtlasThemesSettings() {
           <div className="mb-2 rounded-lg border border-warning/40 bg-warning-muted p-2.5">
             <div className="flex items-center gap-1.5">
               <AlertTriangle size={11} className="shrink-0 text-warning" />
-              <span className="text-xs font-medium text-text-primary">
+              <span className="text-xs font-medium text-foreground">
                 {skipped.length === 1
                   ? "1 theme file was skipped"
                   : `${skipped.length} theme files were skipped`}
@@ -128,8 +128,8 @@ export function AtlasThemesSettings() {
             </div>
             <ul className="mt-1.5 space-y-1">
               {skipped.map((warning) => (
-                <li key={warning.key} className="text-2xs leading-snug text-text-tertiary">
-                  <span className="font-medium text-text-secondary">{warning.key}</span> —{" "}
+                <li key={warning.key} className="text-2xs leading-snug text-muted-foreground">
+                  <span className="font-medium text-secondary-foreground">{warning.key}</span> —{" "}
                   {warning.message}
                 </li>
               ))}
@@ -155,18 +155,18 @@ export function AtlasThemesSettings() {
                   toast.success(`Applied “${theme.name}” theme`);
                 }}
                 className={cn(
-                  "flex min-h-24 flex-col justify-between rounded-lg border bg-bg-secondary p-3 text-left transition-colors",
+                  "flex min-h-24 flex-col justify-between rounded-lg border bg-card p-3 text-left transition-colors",
                   selected ? "border-primary" : "border-border hover:border-border-strong",
                 )}
               >
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-medium text-text-primary">
+                    <span className="truncate text-sm font-medium text-foreground">
                       {theme.name}
                     </span>
                     {selected && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
                   </div>
-                  <p className="mt-1 text-xs text-text-tertiary">{theme.author}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{theme.author}</p>
                 </div>
                 <div className="flex items-center gap-1 text-3xs uppercase tracking-wide text-text-muted">
                   {theme.hasDark && <span>Dark</span>}
@@ -200,10 +200,10 @@ export function AtlasThemesSettings() {
           })}
         </div>
 
-        {loading && <div className="py-6 text-center text-xs text-text-tertiary">Loading…</div>}
+        {loading && <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>}
         {error && <div className="py-6 text-center text-xs text-error">{error}</div>}
         {!loading && !error && filtered.length === 0 && (
-          <div className="py-6 text-center text-xs text-text-tertiary">
+          <div className="py-6 text-center text-xs text-muted-foreground">
             No themes match “{query}”.
           </div>
         )}

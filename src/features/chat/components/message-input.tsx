@@ -215,10 +215,12 @@ interface MessageInputProps {
  */
 function acpModeColor(modeId: string | undefined): string {
   const id = (modeId ?? "").toLowerCase();
-  if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id)) return "var(--status-error)";
+  if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id))
+    return "var(--atlas-status-error-foreground)";
   if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--primary)";
-  if (/auto|default|edit|accept|agent|project/.test(id)) return "var(--status-success)";
-  return "var(--text-tertiary)";
+  if (/auto|default|edit|accept|agent|project/.test(id))
+    return "var(--atlas-status-success-foreground)";
+  return "var(--muted-foreground)";
 }
 
 interface CodebaseIndexStatus {
@@ -285,14 +287,14 @@ function CerseiMemoryPill() {
       onClick={reindex}
       disabled={indexing}
       title="Codebase index that grounds the agent's memory recall — click to re-index"
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-2xs leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
         <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
       ) : (
         <Database
           size={11}
-          className={status?.indexed ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]"}
+          className={status?.indexed ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
         />
       )}
       {label}
@@ -318,12 +320,12 @@ function EffortPill({ tabId }: { tabId: string }) {
   return (
     <button
       onClick={cycle}
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-2xs leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
       title="Reasoning effort (thinking budget) — Anthropic models"
     >
       <Brain
         size={11}
-        className={active ? "text-[var(--primary)]" : "text-[var(--text-tertiary)]"}
+        className={active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
       />
       {active ? `Think: ${effort}` : "Think"}
     </button>
@@ -351,15 +353,15 @@ const GROUP_ORDER: ComposerGroup[] = ["agent", "mode", "model"];
 function claudeModeDotClass(mode: ClaudePermissionMode): string {
   switch (mode) {
     case "acceptEdits":
-      return "bg-[var(--status-success)]";
+      return "bg-[var(--atlas-status-success-foreground)]";
     case "plan":
       return "bg-[var(--primary)]";
     case "bypassPermissions":
-      return "bg-[var(--status-error)]";
+      return "bg-[var(--atlas-status-error-foreground)]";
     case "auto":
-      return "bg-[var(--status-warning)]";
+      return "bg-[var(--atlas-status-warning-foreground)]";
     default:
-      return "bg-[var(--text-tertiary)]";
+      return "bg-[var(--muted-foreground)]";
   }
 }
 
@@ -504,8 +506,8 @@ function ComposerGroupsMenu({
     cn(
       "flex items-center px-1.5 h-6.5 rounded-full border text-2xs leading-none font-medium transition-colors cursor-pointer",
       active
-        ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-        : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+        ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+        : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
     );
 
   return (
@@ -516,7 +518,7 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
+        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -544,7 +546,9 @@ function ComposerGroupsMenu({
                         }}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                          active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                          active
+                            ? "bg-[var(--atlas-element-selected)]"
+                            : "hover:bg-[var(--atlas-element-hover)]",
                         )}
                       >
                         <AgentMark agentType={a} className="!h-4 !w-4 !text-3xs !rounded" />
@@ -569,7 +573,7 @@ function ComposerGroupsMenu({
                     close();
                     openSettingsSection("agents");
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition-colors cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  className="flex w-full items-center gap-1.5 px-3 py-2 text-xs text-[var(--secondary-foreground)] transition-colors cursor-pointer hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
                 >
                   <Plus size={11} className="shrink-0" />
                   Add more agents
@@ -590,7 +594,9 @@ function ComposerGroupsMenu({
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                        active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                        active
+                          ? "bg-[var(--atlas-element-selected)]"
+                          : "hover:bg-[var(--atlas-element-hover)]",
                       )}
                     >
                       <span
@@ -607,7 +613,7 @@ function ComposerGroupsMenu({
             {openGroup === "mode" && !isClaude && (
               <div className="p-1">
                 {!hasAcpModes ? (
-                  <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-[var(--muted-foreground)]">
                     <Loader2 size={11} className="animate-spin" /> Loading modes…
                   </div>
                 ) : (
@@ -622,7 +628,9 @@ function ComposerGroupsMenu({
                         }}
                         className={cn(
                           "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                          active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                          active
+                            ? "bg-[var(--atlas-element-selected)]"
+                            : "hover:bg-[var(--atlas-element-hover)]",
                         )}
                       >
                         <span
@@ -635,7 +643,7 @@ function ComposerGroupsMenu({
                             {active && <Check size={11} className="text-[var(--primary)]" />}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)]">
+                            <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)]">
                               {m.description}
                             </span>
                           )}
@@ -649,15 +657,15 @@ function ComposerGroupsMenu({
 
             {openGroup === "model" && (
               <>
-                <div className="flex h-8 items-center gap-1.5 border-b border-[var(--border-subtle)] px-2.5">
-                  <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <div className="flex h-8 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2.5">
+                  <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                   <input
                     autoFocus
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search models…"
                     spellCheck={false}
-                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                   />
                   {isNative && (
                     // The gateway's list, re-fetched on demand (ADR-0007).
@@ -669,10 +677,10 @@ function ComposerGroupsMenu({
                         disabled={refreshingModels}
                         onClick={() => void refreshNativeModels()}
                         className={cn(
-                          "shrink-0 rounded p-0.5 text-[var(--text-tertiary)] transition-colors",
+                          "shrink-0 rounded p-0.5 text-[var(--muted-foreground)] transition-colors",
                           refreshingModels
                             ? "cursor-default"
-                            : "cursor-pointer hover:text-[var(--text-primary)]",
+                            : "cursor-pointer hover:text-[var(--foreground)]",
                         )}
                       >
                         <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
@@ -682,7 +690,7 @@ function ComposerGroupsMenu({
                 </div>
                 <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
                   {filteredModels.length === 0 ? (
-                    <div className="px-2.5 py-2 text-xs text-[var(--text-tertiary)]">
+                    <div className="px-2.5 py-2 text-xs text-[var(--muted-foreground)]">
                       No models
                       {isNative && models.length === 0 && (
                         <span className="mt-0.5 block text-3xs leading-snug">
@@ -703,7 +711,9 @@ function ComposerGroupsMenu({
                           }}
                           className={cn(
                             "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                            active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                            active
+                              ? "bg-[var(--atlas-element-selected)]"
+                              : "hover:bg-[var(--atlas-element-hover)]",
                           )}
                         >
                           <span className="min-w-0 flex-1">
@@ -715,7 +725,7 @@ function ComposerGroupsMenu({
                             </span>
                             {m.description &&
                               m.description.trim().toLowerCase() !== "recommended" && (
-                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)] line-clamp-2">
+                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)] line-clamp-2">
                                   {m.description}
                                 </span>
                               )}
@@ -780,11 +790,11 @@ function ComposerGroupsMenu({
           className={pillCls(openGroup === "model")}
           title="Model"
         >
-          <Cpu size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+          <Cpu size={11} className="shrink-0 text-[var(--muted-foreground)]" />
           <span className={cn(labelCls(openGroup === "model"), "max-w-[120px] truncate")}>
             {currentModelInfo ? modelLabel(currentModelInfo) : (currentModel ?? "Model")}
           </span>
-          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--text-tertiary)]" />
+          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--muted-foreground)]" />
         </button>
       )}
     </div>
@@ -1808,7 +1818,7 @@ export function MessageInput({
         {/* Queued messages above the input */}
         {queue.length > 0 && (
           <div className="mb-2 flex flex-col gap-1">
-            <div className="text-2xs uppercase tracking-wider text-[var(--text-tertiary)] px-1">
+            <div className="text-2xs uppercase tracking-wider text-[var(--muted-foreground)] px-1">
               Queued · {queue.length}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1868,7 +1878,7 @@ export function MessageInput({
             // its exposed bottom strip; the INNER surface below holds the
             // input + send button (the focus ring lives there — the "active
             // field" is the input surface, not the toolbar).
-            "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]",
+            "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--card)]",
             "shadow-md",
             // Drag-over highlight: a clear accent ring while OS files hover.
             isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
@@ -1885,8 +1895,8 @@ export function MessageInput({
           onFocusCapture={handleFocusCapture}
         >
           {githubSyncing !== null && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--bg-base)]/40 backdrop-blur-[1px]">
-              <span className="flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)] shadow">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--background)]/40 backdrop-blur-[1px]">
+              <span className="flex items-center gap-2 rounded-full bg-[var(--card)] px-3 py-1 text-xs font-medium text-[var(--secondary-foreground)] shadow">
                 <Loader2 size={12} className="animate-spin" />
                 Syncing {githubSyncing}…
               </span>
@@ -1894,7 +1904,7 @@ export function MessageInput({
           )}
           {isDropTarget && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
-              <span className="rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)] shadow">
+              <span className="rounded-full bg-[var(--card)] px-3 py-1 text-xs font-medium text-[var(--secondary-foreground)] shadow">
                 Drop files to attach
               </span>
             </div>
@@ -1911,11 +1921,11 @@ export function MessageInput({
               // `.atlas-chat-cm-host` block) the field collapses and the
               // button hangs out over the footer. The floor makes the
               // geometry hold even with no editor mounted at all.
-              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg-base)]",
+              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--background)]",
               "transition-[border-color,box-shadow] duration-150",
               // Focus treatment at HALF strength: the full border-focus +
               // /20 accent ring read far too loud on the nested surface.
-              "focus-within:border-[color-mix(in_srgb,var(--border-strong)_50%,var(--border))]",
+              "focus-within:border-[color-mix(in_srgb,var(--atlas-border-strong)_50%,var(--border))]",
               "focus-within:ring-1 focus-within:ring-[var(--primary)]/10",
               // The disabled dim, scoped to the field the lock actually
               // applies to (see the shell above). No red tint — the send
@@ -1939,7 +1949,7 @@ export function MessageInput({
                       <Hint label="Remove image" side="right">
                         <button
                           onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
-                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--secondary-foreground)] hover:text-[var(--foreground)] cursor-pointer"
                         >
                           <X size={9} />
                         </button>
@@ -1951,7 +1961,7 @@ export function MessageInput({
                         <img
                           src={src}
                           alt=""
-                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--bg-elevated)] shadow-md"
+                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--card)] shadow-md"
                         />
                       </div>
                     </div>
@@ -2018,8 +2028,8 @@ export function MessageInput({
                   // button at 8px top centers at 22px at EVERY UI scale.
                   "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
                   buttonEnabled
-                    ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border)] cursor-pointer"
-                    : "border-transparent text-[var(--text-tertiary)] cursor-not-allowed",
+                    ? "border-transparent text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] hover:border-[var(--border)] cursor-pointer"
+                    : "border-transparent text-[var(--muted-foreground)] cursor-not-allowed",
                 )}
               >
                 {/* Updates in place: Enter sends, so the arrow↔stop swap is
@@ -2134,19 +2144,19 @@ function QueueChip({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-xs text-[var(--text-secondary)]">
+    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--card)] text-xs text-[var(--secondary-foreground)]">
       <button
         onClick={onEdit}
-        className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--text-primary)]"
+        className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--foreground)]"
         title="Edit / merge into input"
       >
-        <Pencil size={9} className="text-[var(--text-tertiary)] shrink-0" />
+        <Pencil size={9} className="text-[var(--muted-foreground)] shrink-0" />
         <span className="truncate">{text.replace(/\s+/g, " ")}</span>
       </button>
       <Hint label="Remove from queue" side="top">
         <button
           onClick={onRemove}
-          className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer shrink-0"
+          className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] cursor-pointer shrink-0"
         >
           <X size={10} />
         </button>

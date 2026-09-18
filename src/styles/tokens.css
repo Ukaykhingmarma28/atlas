@@ -51,117 +51,11 @@
   --shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.82);
   --shadow-2xl: 0 16px 48px rgba(0, 0, 0, 0.9);
 
-  /* Legacy aliases retained through PR 4. They point only at base tokens or
-     resolved schema-1 theme keys; no legacy value is independently themed. */
-  --bg-base: var(--background);
-  --bg-surface: var(--background);
-  --bg-primary: var(--background);
-  --bg-sidebar: var(--sidebar);
-  --bg-raised: var(--card);
-  --bg-secondary: var(--card);
-  --bg-overlay: var(--popover);
-  --bg-tertiary: var(--popover);
-  --bg-input: var(--atlas-panel-input-background);
-  --bg-tab-active: var(--accent);
-  --bg-tab-inactive: var(--sidebar);
-  --bg-hover: var(--atlas-element-hover);
-  --bg-selected: var(--atlas-element-selected);
-  --bg-active: var(--atlas-element-active);
-  --selection-bg: var(--atlas-selection-background);
-  --bg-canvas: var(--atlas-panel-background);
-  --bg-rail: var(--atlas-panel-background);
-  --bg-elevated: var(--card);
-  --bg-elevated-2: var(--card);
-  --panel-rail-bg: var(--atlas-panel-background);
-  --panel-bg: var(--atlas-panel-background);
-  --panel-bg-2: var(--card);
-
-  --text-primary: var(--foreground);
-  --text-secondary: var(--secondary-foreground);
-  --text-tertiary: var(--muted-foreground);
-  --text-ghost: var(--atlas-text-disabled);
-  --text-inverse: var(--primary-foreground);
-  --text-muted: var(--muted-foreground);
-
-  --border-subtle: var(--atlas-border-subtle);
-  --border-strong: var(--atlas-border-strong);
-
-  --accent-primary: var(--primary);
-  --accent-primary-hover: var(--atlas-primary-hover);
-  --accent-primary-muted: var(--atlas-primary-muted);
-  --accent-secondary: var(--muted-foreground);
-
-  --status-success: var(--atlas-status-success-foreground);
-  --status-success-muted: var(--atlas-status-success-background);
-  --status-success-bg: var(--atlas-status-success-background);
-  --status-warning: var(--atlas-status-warning-foreground);
-  --status-warning-muted: var(--atlas-status-warning-background);
-  --status-error: var(--atlas-status-error-foreground);
-  --status-error-muted: var(--atlas-status-error-background);
-  --status-info: var(--atlas-status-info-foreground);
-  --status-info-muted: var(--atlas-status-info-background);
-  --danger: var(--destructive);
-  --warning: var(--atlas-status-warning-foreground);
-  --stat-added: var(--atlas-diff-added-text);
-  --stat-removed: var(--atlas-diff-removed-text);
-  --capture-live: var(--atlas-status-success-foreground);
-
-  --diff-added-text: var(--atlas-diff-added-text);
-  --diff-removed-text: var(--atlas-diff-removed-text);
-  --diff-context-bg: var(--atlas-diff-context-background);
-  /* One added fill and one removed fill, for both diff renderers. The inline
-     view and the side-by-side view used to read two different keys, and the
-     side-by-side pair was a hardcoded green/red every theme file repeated
-     verbatim — so a themed diff and an unthemed one sat next to each other. */
-  --diff-add-line-bg: var(--atlas-diff-added-background);
-  --diff-remove-line-bg: var(--atlas-diff-removed-background);
-  --diff-add-side-bg: var(--atlas-diff-added-background);
-  --diff-remove-side-bg: var(--atlas-diff-removed-background);
-  --diff-emph-add-bg: var(--atlas-diff-added-emphasis);
-  --diff-emph-remove-bg: var(--atlas-diff-removed-emphasis);
-
-  --cm-bg: var(--atlas-editor-background);
-  --cm-fg: var(--atlas-editor-foreground);
-  --cm-caret: var(--atlas-editor-caret);
-  --cm-gutter-bg: var(--atlas-editor-gutter-background);
-  --cm-gutter-fg: var(--atlas-editor-gutter-foreground);
-  --cm-active-gutter-fg: var(--atlas-editor-active-line-gutter-foreground);
-  --cm-active-line-bg: var(--atlas-editor-active-line-background);
-  --cm-selection-bg: var(--atlas-editor-selection-background);
-  --cm-bracket-bg: var(--atlas-editor-match-bracket-background);
-  --cm-bracket-outline: var(--atlas-editor-match-bracket-border);
-  /* The fold placeholder is a secondary surface with a secondary label on it;
-     it had three theme keys of its own and no author ever wanted them to
-     differ from that. */
-  --cm-fold-bg: var(--secondary);
-  --cm-fold-border: var(--border);
-  --cm-fold-fg: var(--secondary-foreground);
-  --cm-comment: var(--atlas-syntax-comment);
-  --cm-keyword: var(--atlas-syntax-keyword);
-  --cm-string: var(--atlas-syntax-string);
-  --cm-number: var(--atlas-syntax-number);
-  --cm-type: var(--atlas-syntax-type);
-  --cm-func: var(--atlas-syntax-function);
-  --cm-variable: var(--atlas-syntax-variable);
-  --cm-tag: var(--atlas-syntax-tag);
-  --cm-attr: var(--atlas-syntax-attribute);
-  --cm-constant: var(--atlas-syntax-constant);
-  --cm-regexp: var(--atlas-syntax-regexp);
-  --cm-property: var(--atlas-syntax-property);
-  --cm-meta: var(--atlas-syntax-attribute);
-
-  --font-ui: var(--font-sans);
-  --font-display: -apple-system, "SF Pro Display", system-ui, sans-serif;
-  --font-size-xxs: 10px;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 13px;
-  --font-size-md: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 20px;
-
   /* Spacing is Tailwind's `--spacing` multiplier (above). The former
-     `--space-*` ladder had 0 references and is gone (decision 19). */
+     `--space-*` ladder had 0 references and is gone (decision 19). The type
+     scale lives in the Tailwind `--text-*` namespace in globals.css; the
+     `--font-size-*` ladder that shadowed it is gone with the rest of the
+     legacy aliases. */
 
   /* Radius (decision 26). Derived from the theme's `--radius`, so a theme that
      ships a rounder — or squarer — look moves the whole scale at once. Use `sm`
@@ -200,10 +94,6 @@
      next one down under it for the contact edge. Still entirely theme-derived,
      and still one step up from `--elevation-menu` in every theme. */
   --elevation-dialog: var(--shadow-xl), var(--shadow-2xl);
-  /* Legacy alias for the 83 `shadow-[var(--shadow-overlay)]` sites; the sweep
-     replaces them with `shadow-md`. It stays pinned to the MENU rung, so those
-     sites move to `shadow-md` with no visual change at all. */
-  --shadow-overlay: var(--elevation-menu);
   /* The 1px top edge on raised glass, composed as Tailwind's
      `--tw-inset-shadow` so `inset-highlight shadow-md` stacks correctly.
 
@@ -244,11 +134,6 @@
   --z-toast: 300;
   --z-tooltip: 400;
   --z-drag: 500;
-  /* Legacy z aliases, removed by the sweep. `--z-max` is the 9999–100000 band
-     the audit found; it stays until each of its 28 sites picks a layer. */
-  --z-dropdown: var(--z-popover);
-  --z-sticky: var(--z-titlebar);
-  --z-max: 9999;
 }
 
 /* ==========================================================================
@@ -279,9 +164,9 @@
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-tertiary);
-  background: var(--bg-raised);
-  border: 1px solid var(--border-default);
+  color: var(--muted-foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 4px;
   letter-spacing: 0.04em;
 }
@@ -294,9 +179,9 @@
   padding: 0 8px;
   border-radius: 9999px;
   font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-raised);
-  border: 1px solid var(--border-default);
+  color: var(--secondary-foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
   white-space: nowrap;
 }
 .pill-bare {

@@ -9,7 +9,7 @@
  *
  * Extracted after the second copy appeared. The copies had already drifted:
  * one used `--accent-positive` with a hex fallback the token never defined,
- * the other the real `--stat-added`, which happen to be the same green — so the
+ * the other the real `--atlas-diff-added-text`, which happen to be the same green — so the
  * drift was invisible until a theme remapped one of them.
  */
 
@@ -23,10 +23,10 @@ import type { GitSummary } from "../stores/project-git-store";
 export function GitDot({ summary, className }: { summary?: GitSummary; className?: string }) {
   const color =
     !summary || !summary.isRepo
-      ? "var(--text-tertiary)"
+      ? "var(--muted-foreground)"
       : summary.dirty
-        ? "var(--status-warning)"
-        : "var(--capture-live)";
+        ? "var(--atlas-status-warning-foreground)"
+        : "var(--atlas-status-success-foreground)";
   return (
     <span
       className={cn("size-2 shrink-0 rounded-full", className)}
@@ -47,7 +47,7 @@ export function BranchLine({ summary, className }: { summary?: GitSummary; class
   return (
     <span
       className={cn(
-        "flex items-center gap-1 text-2xs leading-tight text-[var(--text-tertiary)]",
+        "flex items-center gap-1 text-2xs leading-tight text-[var(--muted-foreground)]",
         className,
       )}
     >
@@ -65,12 +65,12 @@ export function BranchLine({ summary, className }: { summary?: GitSummary; class
 export function NumStatPill({ summary }: { summary?: GitSummary }) {
   if (!summary || (summary.additions === 0 && summary.deletions === 0)) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-elevated)] px-1.5 py-[1px] font-mono text-3xs">
+    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--card)] px-1.5 py-[1px] font-mono text-3xs">
       {summary.additions > 0 && (
-        <span className="text-[var(--stat-added)]">+{summary.additions}</span>
+        <span className="text-[var(--atlas-diff-added-text)]">+{summary.additions}</span>
       )}
       {summary.deletions > 0 && (
-        <span className="text-[var(--stat-removed)]">−{summary.deletions}</span>
+        <span className="text-[var(--atlas-diff-removed-text)]">−{summary.deletions}</span>
       )}
     </span>
   );

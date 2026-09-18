@@ -145,7 +145,7 @@ export function TitlebarDock({
         ref={pill}
         className={cn(
           "flex h-6 items-center gap-1 rounded-full px-1 py-0.5",
-          "border border-border-subtle bg-bg-elevated",
+          "border border-border-subtle bg-card",
         )}
       >
         {items.map((item, index) => (
@@ -163,10 +163,10 @@ export function TitlebarDock({
             aria-label={item.title ?? item.label}
             className={cn(
               "relative flex size-5 items-center justify-center rounded-full outline-none",
-              "text-text-tertiary transition-colors duration-150",
+              "text-muted-foreground transition-colors duration-150",
               item.disabled
                 ? "cursor-default opacity-60"
-                : "cursor-pointer hover:bg-bg-hover hover:text-text-primary",
+                : "cursor-pointer hover:bg-element-hover hover:text-foreground",
             )}
           >
             {item.icon}
@@ -215,7 +215,7 @@ export function TitlebarDock({
         <div
           className={cn(
             "flex w-max",
-            "bg-popover text-text-primary",
+            "bg-popover text-foreground",
             "outline outline-1 outline-[var(--border)]",
             "shadow-md",
           )}

@@ -17,7 +17,7 @@
  * stylesheet changes colour and nothing else. `.diff-syntax` (specificity
  * 0,2,0) still out-specifies every rule below, which is how the diff view and
  * the artifacts code block keep their own scope; both already read the same
- * keys through `--cm-*`, so the two agree by construction rather than by luck.
+ * `--atlas-syntax-*` keys, so the two agree by construction rather than by luck.
  *
  * Unlayered, like the stylesheet it replaces: an `@layer` rule loses to every
  * unlayered rule regardless of specificity, and `globals.css` styles `pre code`

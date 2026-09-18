@@ -71,7 +71,7 @@ export function ChatSearchPalette({
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[560px] max-h-[440px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border)]",
+            "bg-[var(--card)] border border-[var(--border)]",
             "shadow-md",
             "flex flex-col",
           )}
@@ -81,22 +81,22 @@ export function ChatSearchPalette({
         >
           <Dialog.Title className="sr-only">Find user message</Dialog.Title>
           <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border)] shrink-0">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Find a question you asked…"
-              className="flex-1 bg-transparent outline-none text-base text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent outline-none text-base text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
-            <span className="text-2xs text-[var(--text-tertiary)] font-mono">
+            <span className="text-2xs text-[var(--muted-foreground)] font-mono">
               {filtered.length}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto hide-scrollbar py-1">
             {filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 {userMessages.length === 0 ? "No user messages yet." : "No matches."}
               </div>
             ) : (
@@ -117,7 +117,9 @@ export function ChatSearchPalette({
                     }}
                     className={cn(
                       "w-full flex items-start gap-3 px-4 py-2 text-left cursor-pointer",
-                      active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                      active
+                        ? "bg-[var(--atlas-element-selected)]"
+                        : "hover:bg-[var(--atlas-element-hover)]",
                     )}
                   >
                     <span
@@ -129,12 +131,14 @@ export function ChatSearchPalette({
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+                        <span className="text-xs font-semibold text-[var(--secondary-foreground)] uppercase tracking-wide">
                           You
                         </span>
-                        <span className="text-2xs font-mono text-[var(--text-tertiary)]">{ts}</span>
+                        <span className="text-2xs font-mono text-[var(--muted-foreground)]">
+                          {ts}
+                        </span>
                       </div>
-                      <div className="text-sm text-[var(--text-primary)] truncate mt-0.5">
+                      <div className="text-sm text-[var(--foreground)] truncate mt-0.5">
                         {preview}
                       </div>
                     </div>
@@ -143,7 +147,7 @@ export function ChatSearchPalette({
               })
             )}
           </div>
-          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border)] text-2xs text-[var(--text-tertiary)] shrink-0">
+          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border)] text-2xs text-[var(--muted-foreground)] shrink-0">
             <KbdGroup>
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>

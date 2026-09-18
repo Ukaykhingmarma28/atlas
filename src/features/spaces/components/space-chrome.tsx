@@ -50,7 +50,7 @@ function SyncDot({ sync }: { sync: SyncState }) {
         render={
           <span className="flex h-4 w-4 shrink-0 items-center justify-center">
             {sync === "syncing" ? (
-              <Loader2 size={11} className="animate-spin text-text-tertiary" />
+              <Loader2 size={11} className="animate-spin text-muted-foreground" />
             ) : (
               <span
                 className={cn(
@@ -97,7 +97,7 @@ export function SpaceHeaderPill({
     <div
       className={cn(
         "absolute left-3 top-3 z-panel flex items-center gap-1.5 py-1 pl-1 pr-1",
-        "rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 shadow-md backdrop-blur-2xl",
+        "rounded-xl border border-border-subtle bg-[var(--card)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
       <Hint label={pagesOpen ? "Hide pages" : "Show pages"}>
@@ -107,8 +107,8 @@ export function SpaceHeaderPill({
           className={cn(
             "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors",
             pagesOpen
-              ? "bg-bg-selected text-text-primary"
-              : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
+              ? "bg-element-selected text-foreground"
+              : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
           )}
         >
           <PanelLeft size={13} />
@@ -124,19 +124,19 @@ export function SpaceHeaderPill({
             <button
               type="button"
               title="Switch page"
-              className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-bg-hover"
+              className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-element-hover"
             >
               <SyncDot sync={sync} />
-              <span className="max-w-[180px] truncate text-sm font-semibold text-text-primary">
+              <span className="max-w-[180px] truncate text-sm font-semibold text-foreground">
                 {active?.name || "Space"}
               </span>
-              <ChevronDown size={11} className="shrink-0 text-text-tertiary" />
+              <ChevronDown size={11} className="shrink-0 text-muted-foreground" />
             </button>
           }
         />
         <Popover.Portal>
           <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
-            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--bg-elevated)]/95 backdrop-blur-2xl">
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 backdrop-blur-2xl">
               <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
                 {selectable.map((p) => (
                   <button
@@ -147,8 +147,8 @@ export function SpaceHeaderPill({
                       setOpen(false);
                     }}
                     className={cn(
-                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-hover)]",
-                      p.id === activePageId ? "text-text-primary" : "text-text-secondary",
+                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--atlas-element-hover)]",
+                      p.id === activePageId ? "text-foreground" : "text-secondary-foreground",
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
@@ -158,7 +158,7 @@ export function SpaceHeaderPill({
                   </button>
                 ))}
                 {selectable.length === 0 && (
-                  <div className="px-3 py-2 text-2xs text-text-tertiary">No pages yet.</div>
+                  <div className="px-3 py-2 text-2xs text-muted-foreground">No pages yet.</div>
                 )}
               </div>
             </Popover.Popup>
@@ -172,7 +172,7 @@ export function SpaceHeaderPill({
         <button
           type="button"
           onClick={() => rf.fitView({ duration: 350, padding: 0.2 })}
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
         >
           <Crosshair size={12} />
         </button>
@@ -191,7 +191,7 @@ function ZoomReadout() {
   const { zoom } = useViewport();
   const pct = Math.round(zoom * 100);
   const step =
-    "flex h-6 w-5 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary";
+    "flex h-6 w-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground";
   return (
     <div className="flex items-center">
       <Hint label="Zoom out">
@@ -205,7 +205,7 @@ function ZoomReadout() {
             <button
               type="button"
               onClick={() => void rf.zoomTo(1, { duration: 200 })}
-              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-xs tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-xs tabular-nums text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
             >
               {pct}%
             </button>
@@ -310,7 +310,7 @@ export function SpaceActionPill({
     <div
       className={cn(
         "absolute right-3 top-3 z-panel flex h-8 items-center gap-1 rounded-xl border border-border-subtle px-1.5",
-        "bg-[var(--bg-secondary)]/70 shadow-md backdrop-blur-2xl",
+        "bg-[var(--card)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
       {/* Presence */}
@@ -332,7 +332,7 @@ export function SpaceActionPill({
                       className={cn(
                         "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
                         riding &&
-                          "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--primary)]",
+                          "z-10 scale-110 shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--primary)]",
                       )}
                       style={{ ["--tw-ring-color" as string]: a.colour }}
                     >
@@ -353,7 +353,7 @@ export function SpaceActionPill({
                   <CommsAvatar
                     member={me ? memberOf(me) : null}
                     size={18}
-                    className="rounded-full ring-2 ring-[var(--bg-secondary)]"
+                    className="rounded-full ring-2 ring-[var(--card)]"
                   />
                 </span>
               }
@@ -364,7 +364,7 @@ export function SpaceActionPill({
           </Tooltip>
         </div>
         {peers.length > 4 && (
-          <span className="pl-1.5 text-2xs text-text-tertiary">+{peers.length - 4}</span>
+          <span className="pl-1.5 text-2xs text-muted-foreground">+{peers.length - 4}</span>
         )}
         {followers.length > 0 && (
           <Tooltip>
@@ -391,7 +391,7 @@ export function SpaceActionPill({
         <button
           type="button"
           onClick={openInWeb}
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
         >
           <ExternalLink size={12} />
         </button>
@@ -406,7 +406,7 @@ export function SpaceActionPill({
               <button
                 type="button"
                 disabled={!!busy}
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:opacity-60"
               >
                 {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
               </button>
@@ -415,16 +415,16 @@ export function SpaceActionPill({
         </Hint>
         <Popover.Portal>
           <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--bg-elevated)]/95 backdrop-blur-2xl">
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 backdrop-blur-2xl">
               <div className="flex w-[140px] flex-col py-1">
                 {FORMATS.map((f) => (
                   <button
                     key={f.format}
                     type="button"
                     onClick={() => void run(f.format)}
-                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-secondary-foreground transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-foreground"
                   >
-                    <f.icon size={12} className="shrink-0 text-text-tertiary" />
+                    <f.icon size={12} className="shrink-0 text-muted-foreground" />
                     {f.label}
                   </button>
                 ))}
