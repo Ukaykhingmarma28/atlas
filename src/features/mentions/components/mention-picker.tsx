@@ -569,7 +569,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
           ...positionStyle,
           width: PICKER_WIDTH,
           maxHeight: PICKER_MAX_HEIGHT,
-          zIndex: 9999,
+          zIndex: "var(--z-popover)",
         }}
       >
         {rows.length === 0 || (rows.length === 1 && rows[0].type === "header") ? (

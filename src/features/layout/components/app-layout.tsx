@@ -181,7 +181,7 @@ export function AppLayout() {
               // while the switcher is open and during its enter/exit — the animation
               // reads as a clean focus transition rather than exposing a mid-load
               // centre. Both are compositor-cheap once established.
-              "absolute inset-0 z-[55] bg-black/28 backdrop-blur-md transition-opacity ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+              "absolute inset-0 z-drawer bg-black/28 backdrop-blur-md transition-opacity ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
               // Closing is 50% slower than opening (300 → 450ms).
               sidebarOpen
                 ? "opacity-100 duration-300"
@@ -207,7 +207,7 @@ export function AppLayout() {
           parked off the left edge, transparent. */}
           <div
             className={cn(
-              "absolute left-0 top-0 h-screen w-[244px] z-[60] border-r border-white/[0.07] backdrop-blur-2xl transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none [backface-visibility:hidden]",
+              "absolute left-0 top-0 h-screen w-[244px] z-drawer border-r border-white/[0.07] backdrop-blur-2xl transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none [backface-visibility:hidden]",
               // Closing (slide-out) is 50% slower than opening (300 → 450ms).
               sidebarOpen ? "duration-300" : "duration-[450ms]",
               // The gradient rail. Linux gets the opaque variant — no

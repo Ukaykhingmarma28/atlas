@@ -37,11 +37,11 @@ export function UpdateAvailableModal() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[var(--z-overlay)]" />
+        <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm z-overlay" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)]",
+            "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-modal",
             "w-[300px] rounded-2xl overflow-hidden",
             // macOS-style vibrancy: translucent panel over a blurred backdrop.
             "bg-[var(--card)]/70 backdrop-blur-2xl border border-white/10",

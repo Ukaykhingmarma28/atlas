@@ -58,13 +58,13 @@ export function NotificationPanel() {
     <>
       {/* Scrim — subtle; the blurred panel carries the depth. */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-drawer bg-black/10 animate-fade-in"
         onClick={close}
         aria-hidden
       />
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[9999] w-[360px] flex flex-col",
+          "fixed right-0 top-0 bottom-0 z-drawer w-[360px] flex flex-col",
           "border-l border-[var(--border)]",
           "bg-[var(--card)]/60 backdrop-blur-2xl",
           "shadow-md animate-slide-in-right",

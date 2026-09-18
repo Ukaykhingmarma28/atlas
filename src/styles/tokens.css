@@ -128,6 +128,14 @@
      dialog is not clipped behind it. */
   --z-panel: 10;
   --z-titlebar: 40;
+  /* An app-level panel that slides in OVER the chrome and is dismissed by a
+     click outside: the project rail, the notification drawer. It has to clear
+     the titlebar, and it has to lose to a dialog. Nothing named that band, so
+     the two drawers wrote 55/60 and 9998/9999 instead and disagreed about
+     which of them was on top. A drawer's own scrim is an earlier SIBLING on
+     this same layer rather than a layer of its own — they share a stacking
+     context, so document order already puts the panel above its dim. */
+  --z-drawer: 60;
   --z-overlay: 100;
   --z-modal: 110;
   --z-popover: 200;

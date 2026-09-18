@@ -323,6 +323,9 @@
 @utility z-titlebar {
   z-index: var(--z-titlebar);
 }
+@utility z-drawer {
+  z-index: var(--z-drawer);
+}
 @utility z-overlay {
   z-index: var(--z-overlay);
 }

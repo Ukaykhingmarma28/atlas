@@ -161,13 +161,14 @@ One thing to keep in mind:
 
 ## Z-index
 
-Eight named layers (decision 28). Nothing outside `globals.css` writes a
+Nine named layers (decision 28). Nothing outside `globals.css` writes a
 z-index — not a class, not an inline style.
 
 | utility | value | what sits there |
 |---|---|---|
 | `z-panel` | 10 | in-panel stacking: sticky headers, resize handles |
 | `z-titlebar` | 40 | the titlebar and its dock |
+| `z-drawer` | 60 | a panel that slides over the chrome: the project rail, the notification drawer |
 | `z-overlay` | 100 | a dialog's scrim |
 | `z-modal` | 110 | the dialog itself |
 | `z-popover` | 200 | menus, popovers, comboboxes |
@@ -178,6 +179,14 @@ z-index — not a class, not an inline style.
 `popover` sits **above** `modal` deliberately: a menu opened inside a dialog has
 to escape it. That is the ordering bug the audit found, where everything shared
 9999.
+
+`drawer` was the band nothing named. A drawer has to clear the titlebar and has
+to lose to a dialog, so the project rail wrote `z-[55]`/`z-[60]` and the
+notification drawer wrote `z-[9998]`/`z-[9999]` — two answers to one question,
+and the second one put a dismissible drawer above every modal in the app. **A
+drawer's own scrim is an earlier sibling on the same layer**, not a layer of its
+own: they share a stacking context, so document order already puts the panel
+above its dim, and `overlay`/`modal` stay the dialog's pair.
 
 ## Motion
 

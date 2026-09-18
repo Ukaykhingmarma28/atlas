@@ -231,7 +231,7 @@ export function HintGroup({
           <div
             aria-hidden
             data-slot="hint-group-tooltip"
-            className="pointer-events-none fixed left-0 z-[9999]"
+            className="pointer-events-none fixed left-0 z-tooltip"
             style={{
               ...(side === "bottom" ? { top: geometry?.y ?? 0 } : { bottom: geometry?.y ?? 0 }),
               transformOrigin: `${geometry?.originX ?? 0}px ${side === "bottom" ? "0%" : "100%"}`,

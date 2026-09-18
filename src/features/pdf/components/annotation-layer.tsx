@@ -132,13 +132,13 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
   const selectedNote = notes.find((n) => n.id === selectedId);
 
   return (
-    // z-index 5 sits ABOVE react-pdf's text layer (z-index: 2) so the drawing
+    // `z-panel` (10) sits ABOVE react-pdf's text layer (z-index: 2) so the drawing
     // svg and note pins actually receive pointer events. The container itself
     // is click-through (`pointer-events: none`) so PDF text selection/links
     // still work in read mode; the svg/pins re-enable pointer-events as needed.
     <div
       className="absolute inset-0"
-      style={{ width: pageW, height: pageH, zIndex: 5, pointerEvents: "none" }}
+      style={{ width: pageW, height: pageH, zIndex: "var(--z-panel)", pointerEvents: "none" }}
     >
       <svg
         ref={svgRef}
