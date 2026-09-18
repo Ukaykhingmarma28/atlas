@@ -71,21 +71,5 @@ diff.removed.background	Removed line or hunk. Source: palette.red → Atlas defa
 diff.removed.emphasis	Changed words inside a removed line. Source: palette.red → Atlas default. Transform: alpha 0.34.
 diff.removed.text	Removed diff text, and the -N line statistic. Source: palette.red → Atlas default.
 diff.context.background	Unchanged diff context. Source: base.background → Atlas default.
-agent.claude.foreground	Claude identity chip. Source: palette.orange → Atlas default.
-agent.claude.background	Claude identity background. Source: palette.orange → Atlas default. Transform: alpha 0.1.
-agent.gpt.foreground	GPT identity chip. Source: palette.green → Atlas default.
-agent.gpt.background	GPT identity background. Source: palette.green → Atlas default. Transform: alpha 0.1.
-agent.gemini.foreground	Gemini identity chip. Source: palette.blue → Atlas default.
-agent.gemini.background	Gemini identity background. Source: palette.blue → Atlas default. Transform: alpha 0.1.
-agent.local.foreground	Local-agent identity chip. Source: palette.purple → Atlas default.
-agent.local.background	Local-agent identity background. Source: palette.purple → Atlas default. Transform: alpha 0.1.
-agent.cursor.foreground	Cursor identity chip. Source: palette.yellow → Atlas default.
-agent.cursor.background	Cursor identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1.
-agent.amp.foreground	Amp identity chip. Source: palette.pink → Atlas default.
-agent.amp.background	Amp identity background. Source: palette.pink → Atlas default. Transform: alpha 0.1.
-agent.codex.foreground	Codex identity chip. Source: palette.green → Atlas default.
-agent.codex.background	Codex identity background. Source: palette.green → Atlas default. Transform: alpha 0.1.
-agent.opencode.foreground	OpenCode identity chip. Source: base.muted-foreground → Atlas default.
-agent.opencode.background	OpenCode identity background. Source: base.muted-foreground → Atlas default. Transform: alpha 0.1.
-agent.kilo.foreground	Kilo identity chip. Source: palette.yellow → Atlas default.
-agent.kilo.background	Kilo identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1.
+agent.chip.foreground	Agent identity chip text. Source: base.foreground → Atlas default.
+agent.chip.background	Agent identity chip fill. Source: base.foreground → Atlas default. Transform: alpha 0.06.

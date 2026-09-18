@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { useAppStore } from "@/features/app/stores/app-store";
+import { agentBrandColor } from "@/features/agents/lib/agent-brand";
 import { useMemoryGraphStore } from "../stores/memory-graph-store";
 import { MemoryGraphCanvas } from "./memory-graph-canvas";
 import { MemoryTreeView } from "./memory-tree-view";
@@ -483,16 +484,9 @@ function GraphReady({
 }
 
 function SourceDot({ source }: { source: string }) {
-  const color =
-    source === "codex"
-      ? "var(--status-info)"
-      : source === "opencode"
-        ? "var(--agent-opencode-chip)"
-        : source === "cursor"
-          ? "var(--agent-cursor-chip)"
-          : source === "kilo"
-            ? "var(--agent-kilo-chip)"
-            : "var(--primary)";
+  // The vendor marks are constants (`agent-brand.ts`); anything else is the
+  // theme's own primary.
+  const color = agentBrandColor(source) ?? "var(--primary)";
   return <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />;
 }
 

@@ -96,15 +96,24 @@ const RULES: Rule[] = [
  *
  * `theme-key-registry.ts` is the whole argument: it is the one table of Atlas's
  * per-appearance default for every theme key, so every entry is a colour
- * literal BY CONSTRUCTION — 271 of them, 37% of the whole count, which the
- * sweep can never remove and which "use a theme key instead" cannot apply to,
- * since this file is what a theme key resolves through. Leaving them in made
- * the target unreachable and every real movement in the number invisible.
+ * literal BY CONSTRUCTION — a large share of the whole count, which the sweep
+ * can never remove and which "use a theme key instead" cannot apply to, since
+ * this file is what a theme key resolves through. Leaving them in made the
+ * target unreachable and every real movement in the number invisible.
+ *
+ * `agent-brand.ts` is the same argument from the other direction: it holds the
+ * five first-party agents' OWN brand colours, which are a third party's and
+ * therefore the one kind of colour a theme key must not be able to restate
+ * (ADR-0002, and the 2026-09-18 key-set audit that deleted the eighteen
+ * `agent.*` keys). There is nothing for the sweep to replace them with.
  *
  * Add to this list only for a file that is itself a definition of the scale.
  * "It has a lot of them" is not a reason.
  */
-const DEFINITION_FILES = new Set(["src/features/theme/theme-key-registry.ts"]);
+const DEFINITION_FILES = new Set([
+  "src/features/theme/theme-key-registry.ts",
+  "src/features/agents/lib/agent-brand.ts",
+]);
 
 function walk(dir: string): string[] {
   const out: string[] = [];

@@ -28,8 +28,6 @@ export interface AgentMeta {
   /** First-party brand icon key, or null → use `iconDataUrl` / monogram. */
   firstPartyIcon: FirstPartyAgent | null;
   iconDataUrl: string | null;
-  /** `.agent-*` token class for the amark badge ("" for externals). */
-  cssClass: string;
   external: boolean;
   /** How a spawn would launch this agent right now — `null` before the catalog
    *  hydrates. Never treat as immutable: discovery lands asynchronously and
@@ -45,18 +43,21 @@ export function catalogEntry(agentTypeOrPluginId: string): AgentCatalogEntry | n
   return useAgentRegistryStore.getState().catalogById[agentTypeOrPluginId] ?? null;
 }
 
-const FIRST_PARTY_CSS: Record<FirstPartyAgent, string> = {
-  "claude-code": "agent-claude",
-  codex: "agent-codex",
-  opencode: "agent-opencode",
-  cursor: "agent-cursor",
-  kilo: "agent-kilo",
-  cersei: "agent-cersei",
-};
+/** The identities Atlas ships a brand mark and a fixed label for. Their chip
+ *  is the neutral `agent.chip.*` pair; their MARK is tinted from
+ *  `agent-brand.ts`, which is a constant rather than a theme key (ADR-0002). */
+const FIRST_PARTY: readonly FirstPartyAgent[] = [
+  "claude-code",
+  "codex",
+  "opencode",
+  "cursor",
+  "kilo",
+  "cersei",
+];
 
 /** Map an agentType OR plugin id to first-party identity, when it is one. */
 function firstPartyOf(id: string): FirstPartyAgent | null {
-  if (id in FIRST_PARTY_CSS) return id as FirstPartyAgent;
+  if (FIRST_PARTY.includes(id as FirstPartyAgent)) return id as FirstPartyAgent;
   if (id === "claude-code-ts" || id === "claude-code-rs" || id.startsWith("claude"))
     return "claude-code";
   return null;
@@ -81,16 +82,15 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
   const catalog = catalogEntry(id);
   const firstParty = firstPartyOf(id);
   if (firstParty) {
-    // First-party branding stays STATIC on purpose: labels, brand icons and
-    // CSS tokens are Atlas's own design, not registry metadata, and this path
-    // is called from non-reactive boot code before any catalog exists.
+    // First-party branding stays STATIC on purpose: labels and brand icons are
+    // Atlas's own design, not registry metadata, and this path is called from
+    // non-reactive boot code before any catalog exists.
     return {
       pluginId: PLUGIN_ID_BY_AGENT[firstParty],
       agentType: firstParty,
       label: AGENT_LABEL[firstParty],
       firstPartyIcon: firstParty,
       iconDataUrl: null,
-      cssClass: FIRST_PARTY_CSS[firstParty],
       external: false,
       source: catalog?.source ?? null,
       availability: catalog ? availabilityOf(catalog) : null,
@@ -106,7 +106,6 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
     label: catalog?.name ?? entry?.name ?? prettifyId(id),
     firstPartyIcon: null,
     iconDataUrl: catalog?.iconDataUrl ?? entry?.iconDataUrl ?? null,
-    cssClass: "",
     external: true,
     source: catalog?.source ?? null,
     availability: catalog ? availabilityOf(catalog) : null,

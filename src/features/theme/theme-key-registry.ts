@@ -536,122 +536,27 @@ export const THEME_KEY_REGISTRY = [
     description: "Unchanged diff context.",
   }),
 
-  define("agent.claude.foreground", {
-    palette: "orange",
-    dark: "#c98263",
-    light: "#b4637a",
-    description: "Claude identity chip.",
+  /**
+   * Two keys, not eighteen. There WAS one pair per vendor — and eight of those
+   * named agents that do not exist, while three more were overridden by hardcoded
+   * CSS. ADR-0002 forbids privileging an agent, and the installed set is discovered
+   * at runtime, so a theme author cannot enumerate it in the first place. The
+   * vendors' own brand hues are now plain constants beside `agentMeta()`; this pair
+   * is the neutral chip every identity falls back to, which is what lets a
+   * monochrome theme flatten the lot.
+   */
+  define("agent.chip.foreground", {
+    base: "foreground",
+    dark: "#ffffff",
+    light: "#575279",
+    description: "Agent identity chip text.",
   }),
-  define("agent.claude.background", {
-    palette: "orange",
-    transform: alpha(0.1),
-    dark: "rgba(201,130,99,0.1)",
-    light: "rgba(180,99,122,0.1)",
-    description: "Claude identity background.",
-  }),
-  define("agent.gpt.foreground", {
-    palette: "green",
-    dark: "#5fb39a",
-    light: "#286983",
-    description: "GPT identity chip.",
-  }),
-  define("agent.gpt.background", {
-    palette: "green",
-    transform: alpha(0.1),
-    dark: "rgba(95,179,154,0.1)",
-    light: "rgba(40,105,131,0.1)",
-    description: "GPT identity background.",
-  }),
-  define("agent.gemini.foreground", {
-    palette: "blue",
-    dark: "#7aa7e8",
-    light: "#56949f",
-    description: "Gemini identity chip.",
-  }),
-  define("agent.gemini.background", {
-    palette: "blue",
-    transform: alpha(0.1),
-    dark: "rgba(122,167,232,0.1)",
-    light: "rgba(86,148,159,0.1)",
-    description: "Gemini identity background.",
-  }),
-  define("agent.local.foreground", {
-    palette: "purple",
-    dark: "#b8a3df",
-    light: "#907aa9",
-    description: "Local-agent identity chip.",
-  }),
-  define("agent.local.background", {
-    palette: "purple",
-    transform: alpha(0.1),
-    dark: "rgba(184,163,223,0.1)",
-    light: "rgba(144,122,169,0.1)",
-    description: "Local-agent identity background.",
-  }),
-  define("agent.cursor.foreground", {
-    palette: "yellow",
-    dark: "#d9b56e",
-    light: "#ea9d34",
-    description: "Cursor identity chip.",
-  }),
-  define("agent.cursor.background", {
-    palette: "yellow",
-    transform: alpha(0.1),
-    dark: "rgba(217,181,110,0.1)",
-    light: "rgba(234,157,52,0.1)",
-    description: "Cursor identity background.",
-  }),
-  define("agent.amp.foreground", {
-    palette: "pink",
-    dark: "#d68aae",
-    light: "#d7827e",
-    description: "Amp identity chip.",
-  }),
-  define("agent.amp.background", {
-    palette: "pink",
-    transform: alpha(0.1),
-    dark: "rgba(214,138,174,0.1)",
-    light: "rgba(215,130,126,0.1)",
-    description: "Amp identity background.",
-  }),
-  define("agent.codex.foreground", {
-    palette: "green",
-    dark: "#10a37f",
-    light: "#286983",
-    description: "Codex identity chip.",
-  }),
-  define("agent.codex.background", {
-    palette: "green",
-    transform: alpha(0.1),
-    dark: "rgba(16,163,127,0.1)",
-    light: "rgba(40,105,131,0.1)",
-    description: "Codex identity background.",
-  }),
-  define("agent.opencode.foreground", {
-    base: "muted-foreground",
-    dark: "#9ca3af",
-    light: "#797593",
-    description: "OpenCode identity chip.",
-  }),
-  define("agent.opencode.background", {
-    base: "muted-foreground",
-    transform: alpha(0.1),
-    dark: "rgba(156,163,175,0.1)",
-    light: "rgba(121,117,147,0.1)",
-    description: "OpenCode identity background.",
-  }),
-  define("agent.kilo.foreground", {
-    palette: "yellow",
-    dark: "#f0c53d",
-    light: "#ea9d34",
-    description: "Kilo identity chip.",
-  }),
-  define("agent.kilo.background", {
-    palette: "yellow",
-    transform: alpha(0.1),
-    dark: "rgba(240,197,61,0.1)",
-    light: "rgba(234,157,52,0.1)",
-    description: "Kilo identity background.",
+  define("agent.chip.background", {
+    base: "foreground",
+    transform: alpha(0.06),
+    dark: "rgba(255,255,255,0.06)",
+    light: "rgba(0,0,0,0.06)",
+    description: "Agent identity chip fill.",
   }),
 ] as const;
 

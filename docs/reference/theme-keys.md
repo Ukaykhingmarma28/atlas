@@ -65,7 +65,7 @@ later. Every non-CSS consumer subscribes to one of the last two.
 
 ## Full key list and derivation sources
 
-All **87** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
+All **71** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
 **Source** is the first thing Atlas tries after an explicit `keys` value:
 `P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the
 active appearance, shown here as dark / light. **Transform** is applied to
@@ -212,28 +212,12 @@ Added and removed regions, inline and side-by-side.
 
 ### Agents and indicators
 
-Per-agent identity chips.
+The agent identity chip.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `agent.claude.foreground` | P:orange → D | — | `#c98263` / `#b4637a` | Claude identity chip. |
-| `agent.claude.background` | P:orange → D | alpha 0.1 | `rgba(201,130,99,0.1)` / `rgba(180,99,122,0.1)` | Claude identity background. |
-| `agent.gpt.foreground` | P:green → D | — | `#5fb39a` / `#286983` | GPT identity chip. |
-| `agent.gpt.background` | P:green → D | alpha 0.1 | `rgba(95,179,154,0.1)` / `rgba(40,105,131,0.1)` | GPT identity background. |
-| `agent.gemini.foreground` | P:blue → D | — | `#7aa7e8` / `#56949f` | Gemini identity chip. |
-| `agent.gemini.background` | P:blue → D | alpha 0.1 | `rgba(122,167,232,0.1)` / `rgba(86,148,159,0.1)` | Gemini identity background. |
-| `agent.local.foreground` | P:purple → D | — | `#b8a3df` / `#907aa9` | Local-agent identity chip. |
-| `agent.local.background` | P:purple → D | alpha 0.1 | `rgba(184,163,223,0.1)` / `rgba(144,122,169,0.1)` | Local-agent identity background. |
-| `agent.cursor.foreground` | P:yellow → D | — | `#d9b56e` / `#ea9d34` | Cursor identity chip. |
-| `agent.cursor.background` | P:yellow → D | alpha 0.1 | `rgba(217,181,110,0.1)` / `rgba(234,157,52,0.1)` | Cursor identity background. |
-| `agent.amp.foreground` | P:pink → D | — | `#d68aae` / `#d7827e` | Amp identity chip. |
-| `agent.amp.background` | P:pink → D | alpha 0.1 | `rgba(214,138,174,0.1)` / `rgba(215,130,126,0.1)` | Amp identity background. |
-| `agent.codex.foreground` | P:green → D | — | `#10a37f` / `#286983` | Codex identity chip. |
-| `agent.codex.background` | P:green → D | alpha 0.1 | `rgba(16,163,127,0.1)` / `rgba(40,105,131,0.1)` | Codex identity background. |
-| `agent.opencode.foreground` | B:muted-foreground → D | — | `#9ca3af` / `#797593` | OpenCode identity chip. |
-| `agent.opencode.background` | B:muted-foreground → D | alpha 0.1 | `rgba(156,163,175,0.1)` / `rgba(121,117,147,0.1)` | OpenCode identity background. |
-| `agent.kilo.foreground` | P:yellow → D | — | `#f0c53d` / `#ea9d34` | Kilo identity chip. |
-| `agent.kilo.background` | P:yellow → D | alpha 0.1 | `rgba(240,197,61,0.1)` / `rgba(234,157,52,0.1)` | Kilo identity background. |
+| `agent.chip.foreground` | B:foreground → D | — | `#ffffff` / `#575279` | Agent identity chip text. |
+| `agent.chip.background` | B:foreground → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(0,0,0,0.06)` | Agent identity chip fill. |
 
 ## Derived variables
 
@@ -292,7 +276,7 @@ single token or key in the next cell.
 | `--comms-unread`, `--comms-unread-deep` | `status.success.foreground` |
 | `--comms-mention-text`, `--comms-mention-bg` | base `foreground`, the `element.emphasis` derived variable |
 | `--comms-mention-other-bg`, `--comms-mention-other-text` | **gone** — no consumer |
-| `--agent-*-chip`, `--agent-*-chip-bg` | `agent.chip.foreground`, `agent.chip.background`, plus the non-themeable brand hues beside `agentMeta()` |
+| `--agent-*-chip`, `--agent-*-chip-bg` | **gone** — the chip is `agent.chip.foreground` / `agent.chip.background`, and the vendors' brand hues are constants in `features/agents/lib/agent-brand.ts` |
 
 `--font-size-*`, `--space-*`, radius, shadow, z-index and motion variables
 are not theme keys. Their current rendered values are deliberately preserved

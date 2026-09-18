@@ -38,149 +38,21 @@
           "additionalProperties": false,
           "default": {},
           "properties": {
-            "agent.amp.background": {
+            "agent.chip.background": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Amp identity background. Source: palette.pink → Atlas default. Transform: alpha 0.1."
+              "description": "Agent identity chip fill. Source: base.foreground → Atlas default. Transform: alpha 0.06."
             },
-            "agent.amp.foreground": {
+            "agent.chip.foreground": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Amp identity chip. Source: palette.pink → Atlas default."
-            },
-            "agent.claude.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Claude identity background. Source: palette.orange → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.claude.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Claude identity chip. Source: palette.orange → Atlas default."
-            },
-            "agent.codex.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Codex identity background. Source: palette.green → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.codex.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Codex identity chip. Source: palette.green → Atlas default."
-            },
-            "agent.cursor.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Cursor identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.cursor.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Cursor identity chip. Source: palette.yellow → Atlas default."
-            },
-            "agent.gemini.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Gemini identity background. Source: palette.blue → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.gemini.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Gemini identity chip. Source: palette.blue → Atlas default."
-            },
-            "agent.gpt.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "GPT identity background. Source: palette.green → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.gpt.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "GPT identity chip. Source: palette.green → Atlas default."
-            },
-            "agent.kilo.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Kilo identity background. Source: palette.yellow → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.kilo.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Kilo identity chip. Source: palette.yellow → Atlas default."
-            },
-            "agent.local.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Local-agent identity background. Source: palette.purple → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.local.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Local-agent identity chip. Source: palette.purple → Atlas default."
-            },
-            "agent.opencode.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "OpenCode identity background. Source: base.muted-foreground → Atlas default. Transform: alpha 0.1."
-            },
-            "agent.opencode.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "OpenCode identity chip. Source: base.muted-foreground → Atlas default."
+              "description": "Agent identity chip text. Source: base.foreground → Atlas default."
             },
             "border.strong": {
               "allOf": [

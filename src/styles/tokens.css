@@ -150,25 +150,6 @@
   --cm-property: var(--atlas-syntax-property);
   --cm-meta: var(--atlas-syntax-attribute);
 
-  --agent-claude-chip: var(--atlas-agent-claude-foreground);
-  --agent-claude-chip-bg: var(--atlas-agent-claude-background);
-  --agent-gpt-chip: var(--atlas-agent-gpt-foreground);
-  --agent-gpt-chip-bg: var(--atlas-agent-gpt-background);
-  --agent-gemini-chip: var(--atlas-agent-gemini-foreground);
-  --agent-gemini-chip-bg: var(--atlas-agent-gemini-background);
-  --agent-local-chip: var(--atlas-agent-local-foreground);
-  --agent-local-chip-bg: var(--atlas-agent-local-background);
-  --agent-cursor-chip: var(--atlas-agent-cursor-foreground);
-  --agent-cursor-chip-bg: var(--atlas-agent-cursor-background);
-  --agent-amp-chip: var(--atlas-agent-amp-foreground);
-  --agent-amp-chip-bg: var(--atlas-agent-amp-background);
-  --agent-codex-chip: var(--atlas-agent-codex-foreground);
-  --agent-codex-chip-bg: var(--atlas-agent-codex-background);
-  --agent-opencode-chip: var(--atlas-agent-opencode-foreground);
-  --agent-opencode-chip-bg: var(--atlas-agent-opencode-background);
-  --agent-kilo-chip: var(--atlas-agent-kilo-foreground);
-  --agent-kilo-chip-bg: var(--atlas-agent-kilo-background);
-
   --font-ui: var(--font-sans);
   --font-display: -apple-system, "SF Pro Display", system-ui, sans-serif;
   --font-size-xxs: 10px;
@@ -335,61 +316,11 @@
   height: 8px;
 }
 
-/* Per-agent color helpers — surface --agent / --agent-bg / --agent-chip
-   so children read them off CSS custom properties. */
-.agent-claude {
-  --agent: var(--text-primary);
-  --agent-bg: rgba(255, 255, 255, 0.06);
-  --agent-chip: var(--text-primary);
-}
-.agent-gpt {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-gpt-chip-bg);
-  --agent-chip: var(--agent-gpt-chip);
-}
-.agent-gemini {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-gemini-chip-bg);
-  --agent-chip: var(--agent-gemini-chip);
-}
-.agent-local {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-local-chip-bg);
-  --agent-chip: var(--agent-local-chip);
-}
-.agent-cursor {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-cursor-chip-bg);
-  --agent-chip: var(--agent-cursor-chip);
-}
-.agent-amp {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-amp-chip-bg);
-  --agent-chip: var(--agent-amp-chip);
-}
-.agent-codex {
-  --agent: var(--text-primary);
-  --agent-bg: rgba(255, 255, 255, 0.06);
-  --agent-chip: var(--text-primary);
-}
-.agent-opencode {
-  --agent: var(--text-primary);
-  --agent-bg: rgba(255, 255, 255, 0.06);
-  --agent-chip: var(--text-primary);
-}
-.agent-kilo {
-  --agent: var(--text-primary);
-  --agent-bg: var(--agent-kilo-chip-bg);
-  --agent-chip: var(--agent-kilo-chip);
-}
-/* The native agent's mark (AtlasIcon) carries its own brand colors; the chip
-   square stays neutral like claude/codex. */
-.agent-cersei {
-  --agent: var(--text-primary);
-  --agent-bg: rgba(255, 255, 255, 0.06);
-  --agent-chip: var(--text-primary);
-}
-
+/* The agent chip. One neutral pair for every identity: the vendors' own hues
+   are constants in `features/agents/lib/agent-brand.ts` and tint the MARK
+   inside the chip, not the chip itself. There used to be ten `.agent-*`
+   classes here, four of which already hardcoded the neutral fill they were
+   supposed to theme, and five of which named agents Atlas cannot run. */
 .amark {
   width: 22px;
   height: 22px;
@@ -400,9 +331,9 @@
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  color: var(--agent-chip, var(--text-primary));
-  background: var(--agent-bg, var(--bg-raised));
-  border: 1px solid var(--border-default);
+  color: var(--atlas-agent-chip-foreground);
+  background: var(--atlas-agent-chip-background);
+  border: 1px solid var(--border);
   flex: none;
 }
 .amark-lg {

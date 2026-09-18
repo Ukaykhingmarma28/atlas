@@ -104,7 +104,7 @@ description = "Added and removed regions, inline and side-by-side."
 
 [[group]]
 name = "Agents and indicators"
-description = "Per-agent identity chips."
+description = "The agent identity chip."
 
 
 # ── Borders ───────────────────────────────────────────────────────────────────
@@ -755,166 +755,31 @@ light = "#faf4ed"
 # ── Agents and indicators ─────────────────────────────────────────────────────
 
 [[key]]
-name = "agent.claude.foreground"
+name = "agent.chip.foreground"
 group = "Agents and indicators"
-description = "Claude identity chip."
-palette = "orange"
-dark = "#c98263"
-light = "#b4637a"
+description = "Agent identity chip text."
+base = "foreground"
+dark = "#ffffff"
+light = "#575279"
+note = """
+Two keys, not eighteen. There WAS one pair per vendor — and eight of those
+named agents that do not exist, while three more were overridden by hardcoded
+CSS. ADR-0002 forbids privileging an agent, and the installed set is discovered
+at runtime, so a theme author cannot enumerate it in the first place. The
+vendors' own brand hues are now plain constants beside `agentMeta()`; this pair
+is the neutral chip every identity falls back to, which is what lets a
+monochrome theme flatten the lot.
+"""
 
 [[key]]
-name = "agent.claude.background"
+name = "agent.chip.background"
 group = "Agents and indicators"
-description = "Claude identity background."
-palette = "orange"
+description = "Agent identity chip fill."
+base = "foreground"
 op = "alpha"
-amount = 0.1
-dark = "rgba(201,130,99,0.1)"
-light = "rgba(180,99,122,0.1)"
-
-[[key]]
-name = "agent.gpt.foreground"
-group = "Agents and indicators"
-description = "GPT identity chip."
-palette = "green"
-dark = "#5fb39a"
-light = "#286983"
-
-[[key]]
-name = "agent.gpt.background"
-group = "Agents and indicators"
-description = "GPT identity background."
-palette = "green"
-op = "alpha"
-amount = 0.1
-dark = "rgba(95,179,154,0.1)"
-light = "rgba(40,105,131,0.1)"
-
-[[key]]
-name = "agent.gemini.foreground"
-group = "Agents and indicators"
-description = "Gemini identity chip."
-palette = "blue"
-dark = "#7aa7e8"
-light = "#56949f"
-
-[[key]]
-name = "agent.gemini.background"
-group = "Agents and indicators"
-description = "Gemini identity background."
-palette = "blue"
-op = "alpha"
-amount = 0.1
-dark = "rgba(122,167,232,0.1)"
-light = "rgba(86,148,159,0.1)"
-
-[[key]]
-name = "agent.local.foreground"
-group = "Agents and indicators"
-description = "Local-agent identity chip."
-palette = "purple"
-dark = "#b8a3df"
-light = "#907aa9"
-
-[[key]]
-name = "agent.local.background"
-group = "Agents and indicators"
-description = "Local-agent identity background."
-palette = "purple"
-op = "alpha"
-amount = 0.1
-dark = "rgba(184,163,223,0.1)"
-light = "rgba(144,122,169,0.1)"
-
-[[key]]
-name = "agent.cursor.foreground"
-group = "Agents and indicators"
-description = "Cursor identity chip."
-palette = "yellow"
-dark = "#d9b56e"
-light = "#ea9d34"
-
-[[key]]
-name = "agent.cursor.background"
-group = "Agents and indicators"
-description = "Cursor identity background."
-palette = "yellow"
-op = "alpha"
-amount = 0.1
-dark = "rgba(217,181,110,0.1)"
-light = "rgba(234,157,52,0.1)"
-
-[[key]]
-name = "agent.amp.foreground"
-group = "Agents and indicators"
-description = "Amp identity chip."
-palette = "pink"
-dark = "#d68aae"
-light = "#d7827e"
-
-[[key]]
-name = "agent.amp.background"
-group = "Agents and indicators"
-description = "Amp identity background."
-palette = "pink"
-op = "alpha"
-amount = 0.1
-dark = "rgba(214,138,174,0.1)"
-light = "rgba(215,130,126,0.1)"
-
-[[key]]
-name = "agent.codex.foreground"
-group = "Agents and indicators"
-description = "Codex identity chip."
-palette = "green"
-dark = "#10a37f"
-light = "#286983"
-
-[[key]]
-name = "agent.codex.background"
-group = "Agents and indicators"
-description = "Codex identity background."
-palette = "green"
-op = "alpha"
-amount = 0.1
-dark = "rgba(16,163,127,0.1)"
-light = "rgba(40,105,131,0.1)"
-
-[[key]]
-name = "agent.opencode.foreground"
-group = "Agents and indicators"
-description = "OpenCode identity chip."
-base = "muted-foreground"
-dark = "#9ca3af"
-light = "#797593"
-
-[[key]]
-name = "agent.opencode.background"
-group = "Agents and indicators"
-description = "OpenCode identity background."
-base = "muted-foreground"
-op = "alpha"
-amount = 0.1
-dark = "rgba(156,163,175,0.1)"
-light = "rgba(121,117,147,0.1)"
-
-[[key]]
-name = "agent.kilo.foreground"
-group = "Agents and indicators"
-description = "Kilo identity chip."
-palette = "yellow"
-dark = "#f0c53d"
-light = "#ea9d34"
-
-[[key]]
-name = "agent.kilo.background"
-group = "Agents and indicators"
-description = "Kilo identity background."
-palette = "yellow"
-op = "alpha"
-amount = 0.1
-dark = "rgba(240,197,61,0.1)"
-light = "rgba(234,157,52,0.1)"
+amount = 0.06
+dark = "rgba(255,255,255,0.06)"
+light = "rgba(0,0,0,0.06)"
 
 
 # ── Derived variables ─────────────────────────────────────────────────────────
