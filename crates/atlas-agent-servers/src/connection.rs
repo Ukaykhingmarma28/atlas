@@ -888,6 +888,10 @@ impl AgentConnection for AcpConnection {
         self.agent_capabilities.load_session
     }
 
+    fn supports_http_mcp(&self) -> bool {
+        self.agent_capabilities.mcp_capabilities.http
+    }
+
     fn load_session(
         self: Arc<Self>,
         session_id: acp::SessionId,

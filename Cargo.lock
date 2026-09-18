@@ -796,8 +796,10 @@ dependencies = [
  "atlas-agent-servers",
  "atlas-agent-store",
  "futures",
+ "serde_json",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

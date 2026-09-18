@@ -159,7 +159,7 @@ Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritt
 | external ACP agent | `atlas-agent-servers` | a subprocess over JSON-RPC/stdio |
 | native agent | `atlas-native-agent` | the ported Codex engine, in-process |
 
-Beyond `prompt` / `cancel` / `authenticate`, **every optional behaviour is capability-gated** — either a `supports_*` predicate (`supports_load_session`, `supports_resume_session`, `supports_close_session`, `supports_logout`) or an `Option<Arc<dyn …>>` sub-trait the connection returns only when the agent advertised it (`model_selector`, `session_modes`, `session_config_options`, `session_list`, `truncate`, `retry`, `set_title`, `telemetry`). A caller asks the connection what it can do; it never asks who it is.
+Beyond `prompt` / `cancel` / `authenticate`, **every optional behaviour is capability-gated** — either a `supports_*` predicate (`supports_load_session`, `supports_resume_session`, `supports_close_session`, `supports_logout`, `supports_http_mcp`) or an `Option<Arc<dyn …>>` sub-trait the connection returns only when the agent advertised it (`model_selector`, `session_modes`, `session_config_options`, `session_list`, `truncate`, `retry`, `set_title`, `telemetry`). A caller asks the connection what it can do; it never asks who it is.
 
 **Branching on agent identity is forbidden.** Capabilities come from what the agent advertised at `initialize`. An `if agent_id == "claude"` is a bug, not a shortcut — it is what made the pre-port stack impossible to extend to an agent nobody had hand-written support for.
 

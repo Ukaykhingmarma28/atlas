@@ -12,6 +12,8 @@
 
 #![allow(dead_code)]
 
+pub mod spawning;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
