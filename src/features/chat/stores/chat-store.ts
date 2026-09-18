@@ -1865,7 +1865,11 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       const seq = env.turn_seq;
       if (env.status === "running" || env.status === "waiting") {
         // Turn start / paused-for-user (plan / permission): adopt the turn
-        // identity and stay in an active (busy) state.
+        // identity and stay in an active (busy) state. A running/waiting for
+        // an already-superseded turn is dropped like a stale terminal: applied,
+        // it would flip a finished session back to busy with nothing left to
+        // clear it.
+        if (isStaleTurn(session, seq)) return;
         if (seq && seq > (session.currentTurnSeq ?? 0)) {
           session.currentTurnSeq = seq;
           // New turn — clear the previous turn's live plan so the docked panel
