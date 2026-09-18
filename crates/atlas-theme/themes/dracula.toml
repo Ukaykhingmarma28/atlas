@@ -65,7 +65,6 @@ pink = "#ff79c6"
 [dark.keys]
 "border.subtle" = "#21222c"
 "border.strong" = "#6272a4"
-"text.disabled" = "#21222c"
 "panel.background" = "#282a36"
 "panel.input.background" = "#282a36"
 "editor.background" = "#282a36"

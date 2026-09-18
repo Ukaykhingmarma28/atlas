@@ -90,7 +90,7 @@ Hover/selected/pressed overlays, the raised edge, and the brand fills.
 | `element.selected` | B:foreground → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(0,0,0,0.06)` | Selected overlay for ordinary elements. |
 | `element.active` | B:foreground → D | alpha 0.08 | `rgba(255,255,255,0.08)` / `rgba(0,0,0,0.08)` | Pressed overlay for ordinary elements. |
 | `element.highlight` | B:foreground → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(0,0,0,0.06)` | Top-edge highlight on a raised surface. |
-| `primary.hover` | B:primary → D | lighten 0.15 | `#cccccc` / `#a290b5` | Hovered primary-brand fill. |
+| `primary.hover` | B:primary → D | mix 0.15 → B:foreground | `#cccccc` / `#8875a1` | Hovered primary-brand fill. |
 | `primary.muted` | B:primary → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(144,122,169,0.08)` | Muted primary-brand fill. |
 
 ### Text
@@ -99,7 +99,7 @@ Prose roles that are not a base token.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `text.disabled` | B:muted-foreground → D | mix 0.35 → B:background | `#333333` / `#b8b1aa` | Disabled and unavailable text. |
+| `text.disabled` | B:muted-foreground → D | mix 0.2 → B:background | `#4a4a4a` / `#a39d96` | Disabled and unavailable text. |
 
 ### Status
 
@@ -129,7 +129,7 @@ The PTY surface and the 16 ANSI colours.
 | `terminal.foreground` | B:foreground → D | — | `#d4d4d4` / `#575279` | Terminal default foreground. |
 | `terminal.background` | B:background → D | — | `#000000` / `#faf4ed` | Terminal background. |
 | `terminal.cursor` | B:foreground → D | — | `#d4d4d4` / `#575279` | Terminal cursor. |
-| `terminal.ansi.black` | B:background → D | lighten 0.12 | `#1e1e1e` / `#575279` | ANSI black. |
+| `terminal.ansi.black` | B:background → D | mix 0.12 → B:foreground | `#1e1e1e` / `#575279` | ANSI black. |
 | `terminal.ansi.red` | P:red → D | — | `#f44747` / `#b4637a` | ANSI red. |
 | `terminal.ansi.green` | P:green → D | — | `#98c379` / `#286983` | ANSI green. |
 | `terminal.ansi.yellow` | P:yellow → D | — | `#e5c07b` / `#ea9d34` | ANSI yellow. |
@@ -138,12 +138,12 @@ The PTY surface and the 16 ANSI colours.
 | `terminal.ansi.cyan` | P:cyan → D | — | `#56b6c2` / `#d7827e` | ANSI cyan. |
 | `terminal.ansi.white` | B:foreground → D | — | `#d4d4d4` / `#575279` | ANSI white. |
 | `terminal.ansi.bright_black` | B:muted-foreground → D | — | `#666666` / `#9893a5` | ANSI bright black. |
-| `terminal.ansi.bright_red` | P:red → D | lighten 0.15 | `#ff6b6b` / `#c97991` | ANSI bright red. |
-| `terminal.ansi.bright_green` | P:green → D | lighten 0.15 | `#b2d89a` / `#4d8399` | ANSI bright green. |
-| `terminal.ansi.bright_yellow` | P:yellow → D | lighten 0.15 | `#f2d28c` / `#edae52` | ANSI bright yellow. |
-| `terminal.ansi.bright_blue` | P:blue → D | lighten 0.15 | `#82c0f3` / `#73a5ae` | ANSI bright blue. |
-| `terminal.ansi.bright_magenta` | P:purple → D | lighten 0.15 | `#d493e5` / `#a290b5` | ANSI bright magenta. |
-| `terminal.ansi.bright_cyan` | P:cyan → D | lighten 0.15 | `#78c7d0` / `#dd9794` | ANSI bright cyan. |
+| `terminal.ansi.bright_red` | P:red → D | mix 0.15 → B:foreground | `#ff6b6b` / `#c97991` | ANSI bright red. |
+| `terminal.ansi.bright_green` | P:green → D | mix 0.15 → B:foreground | `#b2d89a` / `#4d8399` | ANSI bright green. |
+| `terminal.ansi.bright_yellow` | P:yellow → D | mix 0.15 → B:foreground | `#f2d28c` / `#edae52` | ANSI bright yellow. |
+| `terminal.ansi.bright_blue` | P:blue → D | mix 0.15 → B:foreground | `#82c0f3` / `#73a5ae` | ANSI bright blue. |
+| `terminal.ansi.bright_magenta` | P:purple → D | mix 0.15 → B:foreground | `#d493e5` / `#a290b5` | ANSI bright magenta. |
+| `terminal.ansi.bright_cyan` | P:cyan → D | mix 0.15 → B:foreground | `#78c7d0` / `#dd9794` | ANSI bright cyan. |
 | `terminal.ansi.bright_white` | B:foreground → D | lighten 0.18 | `#ffffff` / `#464261` | ANSI bright white. |
 
 ### Syntax

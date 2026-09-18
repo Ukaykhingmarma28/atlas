@@ -32,10 +32,20 @@
 # ── The operation vocabulary (closed; adding one means editing the resolver) ──
 #
 #   alpha              replace the colour's alpha channel with `amount`.
-#   lighten            mix `amount` of white into the colour.
 #   toward_background  mix `amount` of `base.background` into the colour. Keeps a
 #                      muted role muted on a light theme, where lightening would
 #                      wash it out.
+#   toward_foreground  mix `amount` of `base.foreground` into the colour — the
+#                      mirror of the above. This is what "a stronger version of
+#                      this colour" means in BOTH appearances: on a dark variant
+#                      the foreground is pale so it lightens, on a light variant
+#                      it is dark so it darkens. Reach for this, not `lighten`.
+#   lighten            mix `amount` of literal white into the colour. Appearance
+#                      BLIND, so it is only correct where "paler" is the literal
+#                      intent whatever the background — which, after the light
+#                      pass, is one key (`terminal.ansi.bright_white`). A hover
+#                      or a bright ANSI slot used to use it and went PALER on a
+#                      light theme, i.e. away from the reader.
 #
 # Deleting a key, renaming one, or changing what it derives from is an edit to
 # this file and nothing else.
@@ -189,10 +199,10 @@ name = "primary.hover"
 group = "Elements and overlays"
 description = "Hovered primary-brand fill."
 base = "primary"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#cccccc"
-light = "#a290b5"
+light = "#8875a1"
 
 [[key]]
 name = "primary.muted"
@@ -211,11 +221,20 @@ light = "rgba(144,122,169,0.08)"
 name = "text.disabled"
 group = "Text"
 description = "Disabled and unavailable text."
+note = """
+A small step below `muted-foreground`, not a large one. Every built-in used to
+set this key explicitly to a SURFACE colour — the port mapped a background role
+onto a text role — which rendered disabled text and comms timestamps at 1.06:1
+to 1.66:1 against their own background, i.e. invisible. With the explicit values
+gone and a 0.2 mix, the sixteen shipped variants land between 1.70:1 and 4.22:1
+(median 2.42) where `muted-foreground` itself has a median of 3.03:1. A larger
+mix reaches 1.48:1 at the bottom of that range and is what the old 0.35 did.
+"""
 base = "muted-foreground"
 op = "toward_background"
-amount = 0.35
-dark = "#333333"
-light = "#b8b1aa"
+amount = 0.2
+dark = "#4a4a4a"
+light = "#a39d96"
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -298,7 +317,7 @@ name = "terminal.ansi.black"
 group = "Terminal"
 description = "ANSI black."
 base = "background"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.12
 dark = "#1e1e1e"
 light = "#575279"
@@ -372,7 +391,7 @@ name = "terminal.ansi.bright_red"
 group = "Terminal"
 description = "ANSI bright red."
 palette = "red"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#ff6b6b"
 light = "#c97991"
@@ -382,7 +401,7 @@ name = "terminal.ansi.bright_green"
 group = "Terminal"
 description = "ANSI bright green."
 palette = "green"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#b2d89a"
 light = "#4d8399"
@@ -392,7 +411,7 @@ name = "terminal.ansi.bright_yellow"
 group = "Terminal"
 description = "ANSI bright yellow."
 palette = "yellow"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#f2d28c"
 light = "#edae52"
@@ -402,7 +421,7 @@ name = "terminal.ansi.bright_blue"
 group = "Terminal"
 description = "ANSI bright blue."
 palette = "blue"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#82c0f3"
 light = "#73a5ae"
@@ -412,7 +431,7 @@ name = "terminal.ansi.bright_magenta"
 group = "Terminal"
 description = "ANSI bright magenta."
 palette = "purple"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#d493e5"
 light = "#a290b5"
@@ -422,7 +441,7 @@ name = "terminal.ansi.bright_cyan"
 group = "Terminal"
 description = "ANSI bright cyan."
 palette = "cyan"
-op = "lighten"
+op = "toward_foreground"
 amount = 0.15
 dark = "#78c7d0"
 light = "#dd9794"

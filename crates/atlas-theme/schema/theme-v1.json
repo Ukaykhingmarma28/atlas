@@ -260,7 +260,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: lighten 0.15."
+              "description": "Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "primary.muted": {
               "allOf": [
@@ -468,7 +468,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI black. Source: base.background → Atlas default. Transform: lighten 0.12."
+              "description": "ANSI black. Source: base.background → Atlas default. Transform: mix 0.12 toward base.foreground."
             },
             "terminal.ansi.blue": {
               "allOf": [
@@ -492,7 +492,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright blue. Source: palette.blue → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright blue. Source: palette.blue → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_cyan": {
               "allOf": [
@@ -500,7 +500,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright cyan. Source: palette.cyan → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright cyan. Source: palette.cyan → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_green": {
               "allOf": [
@@ -508,7 +508,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright green. Source: palette.green → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright green. Source: palette.green → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_magenta": {
               "allOf": [
@@ -516,7 +516,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright magenta. Source: palette.purple → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright magenta. Source: palette.purple → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_red": {
               "allOf": [
@@ -524,7 +524,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright red. Source: palette.red → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright red. Source: palette.red → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_white": {
               "allOf": [
@@ -540,7 +540,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright yellow. Source: palette.yellow → Atlas default. Transform: lighten 0.15."
+              "description": "ANSI bright yellow. Source: palette.yellow → Atlas default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.cyan": {
               "allOf": [
@@ -620,7 +620,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.35 toward base.background."
+              "description": "Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.2 toward base.background."
             }
           },
           "type": "object"

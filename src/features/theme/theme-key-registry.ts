@@ -53,6 +53,10 @@ const towardBackground =
   (amount: number): ColorTransform =>
   (color, { base }) =>
     mix(color, base.background ?? "#000000", amount);
+const towardForeground =
+  (amount: number): ColorTransform =>
+  (color, { base }) =>
+    mix(color, base.foreground ?? "#ffffff", amount);
 
 function define<const Key extends string>(
   key: Key,
@@ -129,9 +133,9 @@ export const THEME_KEY_REGISTRY = [
   }),
   define("primary.hover", {
     base: "primary",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#cccccc",
-    light: "#a290b5",
+    light: "#8875a1",
     description: "Hovered primary-brand fill.",
   }),
   define("primary.muted", {
@@ -142,11 +146,20 @@ export const THEME_KEY_REGISTRY = [
     description: "Muted primary-brand fill.",
   }),
 
+  /**
+   * A small step below `muted-foreground`, not a large one. Every built-in used to
+   * set this key explicitly to a SURFACE colour — the port mapped a background role
+   * onto a text role — which rendered disabled text and comms timestamps at 1.06:1
+   * to 1.66:1 against their own background, i.e. invisible. With the explicit values
+   * gone and a 0.2 mix, the sixteen shipped variants land between 1.70:1 and 4.22:1
+   * (median 2.42) where `muted-foreground` itself has a median of 3.03:1. A larger
+   * mix reaches 1.48:1 at the bottom of that range and is what the old 0.35 did.
+   */
   define("text.disabled", {
     base: "muted-foreground",
-    transform: towardBackground(0.35),
-    dark: "#333333",
-    light: "#b8b1aa",
+    transform: towardBackground(0.2),
+    dark: "#4a4a4a",
+    light: "#a39d96",
     description: "Disabled and unavailable text.",
   }),
 
@@ -204,7 +217,7 @@ export const THEME_KEY_REGISTRY = [
   }),
   define("terminal.ansi.black", {
     base: "background",
-    transform: lighter(0.12),
+    transform: towardForeground(0.12),
     dark: "#1e1e1e",
     light: "#575279",
     description: "ANSI black.",
@@ -259,42 +272,42 @@ export const THEME_KEY_REGISTRY = [
   }),
   define("terminal.ansi.bright_red", {
     palette: "red",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#ff6b6b",
     light: "#c97991",
     description: "ANSI bright red.",
   }),
   define("terminal.ansi.bright_green", {
     palette: "green",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#b2d89a",
     light: "#4d8399",
     description: "ANSI bright green.",
   }),
   define("terminal.ansi.bright_yellow", {
     palette: "yellow",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#f2d28c",
     light: "#edae52",
     description: "ANSI bright yellow.",
   }),
   define("terminal.ansi.bright_blue", {
     palette: "blue",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#82c0f3",
     light: "#73a5ae",
     description: "ANSI bright blue.",
   }),
   define("terminal.ansi.bright_magenta", {
     palette: "purple",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#d493e5",
     light: "#a290b5",
     description: "ANSI bright magenta.",
   }),
   define("terminal.ansi.bright_cyan", {
     palette: "cyan",
-    transform: lighter(0.15),
+    transform: towardForeground(0.15),
     dark: "#78c7d0",
     light: "#dd9794",
     description: "ANSI bright cyan.",

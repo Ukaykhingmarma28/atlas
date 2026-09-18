@@ -55,6 +55,11 @@ const OPERATIONS = {
     docs: (n) => `mix ${n} → B:background`,
     prose: (n) => `mix ${n} toward base.background`,
   },
+  toward_foreground: {
+    call: "towardForeground",
+    docs: (n) => `mix ${n} → B:foreground`,
+    prose: (n) => `mix ${n} toward base.foreground`,
+  },
 };
 
 const DOCS_BEGIN = "<!-- generated:theme-keys -->";
@@ -381,6 +386,10 @@ const towardBackground =
   (amount: number): ColorTransform =>
   (color, { base }) =>
     mix(color, base.background ?? "#000000", amount);
+const towardForeground =
+  (amount: number): ColorTransform =>
+  (color, { base }) =>
+    mix(color, base.foreground ?? "#ffffff", amount);
 
 function define<const Key extends string>(
   key: Key,
