@@ -179,7 +179,7 @@ const ProjectRow = memo(function ProjectRow({
               if (e.key === "Enter") commitRename();
               if (e.key === "Escape") endRenameProject();
             }}
-            className="block w-full bg-transparent outline-none text-[12px] leading-tight text-[var(--text-primary)]"
+            className="block w-full bg-transparent outline-none text-sm leading-tight text-[var(--text-primary)]"
           />
         ) : (
           <span
@@ -188,7 +188,7 @@ const ProjectRow = memo(function ProjectRow({
               beginRenameProject(ws.id);
             }}
             className={cn(
-              "block truncate text-[12px] leading-tight",
+              "block truncate text-sm leading-tight",
               active
                 ? "text-[var(--text-primary)] font-medium"
                 : "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]",
@@ -197,7 +197,7 @@ const ProjectRow = memo(function ProjectRow({
             {ws.name}
           </span>
         )}
-        <span className="mt-0.5 block truncate text-[10px] leading-tight text-[var(--text-tertiary)]">
+        <span className="mt-0.5 block truncate text-2xs leading-tight text-[var(--text-tertiary)]">
           {summary?.isRepo ? summary.branch || "—" : "no source control"}
         </span>
       </div>
@@ -245,7 +245,7 @@ const ProjectRow = memo(function ProjectRow({
                 />
               </HintItem>
               <DropdownMenu.Portal>
-                <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
+                <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
                   <DropdownMenu.Popup
                     onClick={(e) => e.stopPropagation()}
                     // On close the menu restores focus to the trigger button.
@@ -255,7 +255,7 @@ const ProjectRow = memo(function ProjectRow({
                     // commitRename → edit mode exits. `finalFocus={false}`
                     // leaves focus alone so the input keeps it.
                     finalFocus={false}
-                    className="min-w-[148px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
+                    className="min-w-[148px] rounded-md border border-[var(--border)] bg-popover py-0.5 shadow-md text-xs text-[var(--text-secondary)]"
                   >
                     <DropdownMenu.Item
                       onClick={() => beginRenameProject(ws.id)}
@@ -280,12 +280,8 @@ const ProjectRow = memo(function ProjectRow({
                         Move to group <ChevronRight size={11} />
                       </DropdownMenu.SubmenuTrigger>
                       <DropdownMenu.Portal>
-                        <DropdownMenu.Positioner
-                          className="z-[var(--z-max)]"
-                          side="right"
-                          align="start"
-                        >
-                          <DropdownMenu.Popup className="min-w-[140px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                        <DropdownMenu.Positioner className="z-popover" side="right" align="start">
+                          <DropdownMenu.Popup className="min-w-[140px] rounded-md border border-[var(--border)] bg-popover py-0.5 shadow-md text-xs text-[var(--text-secondary)]">
                             {groups.map((g) => (
                               <DropdownMenu.Item
                                 key={g.id}
@@ -322,7 +318,7 @@ const ProjectRow = memo(function ProjectRow({
                     <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
                     <DropdownMenu.Item
                       onClick={() => void closeProject(ws.id)}
-                      className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
+                      className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-error cursor-default"
                     >
                       <X size={11} /> Remove from list
                     </DropdownMenu.Item>
@@ -390,7 +386,7 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
             if (e.key === "Enter") commit();
             if (e.key === "Escape") endRenameGroup();
           }}
-          className="min-w-0 flex-1 bg-transparent outline-none text-[11px] leading-none text-[var(--text-primary)]"
+          className="min-w-0 flex-1 bg-transparent outline-none text-xs leading-none text-[var(--text-primary)]"
         />
       ) : (
         <span
@@ -398,7 +394,7 @@ const GroupHeaderRow = memo(function GroupHeaderRow({
             e.stopPropagation();
             beginRenameGroup(group.id);
           }}
-          className="min-w-0 flex-1 truncate text-[11px] leading-normal text-[var(--text-secondary)] group-hover/h:text-[var(--text-primary)]"
+          className="min-w-0 flex-1 truncate text-xs leading-normal text-[var(--text-secondary)] group-hover/h:text-[var(--text-primary)]"
         >
           {group.name}
         </span>
@@ -501,7 +497,7 @@ const SectionHeaderRow = memo(function SectionHeaderRow({
         style={{ height: HEADER_H }}
         className="group/s flex w-full items-center gap-1 rounded-md px-2 outline-none cursor-pointer hover:bg-[var(--bg-hover)]"
       >
-        <span className="text-[11px] font-semibold leading-none text-[var(--text-secondary)] group-hover/s:text-[var(--text-primary)]">
+        <span className="text-xs font-semibold leading-none text-[var(--text-secondary)] group-hover/s:text-[var(--text-primary)]">
           {label}
         </span>
         {/* Promoted, and NO opacity tween on the action: fading an unpromoted
@@ -523,7 +519,7 @@ const SectionHeaderRow = memo(function SectionHeaderRow({
                 e.stopPropagation();
                 onClear(id);
               }}
-              className="ml-auto flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover/s:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--status-error,#f44)] outline-none cursor-pointer transform-gpu [backface-visibility:hidden]"
+              className="ml-auto flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] opacity-0 group-hover/s:opacity-100 focus-visible:opacity-100 hover:bg-[var(--bg-elevated)] hover:text-error outline-none cursor-pointer transform-gpu [backface-visibility:hidden]"
             >
               <Trash2 size={11} />
             </button>
@@ -553,7 +549,7 @@ const RecentProjectRow = memo(function RecentProjectRow({
       title={path}
     >
       <Folder size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-      <span className="flex-1 min-w-0 truncate text-[12px] leading-normal text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
+      <span className="flex-1 min-w-0 truncate text-sm leading-normal text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
         {name}
       </span>
     </div>
@@ -614,7 +610,7 @@ const ChatRow = memo(function ChatRow({
       <div className="min-w-0 flex-1 pr-9">
         <span
           className={cn(
-            "block truncate text-[12px] leading-tight",
+            "block truncate text-sm leading-tight",
             running
               ? "text-[var(--text-primary)]"
               : "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]",
@@ -622,11 +618,11 @@ const ChatRow = memo(function ChatRow({
         >
           {stripInjectedContext(chat.title) || chat.projectName}
         </span>
-        <span className="mt-0.5 block truncate text-[10px] leading-tight text-[var(--text-tertiary)]">
+        <span className="mt-0.5 block truncate text-2xs leading-tight text-[var(--text-tertiary)]">
           {chat.projectName}
         </span>
       </div>
-      <span className="absolute right-2 top-2 shrink-0 text-[10px] leading-none tabular-nums text-[var(--text-tertiary)]">
+      <span className="absolute right-2 top-2 shrink-0 text-2xs leading-none tabular-nums text-[var(--text-tertiary)]">
         {relTime(chat.updatedAt)}
       </span>
     </div>
@@ -987,7 +983,7 @@ export function ProjectSidebar() {
             nothing else. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-6 rounded-t-[10px]"
+          className="pointer-events-none absolute inset-x-0 top-0 z-panel h-6 rounded-t-[10px]"
           style={{
             background:
               "linear-gradient(to bottom, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
@@ -995,7 +991,7 @@ export function ProjectSidebar() {
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-[30px] z-[2] h-6"
+          className="pointer-events-none absolute inset-x-0 bottom-[30px] z-panel h-6"
           style={{
             background:
               "linear-gradient(to top, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
@@ -1098,7 +1094,7 @@ export function ProjectSidebar() {
 
         {/* Card footer: help on the left, version on the right. Outside the
             scroller so it stays put, inside the card so it belongs to it. */}
-        <div className="relative z-[2] flex h-[30px] shrink-0 items-center justify-between px-2">
+        <div className="relative z-panel flex h-[30px] shrink-0 items-center justify-between px-2">
           <HelpMenu />
           <AppVersion />
         </div>
@@ -1134,7 +1130,7 @@ function NavItem({
       title={title}
       aria-pressed={active}
       className={cn(
-        "group/nav flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-[12px] leading-none outline-none transition-colors cursor-pointer",
+        "group/nav flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm leading-none outline-none transition-colors cursor-pointer",
         "disabled:cursor-default disabled:opacity-40",
         active
           ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
@@ -1416,7 +1412,7 @@ function VirtualRail({
 }
 
 function EmptyRail() {
-  return <div className="px-2 py-3 text-[11px] text-[var(--text-tertiary)]">No projects yet.</div>;
+  return <div className="px-2 py-3 text-xs text-[var(--text-tertiary)]">No projects yet.</div>;
 }
 
 /** Where the help menu points. Grouped as they render: docs and support, then
@@ -1439,7 +1435,7 @@ function HelpItem({
   return (
     <DropdownMenu.Item
       onClick={onSelect}
-      className="flex h-[26px] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+      className="flex h-control-md items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
     >
       <span className="flex size-3.5 shrink-0 items-center justify-center text-[var(--text-tertiary)]">
         {icon}
@@ -1469,11 +1465,8 @@ function HelpMenu() {
         />
       </Hint>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" side="top" sideOffset={6}>
-          <DropdownMenu.Popup
-            style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.95)" }}
-            className="w-[212px] overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 p-1 backdrop-blur-2xl select-none"
-          >
+        <DropdownMenu.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
+          <DropdownMenu.Popup className="w-[212px] overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 p-1 backdrop-blur-2xl shadow-md select-none">
             <HelpItem
               icon={<BookOpen size={12} />}
               label="Docs"
@@ -1492,7 +1485,7 @@ function HelpMenu() {
               onSelect={() => openSettingsSection("keybindings")}
             />
 
-            <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
 
             <HelpItem
               icon={<GithubIcon className="size-3" />}
@@ -1506,7 +1499,7 @@ function HelpMenu() {
             />
             <HelpItem icon={<XIcon />} label="Follow on X" onSelect={() => void openUrl(X_URL)} />
 
-            <DropdownMenu.Separator className="my-1 h-px bg-white/5" />
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
 
             <HelpItem
               icon={<Settings size={12} />}
@@ -1575,7 +1568,7 @@ function AppVersion() {
           else toast.error("Could not copy the version.");
         });
       }}
-      className="cursor-pointer select-none pr-1 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
+      className="cursor-pointer select-none pr-1 font-mono text-2xs tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
     >
       v{version}
     </button>

@@ -5,7 +5,7 @@ import { useStopAgentsConfirmStore } from "../lib/stop-agents-confirm";
 
 /** The app's pill-button language (matches the create-org dialog footer). */
 const pillButton =
-  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
+  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium leading-none cursor-pointer transition-colors";
 
 /**
  * Global "this will stop running agents" confirmation, driven by
@@ -21,22 +21,22 @@ export function StopAgentsDialog() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && settle(false)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/45 backdrop-blur-xl" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "w-[380px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border)]",
             "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
-            "shadow-[var(--shadow-overlay)] animate-scale-in",
+            "shadow-md animate-scale-in",
           )}
         >
           <div className="px-4 pt-3.5 pb-4">
-            <Dialog.Title className="flex items-center gap-2 text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
+            <Dialog.Title className="flex items-center gap-2 text-base font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
               <OctagonX size={13} className="text-error" />
               {pending.count} running {pending.count === 1 ? "agent" : "agents"}
             </Dialog.Title>
-            <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
               {pending.count} {plural} still working. {pending.actionLabel} will stop{" "}
               {pending.count === 1 ? "it" : "them"} — the conversation
               {pending.count === 1 ? " stays" : "s stay"} in history, but the in-flight work is
