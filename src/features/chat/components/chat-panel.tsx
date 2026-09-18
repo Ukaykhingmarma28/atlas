@@ -1333,6 +1333,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 acpSessionId={acpSessionId}
                 messages={filteredMessages}
                 isStreaming={session.status === "running"}
+                turnInProgress={isBusyAgentStatus(session.status)}
                 agentType={session.agentType}
                 topInset={HEADER_INSET}
                 onShowJumpChange={onShowJumpChange}

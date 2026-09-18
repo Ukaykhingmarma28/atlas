@@ -2041,6 +2041,15 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
         }
         session.turnScratch = undefined;
       }
+      // "Worked for 7m 37s": the turn's wall time, measured from the user's
+      // message. Only a live turn can be timed honestly — see `workedMs`.
+      if (lastUserIdx >= 0 && responded) {
+        const sentAt = Date.parse(session.messages[lastUserIdx].timestamp);
+        const last = session.messages[session.messages.length - 1];
+        if (Number.isFinite(sentAt) && last.role === "assistant") {
+          last.workedMs = Math.max(0, Date.now() - sentAt);
+        }
+      }
       // Agent-generated next-step chips: extract the trailing assistant reply's
       // hidden `<next_steps>` block into click-to-send suggestions. The raw
       // content (with the block) stays in the store; the display path strips it.

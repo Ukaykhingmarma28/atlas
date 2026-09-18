@@ -6,6 +6,7 @@ import type { Scenario } from "../types";
 import { lines, text, thinking, tool, tools, user, t } from "../fixtures/chat";
 import {
   appendToolOutput,
+  finishTurn,
   playTranscript,
   requestPermission,
   requestPermissionLongArgs,
@@ -102,7 +103,7 @@ async function liveTurn(): Promise<void> {
       status: "completed",
       result: output.join("") + "\nTests: 24 passed",
     });
-    await setStatus("idle");
+    await finishTurn();
   };
 }
 

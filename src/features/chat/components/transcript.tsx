@@ -58,6 +58,7 @@ import {
   ThinkingRowView,
   MarkerRowView,
   MarkerGroupRowView,
+  WorkHeaderRowView,
   SeparatorRowView,
   TurnFooterRowView,
 } from "./transcript-rows";
@@ -124,6 +125,10 @@ interface TranscriptProps {
   acpSessionId: string;
   messages: ChatMessage[];
   isStreaming: boolean;
+  /** The turn is still in progress, including while it is paused on the user
+   *  (a permission or plan approval). `isStreaming` goes false for that pause;
+   *  the work header must not read it as the turn being over and fold it. */
+  turnInProgress?: boolean;
   agentType?: string;
   /** Vertical space (px) reserved at the top for the floating header, applied as
    *  content padding so the first row clears it while still scrolling under. */
@@ -263,6 +268,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     acpSessionId,
     messages,
     isStreaming,
+    turnInProgress = isStreaming,
     agentType,
     topInset = 0,
     onShowJumpChange,
@@ -367,12 +373,12 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     if (!live && prevProjectionRef.current) return prevProjectionRef.current;
     const next = projectRows(
       messages,
-      { expanded, expandedTurns, streaming: isStreaming },
+      { expanded, expandedTurns, streaming: isStreaming, turnInProgress },
       prevProjectionRef.current,
     );
     prevProjectionRef.current = next;
     return next;
-  }, [messages, expanded, expandedTurns, isStreaming, live]);
+  }, [messages, expanded, expandedTurns, isStreaming, turnInProgress, live]);
   const rows: Row[] = projection.rows;
 
   // ── Is the live turn still silent? ───────────────────────────────────
@@ -1013,6 +1019,8 @@ function RowView({
       return <MarkerGroupRowView row={row} tabId={tabId} onExpandTurn={onExpandTurn} />;
     case RowKind.Separator:
       return <SeparatorRowView row={row} />;
+    case RowKind.WorkHeader:
+      return <WorkHeaderRowView row={row} onToggle={onExpandTurn} />;
     case RowKind.TurnFooter:
       // made a fresh closure per render and defeated the memo on footer rows.
       return <TurnFooterRowView row={row} onSaveKb={onSaveKb} />;

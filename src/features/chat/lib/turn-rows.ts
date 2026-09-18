@@ -36,6 +36,7 @@ export const RowKind = {
   MarkerGroup: 4,
   Separator: 5,
   TurnFooter: 6,
+  WorkHeader: 7,
 } as const;
 
 /** Marker execution state — drives the leading glyph, nothing else. */
@@ -147,12 +148,40 @@ export interface MarkerGroupRow extends RowBase {
    *  the whole line — but it is what `summary` was counted from, and the thing
    *  to assert on when testing that projection. */
   count: number;
+  /** The glyph for the whole block: the icon of the FIRST bucket in `summary`,
+   *  so the wrench leads "Loaded a tool, read files…" and the book leads "Read
+   *  files, ran commands" — note 3 under "Folded-block summary". */
+  tool: MarkerTool;
   /** Calls in this consecutive sequence, shown inside the disclosure. */
   markers: MarkerRow[];
   open: boolean;
   /** At least one call in the sequence is still active. */
   running: boolean;
   liveLabel: string | null;
+  /** The active call's own glyph while `running` — the live line names that
+   *  call, so it wears that call's icon rather than the block's. */
+  liveTool: MarkerTool | null;
+}
+
+/**
+ * "Working for 46s" / "Worked for 7m 37s ›" — the head of an assistant turn.
+ *
+ * Once the turn settles, everything before its final answer (earlier prose,
+ * thinking, tool blocks) is folded behind this row and simply not projected, so
+ * a finished turn costs a header, its answer and its footer however much work
+ * it did. Opening it puts those rows back in the thread, in flow.
+ */
+export interface WorkHeaderRow extends RowBase {
+  kind: typeof RowKind.WorkHeader;
+  /** The turn is still running: the row ticks and nothing is folded. */
+  live: boolean;
+  /** Epoch ms the live clock counts from — the user's message. */
+  startedAt: number | null;
+  /** Settled wall time, when the turn was timed live (`ChatMessage.workedMs`). */
+  workedMs: number | null;
+  /** There are rows behind the header to fold; without them it is a caption. */
+  foldable: boolean;
+  open: boolean;
 }
 
 export interface SeparatorRow extends RowBase {
@@ -182,7 +211,8 @@ export type Row =
   | MarkerRow
   | MarkerGroupRow
   | SeparatorRow
-  | TurnFooterRow;
+  | TurnFooterRow
+  | WorkHeaderRow;
 
 // ── Turns ──────────────────────────────────────────────────────────────────
 
@@ -397,20 +427,25 @@ const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
   run: ["ran a command", "ran commands"],
 };
 
-/** One folded block → the sentence on its header. */
-function summarizeMarkers(markers: MarkerRow[]): { summary: string } {
+/** One folded block → the sentence on its header, and the glyph that leads it
+ *  (note 3: the first bucket's, not the commonest). */
+function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: MarkerTool } {
   const counts = new Map<SummaryBucket, number>();
   for (const m of markers) {
     const bucket = SUMMARY_BUCKET[m.tool];
     counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
   const present = SUMMARY_ORDER.filter((b) => counts.has(b));
-  if (present.length === 0) return { summary: "Used tools" };
+  if (present.length === 0) return { summary: "Used tools", tool: "tool" };
 
   const fragments = present.map((b) => SUMMARY_PHRASE[b][counts.get(b) === 1 ? 0 : 1]);
   const sentence = fragments.join(", ");
   // Only the first fragment is capitalised; the rest stay mid-sentence.
-  return { summary: sentence.charAt(0).toUpperCase() + sentence.slice(1) };
+  return {
+    summary: sentence.charAt(0).toUpperCase() + sentence.slice(1),
+    // Each bucket is named after the glyph that stands for it.
+    tool: present[0],
+  };
 }
 
 /** A live disclosure names the current action, then returns to its aggregate
@@ -655,6 +690,10 @@ export interface ProjectOptions {
   streaming: boolean;
   /** Turns whose tool-call block the reader has opened. */
   expandedTurns: ReadonlySet<string>;
+  /** The trailing assistant turn has not finished, even if it is not streaming
+   *  right now — it may be paused on a permission prompt. Drives the work
+   *  header only; defaults to `streaming`. */
+  turnInProgress?: boolean;
 }
 
 /**
@@ -752,9 +791,11 @@ export function projectRows(
         open: opts.expandedTurns.has(id),
         running: false,
         liveLabel: null,
+        liveTool: null,
       });
       markers = [];
     };
+    let workedMs: number | null = null;
     let toolCount = 0;
     let footerMsg: ChatMessage | null = null;
     let headerShown = false;
@@ -807,6 +848,7 @@ export function projectRows(
 
       // The footer data is frozen onto the trailing message at turn_finished.
       if (msg.turnSummary || msg.suggestions || msg.contextUsage) footerMsg = msg;
+      if (msg.workedMs !== undefined) workedMs = msg.workedMs;
       i += 1;
     }
     flushMarkers();
@@ -822,7 +864,19 @@ export function projectRows(
         if (!active) continue;
         row.running = true;
         row.liveLabel = liveMarkerLabel(active);
+        row.liveTool = active.tool;
       }
+    }
+
+    const turnInProgress = (opts.turnInProgress ?? opts.streaming) && i > lastIdx;
+    if (rows.length > rowStart) {
+      foldWork(rows, rowStart, {
+        turnId,
+        live: turnInProgress,
+        startedAt: turnInProgress ? turnStartMs(messages, turnFirstIdx) : null,
+        workedMs,
+        expandedTurns: opts.expandedTurns,
+      });
     }
 
     if (footerMsg?.turnSummary) {
@@ -919,6 +973,68 @@ function sameShallow(a: object, b: object): boolean {
     return false;
   }
   return true;
+}
+
+/** When the live clock of the assistant turn at `firstIdx` starts: the user
+ *  message it answers. Null when there is none to count from. */
+function turnStartMs(messages: ChatMessage[], firstIdx: number): number | null {
+  const prev = messages[firstIdx - 1];
+  if (!prev || prev.role !== "user") return null;
+  const t = Date.parse(prev.timestamp);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Put the work header at the head of the assistant turn starting at
+ * `rowStart`, and — once the turn has settled and the reader has not opened it
+ * — drop everything before the final answer.
+ *
+ * "The final answer" is the trailing run of prose rows: whatever the agent said
+ * after it last used a tool or thought. A turn that ENDS on a tool block has no
+ * answer, and folds whole.
+ */
+function foldWork(
+  rows: Row[],
+  rowStart: number,
+  o: {
+    turnId: string;
+    live: boolean;
+    startedAt: number | null;
+    workedMs: number | null;
+    expandedTurns: ReadonlySet<string>;
+  },
+): void {
+  let answerStart = rows.length;
+  while (answerStart > rowStart && rows[answerStart - 1].kind === RowKind.Prose) answerStart -= 1;
+  const foldable = !o.live && answerStart > rowStart;
+  // A settled prose-only turn with no timing has nothing to say.
+  if (!o.live && !foldable && o.workedMs === null) return;
+
+  const id = `wk:${o.turnId}`;
+  const open = foldable && o.expandedTurns.has(id);
+  if (foldable && !open) {
+    const folded = rows.splice(rowStart, answerStart - rowStart);
+    // The model · time line rode on the turn's first prose row, which may have
+    // just been folded. Hand it to the first row still showing.
+    const answer = rows[rowStart];
+    if (
+      answer?.kind === RowKind.Prose &&
+      folded.some((r) => r.kind === RowKind.Prose && r.showHeader)
+    ) {
+      answer.showHeader = true;
+    }
+  }
+  rows.splice(rowStart, 0, {
+    kind: RowKind.WorkHeader,
+    id,
+    turnId: o.turnId,
+    firstInTurn: true,
+    live: o.live,
+    startedAt: o.startedAt,
+    workedMs: o.workedMs,
+    foldable,
+    open,
+  });
 }
 
 /** Faint "N ago" divider marking a real pause between turns. */

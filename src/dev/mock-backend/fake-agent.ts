@@ -129,6 +129,16 @@ export function setStatus(status: "idle" | "running" | "waiting" | "error"): Pro
   return sendDelta({ kind: "status", ...at(s), status });
 }
 
+/** End the turn the way the real projector does — a `turn_finished` terminal,
+ *  not a bare status flip. The store only freezes turn-end state (the turn's
+ *  "Worked for" time, its files footer, next-step chips) on the terminal, so a
+ *  mock that just went idle never showed any of it. */
+export function finishTurn(): Promise<void> {
+  const s = latest();
+  if (!s) return Promise.resolve();
+  return sendDelta({ kind: "turn_finished", ...at(s), stop_reason: "end_turn", turn_seq: 0 });
+}
+
 // ── Permission requests ──────────────────────────────────────────────────
 //
 // The real backend never raises `permission_request` out of nowhere: the
@@ -238,7 +248,7 @@ async function resolvePermission(
 
   const line = open.reply(decision, option);
   if (line) await playTranscript([text(line, new Date().toISOString())]);
-  await setStatus("idle");
+  await finishTurn();
 }
 
 let permSeq = 0;
@@ -408,7 +418,7 @@ export const agentHandlers: TypedHandlers<AgentResponses> = {
       timestamp: now(),
     };
     setTimeout(() => {
-      void playTranscript([reply]).then(() => setStatus("idle"));
+      void playTranscript([reply]).then(() => finishTurn());
     }, 400);
     return null;
   },

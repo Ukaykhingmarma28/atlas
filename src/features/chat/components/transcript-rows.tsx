@@ -14,18 +14,25 @@
 //  3. Rows never subscribe to the chat store or the detail-panel store. Data
 //     arrives as props; actions are fired imperatively via `getState()`.
 
-import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  ArrowRightLeft,
+  BookOpen,
   ChevronRight,
   Paperclip,
   Brain,
   Bookmark,
-  Check,
-  Circle,
   Code2,
   ChevronDown,
-  MousePointer2,
-  X,
+  File,
+  FolderClosed,
+  Globe,
+  Pencil,
+  Search,
+  SquareTerminal,
+  Trash2,
+  Wrench,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CachedMarkdown } from "@/lib/markdown-cache";
@@ -41,7 +48,7 @@ import type {
   MarkerGroupRow,
   SeparatorRow,
   TurnFooterRow,
-  MarkerState,
+  WorkHeaderRow,
   MarkerTool,
 } from "../lib/turn-rows";
 import { userRowMessageId } from "../lib/turn-rows";
@@ -355,17 +362,25 @@ export const ThinkingRowView = memo(function ThinkingRowView({
       <button
         type="button"
         onClick={() => onToggleExpand(row.id)}
-        className="flex h-[26px] w-full items-center gap-2 text-left text-xs text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
+        className="flex h-[26px] w-full items-center gap-2 text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
       >
-        <Brain size={11} className={cn(row.streaming && "atlas-marker-running")} />
+        {/* Same slot, size and stroke as the tool rows around it. */}
+        <span className="flex w-4 shrink-0 justify-center">
+          <Brain
+            size={ICON_PX}
+            strokeWidth={ICON_STROKE}
+            className={cn(row.streaming && "atlas-marker-running")}
+          />
+        </span>
         <span>{row.streaming ? "Thinking…" : "Thought process"}</span>
         <ChevronRight
-          size={11}
+          size={ICON_PX}
+          strokeWidth={ICON_STROKE}
           className={cn("transition-transform", row.expanded && "rotate-90")}
         />
       </button>
       {row.expanded && (
-        <div className="pb-3 pl-[19px]">
+        <div className="pb-3 pl-6">
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[19px] text-[var(--muted-foreground)] select-text">
             {row.text}
           </pre>
@@ -378,76 +393,57 @@ export const ThinkingRowView = memo(function ThinkingRowView({
 // ── Marker ─────────────────────────────────────────────────────────────────
 
 /**
- * A tool call's leading glyph: state first, shape second.
+ * One icon per `MarkerTool` key, in the Codex desktop app's vocabulary: the
+ * wrench for a loaded tool, the book for a read, the boxed prompt for a
+ * command, the folder for a listing, the magnifier for a search.
  *
- * The transcript briefly gave every call a per-tool icon (terminal, book,
- * pencil) at 15px. It read as a toolbar: eleven shapes at a size that competes
- * with the prose, on rows that are meant to be skimmed past. What a reader
- * actually scans a settled turn for is "did anything go wrong", so state is
- * back in the glyph — a tick for done, a red cross for failed — at the muted
- * 11px the rest of the row runs at.
- *
- * `think` is the one exception, and it is the user's call: a delegated
- * sub-agent is a different KIND of work from a file read, not just another
- * tool, so it keeps the brain. It still tints red on failure, because losing
- * the state signal on the one row type that can quietly fail is not a trade
- * worth making.
+ * Shapes only, never colours (house rule 2) — the one tint is red on failure.
+ * Keyed by the projection's classification so rows stay plain data; see
+ * `MarkerTool` in `turn-rows.ts` for how each call is classified.
  */
-function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) {
-  if (tool === "think")
-    return (
-      <Brain
-        size={11}
-        className={cn(
-          state === "failed"
-            ? "text-[var(--atlas-status-error-foreground)]"
-            : "text-[var(--muted-foreground)]",
-        )}
-      />
-    );
-  if (state === "failed")
-    return <X size={11} className="text-[var(--atlas-status-error-foreground)]" />;
-  if (state === "done") return <Check size={11} className="text-[var(--muted-foreground)]" />;
-  if (state === "running")
-    return (
-      <Circle
-        size={9}
-        className="atlas-marker-running fill-[var(--primary)] text-[var(--primary)]"
-      />
-    );
-  return <Circle size={9} className="text-[var(--muted-foreground)]" />;
-}
+const TOOL_ICON: Record<MarkerTool, LucideIcon> = {
+  run: SquareTerminal,
+  read: BookOpen,
+  edit: Pencil,
+  search: Search,
+  list: FolderClosed,
+  fetch: Globe,
+  // A delegated sub-agent is a different KIND of work from a file read.
+  think: Brain,
+  delete: Trash2,
+  move: ArrowRightLeft,
+  file: File,
+  tool: Wrench,
+};
 
-/**
- * The folded sequence's own glyph: one filled cursor, the whole block's verdict.
- *
- * Filled rather than outline so it holds at 11px, and a single shape rather
- * than the first bucket's tool icon — the summary sentence beside it ("Read
- * files, ran commands") already says what the block did, and that sentence is
- * what tells one block from the next. Red when any call in the sequence
- * failed, which is the one thing worth surfacing before the reader opens it.
- */
-function GroupGlyph({ failed, running }: { failed: boolean; running: boolean }) {
+/** Near the height of the 13px row text, drawn at the thin stroke Codex uses. */
+const ICON_PX = 14;
+const ICON_STROKE = 1.5;
+
+/** A tool call's (or a block's) leading icon, red when it failed. */
+function ToolGlyph({ tool, failed }: { tool: MarkerTool; failed: boolean }) {
+  const Icon = TOOL_ICON[tool];
   return (
-    <MousePointer2
-      size={11}
-      className={cn(
-        "fill-current",
-        failed
-          ? "text-[var(--atlas-status-error-foreground)]"
-          : running
-            ? "text-[var(--primary)]"
-            : "text-[var(--muted-foreground)]",
-      )}
+    <Icon
+      size={ICON_PX}
+      strokeWidth={ICON_STROKE}
+      className={failed ? "text-[var(--atlas-status-error-foreground)]" : undefined}
     />
   );
 }
+
+/** Rows whose detail is a file the reader can open — only these get the dimmer,
+ *  dotted-underline link treatment. A command or a search pattern is not a
+ *  link, so it stays in the verb's tone. */
+const FILE_DETAIL = new Set<MarkerTool>(["read", "edit", "file"]);
 
 /**
  * One tool call: a single muted line, and nothing else.
  *
  * The group expands, while each action stays one line. Clicking an action with
- * output or a diff opens its detail view; the trailing chevron is what says so.
+ * output or a diff opens its detail view. There is no trailing chevron, as in
+ * Codex: a file target reads as a link (dotted underline) and every clickable
+ * row brightens on hover.
  */
 export const MarkerRowView = memo(function MarkerRowView({
   row,
@@ -468,6 +464,7 @@ export const MarkerRowView = memo(function MarkerRowView({
       openDetail(tabId, { kind: "output", toolCallId: row.toolCallId });
     }
   }, [row.opens, row.path, row.toolCallId, tabId]);
+  const fileLink = clickable && FILE_DETAIL.has(row.tool);
 
   const line = (
     <button
@@ -475,7 +472,7 @@ export const MarkerRowView = memo(function MarkerRowView({
       disabled={!clickable}
       onClick={clickable ? onClick : undefined}
       className={cn(
-        "atlas-marker w-full min-w-0 text-left text-xs text-[var(--muted-foreground)]",
+        "atlas-marker group/marker w-full min-w-0 text-left text-base text-[var(--muted-foreground)]",
         clickable && "cursor-pointer hover:text-[var(--secondary-foreground)]",
         row.state === "running" && "atlas-marker-running",
       )}
@@ -483,15 +480,28 @@ export const MarkerRowView = memo(function MarkerRowView({
         clickable ? `${row.cmd ?? `${row.verb} ${row.detail}`} — open in side panel` : undefined
       }
     >
-      <span className="flex w-3 shrink-0 justify-center">
-        <MarkerGlyph state={row.state} tool={row.tool} />
+      <span className="flex w-4 shrink-0 justify-center">
+        <ToolGlyph tool={row.tool} failed={row.state === "failed"} />
       </span>
-      <span className="shrink-0">{row.verb}</span>
-      {row.detail && (
-        <span className="min-w-0 truncate font-mono text-[var(--muted-foreground)]/85">
-          {row.detail}
-        </span>
-      )}
+      {/* One run of text, so verb and target are a sentence ("Read flow.tsx")
+          with a plain space between them, and a long command truncates as a
+          line rather than as a separate column. */}
+      <span className="min-w-0 truncate">
+        {row.verb}
+        {row.detail && (
+          <>
+            {" "}
+            <span
+              className={cn(
+                fileLink &&
+                  "text-[var(--atlas-text-disabled)] underline decoration-dotted underline-offset-[3px] group-hover/marker:text-[var(--secondary-foreground)]",
+              )}
+            >
+              {row.detail}
+            </span>
+          </>
+        )}
+      </span>
       {(row.added > 0 || row.removed > 0) && (
         <span className="ml-auto shrink-0 font-mono text-2xs tabular-nums">
           {row.added > 0 && (
@@ -502,12 +512,6 @@ export const MarkerRowView = memo(function MarkerRowView({
           )}
         </span>
       )}
-      {clickable && (
-        <ChevronRight
-          size={11}
-          className={cn("shrink-0", !row.added && !row.removed && "ml-auto")}
-        />
-      )}
     </button>
   );
   return embedded ? line : <Column>{line}</Column>;
@@ -516,14 +520,12 @@ export const MarkerRowView = memo(function MarkerRowView({
 /**
  * A folded sequence of consecutive tool calls, kept between the prose around it.
  *
- * `Tool calls · 6s · 8 calls` over a separate "Show tool calls" button became a
- * single sentence you click — "Read files, ran commands" — matching the Codex
- * desktop app. The wall time and the call/edit counts went with the old header;
- * the turn footer below already carries "N files changed +x −y", so the only
- * thing actually lost is the duration.
+ * One sentence you click — "Read files, ran commands" — matching the Codex
+ * desktop app, led by the icon of the sentence's first fragment. While a call
+ * is running the line names that call instead ("Reading flow.tsx") and wears
+ * its icon, then returns to the sentence when it finishes.
  *
- * The chevron appears on hover and stays visible when open. The action list is
- * height-bounded so a long run does not take over the transcript.
+ * The chevron appears on hover and stays visible when open.
  */
 export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   row,
@@ -539,22 +541,23 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   // list the row already holds.
   const failed = row.markers.some((marker) => marker.state === "failed");
   return (
-    <Column className="py-1.5">
+    <Column className="py-1">
       <button
         type="button"
         aria-expanded={row.open}
         aria-controls={`${row.id}:actions`}
         onClick={() => onExpandTurn(row.id)}
-        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-xs text-[var(--secondary-foreground)] hover:text-[var(--foreground)]"
+        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]"
       >
-        <span className="flex w-3 shrink-0 justify-center">
-          <GroupGlyph failed={failed} running={row.running} />
+        <span className="flex w-4 shrink-0 justify-center">
+          <ToolGlyph tool={row.running && row.liveTool ? row.liveTool : row.tool} failed={failed} />
         </span>
         <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
           {row.running ? row.liveLabel : row.summary}
         </span>
         <ChevronRight
-          size={11}
+          size={ICON_PX}
+          strokeWidth={ICON_STROKE}
           className={cn(
             "shrink-0",
             row.open
@@ -575,6 +578,103 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
           ))}
         </div>
       )}
+    </Column>
+  );
+});
+
+// ── Work header ────────────────────────────────────────────────────────────
+
+/** "17s", "1m 29s", "7m 37s", "1h 3m" — the Codex desktop app's format. */
+function formatWorked(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/**
+ * The live "Working for 46s" figure, written straight to the DOM once a second
+ * — the same bargain as `useElapsed` in `loading-state.tsx`: the one element
+ * that changes every second never goes through React, and a hidden window
+ * stops painting it (the next visible paint is exact, being derived from
+ * `startedAt`).
+ */
+function LiveElapsed({ startedAt }: { startedAt: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const write = () => {
+      if (ref.current) ref.current.textContent = formatWorked(Date.now() - startedAt);
+    };
+    const paint = () => {
+      if (document.visibilityState === "visible") write();
+    };
+    // The first write is unconditional: a row that mounts in a hidden window
+    // must not sit on an empty "Working for" until it is shown.
+    write();
+    const id = window.setInterval(paint, 1000);
+    document.addEventListener("visibilitychange", paint);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", paint);
+    };
+  }, [startedAt]);
+  return <span ref={ref} className="tabular-nums" />;
+}
+
+/**
+ * The head of an assistant turn: "Working for 46s" while it runs, then "Worked
+ * for 7m 37s ›" with the work folded behind it. Clicking puts the earlier
+ * prose, thinking and tool blocks back in the thread. Opening is instant — it
+ * is a frequent, deliberate act, and the rows it reveals are ordinary rows.
+ */
+export const WorkHeaderRowView = memo(function WorkHeaderRowView({
+  row,
+  onToggle,
+}: {
+  row: WorkHeaderRow;
+  onToggle: (id: string) => void;
+}) {
+  const label = row.live ? (
+    row.startedAt !== null ? (
+      <>
+        Working for <LiveElapsed startedAt={row.startedAt} />
+      </>
+    ) : (
+      "Working"
+    )
+  ) : row.workedMs !== null ? (
+    <>
+      Worked for <span className="tabular-nums">{formatWorked(row.workedMs)}</span>
+    </>
+  ) : (
+    "Worked"
+  );
+  return (
+    <Column className="pt-2 pb-2">
+      <div className="border-b border-[var(--atlas-border-subtle)] pb-2">
+        {row.foldable ? (
+          <button
+            type="button"
+            aria-expanded={row.open}
+            onClick={() => onToggle(row.id)}
+            className="flex h-[22px] cursor-pointer items-center gap-1 text-base text-[var(--muted-foreground)] transition-colors hover:text-[var(--secondary-foreground)]"
+          >
+            <span>{label}</span>
+            <ChevronRight
+              size={ICON_PX}
+              strokeWidth={ICON_STROKE}
+              className={cn("shrink-0 transition-transform", row.open && "rotate-90")}
+            />
+          </button>
+        ) : (
+          // The span matters: straight inside a flex box, "Working for " is its
+          // own flex item and loses the trailing space before the figure.
+          <div className="flex h-[22px] items-center text-base text-[var(--muted-foreground)]">
+            <span>{label}</span>
+          </div>
+        )}
+      </div>
     </Column>
   );
 });
