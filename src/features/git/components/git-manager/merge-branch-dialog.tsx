@@ -174,35 +174,35 @@ export function MergeBranchDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
         <Dialog.Popup
-          className="fixed left-1/2 top-[22%] -translate-x-1/2 z-[var(--z-modal)] w-[420px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border shadow-[var(--shadow-overlay)] flex flex-col"
+          className="fixed left-1/2 top-[22%] -translate-x-1/2 z-modal w-[420px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border shadow-md flex flex-col"
           // Keep focus on the filter input (rendered below), not the list.
           // `false` is Base UI's spelling of Radix's preventDefault() here.
           initialFocus={false}
         >
           <div className="px-4 pt-3.5 pb-3 border-b border-border">
-            <Dialog.Title className="text-[13px] font-semibold text-text-primary flex items-center gap-1.5">
+            <Dialog.Title className="text-base font-semibold text-text-primary flex items-center gap-1.5">
               <GitMerge size={13} className="text-text-secondary shrink-0" />
               <span>
                 Merge into <span className="font-mono text-primary">{branch || "—"}</span>
               </span>
             </Dialog.Title>
-            <Dialog.Description className="text-[11px] text-text-tertiary mt-1">
+            <Dialog.Description className="text-xs text-text-tertiary mt-1">
               Choose a branch to merge into{" "}
               <span className="font-mono">{branch || "the current branch"}</span>.
             </Dialog.Description>
           </div>
 
           {/* Filter */}
-          <div className="flex items-center gap-1.5 px-3 h-[32px] border-b border-border shrink-0">
+          <div className="flex items-center gap-1.5 px-3 h-8 border-b border-border shrink-0">
             <Search size={11} className="text-text-tertiary shrink-0" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter branches…"
               autoFocus
-              className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary min-w-0"
+              className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
             />
           </div>
 
@@ -217,7 +217,7 @@ export function MergeBranchDialog({
                   aria-selected={isSel}
                   onClick={() => setSelected(b.name)}
                   className={cn(
-                    "group flex items-center gap-2 px-3 h-[28px] text-[11px] cursor-pointer",
+                    "group flex items-center gap-2 px-3 h-[28px] text-xs cursor-pointer",
                     isSel
                       ? "bg-bg-selected text-text-primary"
                       : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
@@ -229,7 +229,7 @@ export function MergeBranchDialog({
                   />
                   <span className="truncate flex-1 font-mono">{b.name}</span>
                   {b.isRemote && (
-                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
+                    <span className="shrink-0 text-3xs font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
                       remote
                     </span>
                   )}
@@ -237,7 +237,7 @@ export function MergeBranchDialog({
               );
             })}
             {filtered.length === 0 && (
-              <div className="px-3 py-3 text-[10px] text-text-tertiary text-center">
+              <div className="px-3 py-3 text-2xs text-text-tertiary text-center">
                 No other branches
               </div>
             )}
@@ -246,13 +246,13 @@ export function MergeBranchDialog({
           {/* Preview + actions */}
           <div className="border-t border-border px-3 py-2.5 flex flex-col gap-2.5">
             {fetching && (
-              <p className="text-[10px] text-text-tertiary flex items-center gap-1.5">
+              <p className="text-2xs text-text-tertiary flex items-center gap-1.5">
                 <Loader2 size={10} className="animate-spin shrink-0" />
                 Checking origin for new commits…
               </p>
             )}
             {staleUpstream && (
-              <p className="text-[11px] text-[var(--status-warning)] flex items-start gap-1.5">
+              <p className="text-xs text-[var(--status-warning)] flex items-start gap-1.5">
                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                 <span>
                   <span className="font-mono">{selected}</span> is behind{" "}
@@ -278,7 +278,7 @@ export function MergeBranchDialog({
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => onOpenChange(false)}
-                className="px-3 h-7 rounded text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+                className="px-3 h-7 rounded text-xs text-text-secondary hover:bg-bg-hover transition-colors"
               >
                 Cancel
               </button>
@@ -287,7 +287,7 @@ export function MergeBranchDialog({
                 disabled={!canMerge}
                 title={selected ? `Rebase ${branch} onto ${selected}` : "Rebase"}
                 className={cn(
-                  "px-3 h-7 rounded text-[11px] font-medium transition-colors",
+                  "px-3 h-7 rounded text-xs font-medium transition-colors",
                   canMerge
                     ? "text-text-primary border border-border hover:bg-bg-hover"
                     : "text-text-tertiary bg-bg-hover cursor-not-allowed",
@@ -301,7 +301,7 @@ export function MergeBranchDialog({
                 // `text-text-inverse` on the accent fill, never `text-white` —
                 // see the note in `git-error-dialog`.
                 className={cn(
-                  "flex items-center gap-1.5 px-3 h-7 rounded text-[11px] font-medium transition-colors",
+                  "flex items-center gap-1.5 px-3 h-7 rounded text-xs font-medium transition-colors",
                   canMerge
                     ? "text-text-inverse bg-primary hover:opacity-90"
                     : "text-text-tertiary bg-bg-hover cursor-not-allowed",
@@ -331,14 +331,12 @@ function MergePreviewLine({
 }) {
   if (!selected) {
     return (
-      <p className="text-[11px] text-text-tertiary">
-        Select a branch to see what merging it would do.
-      </p>
+      <p className="text-xs text-text-tertiary">Select a branch to see what merging it would do.</p>
     );
   }
   if (previewing || !preview) {
     return (
-      <p className="text-[11px] text-text-tertiary flex items-center gap-1.5">
+      <p className="text-xs text-text-tertiary flex items-center gap-1.5">
         <Loader2 size={11} className="animate-spin shrink-0" />
         Checking for ability to merge automatically…
       </p>
@@ -353,20 +351,20 @@ function MergePreviewLine({
   switch (preview.kind) {
     case "uptodate":
       return (
-        <p className="text-[11px] text-text-tertiary">
+        <p className="text-xs text-text-tertiary">
           {dst} is already up to date with {src}.
         </p>
       );
     case "invalid":
       return (
-        <p className="text-[11px] text-[var(--status-error)] flex items-center gap-1.5">
+        <p className="text-xs text-[var(--status-error)] flex items-center gap-1.5">
           <Ban size={11} className="shrink-0" />
           Unable to merge unrelated histories.
         </p>
       );
     case "conflicts":
       return (
-        <p className="text-[11px] text-[var(--status-warning)] flex items-center gap-1.5">
+        <p className="text-xs text-[var(--status-warning)] flex items-center gap-1.5">
           <AlertTriangle size={11} className="shrink-0" />
           <span>
             {plural(preview.conflictedFiles, "file")} will conflict when merging {src} into {dst}.
@@ -376,14 +374,14 @@ function MergePreviewLine({
       );
     case "unsupported":
       return (
-        <p className="text-[11px] text-text-secondary">
+        <p className="text-xs text-text-secondary">
           This will merge {plural(n, "commit")} from {src} into {dst}.
         </p>
       );
     case "clean":
     default:
       return (
-        <p className="text-[11px] text-text-secondary">
+        <p className="text-xs text-text-secondary">
           This will merge {plural(n, "commit")} from {src} into {dst}.
         </p>
       );

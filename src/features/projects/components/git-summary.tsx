@@ -47,7 +47,7 @@ export function BranchLine({ summary, className }: { summary?: GitSummary; class
   return (
     <span
       className={cn(
-        "flex items-center gap-1 text-[10px] leading-tight text-[var(--text-tertiary)]",
+        "flex items-center gap-1 text-2xs leading-tight text-[var(--text-tertiary)]",
         className,
       )}
     >
@@ -65,7 +65,7 @@ export function BranchLine({ summary, className }: { summary?: GitSummary; class
 export function NumStatPill({ summary }: { summary?: GitSummary }) {
   if (!summary || (summary.additions === 0 && summary.deletions === 0)) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-elevated)] px-1.5 py-[1px] font-mono text-[9px]">
+    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-elevated)] px-1.5 py-[1px] font-mono text-3xs">
       {summary.additions > 0 && (
         <span className="text-[var(--stat-added)]">+{summary.additions}</span>
       )}

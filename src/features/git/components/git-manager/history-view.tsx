@@ -46,9 +46,7 @@ export function HistoryView() {
                   <ArrowLeft size={13} />
                 </button>
               </HintItem>
-              <span className="font-mono text-[11px] text-text-secondary">
-                {selected.shortHash}
-              </span>
+              <span className="font-mono text-xs text-text-secondary">{selected.shortHash}</span>
               <div className="ml-auto flex items-center gap-0.5">
                 <HintItem label="Copy SHA">
                   <button
@@ -97,7 +95,7 @@ export function HistoryView() {
                 onChange={(e) => setTagName(e.target.value)}
                 autoFocus
                 placeholder="tag name → Enter"
-                className="w-full h-7 rounded border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
+                className="w-full h-7 rounded border border-border bg-bg-input px-2 text-xs font-mono text-text-primary outline-none focus:border-border-strong"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && tagName.trim()) {
                     void run(() => actions.createTag(tagName.trim(), selected.hash));
@@ -112,13 +110,13 @@ export function HistoryView() {
             </div>
           )}
           <div className="px-3 pb-2">
-            <div className="text-[12px] text-text-primary font-medium">{selected.subject}</div>
+            <div className="text-sm text-text-primary font-medium">{selected.subject}</div>
             {selected.body && (
-              <pre className="mt-1 max-h-32 overflow-y-auto hide-scrollbar whitespace-pre-wrap break-words font-sans text-[11px] text-text-tertiary">
+              <pre className="mt-1 max-h-32 overflow-y-auto hide-scrollbar whitespace-pre-wrap break-words font-sans text-xs text-text-tertiary">
                 {selected.body}
               </pre>
             )}
-            <div className="mt-1 text-[10px] text-text-tertiary">
+            <div className="mt-1 text-2xs text-text-tertiary">
               {selected.author} · {selected.date}
             </div>
             <CommitSessions sha={selected.hash} />
@@ -133,7 +131,7 @@ export function HistoryView() {
   return (
     <div className="h-full overflow-y-auto hide-scrollbar">
       {log.length === 0 ? (
-        <div className="px-3 py-8 text-center text-[11px] text-text-tertiary">No history</div>
+        <div className="px-3 py-8 text-center text-xs text-text-tertiary">No history</div>
       ) : (
         log.map((c, i) => (
           <div key={c.hash} className="relative group">
@@ -141,10 +139,10 @@ export function HistoryView() {
               onClick={() => void actions.loadCommit(c.hash)}
               className="w-full text-left flex flex-col gap-0.5 px-3 py-1.5 border-b border-border-subtle hover:bg-bg-hover"
             >
-              <span className="text-[11px] text-text-secondary group-hover:text-text-primary truncate pr-12">
+              <span className="text-xs text-text-secondary group-hover:text-text-primary truncate pr-12">
                 {c.message}
               </span>
-              <span className="text-[9px] text-text-tertiary font-mono">
+              <span className="text-3xs text-text-tertiary font-mono">
                 {c.short_hash} · {c.author} · {c.date}
               </span>
             </button>
@@ -154,7 +152,7 @@ export function HistoryView() {
                   e.stopPropagation();
                   void run(() => actions.undoCommit());
                 }}
-                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border text-3xs text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                 title="Undo this commit — changes return to the staged area (blocked once pushed)"
               >
                 Undo
@@ -177,8 +175,8 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
       }}
       className="w-full text-left px-3 py-1.5 hover:bg-bg-hover"
     >
-      <div className="text-[11px] text-text-primary">{label}</div>
-      <div className="text-[9px] text-text-tertiary">{desc}</div>
+      <div className="text-xs text-text-primary">{label}</div>
+      <div className="text-3xs text-text-tertiary">{desc}</div>
     </button>
   );
   return (
@@ -198,9 +196,9 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
         />
       </HintItem>
       <Popover.Portal>
-        <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
-          <Popover.Popup className="w-[200px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
-            <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+        <Popover.Positioner className="z-popover" side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="w-[200px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-md py-1">
+            <div className="px-3 py-1 text-3xs uppercase tracking-wider text-text-tertiary">
               Reset to here
             </div>
             {item("soft", "Soft", "keep changes staged")}
@@ -274,7 +272,7 @@ function CommitSessions({ sha }: { sha: string }) {
 
   return (
     <div className="mt-2 border-t border-border-subtle pt-2">
-      <div className="text-[9px] uppercase tracking-wider text-text-tertiary">
+      <div className="text-3xs uppercase tracking-wider text-text-tertiary">
         Produced by {sessions.length} session{sessions.length === 1 ? "" : "s"}
       </div>
       {sessions.map((s) => (
@@ -286,11 +284,11 @@ function CommitSessions({ sha }: { sha: string }) {
         >
           <div className="flex items-start gap-1.5">
             <Sparkles size={11} className="mt-0.5 shrink-0 text-text-tertiary" />
-            <span className="text-[11px] text-text-secondary group-hover:text-text-primary line-clamp-2">
+            <span className="text-xs text-text-secondary group-hover:text-text-primary line-clamp-2">
               {s.title ?? "Untitled session"}
             </span>
           </div>
-          <div className="mt-0.5 pl-[18px] text-[9px] text-text-tertiary truncate">
+          <div className="mt-0.5 pl-[18px] text-3xs text-text-tertiary truncate">
             {s.messageCount} message{s.messageCount === 1 ? "" : "s"} · {s.toolCallCount} tool call
             {s.toolCallCount === 1 ? "" : "s"}
             {s.files.length > 0 && ` · ${s.files.join(", ")}`}

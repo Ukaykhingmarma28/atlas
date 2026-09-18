@@ -239,7 +239,7 @@ export function LogPanel() {
         cell: ({ row }) => (
           <span
             title={new Date(row.original.timestamp).toLocaleString()}
-            className="text-[10px] font-mono text-[var(--text-tertiary)]"
+            className="text-2xs font-mono text-[var(--text-tertiary)]"
           >
             {timeAgo(row.original.timestamp, { suffix: true, seconds: true })}
           </span>
@@ -254,7 +254,7 @@ export function LogPanel() {
           return (
             <span
               className={cn(
-                "inline-flex items-center px-1.5 h-[15px] rounded border text-[9px] font-mono leading-none",
+                "inline-flex items-center px-1.5 h-[15px] rounded border text-3xs font-mono leading-none",
                 c.text,
                 c.bg,
                 c.border,
@@ -270,7 +270,7 @@ export function LogPanel() {
         id: "kind",
         header: "Kind",
         cell: ({ row }) => (
-          <span className="text-[10px] font-mono text-[var(--text-secondary)] truncate inline-block max-w-[120px]">
+          <span className="text-2xs font-mono text-[var(--text-secondary)] truncate inline-block max-w-[120px]">
             {row.original.kind}
           </span>
         ),
@@ -280,7 +280,7 @@ export function LogPanel() {
         id: "project",
         header: "Project",
         cell: ({ row }) => (
-          <span className="text-[10px] font-mono text-[var(--text-tertiary)] truncate inline-block max-w-[140px]">
+          <span className="text-2xs font-mono text-[var(--text-tertiary)] truncate inline-block max-w-[140px]">
             {row.original.projectName ?? "—"}
           </span>
         ),
@@ -290,7 +290,7 @@ export function LogPanel() {
         id: "summary",
         header: "Summary",
         cell: ({ row }) => (
-          <span className="text-[12px] text-[var(--text-primary)] truncate inline-block max-w-full">
+          <span className="text-sm text-[var(--text-primary)] truncate inline-block max-w-full">
             {row.original.summary}
           </span>
         ),
@@ -376,7 +376,7 @@ export function LogPanel() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search activity…"
-            className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary min-w-0"
+            className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
           />
         </div>
 
@@ -391,7 +391,7 @@ export function LogPanel() {
         <button
           onClick={() => setShowPinnedOnly((v) => !v)}
           className={cn(
-            "flex items-center gap-1 px-2 h-6 rounded text-[10px] cursor-pointer outline-none transition-colors",
+            "flex items-center gap-1 px-2 h-6 rounded text-2xs cursor-pointer outline-none transition-colors",
             showPinnedOnly
               ? "text-[var(--primary)] bg-[var(--atlas-primary-muted)]"
               : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover",
@@ -404,7 +404,7 @@ export function LogPanel() {
 
         <div className="flex-1" />
 
-        <span className="text-[10px] text-text-tertiary font-mono">
+        <span className="text-2xs text-text-tertiary font-mono">
           {filtered.length} / {merged.length}
         </span>
 
@@ -413,7 +413,7 @@ export function LogPanel() {
             if (showPinnedOnly) clearPinned();
             else clearBuffer();
           }}
-          className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-[var(--status-error)] hover:bg-bg-hover cursor-pointer transition-colors"
+          className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-[var(--status-error)] hover:bg-bg-hover cursor-pointer transition-colors"
           title={showPinnedOnly ? "Clear pinned" : "Clear buffer"}
         >
           <Trash2 size={11} />
@@ -422,7 +422,7 @@ export function LogPanel() {
       </div>
 
       {/* Header row */}
-      <div className="flex items-center h-[24px] shrink-0 border-b border-border-subtle bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary font-medium">
+      <div className="flex items-center h-6 shrink-0 border-b border-border-subtle bg-bg-base px-3 text-2xs uppercase tracking-wider text-text-tertiary font-medium">
         {table.getHeaderGroups().map((hg) => (
           <div key={hg.id} className="flex items-center w-full">
             {hg.headers.map((h) => (
@@ -437,7 +437,7 @@ export function LogPanel() {
       {/* Virtualized rows */}
       <div ref={parentRef} className="flex-1 min-h-0 overflow-auto hide-scrollbar">
         {rows.length === 0 ? (
-          <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
+          <div className="px-3 py-6 text-xs text-text-tertiary text-center">
             {merged.length === 0
               ? "No events yet — start chatting or making changes."
               : "No matches."}
@@ -486,7 +486,7 @@ export function LogPanel() {
                   </div>
                   {isExpanded && (
                     <div className="px-3 pb-3 pt-1 bg-[var(--bg-elevated)]/40 border-b border-[var(--border-subtle)]">
-                      <pre className="text-[10px] font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)] p-2 max-h-[200px] overflow-auto">
+                      <pre className="text-2xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)] p-2 max-h-[200px] overflow-auto">
                         {JSON.stringify(row.original, null, 2)}
                       </pre>
                     </div>
@@ -520,7 +520,7 @@ function SourceFilter({
       <DropdownMenu.Trigger
         render={
           <button
-            className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
             title="Filter sources"
           >
             <ListFilter size={11} />
@@ -529,8 +529,8 @@ function SourceFilter({
         }
       />
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+        <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md py-1 min-w-[160px]">
             {SOURCES.map((s) => {
               const checked = active.has(s);
               return (
@@ -543,7 +543,7 @@ function SourceFilter({
                     else next.delete(s);
                     onChange(next);
                   }}
-                  className="flex items-center gap-2 px-3 h-[24px] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none capitalize"
+                  className="flex items-center gap-2 px-3 h-6 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none capitalize"
                 >
                   <span
                     className={cn(
@@ -580,7 +580,7 @@ function ProjectScopeFilter({
       <DropdownMenu.Trigger
         render={
           <button
-            className="flex items-center gap-1 px-2 h-6 rounded text-[10px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
+            className="flex items-center gap-1 px-2 h-6 rounded text-2xs text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
             title="Project scope"
           >
             {value === "all" ? "All projects" : "Current project"}
@@ -588,8 +588,8 @@ function ProjectScopeFilter({
         }
       />
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+        <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md py-1 min-w-[160px]">
             {(
               [
                 { v: "all", label: "All projects" },
@@ -601,7 +601,7 @@ function ProjectScopeFilter({
                 onClick={() => onChange(v)}
                 disabled={v === "current" && !hasProject}
                 className={cn(
-                  "flex items-center gap-2 px-3 h-[24px] text-[11px] cursor-pointer outline-none",
+                  "flex items-center gap-2 px-3 h-6 text-xs cursor-pointer outline-none",
                   value === v
                     ? "text-[var(--text-primary)] bg-[var(--bg-selected)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",

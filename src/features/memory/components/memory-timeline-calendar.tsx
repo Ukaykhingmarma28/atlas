@@ -5,7 +5,7 @@ import { Hint } from "@/ui/tooltip";
 import type { MemoryTimeline } from "../lib/memory-timeline-api";
 
 /**
- * Apple-Calendar-style week view. The left panel (#141414) lists branches as a
+ * Apple-Calendar-style week view. The left panel (a card-tinted gutter) lists branches as a
  * plain text list with dividers; the right grid lays out 7 day columns and
  * **stacks items as cards** by time. Hovering/selecting a branch draws smooth
  * bezier connectors from its row to each of its cards. Navigation skips empty
@@ -15,13 +15,13 @@ import type { MemoryTimeline } from "../lib/memory-timeline-api";
  *   id forms — "branch:<name>", "commit:<sha>", "session:<id>".
  */
 
-const PANEL = "#0E0F0E";
+const PANEL = "var(--card)";
 const GUTTER = 184;
 // Monochromatic — branches are disambiguated by the connector lines, not hue.
-const MONO = "#6b6b6b";
-const DOT_MEMORY = "#3fb950"; // has memory feeding into it
-const DOT_PLAIN = "rgba(255,255,255,0.7)"; // no linked memory
-const CONNECTOR = "rgba(255,255,255,0.55)";
+const MONO = "var(--muted-foreground)";
+const DOT_MEMORY = "var(--atlas-status-success-foreground)"; // has memory feeding into it
+const DOT_PLAIN = "color-mix(in srgb, var(--foreground) 70%, transparent)"; // no linked memory
+const CONNECTOR = "color-mix(in srgb, var(--foreground) 55%, transparent)";
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface CalItem {
@@ -230,12 +230,12 @@ export function MemoryTimelineCalendar({
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full">
-      {/* ── Left branch list (#141414) ── */}
+      {/* ── Left branch list ── */}
       <div
         className="shrink-0 flex flex-col border-r border-[var(--border)]"
         style={{ width: GUTTER, background: PANEL }}
       >
-        <div className="flex items-center px-3 h-[32px] shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border)]">
+        <div className="flex items-center px-3 h-8 shrink-0 text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border)]">
           Branches
         </div>
         <div className="flex-1 overflow-y-auto hide-scrollbar">
@@ -260,7 +260,7 @@ export function MemoryTimelineCalendar({
                   <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: MONO }} />
                   <span
                     className={cn(
-                      "text-[11px] truncate",
+                      "text-xs truncate",
                       b.is_current
                         ? "text-[var(--text-primary)] font-medium"
                         : "text-[var(--text-secondary)]",
@@ -269,7 +269,7 @@ export function MemoryTimelineCalendar({
                     {b.name}
                   </span>
                 </div>
-                <span className="text-[9px] text-[var(--text-tertiary)] pl-3.5">
+                <span className="text-3xs text-[var(--text-tertiary)] pl-3.5">
                   {model.commitCount.get(b.name) ?? 0} commits{b.is_current ? " · current" : ""}
                 </span>
               </button>
@@ -281,7 +281,7 @@ export function MemoryTimelineCalendar({
       {/* ── Week calendar ── */}
       <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-base)]">
         {/* Week nav */}
-        <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2 px-3 h-8 shrink-0 border-b border-[var(--border)]">
           <Hint label="Previous week with activity">
             <button
               onClick={goPrev}
@@ -302,11 +302,11 @@ export function MemoryTimelineCalendar({
           </Hint>
           <button
             onClick={goToday}
-            className="h-6 px-2.5 rounded-md border border-[var(--border)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="h-6 px-2.5 rounded-md border border-[var(--border)] text-2xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             Today
           </button>
-          <span className="text-[12px] font-medium text-[var(--text-primary)] tabular-nums ml-1">
+          <span className="text-sm font-medium text-[var(--text-primary)] tabular-nums ml-1">
             {rangeLabel}
           </span>
         </div>
@@ -320,12 +320,12 @@ export function MemoryTimelineCalendar({
                 key={d}
                 className="flex-1 min-w-0 flex flex-col items-center justify-center py-1.5 border-l border-[var(--border-subtle)] first:border-l-0"
               >
-                <span className="text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
+                <span className="text-3xs uppercase tracking-wider text-[var(--text-tertiary)]">
                   {WEEKDAYS[new Date(d).getDay()]}
                 </span>
                 <span
                   className={cn(
-                    "text-[13px] tabular-nums leading-none",
+                    "text-base tabular-nums leading-none",
                     isToday
                       ? // `w-6 h-6` (was w-5) so two-digit dates (10–31) aren't
                         // cramped/clipped inside the today circle.
@@ -378,10 +378,10 @@ export function MemoryTimelineCalendar({
                         style={{ background: memoryIds?.has(c.id) ? DOT_MEMORY : DOT_PLAIN }}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[10px] leading-snug text-[var(--text-secondary)] line-clamp-2 break-words">
+                        <span className="block text-2xs leading-snug text-[var(--text-secondary)] line-clamp-2 break-words">
                           {c.title}
                         </span>
-                        <span className="block text-[9px] tabular-nums text-[var(--text-tertiary)] mt-0.5">
+                        <span className="block text-3xs tabular-nums text-[var(--text-tertiary)] mt-0.5">
                           {fmtTime(c.ts)}
                         </span>
                       </span>

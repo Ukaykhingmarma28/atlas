@@ -91,17 +91,17 @@ export function CheckpointsPicker({
         />
       </HintItem>
       <Popover.Portal>
-        <Popover.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-          <Popover.Popup className="flex max-h-[380px] w-[320px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
+        <Popover.Positioner className="z-popover" align="end" sideOffset={4}>
+          <Popover.Popup className="flex max-h-[380px] w-[320px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-popover shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
             <div className="flex h-[30px] shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+              <span className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
                 Checkpoints
               </span>
               <div className="flex-1" />
               {rows === null ? (
                 <Loader2 size={10} className="animate-spin text-[var(--text-tertiary)]" />
               ) : (
-                <span className="text-[9px] tabular-nums text-[var(--text-ghost)]">
+                <span className="text-3xs tabular-nums text-[var(--text-ghost)]">
                   {filtered.length}
                 </span>
               )}
@@ -112,16 +112,16 @@ export function CheckpointsPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search commits…"
-              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
             />
 
             <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
               {rows === null ? (
-                <p className="px-3 py-4 text-center text-[11px] text-[var(--text-tertiary)]">
+                <p className="px-3 py-4 text-center text-xs text-[var(--text-tertiary)]">
                   Reading checkpoints…
                 </p>
               ) : filtered.length === 0 ? (
-                <p className="px-3 py-4 text-center text-[11px] text-[var(--text-tertiary)]">
+                <p className="px-3 py-4 text-center text-xs text-[var(--text-tertiary)]">
                   {rows.length === 0
                     ? "No commits have been linked to a session yet."
                     : `Nothing matches “${query.trim()}”.`}
@@ -150,18 +150,18 @@ export function CheckpointsPicker({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline gap-1.5">
-                            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight text-[var(--text-primary)]">
+                            <span className="min-w-0 flex-1 truncate text-xs leading-tight text-[var(--text-primary)]">
                               {row.commitSubject ?? (
                                 <span className="text-[var(--text-tertiary)]">
                                   {row.sessionTitle ?? "Checkpoint"}
                                 </span>
                               )}
                             </span>
-                            <span className="shrink-0 text-[9px] tabular-nums text-[var(--text-ghost)]">
+                            <span className="shrink-0 text-3xs tabular-nums text-[var(--text-ghost)]">
                               {timeAgo(row.at)}
                             </span>
                           </span>
-                          <span className="mt-0.5 flex items-center gap-1.5 text-[9px] leading-tight text-[var(--text-tertiary)]">
+                          <span className="mt-0.5 flex items-center gap-1.5 text-3xs leading-tight text-[var(--text-tertiary)]">
                             <span className="shrink-0 font-mono">{row.commitSha.slice(0, 7)}</span>
                             {row.branch && (
                               <>
@@ -189,7 +189,7 @@ export function CheckpointsPicker({
             {/* The project is on its own line only when the list spans more than
                 one — inside a filtered board it is the same value on every row. */}
             {rows !== null && filtered.length > 0 && (
-              <p className="shrink-0 border-t border-[var(--border)] px-3 py-1 text-[9px] text-[var(--text-ghost)]">
+              <p className="shrink-0 border-t border-[var(--border)] px-3 py-1 text-3xs text-[var(--text-ghost)]">
                 {new Set(filtered.map((r) => r.projectPath)).size > 1
                   ? `Across ${new Set(filtered.map((r) => r.projectPath)).size} projects`
                   : filtered[0].projectName}

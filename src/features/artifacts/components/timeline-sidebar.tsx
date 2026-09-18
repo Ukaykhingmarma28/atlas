@@ -231,7 +231,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
 
   if (loading) {
     return (
-      <p className="py-8 text-center text-[12px] text-[var(--text-tertiary)]">
+      <p className="py-8 text-center text-sm text-[var(--text-tertiary)]">
         Reading the session store…
       </p>
     );
@@ -309,7 +309,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
           type="button"
           onClick={() => virtualizer.scrollToIndex(0, { align: "start" })}
           className={cn(
-            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/85 px-3 text-[11px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--text-primary)]",
+            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/85 px-3 text-xs text-[var(--text-secondary)] shadow-md backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--text-primary)]",
             edges.top ? "opacity-100" : "pointer-events-none opacity-0",
           )}
           tabIndex={edges.top ? undefined : -1}
@@ -410,7 +410,7 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
   return (
     <div
       title={`${row.date} · ${row.meta}`}
-      className="relative flex h-full items-center pr-3 text-[12px] font-medium"
+      className="relative flex h-full items-center pr-3 text-sm font-medium"
       style={{ paddingLeft: laneX(0) + LABEL_GAP }}
     >
       <Dot
@@ -488,7 +488,7 @@ const SessionRow = memo(function SessionRow({
       />
       <span
         className={cn(
-          "min-w-0 truncate text-[12.5px] leading-tight tracking-[-0.01em]",
+          "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",
           selected
             ? "text-[var(--text-primary)]"
             : lane === 2 || state === "done"
@@ -528,13 +528,13 @@ const ClusterRow = memo(function ClusterRow({
       <Dot lane={1} r={SESSION_R} style={{ background: DOT_NEUTRAL }} />
       <span
         className={cn(
-          "min-w-0 truncate text-[12.5px] leading-tight tracking-[-0.01em]",
+          "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",
           holdsOpen ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
         )}
       >
         {row.title}
       </span>
-      <span className="ml-1.5 shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
+      <span className="ml-1.5 shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
         ×{row.sessions.length}
       </span>
       <Chevron
@@ -594,11 +594,11 @@ export function clusterRows(rows: BoardSession[]): ListItem[] {
 function Empty({ filtered }: { filtered: boolean }) {
   return (
     <div className="px-4 py-12 text-center">
-      <p className="text-[12px] text-[var(--text-secondary)]">
+      <p className="text-sm text-[var(--text-secondary)]">
         {filtered ? "No sessions match this filter." : "No sessions captured yet."}
       </p>
       {!filtered && (
-        <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+        <p className="mt-1 text-xs text-[var(--text-tertiary)]">
           Send a prompt to an agent in this Project and it will appear here.
         </p>
       )}

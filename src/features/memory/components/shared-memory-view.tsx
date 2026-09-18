@@ -170,7 +170,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${tab}…`}
             spellCheck={false}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            className="flex-1 min-w-0 bg-transparent outline-none text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
           />
         </div>
 
@@ -251,14 +251,11 @@ function EventRow({
         )}
       >
         <span
-          className={cn(
-            EVENT_COL.seq,
-            "font-mono text-[10px] tabular-nums text-[var(--text-ghost)]",
-          )}
+          className={cn(EVENT_COL.seq, "font-mono text-2xs tabular-nums text-[var(--text-ghost)]")}
         >
           {e.seq}
         </span>
-        <span className={cn(EVENT_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+        <span className={cn(EVENT_COL.time, "text-2xs text-[var(--text-tertiary)]")}>
           {eventTime(e.ts)}
         </span>
         <span className={EVENT_COL.agent}>
@@ -268,7 +265,7 @@ function EventRow({
           <KindChip kind={e.kind} />
         </span>
         <span className={cn(EVENT_COL.detail, "min-w-0 pr-3")}>
-          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
+          <span className="block truncate text-sm text-[var(--text-secondary)]">
             {eventDetail(e) || <span className="text-[var(--text-ghost)]">—</span>}
           </span>
         </span>
@@ -300,7 +297,7 @@ function EventDetail({ event: e }: { event: MemoryEvent }) {
       </div>
       {detail && (
         <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2">
-          <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[1.55] text-[var(--text-secondary)]">
             {detail}
           </pre>
         </div>
@@ -363,14 +360,11 @@ function PlanRow({
         )}
       >
         <span
-          className={cn(
-            PLAN_COL.seq,
-            "font-mono text-[10px] tabular-nums text-[var(--text-ghost)]",
-          )}
+          className={cn(PLAN_COL.seq, "font-mono text-2xs tabular-nums text-[var(--text-ghost)]")}
         >
           {e.seq}
         </span>
-        <span className={cn(PLAN_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+        <span className={cn(PLAN_COL.time, "text-2xs text-[var(--text-tertiary)]")}>
           {eventTime(e.ts)}
         </span>
         <span className={PLAN_COL.agent}>
@@ -380,7 +374,7 @@ function PlanRow({
           <StatusChip status={status} />
         </span>
         <span className={cn(PLAN_COL.plan, "min-w-0 pr-3")}>
-          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
+          <span className="block truncate text-sm text-[var(--text-secondary)]">
             {firstLine || <span className="text-[var(--text-ghost)]">—</span>}
           </span>
         </span>
@@ -402,7 +396,7 @@ function PlanRow({
             <MetaChip label="When" value={fmtDateTime(e.ts)} />
           </div>
           <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2">
-            <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[1.55] text-[var(--text-secondary)]">
               {text || "—"}
             </pre>
           </div>
@@ -416,7 +410,7 @@ function PlanRow({
 
 function HeaderRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-2xs uppercase tracking-wider text-[var(--text-tertiary)]">
       {children}
     </div>
   );
@@ -424,7 +418,7 @@ function HeaderRow({ children }: { children: React.ReactNode }) {
 
 function EmptyRows({ label }: { label: string }) {
   return (
-    <div className="grid place-items-center h-[160px] text-[11px] text-[var(--text-tertiary)]">
+    <div className="grid place-items-center h-[160px] text-xs text-[var(--text-tertiary)]">
       {label}
     </div>
   );
@@ -447,7 +441,7 @@ function SegBtn({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 h-[20px] px-2.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer",
+        "flex items-center gap-1.5 h-control-xs px-2.5 rounded-full text-xs font-medium transition-colors cursor-pointer",
         active
           ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
           : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -455,9 +449,7 @@ function SegBtn({
     >
       <span className={active ? "opacity-100" : "opacity-60"}>{icon}</span>
       {label}
-      {count > 0 && (
-        <span className="text-[9px] tabular-nums text-[var(--text-ghost)]">{count}</span>
-      )}
+      {count > 0 && <span className="text-3xs tabular-nums text-[var(--text-ghost)]">{count}</span>}
     </button>
   );
 }
@@ -504,7 +496,7 @@ function FilterMenu({
         onClick={() => setOpen((o) => !o)}
         title={`Filter by ${label.toLowerCase()}`}
         className={cn(
-          "flex items-center gap-1 h-6 rounded-md border px-2 text-[11px] transition-colors cursor-pointer",
+          "flex items-center gap-1 h-6 rounded-md border px-2 text-xs transition-colors cursor-pointer",
           active
             ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
             : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
@@ -557,7 +549,7 @@ function FilterOption({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors cursor-pointer",
+        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors cursor-pointer",
         active
           ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
@@ -575,7 +567,7 @@ function AgentTag({ agent }: { agent: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 min-w-0">
       <AgentMark agentType={pluginIdForSource(agent)} />
-      <span className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+      <span className="truncate font-mono text-2xs uppercase tracking-wider text-[var(--text-tertiary)]">
         {agentMetaForSource(agent).label}
       </span>
     </span>
@@ -595,7 +587,7 @@ const KIND_LABEL: Record<string, string> = {
 
 function KindChip({ kind }: { kind: string }) {
   return (
-    <span className="inline-flex items-center rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-tertiary)]">
+    <span className="inline-flex items-center rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-2xs text-[var(--text-tertiary)]">
       {KIND_LABEL[kind] ?? kind.replace(/_/g, " ")}
     </span>
   );
@@ -606,7 +598,7 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs",
         done
           ? "bg-[var(--status-success-bg,var(--bg-elevated))] text-[var(--status-success,var(--text-tertiary))]"
           : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
@@ -620,10 +612,8 @@ function StatusChip({ status }: { status: string }) {
 function MetaChip({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-wider text-[var(--text-ghost)]">{label}</span>
-      <span
-        className={cn("text-[11px] text-[var(--text-secondary)]", mono && "font-mono text-[10px]")}
-      >
+      <span className="text-3xs uppercase tracking-wider text-[var(--text-ghost)]">{label}</span>
+      <span className={cn("text-xs text-[var(--text-secondary)]", mono && "font-mono text-2xs")}>
         {value}
       </span>
     </span>
@@ -659,10 +649,10 @@ function EmptyState() {
         <Share2 size={16} />
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-[13px] font-medium text-[var(--text-secondary)]">
+        <span className="text-base font-medium text-[var(--text-secondary)]">
           No shared memory yet
         </span>
-        <p className="max-w-[34ch] text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p className="max-w-[34ch] text-sm leading-[1.5] text-[var(--text-tertiary)]">
           As agents plan, decide, and edit files, their work is captured here as events and shared
           with every agent on this project.
         </p>

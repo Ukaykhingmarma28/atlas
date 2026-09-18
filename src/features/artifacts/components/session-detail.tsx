@@ -470,7 +470,7 @@ export function SessionDetail({
                 register={register}
               />
               {renderCount < groups.length && (
-                <p className="py-6 text-center font-mono text-[11px] text-[var(--text-tertiary)]">
+                <p className="py-6 text-center font-mono text-xs text-[var(--text-tertiary)]">
                   {groups.length - renderCount} more…
                 </p>
               )}
@@ -517,7 +517,7 @@ export function SessionDetail({
           {/* The search field, between the two control clusters and centred in the
            *  measure. Same pill as the memory Timeline's: floating, blurred, no
            *  box around it — it belongs to the content, not to a toolbar. */}
-          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 px-4 shadow-[var(--shadow-overlay)] backdrop-blur-2xl">
+          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 px-4 shadow-md backdrop-blur-2xl">
             <Search size={15} className="shrink-0 text-[var(--text-tertiary)]" />
             <input
               value={search}
@@ -528,11 +528,11 @@ export function SessionDetail({
               placeholder="Search this session…"
               spellCheck={false}
               aria-label="Search this session"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
             />
             {search && (
               <>
-                <span className="shrink-0 font-mono text-[11px] text-[var(--text-ghost)]">
+                <span className="shrink-0 font-mono text-xs text-[var(--text-ghost)]">
                   {groups.length}
                 </span>
                 <Hint label="Clear search">
@@ -548,7 +548,7 @@ export function SessionDetail({
             )}
           </div>
 
-          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-xl">
+          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 shadow-md backdrop-blur-xl">
             <BarButton
               label="Next prompt"
               bare
@@ -648,7 +648,7 @@ function Masthead({ detail }: { detail: Detail }) {
 
   return (
     <>
-      <h1 className="text-[22px] font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--text-primary)]">
+      <h1 className="text-xl font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--text-primary)]">
         {sessionTitle(s.title) ?? (
           <span className="text-[var(--text-tertiary)]">Untitled session</span>
         )}
@@ -668,12 +668,12 @@ function Masthead({ detail }: { detail: Detail }) {
             {branch}
           </Chip>
         )}
-        <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
+        <span className="font-mono text-xs text-[var(--text-tertiary)]">
           {timeAgo(s.lastActivityAt, { suffix: true })} · {formatDuration(s.activeSeconds)}
         </span>
         {s.needsAttention && (
           <span
-            className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-[10.5px] text-[var(--status-warning)]"
+            className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--status-warning)]/25 bg-[var(--status-warning-muted)] px-2.5 font-mono text-xs text-[var(--status-warning)]"
             title={s.attentionReason ?? undefined}
           >
             <TriangleAlert size={11} />
@@ -718,7 +718,7 @@ function Masthead({ detail }: { detail: Detail }) {
 function Cell({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 bg-[var(--bg-raised)] px-3.5 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+      <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
         {label}
       </p>
       {children}
@@ -746,13 +746,13 @@ function Metric({
     <Cell label={label}>
       <p
         className={cn(
-          "mt-1.5 truncate font-mono text-[17px] font-medium tracking-[-0.02em]",
+          "mt-1.5 truncate font-mono text-lg font-medium tracking-[-0.02em]",
           absent ? "text-[var(--text-ghost)]" : "text-[var(--text-primary)]",
         )}
       >
         {value}
       </p>
-      <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">{sub}</p>
+      <p className="mt-0.5 truncate font-mono text-2xs text-[var(--text-ghost)]">{sub}</p>
     </Cell>
   );
 }
@@ -783,9 +783,7 @@ function TokenMix({ spend, total }: { spend: TokenSpend; total: number }) {
     return (
       <Cell label="Token mix">
         <div className="mt-3.5 h-1.5 w-full rounded-full bg-[var(--bg-hover)]" />
-        <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]">
-          not reported
-        </p>
+        <p className="mt-2.5 truncate font-mono text-2xs text-[var(--text-ghost)]">not reported</p>
       </Cell>
     );
   }
@@ -824,12 +822,12 @@ function TokenMix({ spend, total }: { spend: TokenSpend; total: number }) {
             key={segment.label}
             style={{
               width: `${(segment.value / total) * 100}%`,
-              background: `rgba(255,255,255,${segment.tint})`,
+              background: `color-mix(in srgb, var(--foreground) ${segment.tint * 100}%, transparent)`,
             }}
           />
         ))}
       </div>
-      <p className="mt-2.5 truncate font-mono text-[10px] text-[var(--text-ghost)]" title={exact}>
+      <p className="mt-2.5 truncate font-mono text-2xs text-[var(--text-ghost)]" title={exact}>
         {caption}
       </p>
     </Cell>
@@ -856,7 +854,7 @@ function costLabel(cost: number): string {
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 font-mono text-[10.5px] text-[var(--text-tertiary)]">
+    <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 font-mono text-xs text-[var(--text-tertiary)]">
       {children}
     </span>
   );
@@ -1027,7 +1025,7 @@ const Row = memo(function Row({
         <div className="flex items-baseline gap-2">
           <span
             className={cn(
-              "text-[12.5px] font-medium",
+              "text-base font-medium",
               group.kind === "checkpoint"
                 ? "text-[var(--capture-live)]"
                 : group.kind === "prompt"
@@ -1038,11 +1036,9 @@ const Row = memo(function Row({
             {kindLabel(group)}
           </span>
           <span className="text-[var(--border-strong)]">·</span>
-          <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
-            {time(head.at)}
-          </span>
+          <span className="font-mono text-xs text-[var(--text-tertiary)]">{time(head.at)}</span>
           {group.kind === "tool_call" && group.entries.length > 1 && (
-            <span className="font-mono text-[10.5px] text-[var(--text-ghost)]">
+            <span className="font-mono text-xs text-[var(--text-ghost)]">
               {group.entries.length} calls
             </span>
           )}
@@ -1070,7 +1066,7 @@ const Row = memo(function Row({
           <Prompt entry={head} projectPath={projectPath} />
         ) : (
           <Clamp>
-            <div className="mt-1.5 text-[13px] leading-[1.65] text-[var(--text-secondary)]">
+            <div className="mt-1.5 text-base leading-[1.65] text-[var(--text-secondary)]">
               <Body entry={head} projectPath={projectPath} markdown={group.kind === "response"} />
             </div>
           </Clamp>
@@ -1209,7 +1205,7 @@ function Calls({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1.5 flex cursor-pointer items-center gap-1 text-[12px] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+        className="mt-1.5 flex cursor-pointer items-center gap-1 text-sm text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
       >
         Show tool calls
         <ChevronRight size={12} />
@@ -1223,7 +1219,7 @@ function Calls({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="mt-1.5 flex cursor-pointer items-center gap-1 text-[12px] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+        className="mt-1.5 flex cursor-pointer items-center gap-1 text-sm text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
       >
         Hide tool calls
         <ChevronDown size={12} className="rotate-180" />
@@ -1247,15 +1243,15 @@ function CallStat({ calls }: { calls: TimelineEntry[] }) {
   return (
     <>
       {stat.parts.length > 0 && (
-        <span className="truncate font-mono text-[10.5px] text-[var(--text-ghost)]">
+        <span className="truncate font-mono text-xs text-[var(--text-ghost)]">
           {stat.parts.join(" · ")}
         </span>
       )}
       {stat.added > 0 && (
-        <span className="font-mono text-[10.5px] text-[var(--stat-added)]">+{stat.added}</span>
+        <span className="font-mono text-xs text-[var(--stat-added)]">+{stat.added}</span>
       )}
       {stat.removed > 0 && (
-        <span className="font-mono text-[10.5px] text-[var(--stat-removed)]">−{stat.removed}</span>
+        <span className="font-mono text-xs text-[var(--stat-removed)]">−{stat.removed}</span>
       )}
     </>
   );
@@ -1359,7 +1355,7 @@ function CallTable({
 
   if (calls.length === 0) {
     return (
-      <p className="py-10 text-center text-[12px] text-[var(--text-tertiary)]">
+      <p className="py-10 text-center text-sm text-[var(--text-tertiary)]">
         No tool calls match the current filters.
       </p>
     );
@@ -1390,7 +1386,7 @@ function CallTable({
         <button
           type="button"
           onClick={() => setShown((cur) => cur + CALL_WINDOW_GROW)}
-          className="flex h-9 w-full cursor-pointer items-center justify-center bg-[var(--bg-raised)] font-mono text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex h-9 w-full cursor-pointer items-center justify-center bg-[var(--bg-raised)] font-mono text-xs text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           Show {Math.min(CALL_WINDOW_GROW, hidden)} more of {hidden}…
         </button>
@@ -1436,17 +1432,17 @@ const CallRow = memo(function CallRow({
         )}
       >
         {!dense && (
-          <span className="font-mono text-[10.5px] text-[var(--text-ghost)]">{time(call.at)}</span>
+          <span className="font-mono text-xs text-[var(--text-ghost)]">{time(call.at)}</span>
         )}
         <span
           className={cn(
-            "truncate font-mono text-[11px]",
+            "truncate font-mono text-xs",
             failed ? "text-[var(--status-error)]" : "text-[var(--status-info)]",
           )}
         >
           {call.toolName ?? "Other"}
         </span>
-        <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-tertiary)]">
+        <span className="min-w-0 truncate font-mono text-xs text-[var(--text-tertiary)]">
           {call.paths[0] ?? call.toolTitle ?? ""}
         </span>
         <ChevronRight
@@ -1461,7 +1457,7 @@ const CallRow = memo(function CallRow({
       {expanded && (
         <div className="space-y-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-3">
           {call.paths.length > 0 && (
-            <p className="font-mono text-[11px] text-[var(--text-tertiary)]">
+            <p className="font-mono text-xs text-[var(--text-tertiary)]">
               {call.paths.join("  ·  ")}
             </p>
           )}
@@ -1475,7 +1471,7 @@ const CallRow = memo(function CallRow({
             />
           )}
           {call.resultBinary ? (
-            <p className="font-mono text-[11px] text-[var(--text-tertiary)]">
+            <p className="font-mono text-xs text-[var(--text-tertiary)]">
               The result is binary and is not shown.
             </p>
           ) : (
@@ -1490,7 +1486,7 @@ const CallRow = memo(function CallRow({
             )
           )}
           {!call.arguments && !call.result && !call.resultBinary && (
-            <p className="font-mono text-[11px] text-[var(--text-ghost)]">
+            <p className="font-mono text-xs text-[var(--text-ghost)]">
               Nothing else was recorded for this call.
             </p>
           )}
@@ -1523,12 +1519,12 @@ function Checkpoint({ entry }: { entry: TimelineEntry }) {
     >
       <div className="flex items-center gap-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
         <GitCommitHorizontal size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-        <span className="shrink-0 font-mono text-[11px] text-[var(--text-tertiary)]">
+        <span className="shrink-0 font-mono text-xs text-[var(--text-tertiary)]">
           {entry.commitSha?.slice(0, 7)}
         </span>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[12px]",
+            "min-w-0 flex-1 truncate text-sm",
             orphaned ? "text-[var(--text-secondary)]" : "text-[var(--text-primary)]",
           )}
         >
@@ -1547,19 +1543,19 @@ function Checkpoint({ entry }: { entry: TimelineEntry }) {
          *  whole subsystem exists to avoid. */}
         {orphaned && (
           <span
-            className="shrink-0 rounded-full bg-[var(--status-warning-muted)] px-2 py-px font-mono text-[10px] text-[var(--status-warning)]"
+            className="shrink-0 rounded-full bg-[var(--status-warning-muted)] px-2 py-px font-mono text-2xs text-[var(--status-warning)]"
             title="This commit is no longer in history — rewritten or squashed. The Session record is kept."
           >
             orphaned
           </span>
         )}
         {entry.insertions > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-added)]">
+          <span className="shrink-0 font-mono text-xs text-[var(--stat-added)]">
             +{entry.insertions}
           </span>
         )}
         {entry.deletions > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-removed)]">
+          <span className="shrink-0 font-mono text-xs text-[var(--stat-removed)]">
             −{entry.deletions}
           </span>
         )}
@@ -1570,13 +1566,13 @@ function Checkpoint({ entry }: { entry: TimelineEntry }) {
           {entry.files.slice(0, 12).map((file) => (
             <li
               key={file}
-              className="truncate font-mono text-[11px] leading-[1.75] text-[var(--text-tertiary)]"
+              className="truncate font-mono text-xs leading-[1.75] text-[var(--text-tertiary)]"
             >
               {file}
             </li>
           ))}
           {entry.files.length > 12 && (
-            <li className="font-mono text-[11px] leading-[1.75] text-[var(--text-ghost)]">
+            <li className="font-mono text-xs leading-[1.75] text-[var(--text-ghost)]">
               +{entry.files.length - 12} more
             </li>
           )}
@@ -1586,7 +1582,7 @@ function Checkpoint({ entry }: { entry: TimelineEntry }) {
       {/* Suppressed when orphaned: the branch no longer contains this commit,
        *  so showing it would assert exactly the link that was lost. */}
       {entry.branch && !orphaned && (
-        <p className="border-t border-[var(--border-subtle)] px-3 py-1.5 font-mono text-[10.5px] text-[var(--text-ghost)]">
+        <p className="border-t border-[var(--border-subtle)] px-3 py-1.5 font-mono text-xs text-[var(--text-ghost)]">
           {entry.branch}
         </p>
       )}
@@ -1672,7 +1668,7 @@ function FilterDrawer({
       <aside
         role="dialog"
         aria-label="Filters"
-        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-50 flex w-[340px] flex-col border-l border-[var(--border)] bg-[var(--bg-elevated)]/60 shadow-[var(--shadow-overlay)] backdrop-blur-2xl"
+        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-50 flex w-[340px] flex-col border-l border-[var(--border)] bg-[var(--bg-elevated)]/60 shadow-md backdrop-blur-2xl"
       >
         {/* No header row at all. With no active filters it was an empty strip
          *  holding one X — the close button floats over the content instead,
@@ -1691,7 +1687,7 @@ function FilterDrawer({
         <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-8 pt-4">
           {activeFilters > 0 && (
             <div className="flex items-center gap-2 pr-8">
-              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+              <span className="font-mono text-2xs text-[var(--text-tertiary)]">
                 {activeFilters} active
               </span>
               <button
@@ -1701,7 +1697,7 @@ function FilterDrawer({
                   setFailedOnly(false);
                   setTools(() => new Set());
                 }}
-                className="h-[22px] cursor-pointer rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                className="h-[22px] cursor-pointer rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 font-mono text-2xs uppercase tracking-[0.06em] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
               >
                 Reset
               </button>
@@ -1779,7 +1775,7 @@ function FilterDrawer({
           </Section>
 
           <div className="border-t border-dashed border-[var(--border-subtle)] pt-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+            <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
               Session
             </p>
             <dl className="mt-2.5 flex flex-col gap-2">
@@ -1800,7 +1796,7 @@ function FilterDrawer({
             </dl>
 
             {s.source === "external_jsonl" && (
-              <p className="mt-4 rounded-md border border-dashed border-[var(--border)] px-3 py-2.5 text-[11.5px] leading-[1.55] text-[var(--text-tertiary)]">
+              <p className="mt-4 rounded-md border border-dashed border-[var(--border)] px-3 py-2.5 text-sm leading-[1.55] text-[var(--text-tertiary)]">
                 Imported session — read from a transcript on disk. Commits aren&apos;t linked to
                 imported history, and token usage wasn&apos;t recorded.
               </p>
@@ -1861,7 +1857,7 @@ function CheckpointJump({
         render={
           <button
             type="button"
-            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 text-left text-[12.5px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 text-left text-base text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           >
             <span className="flex-1">Jump to</span>
             <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
@@ -1869,8 +1865,8 @@ function CheckpointJump({
         }
       />
       <Popover.Portal>
-        <Popover.Positioner className="z-[var(--z-max)]" align="start" sideOffset={6}>
-          <Popover.Popup className="flex max-h-[320px] w-[var(--anchor-width)] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/95 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+        <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
+          <Popover.Popup className="flex max-h-[320px] w-[var(--anchor-width)] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/95 shadow-md backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
             {/* The search only appears when there is enough to search. */}
             {checkpoints.length > 4 && (
               <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-2.5">
@@ -1881,14 +1877,14 @@ function CheckpointJump({
                   placeholder="Find a commit…"
                   spellCheck={false}
                   autoFocus
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
               </div>
             )}
 
             <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
               {matches.length === 0 ? (
-                <p className="px-2 py-3 text-center text-[11.5px] text-[var(--text-tertiary)]">
+                <p className="px-2 py-3 text-center text-sm text-[var(--text-tertiary)]">
                   No match.
                 </p>
               ) : (
@@ -1905,12 +1901,12 @@ function CheckpointJump({
                       }}
                       className="flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
                     >
-                      <span className="truncate text-[12.5px] text-[var(--text-secondary)]">
+                      <span className="truncate text-base text-[var(--text-secondary)]">
                         {checkpoint.commitSubject ?? (
                           <span className="text-[var(--text-tertiary)]">Subject unavailable</span>
                         )}
                       </span>
-                      <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--text-ghost)]">
+                      <span className="flex items-center gap-1.5 font-mono text-xs text-[var(--text-ghost)]">
                         <span>
                           #{ordinal.get(checkpoint.id) ?? i + 1} · {sha.slice(0, 7)}
                         </span>
@@ -1942,10 +1938,10 @@ function Section({ label, hint, children }: { label: string; hint?: string; chil
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+        <span className="text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
           {label}
         </span>
-        {hint && <span className="font-mono text-[10px] text-[var(--text-ghost)]">{hint}</span>}
+        {hint && <span className="font-mono text-2xs text-[var(--text-ghost)]">{hint}</span>}
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">{children}</div>
     </div>
@@ -1973,7 +1969,7 @@ function FilterChip({
       disabled={!enabled}
       onClick={onClick}
       className={cn(
-        "flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors",
+        "flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-sm transition-colors",
         !enabled
           ? "cursor-default border-[var(--border-subtle)] text-[var(--text-ghost)]"
           : on
@@ -1985,7 +1981,7 @@ function FilterChip({
         <span className="size-[5px] rounded-full" style={{ backgroundColor: dot }} />
       )}
       {label}
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{count}</span>
+      <span className="font-mono text-2xs text-[var(--text-ghost)]">{count}</span>
     </button>
   );
 }
@@ -1993,8 +1989,8 @@ function FilterChip({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="shrink-0 text-[12px] text-[var(--text-tertiary)]">{label}</dt>
-      <dd className="truncate font-mono text-[11px] text-[var(--text-secondary)]">{value}</dd>
+      <dt className="shrink-0 text-sm text-[var(--text-tertiary)]">{label}</dt>
+      <dd className="truncate font-mono text-xs text-[var(--text-secondary)]">{value}</dd>
     </div>
   );
 }
@@ -2039,13 +2035,13 @@ function BarButton({
             ? "cursor-default text-[var(--text-ghost)]"
             : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
           !bare && "border border-[var(--border)] bg-[var(--bg-elevated)]/70 backdrop-blur-xl",
-          !bare && "shadow-[var(--shadow-overlay)]",
+          !bare && "shadow-md",
           active && !bare && "border-[var(--border-strong)] text-[var(--text-primary)]",
         )}
       >
         {children}
         {badge !== undefined && (
-          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--primary)] font-mono text-[8px] font-semibold text-[var(--primary-foreground)]">
+          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--primary)] font-mono text-3xs font-semibold text-[var(--primary-foreground)]">
             {badge}
           </span>
         )}
@@ -2115,7 +2111,7 @@ function Clamp({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-[11.5px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-sm text-[var(--text-secondary)] shadow-md transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           >
             <ChevronDown
               size={12}
@@ -2197,14 +2193,14 @@ function MemoryBlock({ block }: { block: InjectedBlock }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
       >
-        <AtlasIcon size={12} className="shrink-0 rounded-[2px]" />
-        <span className="text-[12px] text-[var(--text-secondary)]">
+        <AtlasIcon size={12} className="shrink-0 rounded-sm" />
+        <span className="text-sm text-[var(--text-secondary)]">
           {MEMORY_LABELS[block.label] ?? block.label.toLowerCase()}
         </span>
-        <span className="font-mono text-[10.5px] text-[var(--text-ghost)]">from Atlas memory</span>
+        <span className="font-mono text-xs text-[var(--text-ghost)]">from Atlas memory</span>
         <span className="flex-1" />
         {lines > 0 && (
-          <span className="font-mono text-[10.5px] text-[var(--text-ghost)]">
+          <span className="font-mono text-xs text-[var(--text-ghost)]">
             {lines} line{lines === 1 ? "" : "s"}
           </span>
         )}
@@ -2214,7 +2210,7 @@ function MemoryBlock({ block }: { block: InjectedBlock }) {
         />
       </button>
       {open && (
-        <div className="hide-scrollbar max-h-[320px] overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border-subtle)] px-3.5 py-2.5 font-mono text-[11px] leading-[1.7] text-[var(--text-tertiary)]">
+        <div className="hide-scrollbar max-h-[320px] overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border-subtle)] px-3.5 py-2.5 font-mono text-xs leading-[1.7] text-[var(--text-tertiary)]">
           {block.body || "(empty)"}
         </div>
       )}
@@ -2233,7 +2229,7 @@ function Block({
   projectPath: string;
 }) {
   return (
-    <div className="mt-2.5 whitespace-pre-wrap break-words rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] px-3.5 py-3 font-mono text-[11.5px] leading-[1.75] text-[var(--text-secondary)]">
+    <div className="mt-2.5 whitespace-pre-wrap break-words rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] px-3.5 py-3 font-mono text-sm leading-[1.75] text-[var(--text-secondary)]">
       <Body entry={entry} projectPath={projectPath} raw={text} />
     </div>
   );
@@ -2304,7 +2300,7 @@ function Body({
 
   const notice = truncated && (
     <>
-      <span className="ml-1 text-[11px] text-[var(--text-tertiary)]">
+      <span className="ml-1 text-xs text-[var(--text-tertiary)]">
         … {compact(entry.bodyBytes)} bytes not shown
       </span>
       {entry.bodyRef && (
@@ -2366,14 +2362,14 @@ function ShowFull({
   };
 
   if (error) {
-    return <span className="ml-1.5 text-[11px] text-[var(--text-tertiary)]">{error}</span>;
+    return <span className="ml-1.5 text-xs text-[var(--text-tertiary)]">{error}</span>;
   }
   return (
     <button
       type="button"
       disabled={busy}
       onClick={() => void fetchFull()}
-      className="ml-1.5 inline-flex cursor-pointer items-center gap-1 text-[11px] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)] disabled:opacity-60"
+      className="ml-1.5 inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)] disabled:opacity-60"
     >
       {busy && <Loader2 size={10} className="animate-spin" />}
       Show full
@@ -2391,7 +2387,7 @@ function Empty({
   failedCount: number;
 }) {
   return (
-    <p className="py-16 text-center text-[12px] text-[var(--text-tertiary)]">
+    <p className="py-16 text-center text-sm text-[var(--text-tertiary)]">
       {detail.entries.length === 0
         ? "Nothing was recorded in this session."
         : failedOnly && failedCount === 0

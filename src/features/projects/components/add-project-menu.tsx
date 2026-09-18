@@ -46,11 +46,11 @@ export function AddProjectMenu() {
       <DropdownMenu.Portal>
         {/* Compact menu primitive — mirrors the source-control "filter files"
          *  dropdown: 26px rows, px-3 on both sides, border-b search header. */}
-        <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-          <DropdownMenu.Popup className="w-[280px] max-h-[360px] rounded-lg border border-[var(--border)] bg-[#000] shadow-xl text-[var(--text-secondary)] flex flex-col overflow-hidden">
+        <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
+          <DropdownMenu.Popup className="w-[280px] max-h-[360px] rounded-lg border border-[var(--border)] bg-popover shadow-xl text-[var(--text-secondary)] flex flex-col overflow-hidden">
             <DropdownMenu.Item
               onClick={() => void pickAndAddProject()}
-              className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default shrink-0"
+              className="w-full flex items-center gap-2 px-3 h-[28px] text-xs outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default shrink-0"
             >
               <FolderOpen size={13} className="text-[var(--text-tertiary)] shrink-0" />
               <span className="flex-1 text-left">Open Folder…</span>
@@ -67,15 +67,15 @@ export function AddProjectMenu() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search projects…"
-                    className="flex-1 bg-transparent outline-none text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+                    className="flex-1 bg-transparent outline-none text-2xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
                   />
                 </div>
-                <div className="px-3 pt-1.5 pb-0.5 text-[9px] uppercase tracking-wide text-[var(--text-tertiary)] shrink-0">
+                <div className="px-3 pt-1.5 pb-0.5 text-3xs uppercase tracking-wide text-[var(--text-tertiary)] shrink-0">
                   Recent
                 </div>
                 <div className="overflow-y-auto py-1 hide-scrollbar">
                   {filtered.length === 0 ? (
-                    <div className="px-3 py-2 text-[10px] text-[var(--text-tertiary)] text-center">
+                    <div className="px-3 py-2 text-2xs text-[var(--text-tertiary)] text-center">
                       No matches
                     </div>
                   ) : (
@@ -83,7 +83,7 @@ export function AddProjectMenu() {
                       <DropdownMenu.Item
                         key={p.path}
                         onClick={() => void addProject(p.path)}
-                        className="w-full flex items-center gap-2 px-3 h-[26px] text-[11px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
+                        className="w-full flex items-center gap-2 px-3 h-control-md text-xs outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
                       >
                         <Folder size={12} className="text-[var(--text-tertiary)] shrink-0" />
                         <span className="truncate font-mono text-left flex-1">{p.name}</span>
@@ -93,7 +93,7 @@ export function AddProjectMenu() {
                 </div>
                 <DropdownMenu.Item
                   onClick={() => clearRecents()}
-                  className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none border-t border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer shrink-0"
+                  className="w-full flex items-center gap-2 px-3 h-[28px] text-xs outline-none border-t border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-error cursor-pointer shrink-0"
                 >
                   <Trash2 size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Clear recent projects</span>

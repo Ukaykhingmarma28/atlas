@@ -1,9 +1,9 @@
 {
-  "arbitrary-text-size": 528,
-  "arbitrary-z-index": 33,
-  "arbitrary-shadow": 45,
-  "arbitrary-radius": 15,
-  "colour-literal": 232,
-  "bg-white-black": 54,
-  "inline-numeric-style": 36
+  "arbitrary-text-size": 84,
+  "arbitrary-z-index": 10,
+  "arbitrary-shadow": 10,
+  "arbitrary-radius": 6,
+  "colour-literal": 188,
+  "bg-white-black": 45,
+  "inline-numeric-style": 21
 }

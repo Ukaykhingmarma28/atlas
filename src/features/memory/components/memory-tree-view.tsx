@@ -26,7 +26,7 @@ const COLLAPSE_LEAVES = 18;
 
 // Monochrome emphasis: a near-white highlight for the clicked decision path,
 // muted grays for everything else (mirrors the Timeline's highlight-and-dim).
-const HL = "#fafafa";
+const HL = "var(--foreground)";
 
 function leafCount(t: TreeNode): number {
   if (t.children.length === 0) return 1;

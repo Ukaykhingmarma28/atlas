@@ -57,9 +57,7 @@ export function GitManagerPanel() {
 
   if (!isRepo) {
     return (
-      <div className="px-3 py-8 text-center text-[11px] text-text-tertiary">
-        Not a git repository
-      </div>
+      <div className="px-3 py-8 text-center text-xs text-text-tertiary">Not a git repository</div>
     );
   }
 
@@ -172,12 +170,12 @@ function ToolbarBtn({
       disabled={busy}
       // A labelled button explains itself; its title only adds the detail.
       title={label ? title : undefined}
-      className="flex items-center gap-1 h-6 px-1.5 rounded text-[10px] font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50"
+      className="flex items-center gap-1 h-6 px-1.5 rounded text-2xs font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50"
     >
       {busy ? <Loader2 size={12} className="animate-spin" /> : icon}
       {label && <span>{label}</span>}
       {badge !== undefined && (
-        <span className="font-mono text-[9px] text-text-secondary">{badge}</span>
+        <span className="font-mono text-3xs text-text-secondary">{badge}</span>
       )}
     </button>
   );
@@ -197,7 +195,7 @@ function ViewTab({
     <button
       onClick={onClick}
       className={cn(
-        "px-2 h-6 rounded text-[11px] font-medium transition-colors",
+        "px-2 h-6 rounded text-xs font-medium transition-colors",
         active
           ? "text-text-primary bg-bg-selected"
           : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
