@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryGraphData } from "@/features/memory/components/memory-graph-canvas";
+import type {
+  GraphLayout,
+  MemoryGraphData,
+} from "@/features/memory/components/memory-graph-canvas";
 import { MOCK_PROJECT } from "../project";
 import { memoryHandlers } from "./memory";
-
-interface GraphLayout {
-  positions: Record<string, { x: number; y: number }>;
-}
 
 // `memory_graph_layout_save` is a pure passthrough in Rust
 // (`commands/memory_graph.rs`) — it only ever persists px positions the

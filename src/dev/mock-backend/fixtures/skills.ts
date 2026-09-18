@@ -47,7 +47,7 @@ import type {
   ToolInfo,
 } from "@/features/skills/lib/types";
 import type { AgentCatalog, AgentCatalogEntry } from "@/types/agent-catalog";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit, Unread } from "../types";
 import { MOCK_PROJECT } from "../project";
 
 const HOME = "/Users/dev";
@@ -1223,7 +1223,47 @@ function catalogFromRegistry(
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
-export const skillsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface SkillsResponses {
+  skills_list: SkillMeta[];
+  skills_read: SkillContent;
+  skills_path: string;
+  skills_project: Unit;
+  skills_unproject: Unit;
+  skills_set_enabled: Unit;
+  skills_adopt: SkillMeta;
+  skills_promote: SkillMeta;
+  skills_freeze: Unit;
+  skills_delete: Unit;
+  skills_reconcile: ReconcileView;
+  tools_list: AgentTarget[];
+  agents_list_skill_targets: AgentTarget[];
+  pack_list: InstalledPack[];
+  pack_inspect: Pack;
+  pack_projections: PackProjectionView[];
+  pack_project: PackProjectReport[];
+  pack_unproject: Unit;
+  pack_uninstall: Unit;
+  pack_check_update: PackUpdateCheck;
+  pack_components_list: PackComponentMeta[];
+  pack_search: PackSearchHit[];
+  pack_remote_preview: Pack;
+  pack_install_remote: PackInstallResult;
+  pack_install_skill: Unread;
+  acp_registry_list: AcpRegistryListing;
+  acp_registry_refresh: AcpRegistryListing;
+  acp_registry_metadata: AcpRegistryEntry | null;
+  acp_registry_install: Unit;
+  acp_registry_install_detected: Unit;
+  acp_registry_uninstall: Unit;
+  agents_catalog: AgentCatalog;
+  agents_catalog_refresh: AgentCatalog;
+}
+
+export const skillsHandlers: TypedHandlers<SkillsResponses> = {
   // ── skills ───────────────────────────────────────────────────────────────
   skills_list: ({ scope }): SkillMeta[] => {
     const s = asScope(scope);

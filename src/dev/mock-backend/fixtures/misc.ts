@@ -35,7 +35,6 @@ import { DEFAULT_SETTINGS } from "@/features/settings/lib/app-settings";
 import type { UpdateOutcome } from "@/features/settings/lib/atlas-config-api";
 import type { ModelStatus, SelectResult } from "@/features/settings/lib/models-api";
 import type { UpdateStatus } from "@/features/updater/lib/updater-api";
-import type { AgentInfo } from "@/types/acp";
 import type { NativeModelsRefresh } from "@/types/agents";
 import type { MockHandlers } from "../types";
 import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
@@ -407,9 +406,8 @@ export const miscHandlers: MockHandlers = {
   agents_authenticate: nothing,
   agents_run_auth_method: (): string => "mock-auth-run",
   agents_start_diagnostics: (): string => "mock-diagnostics-run",
-  agents_list_running: (): AgentInfo[] => [
-    { agent_id: "cersei", spec_id: "atlas-native", display_name: "Atlas" },
-  ],
+  // agents_list_running lives in `fake-agent.ts`: only it knows which sessions
+  // are live.
   // One satisfied method and one that still needs a variable exported: the
   // settings row renders the two differently, and only the second one shows
   // the instructions.

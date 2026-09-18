@@ -13,7 +13,7 @@
 import type { LogEntry, LogSource } from "@/features/log/stores/log-store";
 import type { UsageDashboard } from "@/features/usage/types";
 import { fixture as usageFixture } from "@/features/usage/lib/__fixtures__/dashboard";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_ORG_ID, MOCK_PROJECT } from "../project";
 
 /** Fixed "now" so the seeded series is stable between reloads. */
@@ -127,7 +127,22 @@ function usage(paths: string[]): UsageDashboard {
   };
 }
 
-export const logHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface LogResponses {
+  load_project_log: string;
+  append_project_log: Unread;
+  clear_project_log: Unread;
+  load_pinned_log: string;
+  append_pinned_log: Unread;
+  rewrite_pinned_log: Unread;
+  clear_pinned_log: Unread;
+  usage_dashboard: UsageDashboard;
+}
+
+export const logHandlers: TypedHandlers<LogResponses> = {
   load_project_log: ({ project }): string => projectLogs.get(String(project)) ?? "",
   append_project_log: ({ project, entryJson }): null => {
     const key = String(project);

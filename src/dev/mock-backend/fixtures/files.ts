@@ -22,7 +22,8 @@ import type {
   FolderMatch,
 } from "@/features/file-picker/lib/file-picker-api";
 import type { RecentFile } from "@/features/chat/stores/recent-files-store";
-import type { MockHandlers } from "../types";
+import type { SearchResult } from "@/components/search-overlay";
+import type { TypedHandlers, Unread } from "../types";
 import { abs, MOCK_PROJECT } from "../project";
 
 /** One file in the fake tree. Binary files carry base64 instead of text. */
@@ -815,18 +816,6 @@ function stemAndExt(name: string): { stem: string; ext: string | null } {
   return { stem: name.slice(0, dot), ext: name.slice(dot + 1) };
 }
 
-/**
- * Declared inline in `components/search-overlay.tsx` (Rust: `SearchResult` in
- * `commands/search.rs`, serialised snake_case), so it is restated here.
- */
-interface SearchResult {
-  file_path: string;
-  line: number;
-  content: string;
-  match_start: number;
-  match_end: number;
-}
-
 /** The extension allowlist `search.rs` walks, and the names it refuses to enter. */
 const SEARCHABLE_EXTS = new Set([
   "rs",
@@ -889,7 +878,37 @@ let recents: RecentFile[] = [
   { absPath: abs("README.md"), rel: "README.md", touchedAt: T0 - 1_800_000 },
 ];
 
-export const fsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface FsResponses {
+  fileindex_open_project: number;
+  fileindex_status: FileIndexStatus;
+  fileindex_search: FileMatch[];
+  fileindex_search_dirs: FolderMatch[];
+  recent_files_open_project: RecentFile[];
+  recent_files_push: RecentFile[];
+  recent_files_clear: Unread;
+  recent_files_rename: Unread;
+  read_file_content: string;
+  write_file_content: Unread;
+  file_mtime_ms: number;
+  is_text_file: boolean;
+  read_file_base64: string;
+  write_file_base64: Unread;
+  fs_create_file: Unread;
+  fs_create_dir: Unread;
+  fs_rename: Unread;
+  fs_delete: Unread;
+  fs_copy: Unread;
+  fs_duplicate: string;
+  fs_add_to_gitignore: Unread;
+  fs_open_in_terminal: Unread;
+  search_in_files: SearchResult[];
+}
+
+export const fsHandlers: TypedHandlers<FsResponses> = {
   // Cmd+P and the `@` picker both go through the file index, so without these
   // there is no way to open a file into the editor at all.
   fileindex_open_project: (): number => mockFilePaths().length,

@@ -37,9 +37,10 @@ import type {
   SourceRef,
   ThreadMeta,
 } from "@/features/artifacts/lib/session-chat-api";
-import type { ModelChatEvent } from "@/lib/byok/byok-chat";
+import type { save } from "@tauri-apps/plugin-dialog";
+import type { modelchat, ModelChatEvent } from "@/lib/byok/byok-chat";
 import type { Project } from "@/features/projects/stores/project-store";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit } from "../types";
 import { abs, ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
 const [APP, PLATFORM, DOCS] = ALL_PROJECTS;
@@ -996,7 +997,29 @@ function sourcesFor(detail: SessionDetail, scope: string[]): SourceRef[] {
 
 // ── handlers ──────────────────────────────────────────────────────────────
 
-export const artifactsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface ArtifactsResponses {
+  artifacts_board: BoardSession[];
+  artifacts_session: SessionDetail | null;
+  artifacts_checkpoints: BoardCheckpoint[];
+  artifacts_payload: ArtifactPayload;
+  session_chat_threads_list: ThreadMeta[];
+  session_chat_thread_get: SessionChatThreadWire;
+  session_chat_thread_save: Unit;
+  session_chat_thread_delete: Unit;
+  session_chat_retrieve: RetrieveResult;
+  // An inline `invoke<{…}>` type in `byok-chat.ts`, read off its wrapper.
+  modelchat_models: Awaited<ReturnType<typeof modelchat.models>>;
+  modelchat_stream: Unit;
+  modelchat_cancel: Unit;
+  // `save()` from `@tauri-apps/plugin-dialog`, which calls this command.
+  "plugin:dialog|save": Awaited<ReturnType<typeof save>>;
+}
+
+export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
   artifacts_board: ({ projects }): BoardSession[] => {
     const paths = Array.isArray(projects) ? (projects as string[]) : [];
     return SEEDS.filter((seed) => paths.includes(seed.project.path))

@@ -5,9 +5,11 @@ fake backend: Tauri's `mockIPC` answers every `invoke()` and `listen()` with
 made-up data, so any screen can be opened, themed and reviewed without starting
 a Rust build, an agent, or a real git operation.
 
-Start here: `install.ts` explains how it is loaded and in what order a command
-is answered. `types.ts` defines a scenario. `scenarios/base.ts` is the wiring
-point — every fixture file's handlers are spread into it.
+Start here: `install.ts` explains how it is loaded, and why it loads the
+fixtures through a dynamic `import()` of `backend.ts` (so `bun run dev:app`
+never evaluates them); `backend.ts` says in what order a command is answered.
+`types.ts` defines a scenario and the handler types. `scenarios/base.ts` is the
+wiring point — every fixture file's handlers are spread into it.
 
 ```
 localhost:1420/                     # the rich default scenario
@@ -66,11 +68,19 @@ inside Tauri, so it never ships and never affects `dev:app`.
 
 1. Find the command's return shape in `src-tauri/src/commands/<domain>.rs` —
    check the serde renaming, it is not always camelCase.
-2. Put the fixture in `fixtures/<domain>.ts` and type it with the **frontend's**
-   own API type, so `bun run typecheck` fails when Rust's shape drifts. A type
-   declared inline in a component and not exported gets restated in the fixture
-   file with a comment naming where it came from.
-3. Spread the handlers into `scenarios/base.ts`.
+2. Add the command to the `<Domain>Responses` interface in
+   `fixtures/<domain>.ts`, typed with the **frontend's** own type — the `T` of
+   its `invoke<T>`, or `Unread` when the frontend never reads the answer, or
+   `Unit` for `invoke<void>` — then write the fake in the map typed
+   `TypedHandlers<<Domain>Responses>`. A fake with no entry, an entry with no
+   fake, and an answer that does not match all fail `bun run typecheck`.
+   **Import** the type; never restate it. If the app declares it without
+   `export`, add the `export`. If it is an inline `invoke<{ … }>` inside an
+   API wrapper, read it off the wrapper
+   (`Awaited<ReturnType<typeof comms.send>>`). A copy compiles against itself,
+   so it catches nothing: a rename on either side leaves both sides green.
+3. Spread the handlers into `scenarios/base.ts`, and add the domain interface
+   to `MockResponses` in `types.ts` so scenarios can override its commands.
 4. Cover states, not happy paths: long names, errors, loading, empty, selected,
    disabled, unread, conflicted, running, cancelled. Colour lives in states, and
    this backend exists so a theme can be judged against them.

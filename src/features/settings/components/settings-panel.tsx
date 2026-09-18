@@ -198,7 +198,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
   );
 }
 
-interface CliStatus {
+export interface CliStatus {
   installed: boolean;
   path: string | null;
   installedVersion: string | null;

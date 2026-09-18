@@ -104,7 +104,6 @@ export const baseHandlers: MockHandlers = {
   // ── boot ────────────────────────────────────────────────────────────────
   bootstrap_app_state: () => appState(),
   cli_take_initial_project_path: nothing,
-  cli_install_helper: nothing,
   set_window_title: nothing,
   telemetry_config: () => ({
     enabled: false,

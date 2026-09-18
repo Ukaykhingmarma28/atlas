@@ -44,10 +44,7 @@ const LIB_RS = path.join(RUST_SRC, "lib.rs");
  * reads as live and is never reached — which is how `misc`'s phantom
  * `agents_list_running` came to outrank `fake-agent`'s. Keep this short.
  */
-const ALLOWED_OVERLAPS: Record<string, string> = {
-  agents_list_running:
-    "fixtures/misc.ts still carries a phantom running `cersei` agent; `misc` is now spread first, so fake-agent's empty list (the truth for a mock with no live session) wins. Delete misc's entry and this allowance together.",
-};
+const ALLOWED_OVERLAPS: Record<string, string> = {};
 
 /**
  * A vacuous pass is the thing to fear: if the imports below ever resolve to an

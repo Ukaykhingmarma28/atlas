@@ -27,7 +27,7 @@ import {
   type ThemeImportPreview,
   type ThemeImportReport,
 } from "@/features/theme/lib/theme-import-api";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers } from "../types";
 import importedThemesJson from "./imported-themes.json";
 import builtinThemesJson from "./builtin-themes.json";
 
@@ -472,7 +472,17 @@ function install(toml: string, typedId: string, name: string): CommittedThemeImp
   return { id, path: `~/.config/atlas/themes/${id}.toml` };
 }
 
-export const themeImportHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the return type of its
+ * wrapper in `theme-import-api.ts`, which `invoke` infers its `T` from.
+ */
+export interface ThemeImportResponses {
+  preview_theme_import: ThemeImportPreview;
+  commit_theme_import: CommittedThemeImport;
+  export_theme_shadcn: ShadcnExport;
+}
+
+export const themeImportHandlers: TypedHandlers<ThemeImportResponses> = {
   preview_theme_import: ({ input }): ThemeImportPreview => {
     const args = (input ?? {}) as { text?: string; url?: string; path?: string };
     return { ...previewFor(args), origin: originOf(args) };

@@ -28,103 +28,26 @@ import type { BuiltGraph, CommitRow, LaneSegment } from "@/features/git/lib/git-
 import type {
   BranchInfo,
   CommitDetail,
+  GitBranch,
+  GitLogEntry,
+  GitOpEvent,
+  GitSnapshotWire,
   InProgress,
   MergePreview,
   RemoteInfo,
   StashEntry,
 } from "@/features/git/stores/git-store";
+import type {
+  ConflictFile,
+  ConflictState,
+} from "@/features/git/components/git-manager/conflicts-view";
+import type { CommitSession } from "@/features/git/components/git-manager/history-view";
+import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 import { binaryFileDiff, buildFileDiff, lineStatusOf, unifiedDiff } from "./diff";
 import { fileText } from "./files";
-
-/**
- * `git_list_branches`' row shape. Declared inline in `git-store.ts` rather
- * than exported, so it is restated here (Rust: `commands/git.rs`).
- */
-interface GitBranch {
-  name: string;
-  is_current: boolean;
-}
-
-/**
- * `git_snapshot`'s wire shape — `GitSnapshotWire` in `git-store.ts`, declared
- * inline there. Restated so a field rename on either side fails typecheck
- * instead of quietly emptying the panel (Rust: `commands/git_snapshot.rs`).
- */
-interface GitSnapshotWire {
-  isRepo: boolean;
-  branch: string;
-  detached: boolean;
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  files: { path: string; status: string; staged: boolean; conflicted: boolean }[];
-  branches: BranchInfo[];
-  stashes: StashEntry[];
-  inProgress: InProgress | null;
-}
-
-/**
- * `git_status_fresh`'s result. Snake_case — this one command predates the
- * camelCase serde convention and its only reader (`block-terminal.tsx`)
- * restates it inline as `RawGitStatus` (Rust: `commands/git.rs::GitStatus`).
- */
-interface GitStatusWire {
-  is_repo: boolean;
-  branch: string;
-  files: { path: string; status: string; staged: boolean }[];
-  ahead: number;
-  behind: number;
-}
-
-/**
- * `git_conflict_state`'s result. Declared inline in `conflicts-view.tsx`
- * (Rust: `commands/git_conflicts.rs`).
- */
-interface ConflictFile {
-  path: string;
-  markerCount: number;
-  /** Porcelain unmerged XY code — "UU", "AA", "DU"… */
-  xy: string;
-}
-interface ConflictState {
-  files: ConflictFile[];
-  message: string;
-}
-
-/**
- * One `atlas:git:op` event. `GitOpEvent` in `git-store.ts` is a non-exported
- * discriminated union; flattened here with optional members because a fake
- * builds the payload field by field (Rust: `git_ops.rs::GitOpEventPayload`,
- * which also omits the unset fields).
- */
-interface GitOpWire {
-  opId: string;
-  repo: string;
-  kind: string;
-  phase: "started" | "output" | "progress" | "done";
-  stream?: "stdout" | "stderr";
-  line?: string;
-  percent?: number;
-  title?: string;
-  ok?: boolean;
-  error?: GitErrorPayload;
-}
-
-/**
- * One Session attributed to a commit, shown under the commit detail. Also
- * declared inline (`history-view.tsx`), and also `null`-unsafe there, so the
- * whole commit view goes down when this command is unanswered.
- */
-interface CommitSession {
-  sessionId: string;
-  title: string | null;
-  messageCount: number;
-  toolCallCount: number;
-  files: string[];
-}
 
 /** Apply ordered substitutions, refusing to produce a no-op diff silently. */
 function atHead(rel: string, edits: [find: string, replace: string][]): string {
@@ -753,6 +676,13 @@ function fail(
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** One `atlas:git:op` event minus the fields `runOp` fills in, per phase. */
+type OpPhase = GitOpEvent extends infer E
+  ? E extends GitOpEvent
+    ? Omit<E, "opId" | "repo" | "kind">
+    : never
+  : never;
+
 interface OpStep {
   line?: string;
   stream?: "stdout" | "stderr";
@@ -773,9 +703,10 @@ interface OpStep {
  */
 async function runOp<T>(kind: string, opId: unknown, steps: OpStep[], finish: () => T): Promise<T> {
   const id = typeof opId === "string" ? opId : null;
-  const send = (event: Omit<GitOpWire, "opId" | "repo" | "kind">) => {
+  const send = (event: OpPhase) => {
     if (!id) return;
-    void emit("atlas:git:op", { opId: id, repo: MOCK_PROJECT.path, kind, ...event });
+    const payload: GitOpEvent = { opId: id, repo: MOCK_PROJECT.path, kind, ...event };
+    void emit("atlas:git:op", payload);
   };
   send({ phase: "started" });
   for (const step of steps) {
@@ -1060,7 +991,73 @@ const FETCH_STEPS: OpStep[] = [
   { line: "From github.com:acme/acme-app", stream: "stderr" },
 ];
 
-export const gitHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface GitResponses {
+  git_watch_start: Unread;
+  git_watch_stop: Unread;
+  git_workspace_summary: GitSummary;
+  git_snapshot: GitSnapshotWire;
+  git_status_fresh: RawGitStatus;
+  git_inprogress: InProgress;
+  git_branches_full: BranchInfo[];
+  git_list_branches: GitBranch[];
+  git_stash_list: StashEntry[];
+  git_stash_drop: Unread;
+  git_stash_pop: Unread;
+  git_stash_apply: Unread;
+  git_stash_push: Unread;
+  git_remotes: RemoteInfo[];
+  git_tags: string[];
+  git_log: GitLogEntry[];
+  git_show: CommitDetail;
+  capture_commit_sessions: CommitSession[];
+  git_commit_changed_files: CommitFile[];
+  git_graph_signature: string;
+  git_graph_build: BuiltGraph;
+  git_diff_structured: FileDiff;
+  diff_structured_text: FileDiff;
+  git_diff_line_status: DiffLineStatus;
+  git_diff_file: string;
+  git_diff_all: string;
+  git_blame_file: BlameLine[];
+  git_stage: Unread;
+  git_unstage: Unread;
+  // `runHunkOp` in `changes-view.tsx` picks the command name at run time.
+  git_stage_hunk: Unread;
+  git_unstage_hunk: Unread;
+  git_discard_hunk: Unread;
+  git_discard: Unread;
+  git_delete_added: Unread;
+  git_commit_v2: Unread;
+  git_push: Unread;
+  git_pull: Unread;
+  git_fetch: Unread;
+  git_publish_branch: Unread;
+  git_checkout: Unread;
+  git_create_branch: Unread;
+  git_rename_branch: Unread;
+  git_branch_delete: Unread;
+  git_merge_preview: MergePreview;
+  git_merge_branch: Unread;
+  git_rebase: Unread;
+  git_op_control: Unread;
+  git_conflict_state: ConflictState;
+  git_resolve_file: Unread;
+  git_undo_commit: Unread;
+  git_squash_last: Unread;
+  git_reset: Unread;
+  git_revert: Unread;
+  git_cherry_pick: Unread;
+  git_create_tag: Unread;
+  git_delete_tag: Unread;
+  git_remote_add: Unread;
+  git_remote_remove: Unread;
+}
+
+export const gitHandlers: TypedHandlers<GitResponses> = {
   // ── watcher ─────────────────────────────────────────────────────────────
   git_watch_start: () => null,
   // Fired on every project close. Nothing reads the result, but leaving it
@@ -1109,7 +1106,7 @@ export const gitHandlers: MockHandlers = {
     };
   },
   // The terminal's cwd badge, not the git panel — same state, older wire shape.
-  git_status_fresh: (): GitStatusWire => ({
+  git_status_fresh: (): RawGitStatus => ({
     is_repo: true,
     branch: currentBranch().name,
     files: statusRows().map((row) => ({

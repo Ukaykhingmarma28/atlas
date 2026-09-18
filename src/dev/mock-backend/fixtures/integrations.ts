@@ -32,7 +32,7 @@ import type {
 } from "@/features/feedback/lib/feedback-api";
 import type { ClonedRepo, GithubRepo, RepoMeta } from "@/features/github/types";
 import type { PdfAnnotation } from "@/features/pdf/stores/pdf-annotation-store";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit, Unread } from "../types";
 import { abs, MOCK_ORG_ID } from "../project";
 
 /**
@@ -560,7 +560,42 @@ const pdfAnnotations = new Map<string, PdfAnnotation[]>([
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
-export const integrationsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface IntegrationsResponses {
+  auth_snapshot: AuthSnapshot;
+  auth_refresh: AuthSnapshot;
+  auth_sign_in: AuthSnapshot;
+  auth_cancel_sign_in: AuthSnapshot;
+  auth_sign_out: boolean;
+  auth_set_active_org: Unread;
+  auth_create_org: CreatedOrg;
+  auth_delete_org: Unit;
+  auth_check_org_slug: boolean;
+  auth_list_members: OrgMember[];
+  auth_list_invitations: OrgInvitation[];
+  auth_invite_member: OrgInvitation;
+  auth_cancel_invitation: Unit;
+  auth_update_member_role: Unit;
+  auth_remove_member: Unit;
+  search_github: GithubRepo[];
+  clone_github_repo: string;
+  list_cloned_repos: ClonedRepo[];
+  read_repo_readme: string;
+  delete_cloned_repo: Unread;
+  list_remote_branches: string[];
+  switch_cloned_repo_branch: Unread;
+  update_cloned_repo: string;
+  fetch_cloned_repo_meta: ClonedRepo["meta"];
+  feedback_submit: FeedbackReceipt;
+  capture_screenshot: CaptureResult | null;
+  pdf_annotations_load: PdfAnnotation[];
+  pdf_annotations_save: Unread;
+}
+
+export const integrationsHandlers: TypedHandlers<IntegrationsResponses> = {
   // ── Atlas account ─────────────────────────────────────────────────────────
   auth_snapshot: (): AuthSnapshot => snapshot,
   auth_refresh: (): AuthSnapshot => {

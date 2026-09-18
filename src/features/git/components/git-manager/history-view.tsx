@@ -214,7 +214,7 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
 }
 
 /** One Session that produced this commit. */
-interface CommitSession {
+export interface CommitSession {
   sessionId: string;
   title: string | null;
   messageCount: number;

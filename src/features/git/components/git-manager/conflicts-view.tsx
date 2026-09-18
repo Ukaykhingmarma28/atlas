@@ -5,13 +5,13 @@ import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 
-interface ConflictFile {
+export interface ConflictFile {
   path: string;
   markerCount: number;
   xy: string;
 }
 
-interface ConflictState {
+export interface ConflictState {
   files: ConflictFile[];
   message: string;
 }
