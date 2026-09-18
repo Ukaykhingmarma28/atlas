@@ -1125,10 +1125,18 @@
    6px. Clear by then and ramping from 18px means no letter is ever left
    half-lit under the glyph, which read as a typo rather than as a fade.
 
+   The second selector is `:has(button:focus-visible)` and not `:focus-within`.
+   The tab is `tabIndex={0}`, so clicking one focuses the TAB — which kept
+   `:focus-within` true for as long as it stayed selected, masking the label
+   long after the pointer had gone while the × (shown on hover, or on its own
+   focus-visible) was nowhere to be seen. "Settings" sat there reading
+   "Setting". The mask has to be on exactly when the button it makes room for
+   is, so it matches that button's own conditions rather than the tab's.
+
    Prefixed as well as not: WKWebView is the target and the two have differed
    on mask-image before. */
 .atlas-tab:hover .atlas-tab-label,
-.atlas-tab:focus-within .atlas-tab-label {
+.atlas-tab:has(button:focus-visible) .atlas-tab-label {
   -webkit-mask-image: linear-gradient(
     to right,
     #000 calc(100% - 18px),

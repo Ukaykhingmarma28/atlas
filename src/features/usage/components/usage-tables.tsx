@@ -17,7 +17,6 @@ import {
 } from "../types";
 import {
   agentDisplay,
-  colorFor,
   keyOf,
   modelDisplay,
   projectLabel,
@@ -211,7 +210,6 @@ function SessionsTable({
   data: UsageDashboard;
   sessionsTotal: number;
 }) {
-  const { seriesColor } = useSeriesPalette();
   const sorted = useMemo(() => sortSessions(rows, sort), [rows, sort]);
   const parentRef = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({
@@ -270,18 +268,10 @@ function SessionsTable({
                       )}
                     </span>
                   </span>
-                  <span className={cn(COL.project, "flex min-w-0 items-center gap-1.5 pr-2")}>
-                    {/* The same colour the chart's legend gives this project,
-                        so a row and a band two cards above it agree. */}
-                    <span
-                      className="size-1.5 shrink-0 rounded-full"
-                      style={{
-                        background: colorFor(s.projectPath, "project", data, 0, seriesColor),
-                      }}
-                    />
-                    <span className="truncate text-[var(--secondary-foreground)]">
-                      {projectLabel(s.projectPath, data)}
-                    </span>
+                  <span
+                    className={cn(COL.project, "truncate pr-2 text-[var(--secondary-foreground)]")}
+                  >
+                    {projectLabel(s.projectPath, data)}
                   </span>
                   <span className={cn(COL.agent, "pr-2")}>
                     <AgentChip agent={s.agent} />
@@ -437,17 +427,22 @@ function RollupTable({
  * It used to be a pill wrapping an `.amark` badge wrapping the glyph — three
  * nested containers for one word, in a table that already has a column headed
  * AGENT. A row's job is to be scannable, and a box per cell is the opposite.
+ *
+ * The vendor tint stops at the glyph. The brand icons paint in `currentColor`,
+ * so colouring the row's wrapper carried the tint into the NAME as well, and a
+ * column of terracotta words read as a column of links. The mark is where a
+ * brand colour belongs; the word beside it is body text and takes the theme's
+ * own foreground, whatever the theme says that is.
  */
 export function AgentChip({ agent }: { agent: string }) {
   const { agentTint } = useIdentityTints();
   if (agent === BYOK_AGENT || agent === UNKNOWN)
     return <span className="truncate text-[var(--muted-foreground)]">{agentDisplay(agent)}</span>;
   return (
-    <span
-      className="inline-flex max-w-full items-center gap-1.5"
-      style={{ color: agentTint(agent).fg }}
-    >
-      <AgentGlyph agentType={agent} />
+    <span className="inline-flex max-w-full items-center gap-1.5 text-[var(--foreground)]">
+      <span className="flex shrink-0 items-center" style={{ color: agentTint(agent).fg }}>
+        <AgentGlyph agentType={agent} />
+      </span>
       <span className="truncate">{agentDisplay(agent)}</span>
     </span>
   );
@@ -465,17 +460,13 @@ function ModelChip({ model }: { model: string }) {
   const { modelTint } = useIdentityTints();
   const label = modelDisplay(model);
   if (model === UNKNOWN)
-    return <span className="truncate text-2xs text-[var(--muted-foreground)]">{label}</span>;
-  const tint = modelTint(model);
+    return <span className="truncate text-[var(--muted-foreground)]">{label}</span>;
+  // The vendor tint, on the text itself. No pill: the agent cell beside it is
+  // already a bare glyph and name, and a box around one of the two made the
+  // MODEL column read as the interactive one in a table where nothing is.
   return (
-    // 18px, which is below `h-control-xs` (20) on purpose: the agent cell
-    // beside it lost its box entirely, so this one has to read as lighter than
-    // a control rather than as one. The control scale has no step under 20.
-    <span
-      className="inline-flex h-[18px] max-w-full items-center rounded-full px-2 text-2xs"
-      style={{ background: tint.bg, color: tint.fg }}
-    >
-      <span className="truncate">{label}</span>
+    <span className="truncate" style={{ color: modelTint(model).fg }}>
+      {label}
     </span>
   );
 }
