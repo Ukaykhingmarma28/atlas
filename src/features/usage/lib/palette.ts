@@ -24,7 +24,8 @@
  * module-level constants this replaced could not.
  */
 import { useMemo } from "react";
-import { mix } from "@/features/theme/color";
+import { mix, withAlpha } from "@/features/theme/color";
+import { modelVendorColor, type ModelVendor } from "@/features/agents/lib/agent-brand";
 import { themeBase, themeColor, useThemeVersion } from "@/features/theme/theme-values";
 
 /** The five series tokens, in the order a theme author sees them. */
@@ -73,4 +74,89 @@ export function useSeriesPalette(): SeriesPalette {
   // on nothing else, which is exactly when the resolved values move.
   const version = useThemeVersion();
   return useMemo(buildSeriesPalette, [version]);
+}
+
+// ── Identity tints ─────────────────────────────────────────────────────────
+
+/**
+ * The colours a model or agent chip wears in the tables, keyed by the family
+ * it belongs to.
+ *
+ * A grey chip per row told you a model existed and nothing else; with a tint
+ * you can see at a glance that a window was mostly Claude, or that one project
+ * is the only thing still on a local model. Families, not individual models —
+ * a colour per model id would be a new hue every release.
+ *
+ * The hue is the vendor's own, from `agents/lib/agent-brand.ts`, so the chip
+ * carries the colour that vendor already has everywhere else in the app rather
+ * than a fourth palette invented for this table. It is deliberately NOT a theme
+ * key: a theme that could restate Anthropic's terracotta would be a theme lying
+ * about someone else's brand (the 2026-09-18 audit that cut the eighteen
+ * `agent.*` keys to two). The fill is the same hue at a tenth, which is what
+ * the old `--agent-*-chip-bg` pairs were.
+ *
+ * The fallback, for a model nobody recognises, is the one pair that IS
+ * themeable: `agent.chip.background` — the app's own "identity chip with no
+ * identity" fill, and what `.amark` draws — under `muted-foreground`. Quiet on
+ * purpose, so an unrecognised model does not end up the loudest thing in the
+ * table.
+ */
+export interface Tint {
+  fg: string;
+  bg: string;
+}
+
+/** Which family a model id belongs to, or `null` for one we cannot place. */
+function modelVendor(model: string): ModelVendor | null {
+  const m = model.toLowerCase();
+  if (/claude|opus|sonnet|haiku|fable|mythos/.test(m)) return "claude";
+  if (/gpt|codex|\bo[134]\b/.test(m)) return "codex";
+  if (/gemini|palm/.test(m)) return "gemini";
+  if (/llama|mistral|qwen|deepseek|phi|gemma/.test(m)) return "local";
+  if (/cursor/.test(m)) return "cursor";
+  if (/kilo/.test(m)) return "kilo";
+  return null;
+}
+
+/** The same question for an agent id. Cersei is Atlas's ported Codex engine. */
+function agentVendor(agent: string): ModelVendor | null {
+  const a = agent.toLowerCase();
+  if (a.includes("claude")) return "claude";
+  if (a.includes("codex") || a.includes("cersei")) return "codex";
+  if (a.includes("cursor")) return "cursor";
+  if (a.includes("kilo")) return "kilo";
+  return null;
+}
+
+export interface IdentityTints {
+  /** The tint a model id wears. Falls back to neutral rather than guessing. */
+  modelTint: (model: string) => Tint;
+  /** The tint an agent wears in a table cell, by the same families. */
+  agentTint: (agent: string) => Tint;
+}
+
+/**
+ * Read once per table, not once per row: the neutral pair is resolved from the
+ * theme, and resolving it is a `getComputedStyle` read that a virtualised list
+ * would otherwise repeat for every visible cell.
+ */
+export function useIdentityTints(): IdentityTints {
+  const version = useThemeVersion();
+  return useMemo(() => {
+    const neutral: Tint = {
+      fg: themeBase("muted-foreground"),
+      bg: themeColor("agent.chip.background"),
+    };
+    const tintOf = (vendor: ModelVendor | null): Tint => {
+      if (vendor === null) return neutral;
+      const hue = modelVendorColor(vendor);
+      return { fg: hue, bg: withAlpha(hue, 0.1) };
+    };
+    return {
+      modelTint: (model) => tintOf(modelVendor(model)),
+      agentTint: (agent) => tintOf(agentVendor(agent)),
+    };
+    // `version` is the dependency for the same reason as above: the neutral
+    // pair moves on a theme switch and the brand hues never do.
+  }, [version]);
 }

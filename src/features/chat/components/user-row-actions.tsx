@@ -66,7 +66,7 @@
 // when it changes under the pointer); the copied state rides on the icon.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Pencil, Pin, RefreshCw } from "lucide-react";
+import { Check, Copy, CornerUpRight, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -230,8 +230,11 @@ export function UserRowActions({
         <ActionButton label="Pin message" onClick={onPin} active={pinned}>
           <Pin size={12} fill={pinned ? "currentColor" : "none"} />
         </ActionButton>
+        {/* A turn-out arrow, not a pencil. Nothing is edited in place — the
+            prompt goes back to the composer and leaves as a NEW turn, which is
+            the shape this glyph has carried here since it was a plain resend. */}
         <ActionButton label="Edit and send as new message" onClick={onEdit}>
-          <Pencil size={12} />
+          <CornerUpRight size={12} />
         </ActionButton>
         <ActionButton label="Copy message" onClick={onCopy}>
           {copied ? <Check size={12} /> : <Copy size={12} />}

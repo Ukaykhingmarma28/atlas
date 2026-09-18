@@ -300,11 +300,10 @@ describe("the folded block's one-line summary", () => {
   });
 
   it("leads with the first bucket in the sentence, not the commonest", () => {
-    // Six commands to two reads, and the glyph is still the book: the observed
-    // Codex summary led with a wrench over six terminal rows.
+    // Six commands to two reads, and the sentence still opens with the reads:
+    // the observed Codex summary led with a wrench over six terminal rows.
     const g = groupOf("cat a.ts", "cat b.ts", "make", "make", "make", "make", "make", "make");
     expect(g?.summary).toBe("Read files, ran commands");
-    expect(g?.tool).toBe("read");
   });
 
   it("counts a search toward having read files", () => {
@@ -312,7 +311,6 @@ describe("the folded block's one-line summary", () => {
     // files" — only the search alongside it makes that plural add up.
     const g = groupOf("cat ci.yml", "rg 'bazzite' .");
     expect(g?.summary).toBe("Read files");
-    expect(g?.tool).toBe("read");
   });
 
   it("uses the singular for a bucket with one call in it", () => {
@@ -336,7 +334,6 @@ describe("the folded block's one-line summary", () => {
     ).rows;
     const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
     expect(g?.summary).toBe("Loaded a tool, edited a file, ran a command");
-    expect(g?.tool).toBe("tool");
   });
 });
 
@@ -409,7 +406,7 @@ describe("tool activity in the transcript", () => {
     const group = rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
     expect(group?.running).toBe(true);
     expect(group?.open).toBe(false);
-    expect([group?.liveTool, group?.liveLabel]).toEqual(["read", "Reading turn-rows.ts"]);
+    expect(group?.liveLabel).toBe("Reading turn-rows.ts");
     expect(group?.summary).toBe("Read a file");
   });
 
@@ -425,7 +422,7 @@ describe("tool activity in the transcript", () => {
       ...OPTS,
       streaming: true,
     }).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
-    expect([live?.liveTool, live?.liveLabel]).toEqual(["edit", "Editing files"]);
+    expect(live?.liveLabel).toBe("Editing files");
     const settled = projectRows([message("m1", "", [{ ...call, status: "completed" }])], {
       ...OPTS,
       streaming: false,

@@ -1,21 +1,26 @@
-import { Menu as DropdownMenu } from "@base-ui/react/menu";
-import {
-  ChevronDown,
-  Copy,
-  Download,
-  FileText,
-  FileType2,
-  Image as ImageIcon,
-  RefreshCw,
-} from "lucide-react";
+import { Popover } from "@base-ui/react/popover";
+import { Copy, Download, FileText, FileType2, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AtlasIcon } from "@/components/atlas-icon";
-import { Hint } from "@/ui/tooltip";
+import { HintItem } from "@/ui/hint-group";
+import { DockButton, DOCK_TRIGGER, HeaderDock } from "@/features/artifacts/components/header-dock";
 import type { DateRange } from "../types";
 import { DateRangeControl } from "./date-range-control";
 
 export type ExportKind = "pdf" | "jpeg" | "markdown" | "copy-markdown";
 
+/**
+ * The Usage header: what window you are looking through, and the two actions
+ * on the page.
+ *
+ * Built to the Timeline's bar rather than its own thing — a name on the left,
+ * one round-ended track for the setting, one icon dock on the right. What it
+ * replaced drew five bordered boxes across two rows (presets, custom, export,
+ * and a label-plus-box for each of group and metric) plus an app icon, which
+ * is a lot of chrome to say "last 30 days".
+ *
+ * No Atlas mark: a tab inside the app does not need to say which app it is,
+ * and it was the only icon in a bar whose other glyphs all do something.
+ */
 export function UsageHeader({
   orgName,
   range,
@@ -25,6 +30,7 @@ export function UsageHeader({
   onRefresh,
   loading,
   canExport,
+  inset,
 }: {
   orgName: string | null;
   range: DateRange;
@@ -34,93 +40,94 @@ export function UsageHeader({
   onRefresh: () => void;
   loading: boolean;
   canExport: boolean;
+  /** The card's inset, so the bar's ends line up with the body below it. */
+  inset: number;
 }) {
   return (
-    <div className="flex h-control-lg shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
-      <AtlasIcon size={14} className="rounded" />
-      <span className="text-sm font-semibold text-[var(--foreground)]">Usage</span>
+    <div
+      className="flex h-control-lg shrink-0 items-center gap-2"
+      style={{ paddingInline: inset + 6 }}
+    >
+      <span className="shrink-0 text-sm font-semibold text-[var(--foreground)]">Usage</span>
       {orgName && (
-        <span className="truncate text-xs text-[var(--muted-foreground)]" title={orgName}>
+        <span className="min-w-0 truncate text-xs text-[var(--muted-foreground)]" title={orgName}>
           {orgName}
         </span>
       )}
-      <div className="flex-1" />
 
-      <DateRangeControl range={range} onChange={onRange} earliest={earliest} />
-
-      <Hint label="Refresh">
-        <button
-          type="button"
-          onClick={onRefresh}
-          className={cn(
-            "flex size-control-md items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--secondary-foreground)]",
-            loading && "animate-spin",
-          )}
-        >
-          <RefreshCw size={13} />
-        </button>
-      </Hint>
-
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger
-          render={
-            <button
-              type="button"
-              disabled={!canExport}
-              className="flex h-control-md items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 text-xs text-[var(--secondary-foreground)] transition-colors outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download size={12} /> Export{" "}
-              <ChevronDown size={11} className="text-[var(--muted-foreground)]" />
-            </button>
-          }
-        />
-        <DropdownMenu.Portal>
-          <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
-            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border)] bg-popover py-1.5 shadow-md text-sm text-[var(--secondary-foreground)]">
-              <Item
-                icon={<FileType2 size={13} />}
-                label="PDF report"
-                onSelect={() => onExport("pdf")}
-              />
-              <Item
-                icon={<ImageIcon size={13} />}
-                label="JPEG image"
-                onSelect={() => onExport("jpeg")}
-              />
-              <Item
-                icon={<FileText size={13} />}
-                label="Markdown report"
-                onSelect={() => onExport("markdown")}
-              />
-              <Item
-                icon={<Copy size={13} />}
-                label="Copy as Markdown"
-                onSelect={() => onExport("copy-markdown")}
-              />
-            </DropdownMenu.Popup>
-          </DropdownMenu.Positioner>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <DateRangeControl range={range} onChange={onRange} earliest={earliest} />
+        {/* No `HintGroup` of its own: `HeaderDock` already is one, and nesting
+            a second group gives the dock two sliding tooltips racing the same
+            pointer. */}
+        <HeaderDock>
+          <ExportMenu onExport={onExport} disabled={!canExport} />
+          <DockButton label="Reload usage" onClick={onRefresh}>
+            <RefreshCw size={12} className={cn(loading && "animate-spin")} />
+          </DockButton>
+        </HeaderDock>
+      </div>
     </div>
   );
 }
 
-function Item({
-  icon,
-  label,
-  onSelect,
+const ITEMS: ReadonlyArray<{ kind: ExportKind; label: string; hint: string; icon: typeof Copy }> = [
+  { kind: "pdf", label: "PDF report", hint: ".pdf", icon: FileType2 },
+  { kind: "jpeg", label: "JPEG image", hint: ".jpg", icon: ImageIcon },
+  { kind: "markdown", label: "Markdown report", hint: ".md", icon: FileText },
+  { kind: "copy-markdown", label: "Copy as Markdown", hint: "⌘C", icon: Copy },
+];
+
+/** Export, as a dock glyph — same shape the Timeline's export takes. */
+function ExportMenu({
+  onExport,
+  disabled,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  onSelect: () => void;
+  onExport: (kind: ExportKind) => void;
+  disabled: boolean;
 }) {
   return (
-    <DropdownMenu.Item
-      onClick={onSelect}
-      className="flex h-control-md cursor-default items-center gap-2.5 px-3 outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
-    >
-      <span className="text-[var(--muted-foreground)]">{icon}</span>
-      {label}
-    </DropdownMenu.Item>
+    <Popover.Root>
+      <HintItem label="Export usage">
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              disabled={disabled}
+              className={cn(DOCK_TRIGGER, "disabled:opacity-40")}
+            >
+              <Download size={12} strokeWidth={1.7} />
+            </button>
+          }
+        />
+      </HintItem>
+      <Popover.Portal>
+        {/* z-index belongs to the Positioner — the Popup is static inside it.
+            `--transform-origin` is Base UI's spelling of Radix's
+            `--radix-popover-content-transform-origin`. */}
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="w-[196px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]/90 p-1 shadow-md backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+            {ITEMS.map((item) => (
+              <Popover.Close
+                key={item.kind}
+                render={
+                  <button
+                    type="button"
+                    onClick={() => onExport(item.kind)}
+                    className="flex h-control-md w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--secondary-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+                  >
+                    <item.icon size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    <span className="shrink-0 text-2xs text-[var(--atlas-text-disabled)]">
+                      {item.hint}
+                    </span>
+                  </button>
+                }
+              />
+            ))}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

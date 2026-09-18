@@ -106,6 +106,22 @@ export const tool = {
       o,
     ),
 
+  /** A delegated sub-agent. ACP's `think` kind, which is what Claude Code
+   *  reports a Task with — the one marker the transcript keeps a brain on. */
+  delegate: (description: string, o: Opts = {}) =>
+    call(
+      {
+        // Both fields carry the description, as this file does everywhere
+        // else and as the wire does: Claude Code titles a Task with what it
+        // asked for, which is the only useful thing to read on the row.
+        tool_name: description,
+        title: description,
+        kind: "think",
+        arguments: { description },
+      },
+      o,
+    ),
+
   /** Anything else — an MCP tool, say. */
   other: (name: string, args: Record<string, unknown> = {}, o: Opts = {}) =>
     call({ tool_name: name, title: name, kind: "other", arguments: args }, o),

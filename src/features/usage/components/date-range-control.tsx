@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange, RangePreset } from "../types";
 import { addDays, dayKey, fmtRange, parseDay, resolveRange } from "../lib/date-range";
-import { Segmented } from "./segmented";
+import { SEGMENT_ACTIVE, SEGMENT_IDLE, SEGMENT_TRIGGER, Segmented } from "./segmented";
 
 const PRESETS: ReadonlyArray<{ value: Exclude<RangePreset, "custom">; label: string }> = [
   { value: "7d", label: "7d" },
@@ -14,10 +14,17 @@ const PRESETS: ReadonlyArray<{ value: Exclude<RangePreset, "custom">; label: str
 ];
 
 /**
- * Range presets plus a custom picker. The custom picker is a hand-rolled month grid (no date
- * library in the bundle): first click sets the start, second the end, either order; hovering
- * previews the span. Two months side by side would be the desktop convention, but the popover
- * sits in a 32px header and one month reads faster.
+ * The window the whole page reads through: four presets and a custom range,
+ * all in ONE track.
+ *
+ * The custom picker used to be a second bordered button beside the presets,
+ * which drew two boxes for one setting — and they are one setting, since
+ * picking a range unsets the preset. It is a segment now, and it shows the
+ * span it picked so the track always says what the page is showing.
+ *
+ * The picker itself is a hand-rolled month grid rather than a date library:
+ * first click sets one end, second the other, either order, with the span
+ * previewing under the pointer in between.
  */
 export function DateRangeControl({
   range,
@@ -35,27 +42,20 @@ export function DateRangeControl({
   const isCustom = range.preset === "custom";
 
   return (
-    <div className="flex items-center gap-1.5">
-      <Segmented
-        label="Range preset"
-        value={isCustom ? null : range.preset}
-        options={PRESETS}
-        onChange={(preset) => onChange({ preset })}
-      />
+    <Segmented
+      label="Date range"
+      value={isCustom ? null : range.preset}
+      options={PRESETS}
+      onChange={(preset) => onChange({ preset })}
+    >
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger
           render={
             <button
               type="button"
               title="Custom range"
-              className={cn(
-                "flex h-control-md items-center gap-1.5 rounded-md border px-2 text-xs transition-colors outline-none",
-                isCustom
-                  ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-active)] text-[var(--foreground)]"
-                  : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--secondary-foreground)]",
-              )}
+              className={cn(SEGMENT_TRIGGER, isCustom ? SEGMENT_ACTIVE : SEGMENT_IDLE)}
             >
-              <CalendarDays size={12} />
               <span className="tabular-nums">{isCustom ? fmtRange(resolved) : "Custom"}</span>
             </button>
           }
@@ -63,9 +63,10 @@ export function DateRangeControl({
         <Popover.Portal>
           {/* z-index belongs to the Positioner: the Popup is statically
               positioned inside it, so `z-popover` on the Popup would do
-              nothing at all. */}
+              nothing at all. `--transform-origin` is Base UI's spelling of
+              Radix's `--radix-popover-content-transform-origin`. */}
           <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
-            <Popover.Popup className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 shadow-md outline-none">
+            <Popover.Popup className="origin-[var(--transform-origin)] rounded-lg border border-[var(--border)] bg-[var(--card)]/90 p-2 shadow-md outline-none backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
               <MonthGrid
                 from={isCustom ? (resolved.from ?? today) : null}
                 to={isCustom ? resolved.to : null}
@@ -80,7 +81,7 @@ export function DateRangeControl({
           </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
-    </div>
+    </Segmented>
   );
 }
 

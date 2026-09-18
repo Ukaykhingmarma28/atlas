@@ -12,7 +12,6 @@ import {
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { Hint } from "@/ui/tooltip";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -444,9 +443,8 @@ const TabColumn = memo(function TabColumn({
                     if (e.key === "Enter" || e.key === " ") setActiveTab(tab.id);
                   }}
                   className={cn(
-                    "group relative flex items-center gap-1.5 pl-3 h-full text-sm font-medium shrink-0 cursor-pointer select-none border-r border-border",
+                    "atlas-tab group relative flex items-center gap-1.5 px-4 h-full text-sm font-medium shrink-0 cursor-pointer select-none border-r border-border",
                     "transition-[background-color,color] duration-150",
-                    tab.closable ? "pr-7" : "pr-3",
                     isActive
                       ? "text-foreground bg-background"
                       : "text-muted-foreground bg-background hover:text-secondary-foreground hover:bg-element-hover",
@@ -466,27 +464,37 @@ const TabColumn = memo(function TabColumn({
                     />
                   )}
                   <span
-                    className={cn("truncate max-w-[140px] leading-normal", tab.dirty && "italic")}
+                    className={cn(
+                      "truncate max-w-[140px] leading-normal",
+                      tab.dirty && "italic",
+                      // Fades out from under the close button on hover — see
+                      // `.atlas-tab-label` in globals.css.
+                      tab.closable && "atlas-tab-label",
+                    )}
                   >
                     {tab.title}
                   </span>
                   {tab.closable && (
-                    <Hint label="Close tab">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          requestCloseTab(tab.id);
-                        }}
-                        className={cn(
-                          "absolute right-1.5 top-1/2 -translate-y-1/2",
-                          "inline-flex items-center justify-center w-4 h-4 rounded-full",
-                          "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                          "hover:bg-element-hover hover:text-foreground transition-[opacity,transform] duration-150",
-                        )}
-                      >
-                        <X size={10} strokeWidth={2.2} />
-                      </button>
-                    </Hint>
+                    // No tooltip. An × on the tab you are hovering is not
+                    // ambiguous, and a panel opening under the pointer to say
+                    // "Close tab" is noise on the one control every user
+                    // already knows. `aria-label` still names it, since the
+                    // button's only content is an icon.
+                    <button
+                      aria-label="Close tab"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestCloseTab(tab.id);
+                      }}
+                      className={cn(
+                        "absolute right-1.5 top-1/2 -translate-y-1/2",
+                        "inline-flex items-center justify-center w-4 h-4 rounded-full",
+                        "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                        "hover:bg-element-hover hover:text-foreground transition-[opacity,transform] duration-150",
+                      )}
+                    >
+                      <X size={10} strokeWidth={2.2} />
+                    </button>
                   )}
                 </div>
               );
@@ -813,9 +821,8 @@ function ProjectlessCenter() {
                 }
               }}
               className={cn(
-                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border pl-3 text-sm font-medium",
+                "atlas-tab group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border px-4 text-sm font-medium",
                 "transition-[background-color,color] duration-150",
-                tab.closable ? "pr-7" : "pr-3",
                 isActive
                   ? "bg-background text-foreground"
                   : "bg-background text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
@@ -832,24 +839,32 @@ function ProjectlessCenter() {
                   )}
                 />
               )}
-              <span className="max-w-[140px] truncate leading-normal">{tab.title}</span>
+              <span
+                className={cn(
+                  "max-w-[140px] truncate leading-normal",
+                  tab.closable && "atlas-tab-label",
+                )}
+              >
+                {tab.title}
+              </span>
               {tab.closable && (
-                <Hint label="Close tab">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tab.id);
-                    }}
-                    className={cn(
-                      "absolute right-1.5 top-1/2 -translate-y-1/2",
-                      "inline-flex h-4 w-4 items-center justify-center rounded-full",
-                      "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                      "transition-[opacity,transform] duration-150 hover:bg-element-hover hover:text-foreground",
-                    )}
-                  >
-                    <X size={10} strokeWidth={2.2} />
-                  </button>
-                </Hint>
+                // No tooltip — see the note on the primary tab strip's close
+                // button above.
+                <button
+                  aria-label="Close tab"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  className={cn(
+                    "absolute right-1.5 top-1/2 -translate-y-1/2",
+                    "inline-flex h-4 w-4 items-center justify-center rounded-full",
+                    "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                    "transition-[opacity,transform] duration-150 hover:bg-element-hover hover:text-foreground",
+                  )}
+                >
+                  <X size={10} strokeWidth={2.2} />
+                </button>
               )}
             </div>
           );

@@ -26,14 +26,54 @@ import type { FirstPartyAgent } from "@/types/agent";
  * own colours (Atlas's native agent draws `AtlasIcon`) and the glyph must not
  * be tinted at all.
  */
+const CLAUDE = "#c98263";
+const CODEX = "#10a37f";
+const OPENCODE = "#9ca3af";
+const CURSOR = "#d9b56e";
+const KILO = "#f0c53d";
+
+/**
+ * Two more vendors that ship MODELS but no Atlas agent, so they have no entry
+ * in `BRAND` above and nothing else in the app would name them. Same argument
+ * as the rest of this file: Google's blue and the open-weights lilac are not
+ * Atlas's colours to restate, which is why they are constants here rather than
+ * theme keys. The lilac stands for the whole local/open-weights family — Llama,
+ * Mistral, Qwen, DeepSeek, Phi, Gemma — which has no single vendor to borrow a
+ * mark from, so it is the one hue here Atlas did choose.
+ */
+const GEMINI = "#7aa7e8";
+const LOCAL = "#b8a3df";
+
 const BRAND: Record<FirstPartyAgent, string | null> = {
-  "claude-code": "#c98263",
-  codex: "#10a37f",
-  opencode: "#9ca3af",
-  cursor: "#d9b56e",
-  kilo: "#f0c53d",
+  "claude-code": CLAUDE,
+  codex: CODEX,
+  opencode: OPENCODE,
+  cursor: CURSOR,
+  kilo: KILO,
   cersei: null,
 };
+
+/**
+ * The same hues, keyed by the family a MODEL belongs to rather than by agent
+ * id. A model chip and its vendor's agent mark read the same colour because
+ * they are the same constant — a second table would drift the first time one
+ * of them was touched.
+ */
+const MODEL_VENDOR = {
+  claude: CLAUDE,
+  codex: CODEX,
+  gemini: GEMINI,
+  local: LOCAL,
+  cursor: CURSOR,
+  kilo: KILO,
+} as const;
+
+export type ModelVendor = keyof typeof MODEL_VENDOR;
+
+/** The brand hue for a model family. Total — the caller classifies first. */
+export function modelVendorColor(vendor: ModelVendor): string {
+  return MODEL_VENDOR[vendor];
+}
 
 /**
  * The tint for an agent's brand mark, or `undefined` to leave it inheriting

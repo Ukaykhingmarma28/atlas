@@ -76,7 +76,9 @@ describe("UsagePanel", () => {
   it("renders every section for a populated org", () => {
     seed();
     render(<UsagePanel />);
-    for (const section of ["stats", "classes", "chart", "insights", "top", "efficiency"]) {
+    // No "top" section: the ranked list was removed — the Projects / Agents /
+    // Models tables say the same thing with real numbers.
+    for (const section of ["stats", "classes", "chart", "insights", "efficiency"]) {
       expect(document.querySelector(`[data-section="${section}"]`), section).not.toBeNull();
     }
     expect(screen.getByRole("tab", { name: /Sessions/ })).toHaveAttribute("aria-selected", "true");
