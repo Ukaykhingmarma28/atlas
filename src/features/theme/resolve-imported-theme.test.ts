@@ -10,8 +10,9 @@ import type { Theme } from "./lib/theme-api";
  *
  * `crates/atlas-theme/tests/import.rs` proves the converted TOML parses and
  * carries every required base token, but "parses" is not the bar an imported
- * theme has to clear — the bar is that the TypeScript resolver produces all 134
- * theme keys from it, with a real colour in each. Those are two different
+ * theme has to clear — the bar is that the TypeScript resolver produces EVERY
+ * theme key in the registry from it, with a real colour in each. The count is
+ * `THEME_KEY_REGISTRY.length` and moves with `keys.toml`; do not restate it. Those are two different
  * checks separated by a language boundary, and only one of them can be run in
  * Rust.
  *

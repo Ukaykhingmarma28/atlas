@@ -150,16 +150,22 @@ Two more utilities belong here:
   theme key — the theme's foreground at 6% — so a light variant gets a dark
   edge instead of the white-on-white one a hardcoded highlight would give it.
 - `backdrop-blur-glass` — the one glass blur (`--blur-glass`, 24px).
+- `glass-hud` — the frosted HUD: a hairline border, the raised top edge and the
+  menu-rung shadow, for a surface that floats over whatever the app is showing
+  (the hint-nav keycaps and their dock, the sign-in dock). Compose the blur and
+  the translucent fill with it —
+  `glass-hud backdrop-blur-glass bg-gradient-to-b from-popover/85 to-card/90` —
+  because the alpha is what lets the blur through and a smaller chip may want a
+  lighter one.
 
 One thing to keep in mind:
 
-- **`shadow-md` is pinned to the theme's `--shadow-2xl`**, which is exactly what
-  `--shadow-overlay` renders, so the sweep can replace all 83
-  `shadow-[var(--shadow-overlay)]` sites with `shadow-md` and move nothing. Do
-  not repoint it. `shadow-lg` stacks the theme's `--shadow-xl` under its
-  `--shadow-2xl` to get a rung of its own — the shadcn scale has no fourth
-  step, and `md` and `lg` resolving to the same value made every dialog read as
-  a popover.
+- **`shadow-md` is pinned to the theme's `--shadow-2xl`**, which is what the
+  former `--shadow-overlay` alias rendered, so the sweep replaced all of its
+  call sites with `shadow-md` and moved nothing. Do not repoint it.
+  `shadow-lg` stacks the theme's `--shadow-xl` under its `--shadow-2xl` to get
+  a rung of its own — the shadcn scale has no fourth step, and `md` and `lg`
+  resolving to the same value made every dialog read as a popover.
 
 ## The scrim
 
@@ -262,15 +268,23 @@ import { Icon } from "@/ui/icon";
 Five sizes — `xs` 10, `sm` 12, `md` 14 (the default), `lg` 16, `xl` 20 — and one
 stroke width, **1.75**. Lucide's own default of 2 reads heavy at these sizes.
 
-The sweep maps the 903 existing `size={n}` call sites onto the scale:
+**Not done yet, and deliberately.** ~960 `size={n}` call sites remain, 443 of
+them off the scale (`11` × 308, `13` × 110, `9` × 23, `15` × 22, `18` × 17,
+`8` × 8). The colour-and-scale sweep left them: unlike a token swap, moving a
+site means restructuring the element — `<Plus size={14} />` becomes
+`<Icon icon={Plus} size="md" />` — and the ratchet cannot see the result, so a
+scattered half-migration would be invisible to everything but a reader. When it
+is done, it is one pass with this mapping:
 
 ```
-9 → 10 (xs)   10 → 10 (xs)   11 → 12 (sm)   12 → 12 (sm)
-13 → 14 (md)  14 → 14 (md)   16 → 16 (lg)   20 → 20 (xl)
+8 → 10 (xs)   9 → 10 (xs)   10 → 10 (xs)   11 → 12 (sm)   12 → 12 (sm)
+13 → 14 (md)  14 → 14 (md)  15 → 16 (lg)   16 → 16 (lg)   18 → 20 (xl)   20 → 20 (xl)
 ```
 
-Foundations ships the wrapper and uses it in the `src/ui` primitives only;
-migrating the call sites is the sweep's job.
+Note that `11 → 12` moves the single most common icon size in the app, in dense
+chrome sized around it, so it wants the before/after check on
+`?scenario=design-system` that decision 23 asks for. Foundations shipped the
+wrapper and uses it in the `src/ui` primitives only.
 
 ## States
 

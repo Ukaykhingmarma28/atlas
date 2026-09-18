@@ -16,9 +16,9 @@ is the only place the derivation order itself lives.
 tokens.** Everything else Atlas derives and does not ask about: a status badge's
 tinted fill is its status foreground at 12%, a focused control's border is the
 strong border, booleans are constants. The 2026-09-18 audit cut the set on
-exactly that test — 135 keys down to this list — and the colours that came off
-it did not disappear, they became **derived variables** (table at the bottom) or
-plain base tokens. Removing a key is a soft break: an unknown key still loads,
+exactly that test — a little over half the keys came off — and what went did not
+disappear, it became a **derived variable** (table at the bottom) or a plain
+base token. Removing a key is a soft break: an unknown key still loads,
 with a warning, so a theme written for a newer Atlas keeps working on an older
 one and the other way round.
 
@@ -42,10 +42,10 @@ Most code never touches this file: the applier writes every resolved key to
 utility or a `var()` follows the theme with no work and recolours on a switch
 with no re-render. Prefer that.
 
-Four subsystems cannot, because they take a colour as a JavaScript VALUE rather
+Five subsystems cannot, because they take a colour as a JavaScript VALUE rather
 than as a style — xterm's `ITheme`, pixi's `Graphics.fill({ color })`, every
-recharts colour prop, and mermaid's `themeVariables`. They read
-`src/features/theme/theme-values.ts`:
+recharts colour prop, mermaid's `themeVariables`, and a canvas 2D `fillStyle`
+(the diff minimap). They read `src/features/theme/theme-values.ts`:
 
 | | |
 |---|---|
@@ -59,6 +59,26 @@ recharts colour prop, and mermaid's `themeVariables`. They read
 Reading the right value once is only half of it. A subsystem that caches a
 colour at construction time is still theme-blind; it just fails one switch
 later. Every non-CSS consumer subscribes to one of the last two.
+
+## The transform vocabulary
+
+Three transforms exist, and the generated table below names one per key.
+`alpha n` replaces the alpha channel. `mix n → B:background` and
+`mix n → B:foreground` are a mirrored pair, and which one a key uses is a
+statement about appearance: mixing toward the BACKGROUND pushes a colour away
+from the reader in either appearance, mixing toward the FOREGROUND pulls it
+closer.
+
+There is no "lighten" — it was the dark-appearance reading of "a stronger
+version of this", and applied unchanged to Rosé Pine Dawn it made a hovered
+primary button PALER than its rest state and resolved `terminal.ansi.black` to
+something lighter than the terminal background it sits just above. One key
+still uses it, `terminal.ansi.bright_white`, where "paler" is the literal
+intent whatever the background.
+
+Adding a fourth means editing `crates/atlas-theme/keys.toml`'s vocabulary
+comment, the `OPERATIONS` table in `scripts/generate-theme-keys.mjs`, and the
+registry preamble it emits — the transform itself is one line of `color.ts`.
 
 <!-- generated:theme-keys -->
 <!-- Generated from crates/atlas-theme/keys.toml by `bun run theme:keys`. Edit that file, not this block. -->
@@ -248,9 +268,14 @@ unknown-key warning.
 
 ## Legacy CSS-variable map
 
-The old names remain aliases through PR 4. This table is exhaustive for the
-former `tokens.css` colour variables; names within a cell each map to the
-single token or key in the next cell.
+**These names no longer exist.** They were aliases in `tokens.css` through the
+sweep, which rewrote all 2,594 `var(--alias)` call sites and deleted them — a
+name in the left column will resolve to nothing. The table is kept because a
+theme written against an older Atlas, a stale branch, or a snippet in an issue
+will still be full of them, and this is the translation.
+
+The table is exhaustive for the former `tokens.css` colour variables; names
+within a cell each map to the single token or key in the next cell.
 
 | Former variable(s) | Source now |
 |---|---|
@@ -287,9 +312,15 @@ single token or key in the next cell.
 | `--comms-mention-other-bg`, `--comms-mention-other-text` | **gone** — no consumer |
 | `--agent-*-chip`, `--agent-*-chip-bg` | **gone** — the chip is `agent.chip.foreground` / `agent.chip.background`, and the vendors' brand hues are constants in `features/agents/lib/agent-brand.ts` |
 
-`--font-size-*`, `--space-*`, radius, shadow, z-index and motion variables
-are not theme keys. Their current rendered values are deliberately preserved
-in Theme Core; changing those scales belongs to Foundations.
+`--font-size-*` and `--space-*` are gone too, and radius, shadow, z-index and
+motion are not theme keys: those scales live in the Tailwind namespaces, and
+[`design-system.md`](./design-system.md) is their reference. A theme does set
+`radius`, the three fonts, `tracking-normal` and the seven `shadow-*` ramps —
+they are base tokens, listed with the rest of the shadcn set above.
+
+Two more former aliases that were not colours: `--shadow-overlay` is
+`shadow-md`, and `--z-max` is whichever named layer the site belongs to
+(`z-popover` for a menu, `z-drag` for the hint overlay).
 
 ## Regenerating checked assets
 
