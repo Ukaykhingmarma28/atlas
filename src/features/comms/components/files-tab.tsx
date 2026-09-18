@@ -59,9 +59,7 @@ export function FilesTab({ convId }: { convId: string }) {
   return (
     <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3 pt-2">
       {entries.length === 0 && (
-        <p className="px-1 pt-4 text-center text-[11px] text-text-ghost">
-          No files in loaded history.
-        </p>
+        <p className="px-1 pt-4 text-center text-xs text-text-ghost">No files in loaded history.</p>
       )}
 
       {media.length > 0 && (
@@ -140,7 +138,7 @@ function SectionHead({
   return (
     <div className="flex items-center gap-1.5 px-1 pb-1 pt-2">
       <Icon size={11} className="shrink-0 text-text-secondary" />
-      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+      <span className="text-2xs font-semibold uppercase tracking-[0.06em] text-text-secondary">
         {label}
       </span>
       {/* Unwrapped: a wrapper span would swallow the button's `ml-auto`. */}
@@ -261,13 +259,11 @@ function FileRow({
       onClick={() => void saveAttachment(attachment)}
       // A surface of its own: on the panel's pure-black card these rows had
       // nothing to sit on and read as floating text.
-      className="flex w-full items-center gap-2 rounded-lg bg-[#0D0E0D] px-2.5 py-2 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 rounded-lg bg-card px-2.5 py-2 text-left transition-colors hover:bg-bg-hover cursor-pointer"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] text-text-secondary">
-          {attachment.filename}
-        </span>
-        <span className="mt-0.5 flex items-center gap-1 text-[9.5px] text-text-ghost">
+        <span className="block truncate text-sm text-text-secondary">{attachment.filename}</span>
+        <span className="mt-0.5 flex items-center gap-1 text-2xs text-text-ghost">
           <CommsAvatar member={author} size={12} />
           <span className="truncate">{author?.name ?? "Unknown"}</span>·
           <span className="shrink-0">

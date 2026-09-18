@@ -109,14 +109,14 @@ export function CommsHome() {
     <div className="flex min-w-0 flex-1 flex-col animate-fade-in">
       <div className="shrink-0 px-2 pt-2 pb-1">
         {/* Radius matches the surface card it sits in (CommsSurface's
-            `rounded-[10px]`) — a tighter corner read as a different family. */}
-        <div className="flex items-center gap-1.5 rounded-[10px] border border-border bg-bg-input px-2.5 py-[5px] focus-within:border-border-strong">
+            `rounded-xl`) — a tighter corner read as a different family. */}
+        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-bg-input px-2.5 py-[5px] focus-within:border-border-strong">
           <Search size={12} className="shrink-0 text-text-ghost" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Jump to a channel or person…"
-            className="min-w-0 flex-1 bg-transparent text-[11.5px] text-text-primary outline-none placeholder:text-text-ghost"
+            className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-ghost"
           />
         </div>
       </div>
@@ -194,7 +194,7 @@ export function CommsHome() {
             <button
               type="button"
               onClick={() => setShowDiscover((v) => !v)}
-              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary transition-colors hover:text-text-primary cursor-pointer"
+              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-text-secondary transition-colors hover:text-text-primary cursor-pointer"
             >
               <ChevronRight
                 size={10}
@@ -212,13 +212,13 @@ export function CommsHome() {
                   <RowIcon>
                     <Hash size={13} className="opacity-60" />
                   </RowIcon>
-                  <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
                   {/* Only public channels are self-serve joinable; a private one
                       answers 404, so no button is offered for it at all. */}
                   <button
                     type="button"
                     onClick={() => actions.joinChannel(c.id)}
-                    className="shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium text-text-secondary opacity-0 transition-opacity hover:bg-bg-hover hover:text-text-primary group-hover/disc:opacity-100 cursor-pointer"
+                    className="shrink-0 rounded px-1.5 py-px text-xs font-medium text-text-secondary opacity-0 transition-opacity hover:bg-bg-hover hover:text-text-primary group-hover/disc:opacity-100 cursor-pointer"
                   >
                     Join
                   </button>
@@ -249,7 +249,7 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-text-secondary">
       <Icon size={12} className="shrink-0" />
       {label}
       {action && <span className="ml-auto flex items-center">{action}</span>}
@@ -278,7 +278,7 @@ function RowDivider() {
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <div className="py-1 pl-[50px] pr-2.5 text-[11px] text-text-tertiary">{text}</div>;
+  return <div className="py-1 pl-[50px] pr-2.5 text-xs text-text-tertiary">{text}</div>;
 }
 
 function ChannelRow({
@@ -307,7 +307,7 @@ function ChannelRow({
       </RowIcon>
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-[12px]",
+          "min-w-0 flex-1 truncate text-sm",
           unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
         )}
       >
@@ -367,13 +367,13 @@ function DirectRow({
       <span className="min-w-0 flex-1">
         <span
           className={cn(
-            "block truncate text-[12px] leading-[1.35]",
+            "block truncate text-sm leading-[1.35]",
             unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
           )}
         >
           {title}
         </span>
-        <span className="block truncate text-[10.5px] leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-text-tertiary">
           {isGroup ? `${others.length + 1} members` : (counterpart?.email ?? "")}
         </span>
       </span>
@@ -405,10 +405,10 @@ function ContactRow({
         <CommsAvatar member={member} size={26} online={online} />
       </RowIcon>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] leading-[1.35] text-text-secondary">
+        <span className="block truncate text-sm leading-[1.35] text-text-secondary">
           {member.name}
         </span>
-        <span className="block truncate text-[10.5px] leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-text-tertiary">
           {member.email}
         </span>
       </span>
@@ -435,9 +435,7 @@ function Badges({ unread, mentions }: { unread: number; mentions: number }) {
     return <KeycapBadge ink="var(--foreground)" label={mentions > 9 ? "9+" : String(mentions)} />;
   }
   if (unread > 0) {
-    return (
-      <KeycapBadge ink="rgba(255,255,255,0.95)" label={unread > 99 ? "99+" : String(unread)} />
-    );
+    return <KeycapBadge ink="var(--foreground)" label={unread > 99 ? "99+" : String(unread)} />;
   }
   return null;
 }
@@ -454,7 +452,7 @@ function Badges({ unread, mentions }: { unread: number; mentions: number }) {
 function KeycapBadge({ ink, label }: { ink: string; label: string }) {
   return (
     <span
-      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 font-sans text-[10px] font-semibold leading-[16px] tabular-nums tracking-wide"
+      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide"
       style={{
         color: ink,
         background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",

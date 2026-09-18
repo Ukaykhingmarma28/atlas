@@ -307,7 +307,7 @@ export const CommsConversation = memo(function CommsConversation({
               strength={2}
               layers={4}
               tint="color-mix(in srgb, var(--background) 90%, transparent)"
-              style={{ zIndex: 3 }}
+              className="z-panel"
             />
 
             {/* Drop hint over the transcript. Opacity only — no transform
@@ -316,12 +316,12 @@ export const CommsConversation = memo(function CommsConversation({
             <div
               aria-hidden
               className={cn(
-                "pointer-events-none absolute inset-0 z-[4] flex items-center justify-center",
+                "pointer-events-none absolute inset-0 z-panel flex items-center justify-center",
                 "bg-[var(--primary)]/8 transition-opacity duration-150",
                 isDropTarget ? "opacity-100" : "opacity-0",
               )}
             >
-              <span className="rounded-full border border-[var(--primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+              <span className="rounded-full border border-[var(--primary)]/40 bg-bg-elevated px-3 py-1 text-xs font-medium text-text-secondary shadow">
                 Drop files to attach
               </span>
             </div>
@@ -336,16 +336,14 @@ export const CommsConversation = memo(function CommsConversation({
                   <TranscriptSkeleton />
                 ) : messages.length === 0 && loadError ? (
                   <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-                    <span className="text-[12px] font-medium text-text-primary">
+                    <span className="text-sm font-medium text-text-primary">
                       Couldn’t load this conversation
                     </span>
-                    <span className="max-w-[260px] text-[11px] text-text-tertiary">
-                      {loadError}
-                    </span>
+                    <span className="max-w-[260px] text-xs text-text-tertiary">{loadError}</span>
                     <button
                       type="button"
                       onClick={() => actions.retryConversation(conv.id)}
-                      className="mt-1 flex h-[26px] items-center gap-1.5 rounded-md border border-border bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+                      className="mt-1 flex h-control-md items-center gap-1.5 rounded-md border border-border bg-bg-hover px-3 text-xs font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
                     >
                       <RefreshCw size={11} />
                       Try again
@@ -398,7 +396,7 @@ export const CommsConversation = memo(function CommsConversation({
             <div
               aria-hidden
               className={cn(
-                "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-[1] h-[44px] transition-opacity duration-200",
+                "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-panel h-[44px] transition-opacity duration-200",
                 more ? "opacity-100" : "opacity-0",
               )}
               style={{
@@ -419,8 +417,8 @@ export const CommsConversation = memo(function CommsConversation({
                   className={cn(
                     "atlas-pill-in pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5",
                     "border border-border bg-bg-elevated",
-                    "text-[11px] font-medium leading-none text-text-secondary",
-                    "shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-colors cursor-pointer",
+                    "text-xs font-medium leading-none text-text-secondary",
+                    "shadow-sm transition-colors cursor-pointer",
                     "hover:bg-bg-hover hover:text-text-primary",
                   )}
                 >
@@ -499,7 +497,7 @@ function SubTabStrip({
           type="button"
           onClick={() => onSelect(id)}
           className={cn(
-            "relative flex h-full items-center gap-1.5 px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer",
+            "relative flex h-full items-center gap-1.5 px-2.5 text-sm font-medium transition-colors cursor-pointer",
             active === id ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
           )}
         >
@@ -516,7 +514,7 @@ function SubTabStrip({
         type="button"
         onClick={openSpace}
         title="Open this conversation's Space"
-        className="ml-auto flex h-[22px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 text-[10.5px] font-medium text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
+        className="ml-auto flex h-control-sm shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-[var(--atlas-element-selected)] px-3 text-xs font-medium text-text-tertiary transition-colors hover:bg-[var(--atlas-element-active)] hover:text-text-primary"
       >
         <Frame size={11} />
         Spaces
@@ -595,7 +593,7 @@ function ConversationHeader({
               title="Rename channel"
               className="group/title flex min-w-0 items-center gap-1 text-left cursor-pointer"
             >
-              <span className="min-w-0 truncate text-[12.5px] font-medium text-text-primary">
+              <span className="min-w-0 truncate text-base font-medium text-text-primary">
                 {conv.name}
               </span>
               <Pencil
@@ -605,18 +603,16 @@ function ConversationHeader({
             </button>
           </RenameChannelMenu>
         ) : (
-          <span className="min-w-0 truncate text-[12.5px] font-medium text-text-primary">
-            {title}
-          </span>
+          <span className="min-w-0 truncate text-base font-medium text-text-primary">{title}</span>
         )}
 
         {isGroup && (
-          <span className="shrink-0 text-[10px] text-text-ghost">
+          <span className="shrink-0 text-2xs text-text-ghost">
             {others.length + 1} · membership frozen
           </span>
         )}
         {isChannel && conv.workspace_ref_ids.length > 0 && (
-          <span className="shrink-0 rounded bg-bg-hover px-1 py-px text-[9px] text-text-tertiary">
+          <span className="shrink-0 rounded bg-bg-hover px-1 py-px text-3xs text-text-tertiary">
             {conv.workspace_ref_ids.length} project
           </span>
         )}
@@ -681,10 +677,10 @@ function ConversationIntro({
 }) {
   return (
     <div className="px-4 pb-3 pt-4">
-      <div className="text-[13px] font-semibold text-text-primary">
+      <div className="text-base font-semibold text-text-primary">
         {isChannel ? `#${conv.name}` : title}
       </div>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-text-ghost">
+      <p className="mt-0.5 text-xs leading-relaxed text-text-ghost">
         {isChannel
           ? "This is the beginning of the channel. Anyone in the organisation can be invited, and an invitee sees the full history."
           : conv.kind === "group_dm"
@@ -699,7 +695,7 @@ function DayDivider({ at }: { at: number }) {
   return (
     <div className="flex items-center gap-2 px-3 py-3">
       <span className="h-px flex-1 bg-border-subtle" />
-      <span className="text-[9.5px] font-medium uppercase tracking-wide text-text-ghost">
+      <span className="text-2xs font-medium uppercase tracking-wide text-text-ghost">
         {formatDayDivider(at)}
       </span>
       <span className="h-px flex-1 bg-border-subtle" />
@@ -716,7 +712,7 @@ function TypingHint({ names }: { names: string[] }) {
         ? `${names[0]} and ${names[1]} are typing`
         : `${names.length} people are typing`;
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] text-text-ghost">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-ghost">
       <span className="flex gap-[3px]">
         {[0, 1, 2].map((i) => (
           <span

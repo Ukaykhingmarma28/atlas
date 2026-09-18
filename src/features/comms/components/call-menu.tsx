@@ -94,17 +94,12 @@ export function CallMenu({ convId, mode }: { convId: string; mode: CallMode }) {
         </TooltipContent>
       </Tooltip>
       <Popover.Portal>
-        <Popover.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
-          <Popover.Popup
-            style={{
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-          >
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-border bg-[var(--bg-elevated)]/95 backdrop-blur-2xl shadow-lg inset-highlight">
             <div className="flex w-[230px] flex-col py-1">
               {liveCall ? (
                 <>
-                  <div className="px-3 pb-1 pt-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  <div className="px-3 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
                     A call is already live here
                   </div>
                   <MenuRow
@@ -188,9 +183,9 @@ function MenuRow({
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[11px] font-medium text-text-primary">{label}</span>
+        <span className="block text-xs font-medium text-text-primary">{label}</span>
         {sub && (
-          <span className="mt-px block text-[10px] leading-[1.4] text-text-tertiary">{sub}</span>
+          <span className="mt-px block text-2xs leading-[1.4] text-text-tertiary">{sub}</span>
         )}
       </span>
     </button>

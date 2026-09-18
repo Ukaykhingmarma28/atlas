@@ -52,7 +52,7 @@ export const MessageBody = memo(function MessageBody({
   const directory = useMemo(() => ({ members, me }), [members, me]);
 
   return (
-    <div className={cn("text-[12.5px] leading-[1.5] break-words", className)}>
+    <div className={cn("text-base leading-[1.5] break-words", className)}>
       <MentionContext.Provider value={directory}>
         <Suspense
           fallback={

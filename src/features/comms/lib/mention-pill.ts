@@ -19,7 +19,7 @@ export const MENTION_AVATAR_SIZE = 13;
 
 const BASE =
   "inline-flex items-center gap-1 rounded-full border px-1.5 py-[1px] align-middle " +
-  "text-[11.5px] font-medium leading-none";
+  "text-sm font-medium leading-none";
 
 /** Addressed to you, or to everyone — the brighter of the two. */
 const SELF = "border-white/20 bg-[var(--atlas-element-emphasis)] text-[var(--foreground)]";
@@ -67,7 +67,7 @@ export function avatarElement(
   fallback.style.width = `${size}px`;
   fallback.style.height = `${size}px`;
   fallback.style.fontSize = `${Math.round(size * 0.4)}px`;
-  fallback.style.backgroundColor = member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "#2a2a2a";
+  fallback.style.backgroundColor = member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)";
   fallback.className =
     "flex shrink-0 items-center justify-center rounded-full font-medium leading-none " +
     "text-white/90 select-none tracking-tight";
