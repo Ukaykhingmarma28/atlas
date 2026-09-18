@@ -302,11 +302,17 @@ utility regardless of specificity.
 pre-theme fallback in `tokens.css` matches. It used to equal `--border-strong`,
 which is why a focus ring was indistinguishable from a border.
 
-**Disabled** (decision 31). One treatment, everywhere:
-`disabled:opacity-50 disabled:cursor-not-allowed`. Every `src/ui` primitive
-carries exactly that pair. For an element that cannot take `:disabled` — a `div`
-acting as a control — use the `disabled-look` utility. Do not invent a third
-opacity; the audit found five (30 / 40 / 45 / 50 / 60).
+**Disabled** (decision 31). One visual treatment, everywhere: `opacity-50` plus
+`cursor-not-allowed`. `Button` and `IconButton` key it off Base UI's
+`data-disabled` attribute (`data-disabled:opacity-50 data-disabled:cursor-not-allowed`)
+rather than the `:disabled` pseudo-class, since `data-disabled` is present
+whether or not the control also carries the native `disabled` attribute — see
+`focusableWhenDisabled` below. Every other `src/ui` primitive, which renders a
+plain element rather than Base UI's `Button`, still carries the same pair as
+`disabled:opacity-50 disabled:cursor-not-allowed`. For an element that cannot
+take `:disabled` at all — a `div` acting as a control — use the `disabled-look`
+utility. Do not invent a third opacity; the audit found five (30 / 40 / 45 /
+50 / 60).
 
 ## Primitives
 
@@ -319,11 +325,27 @@ so later `shadcn add` output drops in with the classes swapped rather than the
 structure rewritten. Two deliberate departures:
 
 - **Sizes are Atlas control heights**, not shadcn's 32/36/40px.
-- **No `asChild` on `Button`.** shadcn's buttons lean on a Slot primitive, and
-  Foundations was allowed one new dependency. Compose instead:
-  `<a className={buttonVariants({ variant: "ghost" })}>`. The overlay
-  primitives, which arrived with Base UI, do take Base UI's `render` prop —
-  that is the same idea under the name Base UI gives it.
+- **No `asChild` on `Button`.** shadcn's buttons lean on a Slot primitive;
+  `Button` and `IconButton` are built directly on `@base-ui/react/button`
+  instead and take its own `render` prop — `<Button render={<a href="/x" />}>`
+  composes the element, with props merged by Base UI rather than cloned by a
+  Slot. `render` is meant for composing with *other components* (a
+  Dialog/Menu/Popover trigger, most often — see `DialogClose` in
+  `dialog.tsx`, which renders as an `IconButton`); a plain link that should
+  merely *look* like a button is still styled directly —
+  `<a className={buttonVariants({ variant: "ghost" })}>` — since a link has
+  its own keyboard semantics that Button's `role="button"` handling isn't
+  meant to replace (this is also Base UI's own guidance).
+
+`Button` and `IconButton` also take `focusableWhenDisabled` (Base UI's own
+prop, default `false`, unchanged from Base UI's default). A disabled control
+is out of the tab order unless a call site opts in. Reach for it specifically
+where a disabled control also carries a `Hint`/`Tooltip` explaining *why* it
+is disabled — otherwise the tooltip can never be reached by keyboard. Most
+disabled controls in Atlas explain nothing, so the default stays `false`
+rather than flipping every disabled control into the tab order; see the
+`IconButton` gallery section (`?scenario=design-system`) for the three states
+side by side.
 
 | primitive | reach for it when |
 |---|---|
