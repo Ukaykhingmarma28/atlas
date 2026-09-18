@@ -358,16 +358,64 @@ Three rules they all share, because Base UI's anatomy differs from Radix's:
 than Radix ones — its classes still need swapping for house tokens.
 
 Hover colour comes from real tokens (`bg-primary-hover`), never from a `/90`
-opacity modifier: Tailwind v4 compiles those to `color-mix()`, and decision 14
-puts the floor at macOS 11 / WKWebView.
+opacity modifier — but on **token** grounds, not browser-support ones: a hover
+colour is one of the things a theme author should be able to choose, and an
+opacity modifier takes that away. (The support claim this paragraph used to make
+was wrong: Tailwind v4 emits its `/N` modifiers as an rgba fallback plus an
+`@supports (color:color-mix(in lab, red, red))` upgrade — verified against the
+built stylesheet, where all 195 `color-mix()` calls sit inside that guard. See
+"Colour functions" below.)
+
+## Colour functions
+
+**`color-mix()` is allowed at a call site. Relative colour syntax is not, and
+theme resolution never happens in CSS.**
+
+Decision 14 and ADR-0009 originally read as a blanket ban on `color-mix()`,
+justified by "Atlas's minimum is macOS 11". The evidence does not support that
+version argument, and the ADR's *other* argument is the load-bearing one:
+
+- `color-mix()` needs Safari **16.2**; relative colour syntax (`rgb(from …)`)
+  needs **16.4**. ADR-0009's rejection bullet cited the 16.4 number against
+  both.
+- The shipped stylesheet already contains **71 unconditional `@property`
+  at-rules**, emitted by Tailwind v4 itself, and `@property` needs Safari 16.4.
+  Tailwind v4's own documented floor is Safari 16.4 / Chrome 111 / Firefox 128.
+  Banning `color-mix()` on a 16.2 argument while the utility layer requires 16.4
+  buys nothing.
+- macOS 11 Big Sur's terminal Safari is 16.6.1, above both. `minimumSystemVersion
+  = 11.0` therefore does **not** imply a pre-`color-mix()` WKWebView; only a Big
+  Sur install that stopped taking Safari updates does, and that install already
+  renders Tailwind v4 degraded whatever this rule says.
+- The argument that *does* survive is version-independent: resolution must
+  happen in TypeScript because the resolved map has to feed xterm, both pixi
+  graphs, recharts and CodeMirror, which need concrete colour values and cannot
+  read a custom property. That is about the **resolver**, not about whether a
+  stylesheet may tint an already-resolved token at a call site.
+
+So the rule is drawn where the real constraint is:
+
+| | |
+|---|---|
+| A theme key derived in CSS | **Never.** `keys.toml` + the TS resolver is the one derivation site (decision 42). |
+| `color-mix()` tinting a resolved token in a rule or a style prop | Fine. 23 sites do, all of them `var(--token) N%, transparent`. |
+| Tailwind's `/N` opacity modifier | Fine — the build emits an rgba fallback and an `@supports` upgrade. |
+| Relative colour syntax (`rgb(from …)`, `oklch(from …)`) | **Never.** Safari 16.4, no fallback, and the `colour-literal` ratchet rule already catches it. |
+
+The alternative — replacing the 23 call sites — was rejected: each is a
+presentational tint, so it would mean either ~15 new public theme keys (days
+after the key-set audit cut 135 to 73 precisely because zero-consumer keys are a
+liability) or 23 new TS-resolved values each needing its own theme subscription,
+i.e. 23 new chances for a stale palette. Both are worse than the risk removed.
 
 ## The ratchet
 
-`tests/design-system-ratchet.test.ts` is the eleventh contract suite. Nothing
-else in the toolchain can see this drift — a new `text-[11.5px]` type-checks,
-lints and renders.
+`tests/design-system-ratchet.test.ts` is one of the contract suites in `tests/`.
+Nothing else in the toolchain can see this drift — a new `text-[11.5px]`
+type-checks, lints and renders.
 
-**What it counts**, across `src/features/**` and `src/components/**`:
+**What it counts**, across `src/features/**`, `src/components/**`, `src/ui/**`
+and `src/dev/**`:
 
 | rule | pattern |
 |---|---|
@@ -376,11 +424,26 @@ lints and renders.
 | `arbitrary-shadow` | `shadow-[…]` |
 | `arbitrary-radius` | `rounded-[…]`, any corner |
 | `colour-literal` | `#rrggbb`, `rgb(`, `rgba(`, `hsl(`, `hsla(` |
-| `bg-white-black` | `bg-white`, `bg-black`, with or without an opacity modifier |
+| `white-black-utility` | `white`/`black` after any colour utility prefix, opacity modifier or not |
+| `tailwind-palette` | Tailwind's stock ramps — `bg-amber-500`, `text-red-400`, … |
+| `bare-z-index` | a bare `z-50` or higher; below 50 is local stacking |
 | `inline-numeric-style` | inline `zIndex:`, `fontSize:`, `boxShadow:` with a literal |
 
-`src/ui` and `src/styles` are out of scope — they *define* these values.
-`src/dev` is out of scope — it never ships.
+`src/styles` is the only wholesale exclusion — it *is* the scale.
+
+`src/ui` and `src/dev` used to be excluded too, on the same "they define these
+values" argument, and it was untrue of nearly every file in them: the 2026-09-18
+review found a hardcoded white canvas ink and a literal 50%-black popover shadow
+sitting in `src/ui`, where exactly 2 of 19 files carried a violation and neither
+defined anything. `src/dev` keeps one narrow **directory** exemption, for the
+mock fixtures whose colours ARE their content (theme files, and the text of fake
+source files the editor renders rather than applies).
+
+Two rules cover what the numeric bans could not. `white-black-utility` replaced
+a `bg-`-only rule that let thirteen `text-white` / `border-black/20` sites
+through. `bare-z-index` exists because decision 28's "arbitrary z-index ≥ 60" is
+a numeric test for a semantic defect: three dialogs shipped at `z-50`, under
+their own `z-overlay` (100) scrim, and passed it.
 
 **It is closed.** It ran as a ratchet through the sweep — committed counts in a
 baseline file that could only go down — and the sweep drove **every rule to
@@ -395,6 +458,8 @@ Which means the exits have to be real ones:
   mark (`agent-brand.ts`, `agent-icons.tsx`), a palette the **user** picks a
   value from (spaces sticky notes, knowledge covers, PDF ink), or something that
   has to survive being shown over content Atlas did not draw.
+- **`EXEMPT_DIRS`** — the same bar, for a directory. One shape qualifies: the
+  files' colours *are* their content.
 - **`ratchet-allow: <reason>`** — one site inside an otherwise ordinary file.
   Put it in a comment on the line, or anywhere in the comment block directly
   above it. The rest of the file keeps being scanned, which a whole-file entry

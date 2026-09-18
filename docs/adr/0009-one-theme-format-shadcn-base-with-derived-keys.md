@@ -24,7 +24,7 @@ That is why Rosé Pine "didn't apply everywhere": nothing guaranteed that every 
 
 **Rust owns theme files.** Rust parses and validates built-in themes and the themes in `~/.config/atlas/themes/`. The frontend receives JSON.
 
-**One key-naming rule.** No key may be both a leaf and a prefix of another key, so the dotted names are valid unquoted TOML (`border.default`, not `border`).
+**One key-naming rule.** No key may be both a leaf and a prefix of another key, so the dotted names are valid unquoted TOML (`border.subtle`, not `border`).
 
 **Import is one-time conversion into this format.** Sources are shadcn/tweakcn, Zed and VS Code; each converted source is never read again.
 
@@ -36,7 +36,21 @@ That is why Rosé Pine "didn't apply everywhere": nothing guaranteed that every 
 - **shadcn tokens only, deriving everything else.** Rejected. A 31-token palette cannot say what Rosé Pine's syntax or ANSI colours are.
 - **An Atlas theme as a shadcn registry item with extras in `meta`.** Rejected. The registry format has no place for per-variant palette or syntax data. Instead we export shadcn registry JSON, which is lossy only for the Atlas extras.
 - **JSON theme files.** Rejected in favour of TOML. TOML allows comments, forgives trailing commas, and matches `config.toml`. JSON Schema still drives editor completion via `#:schema`.
-- **Derivation in CSS with `color-mix()` and relative colour syntax.** Rejected. Relative colour syntax needs Safari 16.4, but Atlas's minimum is macOS 11. It also cannot feed canvas and WebGL consumers.
+- **Derivation in CSS with `color-mix()` and relative colour syntax.** Rejected, on the consumer argument: a CSS-derived colour cannot feed xterm, the two pixi graphs, recharts or CodeMirror, all of which need a concrete value and cannot read a custom property. This bullet originally also gave a browser-support argument ("relative colour syntax needs Safari 16.4, but Atlas's minimum is macOS 11") and let it stand for both features. That was wrong for `color-mix()`, and the amendment below states the real policy.
+
+## Amendment (2026-09-18): `color-mix()` at a call site
+
+The rejection bullet above was read as a blanket ban on `color-mix()` anywhere, and `docs/reference/design-system.md` restated it that way. The ban does not hold up, and the rule is now drawn where the constraint actually is.
+
+**`color-mix()` needs Safari 16.2; relative colour syntax needs 16.4** — the bullet cited the 16.4 figure against both. More decisively, the shipped stylesheet already carries **71 unconditional `@property` at-rules** emitted by Tailwind v4, and `@property` needs Safari 16.4; Tailwind v4's own documented floor is Safari 16.4. Banning `color-mix()` on a 16.2 argument while the utility layer requires 16.4 buys nothing. macOS 11's terminal Safari is 16.6.1, so `minimumSystemVersion = 11.0` does not imply a pre-`color-mix()` WKWebView either — only a Big Sur install that stopped updating does, and that install already renders Tailwind v4 degraded.
+
+So:
+
+- **A theme key is never derived in CSS.** `keys.toml` plus the TypeScript resolver is the one derivation site, for the consumer reason above. Unchanged.
+- **`color-mix()` may tint an already-resolved token at a call site**, on the same footing as Tailwind's `/N` opacity modifier (which the build emits as an rgba fallback plus an `@supports` upgrade).
+- **Relative colour syntax stays banned**: Safari 16.4, no fallback, and nothing needs it.
+
+Replacing the 23 existing call sites was considered and rejected: each is a presentational tint, so it would mean either ~15 new public theme keys — days after the key-set audit cut 135 to 73 precisely because zero-consumer keys are a liability — or 23 new TypeScript-resolved values each needing a theme subscription, i.e. 23 new chances for a stale palette.
 
 ## Consequences
 
