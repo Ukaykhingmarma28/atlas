@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Download, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,26 @@ export function AtlasThemesSettings() {
 
   /** What the user would actually get if they clicked a card right now. */
   const appearance = appearanceForMode(settings.themeMode);
+
+  // Both stable, because `ThemeCard` is memoised: a card whose props did not
+  // change must not re-render, and a fresh closure per card per keystroke
+  // would change one on every card of every render.
+  const onPreview = useCallback((id: string, next: ThemeAppearance) => {
+    setPreviewing((state) => ({ ...state, [id]: next }));
+  }, []);
+
+  const onApply = useCallback(
+    (id: string, name: string) => {
+      // Clicking the theme you are already on writes the same id back, and
+      // `applySettingsSideEffects` — rightly — skips a value that did not
+      // change. That made the obvious way to pick up a hand-edit ("click it
+      // again") do nothing at all, so ask the theme store directly instead.
+      if (id === settings.theme) void reapply();
+      else updateSettings({ theme: id });
+      toast.success(`Applied “${name}” theme`);
+    },
+    [settings.theme, reapply, updateSettings],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -164,17 +184,8 @@ export function AtlasThemesSettings() {
               full={loaded[theme.id]}
               selected={theme.id === settings.theme}
               appearance={previewing[theme.id] ?? appearance}
-              onPreview={(next) => setPreviewing((state) => ({ ...state, [theme.id]: next }))}
-              onApply={() => {
-                // Clicking the theme you are already on writes the same id
-                // back, and `applySettingsSideEffects` — rightly — skips a
-                // value that did not change. That made the obvious way to
-                // pick up a hand-edit ("click it again") do nothing at all,
-                // so ask the theme store directly instead.
-                if (theme.id === settings.theme) void reapply();
-                else updateSettings({ theme: theme.id });
-                toast.success(`Applied “${theme.name}” theme`);
-              }}
+              onPreview={onPreview}
+              onApply={onApply}
             />
           ))}
         </div>
@@ -198,8 +209,15 @@ export function AtlasThemesSettings() {
  * The card's OWN chrome — the selected border, the card surface, the name —
  * stays on the active theme; only `ThemeMiniature` carries the previewed
  * theme's variables, so nothing here has to be applied to be seen.
+ *
+ * Memoised, because a miniature is ~40 elements and 124 inline custom
+ * properties: resolving a theme is free once cached, but reconciling fifteen
+ * of these on every search keystroke is not. Every prop is stable — the
+ * summaries come from the store, the documents from its `loaded` map, and the
+ * two callbacks are `useCallback`ed above — so a keystroke only pays for the
+ * cards that actually appear or disappear.
  */
-function ThemeCard({
+const ThemeCard = memo(function ThemeCard({
   summary,
   full,
   selected,
@@ -212,8 +230,8 @@ function ThemeCard({
   full: Theme | undefined;
   selected: boolean;
   appearance: ThemeAppearance;
-  onPreview: (appearance: ThemeAppearance) => void;
-  onApply: () => void;
+  onPreview: (id: string, appearance: ThemeAppearance) => void;
+  onApply: (id: string, name: string) => void;
 }) {
   const preview = full ? previewTheme(full, appearance) : null;
   const dark = full && summary.hasDark ? previewTheme(full, "dark") : null;
@@ -222,7 +240,7 @@ function ThemeCard({
   return (
     <button
       type="button"
-      onClick={onApply}
+      onClick={() => onApply(summary.id, summary.name)}
       className={cn(
         "flex cursor-pointer flex-col overflow-hidden rounded-lg border text-left transition-colors",
         "bg-card",
@@ -279,20 +297,20 @@ function ThemeCard({
             theme={summary.name}
             preview={dark}
             active={preview?.appearance === "dark"}
-            onPick={() => onPreview("dark")}
+            onPick={() => onPreview(summary.id, "dark")}
           />
           <AppearanceSwatch
             label="Light"
             theme={summary.name}
             preview={light}
             active={preview?.appearance === "light"}
-            onPick={() => onPreview("light")}
+            onPick={() => onPreview(summary.id, "light")}
           />
         </div>
       </div>
     </button>
   );
-}
+});
 
 /**
  * The "this theme also has a light variant" affordance, and the control that
@@ -344,7 +362,12 @@ function AppearanceSwatch({
         style={{
           backgroundColor: preview.swatch.background,
           color: preview.swatch.foreground,
-          borderColor: active ? preview.swatch.primary : "transparent",
+          // Never transparent: a dark variant's swatch is near-black on a
+          // near-black card, and with no edge it simply vanished. Its own
+          // foreground always contrasts with its own background — that is what
+          // makes it a foreground — so the edge is legible in either variant,
+          // and the brand colour is what marks the one being shown.
+          borderColor: active ? preview.swatch.primary : preview.swatch.foreground,
         }}
         className={cn(
           "flex h-4 cursor-pointer items-center gap-0.5 rounded-sm border px-1",

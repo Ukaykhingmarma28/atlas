@@ -58,12 +58,23 @@ function Tok({ role, children }: { role: keyof typeof SYNTAX; children: ReactNod
   return <span style={{ color: SYNTAX[role] }}>{children}</span>;
 }
 
-/** One rail row: a bar whose colour is the weight of that row's text. */
+/**
+ * One rail row: a bar whose colour is the weight of that row's text.
+ *
+ * The selected row carries `element.selected` AND the accent edge, because
+ * `element.selected` is a 6%-alpha overlay by derivation — honest, but at this
+ * size an overlay alone is a row you have to look for. The accent edge is the
+ * same one the real nav rail draws (`border-l-primary`).
+ */
 function RailRow({ width, selected }: { width: string; selected?: boolean }) {
   return (
     <div
-      className={cn("flex h-2 items-center rounded-sm px-0.5", selected && "bg-element-selected")}
+      className={cn(
+        "flex h-2 items-center gap-0.5 rounded-sm pr-0.5",
+        selected ? "bg-element-selected" : "pl-0.5",
+      )}
     >
+      {selected && <div className="h-full w-0.5 shrink-0 rounded-full bg-primary" />}
       <div
         className={cn("h-0.5 rounded-full", width, selected ? "bg-foreground" : "bg-disabled")}
       />
