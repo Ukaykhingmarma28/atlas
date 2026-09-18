@@ -336,7 +336,7 @@ function banner(comment) {
     `Generated from ${SOURCE_REL} — do not edit.`,
     `Run \`${COMMAND}\` after editing that file.`,
   ];
-  return lines.map((line) => `${comment} ${line}`).join("\n");
+  return lines.map((line) => `${comment} ${line}`.trimEnd()).join("\n");
 }
 
 const REGISTRY_PREAMBLE = `${banner("//")}
@@ -475,7 +475,10 @@ function renderRegistry({ keys, derived }) {
     }
     if (key.note) {
       body.push("  /**");
-      for (const line of key.note.split("\n")) body.push(`   * ${line}`);
+      // `trimEnd`: a blank line inside a TOML note would otherwise emit `   * `
+      // with a trailing space, which `oxfmt` strips — putting `format:check` and
+      // `theme:keys:check` permanently at odds.
+      for (const line of key.note.split("\n")) body.push(`   * ${line}`.trimEnd());
       body.push("   */");
     }
     body.push(`  define("${key.name}", {`);

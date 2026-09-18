@@ -154,7 +154,7 @@ export const THEME_KEY_REGISTRY = [
    * gone and a 0.2 mix, the sixteen shipped variants land between 1.98:1 and 4.22:1
    * (median 2.42) where `muted-foreground` itself has a median of 3.03:1. A larger
    * mix reaches 1.48:1 at the bottom of that range and is what the old 0.35 did.
-   * 
+   *
    * The fraction is deliberately ONE value for every theme. The ratio of this key's
    * contrast to `muted-foreground`'s is near-constant across the fleet (~0.82), so a
    * variant that lands low here lands low because its own `muted-foreground` is low,
