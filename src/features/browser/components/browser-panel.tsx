@@ -622,7 +622,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
             onKeyDown={(e) => {
               if (e.key === "Enter") navigate(inputUrl);
             }}
-            className="flex-1 bg-transparent outline-none text-[11px] text-text-primary font-mono placeholder:text-text-tertiary"
+            className="flex-1 bg-transparent outline-none text-xs text-text-primary font-mono placeholder:text-text-tertiary"
             placeholder="Search or enter URL"
           />
         </div>
@@ -640,7 +640,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           title={mode === "reader" ? "Back to live page" : "Reader view of this page"}
         >
           {mode === "reader" ? <Zap size={11} /> : <BookText size={11} />}
-          <span className="text-[10px]">{mode === "reader" ? "Live" : "Reader"}</span>
+          <span className="text-2xs">{mode === "reader" ? "Live" : "Reader"}</span>
         </button>
 
         <HintGroup side="top">
@@ -694,7 +694,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
               if (e.key === "Enter") handleSearch();
               if (e.key === "Escape") setSearchOpen(false);
             }}
-            className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+            className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary"
             placeholder="Find in page..."
             autoFocus
           />
@@ -718,7 +718,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                     The embedded live browser could not be native-contained in this panel area. You
                     can view in Reader mode or open in a separate window:
                   </p>
-                  <p className="truncate pt-1 font-mono text-[10px] text-text-tertiary">
+                  <p className="truncate pt-1 font-mono text-2xs text-text-tertiary">
                     {embedError}
                   </p>
                 </div>
@@ -762,7 +762,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                     A menu or dialog is open on top. Keep browsing without interruption:
                   </p>
                   {(liveNav?.title || currentUrl()) && (
-                    <p className="truncate pt-1 font-mono text-[10px] text-text-secondary">
+                    <p className="truncate pt-1 font-mono text-2xs text-text-secondary">
                       {liveNav?.title || currentUrl()}
                     </p>
                   )}
@@ -803,7 +803,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                           setInputUrl(`https://${site}`);
                           navigate(site);
                         }}
-                        className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
+                        className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-2xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
                       >
                         {site}
                       </button>
@@ -832,10 +832,10 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                 )}
                 {error && (
                   <div className="px-6 py-8 text-center">
-                    <p className="text-[12px] text-error">{error}</p>
+                    <p className="text-sm text-error">{error}</p>
                     <button
                       onClick={() => fetchPage(inputUrl)}
-                      className="mt-2 text-[11px] text-primary underline cursor-pointer"
+                      className="mt-2 text-xs text-primary underline cursor-pointer"
                     >
                       Retry
                     </button>
@@ -844,10 +844,10 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                 {!loading && !error && page && (
                   <div className="select-text">
                     <div className="px-4 py-3 border-b border-border">
-                      <h1 className="text-[15px] font-semibold text-text-primary leading-snug">
+                      <h1 className="text-lg font-semibold text-text-primary leading-snug">
                         {page.title}
                       </h1>
-                      <span className="text-[10px] text-text-tertiary font-mono">{page.url}</span>
+                      <span className="text-2xs text-text-tertiary font-mono">{page.url}</span>
                     </div>
                     <div
                       ref={contentRef}
@@ -874,7 +874,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                           <button
                             key={site}
                             onClick={() => fetchPage(`https://${site}`)}
-                            className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
+                            className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-2xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
                           >
                             {site}
                           </button>
@@ -890,47 +890,47 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
             {/* Base UI positions the Popup through a Positioner, and the Popup
                 is static inside it — the z-index has to sit on the Positioner
                 or it does nothing. */}
-            <ContextMenu.Positioner style={{ zIndex: 99999 }}>
-              <ContextMenu.Popup className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1">
+            <ContextMenu.Positioner className="z-popover">
+              <ContextMenu.Popup className="w-[180px] rounded-lg border border-border bg-card shadow-md py-1">
                 <ContextMenu.Item
                   onClick={copySelection}
-                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                 >
-                  <Copy size={11} className="text-[#555]" /> Copy Selection
+                  <Copy size={11} className="text-text-tertiary" /> Copy Selection
                 </ContextMenu.Item>
                 <ContextMenu.Item
                   onClick={copyLink}
-                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                 >
-                  <Globe size={11} className="text-[#555]" /> Copy Link
+                  <Globe size={11} className="text-text-tertiary" /> Copy Link
                 </ContextMenu.Item>
-                <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+                <ContextMenu.Separator className="h-px bg-border my-1" />
                 <ContextMenu.Item
                   onClick={() => setSearchOpen(true)}
-                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                 >
-                  <Search size={11} className="text-[#555]" /> Find in Page
+                  <Search size={11} className="text-text-tertiary" /> Find in Page
                 </ContextMenu.Item>
                 <ContextMenu.Item
                   onClick={openBrowserWindow}
-                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                 >
-                  <AppWindow size={11} className="text-[#555]" /> Open in Browser Window
+                  <AppWindow size={11} className="text-text-tertiary" /> Open in Browser Window
                 </ContextMenu.Item>
                 <ContextMenu.Item
                   onClick={openExternal}
-                  className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                 >
-                  <ExternalLink size={11} className="text-[#555]" /> Open in System Browser
+                  <ExternalLink size={11} className="text-text-tertiary" /> Open in System Browser
                 </ContextMenu.Item>
                 {page && currentProject && (
                   <>
-                    <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+                    <ContextMenu.Separator className="h-px bg-border my-1" />
                     <ContextMenu.Item
                       onClick={saveToKnowledge}
-                      className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+                      className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
                     >
-                      <BookOpen size={11} className="text-[#555]" /> Save to Knowledge
+                      <BookOpen size={11} className="text-text-tertiary" /> Save to Knowledge
                     </ContextMenu.Item>
                   </>
                 )}
