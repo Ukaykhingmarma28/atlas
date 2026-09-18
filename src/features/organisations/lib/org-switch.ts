@@ -195,6 +195,9 @@ export async function switchOrg(id: string): Promise<void> {
       source: "project",
       kind: "org-switch",
       summary: target.name,
+      // `projectId`, not `workspaceId` — see the note on the same key in
+      // `project-store.ts`'s `switchTo`. Nothing reads the activity log's
+      // payload, so there is nothing to keep the old spelling for.
       payload: { orgId: id, projectId: targetWsId ?? null },
     });
   } finally {

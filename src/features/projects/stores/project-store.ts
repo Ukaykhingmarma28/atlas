@@ -505,6 +505,13 @@ export const useProjectStore = createSelectors(
             summary: target.name,
             projectPath: target.path,
             projectName: target.name,
+            // `projectId`, not the `workspaceId` this used to say. The frozen
+            // storage keys are frozen because a READER exists on the other
+            // side; the activity log has none — the payload is free-form JSON
+            // rendered for a human, and nothing groups, filters or joins on it.
+            // Historic rows therefore reconcile exactly as well either way,
+            // and keeping the old spelling would leave the only frontend
+            // surface still saying "workspace" without a reason.
             payload: { projectId: id },
           });
         } finally {
