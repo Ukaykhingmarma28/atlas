@@ -401,7 +401,8 @@ export const miscHandlers: MockHandlers = {
   agents_set_mode: nothing,
   agents_set_model: nothing,
   agents_respond_elicitation: nothing,
-  agents_respond_permission: nothing,
+  // agents_respond_permission lives in `fake-agent.ts` (`agentHandlers`) —
+  // it needs to update the transcript, not just resolve.
   agents_logout: nothing,
   agents_authenticate: nothing,
   agents_run_auth_method: (): string => "mock-auth-run",
