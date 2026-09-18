@@ -2,7 +2,7 @@
 //!
 //! # Why this replaced a JSONL scrape
 //!
-//! The status-bar widget, the usage panel and Mission Control's cost charts
+//! The status-bar widget, the usage panel and the Usage tab's cost charts
 //! used to parse `~/.claude/projects/**/*.jsonl` and price it with a table
 //! hardcoded in `claude.rs`. That made three user-facing surfaces Claude-only
 //! by construction, and coupled them to a file format Atlas does not own. They

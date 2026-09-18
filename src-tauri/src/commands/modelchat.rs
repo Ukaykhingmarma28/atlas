@@ -267,7 +267,7 @@ pub async fn modelchat_stream(
                     &stream_id,
                     ModelChatEvent::Usage { input_tokens, output_tokens },
                 );
-                // Persist for the Mission Control BYOK usage history (accrues
+                // Persist for the Usage tab's BYOK usage history (accrues
                 // going forward; old sessions have no token data).
                 persist_byok_usage(&app, &provider, &model, input_tokens, output_tokens);
             }
