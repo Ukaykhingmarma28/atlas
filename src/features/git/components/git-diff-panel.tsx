@@ -106,19 +106,15 @@ interface GitDiffPanelProps {
 }
 
 function sideBg(side: DiffSide | null, isLeft: boolean): string | undefined {
-  if (!side) return "rgba(255,255,255,0.018)"; // filler (no line on this side)
+  if (!side) return "color-mix(in srgb, var(--foreground) 1.8%, transparent)"; // filler (no line on this side)
   if (side.kind === "context") return undefined;
   // Left side = deletions (red), right side = additions (green). Colors follow
-  // the active editor theme's diff tokens (atlas rgba values as fallbacks).
-  return isLeft
-    ? "var(--diff-remove-side-bg, rgba(244,63,63,0.13))"
-    : "var(--diff-add-side-bg, rgba(34,197,94,0.13))";
+  // the active editor theme's diff tokens.
+  return isLeft ? "var(--atlas-diff-removed-background)" : "var(--atlas-diff-added-background)";
 }
 
 function emphBg(isLeft: boolean): string {
-  return isLeft
-    ? "var(--diff-emph-remove-bg, rgba(244,63,63,0.34))"
-    : "var(--diff-emph-add-bg, rgba(52,211,153,0.34))";
+  return isLeft ? "var(--atlas-diff-removed-emphasis)" : "var(--atlas-diff-added-emphasis)";
 }
 
 const isLeftChange = (r?: DiffRow) => !!r?.left && r.left.kind !== "context";
@@ -191,7 +187,7 @@ function SideCell({
   const bg = sideBg(side, isLeft);
   return (
     <div className="flex min-w-0">
-      <span className="w-8 shrink-0 select-none border-r border-[var(--border-subtle)] pr-[3px] pl-[3px] text-right font-mono text-[10px] leading-[18px] text-[var(--text-tertiary)]">
+      <span className="w-8 shrink-0 select-none border-r border-[var(--border-subtle)] pr-[3px] pl-[3px] text-right font-mono text-2xs leading-[18px] text-[var(--text-tertiary)]">
         {side?.lineNo ?? ""}
       </span>
       <code
@@ -234,14 +230,14 @@ function CenterMarker({ row }: { row: DiffRow }) {
     char = "›";
   } else if (rc) {
     char = "»";
-    color = "var(--status-success, #22c55e)";
+    color = "var(--status-success)";
   } else if (lc) {
     char = "«";
-    color = "var(--status-error, #ef4444)";
+    color = "var(--status-error)";
   }
   return (
     <div
-      className="flex items-center justify-center border-x border-[var(--border-subtle)] font-mono text-[11px] leading-[18px] select-none"
+      className="flex items-center justify-center border-x border-[var(--border-subtle)] font-mono text-xs leading-[18px] select-none"
       style={{ color }}
     >
       {char}
@@ -505,23 +501,23 @@ export function GitDiffPanel({
                 </button>
               </HintItem>
               <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-              <span className="truncate font-mono text-[11px] text-[var(--text-secondary)]">
+              <span className="truncate font-mono text-xs text-[var(--text-secondary)]">
                 {file || "Git Diff"}
               </span>
               {staged && (
-                <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-px text-3xs uppercase tracking-wide text-[var(--text-tertiary)]">
                   staged
                 </span>
               )}
               {stats && (
-                <span className="shrink-0 font-mono text-[10px]">
+                <span className="shrink-0 font-mono text-2xs">
                   <span className="text-[var(--status-success)]">+{stats.additions}</span>{" "}
                   <span className="text-[var(--status-error)]">-{stats.deletions}</span>
                 </span>
               )}
               {!!file && (
                 <div className="ml-auto flex items-center gap-0.5">
-                  <span className="mr-1 font-mono text-[10px] text-[var(--text-tertiary)] tabular-nums">
+                  <span className="mr-1 font-mono text-2xs text-[var(--text-tertiary)] tabular-nums">
                     {diffCount} diff{diffCount !== 1 ? "s" : ""}
                   </span>
                   <HintItem label="Previous change">
@@ -568,19 +564,19 @@ export function GitDiffPanel({
 
           {/* Body */}
           {!file ? (
-            <div className="flex flex-1 items-center justify-center px-3 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="flex flex-1 items-center justify-center px-3 text-center text-xs text-[var(--text-tertiary)]">
               Pick a file from the left to view its diff — or choose a commit to browse.
             </div>
           ) : isLoading ? (
-            <div className="px-3 py-8 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
               Loading diff…
             </div>
           ) : data?.isBinary ? (
-            <div className="px-3 py-8 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
               Binary file — no text diff to show.
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-3 py-8 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="px-3 py-8 text-center text-xs text-[var(--text-tertiary)]">
               No changes.
             </div>
           ) : (

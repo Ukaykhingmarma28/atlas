@@ -44,7 +44,7 @@ export function BranchSwitcher() {
       <Popover.Trigger
         render={
           <button
-            className="flex items-center gap-1.5 h-6 px-2 rounded text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer min-w-0"
+            className="flex items-center gap-1.5 h-6 px-2 rounded text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer min-w-0"
             title="Switch branch"
           >
             <GitBranch size={12} className="shrink-0" />
@@ -53,8 +53,8 @@ export function BranchSwitcher() {
         }
       />
       <Popover.Portal>
-        <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="start" sideOffset={4}>
-          <Popover.Popup className="w-[260px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
+        <Popover.Positioner className="z-popover" side="bottom" align="start" sideOffset={4}>
+          <Popover.Popup className="w-[260px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-md flex flex-col">
             <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border shrink-0">
               <Search size={11} className="text-text-tertiary shrink-0" />
               <input
@@ -62,7 +62,7 @@ export function BranchSwitcher() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Filter branches…"
                 autoFocus
-                className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary min-w-0"
+                className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
               />
             </div>
 
@@ -71,7 +71,7 @@ export function BranchSwitcher() {
                 <div
                   key={b.name}
                   className={cn(
-                    "group flex items-center gap-2 px-2 h-[28px] text-[11px] cursor-pointer",
+                    "group flex items-center gap-2 px-2 h-[28px] text-xs cursor-pointer",
                     b.isCurrent
                       ? "text-text-primary"
                       : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
@@ -92,12 +92,12 @@ export function BranchSwitcher() {
                   />
                   <span className="truncate flex-1 font-mono">{b.name}</span>
                   {b.isRemote && (
-                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
+                    <span className="shrink-0 text-3xs font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
                       remote
                     </span>
                   )}
                   {(b.ahead > 0 || b.behind > 0) && (
-                    <span className="shrink-0 text-[9px] font-mono text-text-tertiary">
+                    <span className="shrink-0 text-3xs font-mono text-text-tertiary">
                       {b.ahead > 0 && `↑${b.ahead}`} {b.behind > 0 && `↓${b.behind}`}
                     </span>
                   )}
@@ -132,9 +132,7 @@ export function BranchSwitcher() {
                 </div>
               ))}
               {filtered.length === 0 && (
-                <div className="px-3 py-2 text-[10px] text-text-tertiary text-center">
-                  No branches
-                </div>
+                <div className="px-3 py-2 text-2xs text-text-tertiary text-center">No branches</div>
               )}
             </div>
 
@@ -145,7 +143,7 @@ export function BranchSwitcher() {
                   onChange={(e) => setNewName(e.target.value)}
                   autoFocus
                   placeholder="new-branch-name"
-                  className="w-full h-7 rounded border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
+                  className="w-full h-7 rounded border border-border bg-bg-input px-2 text-xs font-mono text-text-primary outline-none focus:border-border-strong"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && newName.trim()) {
                       void run(() => actions.createBranch(newName.trim()));
@@ -159,7 +157,7 @@ export function BranchSwitcher() {
               ) : (
                 <button
                   onClick={() => setCreating(true)}
-                  className="w-full flex items-center gap-1.5 h-7 px-2 rounded text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+                  className="w-full flex items-center gap-1.5 h-7 px-2 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
                 >
                   <Plus size={12} />
                   New branch from {branch}

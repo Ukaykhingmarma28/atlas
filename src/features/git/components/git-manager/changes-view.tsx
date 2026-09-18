@@ -43,7 +43,7 @@ function FieldToggle({
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-secondary"
+      className="flex items-center gap-1 text-2xs text-text-tertiary hover:text-text-secondary"
       title={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
     >
       {open ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
@@ -98,13 +98,11 @@ function FileRow({
     <div
       onClick={onSelect}
       className={cn(
-        "group flex items-center gap-1.5 h-[24px] px-2 cursor-pointer text-[11px]",
+        "group flex items-center gap-1.5 h-6 px-2 cursor-pointer text-xs",
         selected ? "bg-bg-selected" : "hover:bg-bg-hover",
       )}
     >
-      <span
-        className={cn("shrink-0 w-3 text-center font-mono text-[10px] font-semibold", badge.cls)}
-      >
+      <span className={cn("shrink-0 w-3 text-center font-mono text-2xs font-semibold", badge.cls)}>
         {badge.letter}
       </span>
       <span className="truncate flex-1 min-w-0 font-mono">
@@ -354,7 +352,7 @@ export function ChangesView() {
   return (
     <div className="h-full flex flex-col min-w-0">
       {inProgressLabel && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 text-[11px]">
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 text-xs">
           <AlertTriangle size={12} className="text-[var(--status-warning)] shrink-0" />
           <span className="flex-1 text-text-secondary">
             Resolving <span className="font-medium text-text-primary">{inProgressLabel}</span>
@@ -363,13 +361,13 @@ export function ChangesView() {
             onClick={() => run(() => actions.opControl(opKind, "continue"))}
             disabled={hasConflicts}
             title={hasConflicts ? "Resolve all conflicts first" : undefined}
-            className="px-2 h-6 rounded text-[10px] font-medium bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-2 h-6 rounded text-2xs font-medium bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Continue
           </button>
           <button
             onClick={() => run(() => actions.opControl(opKind, "abort"))}
-            className="px-2 h-6 rounded text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            className="px-2 h-6 rounded text-2xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           >
             Abort
           </button>
@@ -384,13 +382,13 @@ export function ChangesView() {
         {/* Staged */}
         {staged.length > 0 && (
           <div>
-            <div className="flex items-center justify-between px-2 h-[24px] sticky top-0 bg-[var(--bg-sidebar)] border-b border-border-subtle">
-              <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider">
+            <div className="flex items-center justify-between px-2 h-6 sticky top-0 bg-[var(--bg-sidebar)] border-b border-border-subtle">
+              <span className="text-2xs font-semibold text-text-tertiary uppercase tracking-wider">
                 Staged ({staged.length})
               </span>
               <button
                 onClick={() => run(() => actions.unstageFiles(staged.map((f) => f.path)))}
-                className="text-[10px] text-text-tertiary hover:text-text-primary"
+                className="text-2xs text-text-tertiary hover:text-text-primary"
               >
                 Unstage all
               </button>
@@ -412,22 +410,22 @@ export function ChangesView() {
 
         {/* Unstaged */}
         <div>
-          <div className="flex items-center justify-between px-2 h-[24px] sticky top-0 bg-[var(--bg-sidebar)] border-b border-border-subtle">
-            <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider">
+          <div className="flex items-center justify-between px-2 h-6 sticky top-0 bg-[var(--bg-sidebar)] border-b border-border-subtle">
+            <span className="text-2xs font-semibold text-text-tertiary uppercase tracking-wider">
               Changes ({unstaged.length})
             </span>
             {unstaged.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => run(() => actions.stageFiles(unstaged.map((f) => f.path)))}
-                  className="text-[10px] text-text-tertiary hover:text-text-primary"
+                  className="text-2xs text-text-tertiary hover:text-text-primary"
                 >
                   Stage all
                 </button>
                 <span className="w-px h-3 bg-border" />
                 <button
                   onClick={() => setConfirmRevertAll(true)}
-                  className="text-[10px] text-text-tertiary hover:text-[var(--status-error)]"
+                  className="text-2xs text-text-tertiary hover:text-[var(--status-error)]"
                   title="Discard all unstaged changes"
                 >
                   Revert all
@@ -449,7 +447,7 @@ export function ChangesView() {
             />
           ))}
           {files.length === 0 && (
-            <div className="px-3 py-6 text-center text-[11px] text-text-tertiary">
+            <div className="px-3 py-6 text-center text-xs text-text-tertiary">
               No changes — working tree clean
             </div>
           )}
@@ -479,7 +477,7 @@ export function ChangesView() {
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           placeholder={amend ? "Amend message (empty = keep original)" : "Summary (required)"}
-          className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-[11px] text-text-primary outline-none focus:border-border-strong"
+          className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-xs text-text-primary outline-none focus:border-border-strong"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doCommit();
           }}
@@ -507,7 +505,7 @@ export function ChangesView() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
             rows={3}
-            className="w-full rounded-md border border-border bg-bg-input px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-border-strong resize-none"
+            className="w-full rounded-md border border-border bg-bg-input px-2 py-1.5 text-xs text-text-primary outline-none focus:border-border-strong resize-none"
           />
         )}
         {showCoAuthors && (
@@ -515,12 +513,12 @@ export function ChangesView() {
             value={coAuthors}
             onChange={(e) => setCoAuthors(e.target.value)}
             placeholder="Co-authors: Name <email>, Name <email>"
-            className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
+            className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-xs font-mono text-text-primary outline-none focus:border-border-strong"
             title="Added as Co-authored-by trailers"
           />
         )}
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[10px] text-text-tertiary cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-2xs text-text-tertiary cursor-pointer select-none">
             <input
               type="checkbox"
               checked={amend}
@@ -539,7 +537,7 @@ export function ChangesView() {
           <button
             onClick={doCommit}
             disabled={!canCommit}
-            className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-elevated)]"
+            className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-elevated)]"
           >
             {committing ? (
               <Loader2 size={11} className="animate-spin" />
