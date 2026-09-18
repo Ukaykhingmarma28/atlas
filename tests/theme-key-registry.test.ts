@@ -127,6 +127,49 @@ describe("the generated theme-key registry", () => {
     }
   });
 
+  /**
+   * Prose and fixtures name keys too, and nothing compiles them. The
+   * 2026-09-18 cut took the set from 135 keys to 73 and left `border.default`,
+   * `border.variant`, `comms.mention.background`, `stat.*`, `syntax.builtin`,
+   * `syntax.meta`, `syntax.punctuation`, `status.purple` and `status.orange`
+   * behind in the import fixture and the import reference — a fixture that
+   * teaches the mock backend to report a mapping onto a key that no longer
+   * exists, and a document telling a theme author to set one.
+   *
+   * Scoped to the two places where a dotted name is unambiguously an ATLAS
+   * key: a `<variant>.keys.<name>` target in an import-report fixture, and the
+   * first column of the reference's scope table, whose header says so. Prose
+   * cannot be scanned: `theme-import.md` spends most of its length naming
+   * Zed's and VS Code's keys, and Zed's vocabulary overlaps ours almost
+   * exactly (`border.variant`, `element.hover`, `syntax.keyword`), so a
+   * blanket backtick sweep reports the correct sentences as errors.
+   */
+  it("names no key that no longer exists, in the docs or the mock fixtures", () => {
+    const keyNames = new Set(source.keys.map((key) => key.name));
+    const derivedNames = new Set(source.derived.map((entry) => entry.name));
+    const known = (name: string) => keyNames.has(name) || derivedNames.has(name);
+
+    const offenders: string[] = [];
+    const check = (where: string, text: string, pattern: RegExp) => {
+      for (const [, name] of text.matchAll(pattern)) {
+        if (!known(name)) offenders.push(`${where}: ${name}`);
+      }
+    };
+
+    // `dark.keys.foo.bar` / `light.keys.foo.bar` in an import-report fixture.
+    const fixture = read("src/dev/mock-backend/fixtures/theme-import.ts");
+    check(
+      "theme-import.ts",
+      fixture,
+      /\b(?:dark|light)\.keys\.([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)/g,
+    );
+
+    // "| `syntax.x` |" — the scope table's Atlas-key column.
+    check("theme-import.md", read("docs/reference/theme-import.md"), /^\| `(syntax\.[a-z_]+)`/gm);
+
+    expect(offenders.sort()).toEqual([]);
+  });
+
   it("keeps each group's keys contiguous", () => {
     const seen: string[] = [];
     for (const key of source.keys) {

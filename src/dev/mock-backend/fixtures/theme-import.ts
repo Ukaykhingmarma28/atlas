@@ -189,7 +189,7 @@ const ZED: ThemeImportPreview = {
         "Zed has no shadcn layer, so all 45 base tokens were derived from the style — check `primary`, `accent` and `card` first if the chrome looks off.",
       ],
       mapped: [
-        { target: "dark.keys.border.default", source: "border", value: "#26233aff" },
+        { target: "dark.keys.border.subtle", source: "border", value: "#26233aff" },
         { target: "dark.keys.syntax.keyword", source: "syntax.keyword", value: "#31748fff" },
         { target: "dark.keys.terminal.ansi.red", source: "terminal.ansi.red", value: "#eb6f92ff" },
       ],
@@ -233,7 +233,7 @@ const ZED: ThemeImportPreview = {
       variants: ["light"],
       summary: ["A family member becomes its own Atlas theme with a single appearance."],
       mapped: [
-        { target: "light.keys.border.default", source: "border", value: "#f4ede8ff" },
+        { target: "light.keys.border.subtle", source: "border", value: "#f4ede8ff" },
         { target: "light.keys.syntax.string", source: "syntax.string", value: "#ea9d34ff" },
       ],
       derived: [{ target: "light.base.primary", from: "style.text.accent", value: "#907aa9ff" }],
@@ -283,7 +283,7 @@ const VSCODE: ThemeImportPreview = {
       ],
       derived: [
         { target: "dark.base.card", from: "editorWidget.background", value: "#21232a" },
-        { target: "dark.keys.comms.mention.background", from: "atlas default", value: "#5a9cf826" },
+        { target: "dark.keys.search.match.background", from: "atlas default", value: "#5a9cf826" },
       ],
       ignored: [
         {

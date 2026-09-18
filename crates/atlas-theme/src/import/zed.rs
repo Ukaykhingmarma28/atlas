@@ -4,8 +4,11 @@
 //! theme keys on Zed's dotted role names, so most of this file is a table of
 //! identities. Where the names differ it is because Atlas's no-leaf-and-prefix
 //! rule forbids Zed's shape — Zed has a bare `border` alongside `border.variant`,
-//! `border.selected` and `border.disabled`, which collapse onto the two Atlas
-//! border keys in [`STYLE_MAP`]: `border.subtle` and `border.strong`.
+//! `border.selected`, `border.disabled` and `border.focused`. The middle three
+//! collapse onto the two Atlas border keys in [`STYLE_MAP`] (`border.subtle` and
+//! `border.strong`); the bare `border` and `border.focused` are not theme keys
+//! at all and carry into the shadcn `border`/`input` and `ring` base tokens
+//! instead (see `derive_base_tokens`).
 //!
 //! **A family is several themes, not one theme with several variants.** A Zed
 //! file is `{name, themes: [{name, appearance, style}]}` and the members are
@@ -80,7 +83,7 @@ const STYLE_MAP: &[(&str, &[&str])] = &[
 ];
 
 /// Zed syntax scope → Atlas `syntax.*` key. Zed's map is richer than Atlas's
-/// twenty keys, so several Zed scopes collapse onto one Atlas key; the first
+/// fifteen roles, so several Zed scopes collapse onto one Atlas key; the first
 /// one present wins.
 const SYNTAX_MAP: &[(&str, &[&str])] = &[
     ("syntax.comment", &["comment", "comment.doc"]),

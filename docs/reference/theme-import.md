@@ -26,10 +26,12 @@ anything is written.
 
 Two steps run after every importer's own mapping, in this order.
 
-**Palette guessing.** The optional eight-colour palette is what ~40 theme keys
-resolve through (status, agent chips, both diff families, `stat.*`), so an
-import that skipped it would produce a theme whose editor is the author's and
-whose chrome is Atlas's. Each colour is taken from the first of:
+**Palette guessing.** The optional eight-colour palette is what **36** theme
+keys resolve through — the four status foregrounds, 12 of the 16 ANSI slots, 12
+of the 15 syntax roles, both search matches and both diff families — plus the
+four derived status fills on top of those. An import that skipped it would
+produce a theme whose editor is the author's and whose chrome is Atlas's. Each
+colour is taken from the first of:
 
 | palette | source, in order |
 |---|---|
@@ -38,8 +40,8 @@ whose chrome is Atlas's. Each colour is taken from the first of:
 | `yellow` | `terminal.ansi.yellow` → `syntax.attribute` → `status.warning.foreground` |
 | `blue` | `terminal.ansi.blue` → `syntax.function` → `status.info.foreground` → base `primary` |
 | `cyan` | `terminal.ansi.cyan` → `syntax.type` |
-| `purple` | `terminal.ansi.magenta` → `syntax.keyword` → `status.purple.foreground` |
-| `orange` | `syntax.number` → `terminal.ansi.bright_red` → `status.orange.foreground` |
+| `purple` | `terminal.ansi.magenta` → `syntax.keyword` |
+| `orange` | `syntax.number` → `terminal.ansi.bright_red` |
 | `pink` | `syntax.escape` → `terminal.ansi.bright_magenta` → `syntax.regexp` |
 
 **Required base tokens.** All 45 are mandatory, so anything the source did not
@@ -98,22 +100,28 @@ Atlas theme per member**, each with the single variant its `appearance` names �
 "Rosé Pine", "Moon" and "Dawn" are siblings, not variants of one design, which
 is also how the built-ins already treat that family.
 
-**Maps.** ~60 style keys onto Atlas theme keys, obeying the no-leaf-and-prefix
-rule — Zed's `border` is Atlas's `border.default`, because Atlas also has
-`border.variant`. All 16 `terminal.ansi.*` colours transfer exactly.
-`players[0].cursor` becomes `editor.caret` and `terminal.cursor`;
-`players[0].selection` becomes the three selection keys. The `syntax` map
-collapses onto Atlas's 20 roles. `font_style` does **not** cross: an Atlas theme
+**Maps.** 44 style keys onto Atlas theme keys — 67 of the 73 in all, once the
+syntax and player maps are counted. Zed's border roles collapse onto Atlas's
+two: Zed's `border.variant` and `border.disabled` become `border.subtle`,
+`border.selected` becomes `border.strong`, and Zed's bare `border` and
+`border.focused` are not theme keys at all — they carry into the shadcn
+`border`/`input` and `ring` base tokens. All 16 `terminal.ansi.*` colours
+transfer exactly. `players[0].cursor` becomes `editor.caret` and
+`terminal.cursor`; `players[0].selection` becomes `selection.background` and
+`editor.selection.background` — two keys, not three, because `terminal.selection`
+is derived from `primary` and no theme may set it. The `syntax` map collapses
+onto Atlas's 15 roles. `font_style` does **not** cross: an Atlas theme
 key is a colour, and the loader rejects a `font_style` by name rather than
 accept one nothing reads, so an italic scope imports upright and the drop is
 listed under "font styles".
 
-**Derives.** All 45 base tokens, since Zed has no shadcn layer. The judgements
-worth knowing: `primary` ← `text.accent`, `accent` ← `element.hover` (shadcn's
+**Derives.** All 45 base tokens, since Zed has no shadcn layer. Every source
+below is a ZED style key, not an Atlas one. The judgements worth knowing:
+`primary` ← Zed's `text.accent`, `accent` ← Zed's `element.hover` (shadcn's
 `accent` is a hover *surface*, which is the audit's "accent collision"), `card`
 and `popover` ← `elevated_surface.background`, `sidebar` and `secondary` ←
-`surface.background`, `destructive` ← `error`, `ring` ← `border.focused`, the
-chart ramp ← the ANSI blue/green/yellow/magenta/red.
+`surface.background`, `destructive` ← `error`, `ring` ← Zed's `border.focused`,
+the chart ramp ← the ANSI blue/green/yellow/magenta/red.
 
 **Drops**, by category: icon roles (Atlas icons follow the text roles), the
 `players[1..]` collaboration colours, editor furniture Atlas does not draw (wrap
@@ -121,7 +129,7 @@ guides, invisibles, subheaders, the read/write highlight pair), app chrome that
 follows the panel tokens (status bar, title bar, toolbar, tab bar, pane borders,
 drop targets), the VCS states Atlas has no colour for (`conflict`, `renamed`,
 `ignored`, `hidden`, `unreachable`), `hint` and `predictive`, Zed's dim ANSI
-ramp, and whichever `syntax` scopes are finer than Atlas's 20 roles.
+ramp, and whichever `syntax` scopes are finer than Atlas's 15 roles.
 
 ## VS Code
 
@@ -137,12 +145,13 @@ lightness.
 ### Workbench keys
 
 Mapped where an Atlas equivalent exists: `editor.background` / `.foreground` /
-`.lineHighlightBackground` / `.selectionBackground` / `.foldBackground`,
+`.lineHighlightBackground` / `.selectionBackground`,
 `editorCursor.foreground`, `editorGutter.background`, `editorLineNumber.*`,
-`editorBracketMatch.*`, `scrollbarSlider.*`, `editorWidget.background`,
-`sideBar.*`, `activityBar.background`, `input.background`, `tab.*`,
+`editorBracketMatch.*`, `scrollbarSlider.background` / `.hoverBackground`,
+`editor.findMatchBackground` / `.findMatchHighlightBackground`,
+`editorWidget.background`, `sideBar.*`, `input.background`,
 `focusBorder`, `editorGroup.border`, `list.*`, `descriptionForeground`,
-`disabledForeground`, `input.placeholderForeground`, `textLink.foreground`,
+`disabledForeground`, `textLink.foreground`,
 `editorError/Warning/Info.foreground`, `gitDecoration.added/deletedResourceForeground`,
 `diffEditor.inserted/removedText/LineBackground`, and all 16 `terminal.ansi*`
 plus `terminal.background` / `.foreground` / `.selectionBackground`.
@@ -155,11 +164,14 @@ The base tokens come from `editor.background`, `foreground`,
 and `sideBar.*`.
 
 Everything else is counted by category: editor furniture (minimap, rulers,
-indent guides, inlay hints, code lens, ghost text), widgets (suggest, hover,
-peek, notifications, quick input, menus, breadcrumbs, debug, testing), app
+indent guides, inlay hints, code lens, ghost text, and `editor.foldBackground` —
+Atlas draws the fold placeholder from the secondary surface), widgets (suggest,
+hover, peek, notifications, quick input, menus, breadcrumbs, debug, testing), app
 chrome (status bar, title bar, badges, panel and sidebar headers, welcome page,
-settings, keybinding labels), VCS (merge editor, the rest of `gitDecoration`,
-the SCM panel), icon roles, and terminal decorations.
+settings, keybinding labels, `activityBar.*`, and `tab.*` — Atlas's tab strip
+follows the accent and sidebar tokens), text roles
+(`input.placeholderForeground`), VCS (merge editor, the rest of
+`gitDecoration`, the SCM panel), icon roles, and terminal decorations.
 
 ### TextMate scope → syntax key
 
@@ -182,19 +194,23 @@ and asks which rule VS Code would apply to each, first match winning.
 | `syntax.escape` | `constant.character.escape` |
 | `syntax.regexp` | `string.regexp` |
 | `syntax.number` | `constant.numeric` |
-| `syntax.boolean` | `constant.language.boolean` |
-| `syntax.null` | `constant.language.null`, `constant.language.undefined` |
-| `syntax.constant` | `constant.other`, `constant.language`, `constant` |
-| `syntax.type` | `entity.name.type`, `entity.name.class`, `support.type`, `storage.type.class` |
+| `syntax.constant` | `constant.other`, `constant.language`, `constant`, `variable.language`, `support.constant` |
+| `syntax.type` | `entity.name.type`, `entity.name.class`, `support.type`, `support.class`, `storage.type.class` |
 | `syntax.function` | `entity.name.function`, `support.function`, `meta.function-call` |
 | `syntax.definition` | `entity.name.function.definition`, `entity.name`, `entity.name.namespace` |
 | `syntax.variable` | `variable.other.readwrite`, `variable` |
 | `syntax.property` | `variable.other.property`, `support.type.property-name`, `meta.object-literal.key` |
-| `syntax.builtin` | `variable.language`, `support.class`, `support.constant` |
 | `syntax.tag` | `entity.name.tag` |
-| `syntax.attribute` | `entity.other.attribute-name` |
-| `syntax.meta` | `meta.preprocessor`, `keyword.control.directive`, `entity.name.section` |
-| `syntax.punctuation` | `punctuation.separator`, `punctuation` |
+| `syntax.attribute` | `entity.other.attribute-name`, `meta.preprocessor`, `keyword.control.directive` |
+
+The 2026-09-18 key-set cut removed `syntax.boolean`, `syntax.null`,
+`syntax.builtin`, `syntax.meta` and `syntax.punctuation`. Their scopes did not
+all go with them: `variable.language` and `support.constant` moved onto
+`syntax.constant`, `support.class` onto `syntax.type`, and `meta.preprocessor`
+and `keyword.control.directive` onto `syntax.attribute`. Dropped outright:
+`constant.language.boolean`, `constant.language.null` / `.undefined`,
+`entity.name.section`, `punctuation.separator` and bare `punctuation` — the only
+surviving punctuation probe is `punctuation.definition.comment`.
 
 `settings.fontStyle: italic` is dropped and reported under "font styles"; the
 rule's `foreground` still lands. `markup.*` and grammar-specific scopes have no
@@ -206,8 +222,8 @@ Atlas role and are counted as dropped too.
 writes one is stating its intent more directly than a grammar selector can. Only
 **bare token types** are read: `variable`, `parameter` → `syntax.variable`;
 `property` → `syntax.property`; `function`, `method` → `syntax.function`;
-`class`, `interface`, `struct`, `enum`, `type`, `typeParameter` →
-`syntax.type`; `namespace`, `macro` → `syntax.meta`; `enumMember` →
+`class`, `interface`, `struct`, `enum`, `type`, `typeParameter` and `namespace`
+→ `syntax.type`; `macro` → `syntax.attribute`; `enumMember` →
 `syntax.constant`; plus `keyword`, `comment`, `string`, `number`, `operator` and
 `regexp` onto their own keys. A selector carrying modifiers
 (`variable.readonly.defaultLibrary`) is a *conditional* rule and cannot be

@@ -109,7 +109,8 @@ pub const NON_COLOR_BASE_TOKENS: &[&str] = &[
     "shadow-2xl",
 ];
 
-/// The optional eight-colour palette, which ~40 theme keys resolve through.
+/// The optional eight-colour palette, which 36 theme keys resolve through
+/// (plus the four derived status fills on top of those).
 pub const PALETTE_KEYS: &[&str] =
     &["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"];
 
