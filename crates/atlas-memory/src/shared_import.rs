@@ -203,16 +203,15 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn tmp_root(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "atlas-memory-shared-import-{}-{}",
-            std::process::id(),
-            name
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_root(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     /// Write a fixture `events.jsonl` under `root/.atlas/shared-memory/` mirroring
@@ -242,7 +241,7 @@ mod tests {
 
     #[test]
     fn imports_decisions_and_constraints_into_graph() {
-        let root = tmp_root("happy");
+        let (_tmp, root) = tmp_root("happy");
         write_events(
             &root,
             &[
@@ -284,13 +283,11 @@ mod tests {
         // Original log kept in place for rollback.
         let log = root.join(".atlas").join("shared-memory").join("events.jsonl");
         assert!(log.exists(), "events.jsonl must be kept readable");
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn second_open_is_already_done_no_double_import() {
-        let root = tmp_root("idempotent");
+        let (_tmp, root) = tmp_root("idempotent");
         write_events(
             &root,
             &[
@@ -304,7 +301,7 @@ mod tests {
         drop(first);
 
         // Re-open: marker present → AlreadyDone, no duplicates added.
-        let mut second = MemoryEngine::open(root.clone());
+        let mut second = MemoryEngine::open(root);
         assert_eq!(
             import_shared_memory(&mut second).unwrap(),
             ImportOutcome::AlreadyDone
@@ -312,13 +309,11 @@ mod tests {
         // Graph is the same (in-memory graph in a fresh open won't carry the prior
         // nodes, but the AlreadyDone short-circuit is the contract under test —
         // it must not re-read the log).
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn missing_log_is_nothing_to_do() {
-        let root = tmp_root("missing");
+        let (_tmp, root) = tmp_root("missing");
         let mut engine = MemoryEngine::open(root.clone());
         assert_eq!(
             import_shared_memory(&mut engine).unwrap(),
@@ -327,13 +322,11 @@ mod tests {
         // No marker written when there was nothing to import.
         let marker = root.join(".atlas").join("memory").join(IMPORT_MARKER);
         assert!(!marker.exists());
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn counts_skipped_non_knowledge_and_empty_lines() {
-        let root = tmp_root("counts");
+        let (_tmp, root) = tmp_root("counts");
         // Open on an empty project first (no events.jsonl yet → NothingToDo, no
         // marker), so we can then write the fixture and call the importer directly
         // to assert the explicit `Imported { count, skipped }` outcome.
@@ -358,7 +351,5 @@ mod tests {
             import_shared_memory(&mut engine).unwrap(),
             ImportOutcome::AlreadyDone
         );
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

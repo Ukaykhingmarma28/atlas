@@ -205,12 +205,15 @@ fn tmp_sibling(path: &Path) -> std::path::PathBuf {
 mod tests {
     use super::*;
 
-    fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("atlas-memory-manifest-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_dir(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     #[test]
@@ -220,7 +223,7 @@ mod tests {
         m.upsert("b", "h2", "md", 200);
         assert_eq!(m.dim, 384);
 
-        let dir = tmp_dir("roundtrip");
+        let (_tmp, dir) = tmp_dir("roundtrip");
         let path = dir.join("manifest.json");
         m.save(&path).unwrap();
 
@@ -232,8 +235,6 @@ mod tests {
         assert_eq!(loaded.id_for(loaded.key_for("b").unwrap()), Some("b"));
         // next_key is at least past the highest used key
         assert!(loaded.next_key >= 2);
-
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -267,7 +268,7 @@ mod tests {
 
     #[test]
     fn atomic_write_leaves_no_tmp_file() {
-        let dir = tmp_dir("atomic");
+        let (_tmp, dir) = tmp_dir("atomic");
         let path = dir.join("manifest.json");
         let mut m = Manifest::new("p", 384);
         m.upsert("a", "h", "c", 1);
@@ -276,7 +277,5 @@ mod tests {
         assert!(path.exists());
         let tmp = tmp_sibling(&path);
         assert!(!tmp.exists(), "stray .tmp left behind: {}", tmp.display());
-
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -1767,11 +1767,12 @@ mod tests {
 
     /// A fresh `config.toml` path inside its own temp directory, so parallel
     /// tests never collide and `write_atomic`'s `create_dir_all` has
-    /// somewhere real to write the sibling `.tmp.<uuid>` file.
-    fn tmp_config_path() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("atlas-config-test-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&dir).unwrap();
-        dir.join(CONFIG_FILE_NAME)
+    /// somewhere real to write the sibling `.tmp.<uuid>` file. Keep the
+    /// `TempDir` alive for the test: dropping it deletes the directory.
+    fn tmp_config_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_FILE_NAME);
+        (dir, path)
     }
 
     // ── config_root (issue #64 follow-up: ~/.config/atlas, not the bundle id) ──
@@ -1828,7 +1829,7 @@ mod tests {
 
     #[test]
     fn missing_keys_fall_back_to_defaults() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = false\n";
         let mgr = ConfigManager::from_raw(path, raw).expect("partial file parses");
         assert!(!mgr.effective().enter_to_send);
@@ -1840,9 +1841,9 @@ mod tests {
 
     #[test]
     fn file_missing_entirely_serves_defaults_without_error() {
-        let dir = std::env::temp_dir().join(format!("atlas-config-test-{}", uuid::Uuid::new_v4()));
+        let root = tempfile::tempdir().unwrap();
         // Deliberately do NOT create the dir/file.
-        let path = dir.join(CONFIG_FILE_NAME);
+        let path = root.path().join("missing").join(CONFIG_FILE_NAME);
         let mgr = ConfigManager::in_memory_defaults(path);
         assert_eq!(mgr.status(), &ConfigStatus::Ok);
         assert_eq!(mgr.effective(), &AppSettings::default());
@@ -1850,7 +1851,7 @@ mod tests {
 
     #[test]
     fn patch_preserves_comments_and_unknown_keys() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "\
 # a user's own comment, must survive every patch
 schemaVersion = 1
@@ -1881,7 +1882,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn invalid_ui_scale_is_rejected_and_does_not_touch_disk() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = true\n";
         fs::write(&path, raw).unwrap();
         let mut mgr = ConfigManager::from_raw(path.clone(), raw).unwrap();
@@ -1897,7 +1898,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn unsupported_future_schema_version_is_rejected() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 99\n\n[settings]\n";
         let err = ConfigManager::from_raw(path, raw).expect_err("future schema must be rejected");
         assert_eq!(err, ConfigError::UnsupportedVersion(99));
@@ -1905,7 +1906,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn malformed_syntax_at_cold_start_serves_defaults_and_leaves_file_alone() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "this is not [ valid toml";
         fs::write(&path, raw).unwrap();
 
@@ -1919,7 +1920,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn malformed_external_edit_is_rejected_and_last_known_good_survives() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let good = "schemaVersion = 1\n\n[settings]\nenterToSend = true\n";
         fs::write(&path, good).unwrap();
         let mut mgr = ConfigManager::from_raw(path.clone(), good).unwrap();
@@ -1940,7 +1941,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn stale_generation_reports_conflict_without_writing() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = true\n";
         fs::write(&path, raw).unwrap();
         let mut mgr = ConfigManager::from_raw(path.clone(), raw).unwrap();
@@ -1959,7 +1960,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn reload_from_disk_dedups_identical_content() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = true\n";
         fs::write(&path, raw).unwrap();
         let mut mgr = ConfigManager::from_raw(path, raw).unwrap();
@@ -1970,7 +1971,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn reset_backs_up_and_rewrites_defaults() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = false\n";
         fs::write(&path, raw).unwrap();
         let mut mgr = ConfigManager::from_raw(path.clone(), raw).unwrap();
@@ -2005,7 +2006,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn config_theme_migration_merges_the_two_legacy_pickers_once() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\natlasTheme = \"one-dark\"\ncodeEditorTheme = \"dracula\"\n";
         let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
 
@@ -2088,7 +2089,7 @@ someFutureKey = \"left alone\"
     /// `themeOverrides` table behind at all.
     #[test]
     fn config_theme_migration_writes_no_overrides_for_the_untouched_editor_default() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw =
             "schemaVersion = 1\n\n[settings]\natlasTheme = \"chyral\"\ncodeEditorTheme = \"atlas\"\n";
         let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
@@ -2102,7 +2103,7 @@ someFutureKey = \"left alone\"
 
     #[test]
     fn unknown_config_theme_falls_back_in_memory_and_is_never_rewritten() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\ntheme = \"from-a-newer-atlas\"\n";
         let manager = ConfigManager::from_raw(path.clone(), raw).expect("unknown id falls back");
 
@@ -2120,7 +2121,7 @@ someFutureKey = \"left alone\"
     /// named, even when this build cannot resolve it.
     #[test]
     fn legacy_theme_keys_migrate_without_rewriting_an_unresolvable_theme() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\natlasTheme = \"not-shipped-here\"\n";
         let manager = ConfigManager::from_raw(path, raw).expect("legacy settings parse");
 
@@ -2181,7 +2182,8 @@ someFutureKey = \"left alone\"
 
         let mut document = document_for(&defaults);
         patch.write_into(&mut document);
-        let reloaded = ConfigManager::from_raw(tmp_config_path(), &document.to_string())
+        let (_dir, path) = tmp_config_path();
+        let reloaded = ConfigManager::from_raw(path, &document.to_string())
             .expect("a written patch reloads");
         assert_eq!(reloaded.effective(), &expected);
     }
@@ -2213,7 +2215,8 @@ evil = "red; } body { display: none"
 [settings.themeOverrides.keys.terminal.ansi]
 red = "#ee0000"
 "##;
-        let manager = ConfigManager::from_raw(tmp_config_path(), raw).expect("the file still loads");
+        let (_dir, path) = tmp_config_path();
+        let manager = ConfigManager::from_raw(path, raw).expect("the file still loads");
         let settings = manager.effective();
         assert!(!settings.enter_to_send, "the rest of the file was read");
         let overrides = &settings.theme_overrides;
@@ -2262,7 +2265,7 @@ red = "#ee0000"
 
     #[test]
     fn bootstrap_first_run_imports_legacy_settings_and_marks_migrated() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let legacy = serde_json::json!({ "enterToSend": false, "atlasTheme": "rose-pine" });
 
         let outcome = bootstrap_at(path.clone(), false, Some(legacy));
@@ -2275,7 +2278,7 @@ red = "#ee0000"
 
     #[test]
     fn bootstrap_never_reimports_after_marker_is_set() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let legacy = serde_json::json!({ "enterToSend": false });
 
         // marker_already_set = true: even though config.toml doesn't exist
@@ -2289,7 +2292,7 @@ red = "#ee0000"
 
     #[test]
     fn bootstrap_leaves_an_existing_config_untouched_regardless_of_legacy_data() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = false\n";
         fs::write(&path, raw).unwrap();
         let legacy = serde_json::json!({ "enterToSend": true, "atlasTheme": "should-never-appear" });
@@ -2306,7 +2309,7 @@ red = "#ee0000"
 
     #[test]
     fn bootstrap_is_idempotent_across_repeated_calls() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let legacy = serde_json::json!({ "enterToSend": false });
 
         let first = bootstrap_at(path.clone(), false, Some(legacy.clone()));
@@ -2382,7 +2385,7 @@ red = "#ee0000"
     /// authorizes `AppState::save` to drop it.
     #[test]
     fn a_malformed_existing_config_does_not_report_migration_done() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::write(&path, "this is not { valid toml").unwrap();
         let legacy = serde_json::json!({ "enterToSend": false, "gitBlameInline": false });
 
@@ -2405,7 +2408,7 @@ red = "#ee0000"
     /// `load_at` used to fold into "file absent" and report as healthy.
     #[test]
     fn an_unreadable_existing_config_does_not_report_migration_done() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::create_dir_all(&path).unwrap();
 
         let outcome = bootstrap_at(path, false, Some(serde_json::json!({ "enterToSend": false })));
@@ -2426,7 +2429,7 @@ red = "#ee0000"
     /// real preferences sitting unused on disk.
     #[test]
     fn a_broken_config_falls_back_to_the_legacy_settings_not_compiled_defaults() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::write(&path, "this is not { valid toml").unwrap();
         let legacy = serde_json::json!({ "shareTelemetry": false, "uiScale": 1.25 });
 
@@ -2442,7 +2445,7 @@ red = "#ee0000"
     /// legacy object is stale by definition and must not be resurrected.
     #[test]
     fn a_broken_config_after_migration_does_not_resurrect_legacy_settings() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::write(&path, "this is not { valid toml").unwrap();
         let legacy = serde_json::json!({ "shareTelemetry": false });
 
@@ -2458,7 +2461,7 @@ red = "#ee0000"
     /// can't be satisfied by simply never setting the marker.
     #[test]
     fn a_readable_existing_config_reports_migration_done() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::write(&path, "schemaVersion = 1\n\n[settings]\nenterToSend = false\n").unwrap();
 
         let outcome = bootstrap_at(path, false, None);
@@ -2473,7 +2476,7 @@ red = "#ee0000"
     /// the frontend mirrors so its next write isn't a spurious conflict.
     #[test]
     fn reload_adopts_a_valid_external_edit_and_bumps_the_generation() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let mut mgr =
             ConfigManager::create_fresh_with(path.clone(), AppSettings::default()).unwrap();
         let before = mgr.generation();
@@ -2502,7 +2505,7 @@ red = "#ee0000"
     /// (comments and unknown keys included).
     #[test]
     fn a_write_whose_base_went_stale_is_refused_rather_than_clobbering() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let mgr = ConfigManager::create_fresh_with(path.clone(), AppSettings::default()).unwrap();
 
         // Simulate the racing writer landing inside the window: disk now holds
@@ -2526,7 +2529,7 @@ red = "#ee0000"
     /// can't be satisfied by refusing everything.
     #[test]
     fn a_write_on_a_current_base_goes_through() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let mgr = ConfigManager::create_fresh_with(path.clone(), AppSettings::default()).unwrap();
 
         let text = "schemaVersion = 1\n\n[settings]\nenterToSend = false\n";
@@ -2549,7 +2552,7 @@ red = "#ee0000"
     /// destination makes the rename fail deterministically.
     #[test]
     fn a_failed_atomic_write_cleans_up_its_temp_file() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         fs::create_dir_all(&path).unwrap();
 
         assert!(write_atomic(&path, "schemaVersion = 1\n").is_err(), "renaming onto a dir fails");
@@ -2563,7 +2566,7 @@ red = "#ee0000"
     /// ...and the success path both lands the content and leaves nothing.
     #[test]
     fn a_successful_atomic_write_lands_the_content_and_leaves_nothing() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         write_atomic(&path, "schemaVersion = 1\n").unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "schemaVersion = 1\n");
@@ -2637,7 +2640,7 @@ red = "#ee0000"
     /// are decoration, not a second schema.
     #[test]
     fn the_annotated_file_round_trips() {
-        let path = tmp_config_path();
+        let (_dir, path) = tmp_config_path();
         let settings = AppSettings { ui_scale: 1.25, enter_to_send: false, ..Default::default() };
         let rendered = document_for(&settings).to_string();
 

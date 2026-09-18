@@ -1,50 +1,19 @@
-//! Behaviour lock for everything `atlas-memory` used to borrow from the Cersei SDK.
+//! Behaviour lock for the graph, session-extraction, consolidation-gate and
+//! embedding-provider modules (`graph.rs`, `session.rs`, `dream.rs`,
+//! `embedding.rs`).
 //!
-//! This file was written against the **cersei-backed** implementation and passed
-//! there before a single line was ported. It is deliberately unchanged by the
-//! port: the native code in `graph.rs` / `session.rs` / `dream.rs` / `embedding.rs`
-//! has to satisfy exactly these assertions, so a green run after the swap is
-//! evidence that observable behaviour did not move.
-//!
-//! It pins *behaviour as it actually was*, not behaviour as it ought to be. Where
-//! Cersei did something surprising (duplicate `:Topic` nodes per tag, unescaped
-//! topic strings, `MEMORY:` lines with a negative confidence surviving) the test
-//! records the surprise and says so, because changing it silently during a port
-//! is precisely the kind of drift this file exists to catch. Fixes are welcome —
-//! but they must land as a deliberate edit to this file, not as a side effect.
-
-use std::path::PathBuf;
+//! These pin what the code does today. Most of it is contract: on-disk
+//! spellings, filenames and the extraction wire format that shipped installs
+//! already depend on. A few assertions pin behaviour that is wrong, and each of
+//! those is marked `KNOWN BUG` so nobody reads it as intended. Fixing one of
+//! them is welcome, but it has to land as a deliberate edit to this file in the
+//! same change, not as a side effect that turns a test red.
 
 use atlas_memory::dream::{AutoDream, ConsolidationState};
 use atlas_memory::graph::{GraphMemory, MemoryType};
 use atlas_memory::session::{
     extraction_prompt, parse_extraction_output, persist_memories, ExtractedMemory, MemoryCategory,
 };
-
-// ─── Test scratch dir ────────────────────────────────────────────────────────
-
-struct TmpDir(PathBuf);
-
-impl TmpDir {
-    fn new(tag: &str) -> Self {
-        let n = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let p = std::env::temp_dir().join(format!("atlas-mem-parity-{tag}-{n}"));
-        std::fs::create_dir_all(&p).unwrap();
-        Self(p)
-    }
-    fn path(&self) -> &std::path::Path {
-        &self.0
-    }
-}
-
-impl Drop for TmpDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
 
 // ─── MemoryType ──────────────────────────────────────────────────────────────
 
@@ -124,11 +93,30 @@ fn graph_tag_and_query_by_topic() {
     assert!(g.by_topic("never-used").is_empty());
 }
 
+/// `tag_memory` INSERTs a new `:Topic` node on every call instead of matching
+/// an existing one, so one topic used N times is N nodes.
+#[test]
+fn graph_tagging_creates_a_topic_node_per_call() {
+    let g = GraphMemory::open_in_memory().unwrap();
+    let a = g.store_memory("alpha fact", MemoryType::Project, 0.9).unwrap();
+    let b = g.store_memory("beta fact", MemoryType::Project, 0.9).unwrap();
+    g.tag_memory(&a, "decision").unwrap();
+    g.tag_memory(&b, "decision").unwrap();
+
+    // KNOWN BUG: two `:Topic {name: "decision"}` nodes rather than one shared
+    // node. Not intended behaviour; queries still work because `by_topic`
+    // matches on the name, but the graph grows a node per tag. The fix is to
+    // match-or-create the topic in `gql::tag_memory`; when it lands, this
+    // becomes 1.
+    assert_eq!(g.stats().topic_count, 2);
+    assert_eq!(g.by_topic("decision").len(), 2);
+}
+
 #[test]
 fn graph_tagging_an_unknown_id_is_not_an_error() {
     let g = GraphMemory::open_in_memory().unwrap();
     // No node matches, so the MATCH yields nothing and the INSERT never fires.
-    // Cersei reported Ok here; callers rely on tag failures being non-fatal.
+    // Callers rely on tag failures being non-fatal.
     assert!(g.tag_memory("no-such-id", "topic").is_ok());
     assert!(g.by_topic("topic").is_empty());
 }
@@ -161,11 +149,10 @@ fn graph_recall_is_substring_matched_and_limited() {
     assert!(g.recall("nothing-matches-this", 10).is_empty());
 }
 
-/// Surprise worth pinning: `recall_top_k` re-ranks by word overlap, but its
-/// candidate set comes from `recall`, which substring-matches the **whole**
-/// query. A candidate therefore already contains every query word, so the score
-/// is effectively always 1.0 and the re-ranking never reorders anything. The
-/// scoring code is real but currently inert. Recorded, not endorsed.
+/// `recall_top_k` re-ranks by word overlap, but its candidate set comes from
+/// `recall`, which substring-matches the **whole** query. A candidate therefore
+/// already contains every query word, so the score is always 1.0 and the
+/// re-ranking never reorders anything.
 #[test]
 fn graph_recall_top_k_scores_are_effectively_always_one() {
     let g = GraphMemory::open_in_memory().unwrap();
@@ -179,6 +166,10 @@ fn graph_recall_top_k_scores_are_effectively_always_one() {
     // "tauri only" does not contain the substring "tauri window", so it is not
     // even a candidate — this is a whole-phrase match, not a word match.
     assert_eq!(scored.len(), 2, "{scored:?}");
+    // KNOWN BUG: the ranking is inert — every score is 1.0, so retrieval's
+    // graph contribution is effectively unranked. Not intended behaviour. The
+    // fix is word-level candidate selection in `recall_top_k`; when it lands,
+    // replace this loop with assertions on a real ordering.
     for (_, s) in &scored {
         assert_eq!(*s, 1.0, "candidates contain every query word: {scored:?}");
     }
@@ -191,16 +182,21 @@ fn graph_recall_top_k_scores_are_effectively_always_one() {
     assert!(g.recall_top_k("   ", 5).is_empty());
 }
 
-/// Surprise worth pinning, and the sharpest one here: every graph query returns
-/// each content string **wrapped in literal double quotes** (`"\"fact\""`),
-/// because results are rendered with `format!("{}", value)` and grafeo's Display
-/// for a string value includes its quotes. Nothing in `atlas-memory` strips them,
-/// so the quotes reach retrieval output today. The port must reproduce this
-/// exactly; fixing it is a separate, deliberate change.
+/// Every graph query returns each content string **wrapped in literal double
+/// quotes** (`"\"fact\""`), because results are rendered with
+/// `format!("{}", value)` and grafeo's Display for a string value includes its
+/// quotes. Nothing in `atlas-memory` strips them, so the quotes reach retrieval
+/// output today.
 #[test]
 fn graph_results_are_wrapped_in_literal_quotes() {
     let g = GraphMemory::open_in_memory().unwrap();
     g.store_memory("plain fact", MemoryType::User, 0.9).unwrap();
+
+    // KNOWN BUG: the quotes are grafeo's `Display` leaking into data, and they
+    // reach the agent in retrieved memory. Not intended behaviour. The fix is
+    // to read the string value in `GraphMemory::query_first_column` instead of
+    // formatting it; when it lands, these three assertions flip to the bare
+    // `plain fact`.
 
     let by_type = g.by_type(MemoryType::User);
     assert_eq!(by_type, vec![r#""plain fact""#.to_string()], "{by_type:?}");
@@ -244,7 +240,7 @@ fn graph_escapes_quotes_and_backslashes_in_content() {
 
 #[test]
 fn graph_persists_across_reopen() {
-    let tmp = TmpDir::new("graph");
+    let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("memory.grafeo");
 
     {
@@ -409,7 +405,7 @@ fn mem(cat: MemoryCategory, content: &str, confidence: f32) -> ExtractedMemory {
 /// shape is a contract between the two modules.
 #[test]
 fn persist_renders_the_expected_entry_line() {
-    let tmp = TmpDir::new("persist-new");
+    let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("extracted").join("s1.md");
 
     persist_memories(&[mem(MemoryCategory::Decision, "chose usearch", 0.85)], &target).unwrap();
@@ -427,7 +423,7 @@ fn persist_renders_the_expected_entry_line() {
 
 #[test]
 fn persist_creates_parent_directories() {
-    let tmp = TmpDir::new("persist-mkdir");
+    let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("deep").join("nested").join("s.md");
     persist_memories(&[mem(MemoryCategory::ProjectFact, "fact", 0.5)], &target).unwrap();
     assert!(target.exists());
@@ -435,7 +431,7 @@ fn persist_creates_parent_directories() {
 
 #[test]
 fn persist_empty_slice_writes_nothing() {
-    let tmp = TmpDir::new("persist-empty");
+    let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("s.md");
     persist_memories(&[], &target).unwrap();
     assert!(!target.exists(), "no file should be created for zero memories");
@@ -443,7 +439,7 @@ fn persist_empty_slice_writes_nothing() {
 
 #[test]
 fn persist_appends_into_the_same_date_block() {
-    let tmp = TmpDir::new("persist-append");
+    let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("s.md");
 
     persist_memories(&[mem(MemoryCategory::Decision, "first", 0.9)], &target).unwrap();
@@ -459,7 +455,7 @@ fn persist_appends_into_the_same_date_block() {
 
 #[test]
 fn persist_preserves_unrelated_existing_content() {
-    let tmp = TmpDir::new("persist-preserve");
+    let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("s.md");
     std::fs::write(&target, "# Hand-written notes\n\nkeep me\n").unwrap();
 
@@ -477,7 +473,7 @@ fn persist_preserves_unrelated_existing_content() {
 /// installs, so they are on-disk contract.
 #[test]
 fn dream_state_and_lock_use_the_expected_filenames() {
-    let tmp = TmpDir::new("dream-paths");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().to_path_buf());
 
     d.acquire_lock().unwrap();
@@ -495,7 +491,7 @@ fn dream_state_and_lock_use_the_expected_filenames() {
 
 #[test]
 fn dream_defaults_are_24h_and_5_sessions() {
-    let tmp = TmpDir::new("dream-defaults");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().to_path_buf());
     assert_eq!(d.config.min_hours, 24.0);
     assert_eq!(d.config.min_sessions, 5);
@@ -503,7 +499,7 @@ fn dream_defaults_are_24h_and_5_sessions() {
 
 #[test]
 fn dream_time_gate_opens_when_never_consolidated_and_closes_right_after() {
-    let tmp = TmpDir::new("dream-time");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().to_path_buf());
 
     let fresh = ConsolidationState::default();
@@ -521,7 +517,7 @@ fn dream_time_gate_opens_when_never_consolidated_and_closes_right_after() {
 
 #[test]
 fn dream_load_state_survives_missing_and_corrupt_files() {
-    let tmp = TmpDir::new("dream-corrupt");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().to_path_buf());
 
     // Missing file → default.
@@ -534,7 +530,7 @@ fn dream_load_state_survives_missing_and_corrupt_files() {
 
 #[test]
 fn dream_lock_gate_closes_while_a_fresh_lock_is_held() {
-    let tmp = TmpDir::new("dream-lock");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().to_path_buf());
 
     assert!(d.lock_gate_passes(), "no lock → open");
@@ -548,7 +544,7 @@ fn dream_lock_gate_closes_while_a_fresh_lock_is_held() {
 
 #[test]
 fn dream_session_gate_counts_only_recent_jsonl_files() {
-    let tmp = TmpDir::new("dream-sessions");
+    let tmp = tempfile::tempdir().unwrap();
     let convos = tmp.path().join("convos");
     std::fs::create_dir_all(&convos).unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), convos.clone());
@@ -574,15 +570,15 @@ fn dream_session_gate_counts_only_recent_jsonl_files() {
 
 #[test]
 fn dream_session_gate_returns_false_for_a_missing_dir() {
-    let tmp = TmpDir::new("dream-nodir");
+    let tmp = tempfile::tempdir().unwrap();
     let d = AutoDream::new(tmp.path().to_path_buf(), tmp.path().join("does-not-exist"));
     assert!(!d.session_gate_passes(&ConsolidationState::default()));
 }
 
 // ─── EmbeddingProvider seam ──────────────────────────────────────────────────
 
-/// `MiniLmProvider` implements this trait; the port must keep the same method
-/// set and signatures or the provider stops compiling.
+/// `MiniLmProvider` implements this trait; changing its method set or
+/// signatures breaks the provider.
 #[test]
 fn embedding_provider_trait_shape_is_unchanged() {
     use atlas_memory::embedding::{EmbeddingError, EmbeddingProvider};

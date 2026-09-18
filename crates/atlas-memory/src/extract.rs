@@ -362,17 +362,20 @@ mod tests {
         assert_eq!(state.tool_calls_since_last, 3); // only turns[2..]
     }
 
-    fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("atlas-extract-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_dir(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     #[tokio::test]
     async fn fake_llm_populates_graph_and_memdir() {
-        let dir = tmp_dir("happy");
+        let (_tmp, dir) = tmp_dir("happy");
         let graph = GraphMemory::open_in_memory().expect("in-memory graph");
         let mut state = ExtractState::default();
         let turns = make_turns(26);
@@ -419,13 +422,11 @@ not a memory line
         // Persisted state round-trips.
         let reloaded = ExtractState::load(&dir, "sess-1");
         assert_eq!(reloaded.extraction_count, 1);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
     async fn short_transcript_is_a_noop_and_never_calls_llm() {
-        let dir = tmp_dir("short");
+        let (_tmp, dir) = tmp_dir("short");
         let graph = GraphMemory::open_in_memory().expect("in-memory graph");
         let mut state = ExtractState::default();
         let turns = make_turns(4); // below the 20-turn gate
@@ -449,7 +450,5 @@ not a memory line
         assert_eq!(state.extraction_count, 0);
         assert!(graph.by_type(MemoryType::Project).is_empty());
         assert!(!dir.join("extracted").join("sess-short.md").exists());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

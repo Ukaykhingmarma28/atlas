@@ -135,8 +135,8 @@ pub fn pick_newest_session(candidates: Vec<(PathBuf, SystemTime)>) -> Option<Pat
 }
 
 /// Pure: parse a Claude Code JSONL transcript into `(role, text)` turns, taking
-/// the last `max_turns`. Mirrors `atlas_agent_transcript::replay_claude_jsonl`:
-/// skips sidechain lines, tool-result user messages, and injected system text.
+/// the last `max_turns`. Skips sidechain lines, tool-result user messages, and
+/// injected system text (the rules the deleted transcript replay used).
 pub fn parse_handoff_turns(jsonl: &str, max_turns: usize) -> Vec<(String, String)> {
     let mut turns: Vec<(String, String)> = Vec::new();
     for line in jsonl.lines() {

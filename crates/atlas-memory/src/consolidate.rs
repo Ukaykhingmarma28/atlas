@@ -379,12 +379,40 @@ mod tests {
     use super::*;
     use crate::graph::MemoryType;
 
-    fn tmp_root(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("atlas-memory-consolidate-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_root(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
+    }
+
+    /// Points [`crate::global::GLOBAL_DIR_ENV`] at `dir` until dropped, then
+    /// restores whatever was there before. Without the restore, every later
+    /// test in the process resolved the global store into this test's deleted
+    /// temp dir. The variable is still process-wide while it is set, so this
+    /// bounds the override's lifetime; it does not hide it from tests running
+    /// concurrently.
+    struct GlobalDirOverride(Option<std::ffi::OsString>);
+
+    impl GlobalDirOverride {
+        fn set(dir: &Path) -> Self {
+            let previous = std::env::var_os(crate::global::GLOBAL_DIR_ENV);
+            std::env::set_var(crate::global::GLOBAL_DIR_ENV, dir);
+            Self(previous)
+        }
+    }
+
+    impl Drop for GlobalDirOverride {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(previous) => std::env::set_var(crate::global::GLOBAL_DIR_ENV, previous),
+                None => std::env::remove_var(crate::global::GLOBAL_DIR_ENV),
+            }
+        }
     }
 
     /// Drop `n` dummy `*.jsonl` into the memory dir so AutoDream's session-gate
@@ -405,20 +433,19 @@ mod tests {
     /// Gate respected: a fresh engine with no session jsonls skips (not due).
     #[test]
     fn skips_when_not_due() {
-        let root = tmp_root("not-due");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("not-due");
+        let mut engine = MemoryEngine::open(root);
         // No *.jsonl in the memory dir → session gate fails.
         let outcome = consolidate(&mut engine).unwrap();
         assert_eq!(outcome, ConsolidateOutcome::Skipped);
-        std::fs::remove_dir_all(&root).ok();
     }
 
     /// A fresh lock held by a "concurrent" run makes a second call return Locked,
     /// not run twice. (Gates are forced to pass so we exercise the lock branch.)
     #[test]
     fn lock_prevents_concurrent_run() {
-        let root = tmp_root("locked");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("locked");
+        let mut engine = MemoryEngine::open(root);
         let memory_dir = engine.memory_dir().to_path_buf();
         force_session_gate(&memory_dir);
 
@@ -432,7 +459,6 @@ mod tests {
         // The held lock is untouched by the skipped run.
         assert!(!other.lock_gate_passes());
         other.release_lock().unwrap();
-        std::fs::remove_dir_all(&root).ok();
     }
 
     /// Prune drops below-floor entries and keeps above-floor ones; the memdir file
@@ -440,15 +466,12 @@ mod tests {
     /// API) — asserted to document the limitation.
     #[test]
     fn prune_drops_below_floor_keeps_above() {
-        let root = tmp_root("prune");
+        let (_tmp, root) = tmp_root("prune");
         // This path reaches `Consolidated`, which fires Step-9b global promotion.
         // Redirect the global store at a temp dir so the test never touches the
         // real `~/.atlas/memory` (the global.rs tests use the explicit-dir form).
-        std::env::set_var(
-            crate::global::GLOBAL_DIR_ENV,
-            root.join("global-memory-override"),
-        );
-        let mut engine = MemoryEngine::open(root.clone());
+        let _global = GlobalDirOverride::set(&root.join("global-memory-override"));
+        let mut engine = MemoryEngine::open(root);
         let memory_dir = engine.memory_dir().to_path_buf();
         force_session_gate(&memory_dir);
 
@@ -505,8 +528,6 @@ mod tests {
 
         // Graph nodes are NOT pruned (no delete API) — documented limitation.
         assert_eq!(count_graph_nodes(engine.graph()), graph_before);
-
-        std::fs::remove_dir_all(&root).ok();
     }
 
     /// The global cap keeps the newest `cap` survivors (date desc) after the floor.

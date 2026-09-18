@@ -52,9 +52,8 @@ pub mod global;
 // ─── Ported-from-Cersei modules ───────────────────────────────────────────────
 //
 // These four were `cersei-embeddings` / `cersei-memory` / `cersei-agent` until
-// 2026-08-22; they are now Atlas's own. `tests/cersei_parity.rs` was written
-// against the SDK versions and passes unchanged against these, which is the
-// evidence that the swap did not move observable behaviour.
+// 2026-08-22; they are now Atlas's own. `tests/behaviour.rs` pins their
+// observable behaviour.
 pub mod dream;
 pub mod embedding;
 pub mod graph;
@@ -412,16 +411,15 @@ const _: fn() = || {
 mod index_corpus_tests {
     use super::*;
 
-    fn tmp_root(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "atlas-memory-index-{}-{}",
-            std::process::id(),
-            name
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_root(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     fn find_model_dir() -> Option<PathBuf> {
@@ -445,8 +443,8 @@ mod index_corpus_tests {
     /// regression in that bookkeeping is caught without an embedder.
     #[test]
     fn diff_drives_manifest_and_store_without_embedding() {
-        let root = tmp_root("plumbing");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("plumbing");
+        let mut engine = MemoryEngine::open(root);
 
         // Seed: two docs already indexed (simulate a prior pass).
         let v = |seed: usize| -> Vec<f32> {
@@ -495,26 +493,22 @@ mod index_corpus_tests {
         }
         assert_eq!(engine.store.len(), 2);
         assert!(engine.manifest.key_for("a").is_none());
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// Full `index_corpus` against a real MiniLM model — only runs when
-    /// `ATLAS_MINILM_DIR` points at an installed model (skips cleanly otherwise,
-    /// no network). Asserts the add/update/delete counts and that re-running with
-    /// an identical corpus re-embeds nothing.
+    /// Full `index_corpus` against a real MiniLM model. Ignored by default; run
+    /// with `ATLAS_MINILM_DIR` pointing at an installed model and `--ignored`
+    /// (no network). Asserts the add/update/delete counts and that re-running
+    /// with an identical corpus re-embeds nothing.
     #[test]
+    #[ignore = "needs ATLAS_MINILM_DIR"]
     fn index_corpus_end_to_end_when_model_available() {
-        let Some(model) = find_model_dir() else {
-            eprintln!("skipping: no MiniLM model dir (set ATLAS_MINILM_DIR)");
-            return;
-        };
+        let model = find_model_dir().expect("set ATLAS_MINILM_DIR to a MiniLM model dir");
         let embedder = atlas_embed::Embedder::load(&model).expect("load MiniLM");
         let provider = MiniLmProvider::new(std::sync::Arc::new(embedder), "all-MiniLM-L6-v2");
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        let root = tmp_root("e2e");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("e2e");
+        let mut engine = MemoryEngine::open(root);
 
         let docs = vec![
             doc("a", "rust borrow checker notes", "h1"),
@@ -537,7 +531,5 @@ mod index_corpus_tests {
         assert_eq!(stats3.updated, 1);
         assert_eq!(stats3.deleted, 1);
         assert_eq!(engine.store.len(), 1);
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

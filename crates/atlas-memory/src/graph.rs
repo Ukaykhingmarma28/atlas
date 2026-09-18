@@ -2,8 +2,7 @@
 //!
 //! Ported into Atlas from `cersei-memory`'s `graph` + `memdir::MemoryType`. The
 //! GQL text, the schema, and the shape of every return value are reproduced
-//! exactly — `tests/cersei_parity.rs` was written against the SDK version and
-//! passes unchanged against this one.
+//! exactly; `tests/behaviour.rs` pins the result.
 //!
 //! ## Schema (v2)
 //! ```text
@@ -16,9 +15,9 @@
 //!
 //! ## Inherited quirks — deliberately preserved
 //!
-//! These are wrong-ish, load-bearing, and out of scope for a port. Each is
-//! pinned by a named test in `tests/cersei_parity.rs`; fix them as their own
-//! change, with that file updated in the same commit.
+//! These are wrong-ish, load-bearing, and out of scope for a port. The first
+//! two are pinned by `KNOWN BUG` tests in `tests/behaviour.rs`; fix them as
+//! their own change, with that file updated in the same commit.
 //!
 //! - **Results are wrapped in literal double quotes.** Every query renders cells
 //!   with `format!("{}", value)`, and grafeo's `Display` for a string value

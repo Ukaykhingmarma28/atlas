@@ -4,8 +4,11 @@
 //! someone actually has, and treating a fingerprint as proof would lock each of
 //! them out.
 
+mod support;
+
 use std::path::Path;
-use std::process::Command;
+
+use support::{git, git_command, init_repo};
 
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
@@ -14,26 +17,6 @@ use atlas_checkpoint::{
 };
 
 const WORKSPACE: &str = "ws-atlas";
-
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .expect("git runs");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn init_repo(root: &Path) {
-    git(root, &["init", "--initial-branch=main"]);
-    git(root, &["config", "user.name", "Test Developer"]);
-    git(root, &["config", "user.email", "dev@example.com"]);
-}
 
 fn commit(root: &Path, file: &str, content: &str, message: &str) {
     std::fs::write(root.join(file), content).unwrap();
@@ -138,7 +121,7 @@ fn a_shallow_clone_binds_and_its_fingerprint_is_flagged_as_not_authoritative() {
 
     let clone_dir = tempfile::tempdir().unwrap();
     let target = clone_dir.path().join("shallow");
-    let output = Command::new("git")
+    let output = git_command()
         .args([
             "clone",
             "--depth",

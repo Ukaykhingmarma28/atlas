@@ -6,7 +6,7 @@
 //! gates over its own format-neutral `TranscriptTurn`.
 //!
 //! Two things in this module are on-disk contracts rather than implementation
-//! details, and both are pinned in `tests/cersei_parity.rs`:
+//! details, and both are pinned in `tests/behaviour.rs`:
 //!
 //! - [`MemoryCategory::label`] is written into the memdir markdown *and* used as
 //!   the graph topic string.
