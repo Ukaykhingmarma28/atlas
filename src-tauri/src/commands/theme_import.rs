@@ -28,7 +28,8 @@ use serde::{Deserialize, Serialize};
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Enough for any theme file and a hard stop on a URL that streams forever.
-const MAX_FETCH_BYTES: usize = 4 * 1024 * 1024;
+/// The same ceiling `atlas-theme` holds a local file and each `include` to.
+const MAX_FETCH_BYTES: usize = atlas_theme::import::MAX_SOURCE_BYTES as usize;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,26 +115,40 @@ pub async fn preview_theme_import(input: ThemeImportInput) -> Result<ThemeImport
     .map_err(|error| format!("theme import task failed: {error}"))?
 }
 
+/// What a commit wrote.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommittedThemeImport {
+    /// The id the theme was saved under — the user's text, slugged. This, not
+    /// what they typed, is what `settings.theme` has to name.
+    pub id: String,
+    pub path: String,
+}
+
 /// Write a previewed theme into `~/.config/atlas/themes/<id>.toml`.
 ///
 /// `id` and `name` are the user's, applied to the previewed TOML rather than
 /// spliced into its text: the file is re-parsed, renamed and re-serialised, so
 /// a name with a quote in it cannot produce a file that will not load.
 #[tauri::command]
-pub async fn commit_theme_import(toml: String, id: String, name: String) -> Result<String, String> {
+pub async fn commit_theme_import(
+    toml: String,
+    id: String,
+    name: String,
+) -> Result<CommittedThemeImport, String> {
     tokio::task::spawn_blocking(move || {
         let mut theme = atlas_theme::parse_theme(&toml, "import").map_err(|error| error.to_string())?;
         let id = atlas_theme::import::slug(&id);
         if id.is_empty() {
             return Err("a theme id needs at least one letter or digit".to_string());
         }
-        theme.id = id;
+        theme.id = id.clone();
         if !name.trim().is_empty() {
             theme.name = name.trim().to_string();
         }
         let rendered = atlas_theme::toml_writer::theme_to_toml(&theme);
         atlas_theme::write_user_theme(&rendered)
-            .map(|path| path.display().to_string())
+            .map(|path| CommittedThemeImport { id, path: path.display().to_string() })
             .map_err(|error| error.to_string())
     })
     .await
@@ -165,10 +180,11 @@ async fn read_source(
             .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
         let base_dir = path.parent().map(Path::to_path_buf);
         let label = origin.clone();
-        let source = tokio::task::spawn_blocking(move || std::fs::read_to_string(&path))
-            .await
-            .map_err(|error| format!("theme read task failed: {error}"))?
-            .map_err(|error| format!("could not read {label}: {error}"))?;
+        let source =
+            tokio::task::spawn_blocking(move || atlas_theme::import::read_source_file(&path))
+                .await
+                .map_err(|error| format!("theme read task failed: {error}"))?
+                .map_err(|error| format!("could not read {label}: {error}"))?;
         return Ok((source, origin, base_dir));
     }
     if let Some(url) = url.filter(|url| !url.trim().is_empty()) {
@@ -196,7 +212,7 @@ async fn fetch(url: &str) -> Result<String, String> {
         .user_agent("Atlas-IDE")
         .build()
         .map_err(|error| format!("could not build an HTTP client: {error}"))?;
-    let response = client
+    let mut response = client
         .get(url)
         .send()
         .await
@@ -204,12 +220,20 @@ async fn fetch(url: &str) -> Result<String, String> {
     if !response.status().is_success() {
         return Err(format!("{url} answered {}", response.status()));
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| format!("could not read {url}: {error}"))?;
-    if bytes.len() > MAX_FETCH_BYTES {
-        return Err(format!("{url} returned {} bytes; the limit is 4 MB", bytes.len()));
+    let too_big = || format!("{url} is larger than the 4 MB a theme may be");
+    // The declared length refuses early; the running total is what actually
+    // holds, because a server may send no length or the wrong one.
+    if response.content_length().is_some_and(|length| length > MAX_FETCH_BYTES as u64) {
+        return Err(too_big());
     }
-    String::from_utf8(bytes.to_vec()).map_err(|_| format!("{url} did not return text"))
+    let mut bytes = Vec::new();
+    while let Some(chunk) =
+        response.chunk().await.map_err(|error| format!("could not read {url}: {error}"))?
+    {
+        if bytes.len() + chunk.len() > MAX_FETCH_BYTES {
+            return Err(too_big());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    String::from_utf8(bytes).map_err(|_| format!("{url} did not return text"))
 }

@@ -94,7 +94,9 @@ impl Default for ThemeMode {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// Deserialized by hand (below), not derived: `config.toml` is a file people
+/// edit, and one bad override entry must not fail the whole file.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeOverride {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -108,6 +110,102 @@ pub struct ThemeOverride {
 impl ThemeOverride {
     fn is_empty(&self) -> bool {
         self.base.is_empty() && self.palette.is_empty() && self.keys.is_empty()
+    }
+}
+
+/// Read `themeOverrides` leniently, the way theme files are read.
+///
+/// `keys` used to be a plain map of an untagged enum, so the natural TOML
+/// spelling `syntax.keyword = "#fff"` — a dotted key, which TOML turns into a
+/// nested table — matched neither a colour nor `{ color }`, and the parse
+/// error took the WHOLE `config.toml` down with it. Nested tables are now
+/// flattened to dotted names exactly as `atlas-theme` flattens a theme's
+/// `[keys]`, and anything still unusable — a number, a `font_style`, a value
+/// that could break out of the `:root { … }` block the frontend writes it into
+/// — is dropped with a warning rather than failing the file.
+impl<'de> Deserialize<'de> for ThemeOverride {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = serde_json::Value::deserialize(deserializer)?;
+        let mut out = ThemeOverride::default();
+        let Some(raw) = raw.as_object() else {
+            tracing::warn!(target: "atlas::config", "themeOverrides is not a table; ignored");
+            return Ok(out);
+        };
+        for (section, value) in raw {
+            match section.as_str() {
+                "base" => out.base = override_strings(value, "base"),
+                "palette" => out.palette = override_strings(value, "palette"),
+                "keys" => flatten_override_keys(value, "", &mut out.keys),
+                other => {
+                    tracing::warn!(target: "atlas::config", "themeOverrides.{other} is not base, palette or keys; ignored");
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// `base` and `palette`: string leaves only, each held to
+/// [`atlas_theme::is_safe_css_value`] — the check a theme file's free-text base
+/// tokens get. A colour-shaped value always passes it.
+fn override_strings(value: &serde_json::Value, section: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(table) = value.as_object() else {
+        tracing::warn!(target: "atlas::config", "themeOverrides.{section} is not a table; ignored");
+        return out;
+    };
+    for (key, value) in table {
+        match value.as_str().filter(|value| atlas_theme::is_safe_css_value(value)) {
+            Some(value) => {
+                out.insert(key.clone(), value.to_string());
+            }
+            None => {
+                tracing::warn!(target: "atlas::config", "themeOverrides.{section}.{key} is not a usable CSS value; ignored");
+            }
+        }
+    }
+    out
+}
+
+fn flatten_override_keys(
+    value: &serde_json::Value,
+    prefix: &str,
+    out: &mut BTreeMap<String, atlas_theme::ThemeKeyValue>,
+) {
+    let Some(table) = value.as_object() else {
+        tracing::warn!(target: "atlas::config", "themeOverrides.keys{prefix} is not a table; ignored");
+        return;
+    };
+    for (key, value) in table {
+        let dotted = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
+        let drop = |why: &str| {
+            tracing::warn!(target: "atlas::config", "themeOverrides.keys.{dotted} {why}; ignored");
+        };
+        match value {
+            serde_json::Value::String(color) if atlas_theme::is_safe_css_value(color) => {
+                out.insert(dotted, atlas_theme::ThemeKeyValue::Color(color.clone()));
+            }
+            serde_json::Value::Object(style) if style.contains_key("font_style") => {
+                drop("sets font_style, which Atlas does not apply");
+            }
+            // `{ color = "…" }` and nothing else is the table spelling of one
+            // key; any other table is a group of keys, as in a theme file.
+            serde_json::Value::Object(style) if style.len() == 1 && style.contains_key("color") => {
+                match style["color"].as_str().filter(|color| atlas_theme::is_safe_css_value(color)) {
+                    Some(color) => {
+                        out.insert(
+                            dotted,
+                            atlas_theme::ThemeKeyValue::Styled(atlas_theme::ThemeKeyStyle {
+                                color: color.to_string(),
+                            }),
+                        );
+                    }
+                    None => drop("is not a usable CSS colour"),
+                }
+            }
+            serde_json::Value::Object(_) => flatten_override_keys(value, &dotted, out),
+            _ => drop("is not a usable CSS colour"),
+        }
     }
 }
 
@@ -851,6 +949,9 @@ impl SettingsPatch {
         if let Some(v) = &self.theme_overrides {
             table["themeOverrides"] = theme_override_item(v);
         }
+        if let Some(v) = &self.icon_theme {
+            table["iconTheme"] = toml_edit::value(v.as_str());
+        }
         if let Some(v) = self.adaptive_suggestions {
             let s = match v {
                 AdaptiveSuggestions::Agent => "agent",
@@ -960,12 +1061,11 @@ fn migrate_legacy_theme(
         Some("atlas-black") | None => default_theme(),
         Some(id) => id.to_string(),
     };
-    let theme = if atlas_theme::get_theme(&mapped_theme).is_ok() {
-        mapped_theme
-    } else {
-        tracing::warn!(target: "atlas::themes", theme = %mapped_theme, "unknown migrated theme id; falling back to atlas");
-        default_theme()
-    };
+    // Not checked against the catalog: a lookup that fails (a transient read
+    // error, a theme this build does not ship) is not a reason to write a
+    // different theme into the file. `fallback_unknown_theme` covers the
+    // in-memory side.
+    let theme = mapped_theme;
     // Overrides are written only for an editor theme that was GENUINELY
     // CHOSEN and that DIFFERS from the theme the chrome picker migrated to:
     // absent, blank, the picker's untouched default, or simply the same theme
@@ -993,6 +1093,24 @@ fn migrate_legacy_theme(
     (theme, ThemeOverride { keys, ..ThemeOverride::default() })
 }
 
+/// Serve the default theme for this session when `settings.theme` does not
+/// resolve — **in memory only**.
+///
+/// This used to write `theme = "atlas"` back to `config.toml`, which turned
+/// anything that made one lookup fail — a user theme mid-edit that briefly did
+/// not parse, an unreadable themes directory, an id written by a newer Atlas —
+/// into the permanent loss of the user's choice. The file keeps what the user
+/// wrote; the next load, once the theme resolves again, uses it.
+fn fallback_unknown_theme(settings: &mut AppSettings) {
+    if let Err(error) = atlas_theme::get_theme(&settings.theme) {
+        tracing::warn!(target: "atlas::themes", theme = %settings.theme, "theme in config.toml does not resolve ({error}); using atlas for this session");
+        settings.theme = default_theme();
+    }
+}
+
+/// Fold the legacy `atlasTheme` / `codeEditorTheme` keys into `theme` and
+/// `themeOverrides`, returning whether `document` changed. That migration is
+/// the only thing this writes; an unresolvable `theme` is handled in memory.
 fn migrate_theme_fields(
     document: &mut toml_edit::DocumentMut,
     settings: &mut AppSettings,
@@ -1000,21 +1118,13 @@ fn migrate_theme_fields(
     let old_atlas = settings.legacy_atlas_theme.take();
     let old_editor = settings.legacy_code_editor_theme.take();
     let migrating = old_atlas.is_some() || old_editor.is_some();
-    if migrating {
-        let (theme, theme_overrides) =
-            migrate_legacy_theme(old_atlas.as_deref(), old_editor.as_deref());
-        settings.theme = theme;
-        settings.theme_overrides = theme_overrides;
-    }
-    let mut changed = migrating;
-    if atlas_theme::get_theme(&settings.theme).is_err() {
-        tracing::warn!(target: "atlas::themes", theme = %settings.theme, "unknown theme id in config.toml; falling back to atlas");
-        settings.theme = default_theme();
-        changed = true;
-    }
-    if !changed {
+    if !migrating {
+        fallback_unknown_theme(settings);
         return false;
     }
+    let (theme, theme_overrides) = migrate_legacy_theme(old_atlas.as_deref(), old_editor.as_deref());
+    settings.theme = theme;
+    settings.theme_overrides = theme_overrides;
     if document.get("settings").and_then(toml_edit::Item::as_table).is_none() {
         document["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
@@ -1032,6 +1142,7 @@ fn migrate_theme_fields(
     } else {
         table["themeOverrides"] = theme_override_item(&settings.theme_overrides);
     }
+    fallback_unknown_theme(settings);
     true
 }
 
@@ -1405,10 +1516,11 @@ impl ConfigManager {
 
     /// Write a specific `AppSettings` as a brand-new file (migration's entry
     /// point — there is no existing document to preserve yet).
-    fn create_fresh_with(path: PathBuf, settings: AppSettings) -> Result<Self, ConfigError> {
+    fn create_fresh_with(path: PathBuf, mut settings: AppSettings) -> Result<Self, ConfigError> {
         let document = document_for(&settings);
         let text = document.to_string();
         write_atomic(&path, &text).map_err(|e| ConfigError::Io(e.to_string()))?;
+        fallback_unknown_theme(&mut settings);
         Ok(Self {
             path,
             document,
@@ -1617,6 +1729,7 @@ fn bootstrap_at(
             // telemetry back on. The broken file itself is left untouched.
             manager.effective = settings_from_legacy_json(legacy_settings_raw.as_ref());
             manager.document = document_for(&manager.effective);
+            fallback_unknown_theme(&mut manager.effective);
         }
         return MigrationOutcome { manager, mark_migrated };
     }
@@ -1640,6 +1753,7 @@ fn bootstrap_at(
             let mut manager = ConfigManager::load_at(path);
             manager.effective = settings;
             manager.document = document_for(&manager.effective);
+            fallback_unknown_theme(&mut manager.effective);
             manager.status =
                 ConfigStatus::UsingDefaults { error: format!("could not write config.toml: {e}") };
             MigrationOutcome { manager, mark_migrated: false }
@@ -1987,13 +2101,137 @@ someFutureKey = \"left alone\"
     }
 
     #[test]
-    fn unknown_config_theme_falls_back_to_atlas_and_is_rewritten() {
+    fn unknown_config_theme_falls_back_in_memory_and_is_never_rewritten() {
         let path = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\ntheme = \"from-a-newer-atlas\"\n";
-        let manager = ConfigManager::from_raw(path, raw).expect("unknown id falls back");
+        let manager = ConfigManager::from_raw(path.clone(), raw).expect("unknown id falls back");
 
         assert_eq!(manager.effective().theme, default_theme());
-        assert!(manager.last_raw.contains("theme = \"atlas\""));
+        assert_eq!(manager.last_raw, raw, "a failed lookup is not a migration");
+
+        // And through the cold-start path, which is the one that writes.
+        fs::write(&path, raw).unwrap();
+        let manager = ConfigManager::load_at(path.clone());
+        assert_eq!(manager.effective().theme, default_theme());
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+    }
+
+    /// The legacy keys still migrate — and the theme they name is written as
+    /// named, even when this build cannot resolve it.
+    #[test]
+    fn legacy_theme_keys_migrate_without_rewriting_an_unresolvable_theme() {
+        let path = tmp_config_path();
+        let raw = "schemaVersion = 1\n\n[settings]\natlasTheme = \"not-shipped-here\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("legacy settings parse");
+
+        assert_eq!(manager.effective().theme, default_theme(), "served in memory");
+        assert!(manager.last_raw.contains("theme = \"not-shipped-here\""), "{}", manager.last_raw);
+        assert!(!manager.last_raw.contains("atlasTheme"));
+    }
+
+    /// `write_into` is hand-written per field, and a field it forgets is saved
+    /// in memory, reported as applied, and gone on the next launch — which is
+    /// what happened to `iconTheme`. The patch below is a struct literal with no
+    /// `..Default::default()`, so a new `SettingsPatch` field does not compile
+    /// until it is added here, and the JSON check proves every setting it sets
+    /// actually differs from the default.
+    #[test]
+    fn every_settings_patch_field_survives_a_write_and_a_reload() {
+        let defaults = AppSettings::default();
+        let patch = SettingsPatch {
+            auto_add_atlas_gitignore: Some(!defaults.auto_add_atlas_gitignore),
+            enable_atlas_logs: Some(!defaults.enable_atlas_logs),
+            show_hidden_files: Some(!defaults.show_hidden_files),
+            ui_scale: Some(1.5),
+            share_telemetry: Some(!defaults.share_telemetry),
+            link_telemetry_to_account: Some(!defaults.link_telemetry_to_account),
+            embedding_model_id: Some("another-model".to_string()),
+            theme: Some("dracula".to_string()),
+            theme_mode: Some(ThemeMode::Light),
+            theme_overrides: Some(ThemeOverride {
+                base: BTreeMap::from([("radius".to_string(), "0.5rem".to_string())]),
+                palette: BTreeMap::from([("red".to_string(), "#ff0000".to_string())]),
+                keys: BTreeMap::from([(
+                    "syntax.keyword".to_string(),
+                    atlas_theme::ThemeKeyValue::Color("#00ff00".to_string()),
+                )]),
+            }),
+            icon_theme: Some(atlas_icon_theme::MINIMAL_ICON_THEME_ID.to_string()),
+            adaptive_suggestions: Some(AdaptiveSuggestions::Off),
+            git_blame_inline: Some(!defaults.git_blame_inline),
+            auto_update: Some(!defaults.auto_update),
+            curated_plugin_sync: Some(!defaults.curated_plugin_sync),
+            updater_ignored_version: Some(Some("9.9.9".to_string())),
+            enter_to_send: Some(!defaults.enter_to_send),
+            terminal_notifications: Some(!defaults.terminal_notifications),
+            terminal_notify_min_duration_ms: Some(defaults.terminal_notify_min_duration_ms + 1),
+            terminal_notify_on_failure: Some(!defaults.terminal_notify_on_failure),
+            terminal_notify_on_attention: Some(!defaults.terminal_notify_on_attention),
+            terminal_notify_native: Some(!defaults.terminal_notify_native),
+            terminal_notify_sound: Some(!defaults.terminal_notify_sound),
+        };
+        let mut expected = defaults.clone();
+        patch.apply_to(&mut expected);
+
+        let expected_json = serde_json::to_value(&expected).unwrap();
+        let default_json = serde_json::to_value(&defaults).unwrap();
+        for (key, value) in expected_json.as_object().unwrap() {
+            assert_ne!(default_json.get(key), Some(value), "the fixture leaves {key} at its default");
+        }
+
+        let mut document = document_for(&defaults);
+        patch.write_into(&mut document);
+        let reloaded = ConfigManager::from_raw(tmp_config_path(), &document.to_string())
+            .expect("a written patch reloads");
+        assert_eq!(reloaded.effective(), &expected);
+    }
+
+    /// `syntax.keyword = "#fff"` is TOML for a nested table. It used to fail
+    /// the untagged-enum parse and take every setting in the file with it.
+    #[test]
+    fn theme_override_keys_accept_dotted_and_nested_forms_and_drop_bad_entries() {
+        let raw = r##"schemaVersion = 1
+
+[settings]
+enterToSend = false
+
+[settings.themeOverrides.base]
+radius = "0.5rem"
+font-sans = "x; } body { display: none"
+
+[settings.themeOverrides.palette]
+red = "#ff0000"
+blue = 7
+
+[settings.themeOverrides.keys]
+syntax.keyword = "#ff0000"
+"editor.background" = { color = "#000000" }
+bad = 5
+styled = { color = "#111111", font_style = "italic" }
+evil = "red; } body { display: none"
+
+[settings.themeOverrides.keys.terminal.ansi]
+red = "#ee0000"
+"##;
+        let manager = ConfigManager::from_raw(tmp_config_path(), raw).expect("the file still loads");
+        let settings = manager.effective();
+        assert!(!settings.enter_to_send, "the rest of the file was read");
+        let overrides = &settings.theme_overrides;
+        assert_eq!(overrides.base.keys().collect::<Vec<_>>(), ["radius"]);
+        assert_eq!(overrides.palette.keys().collect::<Vec<_>>(), ["red"]);
+        assert_eq!(
+            overrides.keys.keys().collect::<Vec<_>>(),
+            ["editor.background", "syntax.keyword", "terminal.ansi.red"]
+        );
+        assert_eq!(overrides.keys["syntax.keyword"].color(), "#ff0000");
+        assert_eq!(overrides.keys["editor.background"].color(), "#000000");
+
+        // The same shape arriving as a JSON patch from the UI.
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "themeOverrides": { "keys": { "syntax": { "keyword": "#fff" } } }
+        }))
+        .unwrap();
+        assert_eq!(patch.theme_overrides.unwrap().keys["syntax.keyword"].color(), "#fff");
     }
 
     #[test]

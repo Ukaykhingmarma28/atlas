@@ -68,7 +68,10 @@ pub fn unpack_extension(archive_bytes: &[u8], destination: &Path) -> Result<usiz
                 .map_err(|source| IconThemeError::Io { path: parent.to_path_buf(), source })?;
         }
         let mut bytes = Vec::new();
-        entry
+        // Read at most one byte past what is left, so an entry whose header
+        // lies about its size cannot inflate unbounded before the check below.
+        (&mut entry)
+            .take(budget + 1)
             .read_to_end(&mut bytes)
             .map_err(|source| IconThemeError::Io { path: target.clone(), source })?;
         budget = budget.checked_sub(bytes.len() as u64).ok_or_else(|| IconThemeError::Vsix {
@@ -142,6 +145,25 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let error = unpack_extension(b"not a zip at all", dir.path()).unwrap_err();
         assert!(error.to_string().contains("not a readable .vsix"), "{error}");
+    }
+
+    #[test]
+    fn an_archive_past_the_expansion_budget_is_refused() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut buffer = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
+            writer
+                .start_file("extension/big.bin", zip::write::SimpleFileOptions::default())
+                .expect("start_file");
+            let chunk = vec![0u8; 1024 * 1024];
+            for _ in 0..=(MAX_UNCOMPRESSED_BYTES / chunk.len() as u64) {
+                writer.write_all(&chunk).expect("write");
+            }
+            writer.finish().expect("finish");
+        }
+        let error = unpack_extension(&buffer, dir.path()).unwrap_err();
+        assert!(error.to_string().contains("ceiling"), "{error}");
     }
 
     #[test]

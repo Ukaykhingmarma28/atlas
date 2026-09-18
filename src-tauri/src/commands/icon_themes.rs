@@ -289,7 +289,14 @@ pub async fn install_icon_theme(
 
     let metadata_client = http_client(METADATA_TIMEOUT)?;
     let metadata_url = match &args.version {
-        Some(version) => format!("{OPEN_VSX_API}/{}/{}/{version}", args.namespace, args.name),
+        // `namespace` and `name` are held to `is_valid_id`'s alphabet above;
+        // `version` is not, so it is encoded as the one path segment it is.
+        Some(version) => format!(
+            "{OPEN_VSX_API}/{}/{}/{}",
+            args.namespace,
+            args.name,
+            path_segment(version).ok_or_else(|| format!("\"{version}\" is not a version."))?
+        ),
         None => format!("{OPEN_VSX_API}/{}/{}", args.namespace, args.name),
     };
     let metadata: serde_json::Value = metadata_client
@@ -307,20 +314,37 @@ pub async fn install_icon_theme(
         .ok_or_else(|| format!("Open VSX has no downloadable .vsix for \"{id}\"."))?
         .to_string();
 
-    let bytes = http_client(DOWNLOAD_TIMEOUT)?
+    let too_big = |size: usize| {
+        format!(
+            "\"{id}\" is {} MB, past the {} MB Atlas accepts for an icon theme.",
+            size / (1024 * 1024),
+            MAX_VSIX_BYTES / (1024 * 1024),
+        )
+    };
+    let mut response = http_client(DOWNLOAD_TIMEOUT)?
         .get(&download)
         .send()
         .await
-        .map_err(|error| network_error("The download", &error))?
-        .bytes()
-        .await
         .map_err(|error| network_error("The download", &error))?;
-    if bytes.len() > MAX_VSIX_BYTES {
-        return Err(format!(
-            "\"{id}\" is {} MB, past the {} MB Atlas accepts for an icon theme.",
-            bytes.len() / (1024 * 1024),
-            MAX_VSIX_BYTES / (1024 * 1024),
-        ));
+    if !response.status().is_success() {
+        return Err(format!("Open VSX answered {} to the download.", response.status()));
+    }
+    // Refuse on the declared length before reading a byte, then hold the body
+    // to the same cap as it streams — a server that lies about its length, or
+    // sends none, must not get to fill memory first and be measured after.
+    if let Some(length) = response.content_length() {
+        if length > MAX_VSIX_BYTES as u64 {
+            return Err(too_big(usize::try_from(length).unwrap_or(usize::MAX)));
+        }
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) =
+        response.chunk().await.map_err(|error| network_error("The download", &error))?
+    {
+        if bytes.len() + chunk.len() > MAX_VSIX_BYTES {
+            return Err(too_big(bytes.len() + chunk.len()));
+        }
+        bytes.extend_from_slice(&chunk);
     }
 
     // Unzipping and writing a thousand small files is the blocking half.
@@ -342,6 +366,27 @@ pub async fn remove_icon_theme(app: AppHandle, id: String) -> Result<(), String>
     .map_err(|error| format!("icon theme removal task failed: {error}"))??;
     notify(&app);
     Ok(())
+}
+
+/// Percent-encode one URL path segment: everything outside RFC 3986's
+/// unreserved set, space included (as `%20`, not the query string's `+`).
+/// `None` for an empty value or a dot-segment: the URL parser resolves `..`
+/// (and `%2e%2e`, per the WHATWG spec) however it is spelled, so there is no
+/// encoding of one that stays a single segment.
+fn path_segment(value: &str) -> Option<String> {
+    if value.is_empty() || value == "." || value == ".." {
+        return None;
+    }
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    Some(out)
 }
 
 /// Percent-encode a query string. `github.rs` keeps its own copy of this for
@@ -369,5 +414,17 @@ mod tests {
         assert_eq!(urlencoding("material icon"), "material+icon");
         assert_eq!(urlencoding("a/b?c=d"), "a%2Fb%3Fc%3Dd");
         assert_eq!(urlencoding("héllo"), "h%C3%A9llo");
+    }
+
+    /// A `version` of `../../evil/x` must stay one segment of the Open VSX
+    /// path rather than walking to another endpoint.
+    #[test]
+    fn a_version_is_encoded_as_a_single_path_segment() {
+        assert_eq!(path_segment("5.38.1").as_deref(), Some("5.38.1"));
+        assert_eq!(path_segment("../../x").as_deref(), Some("..%2F..%2Fx"));
+        assert_eq!(path_segment("1.0 beta?a=b#c").as_deref(), Some("1.0%20beta%3Fa%3Db%23c"));
+        assert_eq!(path_segment(".."), None);
+        assert_eq!(path_segment("."), None);
+        assert_eq!(path_segment(""), None);
     }
 }

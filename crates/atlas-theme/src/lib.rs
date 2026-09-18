@@ -7,8 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Duration;
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -92,7 +94,8 @@ pub const BASE_TOKENS: &[&str] = &[
 ];
 
 /// Base tokens whose value is free text (a length, a font stack, a composed
-/// shadow) rather than a colour, so the colour validator skips them.
+/// shadow) rather than a colour, so the colour validator skips them — and
+/// [`is_safe_css_value`] checks them instead.
 pub const NON_COLOR_BASE_TOKENS: &[&str] = &[
     "radius",
     "font-sans",
@@ -432,8 +435,20 @@ pub fn load_user_themes_from(dir: &Path) -> Result<(Vec<Theme>, Vec<ThemeWarning
     if !dir.exists() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let mut paths = fs::read_dir(dir)
-        .map_err(|source| ThemeError::Read { path: dir.to_path_buf(), source })?
+    // An unlistable directory (permissions, a file where the directory should
+    // be) costs the user themes, not the built-ins: it is reported the same way
+    // one bad file is, and `get_theme("atlas")` keeps answering.
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(source) => {
+            let error = ThemeError::Read { path: dir.to_path_buf(), source };
+            return Ok((
+                Vec::new(),
+                vec![ThemeWarning { key: dir.display().to_string(), message: error.to_string() }],
+            ));
+        }
+    };
+    let mut paths = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml"))
@@ -491,21 +506,59 @@ pub fn get_theme(id: &str) -> Result<Theme, ThemeError> {
         .ok_or_else(|| ThemeError::NotFound(id.to_string()))
 }
 
-pub fn watch_user_themes<F>(mut on_change: F) -> Result<RecommendedWatcher, ThemeError>
+/// How long the theme directory must be quiet before one change is reported —
+/// the same window the `config.toml` watcher uses. An editor's save is a burst
+/// (write a temp file, rename it over, touch metadata) and should repaint once.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(200);
+
+pub fn watch_user_themes<F>(on_change: F) -> Result<RecommendedWatcher, ThemeError>
 where
     F: FnMut() + Send + 'static,
 {
     let dir = user_theme_dir().ok_or_else(|| validation("themes", "could not resolve config directory"))?;
     fs::create_dir_all(&dir).map_err(|source| ThemeError::Read { path: dir.clone(), source })?;
+    let (tx, rx) = mpsc::channel::<()>();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-        if let Ok(event) = event {
-            if event.paths.iter().any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml")) {
-                on_change();
-            }
+        if event.is_ok_and(|event| is_theme_change(&event)) {
+            let _ = tx.send(());
         }
     })?;
     watcher.watch(&dir, RecursiveMode::NonRecursive)?;
+    // The sender lives in the watcher's callback, so dropping the watcher ends
+    // this thread too.
+    std::thread::Builder::new()
+        .name("atlas-theme-watch".to_string())
+        .spawn(move || debounce(&rx, WATCH_DEBOUNCE, on_change))
+        .map_err(|source| ThemeError::Read { path: dir.clone(), source })?;
     Ok(watcher)
+}
+
+/// Whether a filesystem event can have changed a theme.
+///
+/// Reads are not changes. On Linux inotify reports every `open` and `close`,
+/// so without this the frontend's own reload — which opens each theme file —
+/// fired the watcher again, which reloaded again, forever.
+fn is_theme_change(event: &notify::Event) -> bool {
+    !matches!(event.kind, EventKind::Access(_))
+        && event.paths.iter().any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml"))
+}
+
+/// Call `on_change` once per burst: after a signal, wait until `window` passes
+/// with no further signal. Returns when every sender is gone.
+fn debounce(rx: &mpsc::Receiver<()>, window: Duration, mut on_change: impl FnMut()) {
+    while rx.recv().is_ok() {
+        loop {
+            match rx.recv_timeout(window) {
+                Ok(()) => continue,
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    on_change();
+                    return;
+                }
+            }
+        }
+        on_change();
+    }
 }
 
 /// The schema authors get through the `#:schema` comment at the top of a theme.
@@ -684,7 +737,14 @@ fn validate_variant(
         return Err(validation(origin, format!("unknown palette colour '{key}' in {appearance}")));
     }
     for (key, value) in base {
-        if !NON_COLOR_BASE_TOKENS.contains(&key.as_str()) && !is_css_color(value) {
+        if NON_COLOR_BASE_TOKENS.contains(&key.as_str()) {
+            if !is_safe_css_value(value) {
+                return Err(validation(
+                    origin,
+                    format!("{appearance}.base.{key} contains characters a CSS value cannot hold (such as ; {{ }} < \\)"),
+                ));
+            }
+        } else if !is_css_color(value) {
             return Err(validation(origin, format!("{appearance}.base.{key} is not a CSS colour")));
         }
     }
@@ -713,6 +773,39 @@ fn collect_warnings(theme: &mut Theme) {
             }
         }
     }
+}
+
+/// `true` when `value` is acceptable for base token `key`: a CSS colour for a
+/// colour token, and CSS-safe free text for the rest.
+pub fn is_valid_base_value(key: &str, value: &str) -> bool {
+    if NON_COLOR_BASE_TOKENS.contains(&key) {
+        is_safe_css_value(value)
+    } else {
+        is_css_color(value)
+    }
+}
+
+/// `true` when `value` can be written as a custom property's value inside the
+/// `:root { … }` block the frontend builds, and stay one value.
+///
+/// A font stack or a shadow is free text, so this is a denylist: nothing that
+/// ends the declaration or the block (`;` `{` `}`), opens markup (`<` `>`),
+/// escapes (`\`), opens a comment, reaches the network (`url(`, `@import`),
+/// breaks the line, or leaves a string open for the rest of the block to fall
+/// into. Every value the built-ins ship — `"Segoe UI", sans-serif`,
+/// `0 1px 3px 0 hsl(0 0% 0% / 0.1)` — passes.
+pub fn is_safe_css_value(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.len() <= 512
+        && !value.chars().any(|c| matches!(c, ';' | '{' | '}' | '<' | '>' | '\\') || c.is_control())
+        && !value.contains("/*")
+        && !value.contains("*/")
+        && !lower.contains("url(")
+        && !lower.contains("image-set(")
+        && !lower.contains("@import")
+        && !lower.contains("expression(")
+        && value.matches('"').count().is_multiple_of(2)
+        && value.matches('\'').count().is_multiple_of(2)
 }
 
 pub fn is_css_color(value: &str) -> bool {
@@ -930,6 +1023,72 @@ mod tests {
     fn no_home_and_no_xdg_resolves_nothing() {
         assert_eq!(config_root_from(None, None), None);
         assert_eq!(config_root_from(Some(&PathBuf::from("rel")), None), None);
+    }
+
+    /// Free-text base tokens are written into a `:root { … }` style block, so
+    /// a value that closes the block would be CSS injection from a theme file.
+    #[test]
+    fn free_text_base_tokens_cannot_break_out_of_the_style_block() {
+        for bad in [
+            "1rem; } body { display: none",
+            "Inter</style><script>",
+            "0 0 0 red\\3b",
+            "Inter /* comment",
+            "url(https://example.com/x)",
+            "\"Inter",
+            "Inter\nsans",
+            "@import 'x'",
+        ] {
+            let source = minimal_theme("").replacen("\"font-sans\" = \"1rem\"", &format!("\"font-sans\" = {bad:?}"), 1);
+            assert_ne!(source, minimal_theme(""), "fixture replaced");
+            let error = parse_theme(&source, "test").unwrap_err().to_string();
+            assert!(error.contains("dark.base.font-sans"), "{bad:?}: {error}");
+        }
+        for good in ["\"Segoe UI\", ui-sans-serif, system-ui", "0 1px 3px 0 hsl(0 0% 0% / 0.1)", "0.625rem", "-0.01em"] {
+            assert!(is_safe_css_value(good), "{good:?}");
+            assert!(is_valid_base_value("font-sans", good), "{good:?}");
+        }
+        assert!(!is_valid_base_value("background", "1rem"));
+        assert!(is_valid_base_value("background", "#fff"));
+    }
+
+    #[test]
+    fn an_unlistable_user_theme_dir_is_a_warning_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file where the directory should be: `exists()` holds, `read_dir` fails.
+        let not_a_dir = dir.path().join("themes");
+        fs::write(&not_a_dir, "").unwrap();
+        let (themes, warnings) = load_user_themes_from(&not_a_dir).unwrap();
+        assert!(themes.is_empty());
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+    }
+
+    #[test]
+    fn reads_are_not_theme_changes() {
+        use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind};
+        let event = |kind| notify::Event::new(kind).add_path(PathBuf::from("/t/x.toml"));
+        assert!(!is_theme_change(&event(EventKind::Access(AccessKind::Open(AccessMode::Read)))));
+        assert!(!is_theme_change(&event(EventKind::Access(AccessKind::Close(AccessMode::Read)))));
+        assert!(is_theme_change(&event(EventKind::Modify(ModifyKind::Any))));
+        assert!(is_theme_change(&event(EventKind::Create(CreateKind::File))));
+        let other = notify::Event::new(EventKind::Modify(ModifyKind::Any)).add_path(PathBuf::from("/t/x.txt"));
+        assert!(!is_theme_change(&other));
+    }
+
+    #[test]
+    fn a_burst_of_changes_is_reported_once() {
+        let (tx, rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || debounce(&rx, Duration::from_millis(50), move || done_tx.send(()).unwrap()));
+        for _ in 0..20 {
+            tx.send(()).unwrap();
+        }
+        done_rx.recv_timeout(Duration::from_secs(5)).expect("one change is reported");
+        assert!(done_rx.recv_timeout(Duration::from_millis(200)).is_err(), "and only one");
+        tx.send(()).unwrap();
+        done_rx.recv_timeout(Duration::from_secs(5)).expect("a later change is reported again");
+        drop(tx);
+        worker.join().unwrap();
     }
 
     #[test]
