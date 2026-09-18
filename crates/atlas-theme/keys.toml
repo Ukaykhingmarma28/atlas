@@ -368,7 +368,7 @@ group = "Terminal"
 description = "ANSI cyan."
 palette = "cyan"
 dark = "#56b6c2"
-light = "#d7827e"
+light = "#56949f"
 
 [[key]]
 name = "terminal.ansi.white"
@@ -444,7 +444,7 @@ palette = "cyan"
 op = "toward_foreground"
 amount = 0.15
 dark = "#78c7d0"
-light = "#dd9794"
+light = "#73a5ae"
 
 [[key]]
 name = "terminal.ansi.bright_white"
@@ -505,7 +505,7 @@ group = "Syntax"
 description = "Functions and headings."
 palette = "blue"
 base = "primary"
-dark = "#ffff00"
+dark = "#61afef"
 light = "#286983"
 
 [[key]]
@@ -529,7 +529,7 @@ name = "syntax.tag"
 group = "Syntax"
 description = "Markup tags."
 palette = "red"
-dark = "#7fd1e8"
+dark = "#f44747"
 light = "#b4637a"
 
 [[key]]
@@ -538,7 +538,7 @@ group = "Syntax"
 description = "Markup attributes."
 palette = "yellow"
 dark = "#d9b47a"
-light = "#907aa9"
+light = "#ea9d34"
 
 [[key]]
 name = "syntax.constant"

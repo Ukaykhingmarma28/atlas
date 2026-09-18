@@ -155,7 +155,7 @@ The PTY surface and the 16 ANSI colours.
 | `terminal.ansi.yellow` | P:yellow → D | — | `#e5c07b` / `#ea9d34` | ANSI yellow. |
 | `terminal.ansi.blue` | P:blue → D | — | `#61afef` / `#56949f` | ANSI blue. |
 | `terminal.ansi.magenta` | P:purple → D | — | `#c678dd` / `#907aa9` | ANSI magenta. |
-| `terminal.ansi.cyan` | P:cyan → D | — | `#56b6c2` / `#d7827e` | ANSI cyan. |
+| `terminal.ansi.cyan` | P:cyan → D | — | `#56b6c2` / `#56949f` | ANSI cyan. |
 | `terminal.ansi.white` | B:foreground → D | — | `#d4d4d4` / `#575279` | ANSI white. |
 | `terminal.ansi.bright_black` | B:muted-foreground → D | — | `#666666` / `#9893a5` | ANSI bright black. |
 | `terminal.ansi.bright_red` | P:red → D | mix 0.15 → B:foreground | `#ff6b6b` / `#c97991` | ANSI bright red. |
@@ -163,7 +163,7 @@ The PTY surface and the 16 ANSI colours.
 | `terminal.ansi.bright_yellow` | P:yellow → D | mix 0.15 → B:foreground | `#f2d28c` / `#edae52` | ANSI bright yellow. |
 | `terminal.ansi.bright_blue` | P:blue → D | mix 0.15 → B:foreground | `#82c0f3` / `#73a5ae` | ANSI bright blue. |
 | `terminal.ansi.bright_magenta` | P:purple → D | mix 0.15 → B:foreground | `#d493e5` / `#a290b5` | ANSI bright magenta. |
-| `terminal.ansi.bright_cyan` | P:cyan → D | mix 0.15 → B:foreground | `#78c7d0` / `#dd9794` | ANSI bright cyan. |
+| `terminal.ansi.bright_cyan` | P:cyan → D | mix 0.15 → B:foreground | `#78c7d0` / `#73a5ae` | ANSI bright cyan. |
 | `terminal.ansi.bright_white` | B:foreground → D | lighten 0.18 | `#ffffff` / `#464261` | ANSI bright white. |
 
 ### Syntax
@@ -177,11 +177,11 @@ CodeMirror and Markdown highlighting.
 | `syntax.string` | P:green → D | — | `#9ecf8a` / `#ea9d34` | Strings. |
 | `syntax.number` | P:orange → D | — | `#e0b070` / `#ea9d34` | Numbers. |
 | `syntax.type` | P:cyan → D | — | `#7fd1e8` / `#56949f` | Types, classes, and namespaces. |
-| `syntax.function` | P:blue → B:primary → D | — | `#ffff00` / `#286983` | Functions and headings. |
+| `syntax.function` | P:blue → B:primary → D | — | `#61afef` / `#286983` | Functions and headings. |
 | `syntax.variable` | B:foreground → D | — | `#eaeaea` / `#575279` | Variables. |
 | `syntax.operator` | P:cyan → D | — | `#9a9a9a` / `#797593` | Operators. |
-| `syntax.tag` | P:red → D | — | `#7fd1e8` / `#b4637a` | Markup tags. |
-| `syntax.attribute` | P:yellow → D | — | `#d9b47a` / `#907aa9` | Markup attributes. |
+| `syntax.tag` | P:red → D | — | `#f44747` / `#b4637a` | Markup tags. |
+| `syntax.attribute` | P:yellow → D | — | `#d9b47a` / `#ea9d34` | Markup attributes. |
 | `syntax.constant` | P:orange → D | — | `#e0b070` / `#d7827e` | Constants and atoms. |
 | `syntax.regexp` | P:red → D | — | `#e59a72` / `#b4637a` | Regular expressions. |
 | `syntax.escape` | P:pink → D | — | `#e59a72` / `#d7827e` | Escape sequences. |

@@ -255,7 +255,7 @@ export const THEME_KEY_REGISTRY = [
   define("terminal.ansi.cyan", {
     palette: "cyan",
     dark: "#56b6c2",
-    light: "#d7827e",
+    light: "#56949f",
     description: "ANSI cyan.",
   }),
   define("terminal.ansi.white", {
@@ -309,7 +309,7 @@ export const THEME_KEY_REGISTRY = [
     palette: "cyan",
     transform: towardForeground(0.15),
     dark: "#78c7d0",
-    light: "#dd9794",
+    light: "#73a5ae",
     description: "ANSI bright cyan.",
   }),
   define("terminal.ansi.bright_white", {
@@ -353,7 +353,7 @@ export const THEME_KEY_REGISTRY = [
   define("syntax.function", {
     palette: "blue",
     base: "primary",
-    dark: "#ffff00",
+    dark: "#61afef",
     light: "#286983",
     description: "Functions and headings.",
   }),
@@ -371,14 +371,14 @@ export const THEME_KEY_REGISTRY = [
   }),
   define("syntax.tag", {
     palette: "red",
-    dark: "#7fd1e8",
+    dark: "#f44747",
     light: "#b4637a",
     description: "Markup tags.",
   }),
   define("syntax.attribute", {
     palette: "yellow",
     dark: "#d9b47a",
-    light: "#907aa9",
+    light: "#ea9d34",
     description: "Markup attributes.",
   }),
   define("syntax.constant", {
