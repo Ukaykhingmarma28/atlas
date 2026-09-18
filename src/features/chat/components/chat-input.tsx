@@ -172,8 +172,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         {
           "&": {
             backgroundColor: "transparent",
-            color: "var(--text-primary)",
-            fontSize: "13px",
+            color: "var(--foreground)",
+            fontSize: "var(--text-base)",
             lineHeight: "1.55",
           },
           ".cm-scroller": {
@@ -214,11 +214,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           },
           // Style CM's drawn cursor to match the theme.
           ".cm-cursor, .cm-dropCursor": {
-            borderLeftColor: "var(--text-primary)",
+            borderLeftColor: "var(--foreground)",
             borderLeftWidth: "1px",
           },
           ".cm-placeholder": {
-            color: "var(--text-tertiary)",
+            color: "var(--muted-foreground)",
           },
           // Hide the active-line highlight; this is a chat composer, not
           // a source editor.
@@ -226,7 +226,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             backgroundColor: "transparent",
           },
           ".cm-selectionBackground, ::selection": {
-            background: "var(--selection-bg) !important",
+            background: "var(--atlas-selection-background) !important",
           },
         },
         { dark: true },

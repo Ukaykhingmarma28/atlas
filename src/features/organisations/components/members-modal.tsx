@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Dialog } from "@base-ui/react/dialog";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Check,
   Copy,
@@ -170,20 +170,16 @@ export function MembersModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 bg-black/60"
-          style={{ zIndex: "var(--z-overlay)" as unknown as number }}
-        />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim" />
+        <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
-          style={{ zIndex: "var(--z-modal)" as unknown as number }}
+          className="fixed top-8.5 left-4 right-4 bottom-6 z-modal rounded-xl border border-[var(--border)] bg-[var(--sidebar)] overflow-hidden flex flex-col shadow-lg focus:outline-none"
         >
           <Dialog.Title className="sr-only">Members of {org.name}</Dialog.Title>
 
           {/* Header — mirrors the git-graph fullscreen bar. */}
           <div className="flex items-center justify-between px-3 h-[32px] shrink-0 border-b border-border-subtle">
-            <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide">
+            <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wide">
               {org.name} · {members.length} {members.length === 1 ? "member" : "members"}
             </span>
             <HintGroup>
@@ -193,9 +189,9 @@ export function MembersModal({
                     disabled={!signedIn}
                     onClick={() => orgId && void load(orgId, { force: true })}
                     className={cn(
-                      "p-1 rounded text-text-tertiary transition-colors",
+                      "p-1 rounded text-muted-foreground transition-colors",
                       signedIn
-                        ? "hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                        ? "hover:bg-element-hover hover:text-foreground cursor-pointer"
                         : "opacity-40 cursor-not-allowed",
                       loading && "animate-spin",
                     )}
@@ -204,7 +200,7 @@ export function MembersModal({
                   </button>
                 </HintItem>
                 <HintItem label="Close">
-                  <Dialog.Close className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer">
+                  <Dialog.Close className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                     <X size={11} />
                   </Dialog.Close>
                 </HintItem>
@@ -213,7 +209,7 @@ export function MembersModal({
           </div>
 
           {/* Toolbar — tabs with counts + search. */}
-          <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border-default">
+          <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border">
             {(
               [
                 ["members", "Members", members.length],
@@ -224,32 +220,32 @@ export function MembersModal({
                 key={id}
                 onClick={() => setTab(id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 h-[40px] text-[11px] font-medium transition-colors border-b-2 -mb-px cursor-pointer",
+                  "flex items-center gap-1.5 px-2.5 h-[40px] text-xs font-medium transition-colors border-b-2 -mb-px cursor-pointer",
                   tab === id
-                    ? "text-text-primary border-b-[var(--accent-primary)]"
-                    : "text-text-secondary hover:text-text-primary border-b-transparent",
+                    ? "text-foreground border-b-[var(--primary)]"
+                    : "text-secondary-foreground hover:text-foreground border-b-transparent",
                 )}
               >
                 {label}
-                <span className="text-[9px] text-text-tertiary tabular-nums">{count}</span>
+                <span className="text-3xs text-muted-foreground tabular-nums">{count}</span>
               </button>
             ))}
             <div className="flex-1" />
-            <div className="flex items-center gap-1.5 h-6 rounded-md border border-border-default bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-focus)]">
-              <Search size={11} className="text-text-tertiary shrink-0" />
+            <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-card px-2 min-w-[200px] focus-within:border-[var(--atlas-border-strong)]">
+              <Search size={11} className="text-muted-foreground shrink-0" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search people…"
-                className="flex-1 min-w-0 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+                className="flex-1 min-w-0 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
           </div>
 
           {/* Invite bar — admin only; the API refuses anyone else anyway. */}
           {isAdmin && (
-            <div className="flex items-center gap-2 px-3 h-[44px] shrink-0 border-b border-border-default">
-              <UserPlus size={12} className="text-text-tertiary shrink-0" />
+            <div className="flex items-center gap-2 px-3 h-[44px] shrink-0 border-b border-border">
+              <UserPlus size={12} className="text-muted-foreground shrink-0" />
               <EmailChipsInput
                 emails={inviteEmails}
                 draft={emailDraft}
@@ -261,7 +257,7 @@ export function MembersModal({
                 role={inviteRole}
                 onSelect={setInviteRole}
                 trigger={
-                  <button className="flex items-center gap-1 h-7 rounded-md border border-border-default bg-bg-elevated px-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors cursor-pointer shrink-0">
+                  <button className="flex items-center gap-1 h-7 rounded-md border border-border bg-card px-2 text-xs text-secondary-foreground hover:text-foreground transition-colors cursor-pointer shrink-0">
                     {ROLE_LABELS[inviteRole]}
                   </button>
                 }
@@ -274,7 +270,7 @@ export function MembersModal({
                     : undefined
                 }
                 onClick={() => void submitInvite()}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-text-primary cursor-pointer transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium leading-none text-foreground cursor-pointer transition-colors hover:bg-[var(--atlas-element-hover)] disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
               >
                 {inviting ? <Loader2 size={11} className="animate-spin" /> : <UserPlus size={11} />}
                 Invite
@@ -287,7 +283,7 @@ export function MembersModal({
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-auto hide-scrollbar">
               <div style={{ minWidth: TABLE_MIN_W }}>
-                <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+                <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground">
                   <span className={COL.person}>{tab === "members" ? "Person" : "Email"}</span>
                   <span className={COL.role}>Role</span>
                   <span className={COL.joined}>{tab === "members" ? "Joined" : "Status"}</span>
@@ -295,20 +291,20 @@ export function MembersModal({
                 </div>
 
                 {!signedIn ? (
-                  <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary px-6 text-center">
+                  <div className="grid place-items-center h-[160px] text-xs text-muted-foreground px-6 text-center">
                     Sign in to manage this organisation's members.
                   </div>
                 ) : firstLoad ? (
-                  <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary">
+                  <div className="grid place-items-center h-[160px] text-xs text-muted-foreground">
                     <Loader2 size={14} className="animate-spin" />
                   </div>
                 ) : roster?.error && members.length === 0 ? (
-                  <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary px-6 text-center">
+                  <div className="grid place-items-center h-[160px] text-xs text-muted-foreground px-6 text-center">
                     {roster.error}
                   </div>
                 ) : tab === "members" ? (
                   filteredMembers.length === 0 ? (
-                    <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary">
+                    <div className="grid place-items-center h-[160px] text-xs text-muted-foreground">
                       {query ? "No people match." : "No members yet."}
                     </div>
                   ) : (
@@ -324,7 +320,7 @@ export function MembersModal({
                     ))
                   )
                 ) : filteredInvites.length === 0 ? (
-                  <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary">
+                  <div className="grid place-items-center h-[160px] text-xs text-muted-foreground">
                     {query ? "No invites match." : "No pending invitations."}
                   </div>
                 ) : (
@@ -340,7 +336,7 @@ export function MembersModal({
               </div>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -367,7 +363,7 @@ function MemberRow({
 
   return (
     <div className="border-b border-border-subtle">
-      <div className="w-full flex items-center h-[40px] px-3 text-left transition-colors hover:bg-bg-hover">
+      <div className="w-full flex items-center h-[40px] px-3 text-left transition-colors hover:bg-element-hover">
         <span className={cn(COL.person, "flex items-center gap-2 min-w-0")}>
           {/* A LOCAL cache path, resolved in Rust — the remote photo URL is
               never handed to the frontend. `null` falls back to initials. */}
@@ -381,73 +377,73 @@ function MemberRow({
             size={20}
           />
           <span className="min-w-0">
-            <span className="block truncate text-[12px] text-text-primary">
+            <span className="block truncate text-sm text-foreground">
               {member.name || member.email}
-              {isSelf && <span className="ml-1.5 text-[10px] text-text-tertiary">You</span>}
+              {isSelf && <span className="ml-1.5 text-2xs text-muted-foreground">You</span>}
             </span>
             {member.name && (
-              <span className="block truncate text-[10px] text-text-tertiary">{member.email}</span>
+              <span className="block truncate text-2xs text-muted-foreground">{member.email}</span>
             )}
           </span>
         </span>
-        <span className={cn(COL.role, "text-[11px] text-text-secondary")}>
+        <span className={cn(COL.role, "text-xs text-secondary-foreground")}>
           {member.role ? ROLE_LABELS[member.role] : "—"}
         </span>
-        <span className={cn(COL.joined, "text-[10px] text-text-tertiary")}>
+        <span className={cn(COL.joined, "text-2xs text-muted-foreground")}>
           {timeAgo(member.createdAt, { suffix: true }) || "—"}
         </span>
         <span className={cn(COL.actions, "flex items-center justify-end")}>
           {isAdmin && (
             <DropdownMenu.Root>
               <Hint label="Manage">
-                <DropdownMenu.Trigger asChild>
-                  <button className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer">
-                    <MoreHorizontal size={12} />
-                  </button>
-                </DropdownMenu.Trigger>
+                <DropdownMenu.Trigger
+                  render={
+                    <button className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-foreground outline-none transition-colors cursor-pointer">
+                      <MoreHorizontal size={12} />
+                    </button>
+                  }
+                />
               </Hint>
               <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={4}
-                  className="z-[var(--z-max)] min-w-[168px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-                >
-                  <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-                    Role
-                  </div>
-                  {ROLES.map((r) => (
+                <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
+                  <DropdownMenu.Popup className="min-w-[168px] rounded-md border border-[var(--border)] bg-popover py-0.5 shadow-md text-xs text-[var(--secondary-foreground)]">
+                    <div className="px-2.5 py-1 text-3xs uppercase tracking-wider text-muted-foreground">
+                      Role
+                    </div>
+                    {ROLES.map((r) => (
+                      <DropdownMenu.Item
+                        key={r}
+                        onClick={() => onRole(r)}
+                        className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
+                      >
+                        {ROLE_LABELS[r]}
+                        {member.role === r && <Check size={11} />}
+                      </DropdownMenu.Item>
+                    ))}
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
+                    {/* An admin can't leave: doing so could strip the org of its
+                        last admin, leaving nobody able to invite, change roles or
+                        delete it. Hand the role over first. */}
                     <DropdownMenu.Item
-                      key={r}
-                      onSelect={() => onRole(r)}
-                      className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                      disabled={!canLeave}
+                      onClick={canLeave ? onRemove : undefined}
+                      title={
+                        canLeave
+                          ? undefined
+                          : "Admins can't leave — give someone else the Admin role first."
+                      }
+                      className={cn(
+                        "px-2.5 h-6 flex items-center gap-1.5 outline-none",
+                        canLeave
+                          ? "hover:bg-[var(--atlas-element-hover)] hover:text-error cursor-pointer"
+                          : "opacity-40 cursor-not-allowed",
+                      )}
                     >
-                      {ROLE_LABELS[r]}
-                      {member.role === r && <Check size={11} />}
+                      <Trash2 size={11} />
+                      {isSelf ? "Leave organisation" : "Remove from organisation"}
                     </DropdownMenu.Item>
-                  ))}
-                  <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
-                  {/* An admin can't leave: doing so could strip the org of its
-                      last admin, leaving nobody able to invite, change roles or
-                      delete it. Hand the role over first. */}
-                  <DropdownMenu.Item
-                    disabled={!canLeave}
-                    onSelect={canLeave ? onRemove : undefined}
-                    title={
-                      canLeave
-                        ? undefined
-                        : "Admins can't leave — give someone else the Admin role first."
-                    }
-                    className={cn(
-                      "px-2.5 h-6 flex items-center gap-1.5 outline-none",
-                      canLeave
-                        ? "hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer"
-                        : "opacity-40 cursor-not-allowed",
-                    )}
-                  >
-                    <Trash2 size={11} />
-                    {isSelf ? "Leave organisation" : "Remove from organisation"}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
+                  </DropdownMenu.Popup>
+                </DropdownMenu.Positioner>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           )}
@@ -468,14 +464,14 @@ function InviteRow({
 }) {
   return (
     <div className="border-b border-border-subtle">
-      <div className="w-full flex items-center h-[40px] px-3 text-left transition-colors hover:bg-bg-hover">
-        <span className={cn(COL.person, "min-w-0 truncate text-[12px] text-text-primary")}>
+      <div className="w-full flex items-center h-[40px] px-3 text-left transition-colors hover:bg-element-hover">
+        <span className={cn(COL.person, "min-w-0 truncate text-sm text-foreground")}>
           {invite.email}
         </span>
-        <span className={cn(COL.role, "text-[11px] text-text-secondary")}>
+        <span className={cn(COL.role, "text-xs text-secondary-foreground")}>
           {invite.role ? ROLE_LABELS[invite.role] : "—"}
         </span>
-        <span className={cn(COL.joined, "text-[10px] text-text-tertiary capitalize")}>
+        <span className={cn(COL.joined, "text-2xs text-muted-foreground capitalize")}>
           {invite.status}
         </span>
         <HintGroup>
@@ -484,7 +480,7 @@ function InviteRow({
               <HintItem label="Copy invite link">
                 <button
                   onClick={() => void copy(invite.acceptUrl!, "Invite link copied.")}
-                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                  className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
                 >
                   <Copy size={11} />
                 </button>
@@ -494,7 +490,7 @@ function InviteRow({
               <HintItem label="Cancel invite">
                 <button
                   onClick={onCancel}
-                  className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-[var(--status-error,#f44)] transition-colors cursor-pointer"
+                  className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-error transition-colors cursor-pointer"
                 >
                   <X size={11} />
                 </button>
@@ -565,7 +561,7 @@ function EmailChipsInput({
     <div
       // FIXED height, never `min-h` + wrap: the bar must not grow the moment a
       // chip appears. Overflowing chips scroll sideways instead.
-      className="flex-1 min-w-0 flex items-center gap-1 h-7 rounded-md border border-border-default bg-bg-elevated px-1.5 overflow-x-auto hide-scrollbar focus-within:border-[var(--border-focus)] cursor-text"
+      className="flex-1 min-w-0 flex items-center gap-1 h-7 rounded-md border border-border bg-card px-1.5 overflow-x-auto hide-scrollbar focus-within:border-[var(--atlas-border-strong)] cursor-text"
       onClick={(e) => {
         // Clicking the padding should focus the field, like a real input.
         const input = e.currentTarget.querySelector("input");
@@ -579,10 +575,8 @@ function EmailChipsInput({
             key={email}
             className={cn(
               // h-5 + a 14px avatar keeps the chip inside the 28px field.
-              "inline-flex shrink-0 items-center gap-1 rounded-full border pl-0.5 pr-1 h-5 text-[11px] max-w-[220px]",
-              valid
-                ? "border-border-default bg-bg-base text-text-primary"
-                : "border-error text-error",
+              "inline-flex shrink-0 items-center gap-1 rounded-full border pl-0.5 pr-1 h-5 text-xs max-w-[220px]",
+              valid ? "border-border bg-background text-foreground" : "border-error text-error",
             )}
           >
             <AccountAvatar user={{ id: email, name: "", email, avatarPath: null }} size={14} />
@@ -597,7 +591,7 @@ function EmailChipsInput({
                   e.stopPropagation();
                   onEmailsChange(emails.filter((x) => x !== email));
                 }}
-                className="shrink-0 rounded-full p-0.5 text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 aria-label={`Remove ${email}`}
               >
                 <X size={9} />
@@ -637,7 +631,7 @@ function EmailChipsInput({
         }}
         onBlur={() => draft.trim() && commit(draft)}
         placeholder={emails.length === 0 ? "teammate@company.com, …" : ""}
-        className="flex-1 shrink-0 min-w-[120px] h-full bg-transparent text-[11px] text-text-primary placeholder:text-text-tertiary outline-none"
+        className="flex-1 shrink-0 min-w-[120px] h-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
       />
     </div>
   );
@@ -651,28 +645,26 @@ function RolePicker({
 }: {
   role: Role;
   onSelect: (role: Role) => void;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
+      <DropdownMenu.Trigger render={trigger} />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={4}
-          className="z-[var(--z-max)] min-w-[150px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
-        >
-          {ROLES.map((r) => (
-            <DropdownMenu.Item
-              key={r}
-              onSelect={() => onSelect(r)}
-              className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
-            >
-              {ROLE_LABELS[r]}
-              {role === r && <Check size={11} />}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
+          <DropdownMenu.Popup className="min-w-[150px] rounded-md border border-[var(--border)] bg-popover py-0.5 shadow-md text-xs text-[var(--secondary-foreground)]">
+            {ROLES.map((r) => (
+              <DropdownMenu.Item
+                key={r}
+                onClick={() => onSelect(r)}
+                className="px-2.5 h-6 flex items-center justify-between outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
+              >
+                {ROLE_LABELS[r]}
+                {role === r && <Check size={11} />}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

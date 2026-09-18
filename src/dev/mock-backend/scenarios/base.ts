@@ -4,46 +4,67 @@
 // Each answer is typed with the same type the frontend's API wrapper uses, so
 // `bun run typecheck` flags a fake that no longer matches what Rust returns.
 
-import type { AcpRegistryListing } from "@/features/agents/lib/agent-registry-api";
-import type { AuthSnapshot } from "@/features/auth/lib/auth-api";
 import type { KeybindingsLoadResult } from "@/features/keybindings/lib/keybindings-api";
 import { DEFAULT_KEYBINDINGS_FILE } from "@/features/keybindings/lib/types";
-import type { ModelStatus } from "@/features/settings/lib/models-api";
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
-import type { AgentCatalog } from "@/types/agent-catalog";
-import type { CaptureHealth } from "@/features/capture/types";
-import type { MentionData } from "@/features/chat/lib/mentions";
-import type { ThreadProject } from "@/features/chat/lib/history-api";
-import type { RecentFile } from "@/features/chat/stores/recent-files-store";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
-import type { FileIndexStatus } from "@/features/file-picker/lib/file-picker-api";
-import type { GitSummary } from "@/features/workspaces/stores/workspace-git-store";
-import type { ClonedRepo } from "@/features/github/types";
-import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
-import type { ProjectGraph } from "@/features/knowledge/stores/knowledge-graph-store";
-import type { Backlink, LinkCounts } from "@/features/knowledge/stores/knowledge-links-store";
-import type { MetaFile, RustPageMeta } from "@/features/knowledge/stores/knowledge-meta-store";
-import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
-import type { UsageDashboard } from "@/features/usage/types";
-import { fixture as usageFixture } from "@/features/usage/lib/__fixtures__/dashboard";
+import type { Theme, ThemeCatalogSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
+import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
-import { appState, listDir, MOCK_WORKSPACE } from "../workspace";
+import { artifactsHandlers } from "../fixtures/artifacts";
+import { captureHandlers } from "../fixtures/capture";
+import { commsHandlers } from "../fixtures/comms";
+import { fsHandlers, listDir } from "../fixtures/files";
+import { gitHandlers } from "../fixtures/git";
+import { iconThemeHandlers } from "../fixtures/icon-themes";
+import { integrationsHandlers } from "../fixtures/integrations";
+import { knowledgeHandlers } from "../fixtures/knowledge";
+import { logHandlers } from "../fixtures/log";
+import { memoryHandlers } from "../fixtures/memory";
+import { miscHandlers } from "../fixtures/misc";
+import { settingsHandlers } from "../fixtures/settings";
+import { skillsHandlers } from "../fixtures/skills";
+import { spacesHandlers } from "../fixtures/spaces";
+import { terminalHandlers } from "../fixtures/terminal";
+import { importedUserThemes, themeImportHandlers } from "../fixtures/theme-import";
+import { appState } from "../project";
 
 const nothing = () => null;
 
-// Inline `invoke<…>` result types in the knowledge panel / footer, restated
-// here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
-export interface KbImportResult {
-  notes_imported: number;
-  files_copied: number;
-}
-export interface KbServerExport {
-  binaryPath: string;
-  noteCount: number;
-}
+// Generated from the TOML themes by the atlas-theme crate; `cargo test -p
+// atlas-theme` fails when this snapshot is stale.
+const builtinThemes = builtinThemesJson as Theme[];
 
 export const baseHandlers: MockHandlers = {
+  // ── theme ──────────────────────────────────────────────────────────────
+  // Built-ins plus whatever this session has imported, which is how the real
+  // catalog reads `~/.config/atlas/themes` on top of `include_str!`.
+  list_themes: (): ThemeCatalogSummary => ({
+    themes: [...builtinThemes, ...importedUserThemes].map((theme) => ({
+      id: theme.id,
+      name: theme.name,
+      author: theme.author,
+      license: theme.license,
+      hasDark: Boolean(theme.dark),
+      hasLight: Boolean(theme.light),
+      builtIn: !importedUserThemes.includes(theme),
+      warnings: theme.warnings ?? [],
+    })),
+    warnings: [],
+  }),
+  get_theme: (a): Theme => {
+    const theme = [...importedUserThemes, ...builtinThemes].find(
+      (candidate) => candidate.id === a.id,
+    );
+    if (!theme) throw new Error(`theme '${String(a.id)}' was not found`);
+    return theme;
+  },
+  ...themeImportHandlers,
+
+  // ── icon theme ──────────────────────────────────────────────────────────
+  ...iconThemeHandlers,
+
   // ── boot ────────────────────────────────────────────────────────────────
   bootstrap_app_state: () => appState(),
   cli_take_initial_project_path: nothing,
@@ -58,7 +79,6 @@ export const baseHandlers: MockHandlers = {
     // null keeps posthog-js from ever loading in mock mode.
     key: null,
   }),
-  auth_snapshot: (): AuthSnapshot => ({ status: "signed-out" }),
   update_state: (): UpdaterSnapshot => ({
     phase: "idle",
     version: null,
@@ -70,110 +90,51 @@ export const baseHandlers: MockHandlers = {
     warnings: [],
   }),
 
-  // ── workspace open ──────────────────────────────────────────────────────
+  // ── project open ──────────────────────────────────────────────────────
   save_app_state: nothing,
-  append_project_log: nothing,
   asset_allow_dir: nothing,
   ensure_atlas_gitignore: nothing,
   load_editor_state: () => "{}",
   save_editor_state: nothing,
   load_project_session: () => "{}",
   read_directory: ({ path }): FileEntry[] => listDir(path),
-  fileindex_open_project: () => 0,
-  fileindex_status: (): FileIndexStatus => ({
-    indexed: true,
-    count: 0,
-    root: MOCK_WORKSPACE.path,
-  }),
-  recent_files_open_project: (): RecentFile[] => [],
   codebase_index_status: () => ({ indexed: false, fileCount: 0, summaryCount: 0, builtAtMs: 0 }),
-  // Knowledge: an empty base. Writes are accepted and forgotten; the
-  // `knowledge` scenario overrides all of these with a live in-memory store.
-  list_knowledge: (): KnowledgeEntry[] => [],
-  knowledge_meta_load: (): MetaFile => ({ version: 1, pages: {} }),
-  knowledge_meta_patch: ({ patch }): RustPageMeta => ({ ...patch }),
-  knowledge_meta_delete: nothing,
-  save_knowledge_note: ({ id }) => `${MOCK_WORKSPACE.path}/.atlas/knowledge/${id}.md`,
-  delete_knowledge_note: nothing,
-  create_knowledge_dir: nothing,
-  import_into_knowledge: (): KbImportResult => ({ notes_imported: 0, files_copied: 0 }),
   log_interaction: nothing,
-  knowledge_backlinks: (): Backlink[] => [],
-  knowledge_link_counts: (): LinkCounts => ({ backlinks: 0, forwardlinks: 0 }),
-  knowledge_links_graph: (): ProjectGraph => ({ nodes: [], edges: [] }),
-  knowledge_links_invalidate: nothing,
-  knowledge_graph_layout_load: (): GraphLayout => ({ positions: {} }),
-  knowledge_graph_layout_save: nothing,
-  // Rust hands gradient refs back untouched; there are no image covers here.
-  knowledge_cover_data_url: ({ cover }): string => {
-    if (String(cover).startsWith("gradient:")) return cover;
-    throw new Error("cover not found");
-  },
-  knowledge_cover_upload: ({ entryId }): string => `covers/${entryId.replace(/\//g, "__")}.png`,
-  // The real command always returns a list; the sidebar also guards null.
-  list_cloned_repos: (): ClonedRepo[] => [],
-  read_repo_readme: () => {
-    throw new Error("No README found");
-  },
-  delete_cloned_repo: nothing,
-  threads_projects: (): ThreadProject[] => [],
-  capture_activate: nothing,
-  capture_binding: nothing,
-  // The Usage tab: 60 days of deterministic fixture data across four projects.
-  usage_dashboard: (): UsageDashboard => usageFixture(60),
-  capture_health: (): CaptureHealth => ({
-    state: "off",
-    summary: "",
-    issues: [],
-    flaggedSessions: 0,
-    failedRows: 0,
-    pendingRows: 0,
-  }),
 
-  // ── git (clean repo; git scenarios override) ────────────────────────────
-  git_watch_start: nothing,
-  git_workspace_summary: (): GitSummary => ({
-    isRepo: true,
-    branch: "main",
-    headSubject: "Initial commit",
-    dirty: false,
-    additions: 0,
-    deletions: 0,
-  }),
-  git_snapshot: () => ({
-    isRepo: true,
-    branch: "main",
-    detached: false,
-    upstream: "origin/main",
-    ahead: 0,
-    behind: 0,
-    files: [],
-    branches: [],
-    stashes: [],
-    inProgress: null,
-  }),
-  git_log: () => [],
-  git_diff_all: () => "",
-  git_remotes: () => [{ name: "origin", url: "git@github.com:acme/acme-app.git" }],
-  git_tags: () => [],
+  // ── knowledge ───────────────────────────────────────────────────────────
+  // A populated knowledge base (notes, meta, backlinks, graph) so Knowledge
+  // and the knowledge-graph tab render for every scenario; see
+  // `fixtures/knowledge.ts`. The `knowledge` scenario adds only its own
+  // console actions on top of this. Cloned repos are a separate surface,
+  // answered below by `integrationsHandlers`.
+  ...knowledgeHandlers,
+
+  // ── git ─────────────────────────────────────────────────────────────────
+  // A dirty working tree with a branch list, a stash stack, a commit graph and
+  // real per-file diffs. `git-conflict` overrides the status half of this.
+  ...gitHandlers,
 
   // ── agents ──────────────────────────────────────────────────────────────
-  agents_catalog: (): AgentCatalog => ({
-    entries: [],
-    lastRefreshedAt: null,
-    lastDiscoveredAt: null,
-    lastError: null,
-  }),
-  acp_registry_list: (): AcpRegistryListing => ({
-    entries: [],
-    lastRefreshedAt: null,
-    lastError: null,
-    isFetching: false,
-  }),
-  models_list: (): ModelStatus[] => [],
-
   ...agentHandlers,
   agents_set_effort: nothing,
+
+  // ── everything else, one fixture file per surface ───────────────────────
+  //
+  // Spread last and in one place, so a command answered by two fixtures is
+  // decided here rather than by an import's position. `misc` comes last
+  // because it is the catch-all: anything a domain file claims outranks it.
+  ...fsHandlers,
+  ...settingsHandlers,
+  ...logHandlers,
+  ...artifactsHandlers,
+  ...captureHandlers,
+  ...commsHandlers,
+  ...integrationsHandlers,
+  ...memoryHandlers,
+  ...skillsHandlers,
+  ...spacesHandlers,
+  ...terminalHandlers,
+  ...miscHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
@@ -181,16 +142,10 @@ export const baseHandlers: MockHandlers = {
   recent_files_close_project: nothing,
   mention_cache_clear: nothing,
   mention_cache_set_knowledge: nothing,
-  // The unscoped `@` picker spreads this result, so `null` would throw.
-  mention_search: (): MentionData[] => [],
   knowledge_export_note_md: nothing,
   knowledge_export_note_html: nothing,
   knowledge_export_workspace_md: nothing,
   knowledge_export_workspace_html: nothing,
-  knowledge_export_server: (): KbServerExport => ({
-    binaryPath: "/Users/dev/Downloads/atlas-kb-server",
-    noteCount: 0,
-  }),
   telemetry_set_org: nothing,
 
   // ── Tauri plugins ───────────────────────────────────────────────────────

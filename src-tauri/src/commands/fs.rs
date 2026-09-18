@@ -225,7 +225,7 @@ pub async fn is_text_file(path: String) -> Result<bool, String> {
 /// BOUNDED: the old version passed the renderer's string straight to
 /// `allow_directory`, so `asset_allow_dir("/")` made the entire filesystem
 /// readable over `asset://` for the rest of the session. A grant now has to
-/// be either (a) under a known workspace root — the project-open case, external
+/// be either (a) under a known project root — the project-open case, external
 /// volumes included — or (b) a *visible* directory under `$HOME` (the
 /// "@-mention a screenshot on the Desktop" case). Hidden directories
 /// (`~/.ssh`, `~/.aws`), `~/Library`, and system roots are refused.
@@ -243,7 +243,7 @@ pub fn asset_allow_dir(
     let canonical = dunce::canonicalize(requested)
         .map_err(|e| format!("cannot grant a directory that does not resolve: {e}"))?;
 
-    let workspace_roots: Vec<std::path::PathBuf> = {
+    let project_roots: Vec<std::path::PathBuf> = {
         let state = app_state.lock();
         state
             .workspaces
@@ -251,7 +251,7 @@ pub fn asset_allow_dir(
             .map(|w| std::path::PathBuf::from(&w.path))
             .collect()
     };
-    if !asset_grant_allowed(&canonical, &workspace_roots, dirs::home_dir().as_deref()) {
+    if !asset_grant_allowed(&canonical, &project_roots, dirs::home_dir().as_deref()) {
         return Err("that directory is outside what the media viewer may serve".into());
     }
 
@@ -261,20 +261,20 @@ pub fn asset_allow_dir(
 }
 
 /// The asset-grant policy, pure so it is testable: a canonical directory may
-/// be granted when it sits under a known workspace root, or when it is a
+/// be granted when it sits under a known project root, or when it is a
 /// VISIBLE directory under `$HOME` — hidden dirs (`~/.ssh`), `~/Library`, and
 /// `$HOME` itself are refused, and anything else (system roots, other users)
 /// falls through to refusal.
 fn asset_grant_allowed(
     canonical: &std::path::Path,
-    workspace_roots: &[std::path::PathBuf],
+    project_roots: &[std::path::PathBuf],
     home: Option<&std::path::Path>,
 ) -> bool {
-    let under_workspace = workspace_roots.iter().any(|root| {
+    let under_project = project_roots.iter().any(|root| {
         let root = dunce::canonicalize(root).unwrap_or_else(|_| root.clone());
         canonical.starts_with(&root)
     });
-    if under_workspace {
+    if under_project {
         return true;
     }
     home.is_some_and(|home| {
@@ -689,7 +689,7 @@ mod asset_grant_tests {
         let home = Path::new("/Users/me");
         let ws = vec![PathBuf::from("/Volumes/ext/project")];
 
-        // Visible home dirs and workspace roots pass.
+        // Visible home dirs and project roots pass.
         for ok in ["/Users/me/Desktop/shots", "/Users/me/Documents", "/Volumes/ext/project/media"] {
             assert!(asset_grant_allowed(Path::new(ok), &ws, Some(home)), "{ok}");
         }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Copy, Undo2, GitGraph, RotateCcw, Sparkles, Tag, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,18 +35,18 @@ export function HistoryView() {
   if (selected) {
     return (
       <div className="h-full flex flex-col">
-        <div className="shrink-0 border-b border-border-default">
+        <div className="shrink-0 border-b border-border">
           <HintGroup>
             <div className="flex items-center gap-2 px-2 h-[30px]">
               <HintItem label="Back to history">
                 <button
                   onClick={() => actions.clearSelectedCommit()}
-                  className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                 >
                   <ArrowLeft size={13} />
                 </button>
               </HintItem>
-              <span className="font-mono text-[11px] text-text-secondary">
+              <span className="font-mono text-xs text-secondary-foreground">
                 {selected.shortHash}
               </span>
               <div className="ml-auto flex items-center gap-0.5">
@@ -57,7 +57,7 @@ export function HistoryView() {
                       setCopied(true);
                       setTimeout(() => setCopied(false), 1200);
                     }}
-                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                   >
                     {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
                   </button>
@@ -65,7 +65,7 @@ export function HistoryView() {
                 <HintItem label="Cherry-pick onto current branch">
                   <button
                     onClick={() => run(() => actions.cherryPick(selected.hash))}
-                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                   >
                     <GitGraph size={12} />
                   </button>
@@ -73,7 +73,7 @@ export function HistoryView() {
                 <HintItem label="Revert this commit">
                   <button
                     onClick={() => run(() => actions.revert(selected.hash))}
-                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                   >
                     <Undo2 size={12} />
                   </button>
@@ -82,7 +82,7 @@ export function HistoryView() {
                 <HintItem label="Tag this commit">
                   <button
                     onClick={() => setTagging((v) => !v)}
-                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                   >
                     <Tag size={12} />
                   </button>
@@ -97,7 +97,7 @@ export function HistoryView() {
                 onChange={(e) => setTagName(e.target.value)}
                 autoFocus
                 placeholder="tag name → Enter"
-                className="w-full h-7 rounded border border-border-default bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-focus"
+                className="w-full h-7 rounded border border-border bg-panel-input px-2 text-xs font-mono text-foreground outline-none focus:border-border-strong"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && tagName.trim()) {
                     void run(() => actions.createTag(tagName.trim(), selected.hash));
@@ -112,13 +112,13 @@ export function HistoryView() {
             </div>
           )}
           <div className="px-3 pb-2">
-            <div className="text-[12px] text-text-primary font-medium">{selected.subject}</div>
+            <div className="text-sm text-foreground font-medium">{selected.subject}</div>
             {selected.body && (
-              <pre className="mt-1 max-h-32 overflow-y-auto hide-scrollbar whitespace-pre-wrap break-words font-sans text-[11px] text-text-tertiary">
+              <pre className="mt-1 max-h-32 overflow-y-auto hide-scrollbar whitespace-pre-wrap break-words font-sans text-xs text-muted-foreground">
                 {selected.body}
               </pre>
             )}
-            <div className="mt-1 text-[10px] text-text-tertiary">
+            <div className="mt-1 text-2xs text-muted-foreground">
               {selected.author} · {selected.date}
             </div>
             <CommitSessions sha={selected.hash} />
@@ -133,18 +133,18 @@ export function HistoryView() {
   return (
     <div className="h-full overflow-y-auto hide-scrollbar">
       {log.length === 0 ? (
-        <div className="px-3 py-8 text-center text-[11px] text-text-tertiary">No history</div>
+        <div className="px-3 py-8 text-center text-xs text-muted-foreground">No history</div>
       ) : (
         log.map((c, i) => (
           <div key={c.hash} className="relative group">
             <button
               onClick={() => void actions.loadCommit(c.hash)}
-              className="w-full text-left flex flex-col gap-0.5 px-3 py-1.5 border-b border-border-subtle hover:bg-bg-hover"
+              className="w-full text-left flex flex-col gap-0.5 px-3 py-1.5 border-b border-border-subtle hover:bg-element-hover"
             >
-              <span className="text-[11px] text-text-secondary group-hover:text-text-primary truncate pr-12">
+              <span className="text-xs text-secondary-foreground group-hover:text-foreground truncate pr-12">
                 {c.message}
               </span>
-              <span className="text-[9px] text-text-tertiary font-mono">
+              <span className="text-3xs text-muted-foreground font-mono">
                 {c.short_hash} · {c.author} · {c.date}
               </span>
             </button>
@@ -154,7 +154,7 @@ export function HistoryView() {
                   e.stopPropagation();
                   void run(() => actions.undoCommit());
                 }}
-                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border text-3xs text-secondary-foreground hover:text-foreground hover:bg-element-hover"
                 title="Undo this commit — changes return to the staged area (blocked once pushed)"
               >
                 Undo
@@ -175,41 +175,39 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
         onReset(mode);
         setOpen(false);
       }}
-      className="w-full text-left px-3 py-1.5 hover:bg-bg-hover"
+      className="w-full text-left px-3 py-1.5 hover:bg-element-hover"
     >
-      <div className="text-[11px] text-text-primary">{label}</div>
-      <div className="text-[9px] text-text-tertiary">{desc}</div>
+      <div className="text-xs text-foreground">{label}</div>
+      <div className="text-3xs text-muted-foreground">{desc}</div>
     </button>
   );
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <HintItem label="Reset current branch to this commit">
-        <Popover.Trigger asChild>
-          <button
-            className={cn(
-              "p-1 rounded hover:bg-bg-hover",
-              open ? "text-text-primary" : "text-text-tertiary hover:text-text-primary",
-            )}
-          >
-            <RotateCcw size={12} />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              className={cn(
+                "p-1 rounded hover:bg-element-hover",
+                open ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <RotateCcw size={12} />
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="w-[200px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1"
-          style={{ zIndex: 99999 }}
-        >
-          <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-            Reset to here
-          </div>
-          {item("soft", "Soft", "keep changes staged")}
-          {item("mixed", "Mixed", "keep changes unstaged")}
-          {item("hard", "Hard", "discard all changes")}
-        </Popover.Content>
+        <Popover.Positioner className="z-popover" side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="w-[200px] rounded-lg border border-border bg-[var(--card)] shadow-md py-1">
+            <div className="px-3 py-1 text-3xs uppercase tracking-wider text-muted-foreground">
+              Reset to here
+            </div>
+            {item("soft", "Soft", "keep changes staged")}
+            {item("mixed", "Mixed", "keep changes unstaged")}
+            {item("hard", "Hard", "discard all changes")}
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -243,9 +241,12 @@ function CommitSessions({ sha }: { sha: string }) {
     setSessions([]);
     invoke<CommitSession[]>("capture_commit_sessions", { projectPath: repoPath, commitSha: sha })
       .then((found) => {
-        if (!cancelled) setSessions(found);
+        // Typed as an array, but guard the null a future backend change (or an
+        // unmocked dev command) could send instead of throwing — `sessions.length`
+        // below would otherwise crash on it.
+        if (!cancelled) setSessions(found ?? []);
       })
-      // A Workspace with capture off returns an empty list rather than failing,
+      // A Project with capture off returns an empty list rather than failing,
       // so reaching here means a store-level problem. The git panel is not the
       // place to report it — capture health already owns that signal.
       .catch(() => {});
@@ -276,23 +277,23 @@ function CommitSessions({ sha }: { sha: string }) {
 
   return (
     <div className="mt-2 border-t border-border-subtle pt-2">
-      <div className="text-[9px] uppercase tracking-wider text-text-tertiary">
+      <div className="text-3xs uppercase tracking-wider text-muted-foreground">
         Produced by {sessions.length} session{sessions.length === 1 ? "" : "s"}
       </div>
       {sessions.map((s) => (
         <button
           key={s.sessionId}
           onClick={() => open(s.sessionId)}
-          className="mt-1 w-full rounded border border-border-default bg-bg-raised px-2 py-1.5 text-left hover:bg-bg-hover group"
+          className="mt-1 w-full rounded border border-border bg-bg-raised px-2 py-1.5 text-left hover:bg-element-hover group"
           title="Open this Session in the Timeline"
         >
           <div className="flex items-start gap-1.5">
-            <Sparkles size={11} className="mt-0.5 shrink-0 text-text-tertiary" />
-            <span className="text-[11px] text-text-secondary group-hover:text-text-primary line-clamp-2">
+            <Sparkles size={11} className="mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-secondary-foreground group-hover:text-foreground line-clamp-2">
               {s.title ?? "Untitled session"}
             </span>
           </div>
-          <div className="mt-0.5 pl-[18px] text-[9px] text-text-tertiary truncate">
+          <div className="mt-0.5 pl-[18px] text-3xs text-muted-foreground truncate">
             {s.messageCount} message{s.messageCount === 1 ? "" : "s"} · {s.toolCallCount} tool call
             {s.toolCallCount === 1 ? "" : "s"}
             {s.files.length > 0 && ` · ${s.files.join(", ")}`}

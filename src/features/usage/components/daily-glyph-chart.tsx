@@ -14,7 +14,7 @@ const GROUP_LABEL: Record<GroupBy, string> = { project: "project", agent: "agent
 
 /**
  * The daily series as a glyph chart (the reference's bar-glyph area): one column per day (or
- * week, past 120 days), stacked by the group-by key in the monochrome series palette, hovered
+ * week, past 120 days), stacked by the group-by key in the theme's series palette, hovered
  * column brightened with a breakdown card beside it. Pure divs, no SVG, so html-to-image
  * export captures it as drawn. Every bucket in the range is present — a quiet day is a gap.
  */
@@ -49,13 +49,13 @@ export function DailyGlyphChart({
           {metric === "tokens" ? "Tokens" : metric === "cost" ? "Est. cost" : "Messages"} · by{" "}
           {bucket} · per {GROUP_LABEL[groupBy]}
         </div>
-        <div className="text-[9px] text-[var(--text-tertiary)]">{attribution}</div>
+        <div className="text-3xs text-[var(--muted-foreground)]">{attribution}</div>
       </div>
 
       <div className="mt-2 flex gap-2">
         {/* y axis */}
         <div
-          className="flex w-[40px] shrink-0 flex-col justify-between text-right text-[9px] tabular-nums text-[var(--text-tertiary)]"
+          className="flex w-[40px] shrink-0 flex-col justify-between text-right text-3xs tabular-nums text-[var(--muted-foreground)]"
           style={{ height: H }}
         >
           {ticks.map((t, i) => (
@@ -72,7 +72,7 @@ export function DailyGlyphChart({
           {[0, 0.5, 1].map((f) => (
             <span
               key={f}
-              className="pointer-events-none absolute inset-x-0 border-t border-white/[0.06]"
+              className="pointer-events-none absolute inset-x-0 border-t border-[var(--atlas-element-selected)]"
               style={{ top: `${f * 100}%` }}
               aria-hidden
             />
@@ -108,7 +108,7 @@ export function DailyGlyphChart({
                   })}
                   {hover === i && (
                     <span
-                      className="pointer-events-none absolute inset-y-0 -inset-x-px bg-white/[0.04]"
+                      className="pointer-events-none absolute inset-y-0 -inset-x-px bg-[var(--atlas-element-hover)]"
                       aria-hidden
                     />
                   )}
@@ -120,7 +120,7 @@ export function DailyGlyphChart({
           {active && (
             <div
               className={cn(
-                "pointer-events-none absolute top-0 z-10 min-w-[170px] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-2 text-[11px] shadow-[var(--shadow-overlay)]",
+                "pointer-events-none absolute top-0 z-10 min-w-[170px] rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-xs shadow-md",
                 hover !== null && hover > n / 2
                   ? "right-[calc(100%_-_var(--x))]"
                   : "left-[var(--x)]",
@@ -131,7 +131,7 @@ export function DailyGlyphChart({
                 } as React.CSSProperties
               }
             >
-              <div className="text-[10px] text-[var(--text-tertiary)]">
+              <div className="text-2xs text-[var(--muted-foreground)]">
                 {bucket === "week"
                   ? `${fmtDay(active.date)} – ${fmtDay(addDays(active.date, 6))}`
                   : fmtDay(active.date)}
@@ -143,20 +143,20 @@ export function DailyGlyphChart({
                       className="h-1.5 w-1.5 shrink-0 rounded-full"
                       style={{ background: k.color }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
+                    <span className="min-w-0 flex-1 truncate text-[var(--secondary-foreground)]">
                       {k.label}
                     </span>
-                    <span className="tabular-nums text-[var(--text-primary)]">
+                    <span className="tabular-nums text-[var(--foreground)]">
                       {fmt(active.values[ki])}
                     </span>
                   </div>
                 ) : null,
               )}
-              <div className="mt-1.5 flex items-center justify-between border-t border-white/[0.06] pt-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+              <div className="mt-1.5 flex items-center justify-between border-t border-[var(--atlas-element-selected)] pt-1.5">
+                <span className="text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
                   Total
                 </span>
-                <span className="tabular-nums text-[var(--text-primary)]">{fmt(active.total)}</span>
+                <span className="tabular-nums text-[var(--foreground)]">{fmt(active.total)}</span>
               </div>
             </div>
           )}
@@ -164,7 +164,7 @@ export function DailyGlyphChart({
       </div>
 
       {/* x axis */}
-      <div className="ml-[48px] mt-1 flex gap-px text-[9px] tabular-nums text-[var(--text-tertiary)]">
+      <div className="ml-[48px] mt-1 flex gap-px text-3xs tabular-nums text-[var(--muted-foreground)]">
         {columns.map((c, i) => (
           <span key={c.date} className="min-w-0 flex-1 truncate">
             {i % labelEvery === 0 || i === n - 1 ? fmtDay(c.date) : ""}
@@ -178,18 +178,18 @@ export function DailyGlyphChart({
           {keys.map((k) => (
             <span
               key={k.key}
-              className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)]"
+              className="flex items-center gap-1 text-2xs text-[var(--secondary-foreground)]"
             >
-              <span className="text-[var(--text-ghost)]">[</span>
+              <span className="text-[var(--atlas-text-disabled)]">[</span>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: k.color }} />
               <span className="max-w-[160px] truncate">{k.label}</span>
-              <span className="text-[var(--text-ghost)]">]</span>
+              <span className="text-[var(--atlas-text-disabled)]">]</span>
             </span>
           ))}
         </div>
       )}
       {max === 0 && (
-        <div className="absolute inset-x-0 top-1/2 text-center text-[10px] text-[var(--text-tertiary)]">
+        <div className="absolute inset-x-0 top-1/2 text-center text-2xs text-[var(--muted-foreground)]">
           Nothing in this range
         </div>
       )}

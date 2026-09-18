@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{resolve_path, ToolName};
 use atlas_checkpoint::{
     hash_written_content, reconcile_rewrites, walk_new_commits, Capture, FileWrite, LinkState,
@@ -68,7 +68,7 @@ impl Fixture {
     }
 
     fn walk(&self, store: &Store) {
-        walk_new_commits(store, WORKSPACE, self.path(), WorkspaceMode::Local).expect("walk");
+        walk_new_commits(store, WORKSPACE, self.path(), ProjectMode::Local).expect("walk");
     }
 
     fn reconcile(&self, store: &Store) -> atlas_checkpoint::ReconcileOutcome {
@@ -86,7 +86,7 @@ fn agent_commit(
     message: &str,
 ) -> String {
     let session_id = {
-        let mut capture = Capture::new(store, WorkspaceMode::Local);
+        let mut capture = Capture::new(store, ProjectMode::Local);
         let key = SessionKey {
             workspace_id: WORKSPACE.to_string(),
             source: Source::Acp,
@@ -562,7 +562,7 @@ fn orphaned_is_a_queryable_state_that_retains_its_session_link() {
     fixture.reconcile(&store);
 
     let orphaned: Vec<_> = store
-        .checkpoints_for_workspace(WORKSPACE)
+        .checkpoints_for_project(WORKSPACE)
         .unwrap()
         .into_iter()
         .filter(|cp| cp.link_state == LinkState::Orphaned)

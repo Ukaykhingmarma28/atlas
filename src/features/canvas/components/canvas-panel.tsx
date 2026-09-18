@@ -14,9 +14,9 @@ import {
   type EdgeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { StickyNote } from "lucide-react";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useCanvasStore, type CanvasNode, type ShapeType } from "../stores/canvas-store";
 import { canvasMediaUpload } from "../lib/canvas-api";
 import { NoteNode } from "./note-node";
@@ -57,18 +57,14 @@ export function CanvasPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 bg-black/60"
-          style={{ zIndex: "var(--z-overlay)" as unknown as number }}
-        />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim" />
+        <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-12 left-6 right-6 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
-          style={{ zIndex: "var(--z-modal)" as unknown as number }}
+          className="fixed top-12 left-6 right-6 bottom-6 z-modal rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden flex flex-col shadow-md focus:outline-none"
         >
           <Dialog.Title className="sr-only">Spaces</Dialog.Title>
           {surface}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -81,7 +77,7 @@ function CanvasSurface({
   fullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const projectPath = project?.path ?? null;
 
   const storeProjectPath = useCanvasStore.use.projectPath();
@@ -188,7 +184,7 @@ function CanvasSurface({
         sourceHandle: e.sourceHandle ?? undefined,
         targetHandle: e.targetHandle ?? undefined,
         type: "smoothstep",
-        style: { stroke: "rgba(255,255,255,0.25)", strokeWidth: 1.5 },
+        style: { stroke: "var(--atlas-border-strong)", strokeWidth: 1.5 },
       })),
     [edges],
   );
@@ -408,10 +404,10 @@ function CanvasSurface({
 
   if (!projectPath) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-[12px] text-text-tertiary gap-2 px-6 text-center">
+      <div className="h-full flex flex-col items-center justify-center text-sm text-muted-foreground gap-2 px-6 text-center">
         <StickyNote size={18} className="opacity-60" />
         <div>No project open.</div>
-        <div className="text-[10px]">Spaces are per-project. Open a folder to start a board.</div>
+        <div className="text-2xs">Spaces are per-project. Open a folder to start a board.</div>
       </div>
     );
   }
@@ -419,9 +415,12 @@ function CanvasSurface({
   return (
     <div className="flex h-full min-h-0">
       {pagesOpen && <PagesPanel />}
-      <div ref={wrapperRef} className="relative min-h-0 min-w-0 flex-1 bg-bg-base overflow-hidden">
+      <div
+        ref={wrapperRef}
+        className="relative min-h-0 min-w-0 flex-1 bg-background overflow-hidden"
+      >
         {!loaded && (
-          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-text-tertiary z-30">
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground z-panel">
             Loading…
           </div>
         )}
@@ -453,7 +452,14 @@ function CanvasSurface({
             variant={BackgroundVariant.Dots}
             gap={20}
             size={1.2}
-            color="rgba(255,255,255,0.18)"
+            // xyflow writes `color` into `--xy-background-pattern-color-props`
+            // and the dot's `fill` reads it back through a var chain, so a
+            // custom property survives the round trip and the grid recolours
+            // on a theme switch with no re-render. `border.strong` is the
+            // structural ramp's top rung — the same weight the dots had as a
+            // fixed 18%-white, and the only one still legible on a light
+            // variant.
+            color="var(--atlas-border-strong)"
           />
         </ReactFlow>
 
@@ -467,7 +473,7 @@ function CanvasSurface({
           >
             {preview && (
               <div
-                className="absolute rounded border border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 pointer-events-none"
+                className="absolute rounded border border-[var(--primary)] bg-[var(--primary)]/10 pointer-events-none"
                 style={{
                   left: preview.left,
                   top: preview.top,
@@ -489,7 +495,7 @@ function CanvasSurface({
           onFit={handleFit}
           onToggleFullscreen={onToggleFullscreen}
         />
-        <CanvasExportToolbar />
+        <CanvasExportToolbar containerRef={wrapperRef} />
         <CanvasToolbar
           activeTool={activeTool}
           onTool={setTool}

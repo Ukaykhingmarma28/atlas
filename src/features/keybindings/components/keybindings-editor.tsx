@@ -95,8 +95,11 @@ export function KeybindingsEditor() {
       <ProfileBar />
       <KeybindingsSearch state={search} onChange={setSearch} />
       {warnings.length > 0 && (
-        <div className="flex items-start gap-2 border-b border-border-default bg-[var(--status-warning-muted)] px-3 py-1.5 text-[10.5px] text-text-secondary">
-          <AlertTriangle size={11} className="mt-0.5 shrink-0 text-[var(--status-warning)]" />
+        <div className="flex items-start gap-2 border-b border-border bg-[var(--atlas-status-warning-background)] px-3 py-1.5 text-xs text-secondary-foreground">
+          <AlertTriangle
+            size={11}
+            className="mt-0.5 shrink-0 text-[var(--atlas-status-warning-foreground)]"
+          />
           <div className="space-y-0.5">
             {warnings.map((w) => (
               <div key={w}>{w}</div>

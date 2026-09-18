@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Hash, Link2, Play } from "lucide-react";
 import {
   EditorView,
@@ -16,7 +16,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
 import { editorThemeExtensions } from "@/features/editor/themes/build-cm-theme";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { yCollab } from "y-codemirror.next";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -26,6 +25,7 @@ import { useDraftSession } from "../lib/use-draft-session";
 import { avatarHue } from "../lib/derive";
 import { useCommsStore } from "../stores/comms-store";
 import type { ChatConversation, PromptDraft } from "../types";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /**
  * The realtime Prompt Draft editor: one shared Y.Doc, everyone types at
@@ -40,7 +40,8 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
   const memberList = useCommsStore.use.members();
   const me = useCommsStore.use.me();
   const members = useMemo(() => new Map(memberList.map((m) => [m.id, m])), [memberList]);
-  const themeId = useProjectStore((s) => s.settings.codeEditorTheme);
+  const themeId = useSettingsStore((s) => s.settings.theme);
+  const [themeRevision, setThemeRevision] = useState(0);
 
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -58,7 +59,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
         EditorView.lineWrapping,
         keymap.of([...historyKeymap, ...defaultKeymap]),
         cmPlaceholder("Write together…"),
-        editorThemeExtensions(themeId),
+        editorThemeExtensions(),
         yCollab(ytext, null),
         remoteCaretField,
         EditorState.readOnly.of(sent),
@@ -78,7 +79,13 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
     };
     // Recreated only on identity-level changes; yCollab owns doc content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, ytext, sent, themeId]);
+  }, [ready, ytext, sent, themeId, themeRevision]);
+
+  useEffect(() => {
+    const onTheme = () => setThemeRevision((revision) => revision + 1);
+    window.addEventListener("atlas:theme-applied", onTheme);
+    return () => window.removeEventListener("atlas:theme-applied", onTheme);
+  }, []);
 
   // Push peer carets into the editor as decorations whenever they move.
   useEffect(() => {
@@ -109,24 +116,24 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-default px-1.5">
-        <span className="flex min-w-0 items-center gap-1 pl-1 text-[11px] font-medium text-text-secondary">
-          <Hash size={11} className="shrink-0 text-text-tertiary" />
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border px-1.5">
+        <span className="flex min-w-0 items-center gap-1 pl-1 text-xs font-medium text-secondary-foreground">
+          <Hash size={11} className="shrink-0 text-muted-foreground" />
           <span className="truncate">{conv.name ?? "conversation"}</span>
         </span>
 
         {/* Centre: the grouped action pill. */}
         <div className="flex min-w-0 flex-1 justify-center">
           <HintGroup>
-            <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06]">
+            <div className="flex items-center overflow-hidden rounded-full border border-border bg-[var(--atlas-element-selected)]">
               <PillButton label="Copy draft" onClick={() => void copyAll()}>
                 <Copy size={11} />
               </PillButton>
-              <span className="h-4 w-px bg-white/10" />
+              <span className="h-4 w-px bg-border" />
               <PillButton label="Send to agent" onClick={toAgent}>
                 <Play size={11} />
               </PillButton>
-              <span className="h-4 w-px bg-white/10" />
+              <span className="h-4 w-px bg-border" />
               {/* No API mints a public draft link (the meetings door is the one
                 unauthenticated surface) — a mock, like the Spaces pill. */}
               <PillButton label="Public link — coming soon" disabled>
@@ -143,43 +150,47 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
           <div className="flex items-center -space-x-1.5">
             {peerList.slice(0, 3).map((p) => (
               <Tooltip key={p.userId}>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <CommsAvatar
-                      member={members.get(p.userId) ?? null}
-                      size={16}
-                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                    />
-                  </span>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <span className="inline-flex">
+                      <CommsAvatar
+                        member={members.get(p.userId) ?? null}
+                        size={16}
+                        className="ring-2 ring-[var(--background)] rounded-full"
+                      />
+                    </span>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {members.get(p.userId)?.name ?? "Unknown"} · editing
                 </TooltipContent>
               </Tooltip>
             ))}
             <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <CommsAvatar
-                    member={members.get(me) ?? null}
-                    size={16}
-                    className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                  />
-                </span>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <span className="inline-flex">
+                    <CommsAvatar
+                      member={members.get(me) ?? null}
+                      size={16}
+                      className="ring-2 ring-[var(--background)] rounded-full"
+                    />
+                  </span>
+                }
+              />
               <TooltipContent side="bottom" sideOffset={4}>
                 You
               </TooltipContent>
             </Tooltip>
           </div>
           {peerList.length > 3 && (
-            <span className="pl-1 text-[9.5px] text-text-tertiary">+{peerList.length - 3}</span>
+            <span className="pl-1 text-2xs text-muted-foreground">+{peerList.length - 3}</span>
           )}
         </div>
       </div>
 
       {sent && (
-        <div className="shrink-0 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
+        <div className="shrink-0 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-muted-foreground">
           Sent to an agent — this draft is read-only now.
         </div>
       )}
@@ -190,7 +201,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="h-[10px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                className="h-[10px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
                 style={{ width: `${60 - i * 12}%` }}
               />
             ))}
@@ -220,10 +231,10 @@ function PillButton({
         disabled={disabled}
         onClick={onClick}
         className={cn(
-          "flex h-[22px] w-8 items-center justify-center text-text-secondary transition-colors",
+          "flex h-[22px] w-8 items-center justify-center text-secondary-foreground transition-colors",
           disabled
-            ? "cursor-not-allowed text-text-ghost"
-            : "hover:bg-white/10 hover:text-text-primary cursor-pointer",
+            ? "cursor-not-allowed text-disabled"
+            : "hover:bg-[var(--atlas-element-active)] hover:text-foreground cursor-pointer",
         )}
       >
         {children}
@@ -260,6 +271,7 @@ class CaretWidget extends WidgetType {
     return other.name === this.name && other.hue === this.hue;
   }
   toDOM(): HTMLElement {
+    // ratchet-allow: a collaborator's own caret hue, assigned per session.
     const color = `hsl(${this.hue} 55% 55%)`;
     const wrap = document.createElement("span");
     wrap.className = "atlas-remote-caret";
@@ -271,6 +283,7 @@ class CaretWidget extends WidgetType {
     flag.textContent = this.name;
     flag.style.cssText =
       `position:absolute;left:-1px;top:-14px;padding:0 4px;border-radius:3px 3px 3px 0;` +
+      // ratchet-allow: white on that saturated caret hue, which is not a theme surface.
       `background:${color};color:#fff;font-size:9px;line-height:13px;white-space:nowrap;` +
       `pointer-events:none;user-select:none;`;
     wrap.append(bar, flag);

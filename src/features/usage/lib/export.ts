@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { fmtCost, fmtNum, fmtPct, fmtTokens } from "@/features/monitor/lib/usage-format";
 import { copyText } from "@/lib/clipboard";
+import { hexOf, themeBase } from "@/features/theme/theme-values";
 import type { GroupBy } from "../types";
 import { fmtRange } from "./date-range";
 import { agentDisplay, modelDisplay, projectLabel, rankBy, tokensOf } from "./derive";
@@ -18,13 +19,13 @@ async function htmlToImage() {
   return import("html-to-image");
 }
 
-/** Capture a DOM node to a PNG/JPEG data URL on the AMOLED background. */
+/** Capture a DOM node to a PNG/JPEG data URL on the theme's own background. */
 async function capture(node: HTMLElement, kind: "png" | "jpeg"): Promise<string> {
   // Fonts must be ready or text renders as fallback in the capture.
   if (document.fonts?.ready) await document.fonts.ready;
   const { toPng, toJpeg } = await htmlToImage();
   const opts = {
-    backgroundColor: "#000000",
+    backgroundColor: themeBase("background"),
     pixelRatio: 2,
     // Skip anything explicitly marked non-exportable (e.g. interactive controls).
     filter: (el: HTMLElement) => !(el.dataset && el.dataset.noexport === "true"),
@@ -73,13 +74,17 @@ export async function exportPdf(node: HTMLElement): Promise<void> {
   const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
+  // The page fill has to be the same background the capture was taken on, or
+  // a light theme exports black margins around its own screenshot. jsPDF takes
+  // channels, not a token, so this is one more resolved value.
+  const page = hexOf(themeBase("background"));
   const imgW = pageW;
   const imgH = (img.height / img.width) * imgW; // full image height scaled to page width
   let remaining = imgH;
   let y = 0;
   // Paint the same scaled image shifted up each page so it tiles vertically.
   while (remaining > 0) {
-    pdf.setFillColor(0, 0, 0);
+    pdf.setFillColor((page >> 16) & 0xff, (page >> 8) & 0xff, page & 0xff);
     pdf.rect(0, 0, pageW, pageH, "F");
     pdf.addImage(dataUrl, "PNG", 0, y, imgW, imgH);
     remaining -= pageH;

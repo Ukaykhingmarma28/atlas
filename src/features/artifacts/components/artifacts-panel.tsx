@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Filter, PanelLeft, RefreshCw, Search, X } from "lucide-react";
@@ -8,9 +8,9 @@ import { copyText } from "@/lib/clipboard";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
-import { BranchLine, GitDot, NumStatPill } from "@/features/workspaces/components/git-summary";
-import { useWorkspaceGitStore } from "@/features/workspaces/stores/workspace-git-store";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+import { BranchLine, GitDot, NumStatPill } from "@/features/projects/components/git-summary";
+import { useProjectGitStore } from "@/features/projects/stores/project-git-store";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -78,7 +78,7 @@ const CHAT_WIDTH = 420;
 /**
  * The card's inset from the tab's edges, in px.
  *
- * Measured against the workspace rail's card rather than chosen: side by side
+ * Measured against the project rail's card rather than chosen: side by side
  * with the switcher, 6px read as a visibly wider gutter on the Timeline. The
  * divider and the header row are both positioned against this constant, so the
  * three cannot drift apart.
@@ -108,7 +108,7 @@ function PeriodPill({
   onChange: (next: GroupPeriod) => void;
 }) {
   return (
-    <div className="flex h-7 shrink-0 items-center rounded-full border border-[var(--border-default)] p-0.5">
+    <div className="flex h-7 shrink-0 items-center rounded-full border border-[var(--border)] p-0.5">
       {PERIODS.map((p) => (
         <button
           key={p.value}
@@ -116,10 +116,10 @@ function PeriodPill({
           aria-pressed={period === p.value}
           onClick={() => onChange(p.value)}
           className={cn(
-            "flex h-full cursor-pointer items-center rounded-full px-2 text-[11px] leading-none outline-none transition-colors",
+            "flex h-full cursor-pointer items-center rounded-full px-2 text-xs leading-none outline-none transition-colors",
             period === p.value
-              ? "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              ? "bg-[var(--atlas-element-active)] font-medium text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
           )}
         >
           {p.label}
@@ -147,12 +147,12 @@ const BOARD_LIMIT = 500;
  *
  * * **Reads are sequenced, not cancelled.** `invoke` has no abort, so every
  *   read carries a sequence number and only the newest may write state. A slow
- *   read for Workspace A landing after a switch to B must not overwrite B's
+ *   read for Project A landing after a switch to B must not overwrite B's
  *   sessions with A's.
  * * **`detail` is tri-state.** `undefined` = a read is in flight, `null` = the
  *   store answered and the Session does not exist. The first version collapsed
  *   the two and left a permanent spinner on any null result.
- * * **Everything resets on a Workspace switch** — open Session included. The
+ * * **Everything resets on a Project switch** — open Session included. The
  *   old Session id means nothing in the new store.
  * * **Refresh is event-driven first** (`atlas:git-changed`, which the watcher
  *   emits on every repo move), with a 15 s poll as the fallback for capture
@@ -164,9 +164,9 @@ export function ArtifactsPanel() {
   // Every project in the active Organisation, not just the open one: the board
   // answers "what has been happening in our code", which does not stop at the
   // folder that happens to be focused.
-  const projects = useActiveOrgWorkspaces();
+  const projects = useActiveOrgProjects();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
-  // A stable key, so the read effect does not re-fire on unrelated workspace
+  // A stable key, so the read effect does not re-fire on unrelated project
   // mutations (a rename, a pin) that leave the set of paths unchanged.
   const projectPaths = useMemo(() => projects.map((w) => w.path).sort(), [projects]);
   // Joined only for a cheap dependency comparison — never split back
@@ -250,7 +250,7 @@ export function ArtifactsPanel() {
 
   // The read cache holds timelines from the *previous* set of projects. Nothing
   // reads it across a switch — the open Session is dropped too — but a stale
-  // Workspace's entries surviving in memory is exactly the leak this subsystem
+  // Project's entries surviving in memory is exactly the leak this subsystem
   // is careful about everywhere else.
   useEffect(() => clearDetailCache, [activeOrganisationId]);
 
@@ -327,7 +327,7 @@ export function ArtifactsPanel() {
 
   // Opening a Session reads its full timeline; the list row does not carry it.
   // The read goes to the store of the project the row came from, which is not
-  // necessarily the Workspace currently open.
+  // necessarily the Project currently open.
   const readDetail = useCallback(
     (showLoading: boolean) => {
       if (!open) return;
@@ -471,9 +471,9 @@ export function ArtifactsPanel() {
     // the whole reason for the colour step and the rounded tops — a header that
     // shares its background with the list under it needs a rule to separate
     // them, and a curve says it better than a line.
-    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-elevated-2)]">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--card)]">
       {error && (
-        <p className="shrink-0 bg-[var(--status-error-muted)] px-4 py-1.5 text-[11px] text-[var(--status-error)]">
+        <p className="shrink-0 bg-[var(--atlas-status-error-background)] px-4 py-1.5 text-xs text-[var(--atlas-status-error-foreground)]">
           {error}
         </p>
       )}
@@ -481,7 +481,7 @@ export function ArtifactsPanel() {
       {/* Chrome, then one card.
        *
        * The two headers share a row above it and the two panes share the card
-       * below it — the same recipe as the workspace rail and team chat: a
+       * below it — the same recipe as the project rail and team chat: a
        * near-black surface inset on the sides and bottom, its edge carried by a
        * hairline ring with a soft shadow behind it. One card rather than two
        * keeps the earlier rule intact for free: only the OUTER corners are
@@ -495,7 +495,7 @@ export function ArtifactsPanel() {
             are known here.
             
             30% of the way from the default border to the strong one — the
-            hairline at `--border-default` disappeared against the card's own
+            hairline at `--border` disappeared against the card's own
             ring at this length.
 
             `z-40` because it has to beat the pane's own overlays, not merely
@@ -514,14 +514,14 @@ export function ArtifactsPanel() {
             className={cn(
               "absolute top-0 z-40 w-px cursor-col-resize transition-colors",
               "after:absolute after:inset-y-0 after:-left-[3px] after:-right-[3px] after:content-['']",
-              resizing && "bg-[var(--accent-primary)]",
+              resizing && "bg-[var(--primary)]",
             )}
             style={{
               bottom: CARD_INSET,
               left: CARD_INSET + sidebarWidth,
               background: resizing
                 ? undefined
-                : "color-mix(in srgb, var(--border-strong) 30%, var(--border-default))",
+                : "color-mix(in srgb, var(--atlas-border-strong) 30%, var(--border))",
             }}
           />
         )}
@@ -535,7 +535,7 @@ export function ArtifactsPanel() {
                 className="flex h-full shrink-0 items-center gap-2 px-1.5"
                 style={{ width: sidebarWidth }}
               >
-                <span className="flex-1 truncate text-[12px] font-semibold text-[var(--text-primary)]">
+                <span className="flex-1 truncate text-sm font-semibold text-[var(--foreground)]">
                   Timeline
                 </span>
                 {/* Grain. It changes what the rows under it are grouped INTO,
@@ -601,13 +601,12 @@ export function ArtifactsPanel() {
         </div>
 
         <div
-          className="relative flex min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--bg-base)]"
+          // On a near-black panel a shadow has almost nothing to darken, so
+          // the ring carries the edge and the shadow only lifts the card.
+          className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border"
           style={{
             marginInline: CARD_INSET,
             marginBottom: CARD_INSET,
-            // On a near-black panel a shadow has almost nothing to darken, so
-            // the ring carries the edge and the shadow only lifts the card.
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
           }}
         >
           {/* The nav. Mounted only when shown, and its width is set directly —
@@ -635,14 +634,14 @@ export function ArtifactsPanel() {
               {/* Say what is being left out. A nav that silently stops at the
                *  newest few hundred reads as "this is everything". */}
               {capped && (
-                <p className="shrink-0 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[11px] leading-snug text-[var(--text-tertiary)]">
+                <p className="shrink-0 border-t border-[var(--atlas-border-subtle)] px-3 py-1.5 text-xs leading-snug text-[var(--muted-foreground)]">
                   Showing the newest {BOARD_LIMIT} sessions — filter by project for a full history.
                 </p>
               )}
             </aside>
           )}
 
-          <main className="min-w-0 flex-1 bg-[var(--bg-surface)]">
+          <main className="min-w-0 flex-1 bg-[var(--background)]">
             {open ? (
               detail === undefined ? (
                 <Centered>Reading the session…</Centered>
@@ -664,7 +663,7 @@ export function ArtifactsPanel() {
                     />
                   </div>
                   <aside
-                    className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border-default)]"
+                    className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border)]"
                     style={{ width: chatOpen ? CHAT_WIDTH : 0 }}
                     aria-hidden={!chatOpen}
                   >
@@ -720,8 +719,12 @@ export function ArtifactsPanel() {
  */
 function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
   return (
-    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-strong)]">
-      <Search size={13} strokeWidth={1.6} className="block shrink-0 text-[var(--text-tertiary)]" />
+    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 transition-colors focus-within:border-[var(--atlas-border-strong)]">
+      <Search
+        size={13}
+        strokeWidth={1.6}
+        className="block shrink-0 text-[var(--muted-foreground)]"
+      />
       <input
         value={query}
         onChange={(e) => onQuery(e.target.value)}
@@ -731,14 +734,14 @@ function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) =
         placeholder="Search sessions…"
         spellCheck={false}
         aria-label="Search sessions"
-        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11.5px] leading-none text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-none text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
       />
       {query && (
         <Hint label="Clear search">
           <button
             type="button"
             onClick={() => onQuery("")}
-            className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
           >
             <X size={11} />
           </button>
@@ -789,16 +792,16 @@ function Breadcrumb({
   return (
     <span
       title={projectPath}
-      className="flex min-w-0 items-center gap-1 text-[12px] text-[var(--text-tertiary)]"
+      className="flex min-w-0 items-center gap-1 text-sm text-[var(--muted-foreground)]"
     >
       <button
         type="button"
         onClick={onBack}
-        className="cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         Sessions
       </button>
-      <span aria-hidden className="text-[var(--text-ghost)]">
+      <span aria-hidden className="text-[var(--atlas-text-disabled)]">
         /
       </span>
       <button
@@ -810,7 +813,7 @@ function Breadcrumb({
           flash.current = setTimeout(() => setCopied(false), 1200);
         }}
         title={`Copy ${sessionId}`}
-        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         {copied ? "copied" : label}
       </button>
@@ -829,7 +832,7 @@ function Breadcrumb({
  * every option reads "0" the moment you type is a menu that cannot be used to
  * find anything.
  *
- * The PROJECT group carries the git detail the workspace sidebar shows — a dot
+ * The PROJECT group carries the git detail the project sidebar shows — a dot
  * for working-tree state and the current branch — because that is what tells two
  * projects called `api` and `api-v2` apart. The other groups are plain values,
  * and searching only filters projects, which is the only list long enough to
@@ -853,8 +856,8 @@ function BoardFilter({
   onClear: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const summaries = useWorkspaceGitStore.use.summaries();
-  const { ensure } = useWorkspaceGitStore.use.actions();
+  const summaries = useProjectGitStore.use.summaries();
+  const { ensure } = useProjectGitStore.use.actions();
 
   const active = activeFacetCount(selection) + (projectFilter ? 1 : 0);
   const q = query.trim().toLowerCase();
@@ -878,94 +881,95 @@ function BoardFilter({
       <HintItem
         label={active ? `${active} filter${active === 1 ? "" : "s"} active` : "Filter sessions"}
       >
-        <Popover.Trigger asChild>
-          <button type="button" className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}>
-            <Filter size={13} />
-            {/* A filter that is ON has to say so from the collapsed state — the
+        <Popover.Trigger
+          render={
+            <button type="button" className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}>
+              <Filter size={13} />
+              {/* A filter that is ON has to say so from the collapsed state — the
                 values are inside the menu, and a funnel that looks identical
                 either way hides an empty board behind a control nobody checks. */}
-            {active > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--text-primary)] px-[3px] font-mono text-[9px] font-medium text-[var(--text-inverse)]">
-                {active}
-              </span>
-            )}
-          </button>
-        </Popover.Trigger>
+              {active > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-[var(--foreground)] px-[3px] font-mono text-3xs font-medium text-[var(--primary-foreground)]">
+                  {active}
+                </span>
+              )}
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="bottom"
-          align="end"
-          sideOffset={4}
-          className="z-[var(--z-max)] flex max-h-[420px] w-[262px] origin-[var(--radix-popover-content-transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          {active > 0 && (
-            <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
-              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-                {active} active
-              </span>
-              <Popover.Close asChild>
-                <button
-                  type="button"
-                  onClick={onClear}
-                  className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--text-primary)]"
-                >
-                  Clear all
-                </button>
-              </Popover.Close>
-            </div>
-          )}
-
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search projects…"
-            className="h-[28px] shrink-0 border-b border-[var(--border-default)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-          />
-
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
-            <GroupLabel>Project</GroupLabel>
-            <Option
-              label="All projects"
-              count={projects.length}
-              selected={projectFilter === null}
-              onSelect={() => onProjectFilter(null)}
-            />
-            {shownProjects.map((p) => (
-              <Option
-                key={p.path}
-                label={p.name}
-                title={p.path}
-                selected={projectFilter === p.path}
-                onSelect={() => onProjectFilter(projectFilter === p.path ? null : p.path)}
-                lead={<GitDot summary={summaries[p.path]} />}
-                sub={<BranchLine summary={summaries[p.path]} className="mt-0.5" />}
-                trail={<NumStatPill summary={summaries[p.path]} />}
-              />
-            ))}
-            {shownProjects.length === 0 && (
-              <p className="px-2 py-2 text-center text-[11px] text-[var(--text-tertiary)]">
-                No project matches “{query.trim()}”.
-              </p>
+        <Popover.Positioner className="z-popover" side="bottom" align="end" sideOffset={4}>
+          <Popover.Popup className="flex max-h-[420px] w-[262px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-popover shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
+            {active > 0 && (
+              <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
+                <span className="font-mono text-2xs text-[var(--muted-foreground)]">
+                  {active} active
+                </span>
+                <Popover.Close
+                  render={
+                    <button
+                      type="button"
+                      onClick={onClear}
+                      className="cursor-pointer font-mono text-2xs uppercase tracking-[0.06em] text-[var(--secondary-foreground)] underline underline-offset-2 transition-colors hover:no-underline hover:text-[var(--foreground)]"
+                    >
+                      Clear all
+                    </button>
+                  }
+                />
+              </div>
             )}
 
-            {otherGroups.map((group) => (
-              <div key={group.key}>
-                <GroupLabel>{group.label}</GroupLabel>
-                {group.options.map((o) => (
-                  <Option
-                    key={`${group.key}:${o.value ?? "all"}`}
-                    label={o.label}
-                    count={o.count}
-                    selected={selection[group.key] === o.value}
-                    onSelect={() => onSelect(group.key, o.value)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </Popover.Content>
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search projects…"
+              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+            />
+
+            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
+              <GroupLabel>Project</GroupLabel>
+              <Option
+                label="All projects"
+                count={projects.length}
+                selected={projectFilter === null}
+                onSelect={() => onProjectFilter(null)}
+              />
+              {shownProjects.map((p) => (
+                <Option
+                  key={p.path}
+                  label={p.name}
+                  title={p.path}
+                  selected={projectFilter === p.path}
+                  onSelect={() => onProjectFilter(projectFilter === p.path ? null : p.path)}
+                  lead={<GitDot summary={summaries[p.path]} />}
+                  sub={<BranchLine summary={summaries[p.path]} className="mt-0.5" />}
+                  trail={<NumStatPill summary={summaries[p.path]} />}
+                />
+              ))}
+              {shownProjects.length === 0 && (
+                <p className="px-2 py-2 text-center text-xs text-[var(--muted-foreground)]">
+                  No project matches “{query.trim()}”.
+                </p>
+              )}
+
+              {otherGroups.map((group) => (
+                <div key={group.key}>
+                  <GroupLabel>{group.label}</GroupLabel>
+                  {group.options.map((o) => (
+                    <Option
+                      key={`${group.key}:${o.value ?? "all"}`}
+                      label={o.label}
+                      count={o.count}
+                      selected={selection[group.key] === o.value}
+                      onSelect={() => onSelect(group.key, o.value)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -973,7 +977,7 @@ function BoardFilter({
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+    <p className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
       {children}
     </p>
   );
@@ -1004,16 +1008,18 @@ function Option({
       title={title}
       onClick={onSelect}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]",
-        selected && "bg-[var(--bg-selected)]",
+        "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)]",
+        selected && "bg-[var(--atlas-element-selected)]",
       )}
     >
       {lead}
       <span className="min-w-0 flex-1">
         <span
           className={cn(
-            "block truncate text-[11px] leading-tight",
-            selected ? "font-medium text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
+            "block truncate text-xs leading-tight",
+            selected
+              ? "font-medium text-[var(--foreground)]"
+              : "text-[var(--secondary-foreground)]",
           )}
         >
           {label}
@@ -1021,11 +1027,11 @@ function Option({
         {sub}
       </span>
       {selected ? (
-        <Check size={11} className="shrink-0 text-[var(--text-primary)]" />
+        <Check size={11} className="shrink-0 text-[var(--foreground)]" />
       ) : (
         (trail ??
         (count !== undefined ? (
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]">
+          <span className="shrink-0 font-mono text-2xs tabular-nums text-[var(--muted-foreground)]">
             {count}
           </span>
         ) : null))
@@ -1038,14 +1044,14 @@ function Option({
  * The first thing a new user sees.
  *
  * Not an error, and not three alarms — capture being off is the default state of
- * every Workspace, and the only useful thing to say about it is what turning it
+ * every Project, and the only useful thing to say about it is what turning it
  * on would give you.
  */
 function NotEnabled() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <h2 className="text-[14px] font-medium text-[var(--text-primary)]">Nothing captured yet</h2>
-      <p className="mt-1.5 max-w-[420px] text-[12px] leading-relaxed text-[var(--text-tertiary)]">
+      <h2 className="text-md font-medium text-[var(--foreground)]">Nothing captured yet</h2>
+      <p className="mt-1.5 max-w-[420px] text-sm leading-relaxed text-[var(--muted-foreground)]">
         Turn capture on for a project and Atlas records what you asked, what the agent did, and
         which commits came out of it — stored on this machine, with secrets scrubbed before anything
         is written.
@@ -1053,7 +1059,7 @@ function NotEnabled() {
       {/* The control is deliberately not repeated here. Capture is per project
        *  and this board spans all of them, so the honest place to switch it on
        *  is the project pill in the titlebar, which names the one it applies to. */}
-      <p className="mt-3 max-w-[420px] text-[11px] text-[var(--text-ghost)]">
+      <p className="mt-3 max-w-[420px] text-xs text-[var(--atlas-text-disabled)]">
         Click the project name in the titlebar to turn it on.
       </p>
     </div>
@@ -1061,15 +1067,15 @@ function NotEnabled() {
 }
 
 /** The store answered: this Session does not exist (deleted, or another
- *  Workspace's id). Distinct from loading — a spinner here never resolves. */
+ *  Project's id). Distinct from loading — a spinner here never resolves. */
 function NotFound({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <p className="text-[13px] text-[var(--text-secondary)]">This session no longer exists.</p>
+      <p className="text-base text-[var(--secondary-foreground)]">This session no longer exists.</p>
       <button
         type="button"
         onClick={onBack}
-        className="mt-3 cursor-pointer rounded-md border border-[var(--border-default)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         Back to sessions
       </button>
@@ -1079,7 +1085,7 @@ function NotFound({ onBack }: { onBack: () => void }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center px-8 text-center text-[12px] text-[var(--text-tertiary)]">
+    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-[var(--muted-foreground)]">
       {children}
     </div>
   );

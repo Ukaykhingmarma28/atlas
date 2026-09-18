@@ -224,13 +224,13 @@ function StallNotice({
   onCopyDiagnostics?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-[11px] leading-[16px] text-[var(--text-tertiary)]">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-xs leading-[16px] text-[var(--muted-foreground)]">
       <span className="select-text">Still starting… this can take a few minutes on first run.</span>
       {onRestart && (
         <button
           type="button"
           onClick={onRestart}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Restart agent
         </button>
@@ -239,7 +239,7 @@ function StallNotice({
         <button
           type="button"
           onClick={onSwitch}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Switch agent
         </button>
@@ -248,7 +248,7 @@ function StallNotice({
         <button
           type="button"
           onClick={onCopyDiagnostics}
-          className="cursor-pointer font-medium text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+          className="cursor-pointer font-medium text-[var(--secondary-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
         >
           Copy diagnostics
         </button>
@@ -391,7 +391,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const [startIndex, setStartIndex] = useState(() => Math.max(0, rows.length - WINDOW_INITIAL));
 
   // A projection that SHRINKS — "New chat" resetting the session in place, a
-  // workspace switch dropping history, a role filter — leaves `startIndex`
+  // project switch dropping history, a role filter — leaves `startIndex`
   // pointing into a thread that no longer exists. Every other writer only ever
   // moves the start DOWN (growth, jump-to-message) or sets it to this floor, so
   // a start above the floor is unreachable except by a shrink: that is the
@@ -733,7 +733,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   // Persist position on unmount so reopening returns the reader. A tab switch
   // no longer unmounts (the panel stays mounted and laid out behind the active
   // tab, keeping `scrollTop` in the DOM); this covers closing the tab or the
-  // workspace and coming back.
+  // project and coming back.
   useEffect(() => {
     return () => {
       const el = scrollRef.current;
@@ -896,7 +896,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           }}
         >
           {rows.length === 0 && !isStreaming && (
-            <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="flex h-full items-center justify-center text-xs text-[var(--muted-foreground)]">
               No messages yet.
             </div>
           )}
@@ -926,8 +926,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         // Mostly-opaque behind the bar itself, ramping to clear below it.
         // Without a tint the header read as a transparent pane over live text;
         // `color-mix` keeps it theme-correct rather than hardcoding black.
-        tint="color-mix(in srgb, var(--bg-surface) 90%, transparent)"
-        style={{ zIndex: 3 }}
+        tint="color-mix(in srgb, var(--background) 90%, transparent)"
+        className="z-panel"
       />
 
       {/* Bottom stays a plain colour fade. The blur was tried here and the
@@ -942,7 +942,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           // scroll repaints a 1-2px hairline of text flashed through the seam
           // above the composer. The overshoot is solid bg-surface over the
           // inter-panel gap — invisible, and it absorbs the rounding both ways.
-          "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-[1] h-[44px] transition-opacity duration-200",
+          "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-panel h-[44px] transition-opacity duration-200",
           more ? "opacity-100" : "opacity-0",
         )}
         style={{
@@ -951,7 +951,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           // band just above the composer let white text ghost through the
           // seam (subtle but visible on AMOLED black).
           background:
-            "linear-gradient(to bottom, transparent, var(--bg-surface) 72%, var(--bg-surface))",
+            "linear-gradient(to bottom, transparent, var(--background) 72%, var(--background))",
         }}
       />
     </div>

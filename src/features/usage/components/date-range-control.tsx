@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange, RangePreset } from "../types";
@@ -49,32 +49,36 @@ export function DateRangeControl({
       onChange={(preset) => onChange({ preset })}
     >
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            title="Custom range"
-            className={cn(SEGMENT_TRIGGER, isCustom ? SEGMENT_ACTIVE : SEGMENT_IDLE)}
-          >
-            <span className="tabular-nums">{isCustom ? fmtRange(resolved) : "Custom"}</span>
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              title="Custom range"
+              className={cn(SEGMENT_TRIGGER, isCustom ? SEGMENT_ACTIVE : SEGMENT_IDLE)}
+            >
+              <span className="tabular-nums">{isCustom ? fmtRange(resolved) : "Custom"}</span>
+            </button>
+          }
+        />
         <Popover.Portal>
-          <Popover.Content
-            align="end"
-            sideOffset={6}
-            className="z-[var(--z-max)] origin-[var(--radix-popover-content-transform-origin)] rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 p-2 shadow-[var(--shadow-overlay)] outline-none backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-          >
-            <MonthGrid
-              from={isCustom ? (resolved.from ?? today) : null}
-              to={isCustom ? resolved.to : null}
-              today={today}
-              earliest={earliest}
-              onPick={(from, to) => {
-                onChange({ preset: "custom", from, to });
-                setOpen(false);
-              }}
-            />
-          </Popover.Content>
+          {/* z-index belongs to the Positioner: the Popup is statically
+              positioned inside it, so `z-popover` on the Popup would do
+              nothing at all. `--transform-origin` is Base UI's spelling of
+              Radix's `--radix-popover-content-transform-origin`. */}
+          <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+            <Popover.Popup className="origin-[var(--transform-origin)] rounded-lg border border-[var(--border)] bg-[var(--card)]/90 p-2 shadow-md outline-none backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+              <MonthGrid
+                from={isCustom ? (resolved.from ?? today) : null}
+                to={isCustom ? resolved.to : null}
+                today={today}
+                earliest={earliest}
+                onPick={(from, to) => {
+                  onChange({ preset: "custom", from, to });
+                  setOpen(false);
+                }}
+              />
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
     </Segmented>
@@ -140,16 +144,16 @@ function MonthGrid({
         <button
           type="button"
           aria-label="Previous month"
-          className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex size-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
           onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
         >
           <ChevronLeft size={12} />
         </button>
-        <span className="text-[11px] font-medium text-[var(--text-primary)]">{monthLabel}</span>
+        <span className="text-xs font-medium text-[var(--foreground)]">{monthLabel}</span>
         <button
           type="button"
           aria-label="Next month"
-          className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-30"
+          className="flex size-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
           disabled={dayKey(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) > today}
           onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
         >
@@ -160,7 +164,7 @@ function MonthGrid({
         {WEEKDAY.map((w, i) => (
           <span
             key={i}
-            className="flex h-5 items-center justify-center text-[9px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]"
+            className="flex h-5 items-center justify-center text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]"
           >
             {w}
           </span>
@@ -179,17 +183,23 @@ function MonthGrid({
               onMouseEnter={() => anchor && setHover(day)}
               onClick={() => pick(day)}
               className={cn(
-                "flex h-6 items-center justify-center text-[11px] tabular-nums transition-colors",
+                "flex h-6 items-center justify-center text-xs tabular-nums transition-colors",
                 edge
-                  ? "rounded-md bg-[var(--text-primary)] text-[var(--text-inverse)]"
+                  ? "rounded-md bg-[var(--foreground)] text-[var(--primary-foreground)]"
                   : inSel
-                    ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
-                    : "rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                future && "cursor-default text-[var(--text-ghost)] hover:bg-transparent",
-                before && !inSel && "text-[var(--text-muted)]",
+                    ? "bg-[var(--atlas-element-active)] text-[var(--foreground)]"
+                    : "rounded-md text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
+                // Future days have not happened — hard-disabled, drawn in the
+                // "unavailable" tone with no hover feedback at all. Before-data
+                // days are still pickable (click handling is unchanged), just
+                // unlikely to show anything, so they get the dimmer but still
+                // "live" muted tone the rest of the calendar uses, and keep
+                // their hover state.
+                future && "cursor-default text-[var(--atlas-text-disabled)] hover:bg-transparent",
+                before && !inSel && "text-[var(--muted-foreground)]",
                 day === today &&
                   !edge &&
-                  "underline decoration-[var(--text-tertiary)] underline-offset-2",
+                  "underline decoration-[var(--muted-foreground)] underline-offset-2",
               )}
             >
               {Number(day.slice(-2))}
@@ -197,11 +207,11 @@ function MonthGrid({
           );
         })}
       </div>
-      <div className="mt-1.5 flex items-center justify-between px-0.5 text-[10px] text-[var(--text-tertiary)]">
+      <div className="mt-1.5 flex items-center justify-between px-0.5 text-2xs text-[var(--muted-foreground)]">
         <span>{anchor ? "Pick the end day" : "Pick two days"}</span>
         <button
           type="button"
-          className="hover:text-[var(--text-primary)]"
+          className="hover:text-[var(--foreground)]"
           onClick={() => onPick(addDays(today, -6), today)}
         >
           This week

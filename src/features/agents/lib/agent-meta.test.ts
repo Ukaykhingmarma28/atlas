@@ -143,7 +143,7 @@ describe("agentMeta", () => {
     expect(meta.source).toBeNull();
     expect(meta.availability).toBeNull();
     expect(meta.label).toBe("Cursor");
-    expect(meta.cssClass).toBe("agent-cursor");
+    expect(meta.firstPartyIcon).toBe("cursor");
   });
 
   it("prefers the catalog's name and icon for externals", () => {

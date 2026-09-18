@@ -3,7 +3,7 @@
 // delta → store → projection path a real session does.
 
 import type { SessionMessage, ToolCall } from "@/types/agents";
-import { abs } from "../workspace";
+import { abs } from "../project";
 
 let n = 0;
 const id = (p: string) => `${p}-${++n}`;

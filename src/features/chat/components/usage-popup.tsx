@@ -41,20 +41,20 @@ function Headline({ view }: { view: SessionUsageView }) {
           Context · {fmtTokens(h.used)} / {fmtTokens(h.size)}
         </div>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {value.toFixed(value >= 10 ? 0 : 1)}
-            <span className="ml-0.5 text-[14px] font-medium text-[var(--text-tertiary)]">%</span>
+            <span className="ml-0.5 text-md font-medium text-[var(--muted-foreground)]">%</span>
           </span>
           <StatusPill status={h.status} />
         </div>
         <TickMeter value={h.pct} className="mt-2.5" />
-        <div className={cn("mt-1 flex justify-between text-[9px]", CAPTION)}>
+        <div className={cn("mt-1 flex justify-between text-3xs", CAPTION)}>
           <span>0</span>
           <span>{fmtTokens(h.size)}</span>
         </div>
         {view.compacting ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--accent-primary)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+          <div className="mt-1.5 flex items-center gap-1.5 text-2xs text-[var(--primary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
             Compacting the context window…
           </div>
         ) : view.savedTokens ? (
@@ -69,7 +69,7 @@ function Headline({ view }: { view: SessionUsageView }) {
     return (
       <Card index={0} section="tokens-total">
         <div className={CAPTION}>Tokens · this session</div>
-        <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+        <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmtTokens(Math.round(value))}
         </div>
       </Card>
@@ -78,7 +78,7 @@ function Headline({ view }: { view: SessionUsageView }) {
   return (
     <Card index={0} section="cost-total">
       <div className={CAPTION}>Cost · this session{h.estimated ? " · est." : ""}</div>
-      <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+      <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
         {fmtCost(value)}
       </div>
     </Card>
@@ -93,7 +93,7 @@ function TokenRows({ rows, index }: { rows: MetricRow[]; index: number }) {
       <div className="flex flex-col">
         {rows.map((r) => (
           <div key={r.key} className="flex h-6 items-center gap-2.5">
-            <span className="w-[76px] shrink-0 truncate text-[11px] text-[var(--text-secondary)]">
+            <span className="w-[76px] shrink-0 truncate text-xs text-[var(--secondary-foreground)]">
               {r.label}
             </span>
             <span className="min-w-0 flex-1">
@@ -113,7 +113,7 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
       <div className="flex items-baseline justify-between">
         <span className={CAPTION}>Cost</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-lg leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {fmtCost(cost.total)}
           </span>
           {cost.estimated ? <EstTag /> : null}
@@ -123,8 +123,8 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
         <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5">
           {cost.rows.map((r) => (
             <div key={r.key} className="flex items-baseline justify-between">
-              <span className="text-[10px] text-[var(--text-tertiary)]">{r.label}</span>
-              <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
+              <span className="text-2xs text-[var(--muted-foreground)]">{r.label}</span>
+              <span className="text-2xs tabular-nums text-[var(--secondary-foreground)]">
                 {fmtCost(r.cost ?? 0)}
               </span>
             </div>
@@ -166,11 +166,11 @@ function QuotaRow({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-[var(--text-secondary)]">{label}</span>
+        <span className="text-xs text-[var(--secondary-foreground)]">{label}</span>
         <span className={VALUE}>
           {Math.round(pct)}%
           {when ? (
-            <span className="ml-1.5 text-[10px] text-[var(--text-tertiary)]">{when}</span>
+            <span className="ml-1.5 text-2xs text-[var(--muted-foreground)]">{when}</span>
           ) : null}
         </span>
       </div>
@@ -179,10 +179,10 @@ function QuotaRow({
         mounted={mounted}
         color={
           pct >= 90
-            ? "var(--status-error)"
+            ? "var(--atlas-status-error-foreground)"
             : pct >= 70
-              ? "var(--status-warning)"
-              : "var(--capture-live)"
+              ? "var(--atlas-status-warning-foreground)"
+              : "var(--atlas-status-success-foreground)"
         }
       />
     </div>
@@ -249,9 +249,13 @@ function Session({
     cells.push([
       "Lines",
       <span key="lines">
-        <span className="text-[var(--capture-live)]">+{session.insertions ?? 0}</span>
-        <span className="mx-0.5 text-[var(--text-tertiary)]">/</span>
-        <span className="text-[var(--status-error)]">−{session.deletions ?? 0}</span>
+        <span className="text-[var(--atlas-status-success-foreground)]">
+          +{session.insertions ?? 0}
+        </span>
+        <span className="mx-0.5 text-[var(--muted-foreground)]">/</span>
+        <span className="text-[var(--atlas-status-error-foreground)]">
+          −{session.deletions ?? 0}
+        </span>
       </span>,
     ]);
   }
@@ -264,7 +268,7 @@ function Session({
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         {cells.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-2">
-            <span className="text-[10px] text-[var(--text-tertiary)]">{label}</span>
+            <span className="text-2xs text-[var(--muted-foreground)]">{label}</span>
             <span className={VALUE}>{value}</span>
           </div>
         ))}
@@ -282,8 +286,8 @@ export function UsagePopup({ view }: { view: SessionUsageView }) {
     <div className="flex flex-col gap-1.5 p-1.5">
       {empty ? (
         <Card index={0} section="empty">
-          <div className="text-[11px] font-medium text-[var(--text-primary)]">Nothing yet</div>
-          <p className="mt-0.5 text-[10px] leading-snug text-[var(--text-tertiary)]">
+          <div className="label">Nothing yet</div>
+          <p className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
             Usage shows up after the first turn — what this agent reports, and what Atlas records.
           </p>
         </Card>

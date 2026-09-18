@@ -22,9 +22,9 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { AtlasLoader } from "@/components/atlas-loader";
 import { timeAgo } from "@/lib/time-ago";
 import { ThreadHistoryView } from "./thread-history-view";
-import { useProjectStore } from "@/features/project/stores/project-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
+import { useAppStore } from "@/features/app/stores/app-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
@@ -38,7 +38,7 @@ import {
 } from "../lib/history-api";
 import { getAgentSync } from "../lib/agents-api";
 import { AtlasIcon } from "@/components/atlas-icon";
-import { useRecentChatsStore } from "@/features/workspaces/stores/recent-chats-store";
+import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { resumeThreadFast, ResumeError } from "../lib/resume-session";
 
 /** One key for the whole sidebar: history is one store, so there is one query. */
@@ -170,28 +170,29 @@ export const SessionSidebar = memo(function SessionSidebar({
   const sidebarHint = useActionShortcut("panels.agentSidebar")?.label;
   const asDropdown = variant === "dropdown";
   const queryClient = useQueryClient();
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   // `currentProject` is a legacy field that's transiently null during boot and
-  // workspace switches (it's repopulated by a fire-and-forget `void switchTo`).
+  // project switches (it's repopulated by a fire-and-forget `void switchTo`).
   // When it's null, `cwd` was "" → every history query (gated on
   // `cwd.length > 0`) returned [] → the sidebar showed only ephemeral live rows.
-  // Fall back to the active workspace's path (the real source of truth).
-  const activeWorkspaceId = useWorkspaceStore.use.activeWorkspaceId();
-  // ACTIVE-org workspaces only — the fallback below must never resolve to (or
+  // Fall back to the active project's path (the real source of truth).
+  const activeProjectId = useProjectStore.use.activeProjectId();
+  // ACTIVE-org projects only — the fallback below must never resolve to (or
   // hold, via the sticky ref) a path that belongs to another organisation.
-  const workspaces = useActiveOrgWorkspaces();
+  // (`projects` further down is the thread-history grouping, not this list.)
+  const orgProjects = useActiveOrgProjects();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const resolvedCwd =
-    project?.path ?? workspaces.find((w) => w.id === activeWorkspaceId)?.path ?? "";
+    project?.path ?? orgProjects.find((w) => w.id === activeProjectId)?.path ?? "";
   // STICKY cwd. It no longer keys any query — history is one app-level store —
   // but it still decides which project's threads sort to the top and which
   // directory a resumed thread binds against, and both would flicker if it
-  // collapsed to "" for a render. Even with the workspace fallback,
+  // collapsed to "" for a render. Even with the project fallback,
   // `currentProject` and
-  // `activeWorkspaceId`/`workspaces` can momentarily DISAGREE mid-switch,
+  // `activeProjectId`/`orgProjects` can momentarily DISAGREE mid-switch,
   // collapsing `resolvedCwd` to "" for a render or two. Hold the last NON-EMPTY
   // cwd across those blips; only clear it when there is genuinely no project
-  // open (zero workspaces).
+  // open (zero projects).
   const lastCwdRef = useRef("");
   // The sticky hold must not survive an ORG switch — it would pin the
   // outgoing org's cwd (and thus its thread ordering) into the new org while
@@ -204,7 +205,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   }
   if (resolvedCwd) {
     lastCwdRef.current = resolvedCwd;
-  } else if (workspaces.length === 0) {
+  } else if (orgProjects.length === 0) {
     lastCwdRef.current = "";
   }
   const cwd = lastCwdRef.current;
@@ -357,7 +358,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     [projects],
   );
 
-  // Self-heal the workspace panel's persisted "Chats" list for THIS project.
+  // Self-heal the project panel's persisted "Chats" list for THIS project.
   // That list (`atlas-recent-chats`) is recorded on agent activity and never
   // re-validated, so rows for sessions deleted elsewhere linger forever. Now
   // that history is one store, "does this still exist" is one lookup.
@@ -592,7 +593,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       // (ADR-0001). No per-agent branch, and no path into anyone's storage.
       await deleteThread(item.threadId);
       if (activeAcpId === item.id) clearSession(tabId);
-      // The workspace panel's "Chats" list is a separate persisted store,
+      // The project panel's "Chats" list is a separate persisted store,
       // recorded on agent activity and never re-validated — purge the deleted
       // session's row so it doesn't linger there.
       useRecentChatsStore.getState().actions.removeBySession(item.id);
@@ -658,7 +659,7 @@ export const SessionSidebar = memo(function SessionSidebar({
         "relative flex flex-col",
         asDropdown
           ? "h-[min(420px,60vh)] w-[340px]"
-          : "shrink-0 h-full border-r border-[var(--border-default)] bg-[var(--bg-sidebar)]",
+          : "shrink-0 h-full border-r border-[var(--border)] bg-[var(--sidebar)]",
       )}
     >
       {/* Search — full-width row matching the GitHub panel's search */}
@@ -667,16 +668,18 @@ export const SessionSidebar = memo(function SessionSidebar({
           "flex items-center gap-1.5 h-[32px] shrink-0 px-3",
           // The dropdown sits on a blurred, translucent panel — an opaque fill
           // here would punch a solid rectangle through the blur.
-          asDropdown ? "border-b border-white/5" : "border-b border-border-default bg-bg-primary",
+          asDropdown
+            ? "border-b border-[var(--atlas-element-hover)]"
+            : "border-b border-border bg-background",
         )}
       >
-        <Search size={11} className="text-text-tertiary shrink-0" />
+        <Search size={11} className="text-muted-foreground shrink-0" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search sessions"
           placeholder="Search…"
-          className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary min-w-0"
+          className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground min-w-0"
         />
         {/* Everything ever, archived included — and where import lives. */}
         {!asDropdown && (
@@ -685,7 +688,7 @@ export const SessionSidebar = memo(function SessionSidebar({
               type="button"
               onClick={() => setHistoryOpen(true)}
               aria-label="All history"
-              className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+              className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
             >
               <History size={11} />
             </button>
@@ -705,10 +708,10 @@ export const SessionSidebar = memo(function SessionSidebar({
       {/* List */}
       <div className="flex-1 overflow-y-auto hide-scrollbar">
         {isLoading && (
-          <div className="text-[11px] text-[var(--text-tertiary)] px-3 py-2">Loading…</div>
+          <div className="text-xs text-[var(--muted-foreground)] px-3 py-2">Loading…</div>
         )}
         {showEmpty && (
-          <div className="text-[11px] text-[var(--text-tertiary)] px-3 py-3 leading-relaxed">
+          <div className="text-xs text-[var(--muted-foreground)] px-3 py-3 leading-relaxed">
             {/* Names the scope: the list is this project's, so an empty one
                 means "nothing here yet", not "no chats anywhere". Other
                 projects' chats are behind the History button in the header. */}
@@ -725,7 +728,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 // The project a run of rows belongs to. Threads from other
                 // worktrees are listed here too, and resume into their own
                 // worktree — that is what an app-level store is for.
-                <div className="px-3 pt-2.5 pb-1 text-[9px] uppercase tracking-wider text-text-tertiary truncate">
+                <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-muted-foreground truncate">
                   {item.projectHeading}
                 </div>
               )}
@@ -739,9 +742,9 @@ export const SessionSidebar = memo(function SessionSidebar({
                 className={cn(
                   "group relative w-full text-left px-3 py-3 transition-colors flex flex-col gap-1 cursor-pointer select-none",
                   active
-                    ? "bg-[var(--bg-selected)] text-[var(--text-primary)] opacity-100"
-                    : "text-[var(--text-secondary)] opacity-80 hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                  !isLast && "border-b border-[var(--border-default)]",
+                    ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)] opacity-100"
+                    : "text-[var(--secondary-foreground)] opacity-80 hover:opacity-100 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
+                  !isLast && "border-b border-[var(--border)]",
                 )}
               >
                 {/* `pr-12` reserves the hover actions' full footprint: two 16px
@@ -753,7 +756,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     first line ran right up under the archive button. */}
                 <div className="flex items-start gap-2 min-w-0 pr-12">
                   <span
-                    className="shrink-0 inline-flex h-[15px] items-center justify-center text-[var(--text-secondary)]"
+                    className="shrink-0 inline-flex h-[15px] items-center justify-center text-[var(--secondary-foreground)]"
                     title={
                       item.kind !== "agent"
                         ? "AI Chat"
@@ -761,7 +764,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     }
                   >
                     {isRunning ? (
-                      <AtlasLoader size={8} className="text-[var(--accent-primary)]" />
+                      <AtlasLoader size={8} className="text-[var(--primary)]" />
                     ) : item.kind === "agent" ? (
                       item.agent === "codex" ? (
                         <CodexIcon className="size-3" />
@@ -781,18 +784,18 @@ export const SessionSidebar = memo(function SessionSidebar({
                         <AgentMonogram label={agentMeta(item.agent).label} size={12} />
                       )
                     ) : (
-                      <MessageSquare size={11} className="text-[var(--accent-primary)]" />
+                      <MessageSquare size={11} className="text-[var(--primary)]" />
                     )}
                   </span>
-                  <span className="text-[11px] leading-snug line-clamp-2 flex-1">{item.title}</span>
+                  <span className="text-xs leading-snug line-clamp-2 flex-1">{item.title}</span>
                 </div>
                 <div className="pl-[18px] flex items-center gap-1.5">
-                  <span className="text-[9px] text-[var(--text-tertiary)]">
+                  <span className="text-3xs text-[var(--muted-foreground)]">
                     {timeAgo(item.lastUpdated, { suffix: true })}
                   </span>
                   {item.elsewhere && (
                     <span
-                      className="text-[9px] text-[var(--text-tertiary)] truncate"
+                      className="text-3xs text-[var(--muted-foreground)] truncate"
                       title={item.cwd}
                     >
                       · {item.projectName}
@@ -807,7 +810,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       onClick={(e) => handleArchiveAgent(e, item)}
                       aria-label="Archive session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]"
                     >
                       <Archive size={10} />
                     </button>
@@ -816,7 +819,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                     <button
                       onClick={(e) => handleDeleteAgent(e, item)}
                       aria-label="Delete session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--text-tertiary)] hover:text-[var(--status-error)] hover:bg-[var(--bg-elevated)]"
+                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] hover:bg-[var(--card)]"
                     >
                       <X size={10} />
                     </button>
@@ -838,14 +841,14 @@ export const SessionSidebar = memo(function SessionSidebar({
             // Same rule as the search row above: an opaque fill would punch a
             // solid strip through the picker's blurred panel.
             asDropdown
-              ? "border-t border-white/5"
-              : "border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]",
+              ? "border-t border-[var(--atlas-element-hover)]"
+              : "border-t border-[var(--border)] bg-[var(--sidebar)]",
           )}
         >
           <HintItem label={sidebarHint ? `Hide sidebar (${sidebarHint})` : "Hide sidebar"}>
             <button
               onClick={toggleChatSidebar}
-              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
             >
               <PanelLeft size={12} />
             </button>
@@ -853,7 +856,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           <HintItem label="New chat">
             <button
               onClick={handleNewChat}
-              className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
             >
               <Plus size={12} />
             </button>
@@ -866,7 +869,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       {!asDropdown && (
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -right-px w-px h-full bg-border-default hover:bg-accent transition-colors cursor-col-resize"
+          className="absolute top-0 -right-px w-px h-full bg-border hover:bg-primary transition-colors cursor-col-resize"
           title="Drag to resize"
         />
       )}

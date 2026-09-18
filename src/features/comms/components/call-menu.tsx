@@ -1,5 +1,5 @@
 import { useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { ExternalLink, Link2, Loader2, Phone, Users, Video } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
@@ -65,96 +65,95 @@ export function CallMenu({ convId, mode }: { convId: string; mode: CallMode }) {
         setOpen(next);
       }}
     >
-      {/* Tooltip OUTSIDE the popover trigger: both want `asChild`, and this
-          nesting order is the one that keeps a single button element. */}
+      {/* Tooltip OUTSIDE the popover trigger: both want to render the same
+          element, and this nesting order is the one that keeps a single
+          button. */}
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Popover.Trigger asChild>
-            <button
-              type="button"
-              aria-label={mode === "video" ? "Start video call" : "Start voice call"}
-              className={cn(
-                "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors",
-                open
-                  ? "bg-bg-selected text-text-primary"
-                  : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
-              )}
-            >
-              <Icon size={13} />
-            </button>
-          </Popover.Trigger>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Popover.Trigger
+              render={
+                <button
+                  type="button"
+                  aria-label={mode === "video" ? "Start video call" : "Start voice call"}
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors",
+                    open
+                      ? "bg-element-selected text-foreground"
+                      : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
+                  )}
+                >
+                  <Icon size={13} />
+                </button>
+              }
+            />
+          }
+        />
         <TooltipContent side="bottom" sideOffset={4}>
           {mode === "video" ? "Start video call" : "Start voice call"}
         </TooltipContent>
       </Tooltip>
       <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-        >
-          <div className="flex w-[230px] flex-col py-1">
-            {liveCall ? (
-              <>
-                <div className="px-3 pb-1 pt-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-text-tertiary">
-                  A call is already live here
-                </div>
-                <MenuRow
-                  icon={<ExternalLink size={12} />}
-                  label="Join ongoing call"
-                  onClick={() => {
-                    void openUrl(memberCallUrl(orgId ?? "", liveCall.id)).catch(() =>
-                      toast.error("Could not open your browser."),
-                    );
-                    setOpen(false);
-                  }}
-                />
-                <MenuRow
-                  icon={<Link2 size={12} />}
-                  label="Copy call link"
-                  onClick={() => {
-                    void copyShareLink(orgId ?? "", liveCall);
-                    setOpen(false);
-                  }}
-                />
-              </>
-            ) : (
-              <>
-                <MenuRow
-                  icon={
-                    pending === "channel" ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Icon size={12} />
-                    )
-                  }
-                  label={pending === "channel" ? "Starting…" : `Call channel`}
-                  sub={`Start a ${noun} for members`}
-                  disabled={pending !== null}
-                  onClick={() => void start(false)}
-                />
-                <MenuRow
-                  icon={
-                    pending === "guests" ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Users size={12} />
-                    )
-                  }
-                  label={pending === "guests" ? "Starting…" : "Call with guests"}
-                  sub="Anyone with the link can knock"
-                  disabled={pending !== null}
-                  onClick={() => void start(true)}
-                />
-              </>
-            )}
-          </div>
-        </Popover.Content>
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-border bg-[var(--card)]/95 backdrop-blur-2xl shadow-lg inset-highlight">
+            <div className="flex w-[230px] flex-col py-1">
+              {liveCall ? (
+                <>
+                  <div className="px-3 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    A call is already live here
+                  </div>
+                  <MenuRow
+                    icon={<ExternalLink size={12} />}
+                    label="Join ongoing call"
+                    onClick={() => {
+                      void openUrl(memberCallUrl(orgId ?? "", liveCall.id)).catch(() =>
+                        toast.error("Could not open your browser."),
+                      );
+                      setOpen(false);
+                    }}
+                  />
+                  <MenuRow
+                    icon={<Link2 size={12} />}
+                    label="Copy call link"
+                    onClick={() => {
+                      void copyShareLink(orgId ?? "", liveCall);
+                      setOpen(false);
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <MenuRow
+                    icon={
+                      pending === "channel" ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Icon size={12} />
+                      )
+                    }
+                    label={pending === "channel" ? "Starting…" : `Call channel`}
+                    sub={`Start a ${noun} for members`}
+                    disabled={pending !== null}
+                    onClick={() => void start(false)}
+                  />
+                  <MenuRow
+                    icon={
+                      pending === "guests" ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Users size={12} />
+                      )
+                    }
+                    label={pending === "guests" ? "Starting…" : "Call with guests"}
+                    sub="Anyone with the link can knock"
+                    disabled={pending !== null}
+                    onClick={() => void start(true)}
+                  />
+                </>
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -178,15 +177,15 @@ function MenuRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center text-text-tertiary">
+      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[11px] font-medium text-text-primary">{label}</span>
+        <span className="block text-xs font-medium text-foreground">{label}</span>
         {sub && (
-          <span className="mt-px block text-[10px] leading-[1.4] text-text-tertiary">{sub}</span>
+          <span className="mt-px block text-2xs leading-[1.4] text-muted-foreground">{sub}</span>
         )}
       </span>
     </button>

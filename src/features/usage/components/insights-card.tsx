@@ -27,7 +27,7 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
   return (
     <Card index={3} section="insights" className="flex min-h-[172px] flex-col">
       <div className="flex items-center gap-1.5">
-        <Lightbulb size={11} className="text-[var(--text-tertiary)]" />
+        <Lightbulb size={11} className="text-[var(--muted-foreground)]" />
         <span className={CAPTION}>Insight</span>
       </div>
       <div
@@ -37,18 +37,18 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
         {cur ? (
           <>
             <div
-              className="truncate text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]"
+              className="truncate text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]"
               title={cur.stat}
             >
               {cur.stat}
             </div>
-            <p className="mt-2 text-[12px] leading-snug">
-              <span className="text-[var(--text-primary)]">{cur.lead}</span>{" "}
-              <span className="text-[var(--text-tertiary)]">{cur.rest}</span>
+            <p className="mt-2 text-sm leading-snug">
+              <span className="text-[var(--foreground)]">{cur.lead}</span>{" "}
+              <span className="text-[var(--muted-foreground)]">{cur.rest}</span>
             </p>
           </>
         ) : (
-          <p className="text-[11px] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--muted-foreground)]">
             Not enough in this window to say anything yet.
           </p>
         )}
@@ -59,7 +59,7 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
             type="button"
             aria-label="Previous insight"
             onClick={() => go(i - 1)}
-            className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex size-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
           >
             <ChevronLeft size={12} />
           </button>
@@ -73,8 +73,8 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
                 className={cn(
                   "h-[3px] rounded-full transition-all duration-200",
                   k === i
-                    ? "w-5 bg-[var(--capture-live)]"
-                    : "w-3 bg-white/[0.12] hover:bg-white/[0.25]",
+                    ? "w-5 bg-[var(--atlas-status-success-foreground)]"
+                    : "w-3 bg-[var(--atlas-element-active)] hover:bg-[var(--muted-foreground)]",
                 )}
               />
             ))}
@@ -83,7 +83,7 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
             type="button"
             aria-label="Next insight"
             onClick={() => go(i + 1)}
-            className="flex size-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex size-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
           >
             <ChevronRight size={12} />
           </button>

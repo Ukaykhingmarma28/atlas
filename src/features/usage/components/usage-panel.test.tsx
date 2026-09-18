@@ -60,7 +60,7 @@ afterEach(cleanup);
 
 function seed(data = fixture(40)) {
   // `fetchedAt` now + a matching signature makes the mount-time refresh a no-op.
-  useUsageStore.setState({ data, fetchedAt: Date.now(), wsSig: "" } as never);
+  useUsageStore.setState({ data, fetchedAt: Date.now(), projectSig: "" } as never);
   return data;
 }
 

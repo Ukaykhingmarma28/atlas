@@ -23,7 +23,7 @@ export function NodeHandles({ selected }: { selected?: boolean }) {
           className={cn(
             // High z so a dot is never painted under node content (e.g. the
             // note-body fade gradient) or clipped by it.
-            "!z-[60] !w-3 !h-3 !rounded-full !border !border-white/40 !bg-[var(--accent-primary)] transition-opacity",
+            "!z-panel !w-3 !h-3 !rounded-full !border !border-[var(--background)] !bg-[var(--primary)] transition-opacity",
             selected ? "opacity-90" : "opacity-0 group-hover:opacity-100",
           )}
         />

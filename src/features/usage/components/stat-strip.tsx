@@ -94,7 +94,7 @@ export function StatStrip({
   ];
   return (
     <Card index={0} section="stats" className="!px-0 !py-0">
-      <div className="grid grid-cols-5 divide-x divide-white/[0.06]">
+      <div className="grid grid-cols-5 divide-x divide-[var(--atlas-element-selected)]">
         {cells.map((c) => (
           <StatCell
             key={c.key}
@@ -130,7 +130,10 @@ function StatCell({
     <div className="min-w-0 px-3.5 py-3">
       <div className={CAPTION}>{caption}</div>
       <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="truncate text-[24px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+        {/* One step below the insight headline's text-2xl (the scale's top
+            step) — a stat cell is five-per-row, the headline is one figure
+            alone, and they should not read as the same weight. */}
+        <span className="truncate text-xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmt(shown)}
         </span>
         <DeltaChip delta={delta} />

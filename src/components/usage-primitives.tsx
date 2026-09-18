@@ -47,8 +47,8 @@ export function useMounted(): boolean {
 }
 
 export const CAPTION =
-  "text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
-export const VALUE = "text-[11px] tabular-nums text-[var(--text-primary)]";
+  "text-2xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]";
+export const VALUE = "text-xs tabular-nums text-[var(--foreground)]";
 
 /** One staggered section card; `index` drives the `atlas-usage-in` delay. */
 export function Card({
@@ -66,7 +66,7 @@ export function Card({
     <section
       data-section={section}
       className={cn(
-        "atlas-usage-in rounded-lg border border-white/[0.06] bg-[var(--bg-elevated-2)] px-2.5 py-2",
+        "atlas-usage-in rounded-lg border border-[var(--atlas-element-selected)] bg-[var(--card)] px-2.5 py-2",
         className,
       )}
       style={{ "--i": index } as CSSProperties}
@@ -79,14 +79,14 @@ export function Card({
 export function StatusPill({ status, label }: { status: "ok" | "warn" | "full"; label?: string }) {
   const tone =
     status === "full"
-      ? "border-[var(--status-error)]/40 text-[var(--status-error)]"
+      ? "border-[var(--atlas-status-error-foreground)]/40 text-[var(--atlas-status-error-foreground)]"
       : status === "warn"
-        ? "border-[var(--status-warning)]/40 text-[var(--status-warning)]"
-        : "border-white/[0.08] text-[var(--text-secondary)]";
+        ? "border-[var(--atlas-status-warning-foreground)]/40 text-[var(--atlas-status-warning-foreground)]"
+        : "border-[var(--atlas-element-active)] text-[var(--secondary-foreground)]";
   return (
     <span
       className={cn(
-        "inline-flex h-4 items-center rounded-full border px-1.5 text-[9px] font-medium uppercase tracking-wider",
+        "inline-flex h-4 items-center rounded-full border px-1.5 text-3xs font-medium uppercase tracking-wider",
         tone,
       )}
     >
@@ -98,14 +98,14 @@ export function StatusPill({ status, label }: { status: "ok" | "warn" | "full"; 
 export function Bar({
   frac,
   mounted,
-  color = "var(--text-secondary)",
+  color = "var(--secondary-foreground)",
 }: {
   frac: number;
   mounted: boolean;
   color?: string;
 }) {
   return (
-    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-white/[0.06]">
+    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-[var(--atlas-element-selected)]">
       <span
         className="block h-full rounded-full"
         style={{
@@ -121,7 +121,7 @@ export function Bar({
 /** The "est." chip beside any cost that came from the price map, not the provider. */
 export function EstTag() {
   return (
-    <span className="rounded-full border border-white/[0.08] px-1 text-[8px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+    <span className="rounded-full border border-[var(--atlas-element-active)] px-1 text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
       est.
     </span>
   );

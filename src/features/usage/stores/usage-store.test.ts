@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
-  workspaces: [] as Array<{ path: string }>,
+  projects: [] as Array<{ path: string }>,
   orgListeners: [] as Array<(s: { activeOrganisationId: string | null }) => void>,
   org: { activeOrganisationId: "org-a" as string | null },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@/features/workspaces/lib/org-scope", () => ({
-  activeOrgWorkspacesSnapshot: () => mocks.workspaces,
+vi.mock("@/features/projects/lib/org-scope", () => ({
+  activeOrgProjectsSnapshot: () => mocks.projects,
 }));
 vi.mock("@/features/organisations/stores/org-store", () => ({
   useOrgStore: {
@@ -32,7 +32,7 @@ function reset() {
     loading: false,
     error: null,
     fetchedAt: null,
-    wsSig: "",
+    projectSig: "",
     facets: NO_FACETS,
     search: "",
   });
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-09-17T12:00:00Z"));
   mocks.invoke.mockReset();
   mocks.invoke.mockResolvedValue(DASH);
-  mocks.workspaces = [{ path: "/w/a" }, { path: "/w/b" }];
+  mocks.projects = [{ path: "/w/a" }, { path: "/w/b" }];
   reset();
 });
 
@@ -85,7 +85,7 @@ describe("refresh", () => {
   it("refetches when the project set changes", async () => {
     const { refresh } = useUsageStore.getState().actions;
     await refresh();
-    mocks.workspaces = [{ path: "/w/a" }];
+    mocks.projects = [{ path: "/w/a" }];
     await refresh();
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
     expect(mocks.invoke).toHaveBeenLastCalledWith("usage_dashboard", { projectPaths: ["/w/a"] });
@@ -94,7 +94,7 @@ describe("refresh", () => {
   it("ignores project order in the signature", async () => {
     const { refresh } = useUsageStore.getState().actions;
     await refresh();
-    mocks.workspaces = [{ path: "/w/b" }, { path: "/w/a" }];
+    mocks.projects = [{ path: "/w/b" }, { path: "/w/a" }];
     await refresh();
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });

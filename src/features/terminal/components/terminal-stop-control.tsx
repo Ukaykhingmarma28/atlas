@@ -73,8 +73,8 @@ export function TerminalStopControl({
         className={cn(
           "flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors",
           force
-            ? "text-[var(--status-error)] hover:bg-[var(--status-error)]/10"
-            : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+            ? "text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-foreground)]/10"
+            : "text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
           pending ? "cursor-wait" : "cursor-pointer",
           className,
         )}

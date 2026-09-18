@@ -412,7 +412,7 @@ export interface ChatMessage {
   turnSummary?: {
     turnSeq: number;
     files: TurnFile[];
-    /** Whether the workspace was a git repo when the turn ended (gates commit). */
+    /** Whether the project was a git repo when the turn ended (gates commit). */
     repoAtTurn: boolean;
   };
   /** Agent-suggested next steps for this turn's footer. Generated once at

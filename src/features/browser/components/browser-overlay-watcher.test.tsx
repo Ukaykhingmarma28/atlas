@@ -24,15 +24,15 @@ afterEach(() => {
 });
 
 describe("BrowserOverlayWatcher", () => {
-  it("hides the browser for a Radix popper that is not a tooltip", () => {
-    mount('<div data-radix-popper-content-wrapper><div role="listbox"></div></div>');
+  it("hides the browser for an anchored popup that is not a tooltip", () => {
+    mount('<div data-open data-side="bottom"><div role="listbox"></div></div>');
     render(<BrowserOverlayWatcher />);
     expect(overlayOpen()).toBe(true);
   });
 
-  it("ignores a Radix tooltip", () => {
+  it("ignores a tooltip", () => {
     mount(
-      '<div data-radix-popper-content-wrapper><div data-slot="tooltip-content" data-state="delayed-open" data-side="bottom">Refresh<span role="tooltip">Refresh</span></div></div>',
+      '<div data-open data-side="bottom"><div data-slot="tooltip-content" data-open data-side="bottom">Refresh<span role="tooltip">Refresh</span></div></div>',
     );
     render(<BrowserOverlayWatcher />);
     expect(overlayOpen()).toBe(false);
@@ -40,7 +40,7 @@ describe("BrowserOverlayWatcher", () => {
 
   it("still counts a real overlay open alongside a tooltip", () => {
     mount(
-      '<div data-radix-popper-content-wrapper><div data-slot="tooltip-content"></div></div><div role="dialog"></div>',
+      '<div data-open data-side="bottom"><div data-slot="tooltip-content"></div></div><div role="dialog"></div>',
     );
     render(<BrowserOverlayWatcher />);
     expect(overlayOpen()).toBe(true);

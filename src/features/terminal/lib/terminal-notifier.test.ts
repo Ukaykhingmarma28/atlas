@@ -10,8 +10,8 @@ import type { TerminalEvent } from "./block-parser";
 const ctx: TerminalCtx = {
   terminalId: "pty-1",
   tabId: "terminal",
-  workspaceId: "ws-a",
-  workspaceName: "atlas",
+  projectId: "ws-a",
+  projectName: "atlas",
   orgId: "org-1",
 };
 const prefs: TerminalNotificationPrefs = {
@@ -26,13 +26,13 @@ const away: NotifierEnv = {
   terminalVisible: false,
   windowFocused: false,
   interactedWithinMs: 999_999,
-  workspaceActive: true,
+  projectActive: true,
 };
 const looking: NotifierEnv = {
   terminalVisible: true,
   windowFocused: true,
   interactedWithinMs: 1_000,
-  workspaceActive: true,
+  projectActive: true,
 };
 
 const finished = (over: Partial<Extract<TerminalEvent, { type: "commandFinished" }>> = {}) =>
@@ -96,12 +96,12 @@ describe("decideTerminalNotification", () => {
     expect(decideTerminalNotification(finished(), ctx, looking, prefs)).toBeNull();
   });
 
-  it("names the workspace only when it is not the active one", () => {
+  it("names the project only when it is not the active one", () => {
     const active = decideTerminalNotification(finished(), ctx, away, prefs);
     const other = decideTerminalNotification(
       finished(),
       ctx,
-      { ...away, workspaceActive: false },
+      { ...away, projectActive: false },
       prefs,
     );
     expect(active?.body).toBe("atlas");

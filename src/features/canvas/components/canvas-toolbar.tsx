@@ -63,8 +63,8 @@ export function CanvasToolbar({
   return (
     <div
       className={cn(
-        "absolute left-3 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1 p-1",
-        "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-[var(--shadow-overlay)]",
+        "absolute left-3 top-1/2 -translate-y-1/2 z-panel flex flex-col items-center gap-1 p-1",
+        "rounded-xl border border-border-subtle bg-[var(--card)]/70 backdrop-blur-2xl shadow-md",
       )}
     >
       {TOOLS.map((t) => (
@@ -76,7 +76,7 @@ export function CanvasToolbar({
         />
       ))}
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
 
       {SHAPES.map((t) => (
         <ToolButton
@@ -87,24 +87,24 @@ export function CanvasToolbar({
         />
       ))}
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
       <Hint label="Insert image" side="right">
         <button
           type="button"
           onClick={onInsertMedia}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
         >
           <ImageIcon size={16} />
         </button>
       </Hint>
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
       <Hint label="Undo" shortcut="⌘Z" side="right">
         <button
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Undo2 size={16} />
         </button>
@@ -114,7 +114,7 @@ export function CanvasToolbar({
           type="button"
           onClick={onRedo}
           disabled={!canRedo}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Redo2 size={16} />
         </button>
@@ -140,8 +140,8 @@ function ToolButton({
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-lg transition-colors cursor-pointer",
           active
-            ? "bg-[var(--accent-primary)]/20 text-[var(--text-primary)]"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            ? "bg-[var(--primary)]/20 text-[var(--foreground)]"
+            : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
         )}
       >
         <def.icon size={16} />

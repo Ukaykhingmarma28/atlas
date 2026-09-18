@@ -12,7 +12,7 @@ export function DeltaChip({ delta, className }: { delta: number | null; classNam
   return (
     <span
       className={cn(
-        "inline-flex h-4 items-center gap-0.5 rounded-full border border-white/[0.08] px-1.5 text-[9px] font-medium tabular-nums text-[var(--text-secondary)]",
+        "inline-flex h-4 items-center gap-0.5 rounded-full border border-[var(--atlas-element-active)] px-1.5 text-3xs font-medium tabular-nums text-[var(--secondary-foreground)]",
         className,
       )}
       title="vs the previous period of the same length"

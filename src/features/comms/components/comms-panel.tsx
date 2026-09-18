@@ -132,7 +132,7 @@ export function CommsPanel() {
     // an empty 29px strip labelled "Team Chat" only repeats what the panel
     // already is. The placeholder gets the whole surface.
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)] pt-1.5">
+      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)] pt-1.5">
         <CommsSurface>
           <CommsNotConnected org={activeOrg} />
         </CommsSurface>
@@ -150,9 +150,9 @@ export function CommsPanel() {
   if (conversations.length === 0 && connection.state !== "open") {
     const terminal = connection.state === "unavailable";
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)]">
+      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
         <div className="flex h-[38px] shrink-0 items-center pl-2">
-          <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-white/[0.07] pl-2.5 pr-2.5 text-[11.5px] font-medium text-text-primary select-none">
+          <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-foreground select-none">
             <MessagesSquare size={11} className="shrink-0 opacity-70" />
             Chats
           </div>
@@ -173,7 +173,7 @@ export function CommsPanel() {
   }
 
   return (
-    <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)]">
+    <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
       {/* The header lives on the BACKDROP, not the card — that separation is
           the whole depth trick. Taller than the old 29px band so the tabs
           breathe like the reference. */}
@@ -204,13 +204,13 @@ export function CommsPanel() {
           ))}
         </div>
 
-        {/* The workspace sidebar's add-project button, verbatim. */}
+        {/* The project sidebar's add-project button, verbatim. */}
         <div className="flex shrink-0 items-center pr-1.5">
           <Hint label="New tab">
             <button
               type="button"
               onClick={() => actions.newTab()}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none cursor-pointer"
             >
               <Plus size={14} />
             </button>
@@ -253,12 +253,10 @@ export function CommsPanel() {
 function CommsSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--comms-surface)]"
-      style={{
-        // Pure black on #0f0f0f leaves a drop shadow almost nothing to darken,
-        // so the hairline ring carries the edge; the shadow just softens it.
-        boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
-      }}
+      // Pure black on the panel's own near-black background leaves a drop
+      // shadow almost nothing to darken, so the hairline ring carries the
+      // edge; the shadow just softens it.
+      className="mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-[var(--background)] ring-1 ring-[var(--atlas-element-active)] shadow-sm"
     >
       {children}
     </div>
@@ -320,21 +318,21 @@ function TabButton({
         }
       }}
       className={cn(
-        "group/tab relative flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg pl-2.5 text-[11.5px] font-medium select-none",
+        "group/tab relative flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg pl-2.5 text-sm font-medium select-none",
         "transition-[background-color,color] duration-150",
         "pr-6",
         active
-          ? "bg-white/[0.07] text-text-primary"
-          : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary",
+          ? "bg-[var(--atlas-element-selected)] text-foreground"
+          : "text-muted-foreground hover:bg-[var(--atlas-element-hover)] hover:text-secondary-foreground",
       )}
     >
       {icon}
       <span className="max-w-[110px] truncate">{label}</span>
 
       {mentions > 0 ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--comms-mention-text)]" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--foreground)]" />
       ) : unread > 0 ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--comms-unread)]" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--atlas-status-success-foreground)]" />
       ) : null}
 
       <Hint label="Close tab">
@@ -347,8 +345,8 @@ function TabButton({
           className={cn(
             "absolute right-1 top-1/2 -translate-y-1/2",
             "inline-flex h-4 w-4 items-center justify-center rounded-full",
-            "text-text-tertiary opacity-0 scale-90 group-hover/tab:opacity-100 group-hover/tab:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-            "transition-[opacity,transform] duration-150 hover:bg-[#ffffff22] hover:text-text-primary cursor-pointer",
+            "text-muted-foreground opacity-0 scale-90 group-hover/tab:opacity-100 group-hover/tab:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+            "transition-[opacity,transform] duration-150 hover:bg-[var(--atlas-element-emphasis)] hover:text-foreground cursor-pointer",
           )}
         >
           <X size={10} strokeWidth={2.2} />
@@ -373,8 +371,8 @@ function CommsConnecting({
   if (state === "unavailable") {
     return (
       <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-        <div className="text-[12px] font-medium text-text-primary">Chat is unavailable</div>
-        <p className="max-w-[220px] text-[11px] leading-relaxed text-text-secondary">
+        <div className="text-sm font-medium text-foreground">Chat is unavailable</div>
+        <p className="max-w-[220px] text-xs leading-relaxed text-secondary-foreground">
           {reason === "not_a_member"
             ? "Your account isn't a member of this organisation's chat."
             : reason === "evicted"
@@ -384,7 +382,7 @@ function CommsConnecting({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-1 flex h-[26px] items-center rounded-md border border-border-default bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+          className="mt-1 flex h-[26px] items-center rounded-md border border-border bg-element-hover px-3 text-xs font-medium text-foreground transition-colors hover:bg-element-active cursor-pointer"
         >
           Try again
         </button>
@@ -393,8 +391,8 @@ function CommsConnecting({
   }
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-      <Loader2 size={16} className="animate-spin text-text-tertiary" />
-      <div className="text-[11.5px] text-text-secondary">
+      <Loader2 size={16} className="animate-spin text-muted-foreground" />
+      <div className="text-sm text-secondary-foreground">
         {state === "backoff" ? "Reconnecting…" : "Connecting to team chat…"}
       </div>
     </div>

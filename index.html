@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" style="background:#000;color-scheme:dark">
+<html lang="en" style="background: var(--atlas-boot-bg, #000)">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>Atlas</title>
     <!-- CSP NOTE: this inline <style> is why `src-tauri/tauri.conf.json` sets
          `dangerousDisableAssetCspModification: ["style-src"]`. In a bundled
@@ -37,19 +37,50 @@
          still leans on the `@layer base` .cm-editor fallback.
          Reproduce without a build: serve `dist/` behind a CSP whose style-src
          carries any nonce alongside 'unsafe-inline'. -->
+    <!-- The last theme's launch colours, replayed BEFORE first paint.
+         `tokens.css` has not loaded here and neither has any module, so the
+         only thing fast enough is localStorage, written by `applyTheme` on
+         every switch (`src/features/theme/apply-theme.ts`). A first run, a
+         cleared profile or a private window finds nothing and every rule below
+         falls back to the literal it always had, so this can only ever
+         improve the flash — never cause one. -->
+    <script>
+      (function () {
+        try {
+          var cached = JSON.parse(localStorage.getItem("atlas:launch-theme") || "null");
+          if (!cached) return;
+          var root = document.documentElement;
+          var set = function (name, value) {
+            if (typeof value === "string" && value) root.style.setProperty(name, value);
+          };
+          set("--atlas-boot-bg", cached.background);
+          set("--atlas-boot-chrome", cached.chrome);
+          set("--atlas-boot-card", cached.card);
+          set("--atlas-boot-line", cached.line);
+          set("--atlas-boot-skeleton", cached.skeleton);
+          set("--atlas-boot-text", cached.text);
+          if (cached.appearance === "light" || cached.appearance === "dark") {
+            set("--atlas-boot-scheme", cached.appearance);
+          }
+        } catch (e) {
+          /* a blocked or corrupt store just means the fallbacks below */
+        }
+      })();
+    </script>
     <style>
-      /* Opaque base black (`--bg-base`), matching the native window
-         background set in `src-tauri/src/lib.rs`, so nothing white shows
-         before the stylesheets load. Written as a literal because
-         tokens.css hasn't loaded yet when this first paints. */
+      /* Opaque base background, matching the native window background set in
+         `src-tauri/src/lib.rs` (which reads the same persisted theme), so
+         nothing white shows before the stylesheets load. The literals are the
+         Atlas-dark values and act as the never-cached fallback; the custom
+         properties come from the script above. */
       html, body, #root {
-        background: #000;
+        background: var(--atlas-boot-bg, #000);
         margin: 0;
         padding: 0;
         height: 100%;
         width: 100%;
         overflow: hidden;
-        color-scheme: dark;
+        color-scheme: var(--atlas-boot-scheme, dark);
       }
 
       /* ── Boot skeleton ────────────────────────────────────────────────
@@ -63,8 +94,8 @@
         inset: 0;
         display: flex;
         flex-direction: column;
-        background: #050505;
-        color: rgba(255, 255, 255, 0.3);
+        background: var(--atlas-boot-bg, #050505);
+        color: var(--atlas-boot-text, rgba(255, 255, 255, 0.3));
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
         font-size: 11px;
         user-select: none;
@@ -73,8 +104,8 @@
       .atlas-boot-titlebar {
         height: 29px;
         flex-shrink: 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        background: #0a0a0a;
+        border-bottom: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
+        background: var(--atlas-boot-chrome, #0a0a0a);
       }
       .atlas-boot-body {
         flex: 1;
@@ -84,8 +115,8 @@
       .atlas-boot-sidebar {
         width: 220px;
         flex-shrink: 0;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
-        background: #080808;
+        border-right: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
+        background: var(--atlas-boot-chrome, #080808);
         padding: 8px 12px;
         display: flex;
         flex-direction: column;
@@ -94,12 +125,12 @@
       .atlas-boot-search {
         height: 24px;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.03));
       }
       .atlas-boot-row {
         height: 14px;
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
       }
       .atlas-boot-row.atlas-boot-row-tall { height: 24px; }
       .atlas-boot-row.atlas-boot-row-narrow { width: 55%; }
@@ -130,7 +161,7 @@
         width: 32px;
         height: 32px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
         flex-shrink: 0;
       }
       .atlas-boot-bubble {
@@ -143,7 +174,7 @@
       .atlas-boot-bubble > div {
         height: 12px;
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
       }
       .atlas-boot-input {
         margin: 0 auto 16px;
@@ -151,8 +182,8 @@
         max-width: 760px;
         height: 86px;
         border-radius: 14px;
-        background: #0c0c0c;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--atlas-boot-card, #0c0c0c);
+        border: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
         flex-shrink: 0;
       }
       .atlas-boot-search,

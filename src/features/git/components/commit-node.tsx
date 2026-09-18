@@ -35,15 +35,15 @@ function segmentPath(seg: LaneSegment): string {
 
 function badgeClass(kind: RefBadge["kind"], isCurrent: boolean) {
   if (kind === "tag") {
-    return "bg-[var(--accent-secondary)]/15 text-[var(--accent-secondary)] border-[var(--accent-secondary)]/30";
+    return "bg-[var(--muted-foreground)]/15 text-[var(--muted-foreground)] border-[var(--muted-foreground)]/30";
   }
   if (kind === "remote") {
-    return "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border-default)]";
+    return "bg-[var(--card)] text-[var(--muted-foreground)] border-[var(--border)]";
   }
   if (isCurrent) {
-    return "bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] border-[var(--accent-primary)]/40";
+    return "bg-[var(--primary)]/20 text-[var(--primary)] border-[var(--primary)]/40";
   }
-  return "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-default)]";
+  return "bg-[var(--card)] text-[var(--secondary-foreground)] border-[var(--border)]";
 }
 
 export const CommitRowView = memo(function CommitRowView({
@@ -70,8 +70,8 @@ export const CommitRowView = memo(function CommitRowView({
       className={cn(
         "group flex items-center cursor-pointer select-none",
         selected
-          ? "bg-[var(--accent-primary)]/15 text-[var(--text-primary)]"
-          : "hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]",
+          ? "bg-[var(--primary)]/15 text-[var(--foreground)]"
+          : "hover:bg-[var(--atlas-element-hover)] text-[var(--secondary-foreground)]",
       )}
       style={{ height: ROW_HEIGHT }}
     >
@@ -92,7 +92,7 @@ export const CommitRowView = memo(function CommitRowView({
           cy={ROW_HEIGHT / 2}
           r={3.5}
           fill={row.commitColor}
-          stroke={row.isHead ? "var(--accent-primary)" : "transparent"}
+          stroke={row.isHead ? "var(--primary)" : "transparent"}
           strokeWidth={row.isHead ? 1.5 : 0}
         />
       </svg>
@@ -105,7 +105,7 @@ export const CommitRowView = memo(function CommitRowView({
             <span
               key={`${r.kind}:${r.name}`}
               className={cn(
-                "px-1 h-[14px] rounded-sm border text-[9px] font-mono leading-none flex items-center shrink-0",
+                "px-1 h-[14px] rounded-sm border text-3xs font-mono leading-none flex items-center shrink-0",
                 badgeClass(r.kind, r.isCurrent),
               )}
               title={`${r.kind}: ${r.name}`}
@@ -115,8 +115,8 @@ export const CommitRowView = memo(function CommitRowView({
           ))}
           <span
             className={cn(
-              "text-[12px] truncate",
-              selected ? "text-[var(--text-primary)] font-medium" : "",
+              "text-sm truncate",
+              selected ? "text-[var(--foreground)] font-medium" : "",
             )}
           >
             {row.message}
@@ -127,16 +127,16 @@ export const CommitRowView = memo(function CommitRowView({
             {/* Author column — fixed width, avatar + name, aligned across all rows */}
             <div className="flex items-center gap-1.5 w-[200px] shrink-0">
               <CommitAvatar email={row.email} size={16} />
-              <span className="text-[11px] text-[var(--text-secondary)] truncate">
+              <span className="text-xs text-[var(--secondary-foreground)] truncate">
                 {row.author}
               </span>
             </div>
             {/* Short sha column */}
-            <span className="text-[11px] font-mono text-[var(--text-tertiary)] shrink-0 w-[68px]">
+            <span className="text-xs font-mono text-[var(--muted-foreground)] shrink-0 w-[68px]">
               {row.shortSha}
             </span>
             {/* Date column */}
-            <span className="text-[11px] font-mono text-[var(--text-tertiary)] shrink-0 w-[160px] text-right">
+            <span className="text-xs font-mono text-[var(--muted-foreground)] shrink-0 w-[160px] text-right">
               {row.date}
             </span>
           </>

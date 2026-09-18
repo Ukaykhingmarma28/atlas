@@ -65,8 +65,10 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
         // A `<button>` still gets the arrow by default, and this one carries no
         // label or border — the pointer is most of what says it is pressable.
         // Matches the title bar's project-name button beside it.
-        "cursor-pointer hover:bg-[#ffffff08] outline-none focus:outline-none",
-        signedIn || connecting ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
+        "cursor-pointer hover:bg-element-hover outline-none focus:outline-none",
+        signedIn || connecting
+          ? "text-secondary-foreground"
+          : "text-disabled hover:text-muted-foreground",
       )}
     >
       {starting || connecting ? (
@@ -94,7 +96,7 @@ export function AccountButton({ compact = false }: { compact?: boolean } = {}) {
 
 /**
  * The button with its tooltip inside. It has to be a component that forwards
- * its props: as the child of `DropdownMenu.Trigger asChild`, the trigger's
+ * its props: as the element `DropdownMenu.Trigger`'s `render` clones, the trigger's
  * props and ref land here and must reach the same `<button>` the tooltip
  * trigger merges onto.
  */

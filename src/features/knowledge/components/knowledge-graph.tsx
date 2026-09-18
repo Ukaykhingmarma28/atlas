@@ -11,8 +11,11 @@ import {
 import Matter from "matter-js";
 import { invoke } from "@tauri-apps/api/core";
 import { forceLayout } from "@/lib/graph-layout";
+import { destroyPixiApp, registerPixiApp } from "@/lib/pixi-app";
 import { GraphRuler, type Viewport } from "@/components/graph-ruler";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { graphPalette, type GraphPalette } from "@/components/graph-palette";
+import { onThemeApplied } from "@/features/theme/theme-values";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useKnowledgeStore } from "../stores/knowledge-store";
 import { useKnowledgeMetaStore } from "../stores/knowledge-meta-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -32,13 +35,6 @@ import {
 
 const RESOLUTION = 2;
 const NODE_CAP = 1000;
-
-const COLOR_PRIMARY = 0xfafafa;
-const COLOR_SECONDARY = 0xc4c4c4;
-const COLOR_MUTED = 0x5e5e5e;
-const COLOR_EDGE_DEFAULT = 0x333333;
-const COLOR_EDGE_SELECTED = 0xc4c4c4;
-const COLOR_EDGE_DIM = 0x262626;
 
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 4;
@@ -74,6 +70,8 @@ interface SceneState {
   draggingId: string | null;
   draggingNeighbors: Set<string>;
   zoom: number;
+  /** Resolved theme colours. Swapped wholesale on `atlas:theme-applied`. */
+  palette: GraphPalette;
 }
 
 /** Per-node {x, y} world-space positions. Loaded from disk on mount,
@@ -84,7 +82,7 @@ export interface GraphLayout {
 }
 
 export function KnowledgeGraph() {
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   const { bind, unbind } = useKnowledgeGraphStore.use.actions();
   const { addTab } = useLayoutStore.use.actions();
   const { selectEntry } = useKnowledgeStore.use.actions();
@@ -154,7 +152,7 @@ export function KnowledgeGraph() {
 
   if (!currentProject) {
     return (
-      <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         Open a project first
       </div>
     );
@@ -164,14 +162,14 @@ export function KnowledgeGraph() {
     <div
       ref={containerRef}
       className="h-full w-full relative"
-      style={{ background: "var(--bg-canvas)" }}
+      style={{ background: "var(--atlas-panel-background)" }}
     >
       {loading ? (
         <LoadingState />
       ) : graph.nodes.length === 0 ? (
         <EmptyState />
       ) : graph.nodes.length > NODE_CAP ? (
-        <div className="h-full w-full flex items-center justify-center text-text-tertiary text-sm">
+        <div className="h-full w-full flex items-center justify-center text-muted-foreground text-sm">
           Graph too large — {graph.nodes.length} nodes (cap {NODE_CAP}).
         </div>
       ) : size.width > 0 && size.height > 0 && layout !== undefined ? (
@@ -231,7 +229,21 @@ function GraphCanvas({
     draggingId: null,
     draggingNeighbors: new Set(),
     zoom: 1,
+    palette: graphPalette(),
   });
+
+  // The scene is drawn into a WebGL canvas, so it cannot inherit a CSS custom
+  // property the way the rest of the app does — a theme switch has to push a
+  // new palette in and force one more frame. Replacing the scene OBJECT is what
+  // does the forcing: the ticker early-outs on `scene === lastScene` once the
+  // simulation has gone to sleep, and a settled graph is the normal case.
+  useEffect(
+    () =>
+      onThemeApplied(() => {
+        sceneRef.current = { ...sceneRef.current, palette: graphPalette() };
+      }),
+    [],
+  );
 
   useEffect(() => {
     const neighbors = new Set<string>();
@@ -271,6 +283,7 @@ function GraphCanvas({
     host.appendChild(canvas);
 
     const app = new Application();
+    registerPixiApp(app);
     createdApp = app;
     void app
       .init({
@@ -287,7 +300,7 @@ function GraphCanvas({
       .then(() => {
         if (disposed) {
           try {
-            app.destroy(true, { children: true });
+            destroyPixiApp(app);
           } catch {
             /* ignore */
           }
@@ -331,7 +344,7 @@ function GraphCanvas({
       }
       if (createdApp) {
         try {
-          createdApp.destroy(true, { children: true });
+          destroyPixiApp(createdApp);
         } catch {
           /* ignore */
         }
@@ -418,6 +431,8 @@ function buildScene(
     if (!s) {
       s = new TextStyle({
         fontFamily: "Inter, -apple-system, system-ui, sans-serif",
+        // pixi rasterises label text into a WebGL atlas.
+        // ratchet-allow: TextStyle takes a number, and no CSS is in this path.
         fontSize: 11,
         fontWeight: "500",
         fill,
@@ -462,7 +477,10 @@ function buildScene(
     });
     nodeLayer.addChild(graphics);
 
-    const label = new Text({ text: node.title, style: styleFor("#c4c4c4") });
+    const label = new Text({
+      text: node.title,
+      style: styleFor(sceneRef.current.palette.labelSecondary),
+    });
     label.anchor.set(0.5, 0); // top-center: hangs below the disc
     labelLayer.addChild(label);
 
@@ -721,7 +739,7 @@ function buildScene(
     if (!awake && scene === lastScene) return;
     lastScene = scene;
 
-    const { selectedId, neighbors, draggingId, draggingNeighbors, zoom } = scene;
+    const { selectedId, neighbors, draggingId, draggingNeighbors, zoom, palette } = scene;
     // Drag-highlight uses the same visual treatment as selection.
     // Selection wins if both are active.
     const focusId = selectedId ?? draggingId;
@@ -733,24 +751,24 @@ function buildScene(
     for (const node of nodesById.values()) {
       const isFocused = focusId === node.id;
       const isNeighbor = focusNeighbors.has(node.id);
-      let color = COLOR_SECONDARY;
+      let color = palette.secondary;
       let alpha = 1;
       let drawRadius = node.radius;
       if (hasFocus) {
         if (isFocused) {
-          color = COLOR_PRIMARY;
+          color = palette.primary;
           drawRadius = node.radius * 1.2;
         } else if (isNeighbor) {
-          color = COLOR_PRIMARY;
+          color = palette.primary;
         } else {
-          color = COLOR_MUTED;
+          color = palette.muted;
           alpha = 0.4;
         }
       }
       node.graphics.clear();
       if (isFocused) {
         node.graphics.circle(node.body.position.x, node.body.position.y, drawRadius + 3 * inv);
-        node.graphics.stroke({ width: 2 * inv, color: COLOR_PRIMARY, alpha: 0.6 });
+        node.graphics.stroke({ width: 2 * inv, color: palette.primary, alpha: 0.6 });
       }
       node.graphics.circle(node.body.position.x, node.body.position.y, drawRadius);
       node.graphics.fill({ color, alpha });
@@ -766,13 +784,13 @@ function buildScene(
         node.label.alpha = 0;
       } else if (!hasFocus) {
         node.label.alpha = 0.85;
-        node.label.style = styleFor("#c4c4c4");
+        node.label.style = styleFor(palette.labelSecondary);
       } else if (isFocused || isNeighbor) {
         node.label.alpha = 1;
-        node.label.style = styleFor("#fafafa");
+        node.label.style = styleFor(palette.labelPrimary);
       } else {
         node.label.alpha = 0.3;
-        node.label.style = styleFor("#5e5e5e");
+        node.label.style = styleFor(palette.labelMuted);
       }
     }
 
@@ -782,14 +800,14 @@ function buildScene(
       edge.graphics.clear();
       if (!a || !b) continue;
       const touchesFocus = hasFocus && (focusId === edge.from || focusId === edge.to);
-      let color = COLOR_EDGE_DEFAULT;
+      let color = palette.edgeDefault;
       let alpha = 0.3;
       if (hasFocus) {
         if (touchesFocus) {
-          color = COLOR_EDGE_SELECTED;
+          color = palette.edgeSelected;
           alpha = 0.9;
         } else {
-          color = COLOR_EDGE_DIM;
+          color = palette.edgeDim;
           alpha = 0.15;
         }
       }
@@ -862,18 +880,18 @@ function buildScene(
 
 function LoadingState() {
   return (
-    <div className="h-full w-full flex items-center justify-center text-text-tertiary">
-      <span className="text-[11px]">Building graph…</span>
+    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+      <span className="text-xs">Building graph…</span>
     </div>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center text-text-tertiary gap-2">
-      <div className="text-[12px]">No notes yet — create some and reference them with</div>
-      <div className="mono text-[11px] text-text-muted">[[note-id]]</div>
-      <div className="text-[12px]">to see them connect here.</div>
+    <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-2">
+      <div className="text-sm">No notes yet — create some and reference them with</div>
+      <div className="mono text-xs text-text-muted">[[note-id]]</div>
+      <div className="text-sm">to see them connect here.</div>
     </div>
   );
 }

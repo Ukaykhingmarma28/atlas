@@ -7,7 +7,7 @@
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::timeline::{self, EntryKind};
 use atlas_checkpoint::{
     Capture, CheckpointInput, Mode, Role, SessionKey, Source, Store, TokenTotals, TurnContent,
@@ -42,7 +42,7 @@ fn assistant(turn_seq: i64, body: &str) -> TurnContent {
 fn seeded(dir: &std::path::Path) -> (Store, String) {
     let mut store = store_in(dir);
     let session_id = {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let id = capture
             .record_prompt(
                 &key("sess-1"),
@@ -86,7 +86,7 @@ fn a_captured_session_appears_in_the_list_with_the_facts_the_row_shows() {
 }
 
 #[test]
-fn a_workspace_with_nothing_captured_lists_nothing_rather_than_failing() {
+fn a_project_with_nothing_captured_lists_nothing_rather_than_failing() {
     let dir = tempfile::tempdir().unwrap();
     let store = store_in(dir.path());
     assert!(timeline::sessions(&store, WORKSPACE).unwrap().is_empty());
@@ -97,7 +97,7 @@ fn sessions_are_newest_first_by_last_activity() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture.record_prompt(&key("older"), "First thing", 1, None, None, None).unwrap();
         capture.record_prompt(&key("newer"), "Second thing", 1, None, None, None).unwrap();
     }
@@ -168,7 +168,7 @@ fn a_body_too_large_to_inline_arrives_as_a_preview_marked_truncated() {
     // Comfortably over the inline limit, and over the spill threshold too.
     let huge = "log line that is not a secret\n".repeat(6_000);
     let session_id = {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let id = capture.record_prompt(&key("sess-big"), "Here is the log", 1, None, None, None).unwrap();
         capture.record_turn(&id, assistant(1, &huge)).unwrap();
         id
@@ -259,8 +259,8 @@ fn a_reader_never_takes_the_writer_lock_from_the_store_that_holds_it() {
     // The bug this pins: the host opened a second `Store` on the same directory
     // for every command, which contended with its own capture worker for the
     // writer lock and lost. `capture_enable` then reported "another Atlas window
-    // is already recording this workspace" — naming a window that did not exist
-    // — and could never succeed on a Workspace the user had sent a prompt in.
+    // is already recording this project" — naming a window that did not exist
+    // — and could never succeed on a Project the user had sent a prompt in.
     let dir = tempfile::tempdir().unwrap();
     let (writer, session_id) = seeded(dir.path());
     assert!(writer.is_writer(), "the first store must hold the lock");
@@ -285,7 +285,7 @@ fn the_writer_keeps_writing_while_a_reader_is_open() {
     // A write taken *after* the reader attached must still succeed — this is
     // what `require_writer` was rejecting.
     let session_id = {
-        let mut capture = Capture::new(&mut writer, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut writer, ProjectMode::Local);
         capture
             .record_prompt(&key("after-reader"), "Still recording", 1, None, None, None)
             .expect("the writer keeps its lock while a reader is attached")
@@ -353,10 +353,10 @@ fn recent_checkpoints_are_newest_first_and_carry_their_session_title() {
     assert_eq!(one[0].commit_sha, rows[0].commit_sha);
 }
 
-/// Another Workspace's Checkpoints are not this Workspace's — the scoping runs
+/// Another Project's Checkpoints are not this Project's — the scoping runs
 /// through the JOIN, which is the easiest thing to get wrong when adding one.
 #[test]
-fn recent_checkpoints_are_scoped_to_their_workspace() {
+fn recent_checkpoints_are_scoped_to_their_project() {
     let dir = tempfile::tempdir().unwrap();
     let (store, session_id) = seeded(dir.path());
     store
@@ -392,7 +392,7 @@ fn a_session_carries_its_starting_branch_without_any_checkpoint() {
     let (mut store, session_id) = seeded(dir.path());
 
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture.note_branch(&session_id, Some("feat/atlas-tokens")).expect("branch recorded");
         // Idempotent: a checkout mid-conversation must not retro-label the row.
         capture.note_branch(&session_id, Some("main")).expect("second note is a no-op");
@@ -416,7 +416,7 @@ fn context_occupancy_travels_separately_from_a_token_split() {
     let (mut store, session_id) = seeded(dir.path());
 
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture
             .record_usage(
                 &session_id,
@@ -463,7 +463,7 @@ fn june(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
 fn imported_session(dir: &std::path::Path, native: &str, stamps: &[DateTime<Utc>]) -> (Store, String) {
     let mut store = store_in(dir);
     let id = {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         // `ensure_session` + `record_turn`, exactly as the importer does it —
         // never `record_prompt`, which opens a turn and stamps the prompt with
         // the wall clock because it is the live-capture path.
@@ -493,7 +493,7 @@ fn an_imported_sessions_duration_is_its_work_not_the_time_since_it_ran() {
     // Every one of these bumps `updated_at` to now — which is exactly how the
     // old duration became "weeks".
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture.record_usage(&session_id, 1, None, &TokenTotals { input_tokens: 10, ..Default::default() }).unwrap();
     }
 
@@ -546,7 +546,7 @@ fn a_bulk_import_does_not_file_a_years_history_under_today() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = store_in(dir.path());
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         for (i, day) in [1u32, 15, 29].iter().enumerate() {
             let at = june(*day, 11, 0);
             let id = capture
@@ -579,7 +579,7 @@ fn recording_usage_does_not_count_as_activity() {
         .last_activity_at;
 
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture.record_usage(&session_id, 1, None, &TokenTotals { input_tokens: 42, ..Default::default() }).unwrap();
     }
 
@@ -598,7 +598,7 @@ fn cache_tokens_reach_the_row_without_inflating_the_split() {
     let (mut store, session_id) = seeded(dir.path());
 
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture
             .record_usage(
                 &session_id,

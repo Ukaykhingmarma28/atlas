@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/usage-primitives";
 import { GradualBlur } from "@/components/gradual-blur";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useUsageStore } from "../stores/usage-store";
 import { useUsageView } from "../lib/use-usage-view";
 import { copyMarkdownReport, exportJpeg, exportMarkdown, exportPdf } from "../lib/export";
@@ -21,9 +21,9 @@ import { UsageTables } from "./usage-tables";
 /**
  * The Usage tab: the organisation's token usage, filtered client-side over one payload.
  *
- * Order, top to bottom: the headline band, the token classes, the daily series, insight +
- * top-N side by side, the efficiency report, then the tables. Everything above the tables is
- * the export capture region. Sections follow the composer Usage pill's grammar — nested
+ * Order, top to bottom: the headline band, the token classes, the daily series and its
+ * insight side by side, the efficiency report, then the tables. Everything above the tables
+ * is the export capture region. Sections follow the composer Usage pill's grammar — nested
  * cards, count-ups, tick meters — and share its primitives.
  */
 export function UsagePanel() {
@@ -42,12 +42,12 @@ export function UsagePanel() {
     const id = s.activeOrganisationId;
     return s.organisations.find((o) => o.id === id)?.name ?? null;
   });
-  // Re-fetch when the org's workspace set changes (this also covers an org switch).
-  const wsSig = useWorkspaceStore((s) => s.workspaces.map((w) => w.path).join("|"));
+  // Re-fetch when the org's project set changes (this also covers an org switch).
+  const projectSig = useProjectStore((s) => s.projects.map((p) => p.path).join("|"));
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsSig]);
+  }, [projectSig]);
 
   const captureRef = useRef<HTMLDivElement>(null);
   // A boolean, not the offset: this only ever flips at the very top, so the
@@ -85,7 +85,7 @@ export function UsagePanel() {
     // the page's content sits INSIDE a rounded, ringed panel rather than
     // bleeding into the window's edges. Same inset constant, so the two tabs
     // line up when they sit side by side in a split.
-    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-elevated-2)]">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--card)]">
       <UsageHeader
         orgName={orgName}
         range={range}
@@ -98,14 +98,11 @@ export function UsagePanel() {
         inset={CARD_INSET}
       />
       <div
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[#000]"
-        style={{
-          marginInline: CARD_INSET,
-          marginBottom: CARD_INSET,
-          // On a near-black panel a shadow has almost nothing to darken, so the
-          // ring carries the edge and the shadow only lifts the card.
-          boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
-        }}
+        // `ring-1 ring-border` + `shadow-lg`, which is the Timeline's card
+        // exactly: on a near-black panel a shadow has almost nothing to darken,
+        // so the ring carries the edge and the shadow only lifts the card.
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border"
+        style={{ marginInline: CARD_INSET, marginBottom: CARD_INSET }}
       >
         <div
           className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
@@ -113,20 +110,18 @@ export function UsagePanel() {
           onScroll={onScroll}
         >
           {!data && loading && (
-            <div className="p-6 text-[12px] text-[var(--text-tertiary)]">Reading usage…</div>
+            <div className="p-6 text-sm text-[var(--muted-foreground)]">Reading usage…</div>
           )}
           {error && (
-            <div className="p-6 text-[12px] text-[var(--status-error)]">
+            <div className="p-6 text-sm text-[var(--atlas-status-error-foreground)]">
               Failed to load: {error}
             </div>
           )}
           {data && view.all.length === 0 && !loading && (
             <div className="p-4">
               <Card index={0} section="empty">
-                <div className="text-[11px] font-medium text-[var(--text-primary)]">
-                  Nothing yet
-                </div>
-                <div className="mt-0.5 text-[10px] leading-snug text-[var(--text-tertiary)]">
+                <div className="text-xs font-medium text-[var(--foreground)]">Nothing yet</div>
+                <div className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
                   Usage appears after the first agent turn in one of this organisation's projects.
                 </div>
               </Card>
@@ -134,7 +129,7 @@ export function UsagePanel() {
           )}
           {data && view.all.length > 0 && (
             <div className="flex flex-col gap-3 p-4">
-              <div ref={captureRef} className="flex flex-col gap-3 bg-[var(--bg-base)]">
+              <div ref={captureRef} className="flex flex-col gap-3 bg-[var(--background)]">
                 <StatStrip
                   totals={view.totals}
                   prevTotals={view.prevTotals}
@@ -207,11 +202,11 @@ export function UsagePanel() {
               height={`${FILTER_TOP + PILL_H + 14 + TOP_BLUR_RAMP}px`}
               strength={2.1}
               layers={scrolled ? 5 : 0}
-              tint={scrolled ? "color-mix(in srgb, #000 90%, transparent)" : undefined}
-              style={{ zIndex: 3 }}
+              tint={scrolled ? "color-mix(in srgb, var(--background) 90%, transparent)" : undefined}
+              className="z-10"
             />
             <FilterBar
-              className="absolute inset-x-0 top-0 z-[4]"
+              className="absolute inset-x-0 top-0 z-20"
               style={{ paddingTop: FILTER_TOP }}
               facets={facets}
               options={view.facetOptions}

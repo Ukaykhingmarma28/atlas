@@ -30,6 +30,7 @@
 //! `crate::telemetry::device`) or was never Atlas-owned to begin with.
 
 use std::fs;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -77,6 +78,37 @@ pub const MAX_UI_SCALE: f32 = 2.0;
 pub enum AdaptiveSuggestions {
     Agent,
     Off,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    System,
+    Dark,
+    Light,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeOverride {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub base: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub palette: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keys: BTreeMap<String, atlas_theme::ThemeKeyValue>,
+}
+
+impl ThemeOverride {
+    fn is_empty(&self) -> bool {
+        self.base.is_empty() && self.palette.is_empty() && self.keys.is_empty()
+    }
 }
 
 impl Default for AdaptiveSuggestions {
@@ -134,12 +166,25 @@ pub struct AppSettings {
     /// consumer via the shared provider. See `crate::commands::models`.
     #[serde(default = "default_embedding_model")]
     pub embedding_model_id: String,
-    /// Code-editor color theme id (see `src/features/editor/themes`).
-    #[serde(default = "default_code_editor_theme")]
-    pub code_editor_theme: String,
-    /// Atlas interface-theme id (see `src/features/theme/themes`).
-    #[serde(default = "default_atlas_theme")]
-    pub atlas_theme: String,
+    /// One theme covers Atlas chrome, editor, terminal, diffs and syntax.
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// Whether to follow the OS appearance or request one variant explicitly.
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
+    /// User-local patch applied after the active theme variant.
+    #[serde(default, skip_serializing_if = "ThemeOverride::is_empty")]
+    pub theme_overrides: ThemeOverride,
+    /// The file/folder icon set. Its own track from the colour theme
+    /// (decision 4): "minimal" keeps Atlas's lucide icons, and anything else
+    /// is a VS Code icon theme — bundled or installed from Open VSX.
+    #[serde(default = "default_icon_theme")]
+    pub icon_theme: String,
+    /// Pre-theme-core config fields. Read once, never serialized again.
+    #[serde(default, rename = "codeEditorTheme", skip_serializing)]
+    legacy_code_editor_theme: Option<String>,
+    #[serde(default, rename = "atlasTheme", skip_serializing)]
+    legacy_atlas_theme: Option<String>,
     /// "agent" (default) asks the coding agent to end each reply with a hidden
     /// `<next_steps>` block; "off" disables it.
     #[serde(default)]
@@ -195,12 +240,12 @@ fn default_true() -> bool {
     true
 }
 
-pub fn default_code_editor_theme() -> String {
-    "atlas".to_string()
+pub fn default_theme() -> String {
+    atlas_theme::DEFAULT_THEME_ID.to_string()
 }
 
-pub fn default_atlas_theme() -> String {
-    "atlas-black".to_string()
+pub fn default_icon_theme() -> String {
+    atlas_icon_theme::DEFAULT_ICON_THEME_ID.to_string()
 }
 
 pub fn default_embedding_model() -> String {
@@ -225,8 +270,12 @@ impl Default for AppSettings {
             share_telemetry: true,
             link_telemetry_to_account: true,
             embedding_model_id: default_embedding_model(),
-            code_editor_theme: default_code_editor_theme(),
-            atlas_theme: default_atlas_theme(),
+            theme: default_theme(),
+            theme_mode: ThemeMode::default(),
+            theme_overrides: ThemeOverride::default(),
+            icon_theme: default_icon_theme(),
+            legacy_code_editor_theme: None,
+            legacy_atlas_theme: None,
             adaptive_suggestions: AdaptiveSuggestions::default(),
             git_blame_inline: true,
             auto_update: true,
@@ -318,14 +367,27 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # (default: \"all-MiniLM-L6-v2\")",
     ),
     (
-        "codeEditorTheme",
-        "# Code-editor colour theme id — themes code syntax in the editor and\n\
-         # both diff views. Must not be empty. (default: \"atlas\")",
+        "theme",
+        "# Theme id for the whole app: chrome, editor, terminal, diffs and syntax.\n\
+         # Unknown ids fall back to \"atlas\" with a warning. (default: \"atlas\")",
     ),
     (
-        "atlasTheme",
-        "# Atlas interface theme id — repaints the whole UI palette, separately\n\
-         # from codeEditorTheme. Must not be empty. (default: \"atlas-black\")",
+        "themeMode",
+        "# Variant selection: exactly \"system\", \"dark\" or \"light\".\n\
+         # A missing requested variant falls back to the theme's other one.\n\
+         # (default: \"system\")",
+    ),
+    (
+        "themeOverrides",
+        "# Optional user-local patch with base, palette and keys tables, applied\n\
+         # after the active theme variant. Omitted when empty.",
+    ),
+    (
+        "iconTheme",
+        "# File and folder icons, on their own track from the colour theme.\n\
+         # \"minimal\" keeps Atlas's own lucide icons; anything else names a VS\n\
+         # Code icon theme, bundled or installed from Open VSX.\n\
+         # (default: \"material-icon-theme\")",
     ),
     (
         "adaptiveSuggestions",
@@ -398,15 +460,7 @@ fn known_settings_keys() -> impl Iterator<Item = &'static str> {
     SETTINGS_DOCS.iter().map(|(key, _)| *key)
 }
 
-/// One field failed semantic validation. Structural validation only —
-/// deliberately NOT a full theme-id/embedding-model-id catalog membership
-/// check: that catalog is frontend-owned (`src/features/theme/themes.ts`,
-/// `src/features/editor/themes/themes.ts`) and duplicating it into Rust would
-/// create a second place both lists must stay in sync, trading one drift bug
-/// (the `adaptiveSuggestions` gap this issue fixes) for another. Garbage
-/// (empty/non-finite) is still rejected; an unrecognized-but-well-formed id
-/// is accepted and left for the frontend to fall back on, same as it does
-/// today for a theme id from a newer Atlas version.
+/// One field failed semantic validation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValidationIssue {
     pub key: &'static str,
@@ -444,16 +498,20 @@ pub fn validate(settings: &AppSettings) -> Result<(), ValidationIssue> {
             message: "must not be empty".to_string(),
         });
     }
-    if settings.code_editor_theme.trim().is_empty() {
+    if settings.theme.trim().is_empty() {
         return Err(ValidationIssue {
-            key: "codeEditorTheme",
+            key: "theme",
             message: "must not be empty".to_string(),
         });
     }
-    if settings.atlas_theme.trim().is_empty() {
+    // An icon theme id is used as a directory name under
+    // `~/.config/atlas/icon-themes/`, so a value with a separator or a `..` in
+    // it would name a path outside it. Rejecting it here means the commands
+    // downstream never have to.
+    if !atlas_icon_theme::is_valid_id(&settings.icon_theme) {
         return Err(ValidationIssue {
-            key: "atlasTheme",
-            message: "must not be empty".to_string(),
+            key: "iconTheme",
+            message: "must be a plain id: letters, digits, dot, dash or underscore".to_string(),
         });
     }
     Ok(())
@@ -648,8 +706,10 @@ pub struct SettingsPatch {
     pub share_telemetry: Option<bool>,
     pub link_telemetry_to_account: Option<bool>,
     pub embedding_model_id: Option<String>,
-    pub code_editor_theme: Option<String>,
-    pub atlas_theme: Option<String>,
+    pub theme: Option<String>,
+    pub theme_mode: Option<ThemeMode>,
+    pub theme_overrides: Option<ThemeOverride>,
+    pub icon_theme: Option<String>,
     pub adaptive_suggestions: Option<AdaptiveSuggestions>,
     pub git_blame_inline: Option<bool>,
     pub auto_update: Option<bool>,
@@ -688,11 +748,17 @@ impl SettingsPatch {
         if let Some(v) = &self.embedding_model_id {
             settings.embedding_model_id = v.clone();
         }
-        if let Some(v) = &self.code_editor_theme {
-            settings.code_editor_theme = v.clone();
+        if let Some(v) = &self.theme {
+            settings.theme = v.clone();
         }
-        if let Some(v) = &self.atlas_theme {
-            settings.atlas_theme = v.clone();
+        if let Some(v) = self.theme_mode {
+            settings.theme_mode = v;
+        }
+        if let Some(v) = &self.theme_overrides {
+            settings.theme_overrides = v.clone();
+        }
+        if let Some(v) = &self.icon_theme {
+            settings.icon_theme = v.clone();
         }
         if let Some(v) = self.adaptive_suggestions {
             settings.adaptive_suggestions = v;
@@ -772,11 +838,18 @@ impl SettingsPatch {
         if let Some(v) = &self.embedding_model_id {
             table["embeddingModelId"] = toml_edit::value(v.as_str());
         }
-        if let Some(v) = &self.code_editor_theme {
-            table["codeEditorTheme"] = toml_edit::value(v.as_str());
+        if let Some(v) = &self.theme {
+            table["theme"] = toml_edit::value(v.as_str());
         }
-        if let Some(v) = &self.atlas_theme {
-            table["atlasTheme"] = toml_edit::value(v.as_str());
+        if let Some(v) = self.theme_mode {
+            table["themeMode"] = toml_edit::value(match v {
+                ThemeMode::System => "system",
+                ThemeMode::Dark => "dark",
+                ThemeMode::Light => "light",
+            });
+        }
+        if let Some(v) = &self.theme_overrides {
+            table["themeOverrides"] = theme_override_item(v);
         }
         if let Some(v) = self.adaptive_suggestions {
             let s = match v {
@@ -852,22 +925,150 @@ pub fn settings_from_legacy_json(raw: Option<&serde_json::Value>) -> AppSettings
             settings.embedding_model_id = v.to_string();
         }
     }
-    if let Some(v) = raw.get("codeEditorTheme").and_then(serde_json::Value::as_str) {
-        if !v.trim().is_empty() {
-            settings.code_editor_theme = v.to_string();
-        }
-    }
-    if let Some(v) = raw.get("atlasTheme").and_then(serde_json::Value::as_str) {
-        if !v.trim().is_empty() {
-            settings.atlas_theme = v.to_string();
-        }
-    }
+    let old_editor = raw.get("codeEditorTheme").and_then(serde_json::Value::as_str);
+    let old_atlas = raw.get("atlasTheme").and_then(serde_json::Value::as_str);
+    let (theme, theme_overrides) = migrate_legacy_theme(old_atlas, old_editor);
+    settings.theme = theme;
+    settings.theme_overrides = theme_overrides;
     if let Some(v) = raw.get("updaterIgnoredVersion").and_then(serde_json::Value::as_str) {
         settings.updater_ignored_version = Some(v.to_string());
     }
     settings.adaptive_suggestions = adaptive_suggestions_from_legacy(raw.get("adaptiveSuggestions"));
 
     settings
+}
+
+/// What the OLD editor-theme picker wrote when nobody had touched it.
+///
+/// `default_code_editor_theme()` returned `"atlas"` unconditionally — the same
+/// answer for every chrome theme — and it was serialized into every fresh
+/// `config.toml`. So the value sitting on disk says nothing about what its
+/// owner chose, and reading it as a deliberate choice forced Atlas's
+/// black/white/yellow `editor.*` / `syntax.*` / `diff.*` keys into the
+/// `themeOverrides` of every chyral / mirage / rosé-pine / phosphor user who
+/// had simply never opened the editor picker. One theme means one theme
+/// (decision 7): an untouched editor picker migrates to nothing.
+const LEGACY_EDITOR_DEFAULT: &str = "atlas";
+
+/// Fold the two old pickers (`atlasTheme` + `codeEditorTheme`) into one theme
+/// id plus, where the user really did diverge, a `themeOverrides` block.
+fn migrate_legacy_theme(
+    old_atlas: Option<&str>,
+    old_editor: Option<&str>,
+) -> (String, ThemeOverride) {
+    let mapped_theme = match old_atlas.map(str::trim).filter(|id| !id.is_empty()) {
+        Some("atlas-black") | None => default_theme(),
+        Some(id) => id.to_string(),
+    };
+    let theme = if atlas_theme::get_theme(&mapped_theme).is_ok() {
+        mapped_theme
+    } else {
+        tracing::warn!(target: "atlas::themes", theme = %mapped_theme, "unknown migrated theme id; falling back to atlas");
+        default_theme()
+    };
+    // Overrides are written only for an editor theme that was GENUINELY
+    // CHOSEN and that DIFFERS from the theme the chrome picker migrated to:
+    // absent, blank, the picker's untouched default, or simply the same theme
+    // under both pickers all mean "nothing to preserve".
+    let Some(editor_id) = old_editor
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && *id != LEGACY_EDITOR_DEFAULT && *id != theme.as_str())
+    else {
+        return (theme, ThemeOverride::default());
+    };
+    let Ok(editor_theme) = atlas_theme::get_theme(editor_id) else {
+        tracing::warn!(target: "atlas::themes", theme = %editor_id, "unknown legacy editor theme; syntax override was not migrated");
+        return (theme, ThemeOverride::default());
+    };
+    let Some(variant) = editor_theme.dark.or(editor_theme.light) else {
+        return (theme, ThemeOverride::default());
+    };
+    let keys = variant
+        .keys
+        .into_iter()
+        .filter(|(key, _)| {
+            key.starts_with("editor.") || key.starts_with("syntax.") || key.starts_with("diff.")
+        })
+        .collect();
+    (theme, ThemeOverride { keys, ..ThemeOverride::default() })
+}
+
+fn migrate_theme_fields(
+    document: &mut toml_edit::DocumentMut,
+    settings: &mut AppSettings,
+) -> bool {
+    let old_atlas = settings.legacy_atlas_theme.take();
+    let old_editor = settings.legacy_code_editor_theme.take();
+    let migrating = old_atlas.is_some() || old_editor.is_some();
+    if migrating {
+        let (theme, theme_overrides) =
+            migrate_legacy_theme(old_atlas.as_deref(), old_editor.as_deref());
+        settings.theme = theme;
+        settings.theme_overrides = theme_overrides;
+    }
+    let mut changed = migrating;
+    if atlas_theme::get_theme(&settings.theme).is_err() {
+        tracing::warn!(target: "atlas::themes", theme = %settings.theme, "unknown theme id in config.toml; falling back to atlas");
+        settings.theme = default_theme();
+        changed = true;
+    }
+    if !changed {
+        return false;
+    }
+    if document.get("settings").and_then(toml_edit::Item::as_table).is_none() {
+        document["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let table = document["settings"].as_table_mut().expect("settings table was ensured");
+    table.remove("atlasTheme");
+    table.remove("codeEditorTheme");
+    table["theme"] = toml_edit::value(settings.theme.as_str());
+    table["themeMode"] = toml_edit::value(match settings.theme_mode {
+        ThemeMode::System => "system",
+        ThemeMode::Dark => "dark",
+        ThemeMode::Light => "light",
+    });
+    if settings.theme_overrides.is_empty() {
+        table.remove("themeOverrides");
+    } else {
+        table["themeOverrides"] = theme_override_item(&settings.theme_overrides);
+    }
+    true
+}
+
+fn theme_override_item(theme_override: &ThemeOverride) -> toml_edit::Item {
+    fn string_map(values: &BTreeMap<String, String>) -> toml_edit::Item {
+        let mut table = toml_edit::Table::new();
+        for (key, value) in values {
+            table[key] = toml_edit::value(value.as_str());
+        }
+        toml_edit::Item::Table(table)
+    }
+
+    let mut root = toml_edit::Table::new();
+    if !theme_override.base.is_empty() {
+        root["base"] = string_map(&theme_override.base);
+    }
+    if !theme_override.palette.is_empty() {
+        root["palette"] = string_map(&theme_override.palette);
+    }
+    if !theme_override.keys.is_empty() {
+        let mut keys = toml_edit::Table::new();
+        for (key, value) in &theme_override.keys {
+            keys[key] = match value {
+                atlas_theme::ThemeKeyValue::Color(color) => toml_edit::value(color.as_str()),
+                // A styled override is `{ color = "…" }` and nothing more —
+                // `font_style` is rejected at load, so it can never be here to
+                // write back out.
+                atlas_theme::ThemeKeyValue::Styled(style) => {
+                    let mut inline = toml_edit::InlineTable::new();
+                    inline.insert("color", toml_edit::Value::from(style.color.as_str()));
+                    toml_edit::value(inline)
+                }
+            };
+        }
+        root["keys"] = toml_edit::Item::Table(keys);
+    }
+    toml_edit::Item::Table(root)
 }
 
 // ---------------------------------------------------------------------------
@@ -963,21 +1164,23 @@ impl ConfigManager {
     }
 
     fn from_raw(path: PathBuf, raw: &str) -> Result<Self, ConfigError> {
-        let document: toml_edit::DocumentMut =
+        let mut document: toml_edit::DocumentMut =
             raw.parse().map_err(|e: toml_edit::TomlError| ConfigError::Parse(e.to_string()))?;
         let text = document.to_string();
-        let file: AtlasConfigFile =
+        let mut file: AtlasConfigFile =
             toml::from_str(&text).map_err(|e| ConfigError::Parse(e.to_string()))?;
         if file.schema_version > CONFIG_SCHEMA_VERSION {
             return Err(ConfigError::UnsupportedVersion(file.schema_version));
         }
+        migrate_theme_fields(&mut document, &mut file.settings);
         validate(&file.settings).map_err(ConfigError::Invalid)?;
         let unknown_keys = unknown_keys_in(&document);
+        let migrated_raw = document.to_string();
         Ok(Self {
             path,
             document,
             effective: file.settings,
-            last_raw: raw.to_string(),
+            last_raw: migrated_raw,
             generation: 0,
             status: ConfigStatus::Ok,
             unknown_keys,
@@ -1000,15 +1203,25 @@ impl ConfigManager {
     /// tests) can exercise the real cold-start behavior against a temp dir.
     fn load_at(path: PathBuf) -> Self {
         match fs::read_to_string(&path) {
-            Ok(raw) => Self::from_raw(path.clone(), &raw).unwrap_or_else(|e| {
-                tracing::warn!(
-                    target: "atlas::config",
-                    "config.toml invalid at cold start, serving defaults in memory (file left untouched): {e}"
-                );
-                let mut mgr = Self::in_memory_defaults(path);
-                mgr.status = ConfigStatus::UsingDefaults { error: e.to_string() };
-                mgr
-            }),
+            Ok(raw) => match Self::from_raw(path.clone(), &raw) {
+                Ok(manager) => {
+                    if manager.last_raw != raw {
+                        if let Err(error) = write_atomic(&path, &manager.last_raw) {
+                            tracing::warn!(target: "atlas::config", "failed to persist theme settings migration: {error}");
+                        }
+                    }
+                    manager
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "atlas::config",
+                        "config.toml invalid at cold start, serving defaults in memory (file left untouched): {e}"
+                    );
+                    let mut mgr = Self::in_memory_defaults(path);
+                    mgr.status = ConfigStatus::UsingDefaults { error: e.to_string() };
+                    mgr
+                }
+            },
             // File genuinely absent — the normal pre-first-write state, not
             // an error. `bootstrap` below is what decides whether that's
             // "needs migration" or "already migrated, stay on defaults".
@@ -1057,6 +1270,9 @@ impl ConfigManager {
                 return Err(e);
             }
         };
+        if fresh.last_raw != raw {
+            write_atomic(&self.path, &fresh.last_raw).map_err(|error| ConfigError::Io(error.to_string()))?;
+        }
         self.document = fresh.document;
         self.effective = fresh.effective;
         self.last_raw = fresh.last_raw;
@@ -1264,6 +1480,17 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 /// `state.json`, `device.json`, `telemetry.json`, the models-pricing cache,
 /// session chat — stays in the platform data directory. Those are
 /// machine-managed state, not documents, and nobody should be editing them.
+///
+/// **This function is copied twice**, in `atlas-theme` (`user_theme_dir`) and
+/// `atlas-icon-theme` (`user_icon_theme_dir`). Both sit below `src-tauri` in
+/// the dependency graph and so cannot call this one without a cycle, and a
+/// shared crate for three identical ~15-line functions was weighed and
+/// declined — the cost is another workspace member and another sequential CI
+/// job on a graph where build time is the documented bottleneck. What keeps
+/// them honest instead: all three carry the same three tests over
+/// `config_root_from`, with the same fixtures and the same expected paths, so
+/// changing where config lives in one place reddens a test next to the copy
+/// that drifted. Change all three together, or none.
 pub(crate) fn config_root() -> Option<PathBuf> {
     let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let home = dirs::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
@@ -1492,7 +1719,7 @@ mod tests {
         let mgr = ConfigManager::from_raw(path, raw).expect("partial file parses");
         assert!(!mgr.effective().enter_to_send);
         // Every other field is absent from the file — must be the compiled default.
-        assert_eq!(mgr.effective().atlas_theme, default_atlas_theme());
+        assert_eq!(mgr.effective().theme, default_theme());
         assert_eq!(mgr.effective().ui_scale, default_ui_scale());
         assert!(mgr.effective().auto_update);
     }
@@ -1651,15 +1878,122 @@ someFutureKey = \"left alone\"
     fn legacy_migration_extracts_known_fields() {
         let legacy = serde_json::json!({
             "enterToSend": false,
-            "atlasTheme": "custom-theme",
+            "atlasTheme": "rose-pine",
             "uiScale": 1.5,
         });
         let settings = settings_from_legacy_json(Some(&legacy));
         assert!(!settings.enter_to_send);
-        assert_eq!(settings.atlas_theme, "custom-theme");
+        assert_eq!(settings.theme, "rose-pine");
         assert_eq!(settings.ui_scale, 1.5);
         // Untouched fields keep their compiled defaults.
         assert!(settings.auto_update);
+    }
+
+    #[test]
+    fn config_theme_migration_merges_the_two_legacy_pickers_once() {
+        let path = tmp_config_path();
+        let raw = "schemaVersion = 1\n\n[settings]\natlasTheme = \"one-dark\"\ncodeEditorTheme = \"dracula\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
+
+        assert_eq!(manager.effective().theme, "one-dark");
+        assert!(manager
+            .effective()
+            .theme_overrides
+            .keys
+            .contains_key("syntax.keyword"));
+        assert!(!manager.last_raw.contains("atlasTheme"));
+        assert!(!manager.last_raw.contains("codeEditorTheme"));
+        assert!(manager.last_raw.contains("themeOverrides"));
+    }
+
+    /// The six themes the OLD `atlasTheme` picker could hold, and the schema-1
+    /// theme each one migrates to. `atlas-black` is the only rename.
+    const LEGACY_CHROME_THEMES: [(&str, &str); 6] = [
+        ("atlas-black", "atlas"),
+        ("chyral", "chyral"),
+        ("mirage", "mirage"),
+        ("rose-pine", "rose-pine"),
+        ("one-dark", "one-dark"),
+        ("phosphor", "phosphor"),
+    ];
+
+    /// The regression this guards: `default_code_editor_theme()` returned
+    /// `"atlas"` for everyone, so `codeEditorTheme = "atlas"` is what an
+    /// UNTOUCHED editor picker left on disk — for all six chrome themes, not
+    /// just the two that happened to share a name with an editor theme.
+    /// Reading it as "deliberately diverging" pinned Atlas's black/white/yellow
+    /// editor colours onto chyral, mirage, rosé-pine and phosphor users who had
+    /// never opened that picker.
+    #[test]
+    fn untouched_legacy_editor_picker_migrates_to_no_overrides() {
+        for (old_chrome, expected) in LEGACY_CHROME_THEMES {
+            for old_editor in [None, Some(""), Some("  "), Some(LEGACY_EDITOR_DEFAULT)] {
+                let (theme, overrides) = migrate_legacy_theme(Some(old_chrome), old_editor);
+                assert_eq!(theme, expected, "chrome {old_chrome}");
+                assert!(
+                    overrides.is_empty(),
+                    "chrome {old_chrome} with editor {old_editor:?} must not diverge, got {overrides:?}"
+                );
+            }
+        }
+    }
+
+    /// The other half of the same rule: an editor theme that really was picked,
+    /// and really is a different theme, still carries its colours over.
+    #[test]
+    fn chosen_legacy_editor_theme_migrates_its_syntax_keys() {
+        for (old_chrome, expected) in LEGACY_CHROME_THEMES {
+            let (theme, overrides) = migrate_legacy_theme(Some(old_chrome), Some("dracula"));
+            assert_eq!(theme, expected, "chrome {old_chrome}");
+            assert!(
+                overrides.keys.contains_key("syntax.keyword"),
+                "chrome {old_chrome} lost its chosen editor theme"
+            );
+            assert!(overrides.base.is_empty() && overrides.palette.is_empty());
+            assert!(
+                overrides.keys.keys().all(|key| key.starts_with("editor.")
+                    || key.starts_with("syntax.")
+                    || key.starts_with("diff.")),
+                "only editor-facing keys migrate: {:?}",
+                overrides.keys.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// Both pickers naming the same theme is not a divergence either.
+    #[test]
+    fn legacy_editor_theme_equal_to_the_chrome_theme_writes_no_overrides() {
+        for id in ["one-dark", "phosphor", "rose-pine"] {
+            let (theme, overrides) = migrate_legacy_theme(Some(id), Some(id));
+            assert_eq!(theme, id);
+            assert!(overrides.is_empty(), "{id} diverged from itself: {overrides:?}");
+        }
+    }
+
+    /// End to end through `config.toml`: the untouched default leaves no
+    /// `themeOverrides` table behind at all.
+    #[test]
+    fn config_theme_migration_writes_no_overrides_for_the_untouched_editor_default() {
+        let path = tmp_config_path();
+        let raw =
+            "schemaVersion = 1\n\n[settings]\natlasTheme = \"chyral\"\ncodeEditorTheme = \"atlas\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("legacy theme settings parse");
+
+        assert_eq!(manager.effective().theme, "chyral");
+        assert!(manager.effective().theme_overrides.is_empty());
+        assert!(!manager.last_raw.contains("themeOverrides"));
+        assert!(!manager.last_raw.contains("atlasTheme"));
+        assert!(!manager.last_raw.contains("codeEditorTheme"));
+    }
+
+    #[test]
+    fn unknown_config_theme_falls_back_to_atlas_and_is_rewritten() {
+        let path = tmp_config_path();
+        let raw = "schemaVersion = 1\n\n[settings]\ntheme = \"from-a-newer-atlas\"\n";
+        let manager = ConfigManager::from_raw(path, raw).expect("unknown id falls back");
+
+        assert_eq!(manager.effective().theme, default_theme());
+        assert!(manager.last_raw.contains("theme = \"atlas\""));
     }
 
     #[test]
@@ -1691,13 +2025,13 @@ someFutureKey = \"left alone\"
     #[test]
     fn bootstrap_first_run_imports_legacy_settings_and_marks_migrated() {
         let path = tmp_config_path();
-        let legacy = serde_json::json!({ "enterToSend": false, "atlasTheme": "custom" });
+        let legacy = serde_json::json!({ "enterToSend": false, "atlasTheme": "rose-pine" });
 
         let outcome = bootstrap_at(path.clone(), false, Some(legacy));
 
         assert!(outcome.mark_migrated);
         assert!(!outcome.manager.effective().enter_to_send);
-        assert_eq!(outcome.manager.effective().atlas_theme, "custom");
+        assert_eq!(outcome.manager.effective().theme, "rose-pine");
         assert!(path.exists(), "bootstrap must actually write config.toml on first run");
     }
 
@@ -1728,7 +2062,7 @@ someFutureKey = \"left alone\"
         // The existing file wins outright — legacy data is never merged in,
         // not even for keys the existing file didn't set.
         assert!(!outcome.manager.effective().enter_to_send);
-        assert_eq!(outcome.manager.effective().atlas_theme, default_atlas_theme());
+        assert_eq!(outcome.manager.effective().theme, default_theme());
         assert_eq!(fs::read_to_string(&path).unwrap(), raw, "must not rewrite an existing config.toml");
     }
 

@@ -248,16 +248,16 @@ function ensureGitStatusFreshListener(): void {
     });
   });
 
-  // Workspace edits Atlas didn't originate (terminal git, external editor).
+  // Project edits Atlas didn't originate (terminal git, external editor).
   // Editor saves inside Atlas refresh directly (see editor-panel) and don't
   // depend on this. Short debounce just coalesces fs-event bursts.
-  let workspaceDebounce: ReturnType<typeof setTimeout> | null = null;
+  let projectDebounce: ReturnType<typeof setTimeout> | null = null;
   void listen("atlas:explorer:changed", () => {
     const current = useGitStore.getState().repoPath;
     if (!current) return;
-    if (workspaceDebounce) clearTimeout(workspaceDebounce);
-    workspaceDebounce = setTimeout(() => {
-      workspaceDebounce = null;
+    if (projectDebounce) clearTimeout(projectDebounce);
+    projectDebounce = setTimeout(() => {
+      projectDebounce = null;
       const repoPath = useGitStore.getState().repoPath;
       if (!repoPath) return;
       const actions = useGitStore.getState().actions;

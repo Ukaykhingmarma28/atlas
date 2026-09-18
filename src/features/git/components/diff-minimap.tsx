@@ -1,4 +1,11 @@
 import { memo, useEffect, useRef, type RefObject } from "react";
+import { withAlpha } from "@/features/theme/color";
+import {
+  themeBase,
+  themeColor,
+  themeDerived,
+  useThemeVersion,
+} from "@/features/theme/theme-values";
 import type { DiffRow } from "../lib/git-diff-api";
 
 interface DiffMinimapProps {
@@ -14,20 +21,36 @@ const WIDTH = 120; // logical px — wide enough to read line shape
 const CHAR_W = 1; // px per character
 const LINE_H = 4; // minimap px per row (3px glyph + 1px interline)
 
-// Text-blob colours, keyed by the row's change kind (Atom-style token blocks,
-// but tinted by diff semantics rather than syntax so the change story reads).
-const TEXT: Record<Kind, string> = {
-  context: "rgba(165,170,180,0.55)",
-  added: "rgba(52,211,153,0.85)",
-  removed: "rgba(244,99,99,0.8)",
-  changed: "rgba(245,190,90,0.9)",
-};
-// Faint full-row wash behind changed rows so clusters pop even on sparse lines.
-const ROW_BG: Partial<Record<Kind, string>> = {
-  added: "rgba(34,197,94,0.12)",
-  removed: "rgba(244,63,63,0.12)",
-  changed: "rgba(245,180,60,0.12)",
-};
+/**
+ * Text-blob colours, keyed by the row's change kind (Atom-style token blocks,
+ * but tinted by diff semantics rather than syntax so the change story reads),
+ * and the faint full-row wash behind a changed row so clusters pop even on
+ * sparse lines.
+ *
+ * Resolved, not `var(--…)`: a canvas 2D `fillStyle` is a string the context
+ * parses once, so a custom property reaches it as literal text and paints
+ * nothing. That is also why this is a FUNCTION and the paint pass re-runs on
+ * `atlas:theme-applied` — the blobs are painted once per diff, so a theme
+ * switch would otherwise leave the previous theme's colours on screen until
+ * the file changed. Same contract as `graph-palette.ts` and `graph-ruler.tsx`.
+ */
+function minimapPalette(): { text: Record<Kind, string>; wash: Partial<Record<Kind, string>> } {
+  return {
+    text: {
+      // Context is the shape of the unchanged code, so it reads as the dimmed
+      // neutral the gutter uses rather than as content.
+      context: withAlpha(themeBase("muted-foreground"), 0.55),
+      added: themeColor("diff.added.text"),
+      removed: themeColor("diff.removed.text"),
+      changed: themeColor("status.warning.foreground"),
+    },
+    wash: {
+      added: themeColor("diff.added.background"),
+      removed: themeColor("diff.removed.background"),
+      changed: themeDerived("status.warning.background"),
+    },
+  };
+}
 
 function rowKind(r: DiffRow): Kind {
   const side = r.right ?? r.left;
@@ -52,6 +75,9 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
   const dragging = useRef(false);
   // Geometry shared between the (rows-keyed) paint pass and the scroll handler.
   const geom = useRef({ lineH: LINE_H, contentH: 0 });
+  // Repaint on a theme switch: the canvas holds resolved colours, so nothing
+  // in CSS can update it for us.
+  const themeVersion = useThemeVersion();
 
   useEffect(() => {
     const box = boxRef.current;
@@ -61,6 +87,8 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
     if (!box || !canvas) return;
 
     const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+
+    const palette = minimapPalette();
 
     const paint = () => {
       const n = rows.length;
@@ -87,7 +115,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
         const row = rows[i];
         const kind = rowKind(row);
         const y = i * lineH;
-        const wash = ROW_BG[kind];
+        const wash = palette.wash[kind];
         if (wash) {
           ctx.fillStyle = wash;
           ctx.fillRect(0, y, WIDTH, lineH);
@@ -99,7 +127,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
           .map((s) => s.text)
           .join("")
           .replace(/\t/g, "  ");
-        ctx.fillStyle = TEXT[kind];
+        ctx.fillStyle = palette.text[kind];
         runRe.lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = runRe.exec(text))) {
@@ -137,7 +165,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
       scroller?.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, [rows, scrollRef]);
+  }, [rows, scrollRef, themeVersion]);
 
   const scrollToClientY = (clientY: number) => {
     const box = boxRef.current;
@@ -160,7 +188,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
   return (
     <div
       ref={boxRef}
-      className="relative shrink-0 cursor-pointer overflow-hidden border-l border-[var(--border-default)] bg-[var(--bg-secondary)]"
+      className="relative shrink-0 cursor-pointer overflow-hidden border-l border-[var(--border)] bg-[var(--card)]"
       style={{ width: WIDTH }}
       title="Code map — click or drag to scroll"
       onPointerDown={(e) => {
@@ -186,7 +214,7 @@ export const DiffMinimap = memo(function DiffMinimap({ rows, scrollRef }: DiffMi
       />
       <div
         ref={indicatorRef}
-        className="pointer-events-none absolute left-0 right-0 border-y border-white/25 bg-white/10"
+        className="pointer-events-none absolute left-0 right-0 border-y border-border-strong bg-element-active"
       />
     </div>
   );

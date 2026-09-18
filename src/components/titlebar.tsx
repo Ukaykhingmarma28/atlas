@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import * as Popover from "@radix-ui/react-popover";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { Popover } from "@base-ui/react/popover";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import {
   useNotificationsStore,
   hasUnread,
@@ -40,8 +40,8 @@ import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { CapturePopover } from "@/features/capture/components/capture-popover";
 import { StatusDot } from "@/features/capture/components/capture-status";
 import type { Binding, CaptureHealth } from "@/features/capture/types";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
-import { useActiveOrgWorkspaces } from "@/features/workspaces/lib/org-scope";
+import { activeProjectId } from "@/features/projects/lib/active-project";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { isDev } from "@/lib/env";
 import { isMac, isWindows } from "@/lib/platform";
 
@@ -73,25 +73,25 @@ function useTauriWindow() {
 }
 
 export function Titlebar() {
-  const currentProject = useProjectStore.use.currentProject();
-  // The label name is read from the WORKSPACE store (matched by path), not from
+  const currentProject = useAppStore.use.currentProject();
+  // The label name is read from the PROJECT store (matched by path), not from
   // `currentProject.name`. `currentProject` only re-syncs after a slow Rust
-  // AppState round-trip, so a workspace rename took ~3-4s to show here; the
-  // workspace store mutates synchronously on rename, so this updates instantly.
-  const workspaces = useWorkspaceStore.use.workspaces();
+  // AppState round-trip, so a project rename took ~3-4s to show here; the
+  // project store mutates synchronously on rename, so this updates instantly.
+  const projects = useProjectStore.use.projects();
   // Owning organisation, for the `org / project` pill. Read live so an org
   // switch or rename re-labels immediately.
   const organisations = useOrgStore.use.organisations();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const orgName = organisations.find((o) => o.id === activeOrganisationId)?.name ?? null;
-  // Same path can be a workspace in several orgs — prefer the ACTIVE org's
+  // Same path can be a project in several orgs — prefer the ACTIVE org's
   // twin so a rename in another org never re-labels this titlebar.
   const displayName =
     (currentProject
-      ? workspaces.find((w) => w.path === currentProject.path && w.orgId === activeOrganisationId)
+      ? projects.find((w) => w.path === currentProject.path && w.orgId === activeOrganisationId)
           ?.name
       : undefined) ??
-    (currentProject ? workspaces.find((w) => w.path === currentProject.path)?.name : undefined) ??
+    (currentProject ? projects.find((w) => w.path === currentProject.path)?.name : undefined) ??
     currentProject?.name ??
     "Atlas";
   const { windowRef, isFullscreen } = useTauriWindow();
@@ -101,8 +101,8 @@ export function Titlebar() {
   // the space. Fullscreen hides the lights entirely. (Unpinned overlay mode
   // doesn't occupy flow width, so it never affects this.) Only macOS has
   // traffic lights on the left; Windows gets `WindowControls` on the right.
-  const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
-  const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
+  const sidebarPinned = useProjectStore.use.sidebarPinned();
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
   const dockedSidebar = sidebarPinned && sidebarOpen;
 
   const isTitlebarSurface = (target: EventTarget | null) => {
@@ -148,17 +148,17 @@ export function Titlebar() {
       onMouseDown={handleDrag}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        "relative z-50 flex h-[30px] select-none items-center bg-[var(--bg-base)] border-b border-border-default",
+        "relative z-titlebar flex h-titlebar select-none items-center bg-[var(--background)] border-b border-border",
         isWindows ? "pr-0" : "pr-3",
         isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
       )}
     >
-      <div className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex h-titlebar min-w-0 flex-1 items-center gap-1.5">
         <HintGroup>
-          <WorkspaceToggle />
+          <ProjectToggle />
           {currentProject && <LeftPanelToggle />}
         </HintGroup>
-        {/* `org / project` pill — click to copy the workspace path. */}
+        {/* `org / project` pill — click to copy the project path. */}
         <ProjectLabel name={displayName} orgName={orgName} path={currentProject?.path} />
       </div>
 
@@ -216,7 +216,7 @@ function WindowControls() {
   }, []);
 
   const button =
-    "flex h-[29px] w-[46px] items-center justify-center text-[#999] transition-colors duration-100";
+    "flex h-[29px] w-[46px] items-center justify-center text-muted-foreground transition-colors duration-100";
 
   return (
     <HintGroup>
@@ -224,7 +224,7 @@ function WindowControls() {
         <HintItem label="Minimize">
           <button
             onClick={() => void windowRef.current?.minimize()}
-            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+            className={cn(button, "hover:bg-element-hover hover:text-foreground")}
           >
             <Minus size={14} strokeWidth={1.25} />
           </button>
@@ -232,7 +232,7 @@ function WindowControls() {
         <HintItem label={isMaximized ? "Restore" : "Maximize"}>
           <button
             onClick={() => void windowRef.current?.toggleMaximize()}
-            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+            className={cn(button, "hover:bg-element-hover hover:text-foreground")}
           >
             {isMaximized ? (
               <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
@@ -244,6 +244,7 @@ function WindowControls() {
         <HintItem label="Close">
           <button
             onClick={() => void windowRef.current?.close()}
+            // ratchet-allow: Windows' own close-button red, fixed by the platform.
             className={cn(button, "hover:bg-[#c42b1c] hover:text-white")}
           >
             <X size={15} strokeWidth={1.25} />
@@ -277,7 +278,7 @@ function ActionDock() {
 /**
  * The titlebar project label — `org / project`, with the capture dot.
  *
- * Clicking it opens capture setup. It used to copy the workspace path and show
+ * Clicking it opens capture setup. It used to copy the project path and show
  * a hover tooltip of that path; both are gone, because the click now opens a
  * panel and a tooltip that fires every time you approach that panel is noise in
  * front of it. It stays a <button> (not a span) so the titlebar's
@@ -308,7 +309,7 @@ function ProjectLabel({
       .catch(() => setBinding(null));
     void invoke<CaptureHealth>("capture_health", {
       projectPath: path,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     })
       .then(setHealth)
       .catch(() => setHealth(null));
@@ -333,52 +334,53 @@ function ProjectLabel({
           the one control in the app that always names the project it would
           apply to — which the Timeline board, spanning every project, cannot. */}
       <Popover.Root open={captureOpen} onOpenChange={setCaptureOpen}>
-        <Popover.Trigger asChild>
-          <button
-            // `leading-none` is what actually centres the capture dot: with the
-            // inherited line-height the label spans set a taller line box than
-            // the dot, and `items-center` centred the dot against *that* — which
-            // is why it sat visibly high.
-            className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-[#303030] bg-[#0C0C0C] px-2 text-[11px] leading-none font-medium transition-colors hover:bg-[#1f1f1f]"
-            title={health?.summary ?? "Session capture"}
-            aria-label={health?.summary ?? "Session capture"}
-          >
-            {orgName && (
-              <>
-                <span className="min-w-0 shrink truncate text-[var(--text-tertiary)]">
-                  {orgName}
-                </span>
-                <span className="shrink-0 text-[var(--text-tertiary)] opacity-50">/</span>
-              </>
-            )}
-            <span className="min-w-0 truncate text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
-              {name}
-            </span>
-            {/* Only once capture is on. An always-present grey dot on every
+        <Popover.Trigger
+          render={
+            <button
+              // `leading-none` is what actually centres the capture dot: with the
+              // inherited line-height the label spans set a taller line box than
+              // the dot, and `items-center` centred the dot against *that* — which
+              // is why it sat visibly high.
+              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border-subtle bg-card px-2 text-xs leading-none font-medium transition-colors hover:bg-element-hover"
+              title={health?.summary ?? "Session capture"}
+              aria-label={health?.summary ?? "Session capture"}
+            >
+              {orgName && (
+                <>
+                  <span className="min-w-0 shrink truncate text-[var(--muted-foreground)]">
+                    {orgName}
+                  </span>
+                  <span className="shrink-0 text-[var(--muted-foreground)] opacity-50">/</span>
+                </>
+              )}
+              <span className="min-w-0 truncate text-[var(--secondary-foreground)] transition-colors group-hover:text-[var(--foreground)]">
+                {name}
+              </span>
+              {/* Only once capture is on. An always-present grey dot on every
                 project reads as a defect indicator rather than a state. */}
-            {binding?.enabled && <StatusDot binding={binding} health={health} />}
-          </button>
-        </Popover.Trigger>
+              {binding?.enabled && <StatusDot binding={binding} health={health} />}
+            </button>
+          }
+        />
         {path && (
           <Popover.Portal>
-            <Popover.Content
-              side="bottom"
-              align="start"
-              sideOffset={6}
-              // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
-              // here: this wrapper would hold a transform for the duration, and
-              // a transformed ancestor becomes the backdrop root — which
-              // flattens the panel's blur while it plays. Exit stays here
-              // because Radix needs the animation on the element it unmounts.
-              className="z-[var(--z-max)] origin-[var(--radix-popover-content-transform-origin)] data-[state=closed]:animate-scale-out"
-            >
-              <CapturePopover
-                projectPath={path}
-                health={health}
-                onChanged={readCapture}
-                onClose={() => setCaptureOpen(false)}
-              />
-            </Popover.Content>
+            <Popover.Positioner className="z-popover" side="bottom" align="start" sideOffset={6}>
+              <Popover.Popup
+                // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
+                // here: this wrapper would hold a transform for the duration, and
+                // a transformed ancestor becomes the backdrop root — which
+                // flattens the panel's blur while it plays. Exit stays here
+                // because Base UI holds the popup mounted through it.
+                className="origin-[var(--transform-origin)] data-closed:animate-scale-out"
+              >
+                <CapturePopover
+                  projectPath={path}
+                  health={health}
+                  onChanged={readCapture}
+                  onClose={() => setCaptureOpen(false)}
+                />
+              </Popover.Popup>
+            </Popover.Positioner>
           </Popover.Portal>
         )}
       </Popover.Root>
@@ -396,7 +398,7 @@ function ProjectLabel({
  * The one saturated element in a monochrome titlebar, which is the point: it
  * must be impossible to mistake a dev window for the shipped app. Blue rather
  * than the old purple because purple appears nowhere else in Atlas, while blue
- * is already the app's informational hue (`--status-info`).
+ * is already the app's informational hue (`--atlas-status-info-foreground`).
  *
  * Built from three stacked layers rather than a flat fill — a vertical
  * gradient body, a blurred crown highlight, and an inset rim — so it reads as
@@ -404,6 +406,27 @@ function ProjectLabel({
  * static paint: no transitions, no hover, no transform. It's an indicator, not
  * a control, so it takes no pointer events and never moves.
  */
+/**
+ * The dev-build badge's paint.
+ *
+ * Deliberately outside the theme: this capsule exists to say "you are not
+ * looking at a release build", and a badge that took on the colours of
+ * whatever theme is active would say it more quietly the better the theme
+ * fits. It is also dev-only — `DevModePill` returns null in a release build —
+ * so nothing a user sees depends on any of it.
+ */
+// ratchet-allow: the dev-build badge is meant to look alien to the theme.
+const DEV_PILL_FILL = "linear-gradient(to bottom, #3b82f6, #2563eb)";
+const DEV_PILL_GLOW =
+  // ratchet-allow: the glow belongs to the dev-badge blue above it.
+  "0 1px 5px 0 rgba(37,99,235,0.35), 0 1px 0 0 rgba(255,255,255,0.25) inset, 0 -2px 6px 0 rgba(37,99,235,0.5) inset";
+const DEV_PILL_CROWN =
+  // ratchet-allow: the crown highlight on that same capsule, not app chrome.
+  "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 80%, transparent 100%)";
+const DEV_PILL_RIM =
+  // ratchet-allow: the rim on that same capsule, sized to the blue underneath.
+  "0 0 0 1px rgba(255,255,255,0.10) inset, 0 1px 0 0 rgba(255,255,255,0.18) inset";
+
 function DevModePill() {
   if (!isDev || !isTauri()) return null;
   return (
@@ -412,32 +435,24 @@ function DevModePill() {
     // it's an indicator, not a control (which also retires its old divider).
     <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
       <div
-        className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-[11px] leading-none font-medium text-white"
-        style={{
-          background: "linear-gradient(to bottom, #3b82f6, #2563eb)",
-          boxShadow:
-            "0 1px 5px 0 rgba(37,99,235,0.35), 0 1px 0 0 rgba(255,255,255,0.25) inset, 0 -2px 6px 0 rgba(37,99,235,0.5) inset",
-        }}
+        // ratchet-allow: the label on the dev-build capsule, whose fill is the
+        // fixed blue above — it is an out-of-band marker that must look the same
+        // in every theme, which is the whole point of it.
+        className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-xs leading-none font-medium text-white"
+        style={{ background: DEV_PILL_FILL, boxShadow: DEV_PILL_GLOW }}
       >
         {/* Crown highlight — the light source. Blurred so its lower edge melts
           into the body instead of banding across the glyphs. */}
         <span
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-0 z-0 h-2/5 w-4/5 -translate-x-1/2 rounded-t-full"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 80%, transparent 100%)",
-            filter: "blur(1px)",
-          }}
+          style={{ background: DEV_PILL_CROWN, filter: "blur(1px)" }}
         />
         {/* Rim — keeps the capsule's edge legible against the black titlebar. */}
         <span
           aria-hidden
           className="pointer-events-none absolute inset-0 z-0 rounded-full"
-          style={{
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.10) inset, 0 1px 0 0 rgba(255,255,255,0.18) inset",
-          }}
+          style={{ boxShadow: DEV_PILL_RIM }}
         />
         <Hammer size={11} className="relative z-10" />
         <span className="relative z-10">Dev Mode</span>
@@ -446,28 +461,28 @@ function DevModePill() {
   );
 }
 
-function WorkspaceToggle() {
+function ProjectToggle() {
   const hint = useActionShortcut("workspace.toggleSidebar")?.label;
   const suffix = hint ? ` (${hint})` : "";
-  const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
-  const { toggleSidebar } = useWorkspaceStore.use.actions();
-  // Badge counts only the active org's workspaces (matches what the sidebar
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
+  const { toggleSidebar } = useProjectStore.use.actions();
+  // Badge counts only the active org's projects (matches what the sidebar
   // it toggles will actually show).
-  const count = useActiveOrgWorkspaces().length;
+  const count = useActiveOrgProjects().length;
 
   return (
-    <HintItem label={sidebarOpen ? `Hide workspaces${suffix}` : `Show workspaces${suffix}`}>
+    <HintItem label={sidebarOpen ? `Hide projects${suffix}` : `Show projects${suffix}`}>
       <button
         onClick={toggleSidebar}
         className={cn(
-          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-[#ffffff08] transition-all duration-150",
-          sidebarOpen ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
+          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-element-hover transition-all duration-150",
+          sidebarOpen ? "text-foreground" : "text-muted-foreground hover:text-secondary-foreground",
         )}
-        aria-label={sidebarOpen ? "Hide workspaces" : "Show workspaces"}
+        aria-label={sidebarOpen ? "Hide projects" : "Show projects"}
       >
         <Layers size={14} />
         {count > 1 && (
-          <span className="absolute -bottom-0.5 -right-0.5 text-[7px] font-mono text-white">
+          <span className="absolute -bottom-0.5 -right-0.5 text-3xs font-mono text-foreground">
             {count}
           </span>
         )}
@@ -484,7 +499,7 @@ function LeftPanelToggle() {
     <HintItem label={leftPanel.visible ? "Hide left panel" : "Show left panel"}>
       <button
         onClick={toggleLeftPanel}
-        className="flex items-center justify-center w-6 h-6 rounded text-[#555] hover:text-[#aaa] hover:bg-[#ffffff08] transition-all duration-150"
+        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-all duration-150"
       >
         <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
       </button>
@@ -582,7 +597,7 @@ function useUpdateItem(): DockItem {
     ) : (
       <ArrowDownToLine size={12} />
     ),
-    badge: ready ? <DockBadge className="bg-[var(--accent-primary)]" /> : undefined,
+    badge: ready ? <DockBadge className="bg-[var(--primary)]" /> : undefined,
   };
 }
 
@@ -594,7 +609,7 @@ function useNotificationItem(): DockItem {
   // Scoped to the active organisation: another org's unread items are its own.
   const unread = useNotificationsStore((s) => hasUnread(s.items, activeOrgId));
   const hasError = useNotificationsStore((s) => hasUnread(s.items, activeOrgId, isErrorKind));
-  // LIVE attention state: any session (any workspace) blocked on a permission
+  // LIVE attention state: any session (any project) blocked on a permission
   // decision, or any terminal waiting on input. Derived from live stores
   // rather than unread flags so it shows even after the panel was opened, and
   // clears itself the moment the prompt is answered.
@@ -614,10 +629,10 @@ function useNotificationItem(): DockItem {
           // Priority: error > needs-attention (green) > plain unread.
           className={cn(
             hasError
-              ? "bg-[var(--status-error)]"
+              ? "bg-[var(--atlas-status-error-foreground)]"
               : needsAttention
-                ? "bg-[var(--status-success)] animate-pulse"
-                : "bg-white",
+                ? "bg-[var(--atlas-status-success-foreground)] animate-pulse"
+                : "bg-foreground",
           )}
           label={needsAttention ? "Something needs your attention" : "Unread notifications"}
         />
@@ -643,7 +658,7 @@ function DockBadge({ className, label }: { className?: string; label?: string })
     <span
       className={cn(
         "pointer-events-none absolute right-[3px] top-[3px] size-[6px] rounded-full",
-        "ring-1 ring-[var(--bg-elevated)]",
+        "ring-1 ring-[var(--card)]",
         className,
       )}
       aria-label={label}

@@ -7,6 +7,11 @@ import { lines, text, thinking, tool, tools, user, t } from "../fixtures/chat";
 import {
   appendToolOutput,
   playTranscript,
+  requestPermission,
+  requestPermissionLongArgs,
+  requestPermissionPlan,
+  requestPermissionQuestion,
+  requestPermissionQuestionMulti,
   setSeedTranscript,
   setStatus,
   upsertToolCall,
@@ -112,9 +117,21 @@ export const chatTools: Scenario = {
     // The chat tab binds its session shortly after mount; the seed plays then.
     await new Promise((r) => setTimeout(r, 1500));
     await liveTurn();
+    // A scripted beat: the agent wants to run something next, so a reviewer
+    // walking this scenario meets the permission modal without needing to
+    // know `__atlasMock.actions` exists. Left pending like the live command
+    // above — nothing auto-resolves it.
+    await new Promise((r) => setTimeout(r, 3500));
+    await requestPermission();
   },
   actions: {
     /** Complete the running command: `__atlasMock.actions.finishLive()`. */
     finishLive: () => finishLive(),
+    // Every `permission-modal.tsx` variant, on demand.
+    requestPermission,
+    requestPermissionLongArgs,
+    requestPermissionPlan,
+    requestPermissionQuestion,
+    requestPermissionQuestionMulti,
   },
 };

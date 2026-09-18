@@ -65,7 +65,7 @@ export function DotMatrix({
                   // come to exactly the 30px the container reserves.
                   className="block size-[3px] shrink-0 rounded-full"
                   style={{
-                    background: newest && on ? "var(--text-primary)" : "var(--text-secondary)",
+                    background: newest && on ? "var(--foreground)" : "var(--secondary-foreground)",
                     opacity: on ? (newest ? 1 : 0.85) : base ? (v === null ? 0.1 : 0.22) : 0.07,
                     transition: "opacity 260ms ease-out",
                     transitionDelay: `${Math.min(i, 40) * 8}ms`,

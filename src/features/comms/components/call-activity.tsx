@@ -67,10 +67,10 @@ export const CallActivity = memo(function CallActivity({
       <div className="flex w-9 shrink-0 justify-center">
         <span
           className={cn(
-            "relative z-[1] mt-[3px] flex h-5 w-5 items-center justify-center rounded-full border",
+            "relative z-panel mt-[3px] flex h-5 w-5 items-center justify-center rounded-full border",
             live
-              ? "border-white/25 bg-white/10 text-text-primary"
-              : "border-border-subtle bg-bg-elevated text-text-tertiary",
+              ? "border-border-strong bg-[var(--atlas-element-active)] text-foreground"
+              : "border-border-subtle bg-card text-muted-foreground",
           )}
         >
           <Icon size={11} />
@@ -78,7 +78,7 @@ export const CallActivity = memo(function CallActivity({
       </div>
 
       <div className="min-w-0 flex-1 py-[2px]">
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] leading-[18px] text-text-tertiary">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-[18px] text-muted-foreground">
           {/* The sentence IS the share link. A hover-revealed "Copy link"
               button used to sit at the end of this row; because the row wraps,
               revealing it pushed the transcript line and the recording
@@ -86,23 +86,25 @@ export const CallActivity = memo(function CallActivity({
               affordance now lives on text that is always there, so nothing
               moves — the tooltip is what says it is clickable. */}
           <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => void copyShareLink(orgId, call)}
-                className="group/link cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-              >
-                {/* Both halves brighten together: the name carries its own
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => void copyShareLink(orgId, call)}
+                  className="group/link cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {/* Both halves brighten together: the name carries its own
                     colour, so a hover rule on the button alone would lift the
                     verb and leave the name behind. */}
-                <span className="text-text-secondary transition-colors group-hover/link:text-text-primary">
-                  {who}
-                </span>{" "}
-                <span className="transition-colors group-hover/link:text-text-primary">
-                  {verb} a {kind}
-                </span>
-              </button>
-            </TooltipTrigger>
+                  <span className="text-secondary-foreground transition-colors group-hover/link:text-foreground">
+                    {who}
+                  </span>{" "}
+                  <span className="transition-colors group-hover/link:text-foreground">
+                    {verb} a {kind}
+                  </span>
+                </button>
+              }
+            />
             <TooltipContent side="top">
               {call.join_slug !== null
                 ? "Click to copy the guest link"
@@ -110,31 +112,31 @@ export const CallActivity = memo(function CallActivity({
             </TooltipContent>
           </Tooltip>
           {!live && call.ended_at !== null && (
-            <span className="text-text-ghost">
+            <span className="text-disabled">
               · {formatDuration(call.started_at, call.ended_at)}
             </span>
           )}
           {live && (
-            <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium text-text-primary">
+            <span className="rounded-full bg-[var(--atlas-element-active)] px-1.5 py-px text-2xs font-medium text-foreground">
               Ongoing
             </span>
           )}
           {call.recording_state === "recording" && (
-            <span className="rounded-full bg-bg-elevated px-1.5 py-px text-[10px] font-medium text-text-tertiary">
+            <span className="rounded-full bg-card px-1.5 py-px text-2xs font-medium text-muted-foreground">
               Recording
             </span>
           )}
           {call.recording_state === "processing" && (
-            <span className="rounded-full bg-bg-elevated px-1.5 py-px text-[10px] font-medium text-text-tertiary">
+            <span className="rounded-full bg-card px-1.5 py-px text-2xs font-medium text-muted-foreground">
               Processing
             </span>
           )}
           {call.recording_state === "failed" && (
-            <span className="rounded-full bg-bg-elevated px-1.5 py-px text-[10px] font-medium text-status-error">
+            <span className="rounded-full bg-card px-1.5 py-px text-2xs font-medium text-status-error">
               Recording failed
             </span>
           )}
-          <span className="text-text-ghost">{formatClock(call.started_at)}</span>
+          <span className="text-disabled">{formatClock(call.started_at)}</span>
 
           {/* Row actions: the log carries the meeting link. Join only while
               the room is still open. */}
@@ -143,7 +145,7 @@ export const CallActivity = memo(function CallActivity({
               type="button"
               title="Join this call in your browser"
               onClick={() => void joinCall(orgId, call.id)}
-              className="flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              className="flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
             >
               <ExternalLink size={10} />
               Join
@@ -154,13 +156,13 @@ export const CallActivity = memo(function CallActivity({
         {/* Transcript: the state IS the live update (frames patch it); when
             ready the CSV is one save away. Wording mirrors the web's card. */}
         {call.transcript_state === "pending" && (
-          <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-text-tertiary">
+          <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 size={10} className="animate-spin" />
             Transcript is being produced…
           </span>
         )}
         {call.transcript_state === "failed" && (
-          <span className="mt-0.5 block text-[10.5px] text-text-ghost">
+          <span className="mt-0.5 block text-xs text-disabled">
             No transcript arrived for this call.
           </span>
         )}
@@ -168,7 +170,7 @@ export const CallActivity = memo(function CallActivity({
           <button
             type="button"
             onClick={() => void saveTranscript(call.id)}
-            className="-ml-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+            className="-ml-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
           >
             <FileText size={11} />
             Save transcript
@@ -179,7 +181,7 @@ export const CallActivity = memo(function CallActivity({
           <button
             type="button"
             onClick={toggle}
-            className="mt-1 flex items-center gap-1 rounded px-1 py-0.5 -ml-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+            className="mt-1 flex items-center gap-1 rounded px-1 py-0.5 -ml-1 text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
           >
             <ChevronDown
               size={11}
@@ -192,14 +194,14 @@ export const CallActivity = memo(function CallActivity({
         {open && hasRecording && (
           <div className="mt-1 flex flex-col gap-1">
             {loading && (
-              <span className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2 size={11} className="animate-spin" />
                 Preparing links…
               </span>
             )}
             {!loading && (tracks ?? []).map((t) => <TrackRow key={t.id} track={t} />)}
             {!loading && tracks?.length === 0 && (
-              <span className="text-[11px] text-text-ghost">No tracks were kept.</span>
+              <span className="text-xs text-disabled">No tracks were kept.</span>
             )}
           </div>
         )}

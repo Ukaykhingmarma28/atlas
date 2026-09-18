@@ -22,7 +22,7 @@ import { useOrgStore } from "@/features/organisations/stores/org-store";
 import type { Organisation } from "@/features/organisations/types";
 import { cn } from "@/lib/utils";
 
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 import { CaptureDot } from "./capture-status";
 
@@ -34,7 +34,7 @@ import type {
   ImportPreview,
   PromotionPreview,
   SlugAvailability,
-  WorkspaceMode,
+  ProjectMode,
 } from "../types";
 
 /**
@@ -55,7 +55,7 @@ import type {
  * Ordering inside the Cloud confirm matters and is not obvious:
  * `capture_register_cloud` requires an existing binding, so Confirm runs
  * enable-Local → register → import-confirm. Running enable *before* the
- * disclosure would leave a bound Workspace behind a Cancel, which is exactly
+ * disclosure would leave a bound Project behind a Cancel, which is exactly
  * what "Cancel = nothing happens" forbids.
  *
  * **Cloud follows the active Organisation, and only that one.** Capture is
@@ -70,10 +70,10 @@ import type {
  * Cloud capture is switched off in the client.
  *
  * The ingest service (`ingest.tryatlas.cc`) currently answers **405 method not
- * allowed to every GET** — `GET /workspaces` and `GET /workspaces/slug-available`
+ * allowed to every GET** — `GET /projects` and `GET /projects/slug-available`
  * are not deployed, only the POST routes are. So Connect could never list
  * anything ("Could not reach the server"), the Slug check could only ever say
- * "couldn't check", and Create-Cloud would bind a Workspace whose drain has
+ * "couldn't check", and Create-Cloud would bind a Project whose drain has
  * nowhere to read back from. None of that is a client fault and none of it is
  * fixable here.
  *
@@ -96,26 +96,27 @@ const CLOUD_UNAVAILABLE_REASON = "Cloud capture isn't available yet";
  * earn its keep. If a third appears, extract then.
  */
 const FIELD =
-  "h-8 w-full rounded-lg border border-[#303030] bg-[#0C0C0C] px-2.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition-colors focus:border-[#4a4a4a]";
+  "h-8 w-full rounded-lg border border-border bg-panel-input px-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none transition-colors focus:border-border-strong";
 
 /** Section heading above a group of controls. */
-const SECTION_LABEL = "text-[11px] font-medium text-[var(--text-secondary)]";
+const SECTION_LABEL = "text-xs font-medium text-[var(--secondary-foreground)]";
 
 /** Hint under a group — the sentence that explains what was just chosen. */
-const HINT = "mt-1 text-[10px] leading-[14px] text-[var(--text-tertiary)]";
+const HINT = "mt-1 text-2xs text-[var(--muted-foreground)]";
 
 /** A read-only group of facts (detection, disclosure lines). */
-const GROUP = "rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-2";
+const GROUP =
+  "rounded-lg border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-2";
 
 /** Selectable pill — the Type/Region language from the organisation modal. */
 function pillClass(state: "on" | "off" | "disabled") {
   return cn(
-    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] leading-none transition-colors",
+    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs leading-none transition-colors",
     state === "disabled"
-      ? "cursor-not-allowed border-[#242424] bg-[#0C0C0C] text-[var(--text-tertiary)] opacity-40"
+      ? "cursor-not-allowed border-border bg-panel-input text-[var(--muted-foreground)] opacity-40"
       : state === "on"
-        ? "cursor-pointer border-[#4a4a4a] bg-[#1f1f1f] text-[var(--text-primary)]"
-        : "cursor-pointer border-[#303030] bg-[#0C0C0C] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+        ? "cursor-pointer border-border-strong bg-accent text-[var(--foreground)]"
+        : "cursor-pointer border-border bg-panel-input text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
   );
 }
 
@@ -137,7 +138,7 @@ type View =
       slug: string;
       preview: ImportPreview;
     }
-  /** Bound Cloud Workspace whose history import awaits approval. */
+  /** Bound Cloud Project whose history import awaits approval. */
   | { kind: "import-confirm"; preview: ImportPreview }
   /** Local→Cloud promotion: pick the destination. */
   | { kind: "promote-form" }
@@ -234,7 +235,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
     } finally {
       // Always re-read, success or not: a multi-step action (Cloud confirm,
       // Connect) can fail after its first mutation landed, and showing the
-      // pre-action state over a Workspace that changed is a lie. `load` never
+      // pre-action state over a Project that changed is a lie. `load` never
       // clears `error` on success, so the failure stays visible.
       await load();
       onChanged();
@@ -259,21 +260,14 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
   return (
     <div
       className={cn(
-        "w-[352px] select-none overflow-hidden rounded-xl text-[12px]",
+        "w-[352px] select-none overflow-hidden rounded-xl text-sm shadow-md",
         // Border, translucent fill and blur all on THIS element — the same one
         // the enter animation transforms. Splitting them across a wrapper would
         // isolate the compositing layer and flatten the blur to flat
         // transparency (see the note beside the keyframes in globals.css).
-        "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+        "border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl",
         "atlas-panel-in-tl",
       )}
-      style={{
-        // Drop shadow only. The inset top hairline that used to be here landed
-        // *on top of* the 1px border, so the top edge read twice as heavy as the
-        // other three. No `will-change` — it would isolate the layer and kill
-        // the blur.
-        boxShadow: "0 16px 48px rgba(0,0,0,0.95)",
-      }}
     >
       {/* A bound project opens onto the radar rather than a title bar: the panel
           is a recorder, and "it is listening" is the one thing worth saying
@@ -330,7 +324,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "cloud-confirm" && (
           <DisclosureStep
-            title="Share this Workspace's history?"
+            title="Share this Project's history?"
             lines={disclosureLines(view.preview)}
             confirmLabel="Share and enable Cloud"
             busy={busy}
@@ -355,7 +349,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "import-confirm" && (
           <DisclosureStep
-            title="Import this Workspace's history?"
+            title="Import this Project's history?"
             lines={disclosureLines(view.preview)}
             confirmLabel="Import and share"
             busy={busy}
@@ -393,7 +387,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
 
         {view.kind === "promote-confirm" && (
           <DisclosureStep
-            title="Publish this Workspace to your Organisation?"
+            title="Publish this Project to your Organisation?"
             lines={[
               `${view.preview.sessionCount} session${view.preview.sessionCount === 1 ? "" : "s"}`,
               dateRange(view.preview.earliest, view.preview.latest),
@@ -416,7 +410,7 @@ export function CapturePopover({ projectPath, health, onChanged, onClose }: Prop
         )}
 
         {error && (
-          <p className="mt-2 rounded-lg bg-[var(--status-error-muted)] px-2.5 py-1.5 text-[11px] text-[var(--status-error)]">
+          <p className="mt-2 rounded-lg bg-[var(--atlas-status-error-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-error-foreground)]">
             {error}
           </p>
         )}
@@ -458,15 +452,15 @@ function DisclosureStep({
 }) {
   return (
     <div className="atlas-fade-in space-y-2.5">
-      <p className="text-[12px] font-medium text-[var(--text-primary)]">{title}</p>
+      <p className="text-sm font-medium text-[var(--foreground)]">{title}</p>
       <ul className={cn(GROUP, "space-y-1")}>
         {lines.map((line) => (
-          <li key={line} className="text-[11px] text-[var(--text-secondary)]">
+          <li key={line} className="text-xs text-[var(--secondary-foreground)]">
             {line}
           </li>
         ))}
       </ul>
-      <p className="text-[10px] leading-[14px] text-[var(--text-tertiary)]">
+      <p className="text-2xs text-[var(--muted-foreground)]">
         This makes the above visible to your Organisation. Nothing is sent until you confirm.
       </p>
       <div className="flex justify-end gap-2 pt-0.5">
@@ -514,7 +508,9 @@ function HealthDetail({
   if (!health || health.issues.length === 0) return null;
 
   const stopped = health.state === "stopped";
-  const tone = stopped ? "var(--status-error)" : "var(--status-warning)";
+  const tone = stopped
+    ? "var(--atlas-status-error-foreground)"
+    : "var(--atlas-status-warning-foreground)";
 
   const retry = async () => {
     if (retrying) return;
@@ -522,7 +518,7 @@ function HealthDetail({
     try {
       await invoke<CaptureHealth>("capture_retry_watcher", {
         projectPath,
-        workspaceId: activeWorkspaceId(),
+        workspaceId: activeProjectId(),
       });
       onRetried();
     } catch {
@@ -546,7 +542,9 @@ function HealthDetail({
         "hover:opacity-90 disabled:cursor-wait",
       )}
       style={{
-        backgroundColor: stopped ? "var(--status-error-muted)" : "var(--status-warning-muted)",
+        backgroundColor: stopped
+          ? "var(--atlas-status-error-background)"
+          : "var(--atlas-status-warning-background)",
         ["--atlas-ants-color" as string]: `color-mix(in oklab, ${tone} 55%, transparent)`,
       }}
     >
@@ -557,10 +555,10 @@ function HealthDetail({
             key={`${index}-${issue.reason}`}
             title={issue.nextStep || undefined}
             className={cn(
-              "flex items-center gap-1.5 text-[11px]",
+              "flex items-center gap-1.5 text-xs",
               issue.state === "stopped"
-                ? "text-[var(--status-error)]"
-                : "text-[var(--status-warning)]",
+                ? "text-[var(--atlas-status-error-foreground)]"
+                : "text-[var(--atlas-status-warning-foreground)]",
             )}
           >
             {index === 0 &&
@@ -634,16 +632,16 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
 
   const tone =
     health?.state === "stopped"
-      ? "var(--status-error)"
+      ? "var(--atlas-status-error-foreground)"
       : health?.state === "degraded"
-        ? "var(--status-warning)"
-        : "var(--capture-live)";
+        ? "var(--atlas-status-warning-foreground)"
+        : "var(--atlas-status-success-foreground)";
 
   const active = blipAt(RADAR_BLIPS[blip]);
 
   return (
     <div
-      className="relative overflow-hidden border-b border-white/5 bg-black/40"
+      className="relative overflow-hidden border-b border-[var(--atlas-element-hover)] bg-background/40"
       style={{ height: RADAR_HEIGHT }}
     >
       {/* Range rings: true circles centred on the dish. `border-t` draws only
@@ -654,7 +652,7 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
         <span
           key={r}
           aria-hidden
-          className="absolute rounded-full border-t border-dashed border-white/[0.07]"
+          className="absolute rounded-full border-t border-dashed border-[var(--atlas-element-selected)]"
           style={{
             width: r * 2,
             height: r * 2,
@@ -683,8 +681,8 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
             key={`${b.r}-${b.deg}`}
             aria-hidden
             className={cn(
-              "absolute size-[4px] rounded-[1px] transition-colors duration-500",
-              i === blip && live ? "" : "bg-white/20",
+              "absolute size-[4px] rounded-full transition-colors duration-500",
+              i === blip && live ? "" : "bg-foreground/20",
             )}
             style={{
               top: at.top - 2,
@@ -692,6 +690,8 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
               ...(i === blip && live
                 ? {
                     backgroundColor: tone,
+                    // The glow is the live capture tone, computed per render.
+                    // ratchet-allow: a per-render hue has no static value to name.
                     boxShadow: `0 0 10px 3px color-mix(in oklab, ${tone} 45%, transparent)`,
                   }
                 : null),
@@ -714,13 +714,13 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
           so the origin of every ring is visibly a thing rather than a corner. */}
       <span
         aria-hidden
-        className="absolute size-[92px] rounded-full border border-white/[0.07] bg-[var(--bg-elevated)]"
+        className="absolute size-[92px] rounded-full border border-[var(--atlas-element-selected)] bg-[var(--card)]"
         style={{ left: RADAR_ORIGIN_X - 46, top: RADAR_HEIGHT - 46 }}
       />
 
       <span className="absolute bottom-3 left-3.5 flex items-center gap-1.5">
         <CaptureDot live={live} tone={live ? "success" : "idle"} />
-        <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+        <span className="text-3xs font-semibold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
           {live ? "Capturing" : "Paused"}
         </span>
       </span>
@@ -796,18 +796,18 @@ function BoundState({
         />
       )}
 
-      {/* A Cloud Workspace whose bulk import was never approved imports
+      {/* A Cloud Project whose bulk import was never approved imports
        *  nothing, forever, on purpose. Say so where it can be resolved. */}
       {binding.mode === "cloud" && !binding.importApproved && (
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-white/[0.10] px-2.5 py-1.5">
-          <span className="text-[11px] text-[var(--text-secondary)]">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[var(--atlas-element-active)] px-2.5 py-1.5">
+          <span className="text-xs text-[var(--secondary-foreground)]">
             History import is waiting for your review.
           </span>
           <button
             type="button"
             disabled={busy || !importPreview}
             onClick={onReviewImport}
-            className="shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
           >
             Review
           </button>
@@ -816,15 +816,15 @@ function BoundState({
 
       {/* Failed rows: the retry is a deliberate human action, never automatic. */}
       {failed > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5">
-          <span className="text-[11px] text-[var(--status-warning)]">
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5">
+          <span className="text-xs text-[var(--atlas-status-warning-foreground)]">
             {failed} record{failed === 1 ? "" : "s"} could not be sent.
           </span>
           <button
             type="button"
             disabled={busy}
             onClick={() => void run(() => invoke("capture_retry_failed", { projectPath }))}
-            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RefreshCw size={10} />
             Retry
@@ -833,9 +833,9 @@ function BoundState({
       )}
 
       <div className="flex items-center gap-2 pt-1">
-        {/* Where this Workspace's Sessions live. A label, not a control — the
+        {/* Where this Project's Sessions live. A label, not a control — the
          *  way to change it is the Sync button beside it. */}
-        <span className="mr-auto flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)]">
+        <span className="mr-auto flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
           {binding.mode === "cloud" ? <Cloud size={11} /> : <Laptop size={11} />}
           {binding.mode === "cloud" ? "Cloud" : "Local"}
         </span>
@@ -850,7 +850,7 @@ function BoundState({
               type="button"
               disabled
               title={cloudReason}
-              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[11px] text-[var(--text-tertiary)] opacity-40"
+              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--muted-foreground)] opacity-40"
             >
               <Cloud size={11} />
               Sync
@@ -860,7 +860,7 @@ function BoundState({
               type="button"
               disabled={busy}
               onClick={onPromote}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] px-2.5 py-1 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-selected)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ArrowUpRight size={11} />
               Sync
@@ -885,7 +885,7 @@ function BoundState({
       </div>
 
       {!binding.enabled && (
-        <p className="text-[11px] text-[var(--text-tertiary)]">
+        <p className="text-xs text-[var(--muted-foreground)]">
           Paused. Nothing already recorded has been deleted.
         </p>
       )}
@@ -919,7 +919,7 @@ function UnboundState({
   onCloudEnable: (orgId: string, slug: string) => void;
 }) {
   const [tab, setTab] = useState<"create" | "connect">("create");
-  const [mode, setMode] = useState<WorkspaceMode>("local");
+  const [mode, setMode] = useState<ProjectMode>("local");
   const [orgId, setOrgId] = useState<string>(cloudOrgs[0]?.remoteId ?? "");
   const [slug, setSlug] = useState("");
   const [slugDirty, setSlugDirty] = useState(false);
@@ -955,7 +955,7 @@ function UnboundState({
       importPreview != null);
 
   // Connect is a purely server-backed flow — there is nothing it can show
-  // without the Organisation's Workspace list, so it is disabled rather than
+  // without the Organisation's Project list, so it is disabled rather than
   // opened onto an error.
   const connectDisabled = !!cloudReason;
   const activeTab = connectDisabled ? "create" : tab;
@@ -1029,14 +1029,14 @@ function UnboundState({
           {/* The preview read failed: Continue has nothing to disclose, so say
            *  so where it blocks, with the retry right there. */}
           {mode === "cloud" && importPreview === null && (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5">
-              <span className="text-[11px] text-[var(--status-warning)]">
-                Couldn't read this Workspace's history.
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5">
+              <span className="text-xs text-[var(--atlas-status-warning-foreground)]">
+                Couldn't read this Project's history.
               </span>
               <button
                 type="button"
                 onClick={onRetryPreview}
-                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline"
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline"
               >
                 <RefreshCw size={10} />
                 Retry
@@ -1044,7 +1044,7 @@ function UnboundState({
             </div>
           )}
 
-          {/* Create only. The Connect tab is a list of existing Workspaces —
+          {/* Create only. The Connect tab is a list of existing Projects —
            *  someone there has already been sold on the Timeline. */}
           <TimelinePreview />
 
@@ -1115,12 +1115,12 @@ function Tabs({
             disabled={disabled}
             title={disabled ? (connectReason ?? undefined) : undefined}
             className={cn(
-              "h-6 rounded-full border px-2.5 text-[11px] transition-colors",
+              "h-6 rounded-full border px-2.5 text-xs transition-colors",
               disabled
-                ? "cursor-not-allowed border-white/[0.04] bg-white/[0.01] text-[var(--text-tertiary)] opacity-40"
+                ? "cursor-not-allowed border-[var(--atlas-element-hover)] bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] opacity-40"
                 : on
-                  ? "cursor-pointer border-white/15 bg-white/[0.10] text-[var(--text-primary)]"
-                  : "cursor-pointer border-white/[0.06] bg-white/[0.02] text-[var(--text-tertiary)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]",
+                  ? "cursor-pointer border-[var(--atlas-element-active)] bg-[var(--atlas-element-active)] text-[var(--foreground)]"
+                  : "cursor-pointer border-[var(--atlas-element-selected)] bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-selected)] hover:text-[var(--secondary-foreground)]",
             )}
             onClick={() => onTabChange(id)}
           >
@@ -1202,23 +1202,23 @@ function CloudFields({
        *  tenant you are not looking at, and the mistake only shows up later in
        *  someone else's timeline. */}
       <div className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-[11px] text-[var(--text-tertiary)]">
+        <span className="w-[70px] shrink-0 text-xs text-[var(--muted-foreground)]">
           Organisation
         </span>
-        <span className="truncate text-[11px] text-[var(--text-secondary)]">
+        <span className="truncate text-xs text-[var(--secondary-foreground)]">
           {cloudOrgs[0]?.name ?? "—"}
         </span>
       </div>
 
       <label className="flex items-center gap-2">
-        <span className="w-[70px] shrink-0 text-[11px] text-[var(--text-tertiary)]">Slug</span>
+        <span className="w-[70px] shrink-0 text-xs text-[var(--muted-foreground)]">Slug</span>
         <input
           value={slug}
           onChange={(e) => onSlugChange(e.target.value)}
           spellCheck={false}
           autoCapitalize="off"
           placeholder="my-project"
-          className={cn(FIELD, "h-7 flex-1 font-mono text-[11px]")}
+          className={cn(FIELD, "h-7 flex-1 font-mono text-xs")}
         />
       </label>
 
@@ -1230,32 +1230,34 @@ function CloudFields({
 function SlugStatus({ state }: { state: SlugState }) {
   if (state.kind === "idle") return null;
   return (
-    <p className="flex items-center gap-1 pl-[78px] text-[10px]">
+    <p className="flex items-center gap-1 pl-[78px] text-2xs">
       {state.kind === "checking" && (
         <>
-          <Loader2 size={10} className="animate-spin text-[var(--text-tertiary)]" />
-          <span className="text-[var(--text-tertiary)]">checking…</span>
+          <Loader2 size={10} className="animate-spin text-[var(--muted-foreground)]" />
+          <span className="text-[var(--muted-foreground)]">checking…</span>
         </>
       )}
       {state.kind === "available" && (
         <>
-          <Check size={10} className="text-[var(--text-secondary)]" />
-          <span className="text-[var(--text-secondary)]">available</span>
+          <Check size={10} className="text-[var(--secondary-foreground)]" />
+          <span className="text-[var(--secondary-foreground)]">available</span>
         </>
       )}
       {state.kind === "taken" && (
         <>
-          <X size={10} className="text-[var(--status-error)]" />
-          <span className="text-[var(--status-error)]">taken in this Organisation</span>
+          <X size={10} className="text-[var(--atlas-status-error-foreground)]" />
+          <span className="text-[var(--atlas-status-error-foreground)]">
+            taken in this Organisation
+          </span>
         </>
       )}
       {state.kind === "unknown" && (
         <>
-          <span className="text-[var(--status-warning)]">couldn't check</span>
+          <span className="text-[var(--atlas-status-warning-foreground)]">couldn't check</span>
           <button
             type="button"
             onClick={state.retry}
-            className="cursor-pointer text-[var(--text-secondary)] underline underline-offset-2 transition-colors duration-150 hover:text-[var(--text-primary)]"
+            className="cursor-pointer text-[var(--secondary-foreground)] underline underline-offset-2 transition-colors duration-150 hover:text-[var(--foreground)]"
           >
             retry
           </button>
@@ -1266,7 +1268,7 @@ function SlugStatus({ state }: { state: SlugState }) {
 }
 
 /**
- * Connect this repository to a Workspace the Organisation already has.
+ * Connect this repository to a Project the Organisation already has.
  *
  * Pre-selection is the server's judgement, not this component's: one confident
  * match arrives pre-picked, several matches arrive with **nothing** selected —
@@ -1316,40 +1318,40 @@ function ConnectTab({
 
   if (cloudReason) {
     return (
-      <p className={cn(GROUP, "flex items-start gap-1.5 text-[11px] text-[var(--text-tertiary)]")}>
+      <p className={cn(GROUP, "flex items-start gap-1.5 text-xs text-[var(--muted-foreground)]")}>
         <Lock size={11} className="mt-px shrink-0" />
         {cloudReason}
       </p>
     );
   }
 
-  const workspace = options?.workspaces.find((w) => w.id === selected);
+  const project = options?.workspaces.find((w) => w.id === selected);
 
   return (
     <div className="space-y-2">
       {options === undefined ? (
-        <p className="flex items-center gap-1.5 py-2 text-[11px] text-[var(--text-tertiary)]">
+        <p className="flex items-center gap-1.5 py-2 text-xs text-[var(--muted-foreground)]">
           <Loader2 size={11} className="animate-spin" />
-          Fetching this Organisation's Workspaces…
+          Fetching this Organisation's Projects…
         </p>
       ) : options === null ? (
-        <p className="rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5 text-[11px] text-[var(--status-warning)]">
+        <p className="rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-warning-foreground)]">
           Could not reach the server. Check the connection and reopen this tab.
         </p>
       ) : options.workspaces.length === 0 ? (
-        <p className={cn(GROUP, "text-[11px] text-[var(--text-tertiary)]")}>
-          This Organisation has no Workspaces yet. Create one from the Create tab instead.
+        <p className={cn(GROUP, "text-xs text-[var(--muted-foreground)]")}>
+          This Organisation has no Projects yet. Create one from the Create tab instead.
         </p>
       ) : (
         <>
           {options.warning && (
-            <p className="rounded-lg bg-[var(--status-warning-muted)] px-2.5 py-1.5 text-[11px] text-[var(--status-warning)]">
+            <p className="rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-warning-foreground)]">
               {options.warning}
             </p>
           )}
           <div
             role="radiogroup"
-            aria-label="Workspace to connect to"
+            aria-label="Project to connect to"
             className="max-h-[180px] space-y-0.5 overflow-y-auto"
           >
             {options.workspaces.map((remote) => (
@@ -1362,23 +1364,23 @@ function ConnectTab({
                 className={cn(
                   "flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors duration-150",
                   selected === remote.id
-                    ? "border-white/15 bg-white/[0.06]"
-                    : "border-transparent hover:bg-white/[0.03]",
+                    ? "border-[var(--atlas-element-active)] bg-[var(--atlas-element-selected)]"
+                    : "border-transparent hover:bg-[var(--atlas-element-hover)]",
                 )}
               >
                 <span className="shrink-0">
                   {selected === remote.id ? (
-                    <Check size={11} className="text-[var(--text-primary)]" />
+                    <Check size={11} className="text-[var(--foreground)]" />
                   ) : (
-                    <span className="block h-[11px] w-[11px] rounded-full border border-[var(--border-strong)]" />
+                    <span className="block h-[11px] w-[11px] rounded-full border border-[var(--atlas-border-strong)]" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-mono text-[11px] text-[var(--text-primary)]">
+                  <span className="block truncate font-mono text-xs text-[var(--foreground)]">
                     {remote.slug}
                   </span>
                   {remote.gitUrl && (
-                    <span className="block truncate text-[10px] text-[var(--text-tertiary)]">
+                    <span className="block truncate text-2xs text-[var(--muted-foreground)]">
                       {remote.gitUrl}
                     </span>
                   )}
@@ -1393,17 +1395,17 @@ function ConnectTab({
         <GhostButton label="Cancel" onClick={onCancel} disabled={busy} />
         <PrimaryButton
           busy={busy}
-          disabled={!workspace}
+          disabled={!project}
           onClick={() => {
-            if (!workspace) return;
+            if (!project) return;
             void run(async () => {
               // Connect needs a binding row to attach the Cloud identity to.
               await invoke("capture_enable", { projectPath, mode: "local" });
               await invoke("capture_connect", {
                 projectPath,
                 orgId,
-                slug: workspace.slug,
-                workspaceId: workspace.id,
+                slug: project.slug,
+                workspaceId: project.id,
               });
             });
           }}
@@ -1445,8 +1447,8 @@ function PromoteForm({
 
   return (
     <div className="space-y-2">
-      <p className="text-[12px] font-medium text-[var(--text-primary)]">Promote to Cloud</p>
-      <p className="text-[11px] text-[var(--text-tertiary)]">
+      <p className="text-sm font-medium text-[var(--foreground)]">Promote to Cloud</p>
+      <p className="text-xs text-[var(--muted-foreground)]">
         Everything captured here joins your Organisation's timeline. You'll see exactly what before
         anything is sent.
       </p>
@@ -1467,7 +1469,7 @@ function PromoteForm({
 /**
  * The one affirmative action per view.
  *
- * Atlas has no accent *background* token — `--accent-primary` is white, meant
+ * Atlas has no accent *background* token — `--primary` is white, meant
  * for text and rules — so the primary action inverts, matching the app.
  */
 function PrimaryButton({
@@ -1486,7 +1488,7 @@ function PrimaryButton({
       type="button"
       disabled={busy || disabled}
       onClick={onClick}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {busy && <Loader2 size={11} className="animate-spin" />}
       {label}
@@ -1508,7 +1510,7 @@ function GhostButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium leading-none text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {label}
     </button>
@@ -1551,7 +1553,7 @@ function ModeOption({
       {disabled ? (
         <Lock size={10} />
       ) : (
-        selected && <Check size={10} className="text-[var(--text-primary)]" />
+        selected && <Check size={10} className="text-[var(--foreground)]" />
       )}
       {label}
     </button>
@@ -1586,7 +1588,7 @@ function Detected({
 
   return (
     <div className={cn(GROUP, "space-y-1.5")}>
-      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+      <p className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
         This project
       </p>
 
@@ -1658,18 +1660,21 @@ function StatusRow({
       <Icon
         size={11}
         strokeWidth={1.75}
-        className={cn("shrink-0", ok ? "text-[var(--text-secondary)]" : "text-[var(--text-ghost)]")}
+        className={cn(
+          "shrink-0",
+          ok ? "text-[var(--secondary-foreground)]" : "text-[var(--atlas-text-disabled)]",
+        )}
       />
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-[11px]",
+          "min-w-0 flex-1 truncate text-xs",
           mono && "font-mono",
-          ok ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]",
+          ok ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]",
         )}
       >
         {value}
       </span>
-      <span className="shrink-0 text-[9px] uppercase tracking-[0.08em] text-[var(--text-ghost)]">
+      <span className="shrink-0 text-3xs uppercase tracking-[0.08em] text-[var(--atlas-text-disabled)]">
         {caption}
       </span>
     </div>
@@ -1697,11 +1702,11 @@ function TimelinePreview() {
   return (
     <div className={cn(GROUP, "overflow-hidden")}>
       <div className="flex items-center gap-1.5">
-        <Layers size={10} className="text-[var(--text-tertiary)]" />
-        <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+        <Layers size={10} className="text-[var(--muted-foreground)]" />
+        <span className="text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
           Timeline
         </span>
-        <span className="ml-auto text-[9px] text-[var(--text-ghost)]">preview</span>
+        <span className="ml-auto text-3xs text-[var(--atlas-text-disabled)]">preview</span>
       </div>
 
       <div className="relative mt-2">
@@ -1710,9 +1715,9 @@ function TimelinePreview() {
             poking out past the first and last node. The nodes themselves are
             laid out in flow — hand-positioning them meant re-deriving a magic
             offset every time the row height changed. */}
-        <span className="absolute bottom-[7px] left-[3px] top-[7px] w-px bg-white/[0.08]" />
+        <span className="absolute bottom-[7px] left-[3px] top-[7px] w-px bg-[var(--atlas-element-active)]" />
         <span
-          className="atlas-timeline-beam absolute left-[2px] top-[3px] h-2.5 w-[3px] rounded-full bg-[var(--capture-live)]"
+          className="atlas-timeline-beam absolute left-[2px] top-[3px] h-2.5 w-[3px] rounded-full bg-[var(--atlas-status-success-foreground)]"
           style={{ "--atlas-beam-travel": "42px" } as React.CSSProperties}
         />
 
@@ -1727,27 +1732,29 @@ function TimelinePreview() {
                 className={cn(
                   "relative size-[7px] shrink-0 rounded-full border",
                   row.dot === "commit"
-                    ? "border-[var(--capture-live)] bg-[var(--capture-live)]"
-                    : "border-white/20 bg-[var(--bg-elevated)]",
+                    ? "border-[var(--atlas-status-success-foreground)] bg-[var(--atlas-status-success-foreground)]"
+                    : "border-border-strong bg-[var(--card)]",
                 )}
               />
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-[10px]",
+                  "min-w-0 flex-1 truncate text-2xs",
                   row.dot === "commit"
-                    ? "font-mono text-[var(--text-secondary)]"
-                    : "text-[var(--text-secondary)]",
+                    ? "font-mono text-[var(--secondary-foreground)]"
+                    : "text-[var(--secondary-foreground)]",
                 )}
               >
                 {row.text}
               </span>
-              <span className="shrink-0 text-[9px] text-[var(--text-ghost)]">{row.meta}</span>
+              <span className="shrink-0 text-3xs text-[var(--atlas-text-disabled)]">
+                {row.meta}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
-      <p className="mt-2 text-[10px] leading-[14px] text-[var(--text-tertiary)]">
+      <p className="mt-2 text-2xs text-[var(--muted-foreground)]">
         Every prompt, tool call and commit, kept on one thread you can reopen months later.
       </p>
     </div>
@@ -1763,10 +1770,10 @@ function TimelinePreview() {
  */
 function GitInitOffer({ busy, onGitInit }: { busy: boolean; onGitInit: () => void }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-dashed border-white/[0.10] px-2.5 py-2">
-      <GitBranch size={12} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
+    <div className="flex items-start gap-2 rounded-lg border border-dashed border-[var(--atlas-element-active)] px-2.5 py-2">
+      <GitBranch size={12} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
       <div className="min-w-0">
-        <p className="text-[11px] text-[var(--text-secondary)]">
+        <p className="text-xs text-[var(--secondary-foreground)]">
           Sessions are recorded here already. Initialise git to also link them to the commits they
           produce.
         </p>
@@ -1774,7 +1781,7 @@ function GitInitOffer({ busy, onGitInit }: { busy: boolean; onGitInit: () => voi
           type="button"
           disabled={busy}
           onClick={onGitInit}
-          className="mt-1 cursor-pointer text-[11px] text-[var(--text-primary)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-1 cursor-pointer text-xs text-[var(--foreground)] underline underline-offset-2 transition-colors duration-150 hover:no-underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           Initialise git
         </button>

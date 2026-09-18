@@ -61,9 +61,9 @@ export function EfficiencyCard({
           const p = prevEff?.[t.key] ?? null;
           return (
             <div key={t.key} className="min-w-0">
-              <div className="text-[10px] text-[var(--text-tertiary)]">{t.label}</div>
+              <div className="text-2xs text-[var(--muted-foreground)]">{t.label}</div>
               <div className="mt-0.5 flex items-baseline gap-1.5">
-                <span className="truncate text-[17px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+                <span className="truncate text-xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
                   {v === null ? "—" : t.fmt(v)}
                 </span>
                 <DeltaChip delta={v === null ? null : deltaPct(v, p)} />
@@ -77,8 +77,8 @@ export function EfficiencyCard({
       </div>
 
       {ranked.length > 1 && (
-        <div className="mt-3 border-t border-white/[0.06] pt-2">
-          <div className="flex h-5 items-center text-[9px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+        <div className="mt-3 border-t border-[var(--atlas-element-selected)] pt-2">
+          <div className="flex h-5 items-center text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
             <span className="min-w-0 flex-1">By {groupBy}</span>
             <span className="w-[64px] text-right">Cache hit</span>
             <span className="w-[64px] text-right">Out : in</span>
@@ -88,9 +88,9 @@ export function EfficiencyCard({
           {ranked.map((r) => {
             const e = efficiency(r.metrics, sessionsByKey.get(r.key) ?? 0);
             return (
-              <div key={r.key} className="flex h-6 items-center text-[11px]">
+              <div key={r.key} className="flex h-6 items-center text-xs">
                 <span
-                  className="min-w-0 flex-1 truncate text-[var(--text-secondary)]"
+                  className="min-w-0 flex-1 truncate text-[var(--secondary-foreground)]"
                   title={r.label}
                 >
                   {r.label}
@@ -104,7 +104,7 @@ export function EfficiencyCard({
                 <span className={`w-[80px] text-right ${VALUE}`}>
                   {e.costPerSession === null ? "—" : fmtCostFine(e.costPerSession)}
                 </span>
-                <span className="w-[56px] text-right text-[10px] tabular-nums text-[var(--text-tertiary)]">
+                <span className="w-[56px] text-right text-2xs tabular-nums text-[var(--muted-foreground)]">
                   {total > 0 ? fmtPct(r.value / total) : "—"}
                 </span>
               </div>

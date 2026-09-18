@@ -27,7 +27,7 @@ export function ClassTrackers({ totals }: { totals: Metrics }) {
   return (
     <Card index={1} section="classes" className="!px-0 !py-0">
       <div
-        className="grid divide-x divide-white/[0.06]"
+        className="grid divide-x divide-[var(--atlas-element-selected)]"
         style={{ gridTemplateColumns: `repeat(${classes.length}, minmax(0, 1fr))` }}
       >
         {classes.map((c) => {
@@ -38,16 +38,13 @@ export function ClassTrackers({ totals }: { totals: Metrics }) {
             <div key={c.key} className="min-w-0 px-3 py-2.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className={CAPTION}>{c.label}</span>
-                <span className="text-[9px] tabular-nums text-[var(--text-tertiary)]">
+                <span className="text-3xs tabular-nums text-[var(--muted-foreground)]">
                   {all > 0 ? fmtPct(c.value / all) : "—"}
                 </span>
               </div>
               <div
-                className={cn(
-                  "mt-1 text-[15px] leading-none font-semibold tabular-nums",
-                  VALUE,
-                  "text-[15px]",
-                )}
+                // `text-lg` after VALUE, because VALUE carries `text-xs`.
+                className={cn("mt-1 leading-none font-semibold tabular-nums", VALUE, "text-lg")}
               >
                 {fmtTokens(c.value)}
               </div>
@@ -57,7 +54,7 @@ export function ClassTrackers({ totals }: { totals: Metrics }) {
                     key={i}
                     className="h-full w-[2px] flex-1 rounded-sm transition-opacity duration-300"
                     style={{
-                      background: largest ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: largest ? "var(--foreground)" : "var(--secondary-foreground)",
                       opacity: i < lit ? 1 : 0.16,
                       transitionDelay: `${i * 6}ms`,
                     }}

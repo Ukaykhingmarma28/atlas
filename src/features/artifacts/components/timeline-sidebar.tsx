@@ -33,7 +33,7 @@ import type { BoardSession } from "../types";
 
 interface Props {
   sessions: BoardSession[];
-  /** True while the first read for this Workspace is in flight. */
+  /** True while the first read for this Project is in flight. */
   loading: boolean;
   /** True when a search or facet is narrowing the board — changes the empty copy. */
   filtered: boolean;
@@ -84,8 +84,8 @@ function trim(r: number): number {
  * content. Status colours (live, attention, today) are deliberately NOT muted:
  * they are the only things on the rail that are trying to tell you something.
  */
-const THREAD = "color-mix(in srgb, var(--border-strong) 70%, var(--bg-base))";
-const DOT_NEUTRAL = "color-mix(in srgb, var(--text-tertiary) 70%, var(--bg-base))";
+const THREAD = "color-mix(in srgb, var(--atlas-border-strong) 70%, var(--background))";
+const DOT_NEUTRAL = "color-mix(in srgb, var(--muted-foreground) 70%, var(--background))";
 
 function laneX(lane: number): number {
   return PAD + lane * LANE_W + LANE_W / 2;
@@ -231,7 +231,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
 
   if (loading) {
     return (
-      <p className="py-8 text-center text-[12px] text-[var(--text-tertiary)]">
+      <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
         Reading the session store…
       </p>
     );
@@ -309,7 +309,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
           type="button"
           onClick={() => virtualizer.scrollToIndex(0, { align: "start" })}
           className={cn(
-            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/85 px-3 text-[11px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--text-primary)]",
+            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)]/85 px-3 text-xs text-[var(--secondary-foreground)] shadow-md backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--foreground)]",
             edges.top ? "opacity-100" : "pointer-events-none opacity-0",
           )}
           tabIndex={edges.top ? undefined : -1}
@@ -334,7 +334,7 @@ function Fade({ edge, show }: { edge: "top" | "bottom"; show: boolean }) {
         show ? "opacity-100" : "opacity-0",
       )}
       style={{
-        background: `linear-gradient(to ${edge === "top" ? "bottom" : "top"}, var(--bg-base), transparent)`,
+        background: `linear-gradient(to ${edge === "top" ? "bottom" : "top"}, var(--background), transparent)`,
       }}
     />
   );
@@ -410,19 +410,19 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
   return (
     <div
       title={`${row.date} · ${row.meta}`}
-      className="relative flex h-full items-center pr-3 text-[12px] font-medium"
+      className="relative flex h-full items-center pr-3 text-sm font-medium"
       style={{ paddingLeft: laneX(0) + LABEL_GAP }}
     >
       <Dot
         lane={0}
         r={DAY_R}
-        className={today ? "bg-[var(--accent-primary)]" : undefined}
+        className={today ? "bg-[var(--primary)]" : undefined}
         style={today ? undefined : { background: DOT_NEUTRAL }}
       />
       <span
         className={cn(
           "truncate",
-          today ? "text-[var(--accent-primary)]" : "text-[var(--text-secondary)]",
+          today ? "text-[var(--primary)]" : "text-[var(--secondary-foreground)]",
         )}
       >
         {row.label}
@@ -435,14 +435,14 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
 /**
  * The shared row shell for anything that is not a period header.
  *
- * `--bg-active` for hover and a 15% accent wash for selection, not the 4%/6%
- * `--bg-hover`/`--bg-selected` pair: on a black surface those two are a couple
+ * `--atlas-element-active` for hover and a 15% accent wash for selection, not the 4%/6%
+ * `--atlas-element-hover`/`--atlas-element-selected` pair: on a black surface those two are a couple
  * of levels of grey apart and the selected row was invisible. The accent wash
  * is the same one the commit graph uses for its selected commit.
  */
 const ROW =
-  "relative flex h-full w-full cursor-pointer items-center pr-3 text-left transition-colors hover:bg-[var(--bg-active)]";
-const ROW_SELECTED = "bg-[var(--accent-primary)]/15 hover:bg-[var(--accent-primary)]/15";
+  "relative flex h-full w-full cursor-pointer items-center pr-3 text-left transition-colors hover:bg-[var(--atlas-element-active)]";
+const ROW_SELECTED = "bg-[var(--primary)]/15 hover:bg-[var(--primary)]/15";
 
 // memo: the board re-renders on every capture/git event while the tab is open;
 // with the parent's same-data bailout keeping row identities stable, memo
@@ -475,14 +475,14 @@ const SessionRow = memo(function SessionRow({
         lane={lane}
         r={SESSION_R}
         className={cn(
-          state === "live" && "atlas-live-pulse bg-[var(--capture-live)]",
-          state === "attention" && "bg-[var(--status-warning)]",
+          state === "live" && "atlas-live-pulse bg-[var(--atlas-status-success-foreground)]",
+          state === "attention" && "bg-[var(--atlas-status-warning-foreground)]",
         )}
         style={
           state === "live"
             ? {
                 ["--atlas-pulse-color" as string]:
-                  "color-mix(in oklab, var(--capture-live) 40%, transparent)",
+                  "color-mix(in oklab, var(--atlas-status-success-foreground) 40%, transparent)",
               }
             : state === "attention"
               ? undefined
@@ -491,13 +491,13 @@ const SessionRow = memo(function SessionRow({
       />
       <span
         className={cn(
-          "min-w-0 truncate text-[12.5px] leading-tight tracking-[-0.01em]",
+          "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",
           selected
-            ? "text-[var(--text-primary)]"
+            ? "text-[var(--foreground)]"
             : lane === 2 || state === "done"
-              ? "text-[var(--text-secondary)]"
-              : "text-[var(--text-primary)]",
-          !title && "text-[var(--text-tertiary)]",
+              ? "text-[var(--secondary-foreground)]"
+              : "text-[var(--foreground)]",
+          !title && "text-[var(--muted-foreground)]",
         )}
       >
         {title ?? "Untitled session"}
@@ -531,19 +531,19 @@ const ClusterRow = memo(function ClusterRow({
       <Dot lane={1} r={SESSION_R} style={{ background: DOT_NEUTRAL }} />
       <span
         className={cn(
-          "min-w-0 truncate text-[12.5px] leading-tight tracking-[-0.01em]",
-          holdsOpen ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
+          "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",
+          holdsOpen ? "text-[var(--foreground)]" : "text-[var(--secondary-foreground)]",
         )}
       >
         {row.title}
       </span>
-      <span className="ml-1.5 shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
+      <span className="ml-1.5 shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
         ×{row.sessions.length}
       </span>
       <Chevron
         size={11}
         strokeWidth={1.5}
-        className="ml-auto shrink-0 text-[var(--text-tertiary)]"
+        className="ml-auto shrink-0 text-[var(--muted-foreground)]"
       />
     </button>
   );
@@ -597,12 +597,12 @@ export function clusterRows(rows: BoardSession[]): ListItem[] {
 function Empty({ filtered }: { filtered: boolean }) {
   return (
     <div className="px-4 py-12 text-center">
-      <p className="text-[12px] text-[var(--text-secondary)]">
+      <p className="text-sm text-[var(--secondary-foreground)]">
         {filtered ? "No sessions match this filter." : "No sessions captured yet."}
       </p>
       {!filtered && (
-        <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-          Send a prompt to an agent in this Workspace and it will appear here.
+        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+          Send a prompt to an agent in this Project and it will appear here.
         </p>
       )}
     </div>

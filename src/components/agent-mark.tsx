@@ -9,11 +9,12 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
  * want the mark beside a name in a table row, where the `.amark` box would be
  * a second container around a glyph that is already a contained shape.
  *
- * Small per-agent identity badge. Reuses the `.amark` + `.agent-*` token
- * system (tokens.css) and renders the agent's brand icon (agent-icons.tsx) —
- * this is how parallel Claude / Codex chat sessions are told apart by icon.
- * External (registry-installed) agents render their manifest SVG, falling
- * back to a monogram of their label.
+ * What identifies the agent is the brand icon itself (agent-icons.tsx) — this
+ * is how parallel Claude / Codex chat sessions are told apart. External
+ * (registry-installed) agents render their manifest SVG, falling back to a
+ * monogram of their label. `AgentMark` below wraps it in the neutral `.amark`
+ * chip (tokens.css, from `agent.chip.*`); there is no per-agent token family
+ * any more — the vendors' hues are constants in `agents/lib/agent-brand.ts`.
  */
 export function AgentGlyph({
   agentType,
@@ -52,10 +53,7 @@ export function AgentMark({
   className?: string;
 }) {
   return (
-    <span
-      className={cn("amark", size === "lg" && "amark-lg", agentMeta(agentType).cssClass, className)}
-      aria-hidden
-    >
+    <span className={cn("amark", size === "lg" && "amark-lg", className)} aria-hidden>
       <AgentGlyph agentType={agentType} size={size} />
     </span>
   );

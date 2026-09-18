@@ -1,5 +1,5 @@
 import { useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtTokens } from "@/features/monitor/lib/usage-format";
@@ -82,7 +82,7 @@ export function FilterBar({
         <button
           type="button"
           onClick={onClear}
-          className="flex h-6 items-center gap-1 rounded-full px-2 text-[10px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="flex h-6 items-center gap-1 rounded-full px-2 text-2xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
         >
           <X size={10} /> Clear
         </button>
@@ -127,70 +127,79 @@ function FacetPill({
 
   return (
     <DropdownMenu.Root onOpenChange={(open) => !open && setQuery("")}>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          disabled={options.length === 0}
-          className={cn(
-            "flex h-6.5 items-center rounded-full border px-2 text-[10px] font-medium leading-none transition-colors outline-none disabled:opacity-40",
-            on
-              ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-              : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-          )}
-        >
-          <span className="max-w-[160px] truncate">{label}</span>
-          {selected.length > 1 && (
-            <span className="ml-1 rounded-full bg-white/[0.08] px-1 text-[9px] tabular-nums">
-              {selected.length}
-            </span>
-          )}
-          <ChevronDown size={10} className="ml-1 shrink-0 text-[var(--text-tertiary)]" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="z-[var(--z-max)] w-[260px] rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] py-1 text-[11px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)]"
-          onCloseAutoFocus={(e) => e.preventDefault()}
-        >
-          {options.length > SEARCH_ABOVE && (
-            <div className="mx-1.5 mb-1 flex h-[26px] items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-2">
-              <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-                placeholder={`Filter ${oneLabel}s`}
-                className="w-full bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-              />
-            </div>
-          )}
-          <div className="max-h-[280px] overflow-y-auto hide-scrollbar">
-            {shown.length === 0 && (
-              <div className="px-3 py-2 text-[10px] text-[var(--text-tertiary)]">No matches</div>
+      <DropdownMenu.Trigger
+        render={
+          <button
+            type="button"
+            disabled={options.length === 0}
+            className={cn(
+              "flex h-control-md items-center rounded-full border px-2 text-2xs font-medium leading-none transition-colors outline-none disabled:cursor-not-allowed disabled:opacity-50",
+              on
+                ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
             )}
-            {shown.map((o) => (
-              <DropdownMenu.CheckboxItem
-                key={o.value}
-                checked={sel.has(o.value)}
-                onCheckedChange={() => onToggle(axis, o.value)}
-                onSelect={(e) => e.preventDefault()}
-                className="flex h-[26px] cursor-default items-center gap-2 px-3 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[state=checked]:text-[var(--text-primary)]"
-              >
-                <span className="flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border border-white/[0.12]">
-                  <DropdownMenu.ItemIndicator>
-                    <Check size={10} />
-                  </DropdownMenu.ItemIndicator>
-                </span>
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                <span className="shrink-0 text-[10px] tabular-nums text-[var(--text-tertiary)]">
-                  {fmtTokens(o.tokens)}
-                </span>
-              </DropdownMenu.CheckboxItem>
-            ))}
-          </div>
-        </DropdownMenu.Content>
+          >
+            <span className="max-w-[160px] truncate">{label}</span>
+            {selected.length > 1 && (
+              <span className="ml-1 rounded-full bg-[var(--atlas-element-active)] px-1 text-3xs tabular-nums">
+                {selected.length}
+              </span>
+            )}
+            <ChevronDown size={10} className="ml-1 shrink-0 text-[var(--muted-foreground)]" />
+          </button>
+        }
+      />
+      <DropdownMenu.Portal>
+        {/* z-index belongs to the Positioner — the Popup is statically
+            positioned inside it. `finalFocus={false}` is Radix's
+            `onCloseAutoFocus` preventDefault: closing the checklist must not
+            yank focus back to the pill. */}
+        <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
+          <DropdownMenu.Popup
+            finalFocus={false}
+            className="w-[260px] rounded-lg border border-[var(--border)] bg-popover py-1 text-xs text-[var(--secondary-foreground)] shadow-md"
+          >
+            {options.length > SEARCH_ABOVE && (
+              <div className="mx-1.5 mb-1 flex h-control-md items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2">
+                <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder={`Filter ${oneLabel}s`}
+                  className="w-full bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+                />
+              </div>
+            )}
+            <div className="max-h-[280px] overflow-y-auto hide-scrollbar">
+              {shown.length === 0 && (
+                <div className="px-3 py-2 text-2xs text-[var(--muted-foreground)]">No matches</div>
+              )}
+              {/* No `closeOnClick`: Base UI's checkbox items keep the menu open
+                  by default, which is what Radix's `onSelect` preventDefault
+                  was doing here. `data-checked` is Base UI's spelling of
+                  `data-[state=checked]`. */}
+              {shown.map((o) => (
+                <DropdownMenu.CheckboxItem
+                  key={o.value}
+                  checked={sel.has(o.value)}
+                  onCheckedChange={() => onToggle(axis, o.value)}
+                  className="flex h-control-md cursor-default items-center gap-2 px-3 outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] data-checked:text-[var(--foreground)]"
+                >
+                  <span className="flex size-3.5 shrink-0 items-center justify-center rounded border border-[var(--atlas-border-strong)]">
+                    <DropdownMenu.CheckboxItemIndicator>
+                      <Check size={10} />
+                    </DropdownMenu.CheckboxItemIndicator>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  <span className="shrink-0 text-2xs tabular-nums text-[var(--muted-foreground)]">
+                    {fmtTokens(o.tokens)}
+                  </span>
+                </DropdownMenu.CheckboxItem>
+              ))}
+            </div>
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

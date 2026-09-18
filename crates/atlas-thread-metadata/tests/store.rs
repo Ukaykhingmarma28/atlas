@@ -187,7 +187,7 @@ fn threads_are_grouped_by_project_across_every_project() {
     assert!(ids.contains(&atlas_one.thread_id) && ids.contains(&atlas_two.thread_id));
 
     // The other project is still there — the store is app-level, not
-    // per-workspace, which is the whole point of ADR-0001.
+    // per-project, which is the whole point of ADR-0001.
     assert_eq!(
         store
             .threads_for_path(&PathList::new(&[PathBuf::from("/tmp/other")]))

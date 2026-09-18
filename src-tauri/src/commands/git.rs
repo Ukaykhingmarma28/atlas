@@ -93,7 +93,7 @@ pub struct GitRefs {
 ///
 /// Used for changes Atlas *originates* and therefore already knows about:
 /// git mutations (stage / unstage / commit / discard / checkout …) and
-/// editor saves. Those don't need to wait for the `.git` / workspace fs
+/// editor saves. Those don't need to wait for the `.git` / project fs
 /// watcher to notice — calling this right after the action lands makes the
 /// Changes panel and file-tree dots update in one lean `git status`
 /// (~50–120 ms) instead of FSEvents-latency + debounce + a stale round-trip.
@@ -379,13 +379,13 @@ pub async fn git_graph_signature(path: String) -> Result<String, String> {
     .await
     .map_err(|e| e.to_string())?
 }
-/// Compact per-workspace git summary for the workspace sidebar: branch, latest
+/// Compact per-project git summary for the project sidebar: branch, latest
 /// commit subject, dirty flag (green/yellow dot), and working-tree +/- counts.
 /// One command (a few cheap git calls) so the sidebar doesn't fan out several
-/// IPC round-trips per workspace.
+/// IPC round-trips per project.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GitWorkspaceSummary {
+pub struct GitProjectSummary {
     pub is_repo: bool,
     pub branch: String,
     pub head_subject: String,
@@ -395,7 +395,7 @@ pub struct GitWorkspaceSummary {
 }
 
 #[tauri::command]
-pub async fn git_workspace_summary(path: String) -> Result<GitWorkspaceSummary, String> {
+pub async fn git_workspace_summary(path: String) -> Result<GitProjectSummary, String> {
     tokio::task::spawn_blocking(move || {
         let git = |args: &[&str]| -> Option<String> {
             let out = git_read().args(args).current_dir(&path).output().ok()?;
@@ -409,7 +409,7 @@ pub async fn git_workspace_summary(path: String) -> Result<GitWorkspaceSummary, 
             .map(|s| s == "true")
             .unwrap_or(false);
         if !is_repo {
-            return GitWorkspaceSummary {
+            return GitProjectSummary {
                 is_repo: false,
                 branch: String::new(),
                 head_subject: String::new(),
@@ -440,7 +440,7 @@ pub async fn git_workspace_summary(path: String) -> Result<GitWorkspaceSummary, 
             }
         }
 
-        GitWorkspaceSummary {
+        GitProjectSummary {
             is_repo: true,
             branch,
             head_subject,

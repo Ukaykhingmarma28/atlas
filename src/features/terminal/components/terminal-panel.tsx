@@ -33,9 +33,9 @@ terminalSessions.bindToStore();
 
 interface TerminalPanelProps {
   tabId: string;
-  /** The workspace this tab belongs to — recorded so a notification can route
-   *  back to it after its workspace has gone to the background. */
-  workspaceId?: string;
+  /** The project this tab belongs to — recorded so a notification can route
+   *  back to it after its project has gone to the background. */
+  projectId?: string;
 }
 
 /**
@@ -51,7 +51,7 @@ interface TerminalPanelProps {
  * So the geometry can be what the DOM says it is, and the ResizeObservers,
  * double-rAF retries and stale-rect guards are gone with it.
  */
-export function TerminalPanel({ tabId, workspaceId }: TerminalPanelProps) {
+export function TerminalPanel({ tabId, projectId }: TerminalPanelProps) {
   const tab = useTerminalStore((s) => s.tabs[tabId]);
   const {
     initTab,
@@ -63,13 +63,13 @@ export function TerminalPanel({ tabId, workspaceId }: TerminalPanelProps) {
     toggleZoom,
   } = useTerminalStore.use.actions();
   // Is this tab the one showing in its column? Mounted already implies the
-  // active workspace (background workspaces unmount terminal panels); this is
+  // active project (background projects unmount terminal panels); this is
   // what tells a hidden tab's terminals to stop rendering.
   const panelVisible = useIsTabVisible(tabId);
 
   useEffect(() => {
-    initTab(tabId, workspaceId);
-  }, [tabId, tab, initTab, workspaceId]);
+    initTab(tabId, projectId);
+  }, [tabId, tab, initTab, projectId]);
 
   const activePane = useCallback((): PaneNode | null => {
     const t = useTerminalStore.getState().tabs[tabId];
@@ -191,7 +191,7 @@ export function TerminalPanel({ tabId, workspaceId }: TerminalPanelProps) {
     : null;
 
   return (
-    <div ref={rootRef} className="h-full bg-[#000] relative">
+    <div ref={rootRef} className="h-full bg-[var(--atlas-terminal-background)] relative">
       {zoomed ? (
         <PaneView pane={zoomed} tabId={tabId} panelVisible={panelVisible} zoomed />
       ) : (
@@ -245,7 +245,7 @@ function SplitView({
           {i > 0 && (
             <Separator
               className={cn(
-                "bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors",
+                "bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors",
                 horizontal ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
               )}
             />
@@ -295,10 +295,10 @@ function PaneView({
     <div
       className={cn(
         "h-full flex flex-col",
-        isActivePane && groupFocused && "ring-1 ring-[#ffffff08] ring-inset",
+        isActivePane && groupFocused && "ring-1 ring-[var(--atlas-element-hover)] ring-inset",
       )}
     >
-      <div className="flex items-center h-[32px] shrink-0 border-b border-border-default bg-bg-primary px-1 gap-0.5">
+      <div className="flex items-center h-control-lg shrink-0 border-b border-border bg-background px-1 gap-0.5">
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto hide-scrollbar">
           {pane.terminals.map((ptyId) => (
             <div
@@ -308,14 +308,14 @@ function PaneView({
                 setActivePane(tabId, pane.id);
               }}
               className={cn(
-                "group flex items-center gap-1 px-1.5 h-5 rounded text-[10px] font-mono cursor-pointer shrink-0",
+                "group flex items-center gap-1 px-1.5 h-5 rounded text-2xs font-mono cursor-pointer shrink-0",
                 ptyId === activePty
-                  ? "text-text-primary bg-bg-selected"
-                  : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
+                  ? "text-foreground bg-element-selected"
+                  : "text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover",
               )}
             >
               {busy[ptyId] ? (
-                <Loader2 size={9} className="animate-spin text-[var(--accent-primary)]" />
+                <Loader2 size={9} className="animate-spin text-[var(--primary)]" />
               ) : (
                 <TerminalIcon size={9} />
               )}
@@ -327,7 +327,7 @@ function PaneView({
                       e.stopPropagation();
                       closeTerminalInPane(tabId, pane.id, ptyId);
                     }}
-                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
                   >
                     <X size={8} />
                   </button>
@@ -339,7 +339,7 @@ function PaneView({
         <HintGroup>
           <div className="flex items-center gap-0.5 shrink-0">
             {zoomed && (
-              <span className="mr-1 rounded bg-white/[0.06] px-1.5 py-px text-[9px] text-text-tertiary">
+              <span className="mr-1 rounded bg-element-selected px-1.5 py-px text-3xs text-muted-foreground">
                 zoomed
               </span>
             )}
@@ -349,7 +349,7 @@ function PaneView({
                   addTerminalToPane(tabId, pane.id);
                   setActivePane(tabId, pane.id);
                 }}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Plus size={11} />
               </button>
@@ -357,7 +357,7 @@ function PaneView({
             <HintItem label="Split right">
               <button
                 onClick={() => splitPane(tabId, pane.id, "horizontal")}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Columns2 size={11} />
               </button>
@@ -365,7 +365,7 @@ function PaneView({
             <HintItem label="Split down">
               <button
                 onClick={() => splitPane(tabId, pane.id, "vertical")}
-                className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+                className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer"
               >
                 <Rows2 size={11} />
               </button>
@@ -375,8 +375,10 @@ function PaneView({
                 <button
                   onClick={() => toggleZoom(tabId, pane.id)}
                   className={cn(
-                    "flex items-center justify-center w-5 h-5 rounded hover:bg-bg-hover transition-colors cursor-pointer",
-                    zoomed ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
+                    "flex items-center justify-center w-5 h-5 rounded hover:bg-element-hover transition-colors cursor-pointer",
+                    zoomed
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-secondary-foreground",
                   )}
                 >
                   <Maximize2 size={11} />
@@ -387,7 +389,7 @@ function PaneView({
               <HintItem label="Close pane">
                 <button
                   onClick={() => closePane(tabId, pane.id)}
-                  className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-white hover:bg-bg-hover transition-colors cursor-pointer"
+                  className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors cursor-pointer"
                 >
                   <X size={11} />
                 </button>

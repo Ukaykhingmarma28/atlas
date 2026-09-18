@@ -51,13 +51,16 @@ export function CommitAvatar({ email, size = 16, className }: CommitAvatarProps)
 
   return (
     <span
-      className={`relative inline-flex items-center justify-center rounded-full overflow-hidden shrink-0 bg-[var(--bg-elevated)] border border-[var(--border-default)] ${
+      className={`relative inline-flex items-center justify-center rounded-full overflow-hidden shrink-0 bg-[var(--card)] border border-[var(--border)] ${
         className ?? ""
       }`}
       style={{ width: size, height: size }}
     >
       {showFallback ? (
-        <User size={Math.max(8, Math.floor(size * 0.55))} className="text-[var(--text-tertiary)]" />
+        <User
+          size={Math.max(8, Math.floor(size * 0.55))}
+          className="text-[var(--muted-foreground)]"
+        />
       ) : (
         <img
           src={`https://www.gravatar.com/avatar/${hash}?s=${size * 2}&d=404`}

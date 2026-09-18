@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
  * which is true, and the filled pill says which at a glance. The bordered
  * rectangles this replaced drew a box per control, so a header carrying three
  * of them read as three separate widgets rather than three settings.
+ *
+ * `h-control-sm`, one step under the facet pills beside it (`h-control-md`):
+ * the track is deliberately the quieter of the two, since a facet pill opens a
+ * menu and a segment only flips a switch.
  */
 export function Segmented<T extends string>({
   value,
@@ -34,7 +38,7 @@ export function Segmented<T extends string>({
       aria-label={label}
       title={label}
       className={cn(
-        "flex h-7 shrink-0 items-center rounded-full border border-[var(--border-default)] p-0.5",
+        "flex h-control-sm shrink-0 items-center rounded-full border border-[var(--border)] p-0.5",
         className,
       )}
     >
@@ -45,12 +49,7 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
-          className={cn(
-            "flex h-full cursor-pointer items-center rounded-full px-2 text-[11px] leading-none outline-none transition-colors",
-            o.value === value
-              ? "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-          )}
+          className={cn(SEGMENT_TRIGGER, o.value === value ? SEGMENT_ACTIVE : SEGMENT_IDLE)}
         >
           {o.label}
         </button>
@@ -62,6 +61,8 @@ export function Segmented<T extends string>({
 
 /** A non-radio segment sharing a `Segmented` track — the custom-range trigger. */
 export const SEGMENT_TRIGGER =
-  "flex h-full cursor-pointer items-center gap-1 rounded-full px-2 text-[11px] leading-none outline-none transition-colors";
-export const SEGMENT_ACTIVE = "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]";
-export const SEGMENT_IDLE = "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]";
+  "flex h-full cursor-pointer items-center gap-1 rounded-full px-2 text-xs leading-none outline-none transition-colors";
+export const SEGMENT_ACTIVE =
+  "bg-[var(--atlas-element-active)] font-medium text-[var(--foreground)]";
+export const SEGMENT_IDLE =
+  "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]";

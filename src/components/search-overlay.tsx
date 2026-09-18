@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { invoke } from "@tauri-apps/api/core";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useSessionStore } from "@/features/project/stores/session-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useSessionStore } from "@/features/app/stores/session-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { Search, FileCode, Clock, X } from "lucide-react";
 
 interface SearchResult {
@@ -35,7 +35,7 @@ export function SearchOverlay({
   const session = useSessionStore.use.session();
   const { addSearchHistory, removeSearchHistory, clearSearchHistory, saveSession } =
     useSessionStore.use.actions();
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
 
   useEffect(() => {
     if (!open) {
@@ -99,46 +99,45 @@ export function SearchOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60" style={{ zIndex: 99998 }} />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
+        <Dialog.Popup
           className={cn(
             "fixed top-[15%] left-1/2 -translate-x-1/2",
             "w-[600px] max-h-[500px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
-            "shadow-[var(--shadow-overlay)]",
+            "bg-[var(--card)] border border-[var(--border)]",
+            "shadow-md",
             "flex flex-col",
+            "z-modal",
           )}
-          style={{ zIndex: 99999 }}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
-          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border)]">
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search in files..."
-              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
             {searching && (
-              <span className="text-[10px] text-[var(--text-tertiary)]">Searching...</span>
+              <span className="text-2xs text-[var(--muted-foreground)]">Searching...</span>
             )}
           </div>
 
           <div className="overflow-y-auto flex-1 py-1">
             {results.length === 0 && hasSearched && !searching && (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 No results found
               </div>
             )}
             {!query.trim() && !hasSearched && session.searchHistory.length > 0 && (
               <div className="py-1">
                 <div className="flex items-center justify-between px-4 py-1">
-                  <span className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wide font-semibold">
+                  <span className="text-2xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">
                     Recent searches
                   </span>
                   <button
@@ -146,7 +145,7 @@ export function SearchOverlay({
                       clearSearchHistory();
                       if (currentProject) saveSession(currentProject.path);
                     }}
-                    className="text-[9px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer"
+                    className="text-3xs text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer"
                   >
                     Clear all
                   </button>
@@ -154,7 +153,7 @@ export function SearchOverlay({
                 {session.searchHistory.slice(0, 8).map((q, i) => (
                   <div
                     key={`${q}-${i}`}
-                    className="flex items-center px-4 py-1.5 hover:bg-[var(--bg-hover)] group"
+                    className="flex items-center px-4 py-1.5 hover:bg-[var(--atlas-element-hover)] group"
                   >
                     <button
                       onClick={() => {
@@ -163,8 +162,8 @@ export function SearchOverlay({
                       }}
                       className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     >
-                      <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-                      <span className="text-[11px] text-[var(--text-secondary)] font-mono truncate">
+                      <Clock size={11} className="text-[var(--muted-foreground)] shrink-0" />
+                      <span className="text-xs text-[var(--secondary-foreground)] font-mono truncate">
                         {q}
                       </span>
                     </button>
@@ -174,7 +173,7 @@ export function SearchOverlay({
                           removeSearchHistory(q);
                           if (currentProject) saveSession(currentProject.path);
                         }}
-                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] shrink-0"
                       >
                         <X size={9} />
                       </button>
@@ -184,7 +183,7 @@ export function SearchOverlay({
               </div>
             )}
             {!query.trim() && !hasSearched && session.searchHistory.length === 0 && (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 Type to search across all files
               </div>
             )}
@@ -195,25 +194,25 @@ export function SearchOverlay({
                 onMouseEnter={() => setSelectedIndex(i)}
                 className={cn(
                   "w-full text-left px-4 py-1.5 transition-colors",
-                  i === selectedIndex ? "bg-[var(--bg-hover)]" : "",
+                  i === selectedIndex ? "bg-[var(--atlas-element-hover)]" : "",
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <FileCode size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                  <span className="text-[11px] text-[var(--accent-primary)] font-mono truncate">
+                  <FileCode size={12} className="text-[var(--muted-foreground)] shrink-0" />
+                  <span className="text-xs text-[var(--primary)] font-mono truncate">
                     {result.file_path}
                   </span>
-                  <span className="text-[10px] text-[var(--text-tertiary)] font-mono shrink-0">
+                  <span className="text-2xs text-[var(--muted-foreground)] font-mono shrink-0">
                     :{result.line}
                   </span>
                 </div>
-                <div className="ml-5 text-[11px] font-mono text-[var(--text-secondary)] truncate mt-0.5">
+                <div className="ml-5 text-xs font-mono text-[var(--secondary-foreground)] truncate mt-0.5">
                   {result.content.trim()}
                 </div>
               </button>
             ))}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

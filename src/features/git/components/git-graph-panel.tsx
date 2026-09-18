@@ -3,11 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { RefreshCw, GitBranch, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { CommitRowView } from "./commit-node";
@@ -19,7 +19,7 @@ const DEFAULT_LIMIT = 1000;
 const scrollPositionCache = new Map<string, number>();
 
 export function GitGraphPanel() {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const isRepo = useGitStore.use.isRepo();
   const path = project?.path ?? "";
 
@@ -84,10 +84,10 @@ export function GitGraphPanel() {
 
   if (!path || !isRepo) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-[12px] text-text-tertiary gap-2 px-6 text-center">
+      <div className="h-full flex flex-col items-center justify-center text-sm text-muted-foreground gap-2 px-6 text-center">
         <GitBranch size={18} className="opacity-60" />
         <div>Not a git repository.</div>
-        <div className="text-[10px]">
+        <div className="text-2xs">
           Open a project that contains a `.git` folder to see its history.
         </div>
       </div>
@@ -119,18 +119,14 @@ export function GitGraphPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 bg-black/60"
-          style={{ zIndex: "var(--z-overlay)" as unknown as number }}
-        />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim" />
+        <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
-          style={{ zIndex: "var(--z-modal)" as unknown as number }}
+          className="fixed top-8.5 left-4 right-4 bottom-6 z-modal rounded-xl border border-[var(--border)] bg-[var(--sidebar)] overflow-hidden flex flex-col shadow-md focus:outline-none"
         >
           <Dialog.Title className="sr-only">Git Graph</Dialog.Title>
           {inner}
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -200,12 +196,12 @@ function GraphView({
   const showMore = useMemo(() => rows.length >= limit, [rows.length, limit]);
 
   return (
-    <div className="h-full flex flex-col bg-bg-sidebar">
+    <div className="h-full flex flex-col bg-sidebar">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-[32px] shrink-0 border-b border-border-subtle">
+      <div className="flex items-center justify-between px-3 h-8 shrink-0 border-b border-border-subtle">
         <div className="flex items-center gap-1.5">
           {rows.length > 0 && (
-            <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide">
+            <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wide">
               {rows.length} commits
             </span>
           )}
@@ -215,7 +211,7 @@ function GraphView({
             <HintItem label={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
               <button
                 onClick={onToggleFullscreen}
-                className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
                 {fullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
               </button>
@@ -224,7 +220,7 @@ function GraphView({
               <button
                 onClick={onRefresh}
                 className={cn(
-                  "p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer",
+                  "p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-foreground transition-colors cursor-pointer",
                   refreshing && "animate-spin",
                 )}
               >
@@ -238,9 +234,9 @@ function GraphView({
       {/* Virtualized commit list */}
       <div className="flex-1 min-h-0 relative">
         <div ref={parentRef} className="absolute inset-0 overflow-auto hide-scrollbar">
-          {isLoading && <div className="px-3 py-3 text-[11px] text-text-tertiary">Loading…</div>}
+          {isLoading && <div className="px-3 py-3 text-xs text-muted-foreground">Loading…</div>}
           {rows.length === 0 && !isLoading && (
-            <div className="px-3 py-3 text-[11px] text-text-tertiary">No commits.</div>
+            <div className="px-3 py-3 text-xs text-muted-foreground">No commits.</div>
           )}
           {rows.length > 0 && (
             <div style={{ height: totalSize, width: "100%", position: "relative" }}>
@@ -275,14 +271,14 @@ function GraphView({
           <>
             <div
               aria-hidden
-              className="pointer-events-none absolute left-0 right-0 bottom-0 h-16 z-[1]"
+              className="pointer-events-none absolute left-0 right-0 bottom-0 h-16 z-panel"
               style={{
-                background: "linear-gradient(to bottom, transparent, var(--bg-sidebar))",
+                background: "linear-gradient(to bottom, transparent, var(--sidebar))",
               }}
             />
             <button
               onClick={onShowMore}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 h-7 rounded-full border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] shadow-[0_6px_16px_rgba(0,0,0,0.5)] transition-colors cursor-pointer"
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 h-7 rounded-full border border-[var(--border)] bg-[var(--card)] text-xs text-[var(--secondary-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)] shadow-md transition-colors cursor-pointer"
               style={{ backdropFilter: "blur(4px)" }}
               title={`Show ${DEFAULT_LIMIT} more commits`}
             >

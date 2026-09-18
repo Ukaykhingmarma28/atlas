@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
-import { activeOrgWorkspacesSnapshot } from "@/features/workspaces/lib/org-scope";
+import { activeOrgProjectsSnapshot } from "@/features/projects/lib/org-scope";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
   NO_FACETS,
@@ -32,7 +32,7 @@ interface UsageState {
   error: string | null;
   fetchedAt: number | null;
   /** The project-path set the current `data` was fetched for. */
-  wsSig: string;
+  projectSig: string;
   range: DateRange;
   facets: Facets;
   groupBy: GroupBy;
@@ -62,7 +62,7 @@ export const useUsageStore = createSelectors(
     loading: false,
     error: null,
     fetchedAt: null,
-    wsSig: "",
+    projectSig: "",
     range: { preset: "30d" },
     facets: NO_FACETS,
     groupBy: "project",
@@ -73,15 +73,15 @@ export const useUsageStore = createSelectors(
       refresh: async (opts) => {
         // Only the ACTIVE org's projects — Usage must never aggregate across
         // organisations.
-        const projectPaths = activeOrgWorkspacesSnapshot().map((w) => w.path);
+        const projectPaths = activeOrgProjectsSnapshot().map((p) => p.path);
         const sig = projectSignature(projectPaths);
-        const { fetchedAt, wsSig, loading } = get();
-        const fresh = fetchedAt !== null && Date.now() - fetchedAt < STALE_MS && sig === wsSig;
+        const { fetchedAt, projectSig, loading } = get();
+        const fresh = fetchedAt !== null && Date.now() - fetchedAt < STALE_MS && sig === projectSig;
         if (!opts?.force && (fresh || loading)) return;
         set({ loading: true, error: null });
         try {
           const data = await invoke<UsageDashboard>("usage_dashboard", { projectPaths });
-          set({ data, loading: false, fetchedAt: Date.now(), wsSig: sig });
+          set({ data, loading: false, fetchedAt: Date.now(), projectSig: sig });
         } catch (e) {
           set({ error: String(e), loading: false });
         }
@@ -111,7 +111,7 @@ function resetForOrg() {
     data: null,
     error: null,
     fetchedAt: null,
-    wsSig: "",
+    projectSig: "",
     facets: NO_FACETS,
     search: "",
   });

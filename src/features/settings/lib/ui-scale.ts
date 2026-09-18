@@ -3,7 +3,7 @@
 //! Uses the native WebView zoom — the same thing browser ⌘±/⌘0 drives — so it
 //! scales the ENTIRE UI (text + layout), not just `rem`-based sizes. Root
 //! font-size scaling wouldn't work because the app uses px-based utilities
-//! (`text-[11px]`, `h-[32px]`) everywhere.
+//! (`text-xs`, `h-[32px]`) everywhere.
 //!
 //! The factor is persisted as `AppSettings.uiScale` (Rust `state.json`) and
 //! re-applied on boot via the project store's `hydrate`.

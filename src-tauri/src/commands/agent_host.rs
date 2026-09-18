@@ -1931,7 +1931,7 @@ impl AgentHost {
             return Ok(None);
         };
         // No cwd filter. Zed scopes its import to a workspace because its
-        // connections are per-workspace; Atlas has one connection per agent and
+        // connections are per-project; Atlas has one connection per agent and
         // an app-level store whose rows carry their own paths, so "everything
         // this agent knows" is both simpler and more useful.
         collect_all_sessions(list.as_ref(), None)

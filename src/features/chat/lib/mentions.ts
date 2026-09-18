@@ -18,8 +18,8 @@ import {
   type AtlasTranscriptMessage,
 } from "./atlas-transcripts";
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { activeProjectId } from "@/features/projects/lib/active-project";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { skills } from "@/features/skills/lib/skills-api";
 import type { PackComponentKind } from "@/features/skills/lib/types";
@@ -51,6 +51,9 @@ export type MentionKind =
   | "knowledge"
   | "component"
   | "repo"
+  // STORAGE/WIRE KEY, not a concept: this tag is what `compose_prompt.rs`
+  // deserializes (`MentionSpec::Workspace`) and what `@workspace:<name>` in a
+  // saved prompt reads back as. Atlas calls these projects.
   | "workspace"
   | "branch"
   | "past_message"
@@ -119,10 +122,10 @@ export interface MentionRepo {
   hasReadme: boolean;
 }
 
-export interface MentionWorkspace {
+export interface MentionProject {
   kind: "workspace";
-  id: string; // workspace id — dedupe key
-  displayName: string; // workspace name
+  id: string; // project id — dedupe key
+  displayName: string; // project name
   absPath: string; // the project path, expanded into the prompt at send
   /** Owning org name, shown as the secondary label to disambiguate. */
   orgName: string | null;
@@ -164,7 +167,7 @@ export type MentionData =
   | MentionKnowledge
   | MentionComponent
   | MentionRepo
-  | MentionWorkspace
+  | MentionProject
   | MentionBranch
   | MentionPastMessage
   | MentionPastSession;
@@ -194,7 +197,7 @@ export const MENTION_CATEGORIES: readonly MentionCategory[] = [
   { kind: "repo", label: "Cloned Repos", aliases: ["repo", "github", "gh/"], weight: 0.8 },
   {
     kind: "workspace",
-    label: "Workspaces",
+    label: "Projects",
     aliases: ["workspace", "project", "ws", "w/"],
     weight: 0.82,
   },
@@ -287,7 +290,10 @@ export async function listMessagesInPastSession(
   const q = query.toLowerCase();
   const out: MentionPastMessage[] = [];
   let idx = 0;
-  for (const m of dump) {
+  // `dump` is typed as an array, but nothing stops a future backend change (or
+  // an unmocked dev command) from resolving `null` instead of throwing — guard
+  // rather than let `for...of` crash outside the try/catch above.
+  for (const m of dump ?? []) {
     if (m.role !== "user") {
       idx += 1;
       continue;
@@ -385,10 +391,10 @@ export async function searchMentions(
   if (scope === "component") {
     return searchPackComponents(stripCategoryAlias(query, "component"), ctx);
   }
-  // Workspaces live in a JS store — resolve them JS-side, so an agent in one
+  // Projects live in a JS store — resolve them JS-side, so an agent in one
   // project can be handed another project's path via @workspace.
   if (scope === "workspace") {
-    return searchWorkspaces(stripCategoryAlias(query, "workspace"), ctx);
+    return searchProjects(stripCategoryAlias(query, "workspace"), ctx);
   }
   // File/folder mentions read from the same backend FileIndex as Cmd+P. If it
   // got stuck/unloaded, recover here too (cheap + coalesced once confirmed).
@@ -403,9 +409,9 @@ export async function searchMentions(
   }
   try {
     const stripped = stripCategoryAlias(query, scope ?? "file");
-    // Unscoped `@`: blend the JS-owned kinds (workspaces) alongside the
+    // Unscoped `@`: blend the JS-owned kinds (projects) alongside the
     // Rust-ranked kinds so ONE search reaches everything — files, folders,
-    // notes, repos, branches, symbols, workspaces. The JS kinds are
+    // notes, repos, branches, symbols, projects. The JS kinds are
     // small lists; they're appended after the Rust results and the picker
     // groups the flat list into per-kind sections for display.
     if (scope === null) {
@@ -413,15 +419,15 @@ export async function searchMentions(
         query: stripped,
         scope,
         projectPath: ctx.projectPath,
-        workspaceId: activeWorkspaceId(),
+        workspaceId: activeProjectId(),
       });
-      return [...results, ...searchWorkspaces(stripped, ctx)];
+      return [...results, ...searchProjects(stripped, ctx)];
     }
     return await invoke<MentionData[]>("mention_search", {
       query: stripped,
       scope,
       projectPath: ctx.projectPath,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     });
   } catch (e) {
     console.warn("mention_search invoke failed:", e);
@@ -429,17 +435,17 @@ export async function searchMentions(
   }
 }
 
-/** Workspace search for the `@workspace:` rail (and the unscoped blend). Lists
- *  the workspaces from the JS store — EXCLUDING the current one (you never need
+/** Project search for the `@workspace:` rail (and the unscoped blend). Lists
+ *  the projects from the JS store — EXCLUDING the current one (you never need
  *  to hand an agent its own path) — substring-filtered by name or path. Scoped
  *  to the active org, with the org name attached for disambiguation. */
-function searchWorkspaces(query: string, ctx: MentionContext): MentionWorkspace[] {
+function searchProjects(query: string, ctx: MentionContext): MentionProject[] {
   const q = query.trim().toLowerCase();
-  const { workspaces } = useWorkspaceStore.getState();
+  const { projects } = useProjectStore.getState();
   const { organisations, activeOrganisationId } = useOrgStore.getState();
   const orgName = organisations.find((o) => o.id === activeOrganisationId)?.name ?? null;
   const currentPath = ctx.projectPath;
-  return workspaces
+  return projects
     .filter((w) => !w.orgId || w.orgId === activeOrganisationId) // active org
     .filter((w) => w.path !== currentPath) // never mention the current project
     .filter((w) => !q || w.name.toLowerCase().includes(q) || w.path.toLowerCase().includes(q))
@@ -540,7 +546,7 @@ export function publishKnowledgeToMentionCache(): Promise<void> {
   });
   return invoke<void>("mention_cache_set_knowledge", {
     items,
-    workspaceId: activeWorkspaceId(),
+    workspaceId: activeProjectId(),
   }).catch((err) => console.warn("mention_cache_set_knowledge failed:", err));
 }
 

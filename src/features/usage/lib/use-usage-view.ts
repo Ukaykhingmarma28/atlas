@@ -33,7 +33,7 @@ import {
   type Insight,
   type Series,
 } from "./derive";
-import { OTHER_COLOR, seriesColor } from "./palette";
+import { useSeriesPalette } from "./palette";
 import type { DailyBucket } from "../types";
 
 /** Everything the Usage tab renders, derived once per (data, range, facets, …) change. */
@@ -114,6 +114,9 @@ export function useUsageView(): UsageView {
   const metric = useUsageStore.use.metric();
   const table = useUsageStore.use.table();
   const search = useUsageStore.use.search();
+  // Resolved theme colours, rebuilt on `atlas:theme-applied` — the chart's
+  // segments are inline styles and cannot follow a custom property.
+  const { seriesColor, otherColor } = useSeriesPalette();
 
   const resolved = useMemo(() => resolveRange(range), [range]);
   const prev = useMemo(() => previousRange(resolved), [resolved]);
@@ -148,8 +151,8 @@ export function useUsageView(): UsageView {
   const facetOptions = useMemo(() => facetsOf(inRange, data), [inRange, data]);
 
   const chart = useMemo(
-    () => series(rows, groupBy, metric, resolved, data, seriesColor, OTHER_COLOR),
-    [rows, groupBy, metric, resolved, data],
+    () => series(rows, groupBy, metric, resolved, data, seriesColor, otherColor),
+    [rows, groupBy, metric, resolved, data, seriesColor, otherColor],
   );
 
   const eff = useMemo(() => efficiency(totals, sessionCount), [totals, sessionCount]);

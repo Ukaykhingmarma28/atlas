@@ -11,6 +11,8 @@ export type EventKind =
   | "decision"
   | "file_changed"
   | "fact"
+  | "failure"
+  | "architecture"
   | "session_start"
   | "session_end"
   | "todo_added"

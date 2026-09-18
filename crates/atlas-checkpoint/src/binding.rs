@@ -1,4 +1,4 @@
-//! Turning a directory into a capturing Workspace.
+//! Turning a directory into a capturing Project.
 //!
 //! Binding is explicit and user-confirmed, and the identity signals it records
 //! are **evidence, not gates**. Every one of the following is a legitimate
@@ -24,18 +24,18 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::git;
-use crate::model::{Binding, WorkspaceDetection, WorkspaceMode};
+use crate::model::{Binding, ProjectDetection, ProjectMode};
 use crate::store::Store;
 
 /// Work out what can be known about a directory before anything is bound.
 ///
 /// Everything is optional. The point is to *show* the developer what was
 /// detected rather than ask them to type it.
-pub fn detect(root: &Path) -> WorkspaceDetection {
+pub fn detect(root: &Path) -> ProjectDetection {
     let is_git_repository = git::is_repository(root);
     let has_commits = is_git_repository && git::head_commit(root).is_some();
 
-    WorkspaceDetection {
+    ProjectDetection {
         root: root.to_string_lossy().to_string(),
         is_git_repository,
         has_commits,
@@ -70,18 +70,18 @@ pub fn suggest_slug(root: &Path) -> String {
     slug.trim_matches('-').to_string()
 }
 
-/// Bind a Workspace and start capturing.
+/// Bind a Project and start capturing.
 ///
-/// Idempotent: binding an already-bound Workspace refreshes its detected
+/// Idempotent: binding an already-bound Project refreshes its detected
 /// signals (a remote may have been added since) and re-enables it, rather than
 /// creating a second binding or refusing.
 ///
-/// For [`WorkspaceMode::Local`] this touches no network and needs no account.
+/// For [`ProjectMode::Local`] this touches no network and needs no account.
 pub fn bind(
     store: &Store,
     workspace_id: &str,
     root: &Path,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<Binding> {
     let detection = detect(root);
     store.upsert_binding(
@@ -95,10 +95,10 @@ pub fn bind(
     Ok(store.binding()?.expect("just written"))
 }
 
-/// Re-read the identity signals for an already-bound Workspace.
+/// Re-read the identity signals for an already-bound Project.
 ///
 /// The case this exists for: a developer takes the inline `git init` offer on a
-/// non-git Workspace and makes their first commit. The Workspace must start
+/// non-git Project and makes their first commit. The Project must start
 /// producing Checkpoints without a restart or a re-bind, and it can only do that
 /// once the fingerprint it had no way to know is filled in.
 pub fn refresh_detection(store: &Store, root: &Path) -> Result<Option<Binding>> {

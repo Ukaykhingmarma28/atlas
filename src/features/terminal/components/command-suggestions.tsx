@@ -73,11 +73,11 @@ export function CommandSuggestions({
       className={cn(
         "atlas-cmd-suggest",
         "rounded-md overflow-hidden flex flex-col",
-        "bg-[var(--bg-overlay)] border border-[var(--border-default)]",
-        "shadow-[var(--shadow-overlay)]",
+        "bg-[var(--popover)] border border-[var(--border)]",
+        "shadow-md z-popover",
       )}
       onMouseDown={(e) => e.preventDefault()}
-      style={{ position: "fixed", left, bottom, width, maxHeight: 280, zIndex: 9999 }}
+      style={{ position: "fixed", left, bottom, width, maxHeight: 280 }}
     >
       <div className="flex-1 overflow-y-auto py-1 hide-scrollbar">
         {items.map((s, i) => {
@@ -93,17 +93,17 @@ export function CommandSuggestions({
                 onSelect(s);
               }}
               className={cn(
-                "w-full text-left px-2.5 h-[24px] flex items-center gap-2 text-[12px] font-mono",
+                "w-full text-left px-2.5 h-control-sm flex items-center gap-2 text-sm font-mono",
                 isActive
-                  ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                  ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                  : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
               )}
             >
               <Icon
                 size={11}
                 className={cn(
                   "shrink-0",
-                  s.kind === "dir" ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
+                  s.kind === "dir" ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]",
                 )}
               />
               <span className="truncate">
@@ -114,7 +114,7 @@ export function CommandSuggestions({
           );
         })}
       </div>
-      <div className="border-t border-[var(--border-default)] px-2.5 h-[22px] flex items-center justify-end gap-2 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] shrink-0">
+      <div className="border-t border-[var(--border)] px-2.5 h-control-sm flex items-center justify-end gap-2 text-3xs uppercase tracking-wider text-[var(--muted-foreground)] shrink-0">
         <span>⇥ ↑↓ cycle · ↵ run · ⎋</span>
       </div>
     </div>,

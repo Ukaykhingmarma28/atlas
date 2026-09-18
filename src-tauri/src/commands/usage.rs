@@ -2,7 +2,7 @@
 //!
 //! # Why this replaced a JSONL scrape
 //!
-//! The status-bar widget, the usage panel and Mission Control's cost charts
+//! The status-bar widget, the usage panel and the Usage tab's cost charts
 //! used to parse `~/.claude/projects/**/*.jsonl` and price it with a table
 //! hardcoded in `claude.rs`. That made three user-facing surfaces Claude-only
 //! by construction, and coupled them to a file format Atlas does not own. They
@@ -151,9 +151,9 @@ pub(crate) fn project_record(project_path: &str) -> Result<Option<ProjectRecord>
     };
     let err = |e: atlas_checkpoint::Error| e.to_string();
     Ok(Some(ProjectRecord {
-        sessions: store.sessions_for_workspace(project_path).map_err(err)?,
+        sessions: store.sessions_for_project(project_path).map_err(err)?,
         message_counts: store.message_counts(project_path).map_err(err)?,
-        deltas: store.usage_deltas_for_workspace(project_path).map_err(err)?,
+        deltas: store.usage_deltas_for_project(project_path).map_err(err)?,
         turn_messages: store.turn_message_counts(project_path).map_err(err)?,
         ledger_since: store.ledger_since().map_err(err)?,
     }))
@@ -169,7 +169,7 @@ pub(crate) fn project_usage(
         return Ok(ProjectUsage::default());
     };
     let sessions = store
-        .sessions_for_workspace(project_path)
+        .sessions_for_project(project_path)
         .map_err(|e| e.to_string())?;
     let message_counts = store
         .message_counts(project_path)

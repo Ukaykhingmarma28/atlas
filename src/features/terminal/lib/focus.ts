@@ -8,7 +8,7 @@
  * themselves whenever an alt-screen app started. This walks the whole chain:
  * focused column → its active tab → a terminal tab → its active pane → the
  * pane's active terminal. The layout mirror always represents the active
- * workspace, so workspace visibility is implicit.
+ * project, so project visibility is implicit.
  */
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { collectPanes, useTerminalStore, type TerminalTabState } from "../stores/terminal-store";

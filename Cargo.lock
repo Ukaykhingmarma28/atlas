@@ -703,10 +703,12 @@ dependencies = [
  "atlas-embed",
  "atlas-git",
  "atlas-gitdiff",
+ "atlas-icon-theme",
  "atlas-memory",
  "atlas-native-agent",
  "atlas-process",
  "atlas-terminal",
+ "atlas-theme",
  "atlas-thread-metadata",
  "base64 0.21.7",
  "chrono",
@@ -963,6 +965,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-icon-theme"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "atlas-memory"
 version = "0.1.0"
 dependencies = [
@@ -1047,6 +1061,20 @@ dependencies = [
  "serde",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "atlas-theme"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "notify",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

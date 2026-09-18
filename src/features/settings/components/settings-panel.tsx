@@ -7,6 +7,7 @@ import { Hint } from "@/ui/tooltip";
 import {
   Settings,
   Palette,
+  Shapes,
   Keyboard,
   Info,
   KeyRound,
@@ -24,21 +25,21 @@ import { clampScale, SCALE_STEP, MIN_SCALE, MAX_SCALE, DEFAULT_SCALE } from "../
 import { AtlasIcon } from "@/components/atlas-icon";
 import { ProvidersSettings } from "./providers-settings";
 import { LayoutsSettings } from "./layouts-settings";
-import { CodeEditorThemesSettings } from "./code-editor-themes-settings";
 import { AtlasThemesSettings } from "./atlas-themes-settings";
+import { IconThemesSettings } from "./icon-themes-settings";
 import { SkillsAndPacks } from "./skills-and-packs";
 import { AgentsMarketplace } from "./agents-marketplace/agents-marketplace";
 import { ModelsManager } from "./models-manager";
 import { KeybindingsSettings } from "./keybindings-settings";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { useModelPricingStore } from "../stores/model-pricing-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
 import { setEnabled as setTelemetryEnabled } from "@/features/telemetry/posthog-client";
 import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { updater } from "@/features/updater/lib/updater-api";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 const SECTIONS: Array<{
   id: SettingsSection;
@@ -47,6 +48,7 @@ const SECTIONS: Array<{
 }> = [
   { id: "general", label: "General", icon: Settings },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "icons", label: "Icons", icon: Shapes },
   { id: "layouts", label: "Layouts", icon: LayoutTemplate },
   { id: "providers", label: "API Keys", icon: KeyRound },
   { id: "skills", label: "Skills", icon: Zap },
@@ -95,7 +97,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       {/* Settings nav — collapses to an icon rail (labels become tooltips). */}
       <div
         className={cn(
-          "shrink-0 border-r border-border-default bg-bg-primary pt-2 flex flex-col",
+          "shrink-0 border-r border-border bg-background pt-2 flex flex-col",
           navCollapsed ? "w-[44px]" : "w-[180px]",
         )}
       >
@@ -106,11 +108,11 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
                 key={s.id}
                 onClick={() => setActiveSection(s.id)}
                 className={cn(
-                  "w-full flex items-center h-[32px] whitespace-nowrap text-[11px] font-medium transition-colors border-l-2 cursor-pointer",
+                  "w-full flex items-center h-[32px] whitespace-nowrap text-xs font-medium transition-colors border-l-2 cursor-pointer",
                   navCollapsed ? "justify-center px-0" : "gap-2 px-4",
                   activeSection === s.id
-                    ? "text-text-primary bg-bg-selected border-l-accent"
-                    : "text-text-secondary hover:bg-bg-hover border-l-transparent",
+                    ? "text-foreground bg-element-selected border-l-primary"
+                    : "text-secondary-foreground hover:bg-element-hover border-l-transparent",
                 )}
               >
                 <s.icon size={13} className="shrink-0" />
@@ -132,7 +134,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
           <button
             onClick={toggleNav}
             className={cn(
-              "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border-default text-[11px] font-medium text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+              "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border text-xs font-medium text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
               navCollapsed ? "justify-center px-0" : "gap-2 px-4",
             )}
           >
@@ -173,6 +175,10 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
         <div className="flex-1 min-w-0 min-h-0">
           <AppearanceSettings />
         </div>
+      ) : activeSection === "icons" ? (
+        <div className="flex-1 min-w-0 min-h-0">
+          <IconThemesSettings />
+        </div>
       ) : activeSection === "keybindings" ? (
         <div className="flex-1 min-w-0 min-h-0">
           <KeybindingsSettings />
@@ -199,9 +205,9 @@ interface CliStatus {
 }
 
 function GeneralSettings() {
-  const settings = useProjectStore.use.settings();
-  const configError = useProjectStore.use.configError();
-  const { updateSettings, clearConfigError, resetConfig } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const configError = useSettingsStore.use.configError();
+  const { updateSettings, clearConfigError, resetConfig } = useSettingsStore.use.actions();
   const [cli, setCli] = useState<CliStatus | null>(null);
   const [installing, setInstalling] = useState(false);
   const [resettingConfig, setResettingConfig] = useState(false);
@@ -277,18 +283,18 @@ function GeneralSettings() {
     <div className="space-y-6">
       <SectionTitle title="General" subtitle="Application preferences" />
       {configError && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
-          <p className="text-[12px] font-medium text-text-primary">
+        <div className="rounded-md border border-warning/40 bg-warning-muted p-3 space-y-2">
+          <p className="text-sm font-medium text-foreground">
             Atlas is using the last valid settings — config.toml has a problem
           </p>
-          <p className="text-[11px] text-text-secondary font-mono break-all">{configError}</p>
+          <p className="text-xs text-secondary-foreground font-mono break-all">{configError}</p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => void openConfigFile()}
               className={cn(
-                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-                "text-text-primary hover:bg-bg-hover transition-colors",
+                "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+                "text-foreground hover:bg-element-hover transition-colors",
               )}
             >
               Open config
@@ -298,8 +304,8 @@ function GeneralSettings() {
               onClick={() => void recreateConfigDefaults()}
               disabled={resettingConfig}
               className={cn(
-                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-                "text-text-primary hover:bg-bg-hover transition-colors",
+                "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+                "text-foreground hover:bg-element-hover transition-colors",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
@@ -308,7 +314,7 @@ function GeneralSettings() {
             <button
               type="button"
               onClick={clearConfigError}
-              className="h-7 rounded-md px-2.5 text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              className="h-7 rounded-md px-2.5 text-xs font-medium text-secondary-foreground hover:text-foreground transition-colors"
             >
               Dismiss
             </button>
@@ -345,7 +351,7 @@ function GeneralSettings() {
           value={String(settings.terminalNotifyMinDurationMs)}
           disabled={!settings.terminalNotifications}
           onChange={(e) => updateSettings({ terminalNotifyMinDurationMs: Number(e.target.value) })}
-          className="h-7 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-40"
+          className="h-7 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-xs text-[var(--foreground)] outline-none disabled:opacity-40"
         >
           <option value="5000">5 seconds</option>
           <option value="10000">10 seconds</option>
@@ -463,8 +469,8 @@ function GeneralSettings() {
           type="button"
           onClick={() => useFeedbackStore.getState().actions.openPanel("settings")}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-            "text-text-primary hover:bg-bg-hover transition-colors",
+            "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+            "text-foreground hover:bg-element-hover transition-colors",
           )}
         >
           Send feedback
@@ -488,8 +494,8 @@ function GeneralSettings() {
           onClick={() => void installCli()}
           disabled={installing}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-            "text-text-primary hover:bg-bg-hover transition-colors",
+            "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+            "text-foreground hover:bg-element-hover transition-colors",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
         >
@@ -505,8 +511,8 @@ function GeneralSettings() {
           onClick={() => void updatePricing()}
           disabled={pricingLoading}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-            "text-text-primary hover:bg-bg-hover transition-colors",
+            "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+            "text-foreground hover:bg-element-hover transition-colors",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
         >
@@ -517,17 +523,9 @@ function GeneralSettings() {
   );
 }
 
-type AppearanceTab = "theme" | "accent";
-
-const APPEARANCE_TABS: { id: AppearanceTab; label: string }[] = [
-  { id: "accent", label: "Interface Theme" },
-  { id: "theme", label: "Editor Theme" },
-];
-
 function AppearanceSettings() {
-  const settings = useProjectStore.use.settings();
-  const { updateSettings } = useProjectStore.use.actions();
-  const [tab, setTab] = useState<AppearanceTab>("accent");
+  const settings = useSettingsStore.use.settings();
+  const { updateSettings } = useSettingsStore.use.actions();
 
   const scalePct = Math.round(settings.uiScale * 100);
   const setScale = (next: number) => updateSettings({ uiScale: clampScale(next) });
@@ -537,16 +535,9 @@ function AppearanceSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header — Skills-style underline tabs (no title), zoom on the right. */}
-      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border-default px-2">
-        {APPEARANCE_TABS.map((t) => (
-          <UnderlineTab
-            key={t.id}
-            active={tab === t.id}
-            onClick={() => setTab(t.id)}
-            label={t.label}
-          />
-        ))}
+      {/* One theme controls the interface, editor, terminal, diffs, and syntax. */}
+      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
+        <span className="px-2.5 text-xs font-medium text-foreground">Theme</span>
 
         {/* Interface zoom — right-aligned control (like Skills' scope control). */}
         <div className="ml-auto flex items-center gap-1 pr-0.5">
@@ -556,8 +547,8 @@ function AppearanceSettings() {
               onClick={() => setScale(settings.uiScale - SCALE_STEP)}
               disabled={settings.uiScale <= MIN_SCALE}
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
-                "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
+                "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >
@@ -568,7 +559,7 @@ function AppearanceSettings() {
             <button
               type="button"
               onClick={() => setScale(DEFAULT_SCALE)}
-              className="h-6 min-w-[44px] rounded-md px-1.5 text-[11px] font-medium tabular-nums text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+              className="h-6 min-w-[44px] rounded-md px-1.5 text-xs font-medium tabular-nums text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
             >
               {scalePct}%
             </button>
@@ -579,8 +570,8 @@ function AppearanceSettings() {
               onClick={() => setScale(settings.uiScale + SCALE_STEP)}
               disabled={settings.uiScale >= MAX_SCALE}
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
-                "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
+                "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >
@@ -591,41 +582,15 @@ function AppearanceSettings() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {tab === "theme" ? <CodeEditorThemesSettings /> : <AtlasThemesSettings />}
+        <AtlasThemesSettings />
       </div>
     </div>
   );
 }
 
-/** Underline tab — copied from the Skills header (`skills-and-packs.tsx`). */
-function UnderlineTab({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-[29px] items-center gap-1.5 px-2.5 text-[11px] font-medium transition-colors border-b-2 -mb-px cursor-pointer",
-        active
-          ? "text-text-primary border-b-[var(--accent-primary)]"
-          : "text-text-secondary hover:text-text-primary border-b-transparent",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
 function UpdatesSettings() {
-  const settings = useProjectStore.use.settings();
-  const { updateSettings } = useProjectStore.use.actions();
+  const settings = useSettingsStore.use.settings();
+  const { updateSettings } = useSettingsStore.use.actions();
   const phase = useUpdaterStore.use.phase();
   const version = useUpdaterStore.use.version();
   const progress = useUpdaterStore.use.progress();
@@ -663,14 +628,14 @@ function UpdatesSettings() {
       type="button"
       onClick={restart}
       className={cn(
-        "h-7 rounded-md px-2.5 text-[11px] font-medium",
-        "bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 transition-opacity",
+        "h-7 rounded-md px-2.5 text-xs font-medium",
+        "bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity",
       )}
     >
       Restart to update
     </button>
   ) : downloading ? (
-    <span className="text-[11px] text-text-tertiary tabular-nums">
+    <span className="text-xs text-muted-foreground tabular-nums">
       {progress != null ? `Downloading ${Math.round(progress * 100)}%` : "Preparing…"}
     </span>
   ) : (
@@ -679,8 +644,8 @@ function UpdatesSettings() {
       onClick={() => void checkNow()}
       disabled={checking}
       className={cn(
-        "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
-        "text-text-primary hover:bg-bg-hover transition-colors",
+        "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+        "text-foreground hover:bg-element-hover transition-colors",
         "disabled:opacity-50 disabled:cursor-not-allowed",
       )}
     >
@@ -727,15 +692,15 @@ function AboutSettings() {
   return (
     <div className="space-y-4">
       <SectionTitle title="About" subtitle="Atlas IDE" />
-      <div className="rounded-lg border border-border-default bg-bg-secondary p-4 space-y-2">
+      <div className="rounded-lg border border-border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2">
           <AtlasIcon size={40} className="rounded-xl" />
           <div>
-            <p className="text-sm font-semibold text-text-primary">Atlas</p>
-            <p className="text-[10px] text-text-tertiary">v0.3.3 — The second brain IDE</p>
+            <p className="text-sm font-semibold text-foreground">Atlas</p>
+            <p className="text-2xs text-muted-foreground">v0.3.3 — The second brain IDE</p>
           </div>
         </div>
-        <p className="text-[11px] text-text-secondary leading-relaxed pt-2">
+        <p className="text-xs text-secondary-foreground leading-relaxed pt-2">
           Built with Tauri, React, and Rust. An everything app for agentic development — from code
           analysis to task management, research, and AI orchestration.
         </p>
@@ -747,8 +712,8 @@ function AboutSettings() {
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-      <p className="text-[11px] text-text-tertiary mt-0.5">{subtitle}</p>
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
     </div>
   );
 }
@@ -765,8 +730,8 @@ function SettingRow({
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <p className="text-[12px] font-medium text-text-primary">{label}</p>
-        <p className="text-[10px] text-text-tertiary mt-0.5">{description}</p>
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="text-2xs text-muted-foreground mt-0.5">{description}</p>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -814,14 +779,14 @@ export function Toggle({
         "relative inline-flex h-5 w-9 shrink-0 items-center",
         "rounded-full border-2 border-transparent transition-colors",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
-        value ? "bg-[var(--accent-primary)]" : "bg-[var(--bg-elevated)]",
+        value ? "bg-[var(--primary)]" : "bg-[var(--card)]",
       )}
     >
       <span
         className={cn(
-          "pointer-events-none block h-4 w-4 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.45)]",
+          "pointer-events-none block h-4 w-4 rounded-full shadow-sm",
           "transition-transform duration-150",
-          value ? "translate-x-4 bg-[var(--bg-base)]" : "translate-x-0 bg-white",
+          value ? "translate-x-4 bg-[var(--background)]" : "translate-x-0 bg-card-foreground",
         )}
       />
     </button>

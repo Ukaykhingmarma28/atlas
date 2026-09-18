@@ -231,7 +231,7 @@ export function HintGroup({
           <div
             aria-hidden
             data-slot="hint-group-tooltip"
-            className="pointer-events-none fixed left-0 z-[9999]"
+            className="pointer-events-none fixed left-0 z-tooltip"
             style={{
               ...(side === "bottom" ? { top: geometry?.y ?? 0 } : { bottom: geometry?.y ?? 0 }),
               transformOrigin: `${geometry?.originX ?? 0}px ${side === "bottom" ? "0%" : "100%"}`,
@@ -242,9 +242,12 @@ export function HintGroup({
             <div
               className={cn(
                 "flex w-max",
-                "bg-[var(--bg-overlay)] text-text-primary",
-                "outline outline-1 outline-[var(--border-default)]",
-                "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
+                "bg-[var(--popover)] text-foreground",
+                "outline outline-1 outline-[var(--border)]",
+                // The menu step, like every other popover in `src/ui`. It was a
+                // literal 50%-black halo, which is a hole punched in a cream
+                // surface on any light theme.
+                "shadow-md",
               )}
               style={{
                 opacity: shown ? 1 : 0,
@@ -259,7 +262,7 @@ export function HintGroup({
                   ref={(el) => {
                     labels.current.set(id, el);
                   }}
-                  className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-[11px] leading-none"
+                  className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-xs leading-none"
                 >
                   {label}
                 </div>

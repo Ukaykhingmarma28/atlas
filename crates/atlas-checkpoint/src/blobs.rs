@@ -24,7 +24,7 @@ pub const SPILL_THRESHOLD_BYTES: usize = 64 * 1024;
 /// How much of a spilled body stays on the row for list rendering.
 pub const PREVIEW_BYTES: usize = 2 * 1024;
 
-/// A content-addressed store under the Workspace's `.atlas/blobs/`.
+/// A content-addressed store under the Project's `.atlas/blobs/`.
 pub struct BlobStore {
     root: PathBuf,
 }

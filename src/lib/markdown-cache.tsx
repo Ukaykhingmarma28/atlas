@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isTypingHot } from "./input-activity";
 import MarkdownWorker from "./markdown.worker?worker";
-import "highlight.js/styles/github-dark.css";
+import "@/styles/hljs.css";
 import { cn } from "./utils";
 import { isScrollHot } from "./scroll-hot";
 
@@ -564,7 +564,7 @@ export function CachedMarkdown({ source, className, unstyled, priority = 0 }: Ca
   const cls = cn(
     unstyled
       ? "select-text"
-      : "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text",
+      : "prose-chat text-[var(--foreground)] leading-relaxed break-words select-text",
     className,
   );
 

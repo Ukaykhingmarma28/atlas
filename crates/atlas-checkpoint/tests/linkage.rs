@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{resolve_path, ToolName};
 use atlas_checkpoint::{
     hash_written_content, walk_new_commits, Capture, FileWrite, SessionKey, Source, Store,
@@ -88,7 +88,7 @@ impl Fixture {
     }
 
     fn walk(&self, store: &Store) -> atlas_checkpoint::WalkOutcome {
-        walk_new_commits(store, WORKSPACE, self.path(), WorkspaceMode::Local).expect("walk")
+        walk_new_commits(store, WORKSPACE, self.path(), ProjectMode::Local).expect("walk")
     }
 }
 
@@ -115,7 +115,7 @@ fn session_touched(
     existed_before: bool,
     deleted: bool,
 ) -> String {
-    let mut capture = Capture::new(store, WorkspaceMode::Local);
+    let mut capture = Capture::new(store, ProjectMode::Local);
     let key = SessionKey {
         workspace_id: WORKSPACE.to_string(),
         source: Source::Acp,
@@ -657,8 +657,8 @@ fn commits_made_while_atlas_was_closed_are_picked_up_on_the_next_walk() {
 }
 
 #[test]
-fn a_workspace_that_never_had_a_watcher_is_still_linked_by_the_open_time_walk() {
-    // A watcher exists only for a Workspace activated at least once this app
+fn a_project_that_never_had_a_watcher_is_still_linked_by_the_open_time_walk() {
+    // A watcher exists only for a Project activated at least once this app
     // session, so this walk is the primary mechanism, not a fallback.
     let fixture = Fixture::new();
     fixture.write("src/lib.rs", "original");
@@ -678,7 +678,7 @@ fn a_workspace_that_never_had_a_watcher_is_still_linked_by_the_open_time_walk() 
 #[test]
 fn a_cursor_that_no_longer_resolves_recovers_by_re_scanning_rather_than_stopping() {
     // `rev-list gone..HEAD` fails outright, after which detection would silently
-    // stop forever for this Workspace.
+    // stop forever for this Project.
     let fixture = Fixture::new();
     fixture.write("src/lib.rs", "original");
     fixture.commit_all("initial");
@@ -745,7 +745,7 @@ fn a_non_git_directory_produces_sessions_and_no_checkpoints() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path().join(".atlas")).unwrap();
 
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
     let session = capture
         .record_prompt(
             &SessionKey {
@@ -762,11 +762,11 @@ fn a_non_git_directory_produces_sessions_and_no_checkpoints() {
         .unwrap();
 
     let outcome =
-        walk_new_commits(&store, WORKSPACE, dir.path(), WorkspaceMode::Local).expect("no error");
+        walk_new_commits(&store, WORKSPACE, dir.path(), ProjectMode::Local).expect("no error");
     assert_eq!(outcome.commits_seen, 0);
     assert!(store.checkpoints_for_session(&session).unwrap().is_empty());
     // The Session itself is perfectly real.
-    assert_eq!(store.sessions_for_workspace(WORKSPACE).unwrap().len(), 1);
+    assert_eq!(store.sessions_for_project(WORKSPACE).unwrap().len(), 1);
 }
 
 #[test]
@@ -1000,7 +1000,7 @@ fn an_imported_session_is_never_link_matched() {
     let mut store = fixture.store();
     fixture.walk(&store);
 
-    let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
     let imported = capture
         .record_prompt(
             &SessionKey {
@@ -1028,7 +1028,7 @@ fn an_imported_session_is_never_link_matched() {
 /// A Session whose prompt has been recorded — and nothing else yet. The #31
 /// ordering needs the Session to predate the commit, as it does in production.
 fn session_started(store: &mut Store, native_id: &str) -> String {
-    let mut capture = Capture::new(store, WorkspaceMode::Local);
+    let mut capture = Capture::new(store, ProjectMode::Local);
     let key = SessionKey {
         workspace_id: WORKSPACE.to_string(),
         source: Source::Acp,
@@ -1048,7 +1048,7 @@ fn session_touched_existing(
     content: &str,
     existed_before: bool,
 ) {
-    let mut capture = Capture::new(store, WorkspaceMode::Local);
+    let mut capture = Capture::new(store, ProjectMode::Local);
     let call = capture
         .record_tool_call(
             session_id,
@@ -1127,7 +1127,7 @@ fn a_commit_the_cursor_already_passed_links_when_evaluated_directly() {
         WORKSPACE,
         fixture.path(),
         std::slice::from_ref(&sha),
-        WorkspaceMode::Local,
+        ProjectMode::Local,
     )
     .expect("evaluation runs");
     assert_eq!(created, 1);
@@ -1159,7 +1159,7 @@ fn re_evaluating_the_same_commit_is_idempotent() {
             WORKSPACE,
             fixture.path(),
             std::slice::from_ref(&sha),
-            WorkspaceMode::Local,
+            ProjectMode::Local,
         )
         .expect("evaluation runs");
     }

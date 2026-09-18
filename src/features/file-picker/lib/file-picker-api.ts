@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 export interface FileMatch {
   path: string;
@@ -17,34 +17,34 @@ export interface FolderMatch {
   rel: string;
 }
 
-// Every call is scoped to the active workspace — multiple workspaces share
+// Every call is scoped to the active project — multiple projects share
 // one webview, so the backend can no longer infer which index to hit from the
 // window label.
 export const fileIndex = {
   openProject: (path: string) =>
     invoke<number>("fileindex_open_project", {
       path,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     }),
   closeProject: () =>
     invoke<void>("fileindex_close_project", {
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     }),
   search: (query: string, limit = 100) =>
     invoke<FileMatch[]>("fileindex_search", {
       query,
       limit,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     }),
   searchDirs: (query: string, limit = 30) =>
     invoke<FolderMatch[]>("fileindex_search_dirs", {
       query,
       limit,
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     }),
   status: () =>
     invoke<FileIndexStatus>("fileindex_status", {
-      workspaceId: activeWorkspaceId(),
+      workspaceId: activeProjectId(),
     }),
 };
 
@@ -57,10 +57,10 @@ let reindexInFlight: Promise<FileIndexStatus> | null = null;
 // Roots we have confirmed the backend holds a RESIDENT index for.
 // `ensureFileIndex` can short-circuit with no IPC for any of them — keeps the
 // per-keystroke mention path free. A SET, not a single root: the Rust side
-// keeps one resident index per workspace (`fileindex_open_project` is
+// keeps one resident index per project (`fileindex_open_project` is
 // idempotent for a live one), so switching A→B→A must not cost A its fast
 // path — with a single slot, every switch made the first Cmd+P/@ in the
-// returned-to workspace pay a status round-trip it didn't owe.
+// returned-to project pay a status round-trip it didn't owe.
 const confirmedRoots = new Set<string>();
 
 /** (Re)open the backend index for `projectPath`. This is the single entry
@@ -121,8 +121,8 @@ export function markFileIndexClosed(): void {
   confirmedRoots.clear();
 }
 
-/** Forget ONE root — its workspace's resident Rust index was torn down
- *  (workspace close / LRU eviction), so the fast path must not vouch for it. */
+/** Forget ONE root — its project's resident Rust index was torn down
+ *  (project close / LRU eviction), so the fast path must not vouch for it. */
 export function markFileIndexClosedFor(path: string): void {
   confirmedRoots.delete(path);
 }

@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { ReactElement } from "react";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Keyboard, LayoutTemplate, LogIn, LogOut, Palette, Settings, Zap } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,12 +33,12 @@ const ITEMS: Array<{
 ];
 
 // Same shape as the composer's "+" menu, so every Atlas dropdown reads alike.
-// `--z-max` matches the sidebar's add-project menu: the content is portalled to
-// `body`, so it is not competing with the title bar, but it does share a
-// stacking context with every dialog and overlay in the app.
+// `z-popover` (decision 28) is the layer every menu sits on: the content is
+// portalled to `body`, so it shares a stacking context with every dialog and
+// overlay in the app, and a menu has to sit above a dialog rather than under it.
 const CONTENT_CLASS =
-  "z-[var(--z-max)] min-w-[228px] max-w-[300px] rounded-md border border-[var(--border-default)] " +
-  "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
+  "min-w-[228px] max-w-[300px] rounded-md border border-[var(--border)] " +
+  "bg-[var(--card)] shadow-md py-1";
 
 /**
  * Shown when the background revocation did not land — offline, or an Atlas
@@ -58,13 +58,13 @@ const RESIDUAL_SESSION =
 // header is a `Label` and keeps the arrow, so the cursor distinguishes what you
 // can act on from what is only being reported.
 const ITEM_CLASS =
-  "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-pointer outline-none " +
-  "text-[var(--text-secondary)] data-[highlighted]:bg-[var(--bg-hover)] " +
-  "data-[highlighted]:text-[var(--text-primary)]";
+  "flex items-center gap-2 px-3 h-[26px] text-xs cursor-pointer outline-none " +
+  "text-[var(--secondary-foreground)] data-[highlighted]:bg-[var(--atlas-element-hover)] " +
+  "data-[highlighted]:text-[var(--foreground)]";
 
 // Hoisted for the same reason as the two above: this menu now has three
 // separators, and a rule one of them disagreed with would be visible.
-const SEPARATOR_CLASS = "my-1 h-px bg-[var(--border-default)]";
+const SEPARATOR_CLASS = "my-1 h-px bg-[var(--border)]";
 
 /**
  * The menu behind the title bar's avatar — who you are, the parts of Settings
@@ -92,7 +92,7 @@ export function AccountMenu({
    * name would be worse than the gap it fills.
    */
   account: SignedIn | SignedOut;
-  children: ReactNode;
+  children: ReactElement;
 }) {
   const { signOut, beginSignIn } = useAuthStore.use.actions();
   const signedIn = account.status === "signed-in";
@@ -107,48 +107,50 @@ export function AccountMenu({
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>{children}</DropdownMenu.Trigger>
+      <DropdownMenu.Trigger render={children} />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={6} className={CONTENT_CLASS}>
-          {/* The account zone is always first, whichever state we are in: the
-              identity when there is one, the way to get one when there is not.
-              Keeping it in the same place means the destinations below never
-              move under the pointer as the user signs in or out. */}
-          {user && <Header user={user} />}
-          {!signedIn && (
-            <>
-              <DropdownMenu.Item onSelect={() => void beginSignIn()} className={ITEM_CLASS}>
-                <LogIn size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="flex-1 text-left">Sign In</span>
+        <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={6}>
+          <DropdownMenu.Popup className={CONTENT_CLASS}>
+            {/* The account zone is always first, whichever state we are in: the
+                identity when there is one, the way to get one when there is not.
+                Keeping it in the same place means the destinations below never
+                move under the pointer as the user signs in or out. */}
+            {user && <Header user={user} />}
+            {!signedIn && (
+              <>
+                <DropdownMenu.Item onClick={() => void beginSignIn()} className={ITEM_CLASS}>
+                  <LogIn size={13} className="shrink-0 text-[var(--muted-foreground)]" />
+                  <span className="flex-1 text-left">Sign In</span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className={SEPARATOR_CLASS} />
+              </>
+            )}
+            {ITEMS.map((item) => (
+              <DropdownMenu.Item
+                key={item.section}
+                onClick={() => openSettingsSection(item.section)}
+                className={ITEM_CLASS}
+              >
+                <item.icon size={13} className="shrink-0 text-[var(--muted-foreground)]" />
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.shortcut && <KbdCombo combo={item.shortcut} />}
               </DropdownMenu.Item>
-              <DropdownMenu.Separator className={SEPARATOR_CLASS} />
-            </>
-          )}
-          {ITEMS.map((item) => (
-            <DropdownMenu.Item
-              key={item.section}
-              onSelect={() => openSettingsSection(item.section)}
-              className={ITEM_CLASS}
-            >
-              <item.icon size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-              <span className="flex-1 text-left">{item.label}</span>
-              {item.shortcut && <KbdCombo combo={item.shortcut} />}
-            </DropdownMenu.Item>
-          ))}
-          {/* Separated from the destinations above: everything else in this
-              menu navigates, and this one ends the session. Rendered whenever a
-              credential is held, with or without a profile — one we cannot put
-              a name to is still one the user must be able to disconnect. */}
-          {signedIn && (
-            <>
-              <DropdownMenu.Separator className={SEPARATOR_CLASS} />
-              <DropdownMenu.Item onSelect={() => void onSignOut()} className={ITEM_CLASS}>
-                <LogOut size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="flex-1 text-left">Sign Out</span>
-              </DropdownMenu.Item>
-            </>
-          )}
-        </DropdownMenu.Content>
+            ))}
+            {/* Separated from the destinations above: everything else in this
+                menu navigates, and this one ends the session. Rendered whenever a
+                credential is held, with or without a profile — one we cannot put
+                a name to is still one the user must be able to disconnect. */}
+            {signedIn && (
+              <>
+                <DropdownMenu.Separator className={SEPARATOR_CLASS} />
+                <DropdownMenu.Item onClick={() => void onSignOut()} className={ITEM_CLASS}>
+                  <LogOut size={13} className="shrink-0 text-[var(--muted-foreground)]" />
+                  <span className="flex-1 text-left">Sign Out</span>
+                </DropdownMenu.Item>
+              </>
+            )}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
@@ -166,21 +168,24 @@ function Header({ user }: { user: AccountUser }) {
 
   return (
     <>
-      {/* `Label`, not a bare div: inside `role="menu"` an unlabelled block is
-          announced as loose text between the items. This is the menu's title. */}
-      <DropdownMenu.Label className="flex items-center gap-2.5 px-3 py-1.5">
-        <AccountAvatar user={user} size={28} />
-        {/* `flex-1 min-w-0` against the content's max width is what makes a
+      {/* `GroupLabel`, not a bare div: inside `role="menu"` an unlabelled block
+          is announced as loose text between the items. This is the menu's
+          title. Base UI reads its group from context and throws when there is
+          none — where Radix's `Label` stood alone — so the `Group` wrapper is
+          required, not decorative. */}
+      <DropdownMenu.Group>
+        <DropdownMenu.GroupLabel className="flex items-center gap-2.5 px-3 py-1.5">
+          <AccountAvatar user={user} size={28} />
+          {/* `flex-1 min-w-0` against the content's max width is what makes a
             long address truncate rather than stretch the whole menu. */}
-        <div className="flex-1 min-w-0">
-          <div className="truncate text-[11.5px] font-medium text-[var(--text-primary)]">
-            {primary}
+          <div className="flex-1 min-w-0">
+            <div className="truncate text-sm font-medium text-[var(--foreground)]">{primary}</div>
+            {email && email !== primary && (
+              <div className="truncate text-xs text-[var(--muted-foreground)]">{email}</div>
+            )}
           </div>
-          {email && email !== primary && (
-            <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">{email}</div>
-          )}
-        </div>
-      </DropdownMenu.Label>
+        </DropdownMenu.GroupLabel>
+      </DropdownMenu.Group>
       <DropdownMenu.Separator className={SEPARATOR_CLASS} />
     </>
   );

@@ -12,7 +12,7 @@ import { bracketMatching, foldGutter, indentOnInput } from "@codemirror/language
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { editorThemeExtensions } from "../themes/build-cm-theme";
 import { useEditorStore } from "../stores/editor-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -25,13 +25,13 @@ import { loadLanguageExtension } from "../lib/languages";
 import { gitBlameFile } from "@/features/git/lib/git-blame-api";
 import { MarkdownFile } from "@/lib/markdown-fileviewer";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 const TOOLBAR_HEIGHT = 32;
 const DIRTY_CHECK_DEBOUNCE = 300; // ms — only check dirty state, not sync content
 
-// Editor theme — live-swappable via a Compartment. The concrete colors come
-// from the theme registry (src/features/editor/themes), keyed by the persisted
-// `settings.codeEditorTheme`.
+// Theme colours are live-swappable through a compartment; the resolved theme
+// is shared with the rest of Atlas rather than selected independently.
 const themeCompartment = new Compartment();
 
 // Inline git blame — live-toggleable via a Compartment so flipping the
@@ -50,7 +50,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const buffer = useEditorStore((s) => s.buffers[path]);
   const { openBuffer, setDirty, markSaved, reloadBuffer, markExternallyChanged } =
     useEditorStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? "";
+  const projectPath = useAppStore.use.currentProject()?.path ?? "";
   const layoutActions = useLayoutStore.use.actions();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -156,7 +156,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         payload: { path, bytes: content.length },
       });
       // A save mutates the working tree — refresh git status/dots + diff
-      // right now instead of waiting for the workspace fs watcher (FSEvents
+      // right now instead of waiting for the project fs watcher (FSEvents
       // latency + fileindex 150 ms + git-store debounce). Lazy-imported to
       // keep the editor decoupled from the git store.
       void import("@/features/git/stores/git-store").then(({ useGitStore }) => {
@@ -201,7 +201,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const refreshBlame = useCallback(() => {
     const view = viewRef.current;
     if (!view || isUntitled || !projectPath) return;
-    if (!useProjectStore.getState().settings.gitBlameInline) return;
+    if (!useSettingsStore.getState().settings.gitBlameInline) return;
     if (!path.startsWith(projectPath + "/")) return;
     if (useEditorStore.getState().buffers[path]?.dirty) return;
     const rel = path.slice(projectPath.length + 1);
@@ -335,14 +335,12 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       const view = new EditorView({
         doc: originalContent,
         extensions: [
-          themeCompartment.of(
-            editorThemeExtensions(useProjectStore.getState().settings.codeEditorTheme),
-          ),
+          themeCompartment.of(editorThemeExtensions()),
           langExt,
           lineNumbers(),
           diffGutter(),
           blameCompartment.of(
-            useProjectStore.getState().settings.gitBlameInline ? blameInline() : [],
+            useSettingsStore.getState().settings.gitBlameInline ? blameInline() : [],
           ),
           highlightActiveLine(),
           drawSelection(),
@@ -406,18 +404,21 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   // Live-reskin the editor when the persisted theme changes — reconfigure the
   // theme compartment in place so the buffer/undo history survive.
-  const codeEditorTheme = useProjectStore.use.settings().codeEditorTheme;
+  const theme = useSettingsStore.use.settings().theme;
   useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      effects: themeCompartment.reconfigure(editorThemeExtensions(codeEditorTheme)),
-    });
-  }, [codeEditorTheme]);
+    const refreshTheme = () => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtensions()) });
+    };
+    refreshTheme();
+    window.addEventListener("atlas:theme-applied", refreshTheme);
+    return () => window.removeEventListener("atlas:theme-applied", refreshTheme);
+  }, [theme]);
 
   // Live-toggle inline blame: reconfigure the compartment in place; turning it
   // on also fetches a fresh snapshot (the extension starts empty).
-  const gitBlameInline = useProjectStore.use.settings().gitBlameInline;
+  const gitBlameInline = useSettingsStore.use.settings().gitBlameInline;
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -429,7 +430,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   if (!buffer) {
     return (
-      <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         Loading...
       </div>
     );
@@ -439,14 +440,17 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     containerHeight > TOOLBAR_HEIGHT ? containerHeight - TOOLBAR_HEIGHT : window.innerHeight - 140;
 
   return (
-    <div style={{ background: "#000000", height: containerHeight || "100%", overflow: "hidden" }}>
+    <div
+      className="bg-background"
+      style={{ height: containerHeight || "100%", overflow: "hidden" }}
+    >
       {/* Breadcrumb toolbar */}
       <div
-        className="flex items-center px-3 border-b border-border-default bg-bg-primary overflow-hidden"
+        className="flex items-center px-3 border-b border-border bg-background overflow-hidden"
         style={{ height: TOOLBAR_HEIGHT }}
       >
         <Breadcrumbs filePath={path} projectPath={projectPath} />
-        {buffer.dirty && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 ml-2" />}
+        {buffer.dirty && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 ml-2" />}
         {/* Right-hand controls. `ml-auto` on the group (rather than on whichever
             child happens to be present) keeps them pinned right no matter which
             of them render — the reload pill is conditional, and hanging the
@@ -458,21 +462,21 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
               type="button"
               onClick={() => void forceReload()}
               title="This file changed on disk. Reload discards your unsaved edits."
-              className="inline-flex items-center gap-1 h-[20px] px-2 rounded-full border border-border-default bg-bg-elevated text-[10px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+              className="inline-flex items-center gap-1 h-control-xs px-2 rounded-full border border-border bg-card text-2xs font-medium text-secondary-foreground hover:text-foreground hover:bg-element-hover transition-colors shrink-0"
             >
               <RefreshCw size={10} /> Disk changed · Reload
             </button>
           )}
           {isMarkdownFile && (
-            <div className="inline-flex items-center h-[20px] rounded-full border border-border-default bg-bg-elevated p-[2px] text-[10px] font-medium shrink-0">
+            <div className="inline-flex items-center h-control-xs rounded-full border border-border bg-card p-[2px] text-2xs font-medium shrink-0">
               <button
                 type="button"
                 onClick={() => setRenderMode("editor")}
                 className={cn(
                   "px-2 h-full rounded-full transition-colors",
                   renderMode === "editor"
-                    ? "bg-bg-hover text-text-primary"
-                    : "text-text-secondary hover:text-text-primary",
+                    ? "bg-element-hover text-foreground"
+                    : "text-secondary-foreground hover:text-foreground",
                 )}
               >
                 Edit
@@ -483,8 +487,8 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
                 className={cn(
                   "px-2 h-full rounded-full transition-colors",
                   renderMode === "preview"
-                    ? "bg-bg-hover text-text-primary"
-                    : "text-text-secondary hover:text-text-primary",
+                    ? "bg-element-hover text-foreground"
+                    : "text-secondary-foreground hover:text-foreground",
                 )}
               >
                 Preview
@@ -507,7 +511,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         {/* Mounted on demand, not display:none — a hidden mount would still
             markdown-parse every non-markdown buffer on open (see above). */}
         {effectiveMode === "preview" && (
-          <div style={{ height: editorHeight }} className="overflow-auto bg-bg-primary px-4 py-3">
+          <div style={{ height: editorHeight }} className="overflow-auto bg-background px-4 py-3">
             {buffer && (
               <MarkdownFile trusted={true} className="max-w-none">
                 {buffer.originalContent}
@@ -533,9 +537,9 @@ function Breadcrumbs({ filePath, projectPath }: { filePath: string; projectPath:
         const isLast = i === segments.length - 1;
         return (
           <span key={i} className="flex items-center shrink-0">
-            {i > 0 && <ChevronRight size={10} className="text-text-tertiary mx-0.5 shrink-0" />}
+            {i > 0 && <ChevronRight size={10} className="text-muted-foreground mx-0.5 shrink-0" />}
             <span
-              className={`text-[11px] font-mono ${isLast ? "text-text-primary" : "text-text-tertiary"}`}
+              className={`text-xs font-mono ${isLast ? "text-foreground" : "text-muted-foreground"}`}
             >
               {segment}
             </span>

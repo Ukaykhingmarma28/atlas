@@ -139,7 +139,7 @@ const TransientMarkdown = memo(function TransientMarkdown({
       className={cn(
         unstyled
           ? "select-text"
-          : "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text",
+          : "prose-chat text-[var(--foreground)] leading-relaxed break-words select-text",
         className,
       )}
       // eslint-disable-next-line react/no-danger
@@ -168,7 +168,7 @@ const MarkdownBlock = memo(function MarkdownBlock({
     return (
       <pre
         className={cn(
-          "whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-[var(--text-primary)] select-text",
+          "whitespace-pre-wrap break-words font-mono text-base leading-relaxed text-[var(--foreground)] select-text",
           className,
         )}
       >

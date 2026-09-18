@@ -63,8 +63,8 @@ pub use store::{LiveThreadUpdate, ThreadMetadataStore, ThreadProject, ThreadStor
 
 /// Where the store lives: one file beside the rest of Atlas's app-level state.
 ///
-/// App-level, not per-workspace: the sidebar groups threads across every
-/// project the user has worked in, which a per-workspace database cannot answer
+/// App-level, not per-project: the sidebar groups threads across every
+/// project the user has worked in, which a per-project database cannot answer
 /// without opening N of them (ADR-0001).
 pub fn db_path(app_config_dir: impl AsRef<std::path::Path>) -> std::path::PathBuf {
     app_config_dir.as_ref().join("threads.db")

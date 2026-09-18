@@ -60,30 +60,30 @@ function CommitPicker({
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Inspect a commit's changes"
-        className="flex h-6 w-full min-w-0 items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)]"
+        className="flex h-6 w-full min-w-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--card)] px-1.5 text-2xs text-[var(--foreground)] outline-none hover:bg-[var(--atlas-element-hover)]"
       >
         {branch && (
-          <span className="flex shrink-0 items-center gap-0.5 rounded bg-[var(--bg-secondary)] px-1 py-px text-[9px] text-[var(--text-tertiary)]">
+          <span className="flex shrink-0 items-center gap-0.5 rounded bg-[var(--card)] px-1 py-px text-3xs text-[var(--muted-foreground)]">
             <GitBranch size={8} />
             <span className="max-w-[70px] truncate">{branch}</span>
           </span>
         )}
         <span className="min-w-0 flex-1 truncate text-left font-mono">{label}</span>
-        <ChevronDown size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+        <ChevronDown size={11} className="shrink-0 text-[var(--muted-foreground)]" />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
-            <div className="flex h-7 items-center gap-1.5 border-b border-[var(--border-subtle)] px-2">
-              <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+          <div className="fixed inset-0 z-overlay" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute left-0 right-0 top-full z-popover mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
+            <div className="flex h-7 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2">
+              <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
               <input
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search commits…"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[10px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                className="min-w-0 flex-1 bg-transparent text-2xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
               />
             </div>
             <div className="max-h-[280px] overflow-y-auto hide-scrollbar py-1">
@@ -91,8 +91,8 @@ function CommitPicker({
                 type="button"
                 onClick={() => pick("")}
                 className={cn(
-                  "flex w-full items-center px-2 py-1.5 text-left text-[10px] hover:bg-[var(--bg-hover)]",
-                  !commit ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
+                  "flex w-full items-center px-2 py-1.5 text-left text-2xs hover:bg-[var(--atlas-element-hover)]",
+                  !commit ? "text-[var(--foreground)]" : "text-[var(--secondary-foreground)]",
                 )}
               >
                 Working tree
@@ -103,20 +103,20 @@ function CommitPicker({
                   type="button"
                   onClick={() => pick(c.hash)}
                   className={cn(
-                    "flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[10px] hover:bg-[var(--bg-hover)]",
+                    "flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-2xs hover:bg-[var(--atlas-element-hover)]",
                     c.hash === commit
-                      ? "text-[var(--text-primary)]"
-                      : "text-[var(--text-secondary)]",
+                      ? "text-[var(--foreground)]"
+                      : "text-[var(--secondary-foreground)]",
                   )}
                 >
-                  <span className="shrink-0 font-mono text-[var(--text-tertiary)]">
+                  <span className="shrink-0 font-mono text-[var(--muted-foreground)]">
                     {c.short_hash}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{c.message}</span>
                 </button>
               ))}
               {filtered.length === 0 && (
-                <div className="px-2 py-2 text-[10px] text-[var(--text-tertiary)]">No commits</div>
+                <div className="px-2 py-2 text-2xs text-[var(--muted-foreground)]">No commits</div>
               )}
             </div>
           </div>
@@ -174,16 +174,19 @@ function statusColor(status: string): string {
   switch (status[0]) {
     case "A":
     case "?":
-      return "var(--status-success, #22c55e)";
+      return "var(--atlas-status-success-foreground)";
     case "M":
-      return "var(--status-warning, #f5b43c)";
+      return "var(--atlas-status-warning-foreground)";
     case "D":
-      return "var(--status-error, #ef4444)";
+      return "var(--atlas-status-error-foreground)";
     case "R":
     case "C":
-      return "var(--accent, #6ea8fe)";
+      // `primary`, not `accent`: shadcn's `accent` is a hover SURFACE, so the
+      // rename left this badge painting near-black-on-black — and the blue
+      // fallback never fired, because `--accent` has always been defined.
+      return "var(--primary)";
     default:
-      return "var(--text-tertiary)";
+      return "var(--muted-foreground)";
   }
 }
 
@@ -345,13 +348,13 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
     });
 
   return (
-    <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)]">
-      <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border-default)] px-2">
-        <GitCommit size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+    <div className="flex h-full w-full flex-col border-r border-[var(--border)] bg-[var(--card)]">
+      <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border)] px-2">
+        <GitCommit size={12} className="shrink-0 text-[var(--muted-foreground)]" />
         {!hidePicker && (
           <CommitPicker commit={commit} branch={branch} log={log} onPick={onPickCommit} />
         )}
-        <span className="shrink-0 text-[10px] tabular-nums text-[var(--text-tertiary)]">
+        <span className="shrink-0 text-2xs tabular-nums text-[var(--muted-foreground)]">
           {rows.filter((r) => !r.node.isDir).length}
         </span>
       </div>
@@ -362,7 +365,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
             const pad = 6 + depth * 12;
             const common = {
               className:
-                "absolute left-0 right-0 flex items-center gap-1 pr-2 text-left hover:bg-[var(--bg-hover)] cursor-pointer",
+                "absolute left-0 right-0 flex items-center gap-1 pr-2 text-left hover:bg-[var(--atlas-element-hover)] cursor-pointer",
               style: { top: vr.start, height: TREE_ROW_H, paddingLeft: pad },
             } as const;
             if (node.isDir) {
@@ -371,7 +374,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
                 <button
                   key={`d:${node.path}`}
                   onClick={() => toggle(node.path)}
-                  className={`${common.className} text-[11px] text-[var(--text-tertiary)]`}
+                  className={`${common.className} text-xs text-[var(--muted-foreground)]`}
                   style={common.style}
                 >
                   {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -385,15 +388,15 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
                 key={`f:${node.path}`}
                 onClick={() => openFile(node.path)}
                 title={node.path}
-                className={`${common.className} gap-1.5 text-[11px] ${
+                className={`${common.className} gap-1.5 text-xs ${
                   active
-                    ? "bg-[var(--bg-active,var(--bg-hover))] text-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)]"
+                    ? "bg-[var(--atlas-element-active,var(--atlas-element-hover))] text-[var(--foreground)]"
+                    : "text-[var(--secondary-foreground)]"
                 }`}
                 style={{ ...common.style, paddingLeft: pad + 12 }}
               >
                 <span
-                  className="w-2 shrink-0 text-center font-mono text-[9px]"
+                  className="w-2 shrink-0 text-center font-mono text-3xs"
                   style={{ color: statusColor(node.status) }}
                 >
                   {statusLetter(node.status)}

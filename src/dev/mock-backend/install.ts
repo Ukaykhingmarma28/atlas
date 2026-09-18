@@ -23,6 +23,8 @@ import { mockConvertFileSrc, mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { baseHandlers } from "./scenarios/base";
 import { scenarios } from "./scenarios";
 import { mountBadge } from "./badge";
+import { resetStores } from "./reset-stores";
+import { mockAssetUrl } from "./fixtures/files";
 import type { MockArgs } from "./types";
 
 declare global {
@@ -34,13 +36,32 @@ declare global {
       calls: () => { cmd: string; args: MockArgs | undefined }[];
       emit: typeof emit;
       actions: Record<string, () => void | Promise<void>>;
+      /** Drop every Zustand store back to how it booted (decision 41). */
+      resetStores: () => Promise<string[]>;
     };
   }
 }
 
-function install(): void {
-  const params = new URLSearchParams(location.search);
-  const name = params.get("scenario") ?? "default";
+/** The scenario `?scenario=` asks for, or the default. Exported so a caller
+ *  that wants the URL's answer can take it without re-parsing. */
+export function scenarioFromUrl(search: string = location.search): string {
+  return new URLSearchParams(search).get("scenario") ?? "default";
+}
+
+/**
+ * Install the fake backend, answering as `scenarioName`.
+ *
+ * The argument is the whole point (decision 41): the mock used to read
+ * `?scenario=` itself, which meant the URL was the ONLY way to choose one. A
+ * Storybook decorator has no URL to set — it renders N stories in one document
+ * and wants a different scenario per story — so the scenario had to become a
+ * parameter before anything else depended on it being global. The URL is still
+ * the default, so `bun run dev` is unchanged.
+ *
+ * Storybook itself is not in scope; this only keeps the door open.
+ */
+export function installMockBackend(scenarioName: string = scenarioFromUrl()): void {
+  const name = scenarioName;
   const scenario = scenarios[name];
   if (!scenario) {
     console.error(
@@ -65,6 +86,18 @@ function install(): void {
 
   mockWindows("main");
   mockConvertFileSrc("macos");
+  // The media viewer bypasses `invoke()` and hands the webview an `asset://`
+  // URL, which resolves to nothing in a plain browser. Serve the seeded binary
+  // files as `data:` URLs instead so an image tab actually shows an image;
+  // anything else keeps Tauri's answer (a broken image — the real "file is
+  // gone" state).
+  const internals = (
+    window as unknown as {
+      __TAURI_INTERNALS__: { convertFileSrc: (p: string, protocol?: string) => string };
+    }
+  ).__TAURI_INTERNALS__;
+  const tauriConvert = internals.convertFileSrc.bind(internals);
+  internals.convertFileSrc = (filePath: string) => mockAssetUrl(filePath, tauriConvert);
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as MockArgs;
@@ -89,6 +122,7 @@ function install(): void {
     calls: () => calls,
     emit,
     actions: scenario?.actions ?? {},
+    resetStores,
   };
 
   if (scenario?.setup) {
@@ -107,4 +141,7 @@ function install(): void {
   console.info(`[mock-backend] active — scenario "${name}"`);
 }
 
-if (!(globalThis as { isTauri?: boolean }).isTauri) install();
+// The `serve`-only Vite plugin injects this file as its own module script, so
+// loading it IS the install. Inside Tauri the shell has already set `isTauri`
+// and there is a real backend, so it stands down.
+if (!(globalThis as { isTauri?: boolean }).isTauri) installMockBackend();

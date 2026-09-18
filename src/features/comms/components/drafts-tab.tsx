@@ -96,8 +96,8 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
       {/* One full-width band with the action inline, matching the agent
           history sidebar's search row (`session-sidebar.tsx`) — a boxed input
           floating inside padding read as a second, competing surface. */}
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-default px-3">
-        <FilePlus2 size={11} className="shrink-0 text-text-tertiary" />
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border px-3">
+        <FilePlus2 size={11} className="shrink-0 text-muted-foreground" />
         <input
           ref={inputRef}
           value={title}
@@ -111,14 +111,14 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
           }}
           placeholder="Name a new draft…"
           aria-label="New draft title"
-          className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
         <Hint label="Create draft">
           <button
             type="button"
             disabled={!title.trim() || creating}
             onClick={() => void create()}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
           >
             {creating ? <Loader2 size={11} className="animate-spin" /> : <Plus size={12} />}
           </button>
@@ -129,15 +129,15 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
         {drafts === undefined &&
           [0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-2.5 px-3 py-[9px]">
-              <div className="h-4 w-4 rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running" />
+              <div className="h-4 w-4 rounded bg-[var(--card)] opacity-50 atlas-marker-running" />
               <div
-                className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50 atlas-marker-running"
+                className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
                 style={{ width: 110 + ((i * 37) % 60) }}
               />
             </div>
           ))}
         {drafts?.length === 0 && (
-          <p className="px-3 pt-4 text-center text-[11px] text-text-ghost">No drafts yet.</p>
+          <p className="px-3 pt-4 text-center text-xs text-disabled">No drafts yet.</p>
         )}
         {drafts?.map((d) => {
           const author = members.get(d.created_by) ?? null;
@@ -153,20 +153,20 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") openInCenter(d);
               }}
-              className="flex cursor-pointer items-center gap-2 border-b border-border-subtle px-3 py-2 transition-colors last:border-b-0 hover:bg-bg-hover"
+              className="flex cursor-pointer items-center gap-2 border-b border-border-subtle px-3 py-2 transition-colors last:border-b-0 hover:bg-element-hover"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 truncate text-[11.5px] font-medium text-text-primary">
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">
                     {d.title}
                   </span>
                   {d.sent_at !== null && (
-                    <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-px text-[9.5px] font-medium text-text-primary">
+                    <span className="shrink-0 rounded-full bg-[var(--atlas-element-active)] px-1.5 py-px text-2xs font-medium text-foreground">
                       sent
                     </span>
                   )}
                 </div>
-                <span className="mt-0.5 block truncate text-[9.5px] text-text-ghost">
+                <span className="mt-0.5 block truncate text-2xs text-disabled">
                   Updated {timeAgo(new Date(d.updated_at).toISOString(), { suffix: true })}
                 </span>
               </div>
@@ -176,20 +176,22 @@ export function DraftsTab({ conv }: { conv: ChatConversation }) {
                   deliberate (not a mass-rendered transcript row), so it earns
                   the real component over a native title. */}
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="flex min-w-0 shrink-0 items-center gap-1">
-                    <CommsAvatar member={author} size={16} />
-                    <span className="max-w-[72px] truncate text-[9.5px] text-text-tertiary">
-                      {firstName(author?.name)}
+                <TooltipTrigger
+                  render={
+                    <span className="flex min-w-0 shrink-0 items-center gap-1">
+                      <CommsAvatar member={author} size={16} />
+                      <span className="max-w-[72px] truncate text-2xs text-muted-foreground">
+                        {firstName(author?.name)}
+                      </span>
                     </span>
-                  </span>
-                </TooltipTrigger>
+                  }
+                />
                 <TooltipContent side="top" sideOffset={4}>
                   Created by {author?.name ?? "Unknown"}
                 </TooltipContent>
               </Tooltip>
 
-              <span className="w-[62px] shrink-0 text-right text-[9.5px] tabular-nums text-text-tertiary">
+              <span className="w-[62px] shrink-0 text-right text-2xs tabular-nums text-muted-foreground">
                 {formatCreated(d.created_at)}
               </span>
             </div>

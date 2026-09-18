@@ -33,8 +33,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mocks.openUrl }));
 vi.mock("@/features/log/lib/log", () => ({ logEvent: mocks.logEvent }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
-vi.mock("@/features/project/stores/project-store", () => ({
-  useProjectStore: { use: { currentProject: () => mocks.currentProject } },
+vi.mock("@/features/app/stores/app-store", () => ({
+  useAppStore: { use: { currentProject: () => mocks.currentProject } },
 }));
 
 const { GithubPanel } = await import("./github-panel");

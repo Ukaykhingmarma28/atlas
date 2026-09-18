@@ -43,8 +43,8 @@ export function MediaViewer({ filePath }: MediaViewerProps) {
   }, [filePath, mtime]);
 
   return (
-    <div className="h-full w-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border-default)] shrink-0 text-[11px] font-mono text-[var(--text-tertiary)] truncate">
+    <div className="h-full w-full flex flex-col bg-[var(--background)]">
+      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border)] shrink-0 text-xs font-mono text-[var(--muted-foreground)] truncate">
         {filePath}
       </div>
       {kind === "image" ? (
@@ -55,8 +55,8 @@ export function MediaViewer({ filePath }: MediaViewerProps) {
         <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto">
           {kind === "video" && <video src={src} controls className="max-w-full max-h-full" />}
           {kind === "audio" && (
-            <div className="flex flex-col items-center gap-3 text-[var(--text-secondary)]">
-              <span className="text-[12px] font-mono">{name}</span>
+            <div className="flex flex-col items-center gap-3 text-[var(--secondary-foreground)]">
+              <span className="text-sm font-mono">{name}</span>
               <audio src={src} controls />
             </div>
           )}

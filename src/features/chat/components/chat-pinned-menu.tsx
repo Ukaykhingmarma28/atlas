@@ -18,7 +18,7 @@
 // button with a zero next to it is a control that asks to be ignored.
 
 import { useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Pin, PinOff, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
@@ -57,81 +57,83 @@ export function ChatPinnedMenu({
       }}
     >
       <HintItem label="Pinned messages">
-        <Popover.Trigger asChild>
-          <button type="button" aria-label={`${pins.length} pinned messages`} className={className}>
-            <Pin size={12} />
-            <span className="tabular-nums text-[11px] leading-none">{pins.length}</span>
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              aria-label={`${pins.length} pinned messages`}
+              className={className}
+            >
+              <Pin size={12} />
+              <span className="tabular-nums text-xs leading-none">{pins.length}</span>
+            </button>
+          }
+        />
       </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
-        >
-          <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
-            <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
-              <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search pins…"
-                aria-label="Search pinned messages"
-                className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-              />
-            </div>
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="overflow-hidden rounded-xl select-none inset-highlight shadow-md border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl">
+            <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
+              <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-[var(--atlas-element-hover)] px-3">
+                <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search pins…"
+                  aria-label="Search pinned messages"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+                />
+              </div>
 
-            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
-              {filtered.length === 0 && (
-                <div className="py-6 text-center text-[11px] text-[var(--text-ghost)]">
-                  No pins match.
-                </div>
-              )}
-              {filtered.map((pin, i) => (
-                <div
-                  key={pin.messageId}
-                  className={cn(
-                    "group/pin flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--bg-hover)]",
-                    i === filtered.length - 1 ? "" : "border-b border-white/5",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      onJump(pin);
-                    }}
-                    className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
+              <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
+                {filtered.length === 0 && (
+                  <div className="py-6 text-center text-xs text-[var(--atlas-text-disabled)]">
+                    No pins match.
+                  </div>
+                )}
+                {filtered.map((pin, i) => (
+                  <div
+                    key={pin.messageId}
+                    className={cn(
+                      "group/pin flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--atlas-element-hover)]",
+                      i === filtered.length - 1
+                        ? ""
+                        : "border-b border-[var(--atlas-element-hover)]",
+                    )}
                   >
-                    <span className="line-clamp-2 text-[11px] leading-snug text-[var(--text-secondary)]">
-                      {pin.text || "…"}
-                    </span>
-                    <span className="text-[9px] text-[var(--text-tertiary)]">
-                      Pinned {timeAgo(pin.at, { suffix: true })}
-                    </span>
-                  </button>
-                  <Hint label="Unpin">
                     <button
                       type="button"
-                      aria-label="Unpin message"
-                      onClick={() =>
-                        useChatPinsStore.getState().actions.unpin(pinScopeKey, pin.messageId)
-                      }
-                      className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/pin:opacity-100 focus-visible:opacity-100"
+                      onClick={() => {
+                        setOpen(false);
+                        onJump(pin);
+                      }}
+                      className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
                     >
-                      <PinOff size={11} />
+                      <span className="line-clamp-2 text-xs leading-snug text-[var(--secondary-foreground)]">
+                        {pin.text || "…"}
+                      </span>
+                      <span className="text-3xs text-[var(--muted-foreground)]">
+                        Pinned {timeAgo(pin.at, { suffix: true })}
+                      </span>
                     </button>
-                  </Hint>
-                </div>
-              ))}
+                    <Hint label="Unpin">
+                      <button
+                        type="button"
+                        aria-label="Unpin message"
+                        onClick={() =>
+                          useChatPinsStore.getState().actions.unpin(pinScopeKey, pin.messageId)
+                        }
+                        className="mt-px flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--muted-foreground)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover/pin:opacity-100 focus-visible:opacity-100"
+                      >
+                        <PinOff size={11} />
+                      </button>
+                    </Hint>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        </Popover.Content>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

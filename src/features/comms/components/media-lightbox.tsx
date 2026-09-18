@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
@@ -79,8 +79,8 @@ export function MediaLightbox() {
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && close()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-black/80 animate-fade-in" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-modal scrim animate-fade-in" />
+        <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={onKeyDown}
           className={cn(
@@ -93,17 +93,17 @@ export function MediaLightbox() {
             // `transform`, so translate-based centring (the other modals')
             // would be overwritten for the length of the animation and the
             // panel would fly in from the viewport's centre-bottom-right.
-            "fixed inset-0 z-[var(--z-modal)] m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
-            "flex flex-col overflow-hidden rounded-xl border border-border-default bg-bg-base",
-            "shadow-[var(--shadow-overlay)] animate-scale-in outline-none",
+            "fixed inset-0 z-modal m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
+            "flex flex-col overflow-hidden rounded-xl border border-border bg-background",
+            "shadow-lg animate-scale-in outline-none",
           )}
         >
-          <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-default px-3">
-            <Dialog.Title className="min-w-0 flex-1 truncate text-[11.5px] text-text-secondary">
+          <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
+            <Dialog.Title className="min-w-0 flex-1 truncate text-sm text-secondary-foreground">
               {item?.filename ?? ""}
             </Dialog.Title>
             {count > 1 && (
-              <span className="shrink-0 text-[10.5px] tabular-nums text-text-ghost">
+              <span className="shrink-0 text-xs tabular-nums text-disabled">
                 {index + 1} / {count}
               </span>
             )}
@@ -113,14 +113,14 @@ export function MediaLightbox() {
                   <a
                     href={convertFileSrc(path)}
                     download={item.filename}
-                    className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
                   >
                     <Download size={13} />
                   </a>
                 </HintItem>
               )}
               <HintItem label="Close">
-                <Dialog.Close className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer">
+                <Dialog.Close className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer">
                   <X size={13} />
                 </Dialog.Close>
               </HintItem>
@@ -135,13 +135,17 @@ export function MediaLightbox() {
                   src={convertFileSrc(path)}
                   controls
                   autoPlay
+                  // The letterbox behind someone else's photo or video. Deliberately
+                  // theme-invariant (decision 3): a tinted matte would misreport the
+                  // image's own edges.
+                  // ratchet-allow: decision 3 — a matte behind someone else's video.
                   className="h-full w-full bg-black object-contain"
                 />
               ) : (
                 <ImageZoomView key={item.id} src={convertFileSrc(path)} alt={item.filename} fill />
               )
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[11px] text-text-ghost">
+              <div className="flex h-full w-full items-center justify-center text-xs text-disabled">
                 {failed ? (
                   "Could not load this file."
                 ) : (
@@ -157,7 +161,7 @@ export function MediaLightbox() {
               </>
             )}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -188,8 +192,8 @@ function NavButton({
         onClick={onClick}
         className={cn(
           "absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
-          "border border-white/10 bg-[var(--bg-secondary)]/70 text-text-secondary backdrop-blur-xl",
-          "transition-opacity hover:text-text-primary cursor-pointer",
+          "border border-border bg-[var(--card)]/70 text-secondary-foreground backdrop-blur-xl",
+          "transition-opacity hover:text-foreground cursor-pointer",
           "disabled:cursor-default disabled:opacity-0",
           side === "left" ? "left-3" : "right-3",
         )}

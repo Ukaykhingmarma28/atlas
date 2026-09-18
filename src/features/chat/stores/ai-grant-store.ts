@@ -151,7 +151,7 @@ export function isLocalOrg(org: Organisation | null): boolean {
  * Drives the probe from the composer.
  *
  * Safe to mount N times — one per open chat tab, which split view and
- * background workspaces both produce. `ensureProbed` collapses them to a
+ * background projects both produce. `ensureProbed` collapses them to a
  * single gateway call per org; without that, every tab would probe on mount
  * and each one's reset would wipe the answer the others just fetched.
  *

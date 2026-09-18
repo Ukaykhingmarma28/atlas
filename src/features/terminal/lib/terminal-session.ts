@@ -5,15 +5,15 @@
  * PTY, its byte channel, the block parser, the interactive xterm surface — is
  * owned here, in a module-level registry keyed by the layout terminal id. React
  * components ATTACH a view to a session and detach again; nothing about a
- * remount, a column move, a pane split or a workspace switch touches the shell.
+ * remount, a column move, a pane split or a project switch touches the shell.
  *
  * What this buys, concretely:
- *  - a build running in workspace A keeps running while you look at B (the
+ *  - a build running in project A keeps running while you look at B (the
  *    panel unmounts; the session does not);
  *  - closing a split column or moving a tab no longer respawns its shells;
  *  - StrictMode's mount → unmount → mount no longer creates two PTYs;
  *  - a HIDDEN session (inactive tab, inactive terminal in a pane, background
- *    workspace) does no React work at all: the parser keeps the block model
+ *    project) does no React work at all: the parser keeps the block model
  *    correct, `busy` keeps flowing to the tab strip, and the view is rebuilt
  *    once when it becomes visible again.
  *
@@ -26,7 +26,7 @@
  *
  * Lifetime: `terminalSessions.bindToStore()` closes a session the moment its
  * terminal id disappears from `useTerminalStore` — the one seam that covers
- * every close path (terminal, pane, tab, workspace discard).
+ * every close path (terminal, pane, tab, project discard).
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -35,6 +35,8 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { isWindows } from "@/lib/platform";
+import { onThemeApplied } from "@/features/theme/theme-values";
+import { terminalTheme } from "./terminal-theme";
 import { BlockStreamParser, type TerminalBlock, type TerminalEvent } from "./block-parser";
 import { createTerminalEventSink } from "./terminal-notifier";
 import { createTerminalKeymap } from "./terminal-keymap";
@@ -98,31 +100,6 @@ const SUDO_SHELL_RE = /^sudo\s+(?:-s|-i|su(?:\s+-l?|\s+-)?)\s*$/;
  *  shells keep LF, which the line discipline already reads as end-of-line. */
 const ENTER = isWindows ? "\r" : "\n";
 
-// ANSI palette for the interactive xterm surface — matches the block renderer
-// so blocks and the live surface look the same.
-const XTERM_THEME = {
-  background: "#000000",
-  foreground: "#cccccc",
-  cursor: "#b3b3b3",
-  selectionBackground: "rgba(97,175,239,0.35)",
-  selectionInactiveBackground: "rgba(255,255,255,0.16)",
-  black: "#1a1a1a",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#cccccc",
-  brightBlack: "#5c6370",
-  brightRed: "#e06c75",
-  brightGreen: "#98c379",
-  brightYellow: "#e5c07b",
-  brightBlue: "#61afef",
-  brightMagenta: "#c678dd",
-  brightCyan: "#56b6c2",
-  brightWhite: "#ffffff",
-};
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 1.4;
 
@@ -132,6 +109,12 @@ interface Registry {
   sessions: Map<string, TerminalSession>;
   byPty: Map<string, TerminalSession>;
   webglCount: number;
+  /** Addons currently counted in `webglCount`. A Set rather than a bare
+   * counter so a repeat release for the same addon — `disposeXterm`'s own
+   * teardown and its `onContextLoss` callback can both fire for one
+   * instance — cannot skew the count. Same shape as `registerPixiApp` /
+   * `destroyPixiApp` in `src/lib/pixi-app.ts`. */
+  webglLive: Set<WebglAddon>;
   listenersStarted: boolean;
   storeBound: boolean;
   zshDir: string | null | undefined;
@@ -142,11 +125,24 @@ const reg: Registry = (g.__atlasTerminalSessions ??= {
   sessions: new Map(),
   byPty: new Map(),
   webglCount: 0,
+  webglLive: new Set(),
   listenersStarted: false,
   storeBound: false,
   zshDir: undefined,
   cell: null,
 });
+
+/**
+ * Release one WebGL context back to the page-wide budget. Safe to call twice
+ * for the same addon — `disposeXterm`'s own teardown and a late
+ * `onContextLoss` firing for that same instance are both real possibilities
+ * (see `disposeXterm`), and the second call is a no-op rather than an extra
+ * decrement.
+ */
+function releaseWebgl(w: WebglAddon): void {
+  if (!reg.webglLive.delete(w)) return;
+  reg.webglCount = Math.max(0, reg.webglCount - 1);
+}
 
 function startGlobalListeners(): void {
   if (reg.listenersStarted) return;
@@ -156,6 +152,13 @@ function startGlobalListeners(): void {
   });
   void listen<{ id: string }>("terminal-exit", (evt) => {
     reg.byPty.get(evt.payload.id)?.onExited();
+  });
+  // One subscription for every session: an xterm that already exists takes a
+  // new palette through `options.theme`, so a live alt-screen app (vim, htop)
+  // recolours on a theme switch instead of keeping the palette it was born
+  // with until the next respawn.
+  onThemeApplied(() => {
+    for (const session of reg.sessions.values()) session.retheme();
   });
   void invoke<string | null>("terminal_zsh_dir")
     .then((d) => {
@@ -315,7 +318,7 @@ export class TerminalSession {
     // A command the opener queued for this terminal — an agent's login, today.
     // Written into the shell rather than exec'd, so it runs with a real tty and
     // a login that asks a question can be answered. Taken ONCE per session, so
-    // neither a remount nor a workspace round trip re-runs it.
+    // neither a remount nor a project round trip re-runs it.
     this.queuedCommand = useTerminalStore.getState().actions.takePendingCommand(this.key) ?? null;
     if (this.queuedCommand !== null) {
       // A shell with no OSC 133 integration never reports a prompt, so the wait
@@ -517,6 +520,17 @@ export class TerminalSession {
       .catch(() => {});
   }
 
+  /**
+   * Push the active theme's palette into a live xterm. Called for every
+   * session on `atlas:theme-applied`; a no-op for the common case where the
+   * session holds no xterm (the block renderer follows the theme through CSS
+   * custom properties and needs nothing).
+   */
+  retheme(): void {
+    if (!this.xterm) return;
+    this.xterm.options.theme = terminalTheme();
+  }
+
   private async ensureXterm(): Promise<void> {
     if (this.xterm || this.xtermCreating || this.closed) return;
     this.xtermCreating = true;
@@ -536,7 +550,7 @@ export class TerminalSession {
         scrollback: 0,
         cursorBlink: true,
         allowProposedApi: true,
-        theme: XTERM_THEME,
+        theme: terminalTheme(),
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -552,11 +566,12 @@ export class TerminalSession {
         try {
           const { WebglAddon } = await import("@xterm/addon-webgl");
           const w = new WebglAddon();
+          reg.webglLive.add(w);
           reg.webglCount++;
           w.onContextLoss(() => {
             w.dispose();
             if (this.webgl === w) this.webgl = null;
-            reg.webglCount = Math.max(0, reg.webglCount - 1);
+            releaseWebgl(w);
           });
           term.loadAddon(w);
           this.webgl = w;
@@ -615,13 +630,22 @@ export class TerminalSession {
 
   private disposeXterm(): void {
     if (!this.xterm) return;
-    try {
-      this.webgl?.dispose();
-    } catch {
-      /* already lost */
-    }
-    if (this.webgl) reg.webglCount = Math.max(0, reg.webglCount - 1);
+    // Read and clear the field before disposing: `w.dispose()` can run its
+    // own `onContextLoss` callback (WKWebView is free to fire a real context
+    // loss off the canvas-removal it does internally), and that callback
+    // reads `this.webgl` too. Clearing first means either order sees a
+    // consistent picture; `releaseWebgl` makes the actual count-down
+    // idempotent regardless.
+    const w = this.webgl;
     this.webgl = null;
+    if (w) {
+      try {
+        w.dispose();
+      } catch {
+        /* already lost */
+      }
+      releaseWebgl(w);
+    }
     this.xterm.dispose();
     this.xterm = null;
     this.fit = null;
@@ -781,6 +805,12 @@ export class TerminalSession {
 
 // ── Registry ───────────────────────────────────────────────────────────────
 
+/** Live WebGL-context count against the page-wide `MAX_WEBGL` budget.
+ * Exported for tests. */
+export function liveWebglCount(): number {
+  return reg.webglCount;
+}
+
 export const terminalSessions = {
   /** Idempotent: the same key returns the same live session. */
   acquire(key: string, opts: AcquireOptions): TerminalSession {
@@ -806,7 +836,7 @@ export const terminalSessions = {
   },
   /**
    * Close every session whose terminal has left the store. One subscription
-   * covers every close path — terminal, pane, tab, workspace discard.
+   * covers every close path — terminal, pane, tab, project discard.
    */
   bindToStore(): () => void {
     if (reg.storeBound) return () => {};

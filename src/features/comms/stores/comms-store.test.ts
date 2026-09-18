@@ -190,7 +190,7 @@ describe("send", () => {
   });
 
   it("sends while reconnecting — Rust queues and replays it", () => {
-    send.mockResolvedValue({ client_msg_id: "x" });
+    send.mockResolvedValue({ clientMsgId: "x" });
     useCommsStore.setState({
       connection: {
         state: "backoff",
