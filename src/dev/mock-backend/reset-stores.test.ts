@@ -68,19 +68,60 @@ describe("snapshot / restore", () => {
     expect(store.getState().count).toBe(1);
   });
 
-  it("does not hand the same object back twice, so one reset cannot poison the next", () => {
+  it("does not hand the same object back twice, so a setState cannot rewrite the baseline", () => {
+    const store = counterStore();
+    const baseline = snapshotStores([store]);
+    const snapshotted = baseline.get(store)!;
+
+    restoreStores(baseline);
+    const first = store.getState();
+    restoreStores(baseline);
+    const second = store.getState();
+
+    // The thing the name promises: a fresh STATE object each time, and never
+    // the baseline's own object.
+    expect(first).not.toBe(second);
+    expect(first).not.toBe(snapshotted);
+    expect(second).not.toBe(snapshotted);
+
+    store.setState({ count: 99 });
+    expect((snapshotted as Counter).count).toBe(0);
+    restoreStores(baseline);
+    expect(store.getState().count).toBe(0);
+  });
+
+  it("shares nested values with the baseline (the snapshot is shallow)", () => {
     const store = counterStore();
     const baseline = snapshotStores([store]);
 
     restoreStores(baseline);
-    store.getState().tags.push("mutated in place");
+    const firstTags = store.getState().tags;
     restoreStores(baseline);
 
-    // The array identity is shared (a shallow snapshot), but the STATE object
-    // is copied on the way in and out, so a later `setState` cannot rewrite the
-    // baseline itself.
-    store.setState({ count: 99 });
+    // Same array, by identity, across restores: only the top-level state
+    // object is copied. Fine for the app's stores, which update through
+    // Immer or `set` and so never mutate a nested value in place.
+    expect(store.getState().tags).toBe(firstTags);
+    expect(store.getState().tags).toBe((baseline.get(store) as Counter).tags);
+    expect(store.getState().tags).toEqual([]);
+  });
+
+  // KNOWN GAP, kept as an expected failure: because the snapshot is shallow
+  // (`snapshotStores` in reset-stores.ts spreads only the top level), a
+  // nested array mutated in place between two resets is mutated inside the
+  // baseline too, and the next reset hands the poisoned array back. If the
+  // snapshot is made deep, this starts passing and `it.fails` turns red —
+  // flip it to `it` then.
+  it.fails("a nested array mutated in place does not survive the next reset", () => {
+    const store = counterStore();
+    const baseline = snapshotStores([store]);
+
     restoreStores(baseline);
-    expect(store.getState().count).toBe(0);
+    const mutated = store.getState().tags;
+    mutated.push("mutated in place");
+    restoreStores(baseline);
+
+    expect(store.getState().tags).not.toBe(mutated);
+    expect(store.getState().tags).toEqual([]);
   });
 });

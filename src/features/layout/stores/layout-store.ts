@@ -342,6 +342,29 @@ function captureView(s: LayoutState): ProjectView {
 }
 
 /**
+ * Save side of the per-project layout file: every closable tab (welcome-chat
+ * is the recreated baseline), minus org-scoped ones — this file is keyed by
+ * project path, and the same project is often open in several orgs.
+ * Exported for `org-tabs.test.ts`.
+ */
+export function persistsInEditorState(t: { type: TabType; closable: boolean }): boolean {
+  return t.closable && !ORG_SCOPED_TYPES.has(t.type);
+}
+
+/**
+ * Restore side: the type a saved tab comes back as, or `null` when it is
+ * dropped. Renamed types (mission-control → usage) map forward; a type this
+ * build no longer knows is dropped; and org-scoped types are dropped because
+ * files written before they were excluded can still carry them, pointing at
+ * another org's conversation. Exported for `org-tabs.test.ts`.
+ */
+export function restoredTabType(saved: string): TabType | null {
+  const type = migrateTabType(saved);
+  if (type === null || ORG_SCOPED_TYPES.has(type)) return null;
+  return type;
+}
+
+/**
  * The per-project layout file (`save_editor_state`). Split columns + their
  * tabs, and — since v3 — the pane trees of the terminal tabs, so a split
  * terminal layout comes back the way it was left. Rust stores the JSON
@@ -352,18 +375,14 @@ function captureView(s: LayoutState): ProjectView {
  */
 function buildEditorState(state: LayoutState) {
   if (state.zen) return null;
-  // Persist every closable tab (welcome-chat is the recreated baseline).
-  // Org-scoped tabs are excluded: this file is keyed by project path, and the
-  // same project is often open in several orgs.
-  const tabs = state.tabs
-    .filter((t) => t.closable && !ORG_SCOPED_TYPES.has(t.type))
-    .map((t) => ({
-      id: t.id,
-      type: t.type,
-      title: t.title,
-      data: t.data,
-      groupId: groupOf(t),
-    }));
+  // Closable, non-org-scoped tabs only (see `persistsInEditorState`).
+  const tabs = state.tabs.filter(persistsInEditorState).map((t) => ({
+    id: t.id,
+    type: t.type,
+    title: t.title,
+    data: t.data,
+    groupId: groupOf(t),
+  }));
   const terminalTabIds = tabs.filter((t) => t.type === "terminal").map((t) => t.id);
   return {
     version: 3,
@@ -888,15 +907,12 @@ export const useLayoutStore = createSelectors(
                   }
                   // Add the saved tabs into their columns.
                   for (const saved of data.tabs!) {
-                    // Renamed types (mission-control → usage) map forward; a
-                    // type this build no longer knows is dropped.
-                    const type = migrateTabType(saved.type);
+                    // Renamed types map forward; unknown and org-scoped
+                    // types are dropped (see `restoredTabType`).
+                    const type = restoredTabType(saved.type);
                     if (type === null) continue;
                     const id = saved.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[saved.id] : saved.id;
                     if (s.tabs.find((t) => t.id === id)) continue;
-                    // Already-written files can still carry these; they point
-                    // at another org's conversation and must not come back.
-                    if (ORG_SCOPED_TYPES.has(type)) continue;
                     let gid = saved.groupId ?? DEFAULT_GROUP;
                     if (!s.groupOrder.includes(gid)) gid = s.groupOrder[0];
                     s.tabs.push({

@@ -132,7 +132,7 @@ pub struct SyncConfig<'a> {
     pub org_id: String,
     /// Keys the local rows: the path they were written under.
     pub workspace_id: String,
-    /// Stamped into every artifact as `projectId` — the server-assigned
+    /// Stamped into every artifact as `workspaceId` — the server-assigned
     /// Project id (or slug fallback), never the local filesystem path, which
     /// no teammate shares and which would leak the directory layout to the
     /// whole Organisation.

@@ -36,7 +36,43 @@ const nothing = () => null;
 // atlas-theme` fails when this snapshot is stale.
 const builtinThemes = builtinThemesJson as Theme[];
 
+/**
+ * Every fixture map spread into `baseHandlers`, by name. Exported so
+ * `tests/mock-backend-contract.test.ts` can check that no two of them (or one
+ * of them and an inline entry below) answer the same command: with object
+ * spread the LAST definition silently wins, so an overlap is a fake that
+ * looks live and is never reached.
+ */
+export const baseFixtureMaps: Readonly<Record<string, MockHandlers>> = {
+  "fixtures/misc": miscHandlers,
+  "fixtures/theme-import": themeImportHandlers,
+  "fixtures/icon-themes": iconThemeHandlers,
+  "fixtures/knowledge": knowledgeHandlers,
+  "fixtures/git": gitHandlers,
+  "fake-agent": agentHandlers,
+  "fixtures/files": fsHandlers,
+  "fixtures/settings": settingsHandlers,
+  "fixtures/log": logHandlers,
+  "fixtures/artifacts": artifactsHandlers,
+  "fixtures/capture": captureHandlers,
+  "fixtures/comms": commsHandlers,
+  "fixtures/integrations": integrationsHandlers,
+  "fixtures/memory": memoryHandlers,
+  "fixtures/skills": skillsHandlers,
+  "fixtures/spaces": spacesHandlers,
+  "fixtures/terminal": terminalHandlers,
+};
+
 export const baseHandlers: MockHandlers = {
+  // ── catch-all ───────────────────────────────────────────────────────────
+  // FIRST, not last: with object spread the LAST definition of a key wins, so
+  // spreading `misc` first is what lets every domain file (and every inline
+  // entry below) outrank the catch-all. It used to be spread last, which made
+  // it the winner — e.g. its `agents_list_running` (a phantom running agent)
+  // shadowed `fake-agent`'s empty list. The contract test now rejects any
+  // overlap that is not explicitly allowed, so the order is a backstop.
+  ...miscHandlers,
+
   // ── theme ──────────────────────────────────────────────────────────────
   // Built-ins plus whatever this session has imported, which is how the real
   // catalog reads `~/.config/atlas/themes` on top of `include_str!`.
@@ -120,9 +156,9 @@ export const baseHandlers: MockHandlers = {
 
   // ── everything else, one fixture file per surface ───────────────────────
   //
-  // Spread last and in one place, so a command answered by two fixtures is
-  // decided here rather than by an import's position. `misc` comes last
-  // because it is the catch-all: anything a domain file claims outranks it.
+  // In one place, so a command answered by two fixtures is decided here
+  // rather than by an import's position. (`misc`, the catch-all, is spread at
+  // the very top so everything outranks it.)
   ...fsHandlers,
   ...settingsHandlers,
   ...logHandlers,
@@ -134,7 +170,6 @@ export const baseHandlers: MockHandlers = {
   ...skillsHandlers,
   ...spacesHandlers,
   ...terminalHandlers,
-  ...miscHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
   comms_ready: nothing,
