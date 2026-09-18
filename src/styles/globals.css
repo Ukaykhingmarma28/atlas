@@ -770,6 +770,33 @@
     transform: translateY(0);
   }
 }
+/* A tab's label dissolves under its close button on hover.
+
+   The button used to reserve a slot: `pr-7` on closable tabs against `pl-3` on
+   every tab, so a tab that could be closed sat visibly off-centre whether or
+   not the pointer was anywhere near it — 16px of empty space on the right for
+   a control that is invisible most of the time. Padding is symmetric now and
+   the button overlays the label, with this mask taking the label out from
+   under it. Paint only: no layout, so revealing the button still moves
+   nothing.
+
+   The ramp is sized to the button, not chosen by eye: the × is 16px wide at a
+   6px inset, so against the tab's 16px side padding it covers the label's last
+   6px. Clear by then and ramping from 18px means no letter is ever left
+   half-lit under the glyph, which read as a typo rather than as a fade.
+
+   Prefixed as well as not: WKWebView is the target and the two have differed
+   on mask-image before. */
+.atlas-tab:hover .atlas-tab-label,
+.atlas-tab:focus-within .atlas-tab-label {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 18px),
+    transparent calc(100% - 5px)
+  );
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent calc(100% - 5px));
+}
+
 .atlas-pill-in {
   animation: atlas-pill-in 200ms ease-out both;
 }
