@@ -805,7 +805,18 @@
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  /* macOS-native overlay scrollbars */
+  /* macOS-native overlay scrollbars.
+
+     The thumb is the theme's `scrollbar.thumb.background` / `.hover`. Those two
+     keys were documented, resolved and written to `:root` on every switch while
+     this rule hardcoded `rgba(255,255,255,…)` — a white thumb, invisible on any
+     light theme, and a pair of keys a theme author could set with no effect.
+     `scrollbar.track.background` is deliberately absent: the track is painted
+     transparent, which is what makes these read as macOS overlay scrollbars.
+
+     The rendered alpha goes UP with this (0.08 → 0.16 rest, 0.14 → 0.26 hover).
+     The registry's values are the intended ones — 0.08 over a near-black
+     background is a thumb you have to hunt for. */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -814,11 +825,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--atlas-scrollbar-thumb-background);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: var(--atlas-scrollbar-thumb-hover);
   }
 
   ::selection {

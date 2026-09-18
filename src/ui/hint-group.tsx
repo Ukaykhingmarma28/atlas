@@ -244,7 +244,10 @@ export function HintGroup({
                 "flex w-max",
                 "bg-[var(--popover)] text-foreground",
                 "outline outline-1 outline-[var(--border)]",
-                "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
+                // The menu step, like every other popover in `src/ui`. It was a
+                // literal 50%-black halo, which is a hole punched in a cream
+                // surface on any light theme.
+                "shadow-md",
               )}
               style={{
                 opacity: shown ? 1 : 0,
