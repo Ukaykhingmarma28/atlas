@@ -201,7 +201,8 @@ pub(super) fn seed_legacy_project(dir: &Path) {
     std::fs::create_dir_all(&extracted).unwrap();
     let src = testdata().join("legacy");
     std::fs::copy(src.join("events.jsonl"), shared.join("events.jsonl")).unwrap();
+    // Stored as `.md.fixture`: the repo ignores `*.md` outside docs.
     for f in ["sess-a.md", "sess-b.md"] {
-        std::fs::copy(src.join("extracted").join(f), extracted.join(f)).unwrap();
+        std::fs::copy(src.join("extracted").join(format!("{f}.fixture")), extracted.join(f)).unwrap();
     }
 }

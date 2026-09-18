@@ -1,0 +1,5 @@
+## Auto-extracted memories
+
+### Session memories — 2026-09-01
+- **[constraint]** Never add an AI attribution trailer to commits *(confidence: 100%)*
+- **[decision]** Use SQLite in WAL mode for app-owned stores *(confidence: 60%)*
