@@ -441,25 +441,27 @@ function Badges({ unread, mentions }: { unread: number; mentions: number }) {
 }
 
 /**
- * The hint-overlay keycap, verbatim apart from its metrics.
+ * The keycap, on the same tokens as the `Kbd` primitive.
  *
- * `backdrop-filter` is deliberately NOT carried over: the hint badges float
- * above arbitrary app content and need to sample it, whereas these sit on an
- * opaque panel row where a blur has nothing to gather — it would add a
+ * It used to be the hint-overlay keycap verbatim: a hand-mixed dark gradient,
+ * a white hairline and a three-layer inset shadow. `src/ui/kbd.tsx` has since
+ * moved that look onto `border-border` + `bg-bg-elevated` + the elevation
+ * scale, so copying the old recipe no longer matched the thing it was copying.
+ * It also could not survive a light theme: the cap was hardcoded dark while
+ * the ink follows `--foreground`, which is dark ON a light theme — dark on
+ * dark. Both sides are theme-derived now, so the pair stays legible either way.
+ *
+ * `backdrop-filter` is deliberately still NOT carried over: the hint badges
+ * float above arbitrary app content and need to sample it, whereas these sit
+ * on an opaque panel row where a blur has nothing to gather — it would add a
  * compositing layer per badge inside a `mix-blend-mode` panel that has already
  * proven touchy about exactly that.
  */
 function KeycapBadge({ ink, label }: { ink: string; label: string }) {
   return (
     <span
-      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide"
-      style={{
-        color: ink,
-        background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow:
-          "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.6)",
-      }}
+      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full border border-border bg-bg-elevated px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide shadow-sm"
+      style={{ color: ink }}
     >
       {label}
     </span>
