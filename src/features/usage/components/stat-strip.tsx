@@ -100,7 +100,10 @@ function StatCell({
     <div className="min-w-0 px-3 py-2.5">
       <div className={CAPTION}>{caption}</div>
       <div className="mt-1 flex items-baseline gap-2">
-        <span className="truncate text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
+        {/* One step below the insight headline's text-2xl (the scale's top
+            step) — a stat cell is five-per-row, the headline is one figure
+            alone, and they should not read as the same weight. */}
+        <span className="truncate text-xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmt(shown)}
         </span>
         <DeltaChip delta={delta} />
