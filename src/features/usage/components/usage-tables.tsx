@@ -137,6 +137,10 @@ export function UsageTables({
                     <DropdownMenu.RadioItem
                       key={k}
                       value={k}
+                      // Base UI leaves a marked item's menu open; Radix's
+                      // `RadioItem` closed it, and picking one sort order is a
+                      // one-shot choice, so the old behaviour is restored.
+                      closeOnClick
                       className="flex h-control-md cursor-default items-center px-3 outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] data-checked:text-[var(--foreground)]"
                     >
                       {SORT_LABEL[k]}
