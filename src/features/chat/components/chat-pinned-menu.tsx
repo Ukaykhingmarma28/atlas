@@ -65,34 +65,29 @@ export function ChatPinnedMenu({
               className={className}
             >
               <Pin size={12} />
-              <span className="tabular-nums text-[11px] leading-none">{pins.length}</span>
+              <span className="tabular-nums text-xs leading-none">{pins.length}</span>
             </button>
           }
         />
       </HintItem>
       <Popover.Portal>
-        <Popover.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
-          <Popover.Popup
-            style={{
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
-          >
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="overflow-hidden rounded-xl select-none inset-highlight shadow-md border border-[var(--atlas-element-active)] bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl">
             <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
-              <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
+              <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-[var(--atlas-element-hover)] px-3">
                 <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search pins…"
                   aria-label="Search pinned messages"
-                  className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
               </div>
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && (
-                  <div className="py-6 text-center text-[11px] text-[var(--text-ghost)]">
+                  <div className="py-6 text-center text-xs text-[var(--text-ghost)]">
                     No pins match.
                   </div>
                 )}
@@ -101,7 +96,9 @@ export function ChatPinnedMenu({
                     key={pin.messageId}
                     className={cn(
                       "group/pin flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--bg-hover)]",
-                      i === filtered.length - 1 ? "" : "border-b border-white/5",
+                      i === filtered.length - 1
+                        ? ""
+                        : "border-b border-[var(--atlas-element-hover)]",
                     )}
                   >
                     <button
@@ -112,10 +109,10 @@ export function ChatPinnedMenu({
                       }}
                       className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
                     >
-                      <span className="line-clamp-2 text-[11px] leading-snug text-[var(--text-secondary)]">
+                      <span className="line-clamp-2 text-xs leading-snug text-[var(--text-secondary)]">
                         {pin.text || "…"}
                       </span>
-                      <span className="text-[9px] text-[var(--text-tertiary)]">
+                      <span className="text-3xs text-[var(--text-tertiary)]">
                         Pinned {timeAgo(pin.at, { suffix: true })}
                       </span>
                     </button>

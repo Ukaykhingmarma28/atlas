@@ -55,15 +55,18 @@ const CONTROL_H = "h-[26px]";
  *
  * A faint fill carries the shape and the border only needs to finish the edge —
  * so the border is deliberately softer than it was when it was doing the job
- * alone (`#3a3a3a` ≈ 23% white; this is ~16%). Outline-only controls on a near
- * black header read as wireframes; fill-plus-whisper reads as a surface.
+ * alone (the previous solid-grey border was roughly 23% white; this is ~16%).
+ * Outline-only controls on a near black header read as wireframes;
+ * fill-plus-whisper reads as a surface.
  *
- * White alphas rather than hex so the controls track the active theme and sit
- * correctly on the blurred band behind them, which is translucent.
+ * Foreground-tinted overlay keys rather than white alphas, so the controls
+ * track the active theme (a light appearance gets a dark outline, not an
+ * invisible white one) and still sit correctly on the translucent blurred
+ * band behind them.
  */
 const OUTLINE = [
-  "border border-white/[0.16] bg-white/[0.045] text-[var(--text-tertiary)]",
-  "transition-colors hover:border-white/[0.22] hover:bg-white/[0.09] hover:text-[var(--text-primary)]",
+  "border border-border bg-[var(--atlas-element-hover)] text-[var(--text-tertiary)]",
+  "transition-colors hover:border-border-strong hover:bg-[var(--atlas-element-active)] hover:text-[var(--text-primary)]",
 ].join(" ");
 
 interface ChatHeaderProps {
@@ -135,7 +138,7 @@ function ChatHeaderImpl({
                     "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
                     CONTROL_H,
                     OUTLINE,
-                    "text-[12px] font-medium leading-none text-[var(--text-primary)]",
+                    "text-sm font-medium leading-none text-[var(--text-primary)]",
                     "cursor-pointer outline-none",
                   )}
                   title="Switch session"
@@ -152,18 +155,14 @@ function ChatHeaderImpl({
               }
             />
             <Popover.Portal>
-              <Popover.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={6}>
+              <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
                 <Popover.Popup
-                  style={{
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-                    // No `will-change` — it would isolate the layer and flatten the blur.
-                  }}
                   className={cn(
-                    "overflow-hidden rounded-xl select-none",
+                    "overflow-hidden rounded-xl select-none inset-highlight shadow-md",
                     // Border, translucent fill, blur AND the enter animation all on
                     // THIS element. Splitting them isolates the layer and kills the
                     // backdrop blur (see the feedback panel for the same rule).
-                    "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+                    "border border-[var(--atlas-element-active)] bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
                     // Grows out of its trigger's top-left corner.
                     "atlas-panel-in-tl",
                   )}
@@ -211,15 +210,15 @@ function ChatHeaderImpl({
               }
             />
             <DropdownMenu.Portal>
-              <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
-                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]">
+              <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={6}>
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] py-1 shadow-md">
                   <MenuLabel>Filter messages</MenuLabel>
                   {(["all", "user", "assistant"] as const).map((f) => (
                     <DropdownMenu.Item
                       key={f}
                       onClick={() => onRoleFilterChange(f)}
                       className={cn(
-                        "flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] capitalize outline-none",
+                        "flex h-[26px] cursor-default items-center gap-2 px-3 text-xs capitalize outline-none",
                         roleFilter === f
                           ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
@@ -241,7 +240,7 @@ function ChatHeaderImpl({
 
                   <DropdownMenu.Item
                     onClick={onToggleBash}
-                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-xs text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   >
                     <TerminalSquare size={11} />
                     <span className="flex-1">Bash calls</span>
@@ -249,7 +248,7 @@ function ChatHeaderImpl({
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
                     onClick={onTogglePlans}
-                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    className="flex h-[26px] cursor-default items-center gap-2 px-3 text-xs text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   >
                     <ClipboardList size={11} />
                     <span className="flex-1">Plans</span>
@@ -260,7 +259,7 @@ function ChatHeaderImpl({
                       <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
                       <DropdownMenu.Item
                         onClick={onForkSession}
-                        className="flex h-[26px] cursor-default items-center gap-2 px-3 text-[11px] text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                        className="flex h-[26px] cursor-default items-center gap-2 px-3 text-xs text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                       >
                         <GitBranch size={11} />
                         <span className="flex-1">Branch from here</span>
@@ -325,7 +324,7 @@ const HeaderCircleButton = forwardRef<
 
 function MenuLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 pb-1 pt-1.5 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className="px-3 pb-1 pt-1.5 text-3xs uppercase tracking-wider text-[var(--text-tertiary)]">
       {children}
     </div>
   );

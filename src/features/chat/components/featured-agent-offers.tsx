@@ -58,7 +58,7 @@ export function FeaturedAgentOffers({
   return (
     <>
       <div className="h-px bg-[var(--border)]" />
-      <div className="px-3 pb-0.5 pt-1.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+      <div className="px-3 pb-0.5 pt-1.5 text-3xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
         Available to install
       </div>
       <div className="p-1 pt-0.5">
@@ -92,7 +92,7 @@ export function FeaturedAgentOffers({
                   <AgentMonogram label={offer.label} size={10} />
                 )}
               </span>
-              <span className="flex-1 truncate text-[11px] font-medium text-[var(--text-secondary)]">
+              <span className="flex-1 truncate text-xs font-medium text-[var(--text-secondary)]">
                 {offer.label}
               </span>
               {busy ? (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog } from "@base-ui/react/dialog";
+import { DialogOverlay } from "@/ui/dialog";
 import { Archive, Download, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -81,27 +82,27 @@ export function ThreadHistoryView({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <DialogOverlay className="backdrop-blur-sm" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
+            "border border-border bg-bg-elevated shadow-md animate-scale-in",
           )}
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
-            <Dialog.Title className="text-[13px] font-semibold text-text-primary">
+            <Dialog.Title className="text-base font-semibold text-text-primary">
               History
             </Dialog.Title>
-            <span className="text-[11px] font-mono text-text-tertiary">
+            <span className="text-xs font-mono text-text-tertiary">
               {threads.length} {threads.length === 1 ? "thread" : "threads"}
             </span>
             <button
               type="button"
               onClick={() => setArchivedOnly((on) => !on)}
               className={cn(
-                "ml-auto flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors cursor-pointer",
+                "ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs transition-colors cursor-pointer",
                 archivedOnly
                   ? "bg-bg-selected text-text-primary"
                   : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
@@ -113,7 +114,7 @@ export function ThreadHistoryView({
             <button
               type="button"
               onClick={() => setImportOpen(true)}
-              className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+              className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
             >
               <Download size={10} />
               Import
@@ -133,19 +134,19 @@ export function ThreadHistoryView({
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search history"
               placeholder="Search…"
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+              className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
             />
           </div>
 
           <div className="flex-1 overflow-auto hide-scrollbar">
             {buckets.length === 0 ? (
-              <div className="px-3 py-6 text-center text-[11px] text-text-tertiary">
+              <div className="px-3 py-6 text-center text-xs text-text-tertiary">
                 {search.trim() ? "Nothing matches your search." : "No threads yet."}
               </div>
             ) : (
               buckets.map(([label, rows]) => (
                 <div key={label}>
-                  <div className="px-3 pt-2.5 pb-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+                  <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-text-tertiary">
                     {label}
                   </div>
                   {rows.map((thread) => (
@@ -158,10 +159,10 @@ export function ThreadHistoryView({
                       className="group flex cursor-pointer select-none items-center gap-2 border-b border-border-subtle px-3 py-2 transition-colors last:border-b-0 hover:bg-bg-hover"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[11px] text-text-primary">
+                        <span className="block truncate text-xs text-text-primary">
                           {thread.title}
                         </span>
-                        <span className="block truncate text-[9px] text-text-tertiary">
+                        <span className="block truncate text-3xs text-text-tertiary">
                           {thread.projectName} · {agentMeta(thread.agentId).label} ·{" "}
                           {timeAgo(thread.updatedAt, { suffix: true })}
                         </span>

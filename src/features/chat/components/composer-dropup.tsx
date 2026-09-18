@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 /** The pill trigger's class string, so every footer pill reads as one set. */
 export function composerPillClass(open: boolean, opts: { disabled?: boolean } = {}): string {
   return cn(
-    "flex h-6.5 items-center rounded-full border px-1.5 text-[10px] font-medium leading-none transition-colors",
+    "flex h-6.5 items-center rounded-full border px-1.5 text-2xs font-medium leading-none transition-colors",
     open
       ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
       : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
@@ -126,7 +126,7 @@ export function ComposerDropup({
   return (
     <div
       aria-hidden={!open}
-      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
       style={{
         width,
         height: open ? panelHeight : 0,

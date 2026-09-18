@@ -133,10 +133,10 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
         <>
           <div className="flex h-9 items-center gap-2 px-3">
             <ListTodo size={13} className="shrink-0 text-[var(--text-secondary)]" />
-            <span className="flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">
+            <span className="flex-1 truncate text-sm font-medium text-[var(--text-primary)]">
               Implementation plan
             </span>
-            <span className="font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]">
+            <span className="font-mono text-2xs tabular-nums text-[var(--text-tertiary)]">
               {completed}/{plan.length}
             </span>
           </div>
@@ -149,7 +149,7 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
                 <StepIcon status={step.status} active={open} />
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-[11.5px] leading-5",
+                    "min-w-0 flex-1 truncate text-sm leading-5",
                     step.status === "completed" &&
                       "text-[var(--text-tertiary)] line-through decoration-[var(--text-tertiary)]",
                     step.status === "in_progress" && "text-[var(--text-primary)]",
@@ -168,7 +168,7 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
       <button
         onClick={toggle}
         className={cn(
-          "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-[10px] font-medium leading-none transition-colors cursor-pointer",
+          "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-2xs font-medium leading-none transition-colors cursor-pointer",
           open
             ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
             : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",

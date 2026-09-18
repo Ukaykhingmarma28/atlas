@@ -59,13 +59,13 @@ interface ComposerAddMenuProps {
 }
 
 const ITEM_CLASS =
-  "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-default outline-none " +
+  "flex items-center gap-2 px-3 h-[26px] text-xs cursor-default outline-none " +
   "text-[var(--text-secondary)] data-[highlighted]:bg-[var(--bg-hover)] " +
   "data-[highlighted]:text-[var(--text-primary)]";
 
 const CONTENT_CLASS =
   "atlas-menu-pop rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] " +
-  "shadow-[var(--shadow-overlay)] py-1";
+  "shadow-md py-1";
 
 // Shared search-box header for the searchable submenus. `stopPropagation`
 // keeps Radix's menu typeahead from stealing the keystrokes.
@@ -99,7 +99,7 @@ function SearchBox({
           if (e.key === "Enter") onEnter?.();
         }}
         placeholder={placeholder}
-        className="flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+        className="flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
       />
     </div>
   );
@@ -159,7 +159,7 @@ export function ComposerAddMenu({
         />
       </Hint>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" side="top" sideOffset={6}>
+        <DropdownMenu.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
           <DropdownMenu.Popup className={cn(CONTENT_CLASS, "min-w-[210px]")}>
             <DropdownMenu.Item className={ITEM_CLASS} onClick={onAddFilesOrPhotos}>
               <Paperclip size={11} />
@@ -177,7 +177,7 @@ export function ComposerAddMenu({
               </DropdownMenu.SubmenuTrigger>
               <DropdownMenu.Portal>
                 <DropdownMenu.Positioner
-                  style={{ zIndex: 9999 }}
+                  className="z-popover"
                   side="right"
                   align="start"
                   sideOffset={6}
@@ -229,7 +229,7 @@ export function ComposerAddMenu({
                 setOpen(false);
                 openSettingsSection("agents");
               }}
-              className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
               <Plus size={11} />
               Add more agents
@@ -292,10 +292,10 @@ function GithubSubmenu({
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
       </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+        <DropdownMenu.Positioner className="z-popover" side="right" align="start" sideOffset={6}>
           <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
             {!projectPath ? (
-              <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+              <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                 Open a project to clone repos into it.
               </div>
             ) : (
@@ -310,7 +310,7 @@ function GithubSubmenu({
                   {/* Already-downloaded repos — a plain, disabled list. */}
                   {cloned.length > 0 && (
                     <>
-                      <div className="px-3 pt-1 pb-0.5 text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                      <div className="px-3 pt-1 pb-0.5 text-3xs uppercase tracking-wide text-[var(--text-tertiary)]">
                         Downloaded
                       </div>
                       {cloned.map((c) => (
@@ -334,16 +334,16 @@ function GithubSubmenu({
 
                   {/* Search results. */}
                   {loading ? (
-                    <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                    <div className="flex items-center gap-2 px-3 h-[26px] text-xs text-[var(--text-tertiary)]">
                       <Loader2 size={11} className="animate-spin" />
                       Searching…
                     </div>
                   ) : results === null ? (
-                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                    <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                       Type a repo name and press Enter.
                     </div>
                   ) : results.length === 0 ? (
-                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                    <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                       No repositories found.
                     </div>
                   ) : (
@@ -378,17 +378,17 @@ function GithubSubmenu({
                                 {repo.full_name}
                               </span>
                               {already ? (
-                                <span className="ml-auto shrink-0 text-[9px] text-[var(--text-tertiary)]">
+                                <span className="ml-auto shrink-0 text-3xs text-[var(--text-tertiary)]">
                                   downloaded
                                 </span>
                               ) : (
-                                <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[9px] text-[var(--text-tertiary)]">
+                                <span className="ml-auto flex shrink-0 items-center gap-0.5 text-3xs text-[var(--text-tertiary)]">
                                   <Star size={9} /> {repo.stars}
                                 </span>
                               )}
                             </div>
                             {repo.description && (
-                              <div className="text-[10px] text-[var(--text-tertiary)] line-clamp-2">
+                              <div className="text-2xs text-[var(--text-tertiary)] line-clamp-2">
                                 {repo.description}
                               </div>
                             )}
@@ -441,10 +441,10 @@ function SessionsSubmenu({
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
       </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+        <DropdownMenu.Positioner className="z-popover" side="right" align="start" sideOffset={6}>
           <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
             {!projectPath ? (
-              <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+              <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                 Open a project to browse its sessions.
               </div>
             ) : (
@@ -452,12 +452,12 @@ function SessionsSubmenu({
                 <SearchBox value={query} onChange={setQuery} placeholder="Search sessions…" />
                 <div className="max-h-[300px] overflow-y-auto">
                   {sessions === null ? (
-                    <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                    <div className="flex items-center gap-2 px-3 h-[26px] text-xs text-[var(--text-tertiary)]">
                       <Loader2 size={11} className="animate-spin" />
                       Loading sessions…
                     </div>
                   ) : filtered.length === 0 ? (
-                    <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                    <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                       {sessions.length === 0 ? "No past sessions in this project." : "No matches."}
                     </div>
                   ) : (
@@ -474,7 +474,7 @@ function SessionsSubmenu({
                         />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[var(--text-primary)]">{s.title}</div>
-                          <div className="text-[10px] text-[var(--text-tertiary)]">
+                          <div className="text-2xs text-[var(--text-tertiary)]">
                             {s.messageCount} message
                             {s.messageCount === 1 ? "" : "s"}
                           </div>
@@ -535,17 +535,17 @@ function ProjectSubmenu({
         <ChevronRight size={11} className="ml-auto text-[var(--text-tertiary)]" />
       </DropdownMenu.SubmenuTrigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 9999 }} side="right" align="start" sideOffset={6}>
+        <DropdownMenu.Positioner className="z-popover" side="right" align="start" sideOffset={6}>
           <DropdownMenu.Popup className={cn(CONTENT_CLASS, "w-[300px]")}>
             <SearchBox value={query} onChange={setQuery} placeholder="Search projects…" />
             <div className="max-h-[300px] overflow-y-auto">
               {projects === null ? (
-                <div className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-[var(--text-tertiary)]">
+                <div className="flex items-center gap-2 px-3 h-[26px] text-xs text-[var(--text-tertiary)]">
                   <Loader2 size={11} className="animate-spin" />
                   Loading projects…
                 </div>
               ) : projects.length === 0 ? (
-                <div className="px-3 py-1.5 text-[11px] text-[var(--text-tertiary)]">
+                <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">
                   {query ? "No matches." : "No other projects in this organisation."}
                 </div>
               ) : (
@@ -559,7 +559,7 @@ function ProjectSubmenu({
                     <Boxes size={11} className="mt-0.5 shrink-0 text-[var(--text-tertiary)]" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[var(--text-primary)]">{w.displayName}</div>
-                      <div className="truncate text-[10px] text-[var(--text-tertiary)]">
+                      <div className="truncate text-2xs text-[var(--text-tertiary)]">
                         {w.absPath}
                       </div>
                     </div>

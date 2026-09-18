@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
+import { DialogOverlay } from "@/ui/dialog";
 import { CheckCircle2, XCircle, AlertTriangle, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { useChatStore } from "../stores/chat-store";
@@ -231,7 +232,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
     return (
       <Dialog.Root open onOpenChange={(open) => !open && cancel()}>
         <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+          <DialogOverlay className="backdrop-blur-sm" />
           <Dialog.Popup
             className={cn(
               // Anchor near the top (not vertically centered) with a viewport
@@ -240,7 +241,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
               "fixed left-1/2 top-[5vh] z-50 -translate-x-1/2",
               "flex max-h-[90vh] w-[880px] max-w-[94vw] flex-col overflow-hidden",
               "rounded-md border border-border bg-bg-elevated",
-              "shadow-[var(--shadow-overlay)] animate-scale-in text-text-primary",
+              "shadow-md animate-scale-in text-text-primary",
             )}
           >
             <div className="flex items-start gap-3 border-b border-border px-4 py-3">
@@ -252,7 +253,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                 </Dialog.Description>
               </div>
               {queueNote && (
-                <span className="shrink-0 rounded-sm bg-bg-base px-2 py-0.5 text-[11px] text-text-secondary">
+                <span className="shrink-0 rounded-sm bg-bg-base px-2 py-0.5 text-xs text-text-secondary">
                   {queueNote}
                 </span>
               )}
@@ -272,13 +273,13 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                       onClick={() => resolve(bypassOptionId, "bypassPermissions")}
                       className={cn(
                         "mt-2 flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-left",
-                        "text-[12px] text-text-primary transition-colors hover:bg-bg-base",
+                        "text-sm text-text-primary transition-colors hover:bg-bg-base",
                       )}
                     >
                       <AlertTriangle className="size-3.5 shrink-0 text-[var(--status-error)]" />
                       <span className="flex-1">
                         Yes, and bypass permissions
-                        <span className="block text-[11px] text-text-secondary">
+                        <span className="block text-xs text-text-secondary">
                           Approve the plan and stop asking for the rest of this session.
                         </span>
                       </span>
@@ -324,13 +325,13 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   // Standard case — inline card above the composer.
   return (
     <div className="px-4 pt-2">
-      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md">
         <div className="flex items-start gap-2 px-3 pt-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-medium leading-snug text-text-primary">
+            <div className="text-base font-medium leading-snug text-text-primary">
               The agent wants to run <span className="font-mono text-text-primary">{title}</span>?
             </div>
-            {queueNote && <div className="mt-0.5 text-[11px] text-text-secondary">{queueNote}</div>}
+            {queueNote && <div className="mt-0.5 text-xs text-text-secondary">{queueNote}</div>}
           </div>
         </div>
 
@@ -351,7 +352,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
             }}
             rows={1}
             placeholder="Tell the agent what to do instead…"
-            className="w-full resize-none rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-strong)]"
+            className="w-full resize-none rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-strong)]"
           />
         </div>
       </div>
@@ -388,14 +389,14 @@ function PermissionOption({
       type="button"
       onClick={onSelect}
       className={cn(
-        "flex w-full min-w-0 items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12px] transition-colors outline-none",
+        "flex w-full min-w-0 items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-sm transition-colors outline-none",
         tone,
       )}
     >
       {index > 0 && (
         <span
           className={cn(
-            "flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold",
+            "flex h-4 w-4 shrink-0 items-center justify-center rounded text-2xs font-semibold",
             isPrimary
               ? "bg-[var(--bg-base)]/15 text-[var(--bg-base)]"
               : "bg-bg-elevated text-text-secondary",
@@ -422,7 +423,7 @@ function ToolCallPreview({ tc }: { tc: PendingPermission["toolCall"] }) {
   if (!formatted) return null;
   return (
     <div className="mx-3 mt-2 rounded-md border border-border bg-bg-base px-3 py-2">
-      <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary">
+      <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-xs leading-snug text-text-secondary">
         {formatted}
       </pre>
     </div>

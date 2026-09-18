@@ -200,7 +200,7 @@ export function UserRowActions({
           // `top-full`, not "under the bubble": the attachment chip sits below
           // the bubble too, and anchoring to the bubble would drop the bar on
           // top of it.
-          "absolute right-0 top-full z-[2] flex items-center gap-0.5",
+          "absolute right-0 top-full z-popover flex items-center gap-0.5",
           // The gap above the icons, as padding rather than a margin so the
           // bar's box still starts exactly at `top-full`. Only the top half
           // draws anything; the bottom 8px is empty and free to overhang the

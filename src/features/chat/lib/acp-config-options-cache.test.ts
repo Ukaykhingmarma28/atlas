@@ -62,7 +62,7 @@ describe("an empty list is a verdict, not a miss", () => {
 
 describe("the v1 → v2 upgrade hop", () => {
   it("reads a v1 payload when there is no v2 one yet", () => {
-    // #162 shipped v1 a day before v2; a user upgrading mid-week must not get a
+    // issue 162 shipped v1 a day before v2; a user upgrading mid-week must not get a
     // spinner back for every agent they have already used.
     localStorage.setItem("atlas:acp-config-options:v1:claude-acp", JSON.stringify([effort]));
     expect(loadCachedAcpConfigOptions("claude-acp")).toEqual([effort]);

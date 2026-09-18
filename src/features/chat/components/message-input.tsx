@@ -285,7 +285,7 @@ function CerseiMemoryPill() {
       onClick={reindex}
       disabled={indexing}
       title="Codebase index that grounds the agent's memory recall — click to re-index"
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-2xs leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
         <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
@@ -318,7 +318,7 @@ function EffortPill({ tabId }: { tabId: string }) {
   return (
     <button
       onClick={cycle}
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-2xs leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
       title="Reasoning effort (thinking budget) — Anthropic models"
     >
       <Brain
@@ -502,7 +502,7 @@ function ComposerGroupsMenu({
   const labelCls = (_active: boolean) => "ml-1.5 whitespace-nowrap";
   const pillCls = (active: boolean) =>
     cn(
-      "flex items-center px-1.5 h-6.5 rounded-full border text-[10px] leading-none font-medium transition-colors cursor-pointer",
+      "flex items-center px-1.5 h-6.5 rounded-full border text-2xs leading-none font-medium transition-colors cursor-pointer",
       active
         ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
         : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
@@ -516,7 +516,7 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -547,10 +547,8 @@ function ComposerGroupsMenu({
                           active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
                         )}
                       >
-                        <AgentMark agentType={a} className="!h-4 !w-4 !text-[9px] !rounded" />
-                        <span className="flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">
-                          {agentMeta(a).label}
-                        </span>
+                        <AgentMark agentType={a} className="!h-4 !w-4 !text-3xs !rounded" />
+                        <span className="flex-1 truncate label">{agentMeta(a).label}</span>
                         {active && <Check size={11} className="text-[var(--primary)]" />}
                       </button>
                     );
@@ -571,7 +569,7 @@ function ComposerGroupsMenu({
                     close();
                     openSettingsSection("agents");
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] text-[var(--text-secondary)] transition-colors cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  className="flex w-full items-center gap-1.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition-colors cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 >
                   <Plus size={11} className="shrink-0" />
                   Add more agents
@@ -598,9 +596,7 @@ function ComposerGroupsMenu({
                       <span
                         className={cn("h-1.5 w-1.5 shrink-0 rounded-full", claudeModeDotClass(m))}
                       />
-                      <span className="flex-1 text-[11px] font-medium text-[var(--text-primary)]">
-                        {CLAUDE_PERMISSION_MODE_LABEL[m]}
-                      </span>
+                      <span className="flex-1 label">{CLAUDE_PERMISSION_MODE_LABEL[m]}</span>
                       {active && <Check size={11} className="text-[var(--primary)]" />}
                     </button>
                   );
@@ -611,7 +607,7 @@ function ComposerGroupsMenu({
             {openGroup === "mode" && !isClaude && (
               <div className="p-1">
                 {!hasAcpModes ? (
-                  <div className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-[var(--text-tertiary)]">
                     <Loader2 size={11} className="animate-spin" /> Loading modes…
                   </div>
                 ) : (
@@ -634,12 +630,12 @@ function ComposerGroupsMenu({
                           style={{ background: acpModeColor(m.id) }}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
+                          <span className="flex items-center gap-1.5 label">
                             {displayModeName(m.name)}
                             {active && <Check size={11} className="text-[var(--primary)]" />}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)]">
+                            <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)]">
                               {m.description}
                             </span>
                           )}
@@ -661,7 +657,7 @@ function ComposerGroupsMenu({
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search models…"
                     spellCheck={false}
-                    className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                   />
                   {isNative && (
                     // The gateway's list, re-fetched on demand (ADR-0007).
@@ -686,10 +682,10 @@ function ComposerGroupsMenu({
                 </div>
                 <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
                   {filteredModels.length === 0 ? (
-                    <div className="px-2.5 py-2 text-[11px] text-[var(--text-tertiary)]">
+                    <div className="px-2.5 py-2 text-xs text-[var(--text-tertiary)]">
                       No models
                       {isNative && models.length === 0 && (
-                        <span className="mt-0.5 block text-[9px] leading-snug">
+                        <span className="mt-0.5 block text-3xs leading-snug">
                           Couldn't load the model list. Check your connection or sign in, then
                           refresh.
                         </span>
@@ -711,7 +707,7 @@ function ComposerGroupsMenu({
                           )}
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
+                            <span className="flex items-center gap-1.5 label">
                               <span className="truncate">{modelLabel(m)}</span>
                               {active && (
                                 <Check size={11} className="shrink-0 text-[var(--primary)]" />
@@ -719,7 +715,7 @@ function ComposerGroupsMenu({
                             </span>
                             {m.description &&
                               m.description.trim().toLowerCase() !== "recommended" && (
-                                <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)] line-clamp-2">
+                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--text-tertiary)] line-clamp-2">
                                   {m.description}
                                 </span>
                               )}
@@ -743,7 +739,7 @@ function ComposerGroupsMenu({
           cycleAgentHint ? `Coding agent — pick here, ${cycleAgentHint} cycles` : "Coding agent"
         }
       >
-        <AgentMark agentType={agentType} className="!h-4 !w-4 !text-[9px] !rounded" />
+        <AgentMark agentType={agentType} className="!h-4 !w-4 !text-3xs !rounded" />
         <span className={labelCls(openGroup === "agent")}>{agentMeta(currentAgent).label}</span>
       </button>
 
@@ -1812,7 +1808,7 @@ export function MessageInput({
         {/* Queued messages above the input */}
         {queue.length > 0 && (
           <div className="mb-2 flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)] px-1">
+            <div className="text-2xs uppercase tracking-wider text-[var(--text-tertiary)] px-1">
               Queued · {queue.length}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1873,7 +1869,7 @@ export function MessageInput({
             // input + send button (the focus ring lives there — the "active
             // field" is the input surface, not the toolbar).
             "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]",
-            "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
+            "shadow-md",
             // Drag-over highlight: a clear accent ring while OS files hover.
             isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
             // NOTE: the disabled dim is NOT applied here. It used to be
@@ -1890,7 +1886,7 @@ export function MessageInput({
         >
           {githubSyncing !== null && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--bg-base)]/40 backdrop-blur-[1px]">
-              <span className="flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow">
+              <span className="flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)] shadow">
                 <Loader2 size={12} className="animate-spin" />
                 Syncing {githubSyncing}…
               </span>
@@ -1898,7 +1894,7 @@ export function MessageInput({
           )}
           {isDropTarget && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
-              <span className="rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow">
+              <span className="rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)] shadow">
                 Drop files to attach
               </span>
             </div>
@@ -1955,7 +1951,7 @@ export function MessageInput({
                         <img
                           src={src}
                           alt=""
-                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--bg-elevated)] shadow-md"
                         />
                       </div>
                     </div>
@@ -2138,7 +2134,7 @@ function QueueChip({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]">
+    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-xs text-[var(--text-secondary)]">
       <button
         onClick={onEdit}
         className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--text-primary)]"
