@@ -10,6 +10,7 @@ import {
   Network,
   BrainCircuit,
   ScrollText,
+  Gauge,
   Code,
   Settings,
   Search,
@@ -65,6 +66,7 @@ const MODULES: ModuleEntry[] = [
     actionId: "tabs.newUntitled",
   },
   { id: "log", type: "log", label: "Log", icon: ScrollText },
+  { id: "usage", type: "usage", label: "Usage", icon: Gauge, actionId: "usage.open" },
   { id: "settings", type: "settings", label: "Settings", icon: Settings, actionId: "app.settings" },
 ];
 

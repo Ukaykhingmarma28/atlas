@@ -16,7 +16,7 @@ import { applyTheme } from "./apply-theme";
 import type { Theme } from "./lib/theme-api";
 import { renderHook } from "@testing-library/react";
 import { act } from "react";
-import { useChartPalette } from "@/features/mission-control/lib/chart-theme";
+import { useSeriesPalette } from "@/features/usage/lib/palette";
 import { terminalTheme } from "@/features/terminal/lib/terminal-theme";
 import { graphPalette } from "@/components/graph-palette";
 import { onThemeApplied, themeBase, themeColor } from "./theme-values";
@@ -84,9 +84,9 @@ describe("the palettes a subsystem snapshots", () => {
     expect(light).not.toEqual(dark);
   });
 
-  it("rebuilds the recharts palette, through the hook a chart actually uses", () => {
-    const { result } = renderHook(() => useChartPalette());
-    const dark = { axes: { ...result.current.axes }, first: result.current.projectColor(0) };
+  it("rebuilds the chart series palette, through the hook a chart actually uses", () => {
+    const { result } = renderHook(() => useSeriesPalette());
+    const dark = { first: result.current.seriesColor(0), other: result.current.otherColor };
 
     // The hook's only dependency is `useThemeVersion()`, so this is also the
     // assertion that the version bump reaches a mounted React consumer.
@@ -94,8 +94,7 @@ describe("the palettes a subsystem snapshots", () => {
       applyTheme(rosePine, "light");
     });
 
-    expect(result.current.axes.grid).not.toBe(dark.axes.grid);
-    expect(result.current.axes.axis).not.toBe(dark.axes.axis);
-    expect(result.current.projectColor(0)).not.toBe(dark.first);
+    expect(result.current.seriesColor(0)).not.toBe(dark.first);
+    expect(result.current.otherColor).not.toBe(dark.other);
   });
 });

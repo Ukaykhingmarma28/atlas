@@ -1414,6 +1414,16 @@ export function App() {
         dirty: false,
         data: {},
       }),
+    // The org's Usage dashboard — a singleton tab, so re-running focuses it.
+    "usage.open": () =>
+      addTab({
+        id: "usage",
+        type: "usage",
+        title: "Usage",
+        closable: true,
+        dirty: false,
+        data: {},
+      }),
     // Session Capture (the popover behind the titlebar's project pill). Local
     // `captureOpen` state lives in `ProjectLabel`, so this reaches it via the
     // same `atlas:open-capture` event the command palette entry dispatches.

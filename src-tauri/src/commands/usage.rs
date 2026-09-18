@@ -2,7 +2,7 @@
 //!
 //! # Why this replaced a JSONL scrape
 //!
-//! The status-bar widget, the usage panel and Mission Control's cost charts
+//! The status-bar widget, the usage panel and the Usage tab's cost charts
 //! used to parse `~/.claude/projects/**/*.jsonl` and price it with a table
 //! hardcoded in `claude.rs`. That made three user-facing surfaces Claude-only
 //! by construction, and coupled them to a file format Atlas does not own. They
@@ -29,11 +29,22 @@
 //! * A session whose model Atlas never recorded, or whose model is absent from
 //!   the price map, contributes tokens and no cost. That is a gap in the price
 //!   map, and inventing a fallback price would hide it.
+//!
+//! # What lives here now
+//!
+//! The dashboard (`usage_dashboard.rs`) reads a [`ProjectRecord`] and does its
+//! own fold, dated by the per-turn ledger. The pricing helpers (`cost_usd`,
+//! `price_for`, `read_prices`, `local_day`) are shared. The session-grained
+//! `summarize` / `day_buckets` fold below has no live caller since the
+//! last-active-day attribution was replaced by the ledger; it is kept, with
+//! its tests, as the reference for the pre-ledger semantics the remainder path
+//! must still match.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use atlas_checkpoint::{Session, TokenTotals};
+use atlas_checkpoint::{Session, TokenTotals, TurnMessages, UsageDeltaRow};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tauri::AppHandle;
 
@@ -43,6 +54,7 @@ use super::models_pricing::ModelPrice;
 ///
 /// Deliberately snake_case on the wire, like every other session-shaped
 /// payload in this app (see `agent_transcript::AgentSessionMeta`'s note).
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct SessionUsage {
     /// The agent's own id for the conversation — the ACP session id, and what
@@ -55,6 +67,9 @@ pub struct SessionUsage {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
+    /// Informational: rides inside `output_tokens` for every provider that
+    /// reports it, so it is never priced and never added to a total.
+    pub reasoning_tokens: u64,
     /// Recorded messages — user and assistant rows in Atlas's own record.
     ///
     /// Not "requests", which is what the JSONL scrape counted: Atlas has no
@@ -70,17 +85,21 @@ pub struct SessionUsage {
     pub title: String,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct UsageTotals {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
+    /// See [`SessionUsage::reasoning_tokens`]: carried, never priced.
+    pub reasoning_tokens: u64,
     pub messages: u64,
     pub total_cost_usd: f64,
     pub session_count: u64,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ProjectUsage {
     pub totals: UsageTotals,
@@ -88,6 +107,7 @@ pub struct ProjectUsage {
 }
 
 /// One local day's usage in one project.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct DayUsage {
     pub input_tokens: u64,
@@ -106,7 +126,41 @@ pub(crate) fn read_prices(app: &AppHandle) -> BTreeMap<String, ModelPrice> {
     super::models_pricing::models_pricing_get(app.clone())
 }
 
+/// Everything the usage dashboard reads out of one project's store, in one
+/// pass over one reader connection.
+///
+/// Kept raw rather than pre-folded so the fold (`usage_dashboard::fold_project`)
+/// is a pure function that a test can drive without a store on disk.
+pub(crate) struct ProjectRecord {
+    pub sessions: Vec<Session>,
+    /// `agent_session.id` → recorded messages.
+    pub message_counts: HashMap<String, i64>,
+    /// The per-turn ledger, ordered by session then turn.
+    pub deltas: Vec<UsageDeltaRow>,
+    /// Message counts per turn, with each turn's earliest stamp.
+    pub turn_messages: Vec<TurnMessages>,
+    /// When this store's ledger began — `None` before any turn was ledgered.
+    pub ledger_since: Option<DateTime<Utc>>,
+}
+
+/// The five reads behind [`ProjectRecord`]. `None` when capture was never
+/// enabled here — the store must not be created by a read.
+pub(crate) fn project_record(project_path: &str) -> Result<Option<ProjectRecord>, String> {
+    let Some(store) = super::capture::open_reader(project_path)? else {
+        return Ok(None);
+    };
+    let err = |e: atlas_checkpoint::Error| e.to_string();
+    Ok(Some(ProjectRecord {
+        sessions: store.sessions_for_project(project_path).map_err(err)?,
+        message_counts: store.message_counts(project_path).map_err(err)?,
+        deltas: store.usage_deltas_for_project(project_path).map_err(err)?,
+        turn_messages: store.turn_message_counts(project_path).map_err(err)?,
+        ledger_since: store.ledger_since().map_err(err)?,
+    }))
+}
+
 /// Every recorded session in one project, priced.
+#[allow(dead_code)]
 pub(crate) fn project_usage(
     project_path: &str,
     prices: &BTreeMap<String, ModelPrice>,
@@ -124,6 +178,7 @@ pub(crate) fn project_usage(
 }
 
 /// Fold recorded sessions into the shape the usage surfaces render.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn summarize(
     sessions: &[Session],
     message_counts: &HashMap<String, i64>,
@@ -141,6 +196,7 @@ pub(crate) fn summarize(
                 output_tokens: totals.output_tokens,
                 cache_creation_tokens: totals.cache_creation_tokens,
                 cache_read_tokens: totals.cache_read_tokens,
+                reasoning_tokens: totals.reasoning_tokens,
                 messages: message_counts.get(&session.id).copied().unwrap_or(0).max(0) as u64,
                 total_cost_usd: cost_usd(totals, price_for(session.model.as_deref(), prices)),
                 started_ms: session.started_at.timestamp_millis(),
@@ -164,6 +220,7 @@ pub(crate) fn summarize(
         totals.output_tokens += session.output_tokens;
         totals.cache_creation_tokens += session.cache_creation_tokens;
         totals.cache_read_tokens += session.cache_read_tokens;
+        totals.reasoning_tokens += session.reasoning_tokens;
         totals.messages += session.messages;
         totals.total_cost_usd += session.total_cost_usd;
     }
@@ -184,6 +241,7 @@ pub(crate) fn summarize(
 }
 
 /// Usage bucketed by the local day each session was last active.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn day_buckets(sessions: &[SessionUsage]) -> BTreeMap<String, DayUsage> {
     let mut days: BTreeMap<String, DayUsage> = BTreeMap::new();
     for session in sessions {
@@ -205,6 +263,7 @@ pub(crate) fn day_buckets(sessions: &[SessionUsage]) -> BTreeMap<String, DayUsag
     days
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn tokens(session: &SessionUsage) -> u64 {
     session.input_tokens
         + session.output_tokens
@@ -268,7 +327,8 @@ fn undated(model: &str) -> &str {
     }
 }
 
-fn local_day(epoch_ms: i64) -> Option<String> {
+/// Epoch milliseconds → the local calendar day, `YYYY-MM-DD`.
+pub(crate) fn local_day(epoch_ms: i64) -> Option<String> {
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(epoch_ms)
         .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string())
 }
@@ -413,6 +473,28 @@ mod tests {
             3,
             "every row says which agent produced it"
         );
+    }
+
+    /// Reasoning tokens ride inside `output_tokens` for every provider that
+    /// reports them. They are carried through so a surface can show them, and
+    /// they must never change the bill.
+    #[test]
+    fn reasoning_tokens_are_carried_but_never_priced() {
+        let prices = prices();
+        let with = TokenTotals { reasoning_tokens: 500_000, ..totals(1_000_000, 200_000) };
+        let without = totals(1_000_000, 200_000);
+        let price = price_for(Some("claude-opus-4"), &prices);
+        assert_eq!(cost_usd(&with, price), cost_usd(&without, price));
+
+        let usage = summarize(
+            &[session("ses-1", "claude-code", Some("claude-opus-4"), with)],
+            &HashMap::new(),
+            &prices,
+        );
+        assert_eq!(usage.sessions[0].reasoning_tokens, 500_000);
+        assert_eq!(usage.totals.reasoning_tokens, 500_000);
+        assert_eq!(usage.totals.output_tokens, 200_000, "reasoning is not added to output");
+        assert!((usage.totals.total_cost_usd - 30.0).abs() < 1e-9, "15 in + 15 out");
     }
 
     #[test]

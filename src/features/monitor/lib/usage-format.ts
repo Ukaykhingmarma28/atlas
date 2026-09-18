@@ -13,3 +13,13 @@ export function fmtDate(ms: number | null): string {
   if (!ms) return "—";
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+/** A 0..1 fraction as a percentage: `fmtPct(0.823)` → "82%". */
+export function fmtPct(frac: number, digits = 0): string {
+  return `${(frac * 100).toFixed(digits)}%`;
+}
+
+/** An integer with locale grouping: `fmtNum(12345)` → "12,345". */
+export function fmtNum(n: number): string {
+  return Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}

@@ -28,6 +28,7 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--fg": "component-local gradient foreground",
   "--diff-sx": "component-local diff transform",
   "--i": "component-local animation index",
+  "--x": "component-local chart-tooltip offset",
   "--atlas-pulse-color": "component-local animation colour",
   "--atlas-ants-color": "component-local animation colour",
   "--atlas-beam-travel": "component-local animation distance",

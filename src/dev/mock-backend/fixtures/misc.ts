@@ -508,8 +508,8 @@ export const miscHandlers: MockHandlers = {
   // so the browser answer is always "no files came with it".
   clipboard_file_paths: (): string[] => [],
   "plugin:opener|reveal_item_in_dir": nothing,
-  mission_control_write_file: nothing,
-  mission_control_export_markdown: nothing,
+  usage_write_file: nothing,
+  usage_export_markdown: nothing,
 
   // ── native Browser tab — answered, never faked ──────────────────────────
   // These drive a real child `WebviewWindow`. There is nothing to stand in for

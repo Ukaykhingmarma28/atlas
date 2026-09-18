@@ -9,7 +9,7 @@ import { FileTree } from "@/features/explorer/components/file-tree";
  *
  * A collapsible project "Usage" report used to be docked at the bottom (a
  * cost donut + per-session list, with a full-screen table behind it). Removed
- * 2026-09-16: the numbers belong in Mission Control, which shows them across
+ * 2026-09-16: the numbers belong in the Usage tab, which shows them across
  * every project instead of squatting on half the file tree.
  */
 export function LeftPanel() {

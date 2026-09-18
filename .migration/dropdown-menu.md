@@ -26,7 +26,8 @@ classes). Verdict: migrated; four flagged deltas.
   `projects/project-sidebar`, `comms/message-group`,
   `organisations/members-modal`, `organisations/org-switcher`,
   `knowledge/editor-footer`, `knowledge/knowledge-sidebar`, `log/log-panel`,
-  `mission-control/dashboard/dashboard-header`.
+  `mission-control/dashboard/dashboard-header` (since renamed to
+  `usage/components/usage-header` by the Usage tab upstream).
   - 24 `Content`/`SubContent` → `Positioner > Popup`, positioning props hoisted.
   - 19 `asChild` → `render`; 45 `onSelect` → `onClick`.
   - **z-index moved onto every Positioner.** The Popup is static inside the
@@ -106,8 +107,8 @@ the end of the migration.
 
 ## Verify by hand
 
-1. Open the account menu, the log-panel filter, the export menu in the Mission
-   Control header, the project-sidebar row menu: each must appear anchored to
+1. Open the account menu, the log-panel filter, the export menu in the Usage
+   header, the project-sidebar row menu: each must appear anchored to
    its trigger, at the same offset as before, and **above** anything it opens
    over.
 2. Click every item in at least three of them — this is the `onSelect` sweep.

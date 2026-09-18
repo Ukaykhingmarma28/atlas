@@ -72,10 +72,10 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     columns: [{ type: "chat", title: "Agents" }],
   },
   {
-    id: "console",
-    name: "Console",
-    description: "The cross-project analytics dashboard.",
+    id: "usage",
+    name: "Usage",
+    description: "Organisation token usage and cost.",
     panels: {},
-    columns: [{ type: "mission-control", title: "Console" }],
+    columns: [{ type: "usage", title: "Usage" }],
   },
 ];
