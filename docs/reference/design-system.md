@@ -159,6 +159,42 @@ One thing to keep in mind:
   step, and `md` and `lg` resolving to the same value made every dialog read as
   a popover.
 
+## The scrim
+
+Two utilities, and the colour is **deliberately not a theme key**.
+
+| utility | what it is |
+|---|---|
+| `scrim` | a dialog, a command palette, a lightbox — the app behind is out of reach |
+| `scrim-soft` | an in-panel drawer whose own surface carries the depth |
+
+The decision, because it looks like an omission: a scrim's whole job is to push
+what is behind it away from the reader, and only *darkening* does that. Over a
+light theme a light scrim separates nothing. Every light UI worth copying
+darkens — macOS sheets, VS Code light, and shadcn's own `DialogOverlay`, which
+is a bare `bg-black/50` in both appearances and is not a token there either.
+Making it a key would offer a theme author a choice with one correct answer, and
+the wrong answer would silently switch the dim off. Appearance is carried by the
+alpha instead: 60% black reads as a heavy dim on cream and as a deepening on
+near-black, which is the same instruction in both.
+
+What *was* drift is that 29 sites wrote nine different alphas by hand
+(`bg-black/10` through `/80`). Those two utilities are now the whole vocabulary,
+and `scrim` is also the right fill for a control that sits over arbitrary media
+— a user's photo, a PDF page — for the same reason: nothing about the theme
+tells you what is underneath.
+
+**The mirror of this is `bg-white/[0.06]`, and that one is not invariant.** A
+white hairline or a white wash is the *dark*-appearance reading of "this surface
+catches the light"; on cream it is nothing at all. Those 49 sites moved onto the
+element roles — `bg-element-hover` / `-selected` / `-active`,
+`border-border-subtle` / `-border` / `-border-strong` — which are the theme's own
+foreground at an alpha and therefore flip with the appearance.
+
+Three literals survive on purpose, all of them decision 3's documented
+exceptions: the PDF page (paper is white), the lightbox matte behind someone
+else's photo, and the Windows close button's system red in the titlebar.
+
 ## Z-index
 
 Nine named layers (decision 28). Nothing outside `globals.css` writes a

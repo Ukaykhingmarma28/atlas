@@ -346,6 +346,35 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   The scrim. Two rungs, and the colour is deliberately NOT a theme key.
+
+   A scrim's job is to push what is behind it away from the reader, and only
+   darkening does that: over a light theme a light scrim separates nothing, so
+   every light UI worth copying — macOS sheets, VS Code light, shadcn's own
+   `DialogOverlay`, which is a bare `bg-black/50` in both appearances — darkens
+   too. Making it a key would offer authors a choice that has one correct
+   answer, and the wrong answer would silently disable the dim. The alpha is
+   what carries appearance: 60% black reads as a heavy dim on cream and as a
+   deepening on near-black, which is the same instruction in both.
+
+   What WAS drift is that 29 sites wrote nine different alphas by hand. These
+   two are the whole vocabulary:
+
+     scrim       a dialog, a palette, a lightbox — the app is out of reach
+     scrim-soft  an in-panel drawer whose own surface carries the depth
+
+   `scrim` is also the right fill for a control that sits over arbitrary media
+   (a user's image, a PDF page), for the same reason: nothing about the theme
+   tells you what is underneath.
+   ────────────────────────────────────────────────────────────────────────── */
+@utility scrim {
+  background-color: rgb(0 0 0 / 0.6);
+}
+@utility scrim-soft {
+  background-color: rgb(0 0 0 / 0.2);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    Motion (decision 29). Tailwind's `duration-*` is numeric-only, same as
    `z-*`. The easings are already a theme namespace, so `ease-out-strong`,
    `ease-in-out-strong` and `ease-drawer` come for free — and are the only

@@ -53,7 +53,7 @@ export function LayoutSwitcher({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/70 backdrop-blur-sm z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim backdrop-blur-sm z-overlay" />
         <Dialog.Popup
           ref={contentRef}
           tabIndex={-1}

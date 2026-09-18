@@ -1672,7 +1672,7 @@ function FilterDrawer({
       {/* Scrim — subtle; the blurred panel carries the depth, as in the
        *  notification centre. Clicking it dismisses. */}
       <div
-        className="animate-fade-in absolute inset-0 z-40 bg-black/10"
+        className="animate-fade-in absolute inset-0 z-40 scrim-soft"
         onClick={onClose}
         aria-hidden
       />

@@ -61,7 +61,7 @@ export function ConnectDialog() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60 backdrop-blur-sm" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-sm" />
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",

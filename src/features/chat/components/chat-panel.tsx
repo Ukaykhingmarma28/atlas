@@ -1660,7 +1660,7 @@ function WelcomeState() {
           className="mb-5 rounded-xl ring-1 ring-[var(--atlas-element-active)] shadow-lg"
         />
 
-        <h2 className="bg-gradient-to-b from-white to-white/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
+        <h2 className="bg-gradient-to-b from-foreground to-foreground/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
           Atlas
         </h2>
         <p className="mt-1.5 text-base text-[var(--muted-foreground)]">

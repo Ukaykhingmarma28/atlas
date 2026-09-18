@@ -34,7 +34,7 @@ import { HintGroup, HintItem } from "@/ui/hint-group";
 export function HeaderDock({ children }: { children: React.ReactNode }) {
   return (
     <HintGroup>
-      <div className="flex h-7 items-center gap-1.5 rounded-full border border-white/[0.07] bg-card p-1">
+      <div className="flex h-7 items-center gap-1.5 rounded-full border border-border-subtle bg-card p-1">
         {children}
       </div>
     </HintGroup>

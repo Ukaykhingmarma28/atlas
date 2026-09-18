@@ -58,7 +58,7 @@ export function NotificationPanel() {
     <>
       {/* Scrim — subtle; the blurred panel carries the depth. */}
       <div
-        className="fixed inset-0 z-drawer bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-drawer scrim-soft animate-fade-in"
         onClick={close}
         aria-hidden
       />
@@ -92,7 +92,7 @@ export function NotificationPanel() {
           {items.length === 0 ? (
             <div className="grid h-full place-items-center px-6">
               <div className="text-center">
-                <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-border-subtle bg-white/[0.03]">
+                <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-border-subtle bg-element-hover">
                   <Bell size={18} className="text-muted-foreground" strokeWidth={1.5} />
                 </div>
                 <p className="mt-3 text-[12px] text-muted-foreground">No notifications</p>
@@ -138,7 +138,7 @@ function NotificationCard({ n }: { n: AppNotification }) {
       }}
       className={cn(
         "group relative flex items-start gap-2.5 rounded-xl border border-border-subtle px-3 py-2.5",
-        "bg-white/[0.03] hover:bg-white/[0.06] transition-colors cursor-pointer select-none",
+        "bg-element-hover hover:bg-element-selected transition-colors cursor-pointer select-none",
       )}
     >
       <span className="mt-0.5 shrink-0">
@@ -166,7 +166,7 @@ function NotificationCard({ n }: { n: AppNotification }) {
             e.stopPropagation();
             dismiss(n.id);
           }}
-          className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 grid h-5 w-5 place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-opacity"
+          className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 grid h-5 w-5 place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-element-active transition-opacity"
         >
           <X size={11} />
         </button>

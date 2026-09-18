@@ -30,7 +30,7 @@ export function GitErrorDialog() {
   return (
     <Dialog.Root open={payload !== null} onOpenChange={(o) => !o && actions.dismissErrorDialog()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
         <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-modal w-[440px] rounded-xl overflow-hidden bg-[var(--card)] border border-border shadow-md flex flex-col">
           {payload && (
             <>

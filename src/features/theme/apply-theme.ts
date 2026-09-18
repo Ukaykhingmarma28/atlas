@@ -49,7 +49,7 @@ function cacheLaunchColors(resolved: ResolvedTheme): void {
  * on a light Mac was landed in the unfinished light UI at boot, having never
  * chosen it and with no visible control to get out.
  */
-export const LIGHT_APPEARANCE_ENABLED = false;
+export const LIGHT_APPEARANCE_ENABLED = true;
 
 export function appearanceForMode(mode: ThemeMode): "dark" | "light" {
   if (!LIGHT_APPEARANCE_ENABLED) return "dark";

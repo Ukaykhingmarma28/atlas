@@ -168,7 +168,7 @@ export function CreateOrgDialog({
         {/* Strong dim + blur, same language as the unpinned project scrim —
             the frosted panel above it needs a hidden, low-contrast backdrop to
             read as a focus transition rather than a floating card. */}
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/45 backdrop-blur-xl" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-xl" />
         <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={(e) => {

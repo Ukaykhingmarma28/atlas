@@ -260,7 +260,7 @@ function ConfirmReindex({
 }) {
   return (
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-modal flex items-center justify-center scrim"
       onClick={onCancel}
     >
       <div

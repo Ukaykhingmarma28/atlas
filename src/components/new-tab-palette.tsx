@@ -171,7 +171,7 @@ export function NewTabPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(

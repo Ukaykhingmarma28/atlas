@@ -37,20 +37,20 @@ export function UpdateAvailableModal() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim backdrop-blur-sm z-overlay" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-modal",
             "w-[300px] rounded-2xl overflow-hidden",
             // macOS-style vibrancy: translucent panel over a blurred backdrop.
-            "bg-[var(--card)]/70 backdrop-blur-2xl border border-white/10",
+            "bg-[var(--card)]/70 backdrop-blur-2xl border border-border",
             "shadow-md",
             "px-5 pt-6 pb-5 flex flex-col items-center text-center",
           )}
         >
           {isError ? (
-            <div className="w-[52px] h-[52px] rounded-2xl bg-white/10 border border-white/10 grid place-items-center">
+            <div className="w-[52px] h-[52px] rounded-2xl bg-element-active border border-border grid place-items-center">
               <AlertTriangle size={24} className="text-[var(--atlas-status-error-foreground)]" />
             </div>
           ) : (
@@ -96,7 +96,7 @@ export function UpdateAvailableModal() {
               <button
                 type="button"
                 onClick={dismissModal}
-                className="w-full h-9 rounded-lg text-[12px] font-medium bg-white/10 text-foreground border border-white/10 hover:bg-white/[0.15] transition-colors"
+                className="w-full h-9 rounded-lg text-[12px] font-medium bg-element-active text-foreground border border-border hover:bg-[var(--atlas-element-emphasis)] transition-colors"
               >
                 Later
               </button>

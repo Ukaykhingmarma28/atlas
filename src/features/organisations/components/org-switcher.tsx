@@ -278,7 +278,7 @@ export function OrgSwitcher() {
               // No inset top highlight: on a card this size it draws a bright
               // line across the whole head of the menu, which reads as a second
               // border above the first.
-              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--card)]/95 shadow-md backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--secondary-foreground)]"
+              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 shadow-md backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--secondary-foreground)]"
             >
               {/* Head: a filter field with the refresh beside it, no rule under
                   it — the same row the chat session picker opens with. The list
@@ -585,7 +585,7 @@ function DeleteOrgDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60 backdrop-blur-sm" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-sm" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
@@ -631,7 +631,7 @@ function DeleteOrgDialog({
                 }
               }}
               disabled={deleting}
-              className="px-3 h-8 rounded-md text-sm font-medium bg-error text-white hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="px-3 h-8 rounded-md text-sm font-medium bg-error text-destructive-foreground hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {deleting && <Loader2 size={12} className="animate-spin" />}
               {deleting ? "Deleting…" : "Delete organisation"}

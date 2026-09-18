@@ -153,7 +153,7 @@ export function CheckpointScopePicker({
                 "flex max-h-[380px] w-[340px] flex-col overflow-hidden rounded-xl select-none",
                 // Border, fill, blur and animation on ONE element — splitting them
                 // isolates the layer and flattens the backdrop blur.
-                "border border-white/10 bg-[var(--card)]/95 backdrop-blur-2xl",
+                "border border-border bg-[var(--card)]/95 backdrop-blur-2xl",
                 "inset-highlight shadow-md",
                 "origin-[var(--transform-origin)] data-open:animate-scale-in",
               )}
@@ -161,7 +161,7 @@ export function CheckpointScopePicker({
               {/* Search first, like the agent chat's session picker. A Session can
                   carry dozens of Checkpoints and the one you want is remembered by
                   its subject, not its position. */}
-              <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.07] px-3 py-2">
+              <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
                 <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                 <input
                   autoFocus
@@ -200,7 +200,7 @@ export function CheckpointScopePicker({
               <button
                 type="button"
                 onClick={() => onChange(null)}
-                className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 py-2 text-left transition-colors hover:bg-element-hover cursor-pointer"
+                className="flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 py-2 text-left transition-colors hover:bg-element-hover cursor-pointer"
               >
                 <Layers size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                 <span className="min-w-0 flex-1 truncate text-xs text-[var(--foreground)]">
@@ -262,7 +262,7 @@ function Row({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-2 border-b border-white/[0.04] px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-element-hover cursor-pointer"
+      className="flex w-full items-start gap-2 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-element-hover cursor-pointer"
     >
       <span className="mt-px shrink-0 text-[var(--muted-foreground)]">{icon}</span>
       <span className="min-w-0 flex-1">

@@ -79,7 +79,7 @@ export function MediaLightbox() {
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && close()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-modal bg-black/80 animate-fade-in" />
+        <Dialog.Backdrop className="fixed inset-0 z-modal scrim animate-fade-in" />
         <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={onKeyDown}
@@ -135,6 +135,9 @@ export function MediaLightbox() {
                   src={convertFileSrc(path)}
                   controls
                   autoPlay
+                  // The letterbox behind someone else's photo or video. Deliberately
+                  // theme-invariant (decision 3): a tinted matte would misreport the
+                  // image's own edges.
                   className="h-full w-full bg-black object-contain"
                 />
               ) : (
@@ -188,7 +191,7 @@ function NavButton({
         onClick={onClick}
         className={cn(
           "absolute top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
-          "border border-white/10 bg-[var(--card)]/70 text-secondary-foreground backdrop-blur-xl",
+          "border border-border bg-[var(--card)]/70 text-secondary-foreground backdrop-blur-xl",
           "transition-opacity hover:text-foreground cursor-pointer",
           "disabled:cursor-default disabled:opacity-0",
           side === "left" ? "left-3" : "right-3",

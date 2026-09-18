@@ -57,7 +57,7 @@ export function CanvasPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim" />
         <Dialog.Popup
           aria-describedby={undefined}
           className="fixed top-12 left-6 right-6 bottom-6 z-modal rounded-xl border border-[var(--border)] bg-[var(--background)] overflow-hidden flex flex-col shadow-md focus:outline-none"

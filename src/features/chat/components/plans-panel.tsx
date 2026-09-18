@@ -90,7 +90,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
     <>
       {/* Scrim — click outside the panel to dismiss. */}
       <div
-        className="absolute inset-0 z-20 bg-black/20 animate-fade-in"
+        className="absolute inset-0 z-20 scrim-soft animate-fade-in"
         onClick={onClose}
         aria-hidden
       />

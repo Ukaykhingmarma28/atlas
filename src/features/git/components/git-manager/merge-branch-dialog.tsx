@@ -174,7 +174,7 @@ export function MergeBranchDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
         <Dialog.Popup
           className="fixed left-1/2 top-[22%] -translate-x-1/2 z-modal w-[420px] rounded-xl overflow-hidden bg-[var(--card)] border border-border shadow-md flex flex-col"
           // Keep focus on the filter input (rendered below), not the list.

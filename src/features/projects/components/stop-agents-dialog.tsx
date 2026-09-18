@@ -21,7 +21,7 @@ export function StopAgentsDialog() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && settle(false)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/45 backdrop-blur-xl" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-xl" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(

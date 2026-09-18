@@ -36,7 +36,7 @@ export function MemoryTimelinePanel({
   return (
     <>
       <div
-        className="absolute inset-0 z-20 bg-black/10 animate-fade-in"
+        className="absolute inset-0 z-20 scrim-soft animate-fade-in"
         onClick={onClose}
         aria-hidden
       />

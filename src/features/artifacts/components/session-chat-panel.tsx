@@ -437,14 +437,11 @@ function Starters({ disabled, onPick }: { disabled: boolean; onPick: (question: 
               background: "radial-gradient(circle, var(--primary) 0%, transparent 68%)",
             }}
           />
-          <AtlasIcon
-            size={48}
-            className="atlas-fade-in rounded-xl shadow-lg ring-1 ring-white/10"
-          />
+          <AtlasIcon size={48} className="atlas-fade-in rounded-xl shadow-lg ring-1 ring-border" />
         </div>
 
         <h2
-          className="atlas-fade-in bg-gradient-to-b from-white to-white/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent"
+          className="atlas-fade-in bg-gradient-to-b from-foreground to-foreground/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent"
           style={{ animationDelay: "40ms" }}
         >
           Ask this session

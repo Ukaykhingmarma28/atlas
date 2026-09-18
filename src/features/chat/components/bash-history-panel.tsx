@@ -99,7 +99,7 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
       {/* Scrim — click outside the panel to dismiss. Subtle so the chat stays
           readable underneath the overlay. */}
       <div
-        className="absolute inset-0 z-20 bg-black/20 animate-fade-in"
+        className="absolute inset-0 z-20 scrim-soft animate-fade-in"
         onClick={onClose}
         aria-hidden
       />

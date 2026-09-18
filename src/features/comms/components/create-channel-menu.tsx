@@ -67,7 +67,7 @@ export function CreateChannelMenu() {
         <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
           <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
             <div className="flex w-[240px] flex-col">
-              <div className="flex h-[32px] items-center gap-1.5 border-b border-white/5 px-3">
+              <div className="flex h-[32px] items-center gap-1.5 border-b border-border-subtle px-3">
                 <Hash size={11} className="shrink-0 text-muted-foreground" />
                 <input
                   ref={inputRef}
@@ -96,7 +96,7 @@ export function CreateChannelMenu() {
                   className={cn(
                     "flex h-[14px] w-[14px] items-center justify-center rounded border transition-colors",
                     isPrivate
-                      ? "border-white/40 bg-[var(--atlas-element-emphasis)] text-foreground"
+                      ? "border-border-strong bg-[var(--atlas-element-emphasis)] text-foreground"
                       : "border-border text-transparent",
                   )}
                 >
@@ -106,7 +106,7 @@ export function CreateChannelMenu() {
                 <span className="ml-auto text-2xs text-disabled">invite-only</span>
               </button>
 
-              <div className="border-t border-white/5 p-2">
+              <div className="border-t border-border-subtle p-2">
                 <button
                   type="button"
                   disabled={!name.trim() || pending}

@@ -719,7 +719,7 @@ function TerminalHandoffDockBody({
           toast.success("Command copied.");
         }}
         title={`Copy — ${command}`}
-        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-xs leading-none text-muted-foreground transition-colors hover:bg-white/[0.1] hover:text-foreground"
+        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-border bg-element-hover px-2.5 font-mono text-xs leading-none text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground"
       >
         <span className="min-w-0 max-w-[220px] truncate">{command}</span>
         <Copy className="size-3 shrink-0" />
@@ -729,7 +729,7 @@ function TerminalHandoffDockBody({
           (`chat-panel.tsx`) — same radius and weight, sized to this row. */}
       <button
         onClick={onDone}
-        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium leading-none text-foreground transition-colors hover:bg-white/[0.14]"
+        className="flex h-6.5 shrink-0 items-center rounded-full border border-border bg-element-selected px-3 text-xs font-medium leading-none text-foreground transition-colors hover:bg-[var(--atlas-element-emphasis)]"
       >
         I've finished signing in
       </button>
@@ -737,7 +737,7 @@ function TerminalHandoffDockBody({
       <Hint label="Dismiss" side="top">
         <button
           onClick={onDismiss}
-          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/[0.1] hover:text-foreground"
+          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground"
         >
           <X className="size-3.5" />
         </button>

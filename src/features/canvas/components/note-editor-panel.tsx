@@ -80,7 +80,7 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
     <>
       {/* Scrim */}
       <div
-        className="fixed inset-0 z-overlay bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-overlay scrim-soft animate-fade-in"
         onClick={close}
         aria-hidden
       />

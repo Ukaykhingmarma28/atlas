@@ -160,6 +160,10 @@ function PdfPage({
   const ref = useRef<HTMLDivElement>(null);
   const { width: w, height: h } = useElementSize(ref);
   return (
+    // A PDF page is paper, and paper is white. Decision 3 names PDF page
+    // content as one of the two documented exceptions to "the theme is applied
+    // everywhere" — the chrome around the page follows the theme, the page
+    // itself renders the document as its author saved it.
     <div ref={ref} className="relative bg-white shadow-lg" data-page-number={pageNumber}>
       <Page
         pageNumber={pageNumber}

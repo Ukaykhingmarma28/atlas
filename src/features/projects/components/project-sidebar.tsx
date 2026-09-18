@@ -1457,7 +1457,7 @@ function HelpMenu() {
             <button
               type="button"
               aria-label="Help and community"
-              className="flex size-[22px] items-center justify-center rounded-full border border-white/[0.08] text-[var(--muted-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
+              className="flex size-[22px] items-center justify-center rounded-full border border-border-subtle text-[var(--muted-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
             >
               <HelpCircle size={12} />
             </button>
@@ -1466,7 +1466,7 @@ function HelpMenu() {
       </Hint>
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
-          <DropdownMenu.Popup className="w-[212px] overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--card)]/95 p-1 backdrop-blur-2xl shadow-md select-none">
+          <DropdownMenu.Popup className="w-[212px] overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 p-1 backdrop-blur-2xl shadow-md select-none">
             <HelpItem
               icon={<BookOpen size={12} />}
               label="Docs"

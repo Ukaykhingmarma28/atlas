@@ -553,7 +553,7 @@ function SourceFilter({
                         : "border-[var(--border)]",
                     )}
                   >
-                    {checked && <Check size={9} className="text-white" />}
+                    {checked && <Check size={9} className="text-primary-foreground" />}
                   </span>
                   {s}
                 </DropdownMenu.CheckboxItem>

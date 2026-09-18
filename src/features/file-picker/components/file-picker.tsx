@@ -175,7 +175,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/40 backdrop-blur-sm" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-sm" />
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[18%] z-modal -translate-x-1/2",

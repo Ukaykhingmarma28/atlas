@@ -54,7 +54,7 @@ export function GitDiffModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60 data-open:animate-fade-in" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim data-open:animate-fade-in" />
         <Dialog.Popup
           aria-describedby={undefined}
           // Scales in from 95%. Without it the modal simply blinked into

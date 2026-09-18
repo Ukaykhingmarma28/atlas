@@ -213,7 +213,7 @@ export function FeedbackPanel() {
                     // it deliberately does not follow a theme token (no key in the
                     // current set expresses "contrast badge on unpredictable image
                     // content" either).
-                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white/80 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                    className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full scrim text-white/80 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
                   >
                     <X size={9} />
                   </button>

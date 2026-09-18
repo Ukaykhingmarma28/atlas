@@ -99,7 +99,7 @@ export function SearchOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
         <Dialog.Popup
           className={cn(
             "fixed top-[15%] left-1/2 -translate-x-1/2",

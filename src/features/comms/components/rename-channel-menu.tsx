@@ -59,7 +59,7 @@ export function RenameChannelMenu({
         <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
           <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
             <div className="flex w-[240px] flex-col">
-              <div className="flex h-[32px] items-center gap-1.5 border-b border-white/5 px-3">
+              <div className="flex h-[32px] items-center gap-1.5 border-b border-border-subtle px-3">
                 <Hash size={11} className="shrink-0 text-muted-foreground" />
                 <input
                   autoFocus
