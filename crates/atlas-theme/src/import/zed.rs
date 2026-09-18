@@ -3,8 +3,9 @@
 //! The near-lossless case, and not by accident: decision 9 modelled Atlas's
 //! theme keys on Zed's dotted role names, so most of this file is a table of
 //! identities. Where the names differ it is because Atlas's no-leaf-and-prefix
-//! rule forbids Zed's shape — Zed has both `border` and `border.variant`, which
-//! in Atlas must be `border.default` and `border.variant`.
+//! rule forbids Zed's shape — Zed has a bare `border` alongside `border.variant`,
+//! `border.selected` and `border.disabled`, which collapse onto the two Atlas
+//! border keys in [`STYLE_MAP`]: `border.subtle` and `border.strong`.
 //!
 //! **A family is several themes, not one theme with several variants.** A Zed
 //! file is `{name, themes: [{name, appearance, style}]}` and the members are
@@ -279,12 +280,12 @@ fn map_syntax(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mut
         report.ignore(
             format!("syntax.* ({unused} scopes)"),
             "syntax scopes",
-            "Atlas has 20 syntax roles; Zed's finer scopes collapse onto them and the surplus is dropped",
+            "Zed's finer scopes collapse onto Atlas's syntax roles (see SYNTAX_MAP), and the surplus is dropped",
         );
     }
 }
 
-/// The 46 shadcn base tokens, from Zed roles.
+/// The shadcn base tokens ([`crate::BASE_TOKENS`]), from Zed roles.
 ///
 /// Every entry here is a judgement, so each is a one-liner rather than a table:
 /// `accent` is shadcn's *hover surface* (the audit's "accent collision"), not a

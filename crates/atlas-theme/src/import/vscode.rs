@@ -413,7 +413,8 @@ fn map_token_colors(token_colors: &[Value], draft: &mut VariantDraft, report: &m
     }
 
     // A rule whose every selector is a markup/diff/plain-text scope has no
-    // Atlas home at all; the rest are simply finer than Atlas's 20 roles.
+    // Atlas home at all; the rest are simply finer than Atlas's syntax roles
+    // (see SCOPE_TABLE).
     let unused = rules
         .iter()
         .filter(|rule| !rule.scopes.is_empty())
@@ -427,7 +428,7 @@ fn map_token_colors(token_colors: &[Value], draft: &mut VariantDraft, report: &m
         report.ignore(
             format!("tokenColors ({unused} rules)"),
             "textmate scopes",
-            "Atlas has 20 syntax roles; grammar-specific and markup scopes have no equivalent",
+            "grammar-specific and markup scopes have no equivalent among Atlas's syntax roles (see SCOPE_TABLE)",
         );
     }
 }

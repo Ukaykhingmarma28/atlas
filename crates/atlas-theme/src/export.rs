@@ -8,7 +8,7 @@
 //! It is lossy in exactly the way the shadcn importer is lossy in reverse. The
 //! base tokens *are* shadcn's, so they cross verbatim, appearance by
 //! appearance. Everything above them — the eight-colour palette and every
-//! theme key covering the editor, terminal, syntax, diffs, comms and agent
+//! theme key covering the editor, terminal, syntax, diffs and agent
 //! chips — describes surfaces shadcn has no vocabulary for and is dropped. The
 //! result carries the app's chrome and none of its code surfaces, which is the
 //! right trade for pasting an Atlas theme onto a marketing site and the wrong
@@ -95,7 +95,7 @@ pub fn to_shadcn_registry_item(theme: &Theme) -> ShadcnExport {
     ];
     if dropped > 0 {
         notes.push(format!(
-            "{dropped} Atlas values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff, comms and agent colours. To move this theme to another Atlas install, copy the TOML instead."
+            "{dropped} Atlas values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff and agent colours. To move this theme to another Atlas install, copy the TOML instead."
         ));
     }
     if theme.light.is_none() || theme.dark.is_none() {

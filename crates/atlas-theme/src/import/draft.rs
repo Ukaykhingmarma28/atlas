@@ -8,9 +8,10 @@
 //! derivation chain — and, more to the point, the same report entries for it.
 //!
 //! **Why the palette matters more than it looks.** It is optional in the file
-//! format, but `docs/reference/theme-keys.md` shows half the theme keys
-//! resolving through it — every status colour, every ANSI colour, every diff
-//! tint. An import that skips the palette produces a theme
+//! format, but a wide swath of the theme keys resolve through it — every
+//! status colour, every ANSI colour, every diff tint; see the Source column
+//! in `docs/reference/theme-keys.md` for the current set. An import that skips
+//! the palette produces a theme
 //! whose editor is the author's and whose chrome is Atlas's, which looks like a
 //! half-finished port. Guessing it from the ANSI ramp costs nothing and is
 //! right far more often than it is wrong.
