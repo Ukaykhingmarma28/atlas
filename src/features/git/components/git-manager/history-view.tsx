@@ -241,7 +241,10 @@ function CommitSessions({ sha }: { sha: string }) {
     setSessions([]);
     invoke<CommitSession[]>("capture_commit_sessions", { projectPath: repoPath, commitSha: sha })
       .then((found) => {
-        if (!cancelled) setSessions(found);
+        // Typed as an array, but guard the null a future backend change (or an
+        // unmocked dev command) could send instead of throwing — `sessions.length`
+        // below would otherwise crash on it.
+        if (!cancelled) setSessions(found ?? []);
       })
       // A Project with capture off returns an empty list rather than failing,
       // so reaching here means a store-level problem. The git panel is not the

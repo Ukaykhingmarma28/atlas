@@ -290,7 +290,10 @@ export async function listMessagesInPastSession(
   const q = query.toLowerCase();
   const out: MentionPastMessage[] = [];
   let idx = 0;
-  for (const m of dump) {
+  // `dump` is typed as an array, but nothing stops a future backend change (or
+  // an unmocked dev command) from resolving `null` instead of throwing — guard
+  // rather than let `for...of` crash outside the try/catch above.
+  for (const m of dump ?? []) {
     if (m.role !== "user") {
       idx += 1;
       continue;
