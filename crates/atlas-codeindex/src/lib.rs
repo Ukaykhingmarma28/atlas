@@ -10,6 +10,9 @@
 
 pub mod code_intel;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -148,6 +151,11 @@ pub fn scan(root: &Path, mtime_ms_of: impl Fn(&Path) -> i64) -> Vec<ScannedFile>
             hash: content_hash(&source),
             mtime_ms: mtime_ms_of(path),
         });
+        // The cap counts files that produced an index entry, not files walked,
+        // so a tree full of unsupported or empty files can't starve it.
+        if out.len() >= DEFAULT_MAX_FILES {
+            break;
+        }
     }
     out
 }
