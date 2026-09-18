@@ -44,15 +44,13 @@ export function MemoryTimelinePanel({
         className={cn(
           "absolute right-0 top-0 bottom-0 z-30 w-[330px] flex flex-col",
           "border-l border-[var(--border)] bg-[var(--bg-elevated)]/75 backdrop-blur-2xl",
-          "shadow-[var(--shadow-overlay)] animate-slide-in-right",
+          "shadow-md animate-slide-in-right",
         )}
       >
         <div className="flex items-start gap-2 px-3 h-[40px] shrink-0 border-b border-[var(--border)]">
           <div className="flex-1 min-w-0 pt-1">
-            <div className="text-[11px] font-medium text-[var(--text-primary)] truncate">
-              {title}
-            </div>
-            <div className="text-[9px] text-[var(--text-tertiary)] truncate">{subtitle}</div>
+            <div className="text-xs font-medium text-[var(--text-primary)] truncate">{title}</div>
+            <div className="text-3xs text-[var(--text-tertiary)] truncate">{subtitle}</div>
           </div>
           <Hint label="Close">
             <button
@@ -66,7 +64,7 @@ export function MemoryTimelinePanel({
 
         <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">
           {items.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
               No memory linked to this yet.
             </div>
           ) : (
@@ -80,16 +78,16 @@ export function MemoryTimelinePanel({
                     agentType={pluginIdForSource(it.source)}
                     className="shrink-0 opacity-70"
                   />
-                  <span className="text-[11px] text-[var(--text-primary)] truncate flex-1">
+                  <span className="text-xs text-[var(--text-primary)] truncate flex-1">
                     {it.title}
                   </span>
                   {it.score !== undefined && (
-                    <span className="text-[9px] text-[var(--text-tertiary)] tabular-nums">
+                    <span className="text-3xs text-[var(--text-tertiary)] tabular-nums">
                       {Math.round(it.score * 100)}%
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 text-[9px] text-[var(--text-tertiary)]">
+                <div className="flex items-center gap-1.5 text-3xs text-[var(--text-tertiary)]">
                   <span className="truncate flex-1">{it.note}</span>
                   {it.ts_ms > 0 && (
                     <span className="shrink-0">

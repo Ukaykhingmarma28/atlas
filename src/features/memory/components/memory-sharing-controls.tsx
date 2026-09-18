@@ -55,7 +55,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
           enabled ? "Shared memory ON — injected into agents on first send" : "Shared memory OFF"
         }
         className={cn(
-          "flex items-center gap-1 h-6 px-2 rounded-full border text-[10px] font-medium transition-colors cursor-pointer outline-none",
+          "flex items-center gap-1 h-6 px-2 rounded-full border text-2xs font-medium transition-colors cursor-pointer outline-none",
           enabled
             ? "border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
             : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
@@ -80,10 +80,10 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
           />
         </Hint>
         <Popover.Portal>
-          <Popover.Positioner className="z-[9999]" align="end" side="bottom" sideOffset={6}>
-            <Popover.Popup className="w-[300px] rounded-md border border-border bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]">
+          <Popover.Positioner className="z-popover" align="end" side="bottom" sideOffset={6}>
+            <Popover.Popup className="w-[300px] rounded-md border border-border bg-bg-elevated p-3 shadow-md">
               <div className="eyebrow mb-2">Recent-session handoff</div>
-              <p className="mb-2.5 text-[11px] leading-snug text-text-tertiary">
+              <p className="mb-2.5 text-xs leading-snug text-text-tertiary">
                 How the previous session's tail is summarized before it is injected into the next
                 agent.
               </p>
@@ -123,7 +123,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
                       onModel={(model) => void setPref({ ...pref, model })}
                     />
                   ) : (
-                    <p className="text-[11px] text-text-tertiary">
+                    <p className="text-xs text-text-tertiary">
                       Add a provider key in Settings to use provider summaries.
                     </p>
                   )}
@@ -131,7 +131,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
               )}
 
               {pref.mode === "raw" && (
-                <p className="mt-2.5 text-[11px] text-text-tertiary">
+                <p className="mt-2.5 text-xs text-text-tertiary">
                   Injecting the last turns verbatim — no model call, no latency.
                 </p>
               )}
@@ -163,7 +163,7 @@ function ModeSeg({
       onClick={() => enabled && onClick()}
       title={enabled ? label : `${label} (coming soon)`}
       className={cn(
-        "flex items-center gap-1 h-[22px] px-2 rounded-full text-[10px] font-medium transition-colors",
+        "flex items-center gap-1 h-[22px] px-2 rounded-full text-2xs font-medium transition-colors",
         active
           ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
           : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",

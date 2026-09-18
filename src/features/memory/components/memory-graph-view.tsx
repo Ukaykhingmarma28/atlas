@@ -65,10 +65,10 @@ export function MemoryGraphView() {
             <Sparkles size={22} className="text-[var(--text-secondary)]" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-[13px] font-medium text-[var(--text-primary)]">
+            <h3 className="text-base font-medium text-[var(--text-primary)]">
               Enable semantic memory
             </h3>
-            <p className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+            <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">
               Download a small on-device embedding model to index your Claude & Codex memory, map
               how it relates, and query it in natural language. Runs entirely locally — nothing
               leaves your machine.
@@ -76,12 +76,12 @@ export function MemoryGraphView() {
           </div>
           <button
             onClick={() => void download()}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-xs font-medium hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Download size={13} />
             Download model
           </button>
-          <p className="text-[10px] text-[var(--text-ghost)] font-mono">{MODEL_LABEL}</p>
+          <p className="text-2xs text-[var(--text-ghost)] font-mono">{MODEL_LABEL}</p>
         </div>
       </Centered>
     );
@@ -100,14 +100,14 @@ export function MemoryGraphView() {
         <div className="text-center max-w-[360px] px-6 w-full space-y-3">
           <Loader2 size={20} className="animate-spin text-[var(--text-secondary)] mx-auto" />
           <div className="space-y-1.5">
-            <p className="text-[12px] text-[var(--text-primary)]">Downloading model…</p>
+            <p className="text-sm text-[var(--text-primary)]">Downloading model…</p>
             <div className="h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
               <div
                 className="h-full bg-[var(--primary)] transition-[width] duration-200"
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <p className="text-[10px] text-[var(--text-tertiary)] font-mono">
+            <p className="text-2xs text-[var(--text-tertiary)] font-mono">
               {progress
                 ? `${progress.file}  ·  ${fmtMB(progress.received)} / ${fmtMB(progress.total)}  ·  ${pct}%`
                 : "starting…"}
@@ -123,15 +123,15 @@ export function MemoryGraphView() {
       <Centered>
         <div className="text-center max-w-[340px] px-6 space-y-3">
           <AlertTriangle size={20} className="text-[var(--status-error)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-secondary)]">
+          <p className="text-sm text-[var(--text-secondary)]">
             {phase === "download-failed" ? "Model download failed" : "Something went wrong"}
           </p>
           {error && (
-            <p className="text-[10px] text-[var(--text-tertiary)] font-mono break-words">{error}</p>
+            <p className="text-2xs text-[var(--text-tertiary)] font-mono break-words">{error}</p>
           )}
           <button
             onClick={() => (phase === "download-failed" ? void download() : void init(projectPath))}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} />
             Retry
@@ -146,7 +146,7 @@ export function MemoryGraphView() {
       <Centered>
         <div className="text-center space-y-2">
           <Loader2 size={18} className="animate-spin text-[var(--text-secondary)] mx-auto" />
-          <p className="text-[11px] text-[var(--text-tertiary)]">Indexing memory…</p>
+          <p className="text-xs text-[var(--text-tertiary)]">Indexing memory…</p>
         </div>
       </Centered>
     );
@@ -156,7 +156,7 @@ export function MemoryGraphView() {
   if (!graph || graph.nodes.length === 0) {
     return (
       <Centered>
-        <p className="text-[12px] text-[var(--text-tertiary)]">No memory to graph yet.</p>
+        <p className="text-sm text-[var(--text-tertiary)]">No memory to graph yet.</p>
       </Centered>
     );
   }
@@ -294,7 +294,7 @@ function GraphReady({
             onClick={() => setView("tree")}
             title="Decision tree"
             className={cn(
-              "flex items-center gap-1 px-1.5 h-5 rounded-[5px] text-[10px] font-medium transition-colors cursor-pointer",
+              "flex items-center gap-1 px-1.5 h-5 rounded-sm text-2xs font-medium transition-colors cursor-pointer",
               viewMode === "tree"
                 ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                 : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
@@ -306,7 +306,7 @@ function GraphReady({
             onClick={() => setView("graph")}
             title="Force graph"
             className={cn(
-              "flex items-center gap-1 px-1.5 h-5 rounded-[5px] text-[10px] font-medium transition-colors cursor-pointer",
+              "flex items-center gap-1 px-1.5 h-5 rounded-sm text-2xs font-medium transition-colors cursor-pointer",
               viewMode === "graph"
                 ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                 : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
@@ -326,7 +326,7 @@ function GraphReady({
             }}
             placeholder="Ask your memory… (Enter to search)"
             spellCheck={false}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            className="flex-1 min-w-0 bg-transparent outline-none text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
           />
           {querying && <Loader2 size={11} className="animate-spin text-[var(--text-tertiary)]" />}
           {query && !querying && (
@@ -341,7 +341,7 @@ function GraphReady({
           )}
         </div>
         <div className="flex-1" />
-        <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">
+        <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">
           {docCount} memories · {graph.edges.length} links
         </span>
         <Hint label="Re-index memory">
@@ -381,7 +381,7 @@ function GraphReady({
 
           {/* Time scrubber — watch memory accrue; drag to a moment in time. */}
           {hasTime && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-9 shadow-[var(--shadow-overlay)]">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-9 shadow-md">
               <Hint label={playing ? "Pause" : "Play timeline"} side="top">
                 <button
                   onClick={() => setPlaying((p) => !p)}
@@ -404,7 +404,7 @@ function GraphReady({
                 }}
                 className="w-[220px] h-1 accent-[var(--primary)] cursor-pointer"
               />
-              <span className="text-[10px] tabular-nums text-[var(--text-tertiary)] w-[78px] text-right">
+              <span className="text-2xs tabular-nums text-[var(--text-tertiary)] w-[78px] text-right">
                 {cutoff ? fmtDate(cutoff) : "All time"}
               </span>
             </div>
@@ -412,30 +412,29 @@ function GraphReady({
 
           {/* Impact-mode legend (graph only, while a node is selected). */}
           {selected && viewMode === "graph" && (
-            <div className="absolute right-3 top-[26px] flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-7 text-[10px] text-[var(--text-tertiary)]">
+            <div className="absolute right-3 top-[26px] flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-7 text-2xs text-[var(--text-tertiary)]">
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ background: "#fafafa" }} /> impacted
+                <span className="w-2 h-2 rounded-full bg-foreground" /> impacted
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ background: "#6796e6" }} />{" "}
-                influenced by
+                <span className="w-2 h-2 rounded-full bg-info" /> influenced by
               </span>
             </div>
           )}
           {/* Selected node detail card. Read-only: the per-agent memory views it
               used to open were removed with the agent dropdown. */}
           {selected && (
-            <div className="absolute left-[26px] bottom-3 max-w-[340px] text-left rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm shadow-[var(--shadow-overlay)] p-3">
+            <div className="absolute left-[26px] bottom-3 max-w-[340px] text-left rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm shadow-md p-3">
               <div className="flex items-center gap-1.5 mb-1">
                 <SourceDot source={selected.source} />
-                <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">
+                <span className="text-xs font-medium text-[var(--text-primary)] truncate">
                   {selected.summary || selected.title}
                 </span>
               </div>
-              <p className="text-[10px] text-[var(--text-tertiary)] line-clamp-4 leading-relaxed">
+              <p className="text-2xs text-[var(--text-tertiary)] line-clamp-4 leading-relaxed">
                 {selected.snippet || "—"}
               </p>
-              <p className="text-[9px] text-[var(--text-ghost)] mt-1.5 uppercase tracking-wide">
+              <p className="text-3xs text-[var(--text-ghost)] mt-1.5 uppercase tracking-wide">
                 {selected.source} · {selected.kind}
                 {selected.timestampMs > 0 && ` · ${fmtDate(selected.timestampMs)}`}
               </p>
@@ -445,7 +444,7 @@ function GraphReady({
 
         {results.length > 0 && (
           <aside className="w-[280px] shrink-0 border-l border-[var(--border)] overflow-y-auto hide-scrollbar bg-[var(--bg-sidebar)]">
-            <div className="px-3 h-[28px] flex items-center text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-subtle)] sticky top-0 bg-[var(--bg-sidebar)]">
+            <div className="px-3 h-[28px] flex items-center text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-subtle)] sticky top-0 bg-[var(--bg-sidebar)]">
               Results
             </div>
             {results.map((hit) => {
@@ -463,14 +462,14 @@ function GraphReady({
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <SourceDot source={node.source} />
-                    <span className="text-[11px] text-[var(--text-primary)] truncate flex-1">
+                    <span className="text-xs text-[var(--text-primary)] truncate flex-1">
                       {node.title}
                     </span>
-                    <span className="text-[9px] text-[var(--text-tertiary)] tabular-nums">
+                    <span className="text-3xs text-[var(--text-tertiary)] tabular-nums">
                       {Math.round(hit.score * 100)}%
                     </span>
                   </div>
-                  <span className="text-[10px] text-[var(--text-tertiary)] line-clamp-2 leading-snug">
+                  <span className="text-2xs text-[var(--text-tertiary)] line-clamp-2 leading-snug">
                     {node.snippet}
                   </span>
                 </button>
@@ -492,7 +491,7 @@ function SourceDot({ source }: { source: string }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-[12px]">
+    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-sm">
       {children}
     </div>
   );

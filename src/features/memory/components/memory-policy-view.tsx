@@ -122,7 +122,7 @@ export function MemoryPolicyView() {
       <Centered>
         <div className="text-center space-y-2">
           <Loader2 size={18} className="animate-spin text-[var(--text-tertiary)] mx-auto" />
-          <p className="text-[11px] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             {phase === "loading" ? "Distilling preferences…" : "Checking…"}
           </p>
         </div>
@@ -137,16 +137,16 @@ export function MemoryPolicyView() {
           <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)] flex items-center justify-center">
             <Sparkles size={22} className="text-[var(--text-secondary)]" />
           </div>
-          <p className="text-[13px] font-medium text-[var(--text-primary)]">
+          <p className="text-base font-medium text-[var(--text-primary)]">
             Enable preference learning
           </p>
-          <p className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+          <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">
             Download the on-device embedding model to distill your saved preferences into an
             editable policy table — no LLM, purely semantic.
           </p>
           <button
             onClick={() => void download()}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--bg-base)] text-xs font-medium hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Download size={13} />
             Download model
@@ -168,14 +168,14 @@ export function MemoryPolicyView() {
       <Centered>
         <div className="text-center max-w-[360px] px-6 w-full space-y-2">
           <Loader2 size={20} className="animate-spin text-[var(--text-secondary)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-primary)]">Downloading model…</p>
+          <p className="text-sm text-[var(--text-primary)]">Downloading model…</p>
           <div className="h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
             <div
               className="h-full bg-[var(--primary)] transition-[width] duration-200"
               style={{ width: `${pct}%` }}
             />
           </div>
-          <p className="text-[10px] text-[var(--text-tertiary)] font-mono">{pct}%</p>
+          <p className="text-2xs text-[var(--text-tertiary)] font-mono">{pct}%</p>
         </div>
       </Centered>
     );
@@ -186,13 +186,13 @@ export function MemoryPolicyView() {
       <Centered>
         <div className="text-center max-w-[340px] px-6 space-y-3">
           <AlertTriangle size={20} className="text-[var(--status-error)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-secondary)]">Couldn't load policies</p>
+          <p className="text-sm text-[var(--text-secondary)]">Couldn't load policies</p>
           {error && (
-            <p className="text-[10px] text-[var(--text-tertiary)] font-mono break-words">{error}</p>
+            <p className="text-2xs text-[var(--text-tertiary)] font-mono break-words">{error}</p>
           )}
           <button
             onClick={() => void init(projectPath)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -205,9 +205,9 @@ export function MemoryPolicyView() {
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
       <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
-        <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+        <span className="text-xs font-medium text-[var(--text-secondary)]">
           Preferences
-          <span className="ml-1.5 text-[9px] text-[var(--text-tertiary)] tabular-nums">
+          <span className="ml-1.5 text-3xs text-[var(--text-tertiary)] tabular-nums">
             {policies.length}
           </span>
         </span>
@@ -224,7 +224,7 @@ export function MemoryPolicyView() {
 
       {policies.length === 0 ? (
         <Centered>
-          <p className="text-[12px] text-[var(--text-tertiary)] max-w-[300px] text-center px-4">
+          <p className="text-sm text-[var(--text-tertiary)] max-w-[300px] text-center px-4">
             No preferences detected yet. As Claude Code & Codex record how you like to work, they'll
             surface here.
           </p>
@@ -270,13 +270,13 @@ export function MemoryPolicyView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter…"
-              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-strong)]"
+              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-strong)]"
             />
           </div>
 
           <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
             <div style={{ minWidth: TABLE_MIN_W }}>
-              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-2xs uppercase tracking-wider text-[var(--text-tertiary)]">
                 <span className={COL.policy}>Policy</span>
                 <span className={COL.value}>Value</span>
                 <span className={COL.source}>Source</span>
@@ -284,7 +284,7 @@ export function MemoryPolicyView() {
                 <span className={COL.actions} />
               </div>
               {visible.length === 0 ? (
-                <div className="px-3 py-6 text-center text-[11px] text-[var(--text-tertiary)]">
+                <div className="px-3 py-6 text-center text-xs text-[var(--text-tertiary)]">
                   No policies match these filters.
                 </div>
               ) : (
@@ -315,7 +315,7 @@ function FilterGroup<T extends string>({
           key={v}
           onClick={() => onChange(v)}
           className={cn(
-            "h-[18px] rounded px-1.5 text-[10px] transition-colors cursor-pointer",
+            "h-[18px] rounded px-1.5 text-2xs transition-colors cursor-pointer",
             value === v
               ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
               : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -363,7 +363,7 @@ function PolicyRow({
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={cn(
-              "shrink-0 rounded px-1 py-px text-[8.5px] font-semibold uppercase tracking-wide border",
+              "shrink-0 rounded px-1 py-px text-3xs font-semibold uppercase tracking-wide border",
               policy.category === "strong"
                 ? "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]"
                 : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
@@ -376,9 +376,9 @@ function PolicyRow({
           >
             {policy.category}
           </span>
-          <span className="text-[12px] text-[var(--text-primary)] truncate">{policy.key}</span>
+          <span className="text-sm text-[var(--text-primary)] truncate">{policy.key}</span>
         </div>
-        <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{policy.hint}</div>
+        <div className="text-2xs text-[var(--text-tertiary)] truncate mt-0.5">{policy.hint}</div>
       </div>
 
       <div className={cn(COL.value, "pr-3")}>
@@ -391,7 +391,7 @@ function PolicyRow({
           }}
           spellCheck={false}
           className={cn(
-            "w-full bg-transparent outline-none text-[12px] text-[var(--text-secondary)] rounded px-1.5 py-1 border transition-colors",
+            "w-full bg-transparent outline-none text-sm text-[var(--text-secondary)] rounded px-1.5 py-1 border transition-colors",
             dirty
               ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
               : "border-transparent hover:border-[var(--border)]",
@@ -405,13 +405,13 @@ function PolicyRow({
         ) : (
           <ClaudeIcon className="size-3 shrink-0 opacity-70" />
         )}
-        <span className="text-[10px] text-[var(--text-tertiary)] truncate" title={policy.file_path}>
+        <span className="text-2xs text-[var(--text-tertiary)] truncate" title={policy.file_path}>
           {basename(policy.file_path)}
         </span>
       </div>
 
       <div
-        className={cn(COL.score, "text-right tabular-nums text-[10px] text-[var(--text-tertiary)]")}
+        className={cn(COL.score, "text-right tabular-nums text-2xs text-[var(--text-tertiary)]")}
       >
         {Math.round(policy.score * 100)}%
       </div>
@@ -424,7 +424,7 @@ function PolicyRow({
                 <button
                   onClick={() => void save()}
                   disabled={saving}
-                  className="flex items-center justify-center w-5 h-5 rounded text-[var(--status-success,#4d4d4d)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                  className="flex items-center justify-center w-5 h-5 rounded text-success hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
                   {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
                 </button>
@@ -461,7 +461,7 @@ function basename(p: string): string {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-[12px]">
+    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-sm">
       {children}
     </div>
   );

@@ -204,8 +204,8 @@ export function MemoryTimelineView() {
       <Centered>
         <div className="text-center max-w-[320px] px-6 space-y-2">
           <GitBranch size={22} className="text-[var(--text-tertiary)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-secondary)]">Timeline needs a git repo</p>
-          <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+          <p className="text-sm text-[var(--text-secondary)]">Timeline needs a git repo</p>
+          <p className="text-xs text-[var(--text-tertiary)] leading-relaxed">
             Initialize git to map agent sessions and memory onto branch lanes over time.
           </p>
         </div>
@@ -223,10 +223,10 @@ export function MemoryTimelineView() {
     return (
       <Centered>
         <div className="text-center space-y-2">
-          <p className="text-[12px] text-[var(--text-tertiary)]">Couldn't build the timeline.</p>
+          <p className="text-sm text-[var(--text-tertiary)]">Couldn't build the timeline.</p>
           <button
             onClick={() => projectPath && void loadTimeline(projectPath, true)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -253,8 +253,8 @@ export function MemoryTimelineView() {
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 h-[32px] shrink-0 border-b border-[var(--border)] text-[10px] text-[var(--text-tertiary)]">
-        <span className="text-[11px] font-medium text-[var(--text-secondary)]">Timeline</span>
+      <div className="flex items-center gap-3 px-3 h-8 shrink-0 border-b border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
+        <span className="text-xs font-medium text-[var(--text-secondary)]">Timeline</span>
         <span className="tabular-nums">
           {timeline.branches.length} branches · {timeline.commits.length} commits ·{" "}
           {timeline.sessions.length} sessions
@@ -267,7 +267,7 @@ export function MemoryTimelineView() {
               key={n}
               onClick={() => setPersistedDayCount(n)}
               className={cn(
-                "px-2 h-6 text-[10px] tabular-nums transition-colors cursor-pointer border-l border-[var(--border)] first:border-l-0",
+                "px-2 h-6 text-2xs tabular-nums transition-colors cursor-pointer border-l border-[var(--border)] first:border-l-0",
                 dayCount === n
                   ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
@@ -315,7 +315,7 @@ export function MemoryTimelineView() {
         {/* Floating semantic search pill — overlaid on the chart, no box. */}
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 w-[min(620px,calc(100%-40px))]">
           <HintGroup side="top">
-            <div className="flex items-center gap-2.5 h-11 rounded-full bg-[#141414]/95 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.6)] border border-white/[0.12] px-4">
+            <div className="flex items-center gap-2.5 h-11 rounded-full bg-card/95 backdrop-blur-2xl shadow-md border border-white/[0.12] px-4">
               <Search size={15} className="text-[var(--text-tertiary)] shrink-0" />
               <input
                 value={query}
@@ -326,7 +326,7 @@ export function MemoryTimelineView() {
                 }}
                 placeholder="Ask how memory shaped your branches…"
                 spellCheck={false}
-                className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+                className="flex-1 min-w-0 bg-transparent outline-none text-base text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
               />
               {(query || searchMode) && !searching && (
                 <HintItem label="Clear">
@@ -376,7 +376,7 @@ function selectionTitle(selectedId: string | null, t: MemoryTimeline): string {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-[12px]">
+    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-sm">
       {children}
     </div>
   );

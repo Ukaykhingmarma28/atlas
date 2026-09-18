@@ -205,4 +205,4 @@ export function layoutTree(root: TreeNode, collapsed: ReadonlySet<string>): Tree
 // Monochromatic by design — Atlas is AMOLED-black + grays, so connectors and
 // lead-in lines are a single muted gray; emphasis comes from the click-to-
 // highlight path (handled in the view), not from per-category colour.
-export const LINE_MONO = "#5e5e5e";
+export const LINE_MONO = "var(--muted-foreground)";

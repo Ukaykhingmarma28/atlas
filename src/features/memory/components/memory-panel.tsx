@@ -74,7 +74,7 @@ export function MemoryPanel() {
           <SharedMemoryView projectPath={projectPath} />
         ) : (
           <Centered>
-            <p className="text-[12px] text-[var(--text-tertiary)]">
+            <p className="text-sm text-[var(--text-tertiary)]">
               Open a project to view shared memory.
             </p>
           </Centered>
@@ -108,7 +108,7 @@ function PillSeg({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 h-[22px] px-2.5 rounded-full text-[11px] font-medium outline-none transition-colors cursor-pointer",
+        "flex items-center gap-1.5 h-control-xs px-2.5 rounded-full text-xs font-medium outline-none transition-colors cursor-pointer",
         active
           ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
           : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
