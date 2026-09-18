@@ -49,6 +49,11 @@ pub struct SessionChatThread {
     pub model: String,
     #[serde(default)]
     pub messages: Vec<StoredMessage>,
+    /// Commit SHAs this thread is scoped to. `None`/absent = the whole Session.
+    /// `default` keeps threads written before scoping shipped readable, and
+    /// lets a save that omits the field (there shouldn't be one) not fail.
+    #[serde(default)]
+    pub checkpoint_scope: Option<Vec<String>>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -167,5 +172,51 @@ mod tests {
     #[test]
     fn safe_accepts_a_normal_id() {
         assert!(safe("01J8Z9-abc_DEF").is_ok());
+    }
+
+    /// Regression for a bug where `checkpoint_scope` was accepted on the wire
+    /// (the frontend always sends it) but the struct had no field for it, so
+    /// serde silently dropped it and a thread's checkpoint scope never
+    /// survived a reload. Pins both the wire key (must be `checkpointScope`,
+    /// matching the frontend's `SessionChatThreadWire`) and that it round-trips.
+    #[test]
+    fn checkpoint_scope_round_trips_on_the_wire() {
+        let thread = SessionChatThread {
+            id: "t1".into(),
+            title: "About the auth refactor".into(),
+            agent_session_id: "s1".into(),
+            project_path: "/repo".into(),
+            provider: "anthropic".into(),
+            model: "claude".into(),
+            messages: Vec::new(),
+            checkpoint_scope: Some(vec!["abc123".into(), "def456".into()]),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&thread).unwrap();
+        assert!(json.contains("\"checkpointScope\""), "wire key: {json}");
+
+        let round_tripped: SessionChatThread = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped.checkpoint_scope, thread.checkpoint_scope);
+    }
+
+    /// A thread file written before scoping shipped has no `checkpointScope`
+    /// key at all — `#[serde(default)]` must keep it readable rather than
+    /// rejecting the file.
+    #[test]
+    fn checkpoint_scope_defaults_to_none_for_old_threads() {
+        let json = r#"{
+            "id": "t1",
+            "title": "Old thread",
+            "agentSessionId": "s1",
+            "projectPath": "/repo",
+            "provider": "anthropic",
+            "model": "claude",
+            "messages": [],
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2025-01-01T00:00:00Z"
+        }"#;
+        let thread: SessionChatThread = serde_json::from_str(json).unwrap();
+        assert_eq!(thread.checkpoint_scope, None);
     }
 }
