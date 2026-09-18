@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle, Rss } from "lucide-react";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { themeDerived } from "@/features/theme/theme-values";
 import type { Organisation } from "@/features/organisations/types";
 
 /**
@@ -119,7 +120,13 @@ function DitherBackdrop() {
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      // A canvas takes a colour as a VALUE, so it cannot name the variable and
+      // has to read the resolved one. `element.emphasis` is the theme's own
+      // foreground at 16% — identical to the white it used to hardcode on a
+      // dark theme, and an equally visible dark speckle on a light one, where
+      // hardcoded white was invisible. Re-read every frame: the loop redraws
+      // at ~12fps, so a theme switch lands within 80ms with no subscription.
+      ctx.fillStyle = themeDerived("element.emphasis");
 
       // Wind: mostly sideways, a little lift, plus a slow phase evolution so
       // shapes morph rather than only translate.
