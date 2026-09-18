@@ -67,11 +67,53 @@ export function collectStores(module: Record<string, unknown>): Map<string, Rese
  * store's own `set`/`get`, so restoring them by reference is correct.
  */
 export function snapshotStores(stores: Iterable<ResettableStore>): Map<ResettableStore, object> {
-  return new Map([...stores].map((store) => [store, { ...store.getState() }]));
+  return new Map([...stores].map((store) => [store, deepCopy(store.getState())]));
 }
 
 export function restoreStores(baseline: Map<ResettableStore, object>): void {
-  for (const [store, state] of baseline) store.setState({ ...state }, true);
+  for (const [store, state] of baseline) store.setState(deepCopy(state), true);
+}
+
+/**
+ * Copy plain objects, arrays, Maps and Sets all the way down, both when
+ * snapshotting and when restoring. A shallow copy would share nested values
+ * with the baseline, so code that mutates a nested array in place (a test
+ * helper, a console experiment) would poison every later reset.
+ *
+ * Not `structuredClone`: the state holds action functions, which it rejects.
+ * Functions, class instances and anything else non-plain are kept by
+ * reference — actions are stable closures, and the stores hold no other
+ * mutable instances worth copying.
+ */
+function deepCopy<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+  if (typeof value !== "object" || value === null) return value;
+  const cached = seen.get(value);
+  if (cached !== undefined) return cached as T;
+
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    seen.set(value, out);
+    for (const item of value) out.push(deepCopy(item, seen));
+    return out as T;
+  }
+  if (value instanceof Map) {
+    const out = new Map();
+    seen.set(value, out);
+    for (const [k, v] of value) out.set(k, deepCopy(v, seen));
+    return out as T;
+  }
+  if (value instanceof Set) {
+    const out = new Set();
+    seen.set(value, out);
+    for (const v of value) out.add(deepCopy(v, seen));
+    return out as T;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  const out: Record<string, unknown> = {};
+  seen.set(value, out);
+  for (const [k, v] of Object.entries(value)) out[k] = deepCopy(v, seen);
+  return out as T;
 }
 
 // Lazy on purpose. `install.ts` has to stay synchronous and cheap — it runs
