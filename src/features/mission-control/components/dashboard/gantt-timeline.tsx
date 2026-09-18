@@ -67,7 +67,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
   if (rows.length === 0) {
     return (
       <ChartCard title="Project timeline" subtitle="Activity + token volume over time">
-        <div className="h-[120px] flex items-center justify-center text-[11px] text-[var(--text-tertiary)]">
+        <div className="h-[120px] flex items-center justify-center text-xs text-[var(--text-tertiary)]">
           No project activity.
         </div>
       </ChartCard>
@@ -86,7 +86,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
         {rows.map((r, ri) => (
           <div key={r.path} className="flex items-center gap-2">
             <div
-              className="w-[120px] shrink-0 truncate text-[11px] text-[var(--text-secondary)]"
+              className="w-[120px] shrink-0 truncate text-xs text-[var(--text-secondary)]"
               title={r.name}
             >
               {r.name}
@@ -118,7 +118,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
                 ),
               )}
             </div>
-            <div className="w-[56px] shrink-0 text-right text-[10px] font-mono text-[var(--text-tertiary)]">
+            <div className="w-[56px] shrink-0 text-right text-2xs font-mono text-[var(--text-tertiary)]">
               {fmtTokens(r.total)}
             </div>
           </div>

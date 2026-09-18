@@ -63,10 +63,10 @@ export function MissionControlDashboard() {
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {!data && loading && (
-          <div className="p-6 text-[12px] text-[var(--text-tertiary)]">Loading metrics…</div>
+          <div className="p-6 text-sm text-[var(--text-tertiary)]">Loading metrics…</div>
         )}
         {error && (
-          <div className="p-6 text-[12px] text-[var(--status-error)]">Failed to load: {error}</div>
+          <div className="p-6 text-sm text-[var(--status-error)]">Failed to load: {error}</div>
         )}
         {data && (
           <div className="p-4 space-y-4">

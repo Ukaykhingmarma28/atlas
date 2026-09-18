@@ -25,14 +25,14 @@ export function StatCard({
         {accent && (
           <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
         )}
-        <span className="text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+        <span className="text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
           {label}
         </span>
       </div>
-      <span className="text-[20px] font-mono tabular-nums text-[var(--text-primary)] leading-none">
+      <span className="text-xl font-mono tabular-nums text-[var(--text-primary)] leading-none">
         {value}
       </span>
-      {sub && <span className="text-[10px] text-[var(--text-tertiary)] font-mono">{sub}</span>}
+      {sub && <span className="text-2xs text-[var(--text-tertiary)] font-mono">{sub}</span>}
     </div>
   );
 }
