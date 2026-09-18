@@ -101,7 +101,7 @@ export function ModelsManager() {
             placeholder="Filter models…"
             className={cn(
               "w-full h-7 pl-8 pr-2.5 rounded-md bg-bg-elevated border border-border",
-              "text-[11px] text-text-primary placeholder:text-text-tertiary",
+              "text-xs text-text-primary placeholder:text-text-tertiary",
               "focus:outline-none focus:border-border-strong",
             )}
           />
@@ -111,11 +111,11 @@ export function ModelsManager() {
       {/* Table */}
       <div className="flex-1 min-h-0 overflow-auto">
         {!loaded ? (
-          <div className="p-8 text-center text-[11px] text-text-tertiary">Loading models…</div>
+          <div className="p-8 text-center text-xs text-text-tertiary">Loading models…</div>
         ) : (
           <div className="min-w-[560px]">
             {/* header */}
-            <div className="sticky top-0 z-10 flex items-center gap-3 px-4 h-8 bg-bg-primary border-b border-border text-[10px] uppercase tracking-wider text-text-tertiary">
+            <div className="sticky top-0 z-10 flex items-center gap-3 px-4 h-8 bg-bg-primary border-b border-border text-2xs uppercase tracking-wider text-text-tertiary">
               <div className={COL.name}>Model</div>
               <div className={COL.size}>Size</div>
               <div className={COL.dim}>Dim</div>
@@ -132,35 +132,33 @@ export function ModelsManager() {
                 >
                   <div className={COL.name}>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-medium text-text-primary">{m.name}</span>
+                      <span className="text-sm font-medium text-text-primary">{m.name}</span>
                       {m.selected && (
-                        <span className="text-[9px] uppercase tracking-wide text-[var(--bg-base)] bg-primary rounded px-1 py-px">
+                        <span className="text-3xs uppercase tracking-wide text-[var(--bg-base)] bg-primary rounded px-1 py-px">
                           In use
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-text-tertiary mt-0.5 truncate">
+                    <div className="text-2xs text-text-tertiary mt-0.5 truncate">
                       {m.description}
                     </div>
                   </div>
-                  <div className={cn(COL.size, "text-[11px] text-text-secondary")}>
+                  <div className={cn(COL.size, "text-xs text-text-secondary")}>
                     {fmtSize(m.sizeMb)}
                   </div>
-                  <div className={cn(COL.dim, "text-[11px] text-text-secondary")}>
-                    {m.dim ?? "—"}
-                  </div>
+                  <div className={cn(COL.dim, "text-xs text-text-secondary")}>{m.dim ?? "—"}</div>
                   <div className={COL.status}>
                     {dl ? (
                       <ProgressBar dl={dl} />
                     ) : m.downloaded ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-text-secondary">
+                      <span className="inline-flex items-center gap-1 text-2xs text-text-secondary">
                         <Check size={12} className="text-text-secondary" /> Downloaded
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => void doDownload(m)}
-                        className="inline-flex items-center gap-1 h-6 rounded-md px-2 text-[10px] font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors"
+                        className="inline-flex items-center gap-1 h-6 rounded-md px-2 text-2xs font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors"
                       >
                         <Download size={11} /> Download
                       </button>
@@ -168,7 +166,7 @@ export function ModelsManager() {
                   </div>
                   <div className={cn(COL.use, "flex items-center justify-end gap-1")}>
                     {m.selected ? (
-                      <span className="inline-flex items-center gap-1 h-6 px-2 text-[10px] font-medium text-text-secondary">
+                      <span className="inline-flex items-center gap-1 h-6 px-2 text-2xs font-medium text-text-secondary">
                         <Check size={11} /> In use
                       </span>
                     ) : (
@@ -189,7 +187,7 @@ export function ModelsManager() {
                             : "Download this model first"
                         }
                         onClick={() => void doUse(m)}
-                        className="h-6 rounded-md px-2 text-[10px] font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="h-6 rounded-md px-2 text-2xs font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {busy ? <Loader2 size={11} className="animate-spin" /> : "Use"}
                       </button>
@@ -244,7 +242,7 @@ function ProgressBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[10px] tabular-nums text-text-tertiary">{pct}%</span>
+      <span className="text-2xs tabular-nums text-text-tertiary">{pct}%</span>
     </div>
   );
 }
@@ -260,7 +258,7 @@ function ConfirmReindex({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
       onClick={onCancel}
     >
       <div
@@ -270,8 +268,8 @@ function ConfirmReindex({
         <div className="flex items-start gap-2.5">
           <AlertTriangle size={16} className="text-[var(--status-warning)] shrink-0 mt-0.5" />
           <div>
-            <p className="text-[13px] font-semibold text-text-primary">Switch embedding model?</p>
-            <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
+            <p className="text-base font-semibold text-text-primary">Switch embedding model?</p>
+            <p className="text-xs text-text-secondary mt-1 leading-relaxed">
               Using <span className="text-text-primary">{name}</span> re-embeds your memory in a new
               vector space. Atlas will wipe this project's memory index and rebuild it in the
               background. Your notes and files are untouched.
@@ -282,14 +280,14 @@ function ConfirmReindex({
           <button
             type="button"
             onClick={onCancel}
-            className="h-7 rounded-md px-3 text-[11px] font-medium border border-border bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
+            className="h-7 rounded-md px-3 text-xs font-medium border border-border bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="h-7 rounded-md px-3 text-[11px] font-medium bg-primary text-[var(--bg-base)] hover:opacity-90 transition-opacity"
+            className="h-7 rounded-md px-3 text-xs font-medium bg-primary text-[var(--bg-base)] hover:opacity-90 transition-opacity"
           >
             Switch & rebuild
           </button>

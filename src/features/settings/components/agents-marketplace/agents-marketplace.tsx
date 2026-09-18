@@ -275,7 +275,7 @@ export function AgentsMarketplace() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search registry"
-              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-border-strong"
+              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-border-strong"
             />
             {query && (
               <Hint label="Clear search">
@@ -300,7 +300,7 @@ export function AgentsMarketplace() {
                 key={id}
                 onClick={() => setFilter(id)}
                 className={cn(
-                  "h-[22px] px-2.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer",
+                  "h-[22px] px-2.5 rounded-full text-xs font-medium transition-colors cursor-pointer",
                   filter === id
                     ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -316,7 +316,7 @@ export function AgentsMarketplace() {
           <button
             onClick={() => void refresh()}
             disabled={refreshing}
-            className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex items-center gap-1.5 h-6 px-2 rounded-md text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
             title={
               refreshedAt
                 ? `Last updated ${new Date(refreshedAt).toLocaleString()}`
@@ -328,7 +328,7 @@ export function AgentsMarketplace() {
           </button>
         </div>
         {error && registryEntries.length > 0 && (
-          <p className="text-[10px] text-[var(--text-tertiary)]">
+          <p className="text-2xs text-[var(--text-tertiary)]">
             Last refresh failed ({error}) — showing cached data
             {refreshedAt ? ` from ${new Date(refreshedAt).toLocaleString()}` : ""}.
           </p>
@@ -345,11 +345,11 @@ export function AgentsMarketplace() {
           // blocking spinner. With a cache in hand we always paint the cache.
           <div className="h-full flex flex-col items-center justify-center gap-2">
             <Loader2 size={18} className="animate-spin text-[var(--text-tertiary)]" />
-            <p className="text-[11px] text-[var(--text-tertiary)]">Loading the ACP registry…</p>
+            <p className="text-xs text-[var(--text-tertiary)]">Loading the ACP registry…</p>
           </div>
         ) : entries.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
-            <p className="text-[12px] text-[var(--text-tertiary)]">
+            <p className="text-sm text-[var(--text-tertiary)]">
               {registryEntries.length > 0
                 ? "No agents match."
                 : error
@@ -358,11 +358,11 @@ export function AgentsMarketplace() {
             </p>
             {registryEntries.length === 0 && error && (
               <>
-                <p className="max-w-[380px] text-[10.5px] text-[var(--text-tertiary)]">{error}</p>
+                <p className="max-w-[380px] text-xs text-[var(--text-tertiary)]">{error}</p>
                 <button
                   onClick={() => void refresh()}
                   disabled={refreshing}
-                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:cursor-default"
+                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-xs font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:cursor-default"
                 >
                   <RefreshCw size={10} className={cn(refreshing && "animate-spin")} />
                   {refreshing ? "Retrying…" : "Try again"}
@@ -383,7 +383,7 @@ export function AgentsMarketplace() {
                   className={cn(section === "registry" && detectedIds.size > 0 && "mt-4")}
                 >
                   {detectedIds.size > 0 && (
-                    <h3 className="mb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
+                    <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
                       {section === "detected" ? "Detected on your system" : "Registry"}
                     </h3>
                   )}
@@ -453,15 +453,15 @@ const AgentCard = memo(function AgentCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
-            <span className="text-[12.5px] font-semibold text-[var(--text-primary)] truncate">
+            <span className="text-base font-semibold text-[var(--text-primary)] truncate">
               {entry.name}
             </span>
-            <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">
+            <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">
               v{entry.version}
             </span>
             {entry.unverified && entry.distributionKind === "binary" && (
               <span
-                className="text-[9px] px-1 rounded bg-[var(--bg-hover)] text-[var(--text-tertiary)]"
+                className="text-3xs px-1 rounded bg-[var(--bg-hover)] text-[var(--text-tertiary)]"
                 title="This agent's binary download publishes no checksum."
               >
                 unverified
@@ -469,7 +469,7 @@ const AgentCard = memo(function AgentCard({
             )}
           </div>
           {!entry.platformSupported && (
-            <p className="text-[10px] text-[var(--warning,#c90)]">
+            <p className="text-2xs text-warning">
               Not supported on this platform
               {entry.unsupportedReason ? ` — ${entry.unsupportedReason}` : ""}
             </p>
@@ -485,11 +485,11 @@ const AgentCard = memo(function AgentCard({
         />
       </div>
       {entry.description && (
-        <p className="text-[11px] leading-snug text-[var(--text-secondary)] line-clamp-2">
+        <p className="text-xs leading-snug text-[var(--text-secondary)] line-clamp-2">
           {entry.description}
         </p>
       )}
-      <div className="flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-2 text-2xs text-[var(--text-tertiary)]">
         <span className="font-mono">ID: {entry.id}</span>
         {entry.distributionKind && <span className="font-mono">[{entry.distributionKind}]</span>}
         <span className="flex-1" />
@@ -549,7 +549,7 @@ function CardAction({
   const kind = installKind(state);
   if (installing) {
     return (
-      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border)] tabular-nums">
+      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-xs font-medium text-[var(--text-secondary)] border border-[var(--border)] tabular-nums">
         <Loader2 size={10} className="animate-spin" />
         {pct !== null ? `${Math.round(pct)}%` : "Installing…"}
       </span>
@@ -568,7 +568,7 @@ function CardAction({
               if (ok) onUninstall(entry);
             });
         }}
-        className="h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        className="h-6 px-2.5 rounded-md text-xs font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
       >
         Remove
       </button>
@@ -583,7 +583,7 @@ function CardAction({
     return (
       <span className="flex items-center gap-1.5">
         <span
-          className="flex items-center gap-1 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-tertiary)] border border-[var(--border)]"
+          className="flex items-center gap-1 h-6 px-2 rounded-md text-xs font-medium text-[var(--text-tertiary)] border border-[var(--border)]"
           title={
             catalog?.resolvedPath ? `Found at ${catalog.resolvedPath}` : "Found on your system"
           }
@@ -598,7 +598,7 @@ function CardAction({
               ? `Add it, running your own copy at ${catalog.resolvedPath}. Nothing is downloaded.`
               : "Add it, running the copy already on your system. Nothing is downloaded."
           }
-          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-xs font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
         >
           Install
         </button>
@@ -610,7 +610,7 @@ function CardAction({
       onClick={() => onInstall(entry, kind)}
       disabled={!entry.platformSupported}
       className={cn(
-        "flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium border transition-colors",
+        "flex items-center gap-1 h-6 px-2.5 rounded-md text-xs font-medium border transition-colors",
         entry.platformSupported
           ? "text-[var(--text-primary)] border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] cursor-pointer"
           : "text-[var(--text-tertiary)] border-[var(--border)] opacity-50 cursor-not-allowed",

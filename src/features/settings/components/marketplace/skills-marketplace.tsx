@@ -230,7 +230,7 @@ export function SkillsMarketplace({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search the skills registry…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
         />
         {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
         {query && (
@@ -247,7 +247,7 @@ export function SkillsMarketplace({
       </div>
 
       {error && (
-        <div className="mx-3 mb-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-[11px] text-error">
+        <div className="mx-3 mb-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error">
           {error}
         </div>
       )}
@@ -256,7 +256,7 @@ export function SkillsMarketplace({
       <div className="min-h-0 flex-1 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
           {/* sticky header */}
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-2xs uppercase tracking-wider text-text-tertiary">
             <span className={cn(COL.rank, "text-right pr-2")}>#</span>
             <span className={COL.skill}>{query.trim() ? "Results" : "Popular"}</span>
             <span className={COL.source}>Source</span>
@@ -266,7 +266,7 @@ export function SkillsMarketplace({
           </div>
 
           {rows.length === 0 ? (
-            <div className="grid h-[180px] place-items-center text-[11px] text-text-tertiary">
+            <div className="grid h-[180px] place-items-center text-xs text-text-tertiary">
               {loading
                 ? "Searching…"
                 : query.trim()
@@ -291,23 +291,23 @@ export function SkillsMarketplace({
                   <span
                     className={cn(
                       COL.rank,
-                      "text-right pr-2 font-mono text-[11px] tabular-nums text-text-tertiary",
+                      "text-right pr-2 font-mono text-xs tabular-nums text-text-tertiary",
                     )}
                   >
                     {i + 1}
                   </span>
-                  <span className={cn(COL.skill, "truncate text-[12px] text-text-primary")}>
+                  <span className={cn(COL.skill, "truncate text-sm text-text-primary")}>
                     {hit.name}
                   </span>
                   <span
-                    className={cn(COL.source, "truncate font-mono text-[10px] text-text-tertiary")}
+                    className={cn(COL.source, "truncate font-mono text-2xs text-text-tertiary")}
                   >
                     {hit.source}
                   </span>
                   <span
                     className={cn(
                       COL.installs,
-                      "text-right font-mono text-[11px] tabular-nums text-text-secondary",
+                      "text-right font-mono text-xs tabular-nums text-text-secondary",
                     )}
                   >
                     {hit.installs.toLocaleString()}
@@ -363,7 +363,7 @@ function InstallButton({
 }) {
   if (installed) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-text-tertiary">
+      <span className="inline-flex items-center gap-1 text-xs text-text-tertiary">
         <Check size={12} /> Added
       </span>
     );
@@ -373,7 +373,7 @@ function InstallButton({
       type="button"
       disabled={installing}
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
     >
       {installing ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
       Install
@@ -490,13 +490,13 @@ function SkillDetailModal({
       }
     >
       {loading ? (
-        <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+        <div className="flex items-center gap-2 text-sm text-text-tertiary">
           <Loader2 size={13} className="animate-spin" /> Loading details…
         </div>
       ) : preview ? (
         <>
           {preview.manifest?.description && (
-            <p className="mb-3 text-[13px] leading-relaxed text-text-secondary">
+            <p className="mb-3 text-base leading-relaxed text-text-secondary">
               {preview.manifest.description}
             </p>
           )}
@@ -506,7 +506,7 @@ function SkillDetailModal({
               {otherCounts.map(([kind, n]) => (
                 <span
                   key={kind}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-base px-2 py-0.5 text-[10px] text-text-tertiary"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-base px-2 py-0.5 text-2xs text-text-tertiary"
                 >
                   <Boxes size={10} />
                   {n} {KIND_LABEL[kind]}
@@ -518,11 +518,11 @@ function SkillDetailModal({
           {!preview.manifest?.description &&
             modalSkills.length === 0 &&
             otherCounts.length === 0 && (
-              <div className="text-[12px] text-text-tertiary">No additional details published.</div>
+              <div className="text-sm text-text-tertiary">No additional details published.</div>
             )}
         </>
       ) : (
-        <div className="text-[12px] text-text-tertiary">
+        <div className="text-sm text-text-tertiary">
           Couldn’t load details — you can still install.
         </div>
       )}
