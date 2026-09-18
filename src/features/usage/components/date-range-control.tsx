@@ -188,8 +188,14 @@ function MonthGrid({
                   : inSel
                     ? "bg-[var(--atlas-element-active)] text-[var(--foreground)]"
                     : "rounded-md text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
+                // Future days have not happened — hard-disabled, drawn in the
+                // "unavailable" tone with no hover feedback at all. Before-data
+                // days are still pickable (click handling is unchanged), just
+                // unlikely to show anything, so they get the dimmer but still
+                // "live" muted tone the rest of the calendar uses, and keep
+                // their hover state.
                 future && "cursor-default text-[var(--atlas-text-disabled)] hover:bg-transparent",
-                before && !inSel && "text-[var(--atlas-text-disabled)]",
+                before && !inSel && "text-[var(--muted-foreground)]",
                 day === today &&
                   !edge &&
                   "underline decoration-[var(--muted-foreground)] underline-offset-2",
