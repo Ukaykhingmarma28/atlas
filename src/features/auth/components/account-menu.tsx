@@ -168,21 +168,26 @@ function Header({ user }: { user: AccountUser }) {
 
   return (
     <>
-      {/* `Label`, not a bare div: inside `role="menu"` an unlabelled block is
-          announced as loose text between the items. This is the menu's title. */}
-      <DropdownMenu.GroupLabel className="flex items-center gap-2.5 px-3 py-1.5">
-        <AccountAvatar user={user} size={28} />
-        {/* `flex-1 min-w-0` against the content's max width is what makes a
+      {/* `GroupLabel`, not a bare div: inside `role="menu"` an unlabelled block
+          is announced as loose text between the items. This is the menu's
+          title. Base UI reads its group from context and throws when there is
+          none — where Radix's `Label` stood alone — so the `Group` wrapper is
+          required, not decorative. */}
+      <DropdownMenu.Group>
+        <DropdownMenu.GroupLabel className="flex items-center gap-2.5 px-3 py-1.5">
+          <AccountAvatar user={user} size={28} />
+          {/* `flex-1 min-w-0` against the content's max width is what makes a
             long address truncate rather than stretch the whole menu. */}
-        <div className="flex-1 min-w-0">
-          <div className="truncate text-[11.5px] font-medium text-[var(--text-primary)]">
-            {primary}
+          <div className="flex-1 min-w-0">
+            <div className="truncate text-[11.5px] font-medium text-[var(--text-primary)]">
+              {primary}
+            </div>
+            {email && email !== primary && (
+              <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">{email}</div>
+            )}
           </div>
-          {email && email !== primary && (
-            <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">{email}</div>
-          )}
-        </div>
-      </DropdownMenu.GroupLabel>
+        </DropdownMenu.GroupLabel>
+      </DropdownMenu.Group>
       <DropdownMenu.Separator className={SEPARATOR_CLASS} />
     </>
   );

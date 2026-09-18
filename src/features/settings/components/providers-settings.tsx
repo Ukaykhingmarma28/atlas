@@ -191,19 +191,24 @@ export function ProvidersSettings() {
 
                 <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
 
-                <DropdownMenu.GroupLabel className="px-3 pb-1 pt-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-                  Sort by
-                </DropdownMenu.GroupLabel>
-                {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
-                  <DropdownMenu.Item
-                    key={k}
-                    onClick={() => setSortKey(k)}
-                    className="flex items-center justify-between gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-                  >
-                    {SORT_LABELS[k]}
-                    {sortKey === k && <Check size={11} className="text-text-primary" />}
-                  </DropdownMenu.Item>
-                ))}
+                {/* The `Group` is what the label labels. Base UI's GroupLabel
+                    reads it from context and throws without one, where Radix's
+                    `Label` stood alone. */}
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel className="px-3 pb-1 pt-1 text-[9px] uppercase tracking-wider text-text-tertiary">
+                    Sort by
+                  </DropdownMenu.GroupLabel>
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                    <DropdownMenu.Item
+                      key={k}
+                      onClick={() => setSortKey(k)}
+                      className="flex items-center justify-between gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+                    >
+                      {SORT_LABELS[k]}
+                      {sortKey === k && <Check size={11} className="text-text-primary" />}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Group>
               </DropdownMenu.Popup>
             </DropdownMenu.Positioner>
           </DropdownMenu.Portal>
