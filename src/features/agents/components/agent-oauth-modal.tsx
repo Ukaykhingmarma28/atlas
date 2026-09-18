@@ -10,7 +10,7 @@
 //
 // Every visual here is lifted from `agent-login-dialog.tsx`, which is the
 // styling reference: same Radix Dialog geometry, same header band, same
-// method-row button, same `text-xs`/`text-[11px]` scale, same tokens. No new
+// method-row button, same type scale, same tokens. No new
 // visual patterns — see the design-language rule in the plan.
 //
 // One method type per branch, mirroring ACP:
@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
+import { DialogOverlay } from "@/ui/dialog";
 import {
   agents,
   ensureAgent,
@@ -473,9 +474,7 @@ function AgentOAuthModal({
       }}
     >
       <Dialog.Portal>
-        {!docked && (
-          <Dialog.Backdrop className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
-        )}
+        {!docked && <DialogOverlay className="backdrop-blur-sm" />}
         {docked ? (
           <Dialog.Popup
             // Never take the keyboard: the terminal behind this is what the
@@ -483,7 +482,7 @@ function AgentOAuthModal({
             // used to sit here are now reasons handled on the Root's
             // onOpenChange.
             initialFocus={false}
-            className="fixed bottom-12 left-1/2 z-[var(--z-modal)] max-w-[92vw] -translate-x-1/2"
+            className="fixed bottom-12 left-1/2 z-modal max-w-[92vw] -translate-x-1/2"
             style={centred}
           >
             <SignInDock label={label}>
@@ -494,16 +493,11 @@ function AgentOAuthModal({
                   onDismiss={dismiss}
                 />
               ) : phase.kind === "done" ? (
-                <span className="text-[12px] text-[var(--status-success)]">
-                  Signed in to {label}.
-                </span>
+                <span className="text-sm text-success">Signed in to {label}.</span>
               ) : (
                 <>
-                  <Loader2
-                    size={13}
-                    className="shrink-0 animate-spin text-[var(--text-tertiary)]"
-                  />
-                  <span className="text-[12px] text-[var(--text-secondary)]">
+                  <Loader2 size={13} className="shrink-0 animate-spin text-text-tertiary" />
+                  <span className="text-sm text-text-secondary">
                     {phase.kind === "running" ? phase.label : `Starting ${label}…`}
                   </span>
                 </>
@@ -513,9 +507,9 @@ function AgentOAuthModal({
         ) : (
           <Dialog.Popup
             className={cn(
-              "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
+              "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
               "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
-              "shadow-[var(--shadow-overlay)] text-text-primary",
+              "shadow-md text-text-primary",
             )}
             style={centred}
           >
@@ -537,19 +531,15 @@ function AgentOAuthModal({
               )}
 
               {phase.kind === "done" && (
-                <div className="px-2 py-6 text-xs text-[var(--status-success)]">
-                  Signed in to {label}.
-                </div>
+                <div className="px-2 py-6 text-xs text-success">Signed in to {label}.</div>
               )}
 
               {phase.kind === "error" && (
                 <div className="space-y-3">
-                  <p className="px-2 text-xs text-[var(--status-error)] break-words">
-                    {phase.message}
-                  </p>
+                  <p className="px-2 text-xs text-error break-words">{phase.message}</p>
                   {phase.manualCommand && (
                     <div className="px-2 space-y-1.5">
-                      <p className="text-[11px] text-text-secondary">
+                      <p className="text-xs text-text-secondary">
                         You can also finish this in a terminal:
                       </p>
                       <button
@@ -558,7 +548,7 @@ function AgentOAuthModal({
                           toast.success("Command copied.");
                         }}
                         title="Copy — then run it in a terminal and try again."
-                        className="w-full rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left font-mono text-[11px] text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                        className="w-full rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left font-mono text-xs text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
                       >
                         {phase.manualCommand}
                       </button>
@@ -608,7 +598,7 @@ function AgentOAuthModal({
                             {m.name}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-[11px] text-text-secondary">
+                            <span className="mt-0.5 block text-xs text-text-secondary">
                               {m.description}
                             </span>
                           )}
@@ -657,7 +647,7 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
       {url && (
         <button
           onClick={() => void openUrl(url)}
-          className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
           <span className="min-w-0 flex-1 truncate">Open sign-in page</span>
@@ -666,7 +656,7 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
       {tail.length > 0 && (
         <div className="max-h-28 overflow-y-auto rounded-sm border border-border bg-bg-base px-2.5 py-1.5">
           {tail.map((line, i) => (
-            <p key={i} className="font-mono text-[11px] text-text-tertiary break-all">
+            <p key={i} className="font-mono text-xs text-text-tertiary break-all">
               {line}
             </p>
           ))}
@@ -720,10 +710,8 @@ function TerminalHandoffDockBody({
 }) {
   return (
     <>
-      <TerminalIcon className="size-3.5 shrink-0 text-[var(--text-tertiary)]" />
-      <span className="shrink-0 text-[12px] text-[var(--text-primary)]">
-        Finish signing in in the terminal
-      </span>
+      <TerminalIcon className="size-3.5 shrink-0 text-text-tertiary" />
+      <span className="shrink-0 text-sm text-text-primary">Finish signing in in the terminal</span>
 
       <button
         onClick={() => {
@@ -731,7 +719,7 @@ function TerminalHandoffDockBody({
           toast.success("Command copied.");
         }}
         title={`Copy — ${command}`}
-        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-[11px] leading-none text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
+        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-xs leading-none text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
       >
         <span className="min-w-0 max-w-[220px] truncate">{command}</span>
         <Copy className="size-3 shrink-0" />
@@ -741,7 +729,7 @@ function TerminalHandoffDockBody({
           (`chat-panel.tsx`) — same radius and weight, sized to this row. */}
       <button
         onClick={onDone}
-        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-white/[0.14]"
+        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium leading-none text-text-primary transition-colors hover:bg-white/[0.14]"
       >
         I've finished signing in
       </button>
@@ -749,7 +737,7 @@ function TerminalHandoffDockBody({
       <Hint label="Dismiss" side="top">
         <button
           onClick={onDismiss}
-          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
+          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
         >
           <X className="size-3.5" />
         </button>
@@ -782,8 +770,8 @@ function EnvPhase({
     <div className="flex flex-col gap-2.5 px-2 py-1">
       <p className="text-xs text-text-secondary">
         {agentLabel} reads these from your environment. Export them in your shell profile (
-        <code className="text-[11px] text-text-primary">~/.zshrc</code>) and they are picked up on
-        its next start.
+        <code className="text-xs text-text-primary">~/.zshrc</code>) and they are picked up on its
+        next start.
       </p>
       <div className="flex flex-col gap-1">
         {env.map((v) => (
@@ -794,13 +782,13 @@ function EnvPhase({
             <Check
               className={cn(
                 "size-3.5 shrink-0",
-                v.satisfied ? "text-[var(--status-success)]" : "text-text-tertiary opacity-40",
+                v.satisfied ? "text-success" : "text-text-tertiary opacity-40",
               )}
             />
-            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-text-primary">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary">
               {v.name}
             </code>
-            <span className="shrink-0 text-[11px] text-text-tertiary">
+            <span className="shrink-0 text-xs text-text-tertiary">
               {v.satisfied
                 ? v.source === "shell-env"
                   ? "from shell profile"
