@@ -55,6 +55,7 @@
     ],
     "resources": {
       "resources/nvm.sh": "resources/nvm.sh",
+      "icons/AtlasLight.icns": "icons/AtlasLight.icns",
       "licenses/Atlas-LICENSE.txt": "licenses/Atlas-LICENSE.txt",
       "licenses/OpenAI-Codex-LICENSE.txt": "licenses/OpenAI-Codex-LICENSE.txt",
       "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt",
