@@ -1,6 +1,6 @@
 // A chat with every tool-call state the transcript renders: a finished turn
-// (folded tool block, edits, a failed command) followed by a live turn with a
-// command still streaming output.
+// (folded tool block, a delegated sub-agent, edits, a failed command) followed
+// by a live turn with a command still streaming output.
 
 import type { Scenario } from "../types";
 import { lines, text, thinking, tool, tools, user, t } from "../fixtures/chat";
@@ -33,6 +33,7 @@ const settledTurn = [
   ),
   tools(
     [
+      tool.delegate("Find every Button call site"),
       tool.search("Button"),
       tool.read("src/components/button.tsx"),
       tool.read("src/components/header.tsx"),

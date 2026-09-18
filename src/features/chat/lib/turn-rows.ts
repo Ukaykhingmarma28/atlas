@@ -139,10 +139,9 @@ export interface MarkerRow extends RowBase {
 
 export interface MarkerGroupRow extends RowBase {
   kind: typeof RowKind.MarkerGroup;
-  /** The glyph, which is the FIRST bucket in `summary` rather than the most
-   *  common one — see `summarizeMarkers`. */
-  tool: MarkerTool;
-  /** The whole folded block as one sentence: "Read files, ran commands". */
+  /** The whole folded block as one sentence: "Read files, ran commands". This
+   *  is what tells one block from the next in a column of them, which is why
+   *  it is the line and not a fixed label. */
   summary: string;
   /** How many tool calls the block stands for. Not rendered — the summary is
    *  the whole line — but it is what `summary` was counted from, and the thing
@@ -153,7 +152,6 @@ export interface MarkerGroupRow extends RowBase {
   open: boolean;
   /** At least one call in the sequence is still active. */
   running: boolean;
-  liveTool: MarkerTool | null;
   liveLabel: string | null;
 }
 
@@ -385,7 +383,13 @@ const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
 const SUMMARY_ORDER: readonly SummaryBucket[] = ["tool", "read", "edit", "run"];
 
 /** [one, several]. The singular is load-bearing: "Loaded a tool" is what a
- *  single call reads as, and it is how note 1's plural was diagnosed. */
+ *  single call reads as, and it is how note 1's plural was diagnosed.
+ *
+ *  A counted form ("3 files read") was tried on a two-line header and reverted:
+ *  every block then opened with the same bold "Tool calls" label, so a column
+ *  of them stopped differentiating at a glance. The sentence IS the
+ *  differentiator — "Read files, ran commands" and "Edited files" are
+ *  recognisably different lines. */
 const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
   tool: ["loaded a tool", "loaded tools"],
   read: ["read a file", "read files"],
@@ -393,31 +397,20 @@ const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
   run: ["ran a command", "ran commands"],
 };
 
-/** The glyph each bucket leads with when it comes first. */
-const SUMMARY_GLYPH: Record<SummaryBucket, MarkerTool> = {
-  tool: "tool",
-  read: "read",
-  edit: "edit",
-  run: "run",
-};
-
-/** One folded block → the sentence on its header, and the glyph beside it. */
-function summarizeMarkers(markers: MarkerRow[]): { tool: MarkerTool; summary: string } {
+/** One folded block → the sentence on its header. */
+function summarizeMarkers(markers: MarkerRow[]): { summary: string } {
   const counts = new Map<SummaryBucket, number>();
   for (const m of markers) {
     const bucket = SUMMARY_BUCKET[m.tool];
     counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
   const present = SUMMARY_ORDER.filter((b) => counts.has(b));
-  if (present.length === 0) return { tool: "tool", summary: "Used tools" };
+  if (present.length === 0) return { summary: "Used tools" };
 
   const fragments = present.map((b) => SUMMARY_PHRASE[b][counts.get(b) === 1 ? 0 : 1]);
   const sentence = fragments.join(", ");
-  return {
-    tool: SUMMARY_GLYPH[present[0]],
-    // Only the first fragment is capitalised; the rest stay mid-sentence.
-    summary: sentence.charAt(0).toUpperCase() + sentence.slice(1),
-  };
+  // Only the first fragment is capitalised; the rest stay mid-sentence.
+  return { summary: sentence.charAt(0).toUpperCase() + sentence.slice(1) };
 }
 
 /** A live disclosure names the current action, then returns to its aggregate
@@ -758,7 +751,6 @@ export function projectRows(
         markers,
         open: opts.expandedTurns.has(id),
         running: false,
-        liveTool: null,
         liveLabel: null,
       });
       markers = [];
@@ -829,7 +821,6 @@ export function projectRows(
           .find((marker) => marker.state === "running" || marker.state === "pending");
         if (!active) continue;
         row.running = true;
-        row.liveTool = active.tool;
         row.liveLabel = liveMarkerLabel(active);
       }
     }

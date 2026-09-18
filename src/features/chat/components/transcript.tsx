@@ -65,9 +65,10 @@ import {
 /**
  * How many rows are added each time the window grows.
  *
- * Sized in ROWS, not turns: each collapsed tool sequence counts as one row,
- * while an opened sequence bounds its own height. Forty rows stay ahead of the
- * reader without mounting the full history at once.
+ * Sized in ROWS, not turns: a collapsed tool sequence counts as one row, and an
+ * opened one counts as one row carrying its calls (26px each, laid out in the
+ * thread rather than in a nested scroller). Forty rows stay ahead of the reader
+ * without mounting the full history at once.
  * Bursting 80 at once was visibly worse even after the blank was fixed.
  */
 const WINDOW_CHUNK = 40;

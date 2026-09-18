@@ -20,18 +20,12 @@ import {
   Paperclip,
   Brain,
   Bookmark,
+  Check,
+  Circle,
   Code2,
   ChevronDown,
-  SquareTerminal,
-  BookOpen,
-  PencilLine,
-  Search,
-  Globe,
-  Trash2,
-  ArrowRightLeft,
-  FolderOpen,
-  FileText,
-  Wrench,
+  MousePointer2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CachedMarkdown } from "@/lib/markdown-cache";
@@ -279,7 +273,12 @@ export const ThinkingRowView = memo(function ThinkingRowView({
   onToggleExpand: (id: string) => void;
 }) {
   return (
-    <Column>
+    // A turn often emits several thinking blocks in a row, and at the bare
+    // 26px button height they stacked into one undifferentiated block — three
+    // "Thought process" lines read as a list with no items. 3px either side
+    // takes the pitch to 32px (the row plus a quarter) which is enough to tell
+    // them apart without turning them into paragraphs.
+    <Column className="py-[3px]">
       <button
         type="button"
         onClick={() => onToggleExpand(row.id)}
@@ -305,45 +304,64 @@ export const ThinkingRowView = memo(function ThinkingRowView({
 
 // ── Marker ─────────────────────────────────────────────────────────────────
 
-/** Icon key → glyph. Exhaustive over `MarkerTool` by construction, so adding a
- *  key to the union is a type error here until it has a glyph. */
-const TOOL_ICONS: Record<MarkerTool, typeof Wrench> = {
-  run: SquareTerminal,
-  read: BookOpen,
-  edit: PencilLine,
-  search: Search,
-  list: FolderOpen,
-  fetch: Globe,
-  think: Brain,
-  delete: Trash2,
-  move: ArrowRightLeft,
-  file: FileText,
-  tool: Wrench,
-};
-
 /**
- * The leading glyph: what the call *did*, not that it finished.
+ * A tool call's leading glyph: state first, shape second.
  *
- * A completed tool call used to get a tick, which meant a tool-heavy turn was a
- * column of identical ticks carrying no information — every row in a settled
- * turn is done. The shape now says "ran a command" / "read a file" / "searched",
- * which is the thing a reader scans for, and state rides along in colour
- * instead: failure tints the action glyph red, and a running call tints it and
- * shimmers with the row. The action shape remains identifiable in every state.
+ * The transcript briefly gave every call a per-tool icon (terminal, book,
+ * pencil) at 15px. It read as a toolbar: eleven shapes at a size that competes
+ * with the prose, on rows that are meant to be skimmed past. What a reader
+ * actually scans a settled turn for is "did anything go wrong", so state is
+ * back in the glyph — a tick for done, a red cross for failed — at the muted
+ * 11px the rest of the row runs at.
  *
- * Note which colours exist here and which do not. Failed and running are tinted
- * because house rule 2 sanctions exactly those; the icon is otherwise the same
- * muted grey as the text, and per-TOOL colour stays out — it would put a
- * different hue on every row of a busy turn, which is the thing rule 2 forbids.
+ * `think` is the one exception, and it is the user's call: a delegated
+ * sub-agent is a different KIND of work from a file read, not just another
+ * tool, so it keeps the brain. It still tints red on failure, because losing
+ * the state signal on the one row type that can quietly fail is not a trade
+ * worth making.
  */
 function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) {
-  const Icon = TOOL_ICONS[tool];
+  if (tool === "think")
+    return (
+      <Brain
+        size={11}
+        className={cn(
+          state === "failed" ? "text-[var(--status-error)]" : "text-[var(--text-tertiary)]",
+        )}
+      />
+    );
+  if (state === "failed") return <X size={11} className="text-[var(--status-error)]" />;
+  if (state === "done") return <Check size={11} className="text-[var(--text-tertiary)]" />;
+  if (state === "running")
+    return (
+      <Circle
+        size={9}
+        className="atlas-marker-running fill-[var(--accent-primary)] text-[var(--accent-primary)]"
+      />
+    );
+  return <Circle size={9} className="text-[var(--text-tertiary)]" />;
+}
+
+/**
+ * The folded sequence's own glyph: one filled cursor, the whole block's verdict.
+ *
+ * Filled rather than outline so it holds at 11px, and a single shape rather
+ * than the first bucket's tool icon — the summary sentence beside it ("Read
+ * files, ran commands") already says what the block did, and that sentence is
+ * what tells one block from the next. Red when any call in the sequence
+ * failed, which is the one thing worth surfacing before the reader opens it.
+ */
+function GroupGlyph({ failed, running }: { failed: boolean; running: boolean }) {
   return (
-    <Icon
-      size={15}
+    <MousePointer2
+      size={11}
       className={cn(
-        state === "failed" && "text-[var(--status-error)]",
-        state === "running" && "text-[var(--accent-primary)]",
+        "fill-current",
+        failed
+          ? "text-[var(--status-error)]"
+          : running
+            ? "text-[var(--accent-primary)]"
+            : "text-[var(--text-tertiary)]",
       )}
     />
   );
@@ -353,7 +371,7 @@ function MarkerGlyph({ state, tool }: { state: MarkerState; tool: MarkerTool }) 
  * One tool call: a single muted line, and nothing else.
  *
  * The group expands, while each action stays one line. Clicking an action with
- * output or a diff opens its detail view.
+ * output or a diff opens its detail view; the trailing chevron is what says so.
  */
 export const MarkerRowView = memo(function MarkerRowView({
   row,
@@ -381,19 +399,23 @@ export const MarkerRowView = memo(function MarkerRowView({
       disabled={!clickable}
       onClick={clickable ? onClick : undefined}
       className={cn(
-        "atlas-marker w-full min-w-0 text-left text-[13px] text-[var(--text-secondary)]",
-        clickable && "cursor-pointer hover:text-[var(--text-primary)]",
+        "atlas-marker w-full min-w-0 text-left text-[11px] text-[var(--text-tertiary)]",
+        clickable && "cursor-pointer hover:text-[var(--text-secondary)]",
         row.state === "running" && "atlas-marker-running",
       )}
       title={
         clickable ? `${row.cmd ?? `${row.verb} ${row.detail}`} — open in side panel` : undefined
       }
     >
-      <span className="flex w-5 shrink-0 justify-center">
+      <span className="flex w-3 shrink-0 justify-center">
         <MarkerGlyph state={row.state} tool={row.tool} />
       </span>
       <span className="shrink-0">{row.verb}</span>
-      {row.detail && <span className="min-w-0 truncate font-mono">{row.detail}</span>}
+      {row.detail && (
+        <span className="min-w-0 truncate font-mono text-[var(--text-tertiary)]/85">
+          {row.detail}
+        </span>
+      )}
       {(row.added > 0 || row.removed > 0) && (
         <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
           {row.added > 0 && <span className="text-[var(--diff-added-text)]">+{row.added}</span>}
@@ -401,6 +423,12 @@ export const MarkerRowView = memo(function MarkerRowView({
             <span className="ml-1 text-[var(--status-error)]">−{row.removed}</span>
           )}
         </span>
+      )}
+      {clickable && (
+        <ChevronRight
+          size={11}
+          className={cn("shrink-0", !row.added && !row.removed && "ml-auto")}
+        />
       )}
     </button>
   );
@@ -428,23 +456,27 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   tabId: string;
   onExpandTurn: (turnId: string) => void;
 }) {
+  // Derived rather than carried on the row: the projection would have to
+  // recompute it on every marker state change anyway, and it is a scan of a
+  // list the row already holds.
+  const failed = row.markers.some((marker) => marker.state === "failed");
   return (
-    <Column className="py-3">
+    <Column className="py-1.5">
       <button
         type="button"
         aria-expanded={row.open}
         aria-controls={`${row.id}:actions`}
         onClick={() => onExpandTurn(row.id)}
-        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        className="atlas-marker group/tool-summary max-w-full cursor-pointer text-left text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
       >
-        <span className="flex w-5 shrink-0 justify-center">
-          <MarkerGlyph state="done" tool={row.liveTool ?? row.tool} />
+        <span className="flex w-3 shrink-0 justify-center">
+          <GroupGlyph failed={failed} running={row.running} />
         </span>
         <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
           {row.running ? row.liveLabel : row.summary}
         </span>
         <ChevronRight
-          size={14}
+          size={11}
           className={cn(
             "shrink-0",
             row.open
@@ -454,10 +486,12 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
         />
       </button>
       {row.open && (
-        <div
-          id={`${row.id}:actions`}
-          className="max-h-[240px] overflow-y-auto overscroll-contain pr-1"
-        >
+        // Laid out in the thread, not in a 240px scroller. A nested scroll area
+        // inside a scrolling transcript is two scrollbars fighting over the
+        // same wheel gesture, and it hides the end of the list behind an
+        // interaction the reader has to discover. Opening a sequence is a
+        // deliberate act on one turn at a time, so its rows are just rows.
+        <div id={`${row.id}:actions`}>
           {row.markers.map((marker) => (
             <MarkerRowView key={marker.id} row={marker} tabId={tabId} embedded />
           ))}
