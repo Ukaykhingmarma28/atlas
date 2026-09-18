@@ -25,6 +25,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type {
+  comms,
   CommsEnvelope,
   CommsEvent,
   CommsSnapshot,
@@ -49,7 +50,7 @@ import {
   type RecordingTrack,
   type SendStatus,
 } from "@/features/comms/types";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit } from "../types";
 import { abs, MOCK_ORG_ID } from "../project";
 
 const MIN = 60_000;
@@ -904,7 +905,54 @@ function appendMessage(
  *  echo is rate-limited rather than fired per keystroke. */
 let lastTypingEcho = 0;
 
-export const commsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface CommsResponses {
+  comms_status: ConnectionInfo;
+  comms_snapshot: CommsSnapshot;
+  comms_base_url: string;
+  comms_reconnect: Unit;
+  comms_disconnect: Unit;
+  comms_open_conversation: ConversationWindow;
+  comms_conversation_snapshot: ConversationWindow;
+  comms_close_conversation: Unit;
+  comms_load_older: MessagePage;
+  comms_search: MessagePage;
+  comms_pins: ChatPin[];
+  // Inline `invoke<{…}>` types in `comms-api.ts`, read off its wrappers.
+  comms_send: Awaited<ReturnType<typeof comms.send>>;
+  comms_edit: Unit;
+  comms_delete: Unit;
+  comms_react: Unit;
+  comms_pin: Unit;
+  comms_read: Unit;
+  comms_typing: Unit;
+  comms_upload_attachment: Awaited<ReturnType<typeof comms.uploadAttachment>>;
+  comms_cancel_upload: Unit;
+  comms_fetch_attachment: string;
+  comms_save_attachment: Unit;
+  comms_create_channel: ChatConversation;
+  comms_create_dm: DmResult;
+  comms_create_group_dm: ChatConversation;
+  comms_join: ChatConversation;
+  comms_leave: Unit;
+  comms_invite: Unit;
+  comms_patch_conversation: ChatConversation;
+  comms_drafts: PromptDraft[];
+  comms_create_draft: PromptDraft;
+  comms_draft_open: Unit;
+  comms_draft_update: Unit;
+  comms_draft_awareness: Unit;
+  comms_start_call: ChatCall;
+  comms_call_recordings: RecordingsResponse;
+  comms_fetch_recording: string;
+  comms_save_recording: Unit;
+  comms_save_transcript: Unit;
+}
+
+export const commsHandlers: TypedHandlers<CommsResponses> = {
   comms_status: (): ConnectionInfo => connection,
   comms_snapshot: (): CommsSnapshot => ({
     connection,

@@ -13,10 +13,17 @@ const { sidebarAgentOf, AGENT_TYPE_BY_SIDEBAR } = await import("./session-sideba
 
 describe("sidebarAgentOf (agent id → transcript-store band)", () => {
   it("folds canonical registry ids into the store band their transcripts land in", () => {
-    // A live codex-acp session and the ~/.codex disk row it produces MUST be
-    // one band, or twin suppression / row icon / delete routing all miss.
+    // A registry id and the older native id a thread row may carry MUST be
+    // one band, or the row icon and resume routing split.
     expect(sidebarAgentOf("codex-acp")).toBe("codex");
     expect(sidebarAgentOf("claude-acp")).toBe("claude");
+    expect(sidebarAgentOf("claude-code")).toBe("claude");
+    expect(sidebarAgentOf("claude-code-ts")).toBe("claude");
+  });
+
+  it("does not fold an external agent whose id merely starts with claude", () => {
+    // It would otherwise resume its history through claude-acp.
+    expect(sidebarAgentOf("claude-foo")).toBe("claude-foo");
   });
 
   it("keeps the bands whose registry id already names the store", () => {

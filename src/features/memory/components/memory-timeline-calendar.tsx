@@ -235,7 +235,7 @@ export function MemoryTimelineCalendar({
         className="shrink-0 flex flex-col border-r border-[var(--border)]"
         style={{ width: GUTTER, background: PANEL }}
       >
-        <div className="flex items-center px-3 h-8 shrink-0 text-3xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] border-b border-[var(--border)]">
+        <div className="flex items-center px-3 h-control-lg shrink-0 text-3xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] border-b border-[var(--border)]">
           Branches
         </div>
         <div className="flex-1 overflow-y-auto hide-scrollbar">
@@ -283,7 +283,7 @@ export function MemoryTimelineCalendar({
       {/* ── Week calendar ── */}
       <div className="flex-1 min-w-0 flex flex-col bg-[var(--background)]">
         {/* Week nav */}
-        <div className="flex items-center gap-2 px-3 h-8 shrink-0 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2 px-3 h-control-lg shrink-0 border-b border-[var(--border)]">
           <Hint label="Previous week with activity">
             <button
               onClick={goPrev}

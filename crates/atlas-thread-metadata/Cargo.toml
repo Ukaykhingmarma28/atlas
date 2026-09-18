@@ -22,8 +22,9 @@ anyhow = "1"
 #
 # THE canonical statement of this pin. `atlas-checkpoint` and `src-tauri`
 # declare rusqlite too and point here. Guarded by `tests/sqlite_floor.rs`
-# (the linked library) and `tests/cargo-deps-unification.test.ts` (the
-# resolution, including that all four declarations agree). Issue #39.
+# (the linked library) and `tests/cargo-workspace.test.ts` (that all four
+# declarations agree; cargo's `links` rule enforces the single resolution).
+# Issue #39.
 #
 # The bump adds `rsqlite-vfs` and `sqlite-wasm-rs` to the lockfile. Both are
 # gated to `cfg(all(target_family = "wasm", target_os = "unknown"))` and are

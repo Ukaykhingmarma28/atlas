@@ -438,15 +438,17 @@
   }
 }
 
-/* Bare `rounded` = `rounded-sm` (decision 26). Tailwind's own `rounded` is a
-   static 0.25rem that no theme value can reach, so it is redeclared here — in
-   the utilities layer, AFTER the generated rules, which is the only placement
-   that both wins against `.rounded` and still loses to `.rounded-lg` on an
-   element that carries both. */
-@layer utilities {
-  .rounded {
-    border-radius: var(--radius-sm);
-  }
+/* Bare `rounded` = `rounded-sm` (decision 26). Tailwind v4 reads bare `rounded`
+   from the `--radius` theme key, whose stock value is a static 0.25rem no theme
+   can reach, so the key is restated here. Not a hand-written `.rounded` rule:
+   one placed after the generated utilities beat every other `rounded-*` on the
+   same element, so `rounded rounded-l-none` kept its left corners. This way
+   Tailwind sorts `.rounded` ahead of the side and corner variants as usual.
+   `reference` keeps the key out of `:root` — it would overwrite the theme's own
+   `--radius`, which the whole scale derives from — and `inline` writes the
+   value into the utility, since there is no variable left to point at. */
+@theme inline reference {
+  --radius: var(--radius-sm);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2101,9 +2103,13 @@
   border-radius: 6px;
   overflow: hidden;
 }
+/* `break-word`, not `anywhere` (which `.atlas-prose` sets and cells would
+   otherwise inherit): both still break a long unbroken run inside a cell, but
+   `anywhere` also shrinks the cell's MIN-CONTENT width to a single character,
+   so auto layout squeezed short columns and split words like "Chan|ge". */
 .atlas-prose th,
 .atlas-prose td {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 .atlas-prose thead {
@@ -2133,7 +2139,9 @@
 /* User prompt bubbles run through the same prose renderer as the agent's
    replies, one step up the type scale (they sit in a tinted bubble at a
    narrower measure, where 13px reads small). The bubble owns the padding, so
-   the first and last blocks must not add their own. */
+   the first and last blocks must not add their own. Applied to the markdown
+   root inside the bubble, never the bubble itself: the `> *` rules have to
+   land on the blocks, not on the renderer's wrapper div. */
 .atlas-prose--user {
   font-size: 14px;
   line-height: 22px;

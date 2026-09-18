@@ -67,7 +67,7 @@ const CONTENT_CLASS =
   "atlas-menu-pop rounded-md border border-[var(--border)] bg-[var(--card)] " + "shadow-md py-1";
 
 // Shared search-box header for the searchable submenus. `stopPropagation`
-// keeps Radix's menu typeahead from stealing the keystrokes.
+// keeps the menu's typeahead from stealing the keystrokes (Escape excepted).
 function SearchBox({
   value,
   onChange,
@@ -83,12 +83,16 @@ function SearchBox({
   // keeps focus on its SubTrigger; programmatically focusing this input pulls
   // focus off the trigger and makes the PARENT menu's highlight jump to another
   // item (the reported glitch). Click-to-focus is the standard for a
-  // hover-opened menu search box. `stopPropagation` keeps Radix's menu typeahead
-  // from stealing keystrokes once the box has focus.
+  // hover-opened menu search box. `stopPropagation` keeps the menu's typeahead
+  // from stealing keystrokes once the box has focus — every key EXCEPT Escape:
+  // Base UI listens for Escape in the bubble phase (Radix used capture), so
+  // swallowing it here left the submenu impossible to dismiss from the box.
   return (
     <div
       className="mx-1 mb-1 flex items-center gap-1.5 rounded border border-[var(--border)] px-2 h-[26px]"
-      onKeyDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") e.stopPropagation();
+      }}
     >
       <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
       <input

@@ -198,7 +198,7 @@ function GraphView({
   return (
     <div className="h-full flex flex-col bg-sidebar">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-8 shrink-0 border-b border-border-subtle">
+      <div className="flex items-center justify-between px-3 h-control-lg shrink-0 border-b border-border-subtle">
         <div className="flex items-center gap-1.5">
           {rows.length > 0 && (
             <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wide">

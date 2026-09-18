@@ -773,6 +773,12 @@ pub fn patch_id(repo: &Path, sha: &str) -> Option<String> {
     (!id.is_empty()).then(|| id.to_string())
 }
 
+// The integration tests' git helpers, isolated from the global and system
+// config. Reached by path because `tests/` is not part of the library crate.
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_support;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,9 +793,7 @@ mod tests {
         pub fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             let repo = Self { dir };
-            repo.git(&["init", "--initial-branch=main"]);
-            repo.git(&["config", "user.name", "Test Developer"]);
-            repo.git(&["config", "user.email", "dev@example.com"]);
+            super::test_support::init_repo(repo.path());
             repo
         }
 
@@ -798,18 +802,7 @@ mod tests {
         }
 
         pub fn git(&self, args: &[&str]) -> String {
-            let output = atlas_process::command("git")
-                .arg("-C")
-                .arg(self.path())
-                .args(args)
-                .output()
-                .expect("git runs");
-            assert!(
-                output.status.success(),
-                "git {args:?} failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            String::from_utf8_lossy(&output.stdout).into_owned()
+            super::test_support::git(self.path(), args)
         }
 
         pub fn write(&self, path: &str, content: &str) {

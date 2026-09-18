@@ -8,8 +8,8 @@
 //
 // What is left is the handful of numbers the components genuinely share with the
 // stylesheet — currently just the user-bubble clamp, which has to agree with the
-// `-webkit-line-clamp` the bubble renders and with the "is this long enough to
-// need a Show more" test.
+// `max-height` budget `useWholeLineClamp` (in `transcript-rows.tsx`) snaps to
+// whole lines and with the "is this long enough to need a Show more" test.
 
 export const M = {
   /** Lines a user prompt shows before clamping behind "Show more". */

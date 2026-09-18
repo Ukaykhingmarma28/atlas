@@ -9,7 +9,7 @@ import { useSessionStore } from "@/features/app/stores/session-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { Search, FileCode, Clock, X } from "lucide-react";
 
-interface SearchResult {
+export interface SearchResult {
   file_path: string;
   line: number;
   content: string;

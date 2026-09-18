@@ -68,19 +68,51 @@ describe("snapshot / restore", () => {
     expect(store.getState().count).toBe(1);
   });
 
-  it("does not hand the same object back twice, so one reset cannot poison the next", () => {
+  it("does not hand the same object back twice, so a setState cannot rewrite the baseline", () => {
+    const store = counterStore();
+    const baseline = snapshotStores([store]);
+    const snapshotted = baseline.get(store)!;
+
+    restoreStores(baseline);
+    const first = store.getState();
+    restoreStores(baseline);
+    const second = store.getState();
+
+    // The thing the name promises: a fresh STATE object each time, and never
+    // the baseline's own object.
+    expect(first).not.toBe(second);
+    expect(first).not.toBe(snapshotted);
+    expect(second).not.toBe(snapshotted);
+
+    store.setState({ count: 99 });
+    expect((snapshotted as Counter).count).toBe(0);
+    restoreStores(baseline);
+    expect(store.getState().count).toBe(0);
+  });
+
+  it("hands back fresh nested values each restore (the snapshot is deep)", () => {
     const store = counterStore();
     const baseline = snapshotStores([store]);
 
     restoreStores(baseline);
-    store.getState().tags.push("mutated in place");
+    const firstTags = store.getState().tags;
     restoreStores(baseline);
 
-    // The array identity is shared (a shallow snapshot), but the STATE object
-    // is copied on the way in and out, so a later `setState` cannot rewrite the
-    // baseline itself.
-    store.setState({ count: 99 });
+    expect(store.getState().tags).not.toBe(firstTags);
+    expect(store.getState().tags).not.toBe((baseline.get(store) as Counter).tags);
+    expect(store.getState().tags).toEqual([]);
+  });
+
+  it("a nested array mutated in place does not survive the next reset", () => {
+    const store = counterStore();
+    const baseline = snapshotStores([store]);
+
     restoreStores(baseline);
-    expect(store.getState().count).toBe(0);
+    const mutated = store.getState().tags;
+    mutated.push("mutated in place");
+    restoreStores(baseline);
+
+    expect(store.getState().tags).not.toBe(mutated);
+    expect(store.getState().tags).toEqual([]);
   });
 });

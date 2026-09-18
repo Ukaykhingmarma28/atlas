@@ -223,6 +223,10 @@ objc2 = "0.6"
 # Apple-Silicon GPU. Feature is additive over the base path dep in `[dependencies]`.
 atlas-embed = { path = "../crates/atlas-embed", features = ["metal"] }
 
+[dev-dependencies]
+# Self-deleting temp dirs for the state/config tests.
+tempfile = "3"
+
 # The workspace lint table is only real for members that opt in —
 # without this stanza it is dead configuration (#60).
 [lints]

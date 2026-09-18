@@ -114,17 +114,23 @@ const baseStore = create<ThemeState>()((set, get) => ({
       }
     },
     apply: async (id, mode, themeOverrides = {}) => {
-      lastRequest = { id, mode, themeOverrides };
+      const request = { id, mode, themeOverrides };
+      lastRequest = request;
+      followSystemAppearance(mode === "system");
       let theme = get().loaded[id];
       if (!theme) {
         // Both loads are guarded. The fallback used to sit bare inside the
         // catch, so whatever made the chosen theme unavailable — an offline
         // backend, a catalog that would not build — threw a SECOND time out of
         // the handler that existed to survive the first, rejecting the promise
-        // no caller awaits and leaving the app on the compiled-in `tokens.css`
-        // defaults with nothing said. Failing to theme is not a reason to fail.
+        // no caller awaits. Failing to theme is not a reason to fail: the app
+        // stays on what `index.html` replayed from the launch cache, or on
+        // `tokens.css`'s Atlas-dark fallback on a first run.
         const loaded =
           (await loadTheme(id)) ?? (id === FALLBACK_THEME ? null : await loadTheme(FALLBACK_THEME));
+        // A newer `apply` started while this one was loading. It owns the
+        // screen now; painting this result would put the older choice back.
+        if (lastRequest !== request) return;
         if (!loaded) {
           set({ error: `No theme could be loaded (tried "${id}" and "${FALLBACK_THEME}")` });
           return;
@@ -149,6 +155,38 @@ const baseStore = create<ThemeState>()((set, get) => ({
 }));
 
 export const useThemeStore = createSelectors(baseStore);
+
+/** The OS appearance query, while `system` mode is following it. */
+let systemQuery: MediaQueryList | null = null;
+
+/** Re-run the last apply against the OS's new answer. Served from the cache:
+ *  the file did not change, only which of its variants is wanted. */
+function onSystemAppearanceChange(): void {
+  if (!lastRequest || lastRequest.mode !== "system") return;
+  const { id, mode, themeOverrides } = lastRequest;
+  void baseStore.getState().actions.apply(id, mode, themeOverrides);
+}
+
+/**
+ * Keep `system` mode following the OS after launch.
+ *
+ * `appearanceForMode` asks `matchMedia` once per apply, so without this a Mac
+ * that switches to dark at sunset left Atlas in light until something else
+ * happened to re-apply. Subscribed only while the mode is `system`, and
+ * dropped the moment it is not. The icons follow on their own: every apply
+ * fires `atlas:theme-applied`, which is what re-runs their appearance.
+ */
+function followSystemAppearance(follow: boolean): void {
+  if (follow === (systemQuery !== null)) return;
+  if (!follow) {
+    systemQuery?.removeEventListener("change", onSystemAppearanceChange);
+    systemQuery = null;
+    return;
+  }
+  if (typeof matchMedia === "undefined") return;
+  systemQuery = matchMedia("(prefers-color-scheme: dark)");
+  systemQuery.addEventListener("change", onSystemAppearanceChange);
+}
 
 let listening = false;
 

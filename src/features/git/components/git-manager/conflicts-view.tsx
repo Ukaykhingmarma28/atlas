@@ -5,13 +5,13 @@ import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
 import { handleGitError } from "../../lib/git-errors";
 
-interface ConflictFile {
+export interface ConflictFile {
   path: string;
   markerCount: number;
   xy: string;
 }
 
-interface ConflictState {
+export interface ConflictState {
   files: ConflictFile[];
   message: string;
 }
@@ -57,7 +57,7 @@ export function ConflictsView({ onOpenFile }: { onOpenFile: (path: string) => vo
 
   return (
     <div className="shrink-0 border-b border-border">
-      <div className="flex items-center justify-between px-2 h-6 bg-[var(--sidebar)] border-b border-border-subtle">
+      <div className="flex items-center justify-between px-2 h-control-sm bg-[var(--sidebar)] border-b border-border-subtle">
         <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
           Conflicts ({state.files.length})
         </span>

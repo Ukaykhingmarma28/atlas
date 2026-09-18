@@ -6,22 +6,40 @@
 //! drifting away from it (research §D12-1). So the test reads the document and
 //! compares it to the real serialisation, in both directions: a variant or
 //! field that exists in one and not the other fails here.
+//!
+//! Three layers, each closing a way the previous version could pass while the
+//! wire drifted:
+//!
+//! - [`contract_kind`] is an exhaustive `match` with no wildcard arm, so adding
+//!   a `SessionDelta` variant is a compile error in this file until someone
+//!   writes down which contract entry it is.
+//! - [`golden`] pins every sample's full JSON, so a field changing *type*
+//!   (`u64` → `String`, `f64` → integer, an object becoming an array) fails,
+//!   not just a field being renamed.
+//! - [`expected`] is the frozen table of kinds and field names.
+//!
+//! What still needs a human: a new variant's arm must be matched by a new
+//! sample, golden and table row. The count check in
+//! [`every_contracted_variant_exists_and_no_others`] catches a sample without
+//! a row (and vice versa), but nothing on stable Rust can count an enum's
+//! variants, so an arm with no sample at all is only caught in review.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use atlas_agent_wire::{RateLimitWindow, 
-    AgentId, Message, MessageMode, MessageRole, PlanEntry, SessionDelta, SessionDeltaEnvelope,
-    SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
+use atlas_agent_wire::{
+    AgentId, Message, MessageMode, MessageRole, PlanEntry, RateLimitWindow, SessionDelta,
+    SessionDeltaEnvelope, SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
 };
+use serde_json::json;
 use uuid::Uuid;
 
 /// The contract, as this test asserts it.
 ///
-/// Written out here rather than only in the document because `docs/*.md` is
-/// git-ignored in this repository (working notes), so a check that only read
-/// the file would silently pass in CI, which is the one place it has to hold.
-/// [`documented`] cross-checks this against the document whenever the document
-/// is present, so the two cannot drift apart unnoticed.
+/// Written out here rather than only in the document because the document is
+/// not in the repository (and `docs/agents/*.md` is git-ignored), so a check
+/// that only read the file would silently pass in CI, which is the one place
+/// it has to hold. [`the_contract_doc_says_the_same_thing`] cross-checks this
+/// against the document; it is `#[ignore]`d until the document exists.
 fn expected() -> BTreeMap<String, BTreeSet<String>> {
     [
         ("status", &["status", "turn_seq"][..]),
@@ -34,6 +52,7 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
             &["message_id", "tool_call_id", "delta"],
         ),
         ("plan_updated", &["plan"]),
+        ("history_rewound", &["turns"]),
         ("mode_changed", &["mode_id"]),
         (
             "retry_status",
@@ -52,7 +71,10 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
         ("compaction", &["active"]),
         ("compression_saved", &["saved_tokens"]),
         ("rate_limits", &["primary", "secondary", "plan_type"]),
-        ("permission_request", &["request_id", "tool_call", "options"]),
+        (
+            "permission_request",
+            &["request_id", "tool_call", "options"],
+        ),
         ("permission_resolved", &["request_id"]),
         ("turn_finished", &["stop_reason", "turn_seq"]),
         ("turn_failed", &["error", "turn_seq", "error_kind"]),
@@ -62,20 +84,59 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
     .map(|(kind, fields)| {
         (
             kind.to_string(),
-            fields.iter().map(std::string::ToString::to_string).collect(),
+            fields
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         )
     })
     .collect()
 }
 
-/// The same table, read out of the contract doc — `None` when the doc is not
-/// checked out (it is git-ignored; see [`expected`]).
+/// Which contract entry a variant is. No wildcard arm, on purpose: a new
+/// `SessionDelta` variant stops this file compiling until it is given a row in
+/// [`expected`], a sample in [`samples`] and a golden in [`golden`].
+fn contract_kind(delta: &SessionDelta) -> &'static str {
+    match delta {
+        SessionDelta::Status { .. } => "status",
+        SessionDelta::MessageAppended { .. } => "message_appended",
+        SessionDelta::TextChunk { .. } => "text_chunk",
+        SessionDelta::ThinkingChunk { .. } => "thinking_chunk",
+        SessionDelta::ToolCallUpserted { .. } => "tool_call_upserted",
+        SessionDelta::ToolCallOutputChunk { .. } => "tool_call_output_chunk",
+        SessionDelta::PlanUpdated { .. } => "plan_updated",
+        SessionDelta::HistoryRewound { .. } => "history_rewound",
+        SessionDelta::ModeChanged { .. } => "mode_changed",
+        SessionDelta::RetryStatus { .. } => "retry_status",
+        SessionDelta::ModelChanged { .. } => "model_changed",
+        SessionDelta::AvailableCommands { .. } => "available_commands",
+        SessionDelta::UsageUpdated { .. } => "usage_updated",
+        SessionDelta::ElicitationRequested { .. } => "elicitation_requested",
+        SessionDelta::TitleUpdated { .. } => "title_updated",
+        SessionDelta::ConfigOptionsUpdated { .. } => "config_options_updated",
+        SessionDelta::ContextUsage { .. } => "context_usage",
+        SessionDelta::Compaction { .. } => "compaction",
+        SessionDelta::CompressionSaved { .. } => "compression_saved",
+        SessionDelta::RateLimits { .. } => "rate_limits",
+        SessionDelta::PermissionRequest { .. } => "permission_request",
+        SessionDelta::PermissionResolved { .. } => "permission_resolved",
+        SessionDelta::TurnFinished { .. } => "turn_finished",
+        SessionDelta::TurnFailed { .. } => "turn_failed",
+        SessionDelta::AgentDisconnected { .. } => "agent_disconnected",
+    }
+}
+
+/// Where the prose version of the contract would live. It is cited as frozen
+/// in `CLAUDE.md`, but is not in the repository at the time of writing.
+const CONTRACT_DOC: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/agents/delta-wire-contract.md"
+);
+
+/// The same table, read out of the contract doc — `None` when the doc is
+/// absent (see [`CONTRACT_DOC`]).
 fn documented() -> Option<BTreeMap<String, BTreeSet<String>>> {
-    let doc = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/agents/delta-wire-contract.md"
-    ))
-    .ok()?;
+    let doc = std::fs::read_to_string(CONTRACT_DOC).ok()?;
 
     // The variant table is the run of table rows after its heading.
     let body = doc
@@ -153,6 +214,7 @@ fn samples() -> Vec<SessionDelta> {
                 status: "pending".into(),
             }],
         },
+        SessionDelta::HistoryRewound { turns: 2 },
         SessionDelta::ModeChanged {
             mode_id: "plan".into(),
         },
@@ -238,7 +300,8 @@ fn sample_message() -> Message {
         tool_calls: vec![sample_tool_call()],
         plan: Some(Vec::new()),
         model: Some("anthropic/claude".into()),
-        timestamp: chrono::Utc::now(),
+        // Fixed, not `now()`: the golden pins the serialized timestamp.
+        timestamp: "2026-01-02T03:04:05Z".parse().unwrap(),
     }
 }
 
@@ -261,32 +324,250 @@ fn sample_tool_call() -> ToolCall {
     }
 }
 
+/// Every sample's exact JSON. Integers are written as integers and floats as
+/// floats on purpose: `serde_json` compares `1` and `1.0` as different
+/// values, so a numeric field changing type fails here as surely as a
+/// renamed one.
+fn golden() -> BTreeMap<&'static str, serde_json::Value> {
+    let nil = Uuid::nil().to_string();
+    let tool_call = json!({
+        "id": "call-1",
+        "tool_name": "Read",
+        "title": "Read src/main.rs",
+        "kind": "read",
+        "status": "completed",
+        "arguments": { "path": "src/main.rs" },
+        "result": "fn main() {}",
+        "locations": [{ "path": "src/main.rs" }],
+        "raw_output": { "ok": true },
+        "content_blocks": [
+            { "type": "diff", "path": "src/main.rs", "oldText": "old", "newText": "new" }
+        ],
+    });
+    BTreeMap::from([
+        (
+            "status",
+            json!({ "kind": "status", "status": "running", "turn_seq": 3 }),
+        ),
+        (
+            "message_appended",
+            json!({
+                "kind": "message_appended",
+                "message": {
+                    "id": "msg-1",
+                    "role": "assistant",
+                    "mode": "text",
+                    "content": "hi",
+                    "thinking": "hmm",
+                    "tool_calls": [tool_call],
+                    "plan": [],
+                    "model": "anthropic/claude",
+                    "timestamp": "2026-01-02T03:04:05Z",
+                },
+            }),
+        ),
+        (
+            "text_chunk",
+            json!({ "kind": "text_chunk", "message_id": "msg-1", "delta": "hello" }),
+        ),
+        (
+            "thinking_chunk",
+            json!({ "kind": "thinking_chunk", "message_id": "msg-1", "delta": "hmm" }),
+        ),
+        (
+            "tool_call_upserted",
+            json!({ "kind": "tool_call_upserted", "message_id": "msg-1", "tool_call": tool_call }),
+        ),
+        (
+            "tool_call_output_chunk",
+            json!({
+                "kind": "tool_call_output_chunk",
+                "message_id": "msg-1",
+                "tool_call_id": "call-1",
+                "delta": "line\n",
+            }),
+        ),
+        (
+            "plan_updated",
+            json!({
+                "kind": "plan_updated",
+                "plan": [{ "content": "do the thing", "priority": "medium", "status": "pending" }],
+            }),
+        ),
+        (
+            "history_rewound",
+            json!({ "kind": "history_rewound", "turns": 2 }),
+        ),
+        (
+            "mode_changed",
+            json!({ "kind": "mode_changed", "mode_id": "plan" }),
+        ),
+        (
+            "retry_status",
+            json!({
+                "kind": "retry_status",
+                "attempt": 1,
+                "max_attempts": 3,
+                "delay_ms": 500,
+                "last_error": "overloaded",
+            }),
+        ),
+        (
+            "model_changed",
+            json!({ "kind": "model_changed", "model_id": "anthropic/claude" }),
+        ),
+        (
+            "available_commands",
+            json!({ "kind": "available_commands", "commands": [{ "name": "login" }] }),
+        ),
+        (
+            "usage_updated",
+            json!({
+                "kind": "usage_updated",
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 20,
+                    "cache_creation_tokens": 1,
+                    "cache_read_tokens": 2,
+                    "reasoning_tokens": 3,
+                    "cost": 0.5,
+                },
+            }),
+        ),
+        (
+            "elicitation_requested",
+            json!({
+                "kind": "elicitation_requested",
+                "request_id": nil,
+                "mode": "form",
+                "message": "which one?",
+                "requested_schema": { "type": "object" },
+                "url": "https://example.invalid",
+            }),
+        ),
+        (
+            "title_updated",
+            json!({ "kind": "title_updated", "title": "a session" }),
+        ),
+        (
+            "config_options_updated",
+            json!({ "kind": "config_options_updated", "config_options": [{ "id": "thinking" }] }),
+        ),
+        (
+            "context_usage",
+            json!({ "kind": "context_usage", "used": 100, "size": 200_000, "cost": 0.25 }),
+        ),
+        (
+            "compaction",
+            json!({ "kind": "compaction", "active": true }),
+        ),
+        (
+            "compression_saved",
+            json!({ "kind": "compression_saved", "saved_tokens": 42 }),
+        ),
+        (
+            "rate_limits",
+            json!({
+                "kind": "rate_limits",
+                "primary": { "used_percent": 40, "window_minutes": 300, "resets_at": 1_800_000_000 },
+                "secondary": null,
+                "plan_type": "plus",
+            }),
+        ),
+        (
+            "permission_request",
+            json!({
+                "kind": "permission_request",
+                "request_id": nil,
+                "tool_call": { "toolCallId": "call-1" },
+                "options": [{ "optionId": "allow_once" }],
+            }),
+        ),
+        (
+            "permission_resolved",
+            json!({ "kind": "permission_resolved", "request_id": nil }),
+        ),
+        (
+            "turn_finished",
+            json!({ "kind": "turn_finished", "stop_reason": "end_turn", "turn_seq": 3 }),
+        ),
+        (
+            "turn_failed",
+            json!({
+                "kind": "turn_failed",
+                "error": "boom",
+                "turn_seq": 3,
+                "error_kind": "transient",
+            }),
+        ),
+        (
+            "agent_disconnected",
+            json!({ "kind": "agent_disconnected", "reason": "process died" }),
+        ),
+    ])
+}
+
 fn kind_of(value: &serde_json::Value) -> String {
-    value["kind"].as_str().expect("every delta is tagged").into()
+    value["kind"]
+        .as_str()
+        .expect("every delta is tagged")
+        .into()
 }
 
 #[test]
 fn every_contracted_variant_exists_and_no_others() {
     let contracted: BTreeSet<String> = expected().keys().cloned().collect();
-    let produced: BTreeSet<String> = samples()
-        .iter()
-        .map(|delta| kind_of(&serde_json::to_value(delta).unwrap()))
-        .collect();
+    let samples = samples();
+
+    let mut produced = BTreeSet::new();
+    for delta in &samples {
+        let kind = kind_of(&serde_json::to_value(delta).unwrap());
+        // The serialized tag and the exhaustive match agree, so the match
+        // really is a map from variant to wire kind.
+        assert_eq!(
+            kind,
+            contract_kind(delta),
+            "`contract_kind` names this variant differently from its tag"
+        );
+        assert!(produced.insert(kind.clone()), "two samples of `{kind}`");
+    }
 
     assert_eq!(
         contracted, produced,
         "the contract and the enum disagree about which kinds exist"
     );
+    let goldens: BTreeSet<String> = golden().keys().map(ToString::to_string).collect();
+    assert_eq!(contracted, goldens, "every contracted kind has a golden");
+}
+
+#[test]
+fn every_variant_serializes_to_its_golden_json() {
+    let golden = golden();
+    for delta in samples() {
+        let value = serde_json::to_value(&delta).unwrap();
+        let kind = contract_kind(&delta);
+        let want = golden
+            .get(kind)
+            .unwrap_or_else(|| panic!("`{kind}` has no golden"));
+        assert_eq!(
+            &value, want,
+            "`{kind}` changed on the wire (names, value types or shape)"
+        );
+    }
 }
 
 /// The document and this test are the same contract, said twice.
+///
+/// Ignored by default, loudly: `docs/agents/delta-wire-contract.md` is cited
+/// as the frozen contract but does not exist in the repository, so there is
+/// nothing to compare against. The earlier version returned early when the
+/// file was missing, which read as a pass. Once the doc is checked in, drop
+/// the `#[ignore]`; `cargo test -- --ignored` runs it meanwhile, and fails
+/// rather than skips if the doc is still absent.
 #[test]
+#[ignore = "docs/agents/delta-wire-contract.md is not in the repository; nothing to compare"]
 fn the_contract_doc_says_the_same_thing() {
-    let Some(documented) = documented() else {
-        // Ignored rather than failed: the doc is git-ignored, so it is simply
-        // absent in CI. `expected()` is what holds there.
-        return;
-    };
+    let documented = documented().unwrap_or_else(|| panic!("{CONTRACT_DOC} does not exist"));
     assert_eq!(
         documented,
         expected(),

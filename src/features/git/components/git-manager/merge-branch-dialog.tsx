@@ -195,7 +195,7 @@ export function MergeBranchDialog({
           </div>
 
           {/* Filter */}
-          <div className="flex items-center gap-1.5 px-3 h-8 border-b border-border shrink-0">
+          <div className="flex items-center gap-1.5 px-3 h-control-lg border-b border-border shrink-0">
             <Search size={11} className="text-muted-foreground shrink-0" />
             <input
               value={query}

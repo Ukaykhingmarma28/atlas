@@ -168,15 +168,24 @@ const EXPORT_SCALE = 2;
 export function MermaidBlock({ code, controls = false }: { code: string; controls?: boolean }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const mountedRef = useRef(true);
+  // The source the current `svg` was rendered from. A theme switch re-renders
+  // the SAME source, and keeps the old diagram on screen until the new one is
+  // ready — clearing it collapsed the block to "Rendering diagram…" and, in the
+  // full-screen viewer, unmounted it and closed it under the user.
+  const renderedCode = useRef(code);
   // Re-renders the diagram after a theme switch: mermaid bakes the palette into
   // the SVG it emits, so nothing about the existing markup can follow a change.
   const themeVersion = useThemeVersion();
 
   useEffect(() => {
-    mountedRef.current = true;
-    setFailed(false);
-    setSvg(null);
+    // Per run, not per mount: a run superseded by a newer `code` or theme must
+    // not land its (now stale) result, even though the component is mounted.
+    let cancelled = false;
+    if (renderedCode.current !== code) {
+      renderedCode.current = code;
+      setSvg(null);
+      setFailed(false);
+    }
 
     // Defensive: remove any stray mermaid render/measurement nodes left directly
     // under <body> (e.g. from an earlier failed render). Successful diagrams are
@@ -189,16 +198,18 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
       const m = await getMermaid();
       for (const candidate of [code, sanitize(code)]) {
         const out = await tryRender(m, candidate);
+        if (cancelled) return;
         if (out !== null) {
-          if (mountedRef.current) setSvg(out);
+          setSvg(out);
+          setFailed(false);
           return;
         }
       }
-      if (mountedRef.current) setFailed(true);
+      if (!cancelled) setFailed(true);
     })();
 
     return () => {
-      mountedRef.current = false;
+      cancelled = true;
     };
   }, [code, themeVersion]);
 

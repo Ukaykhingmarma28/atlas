@@ -107,8 +107,7 @@ mod tests {
     use super::*;
 
     /// Locate a local MiniLM model dir if one is installed, else `None`. Tests
-    /// that need real embeddings skip cleanly when absent (no hard-fail / no
-    /// network download).
+    /// that need real embeddings are `#[ignore]`d and never download one.
     fn find_model_dir() -> Option<std::path::PathBuf> {
         if let Ok(dir) = std::env::var("ATLAS_MINILM_DIR") {
             let p = std::path::PathBuf::from(dir);
@@ -135,11 +134,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs ATLAS_MINILM_DIR"]
     fn embed_produces_384d_when_model_available() {
-        let Some(dir) = find_model_dir() else {
-            eprintln!("skipping: no MiniLM model dir (set ATLAS_MINILM_DIR to enable)");
-            return;
-        };
+        let dir = find_model_dir().expect("set ATLAS_MINILM_DIR to a MiniLM model dir");
         let embedder = Embedder::load(&dir).expect("load MiniLM model");
         let provider = MiniLmProvider::new(Arc::new(embedder), "all-MiniLM-L6-v2");
         let rt = tokio::runtime::Runtime::new().expect("tokio rt");

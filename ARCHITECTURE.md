@@ -208,7 +208,7 @@ All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members
 | `atlas-native-agent` | The ported Codex engine on the `AgentConnection` seam — the native agent as just another connection. Its agent id is still the literal `"cersei"`: a storage key, not a live reference to the deleted SDK. Renaming it orphans every existing thread's history. |
 | `atlas-agent-transcript` | Where an agent keeps its record of a conversation, and how to read Atlas's own text back out of one. The Claude JSONL replay it used to hold is gone. |
 | `atlas-thread-metadata` | The app-owned thread-metadata store (`threads.db`) — Atlas's only source for the sidebar and history. Metadata only, never transcript content. Ported from Zed's `ThreadMetadataStore`. See ADR-0001. |
-| `atlas-bus` | Event broadcaster + middleware pipeline seam: a `tokio::sync::broadcast`-backed fan-out (lagging subscribers drop rather than block the producer), plus `OutboundPipeline`/`InboundPipeline`. Generic — no dependency on any agent or ACP type. |
+| `atlas-bus` | Event broadcaster + middleware pipeline seam: a `tokio::sync::broadcast`-backed fan-out (lagging subscribers drop rather than block the producer), plus `OutboundPipeline`. Generic — no dependency on any agent or ACP type. |
 
 ### Everything else
 

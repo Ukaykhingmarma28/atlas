@@ -1002,11 +1002,15 @@ async fn cancelling_mid_tool_stops_the_command_it_started() {
     // Bar item 4's tool clause. The turn reporting `Cancelled` is not enough:
     // an orphaned child keeps writing to the user's disk after the UI says the
     // turn stopped. The marker file is what distinguishes "the turn ended" from
-    // "the work ended".
+    // "the work ended" — and the started marker is what makes its absence mean
+    // anything: without it, a command that never ran (refused, sandboxed out of
+    // the directory, not yet spawned when the cancel landed) passes too.
     let dir = tempfile::tempdir().expect("tempdir");
+    let started = dir.path().join("started");
     let marker = dir.path().join("survived-the-cancel");
     let command = format!(
-        "sleep 5; touch {}",
+        "touch {}; sleep 5; touch {}",
+        started.to_string_lossy(),
         marker.to_string_lossy(),
     );
 
@@ -1031,25 +1035,34 @@ async fn cancelling_mid_tool_stops_the_command_it_started() {
         .await
         .expect("the engine should ask before an untrusted command");
 
-    // Let it get started, then cancel while it is genuinely running.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    let cancelled = tokio::time::timeout(Duration::from_secs(20), async {
-        while !prompting.is_finished() {
-            h.connection.cancel(&session_id);
-            tokio::time::sleep(Duration::from_millis(100)).await;
+    // Cancel only once the command is provably running.
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !started.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
-    .await;
-    assert!(cancelled.is_ok(), "the cancel never took effect");
+    .await
+    .expect("the command never started, so a cancel could prove nothing");
+    let started_at = tokio::time::Instant::now();
+    assert!(
+        !prompting.is_finished(),
+        "the turn ended before it was cancelled"
+    );
 
-    let response = prompting
+    // ONE press, like production (#57) — see the note in
+    // `a_cancelled_turn_ends_aborted_rather_than_hanging_or_ending_normally`.
+    // A retry loop here would hide a lost press.
+    h.connection.cancel(&session_id);
+
+    let response = tokio::time::timeout(Duration::from_secs(20), prompting)
         .await
+        .expect("one press must take the turn down — 20s later it was still running")
         .expect("the prompt task should not panic")
         .expect("a cancelled turn is an outcome, not an error");
     assert_eq!(response.stop_reason, acp::StopReason::Cancelled);
 
     // Past when the command would have finished had it survived.
-    tokio::time::sleep(Duration::from_secs(6)).await;
+    tokio::time::sleep_until(started_at + Duration::from_secs(6)).await;
     assert!(
         !marker.exists(),
         "the cancelled command kept running and touched {} — the turn was \

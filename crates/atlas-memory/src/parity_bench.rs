@@ -1,39 +1,39 @@
-//! Step 10 — 3-agent retrieval parity + HNSW-vs-brute-force micro-benchmark.
+//! Agent-agnostic retrieval parity + HNSW-vs-brute-force micro-benchmark.
 //!
-//! These tests are the offline (no live app) half of Step 10's verification. The
-//! LIVE 3-agent check (Claude Code / Codex / Cersei retrieving through the running
-//! app with API keys + the MiniLM model loaded) is a MANUAL runtime step — see
-//! `crates/atlas-memory/MIGRATION.md` for the exact click-path.
+//! These tests are the offline (no live app) half of the retrieval checks. The
+//! live check (agents retrieving through the running app with the MiniLM model
+//! loaded) is a MANUAL runtime step — see `crates/atlas-memory/MIGRATION.md`.
 //!
 //! ## Parity (agent-agnostic retrieval)
-//! All three agents reach retrieval through ONE closure registered with
-//! the host's `register_memory_search` — a `Fn(cwd, query, limit) -> Vec<MemDoc>`
-//! with **no agent-type parameter** (`src-tauri/.../agents.rs`). That closure calls
-//! `memory_retrieve::retrieve` → [`MemoryEngine::retrieve`], which returns
+//! Every agent reaches retrieval through ONE callback: the native agent through
+//! the `search_memory` tool registered with
+//! `atlas_native_agent::engine::memory::register_search`, ACP agents through
+//! the pushed `--- RELEVANT PROJECT MEMORY ---` block. Both call
+//! `memory_retrieve::retrieve` (`src-tauri`) with **no agent-type parameter**,
+//! which calls [`MemoryEngine::retrieve`] and gets
 //! [`RetrievedDoc { id, title, source, text }`](crate::RetrievedDoc); the Tauri
 //! layer maps each onto `MemDoc { title, source, text }`, dropping only `id`. So
 //! "parity" reduces to two checkable claims, both asserted below:
 //!   1. the engine's retrieve path takes no agent discriminator, so the same
 //!      (cwd, query, limit) yields identical results no matter which agent asks; and
 //!   2. every [`RetrievedDoc`] maps cleanly (total, lossless except `id`) onto the
-//!      frozen `MemDoc` shape the `search_memory` closure / site C expect.
+//!      `MemDoc` shape the `search_memory` tool expects.
 //!
 //! ## Benchmark
 //! [`bench_hnsw_vs_brute_force`] builds a synthetic corpus of random L2-normalized
-//! 384-d vectors and times [`HnswStore::search`] against the legacy
-//! `atlas_embed::BruteForce` O(n) cosine, plus a top-1 recall-agreement sanity
-//! check. Numbers are printed (run with `--nocapture`) and captured in the Step 10
-//! report.
+//! 384-d vectors and times [`HnswStore::search`] against `atlas_embed::BruteForce`
+//! O(n) cosine, plus a top-1 recall-agreement sanity check. It is `#[ignore]`d;
+//! numbers print with `--ignored --nocapture`.
 
 #![cfg(test)]
 
 use crate::{RetrievedDoc, DIM};
 
-/// Local mirror of the frozen `atlas_cersei::MemDoc` shape.
-/// `atlas-memory` must not depend on `atlas-cersei` (Invariant 4), so we redeclare
-/// the three fields here and prove [`RetrievedDoc`] maps onto them. If the real
-/// `MemDoc` ever grows/loses a field, this mirror (and the mapping below) is where
-/// the parity contract is pinned.
+/// Local mirror of `atlas_native_agent::engine::memory::MemDoc`.
+/// `atlas-memory` must not depend on the agent crate (the dependency points the
+/// other way, app-side), so we redeclare the three fields here and prove
+/// [`RetrievedDoc`] maps onto them. If the real `MemDoc` ever grows/loses a
+/// field, this mirror (and the mapping below) is where the contract is pinned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MemDocShape {
     title: String,
@@ -53,7 +53,7 @@ fn to_memdoc(d: &RetrievedDoc) -> MemDocShape {
 }
 
 /// Locate a local MiniLM model dir via `ATLAS_MINILM_DIR`, else `None`. Tests that
-/// need real embeddings skip cleanly when absent (no network download).
+/// need real embeddings are `#[ignore]`d and never download one.
 fn find_model_dir() -> Option<std::path::PathBuf> {
     let dir = std::env::var("ATLAS_MINILM_DIR").ok()?;
     let p = std::path::PathBuf::from(dir);
@@ -62,9 +62,9 @@ fn find_model_dir() -> Option<std::path::PathBuf> {
 
 // ── Parity (no model required) ───────────────────────────────────────────────
 
-/// Every `RetrievedDoc` maps onto the frozen `MemDoc` shape with all three
-/// display fields intact and `id` dropped — the byte-shape the three agents'
-/// `search_memory` results depend on.
+/// Every `RetrievedDoc` maps onto the `MemDoc` shape with all three display
+/// fields intact and `id` dropped — the shape every agent's retrieved memory
+/// arrives in.
 #[test]
 fn retrieved_doc_maps_cleanly_onto_memdoc() {
     let docs = vec![
@@ -124,31 +124,27 @@ fn retrieve_signature_has_no_agent_parameter() {
     let _ = _coerce;
 }
 
-/// End-to-end agent-agnostic retrieval over a real engine — gated on the MiniLM
-/// model (`ATLAS_MINILM_DIR`); skips cleanly (no network) when absent. Builds one
+/// End-to-end agent-agnostic retrieval over a real engine. Ignored by default;
+/// run with `ATLAS_MINILM_DIR` set and `--ignored` (no network). Builds one
 /// engine, indexes a small corpus, then issues the SAME (cwd, query, limit) twice
 /// — standing in for "agent X asks" vs "agent Y asks". Asserts the two result sets
 /// are byte-identical (no per-caller drift) and that every doc is well-formed and
 /// maps cleanly onto `MemDoc`.
 #[test]
+#[ignore = "needs ATLAS_MINILM_DIR"]
 fn retrieve_is_agent_agnostic_and_well_formed_when_model_available() {
     use crate::{CorpusDoc, MemoryEngine, MiniLmProvider};
     use std::sync::Arc;
 
-    let Some(model) = find_model_dir() else {
-        eprintln!("skipping parity e2e: no MiniLM model (set ATLAS_MINILM_DIR)");
-        return;
-    };
+    let model = find_model_dir().expect("set ATLAS_MINILM_DIR to a MiniLM model dir");
     let embedder = atlas_embed::Embedder::load(&model).expect("load MiniLM");
     let provider = MiniLmProvider::new(Arc::new(embedder), "all-MiniLM-L6-v2");
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    let mut root = std::env::temp_dir();
-    root.push(format!("atlas-memory-parity-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
 
-    let mut engine = MemoryEngine::open(root.clone());
+    let mut engine = MemoryEngine::open(root);
     let corpus = vec![
         CorpusDoc {
             id: "d1".into(),
@@ -190,8 +186,6 @@ fn retrieve_is_agent_agnostic_and_well_formed_when_model_available() {
         assert!(!a.text.trim().is_empty(), "text must be non-empty");
         assert_eq!(to_memdoc(a), to_memdoc(b));
     }
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 // ── Benchmark: HNSW vs legacy brute-force ────────────────────────────────────
@@ -226,8 +220,11 @@ impl Rng {
 /// Time [`HnswStore::search`] vs the legacy `atlas_embed::BruteForce` O(n) cosine
 /// over a synthetic corpus of random normalized 384-d vectors, and report a top-1
 /// recall-agreement sanity check (HNSW is approximate, so <100% is expected and
-/// fine). Always runs (no model, no network); prints with `--nocapture`.
+/// fine). Needs no model or network, but builds a 4000-vector index, which is
+/// slow unoptimized, so it is opt-in:
+/// `cargo test -p atlas-memory --release bench_hnsw -- --ignored --nocapture`.
 #[test]
+#[ignore = "benchmark; run with --ignored --nocapture"]
 fn bench_hnsw_vs_brute_force() {
     use crate::HnswStore;
     use atlas_embed::{BruteForce, VectorStore};

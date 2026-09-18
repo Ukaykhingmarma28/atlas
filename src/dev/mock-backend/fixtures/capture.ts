@@ -42,7 +42,7 @@ import type {
   RemoteWorkspace,
   SlugAvailability,
 } from "@/features/capture/types";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
 /** Fixed "now", so seeded dates never drift between reloads. */
@@ -409,7 +409,32 @@ function sessionSummary(sessionId: string): SessionSummary {
   };
 }
 
-export const captureHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface CaptureResponses {
+  capture_binding: Binding | null;
+  capture_detect: Detection;
+  capture_import_preview: ImportPreview;
+  capture_health: CaptureHealth;
+  capture_activate: Unread;
+  capture_session_summary: SessionSummary | null;
+  capture_enable: Unread;
+  capture_disable: Unread;
+  capture_git_init: Unread;
+  capture_retry_failed: Unread;
+  capture_retry_watcher: CaptureHealth;
+  capture_import_confirm: Unread;
+  capture_slug_available: SlugAvailability;
+  capture_connect_options: ConnectOptions;
+  capture_register_cloud: Unread;
+  capture_connect: Unread;
+  capture_promotion_preview: PromotionPreview;
+  capture_promote: Unread;
+}
+
+export const captureHandlers: TypedHandlers<CaptureResponses> = {
   // ── Reads ───────────────────────────────────────────────────────────────
   capture_binding: ({ projectPath }): Binding | null => projectFor(projectPath).binding,
   capture_detect: ({ projectPath }): Detection => projectFor(projectPath).detection,

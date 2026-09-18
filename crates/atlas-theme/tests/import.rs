@@ -80,7 +80,14 @@ fn a_tweakcn_registry_item_becomes_a_complete_two_variant_theme() {
     let dark = theme.dark.as_ref().unwrap();
     assert_eq!(dark.base["background"], "oklch(0.2155 0.0254 284.0647)");
     assert_eq!(dark.base["font-sans"], "Montserrat, sans-serif", "cssVars.theme reaches both variants");
-    assert_eq!(dark.base["radius"], "0.35rem");
+    // Except `radius`: its rem assumes a 16px root and Atlas's is 13px, so it
+    // is carried over as the px the author saw, and the report says so.
+    assert_eq!(dark.base["radius"], "5.6px");
+    assert!(
+        report.summary.iter().any(|note| note.contains("0.35rem") && note.contains("5.6px")),
+        "the radius conversion should be reported: {:?}",
+        report.summary
+    );
 
     // The dark block omits `destructive-foreground`, as current shadcn does.
     // It must be derived, and it must be readable against `destructive`.

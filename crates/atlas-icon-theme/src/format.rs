@@ -197,6 +197,10 @@ pub struct IconThemeDocument {
     pub hides_explorer_arrows: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_language_mode_icons: Option<bool>,
+    /// Fonts and font sources [`IconThemeDocument::parse`] dropped because a
+    /// field that ends up in a CSS `@font-face` rule was not a plain word.
+    #[serde(skip)]
+    rejected: Vec<IconThemeWarning>,
 }
 
 /// Something survivable that the document got wrong.
@@ -220,6 +224,7 @@ impl IconThemeDocument {
         if let Some(high_contrast) = document.high_contrast.as_mut() {
             high_contrast.normalise();
         }
+        document.rejected = sanitise_fonts(&mut document.fonts);
         if document.icon_definitions.is_empty() {
             return Err(IconThemeError::Parse {
                 origin: origin.to_string(),
@@ -237,7 +242,7 @@ impl IconThemeDocument {
     /// and is otherwise completely silent, which is why they are collected
     /// rather than ignored.
     pub fn warnings(&self) -> Vec<IconThemeWarning> {
-        let mut warnings = Vec::new();
+        let mut warnings = self.rejected.clone();
         let sections = [
             ("", Some(&self.associations)),
             ("light.", self.light.as_ref()),
@@ -273,6 +278,53 @@ impl IconThemeDocument {
         }
         warnings
     }
+}
+
+/// `true` for a value that may be written into a CSS `@font-face` rule or a
+/// `font-family` name as-is: letters, digits, space, `_` and `-`.
+///
+/// A font's `id`, `weight` and `style` and a source's `format` are all
+/// interpolated into CSS by the webview, and the theme is a third-party file.
+/// Every real value (`seti`, `normal`, `bold`, `400`, `woff2`) fits.
+pub fn is_plain_css_word(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-'))
+}
+
+/// Drop every font whose id, weight or style is not a plain word, and every
+/// source whose format is not, returning one warning per thing dropped. A
+/// glyph naming a dropped font then warns through the ordinary undeclared-font
+/// check, and renders blank rather than as injected CSS.
+fn sanitise_fonts(fonts: &mut Vec<IconFont>) -> Vec<IconThemeWarning> {
+    let mut rejected = Vec::new();
+    fonts.retain_mut(|font| {
+        let bad_field = [("id", Some(&font.id)), ("weight", font.weight.as_ref()), ("style", font.style.as_ref())]
+            .into_iter()
+            .find(|(_, value)| value.is_some_and(|value| !is_plain_css_word(value)));
+        if let Some((field, _)) = bad_field {
+            rejected.push(IconThemeWarning {
+                key: format!("fonts.{}", font.id),
+                message: format!("font `{field}` must be letters, digits, space, `_` or `-`; font ignored"),
+            });
+            return false;
+        }
+        font.src.retain(|source| {
+            let ok = is_plain_css_word(&source.format);
+            if !ok {
+                rejected.push(IconThemeWarning {
+                    key: format!("fonts.{}.src", font.id),
+                    message: format!(
+                        "source `{}` has a format that is not a plain word; source ignored",
+                        source.path
+                    ),
+                });
+            }
+            ok
+        });
+        true
+    });
+    rejected
 }
 
 /// Strip `//` and `/* */` comments and trailing commas.
@@ -462,6 +514,31 @@ mod tests {
         let warnings = document.warnings();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].message.contains("ghost"), "{:?}", warnings[0]);
+    }
+
+    #[test]
+    fn a_font_with_css_in_its_fields_is_dropped_with_a_warning() {
+        let source = r##"{
+            "fonts": [
+                { "id": "ok", "weight": "400", "style": "normal",
+                  "src": [
+                    { "path": "./a.woff", "format": "woff" },
+                    { "path": "./b.woff", "format": "woff\"); } body { display: none" }
+                  ] },
+                { "id": "x;}", "src": [{ "path": "./c.woff", "format": "woff" }] },
+                { "id": "y", "weight": "bold}", "src": [] },
+                { "id": "z", "style": "<script>", "src": [] }
+            ],
+            "iconDefinitions": { "a": { "fontCharacter": "\\E001", "fontId": "ok" } },
+            "file": "a"
+        }"##;
+        let document = IconThemeDocument::parse(source, "test").expect("parses");
+        assert_eq!(document.fonts.len(), 1);
+        assert_eq!(document.fonts[0].id, "ok");
+        assert_eq!(document.fonts[0].src.len(), 1, "the bad source is dropped");
+        assert_eq!(document.warnings().len(), 4, "{:?}", document.warnings());
+        assert!(is_plain_css_word("Seti Icons_2-x"));
+        assert!(!is_plain_css_word(""));
     }
 
     #[test]

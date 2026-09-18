@@ -5,6 +5,7 @@ import { detectLanguage, PLAINTEXT } from "@/features/editor/lib/languages";
 import { useIconThemeStore } from "../stores/icon-theme-store";
 import { cacheKey, type PreparedIcon } from "../stores/icon-theme-store";
 import type { IconKind } from "../lib/icon-theme-api";
+import { fontFaceCss, safeFontIdent } from "../lib/font-face-css";
 
 /**
  * One file's or folder's icon, under the active icon theme.
@@ -28,7 +29,7 @@ export type FallbackIcon = ComponentType<{ size?: number; className?: string }>;
 
 /** A font-glyph icon needs the theme's `@font-face`; see `IconThemeFonts`. */
 function fontFamily(fontId: string | undefined): string | undefined {
-  return fontId ? `atlas-icon-font-${fontId}` : undefined;
+  return fontId ? safeFontIdent(`atlas-icon-font-${fontId}`) : undefined;
 }
 
 export interface FileIconProps {
@@ -145,20 +146,7 @@ export function IconThemeFonts() {
   const fonts = useIconThemeStore.use.fonts();
   if (fonts.length === 0) return null;
   const css = fonts
-    .map((font) => {
-      const src = font.src
-        .map((source) => `url("${source.url}") format("${source.format}")`)
-        .join(", ");
-      if (!src) return "";
-      return [
-        "@font-face {",
-        `  font-family: "atlas-icon-font-${font.id}";`,
-        `  src: ${src};`,
-        `  font-weight: ${font.weight ?? "normal"};`,
-        `  font-style: ${font.style ?? "normal"};`,
-        "}",
-      ].join("\n");
-    })
+    .map((font) => fontFaceCss(`atlas-icon-font-${font.id}`, font))
     .filter(Boolean)
     .join("\n");
   if (!css) return null;

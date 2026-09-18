@@ -210,4 +210,33 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert!(evs[0].payload["text"].as_str().unwrap().contains("[REDACTED]"));
     }
+
+    /// Credentials as they turn up in real transcripts, each paired with the
+    /// part that must not survive. See the known-gap tests in `memory_delta`.
+    const LEAKS: &[(&str, &str)] = &[
+        ("password: hunter2hunter2", "hunter2hunter2"),
+        ("postgres://app:s3cretPassw0rd@db.internal:5432/app", "s3cretPassw0rd"),
+        (
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl",
+            "eyJhbGciOiJIUzI1NiJ9",
+        ),
+        ("database:\n  password: hunter2hunter2", "hunter2hunter2"),
+        (r#"{"user": "app", "password": "hunter2hunter2"}"#, "hunter2hunter2"),
+    ];
+
+    /// `secrets_redacted_in_compiled_events` uses the one shape the redactor
+    /// was written for. A compiled fact carrying any of these reaches the
+    /// shared log unredacted.
+    #[test]
+    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    fn realistic_credentials_are_redacted_in_compiled_events() {
+        for (leak, secret) in LEAKS {
+            let fact = format!("The deploy uses {leak} for now");
+            let resp = serde_json::json!({ "facts": [fact] }).to_string();
+            let evs = parse_events(&resp, "a", "s");
+            assert_eq!(evs.len(), 1, "{resp}");
+            let text = evs[0].payload["text"].as_str().unwrap();
+            assert!(!text.contains(secret), "leaked {secret:?}: {text}");
+        }
+    }
 }

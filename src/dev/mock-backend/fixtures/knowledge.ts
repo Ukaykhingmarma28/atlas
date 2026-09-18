@@ -17,6 +17,7 @@
 // happening outside the panel.
 
 import { emit } from "@tauri-apps/api/event";
+import type { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { MentionData, MentionKnowledge } from "@/features/chat/lib/mentions";
 import type { GraphLayout } from "@/features/knowledge/components/knowledge-graph";
 import type {
@@ -31,7 +32,7 @@ import type {
   RustPageMeta,
 } from "@/features/knowledge/stores/knowledge-meta-store";
 import type { KnowledgeEntry } from "@/features/knowledge/stores/knowledge-store";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unread } from "../types";
 import { MOCK_PROJECT } from "../project";
 
 const F = "```";
@@ -460,20 +461,6 @@ export function coverSvgDataUrl(ref: string): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
-// ── result types ─────────────────────────────────────────────────────────
-//
-// Inline `invoke<…>` result types in the knowledge panel / footer, restated
-// here (Rust: `KbImportResult` in knowledge.rs, `knowledge_export_server`).
-
-export interface KbImportResult {
-  notes_imported: number;
-  files_copied: number;
-}
-export interface KbServerExport {
-  binaryPath: string;
-  noteCount: number;
-}
-
 // ── state ─────────────────────────────────────────────────────────────────
 
 const PROJECT = MOCK_PROJECT.path;
@@ -667,7 +654,37 @@ function projectGraph(): ProjectGraph {
 
 // ── handlers ─────────────────────────────────────────────────────────────
 
-export const knowledgeHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface KnowledgeResponses {
+  list_knowledge: KnowledgeEntry[];
+  save_knowledge_note: Unread;
+  delete_knowledge_note: Unread;
+  create_knowledge_dir: Unread;
+  // These two are inline `invoke<{…}>` type arguments inside components
+  // (`knowledge-panel.tsx`, `editor-footer.tsx`) with no named type to import,
+  // so they are restated — and, unlike the rest, do NOT catch drift.
+  import_into_knowledge: { notes_imported: number; files_copied: number };
+  knowledge_meta_load: MetaFile;
+  knowledge_meta_patch: Unread;
+  knowledge_meta_delete: Unread;
+  knowledge_backlinks: Backlink[];
+  knowledge_link_counts: LinkCounts;
+  knowledge_links_graph: ProjectGraph;
+  knowledge_links_invalidate: Unread;
+  knowledge_graph_layout_load: GraphLayout;
+  knowledge_graph_layout_save: Unread;
+  knowledge_cover_data_url: string;
+  knowledge_cover_upload: string;
+  // `open()` from `@tauri-apps/plugin-dialog`, which calls this command.
+  "plugin:dialog|open": Awaited<ReturnType<typeof openDialog>>;
+  mention_search: MentionData[];
+  knowledge_export_server: { binaryPath: string; noteCount: number };
+}
+
+export const knowledgeHandlers: TypedHandlers<KnowledgeResponses> = {
   // ── notes ──
   list_knowledge: (): KnowledgeEntry[] => listKnowledgeEntries(),
   save_knowledge_note: ({ id, content }): string => {
@@ -683,7 +700,7 @@ export const knowledgeHandlers: MockHandlers = {
     dirs.add(kbRel(dirName));
     return null;
   },
-  import_into_knowledge: ({ sources }): KbImportResult => {
+  import_into_knowledge: ({ sources }): KnowledgeResponses["import_into_knowledge"] => {
     let imported = 0;
     for (const src of sources as string[]) {
       const name = src
@@ -782,7 +799,7 @@ export const knowledgeHandlers: MockHandlers = {
   // seeded with three repos for exactly this reason) — not duplicated here.
 
   // ── export ──
-  knowledge_export_server: (): KbServerExport => ({
+  knowledge_export_server: (): KnowledgeResponses["knowledge_export_server"] => ({
     binaryPath: "/Users/dev/Downloads/atlas-kb-server",
     noteCount: notes.size,
   }),

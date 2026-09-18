@@ -108,13 +108,55 @@ export function sanitizeSvg(source: string): string | null {
   return new XMLSerializer().serializeToString(root);
 }
 
+/**
+ * The only CSS properties an inline `style` may keep: paint and text, i.e.
+ * things that change how the icon's own shapes look. Everything that changes
+ * where a box sits — `position`, `inset`, `z-index`, `width`, `transform` — is
+ * absent on purpose. An inline SVG is an ordinary box in the app's layout, so
+ * `style="position:fixed;inset:0;z-index:…"` on its root would lay a
+ * full-window overlay over Atlas, and that needs no `url()` at all.
+ */
+const ALLOWED_STYLE_PROPERTIES = new Set([
+  "fill",
+  "fill-opacity",
+  "fill-rule",
+  "stroke",
+  "stroke-width",
+  "stroke-opacity",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-miterlimit",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "opacity",
+  "color",
+  "stop-color",
+  "stop-opacity",
+  "flood-color",
+  "flood-opacity",
+  "clip-rule",
+  "paint-order",
+  "vector-effect",
+  "shape-rendering",
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "text-anchor",
+  "dominant-baseline",
+  "letter-spacing",
+]);
+
 function scrub(element: Element): void {
   // Both loops iterate a *snapshot*. `attributes` and `children` are live
   // collections: removing an entry while iterating the collection itself
   // shifts the index and silently skips the next one.
   for (const attribute of Array.from(element.attributes)) {
     const name = attribute.name.toLowerCase();
-    if (name.startsWith("on")) {
+    // `class` reaches the APP's stylesheet: `class="fixed inset-0 z-tooltip"`
+    // is the same overlay as a hostile `style`, spelled in Tailwind. With
+    // `<style>` gone an icon has no rules of its own for a class to select.
+    if (name.startsWith("on") || name === "class") {
       element.removeAttribute(attribute.name);
       continue;
     }
@@ -122,11 +164,17 @@ function scrub(element: Element): void {
       element.removeAttribute(attribute.name);
       continue;
     }
-    // `style` can smuggle a URL too (`background: url(javascript:…)`), and no
-    // icon theme needs one in an inline style.
-    if (name === "style" && /url\s*\(/i.test(attribute.value)) {
-      element.removeAttribute(attribute.name);
+    if (name === "style") {
+      const style = safeStyle(attribute.value);
+      if (style) element.setAttribute(attribute.name, style);
+      else element.removeAttribute(attribute.name);
+      continue;
     }
+    // A presentation attribute is a CSS value, so `fill`, `filter`, `mask`,
+    // `clip-path` and `marker-*` all take a `url()` — and can point it off the
+    // document. Checked on every attribute rather than a list of those, so a
+    // property added to SVG later is covered too.
+    if (!isSafeCssValue(attribute.value)) element.removeAttribute(attribute.name);
   }
   for (const child of Array.from(element.children)) {
     if (!ALLOWED_ELEMENTS.has(child.nodeName.toLowerCase())) {
@@ -135,6 +183,44 @@ function scrub(element: Element): void {
     }
     scrub(child);
   }
+}
+
+/** Rebuild a `style` attribute from its allowlisted declarations, or `""`. */
+function safeStyle(value: string): string {
+  return value
+    .split(";")
+    .map((declaration) => {
+      const colon = declaration.indexOf(":");
+      if (colon === -1) return null;
+      const property = declaration.slice(0, colon).trim().toLowerCase();
+      const propertyValue = declaration.slice(colon + 1).trim();
+      if (!ALLOWED_STYLE_PROPERTIES.has(property) || !propertyValue) return null;
+      if (!isSafeCssValue(propertyValue)) return null;
+      return `${property}:${propertyValue}`;
+    })
+    .filter((declaration): declaration is string => declaration !== null)
+    .join(";");
+}
+
+/**
+ * A CSS value may reference only a same-document fragment: `url(#grad)` stays,
+ * `url(https://…)` and `url(data:…)` go.
+ *
+ * A backslash fails outright. CSS resolves escapes before it recognises a
+ * function name, so `\75 rl(https://…)` IS a `url()` to the browser and
+ * invisible to a pattern that looks for the letters. No icon's paint or path
+ * data has a reason to contain one. `image-set()` and friends take a URL
+ * without the word `url`, so those fail too.
+ */
+function isSafeCssValue(value: string): boolean {
+  if (value.includes("\\")) return false;
+  if (/\b(?:image-set|image|cross-fade|element|src)\s*\(/i.test(value)) return false;
+  const opened = value.match(/url\s*\(/gi)?.length ?? 0;
+  const read = [...value.matchAll(/url\s*\(\s*(['"]?)([^'")]*)\1\s*\)/gi)];
+  // A `url(` the pattern could not read (unbalanced, mixed quotes) is not
+  // given the benefit of the doubt.
+  if (read.length !== opened) return false;
+  return read.every((match) => match[2].trim().startsWith("#"));
 }
 
 /** Only a same-document fragment (`#gradient-1`) is allowed through. */

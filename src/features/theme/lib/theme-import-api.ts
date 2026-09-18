@@ -115,9 +115,55 @@ export function previewThemeImport(input: ThemeImportInput): Promise<ThemeImport
   return invoke("preview_theme_import", { input });
 }
 
-/** Write a previewed theme to `~/.config/atlas/themes/<id>.toml`. Returns the path. */
-export function commitThemeImport(toml: string, id: string, name: string): Promise<string> {
+/** What `commitThemeImport` wrote. */
+export interface CommittedThemeImport {
+  /** The id the theme was saved under: the text the user typed, slugged.
+   *  This, not the typed text, is what `settings.theme` must name. */
+  id: string;
+  path: string;
+}
+
+/** Write a previewed theme to `~/.config/atlas/themes/<id>.toml`. */
+export function commitThemeImport(
+  toml: string,
+  id: string,
+  name: string,
+): Promise<CommittedThemeImport> {
   return invoke("commit_theme_import", { toml, id, name });
+}
+
+/** `fold` in `crates/atlas-theme/src/import/mod.rs`, one entry per run. */
+const SLUG_FOLDS: [RegExp, string][] = [
+  [/[à-åÀ-Åāăą]/, "a"],
+  [/[è-ëÈ-Ëēėę]/, "e"],
+  [/[ì-ïÌ-Ïīį]/, "i"],
+  [/[ò-öÒ-ÖøØō]/, "o"],
+  [/[ù-üÙ-Üū]/, "u"],
+  [/[çÇćč]/, "c"],
+  [/[ñÑń]/, "n"],
+  [/[ýÿ]/, "y"],
+  [/[šś]/, "s"],
+  [/[žźż]/, "z"],
+  [/ß/, "ss"],
+  [/[æÆ]/, "ae"],
+];
+
+/**
+ * The id `commit_theme_import` will save under for what the user typed —
+ * `atlas_theme::import::slug`, character for character. Only used to label the
+ * preview ("Replaces an import"); the id that is applied is the one Rust
+ * returns from the commit.
+ */
+export function themeIdSlug(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    let folded = "";
+    if (/^[A-Za-z0-9]$/.test(ch)) folded = ch.toLowerCase();
+    else folded = SLUG_FOLDS.find(([pattern]) => pattern.test(ch))?.[1] ?? "";
+    if (folded) out += folded;
+    else if (!out.endsWith("-")) out += "-";
+  }
+  return out.replace(/^-+|-+$/g, "");
 }
 
 export function exportThemeShadcn(id: string): Promise<ShadcnExport> {

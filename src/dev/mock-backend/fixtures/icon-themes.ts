@@ -26,7 +26,7 @@ import type {
   OpenVsxIconTheme,
   ResolvedIcon,
 } from "@/features/icon-theme/lib/icon-theme-api";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit } from "../types";
 
 /** Trimmed `iconDefinitions`: id -> SVG source, exactly as Rust serves it. */
 const ICONS: Record<string, string> = {
@@ -306,7 +306,21 @@ const OPEN_VSX: OpenVsxIconTheme[] = [
   },
 ];
 
-export const iconThemeHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the return type of its
+ * wrapper in `icon-theme-api.ts`, which `invoke` infers its `T` from.
+ */
+export interface IconThemeResponses {
+  list_icon_themes: IconThemeSummary[];
+  resolve_icons: (ResolvedIcon | null)[];
+  get_icon_theme_assets: Record<string, IconAsset>;
+  get_icon_theme_fonts: IconFontFace[];
+  search_icon_themes: OpenVsxIconTheme[];
+  install_icon_theme: IconThemeSummary;
+  remove_icon_theme: Unit;
+}
+
+export const iconThemeHandlers: TypedHandlers<IconThemeResponses> = {
   list_icon_themes: (): IconThemeSummary[] => [...installed.values()],
 
   resolve_icons: (a): (ResolvedIcon | null)[] => {

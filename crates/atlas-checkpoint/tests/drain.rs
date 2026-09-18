@@ -21,8 +21,8 @@ use std::time::Duration;
 use atlas_checkpoint::artifacts::AtlasArtifact;
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
-    bind, drain, Capture, DrainStatus, Role, SessionKey, Source, Store, SyncConfig, TurnContent,
-    SPILL_THRESHOLD_BYTES,
+    bind, drain, register_workspace, Capture, DrainStatus, Role, SessionKey, Source, Store,
+    SyncConfig, TurnContent, SPILL_THRESHOLD_BYTES,
 };
 
 const WORKSPACE: &str = "ws-atlas";
@@ -204,7 +204,11 @@ fn handle(
         if String::from_utf8_lossy(&body).contains("\"slug\":\"taken\"") {
             respond(&mut stream, 409, "{}");
         } else {
-            respond(&mut stream, 200, "{\"projectId\":\"ws-remote-1\"}");
+            // `workspaceId` is the SERVER's key for the new id, and the one
+            // `register_workspace` reads (`sync.rs`). The Project/Workspace
+            // rename is UI vocabulary; it did not rename the wire, so a stub
+            // answering `projectId` here describes a server that doesn't exist.
+            respond(&mut stream, 200, "{\"workspaceId\":\"ws-remote-1\"}");
         }
         return;
     }
@@ -397,9 +401,37 @@ fn the_wire_project_id_is_never_the_local_row_key() {
     assert!(!artifacts.is_empty());
     for artifact in artifacts {
         let json = serde_json::to_string(&artifact).unwrap();
-        assert!(json.contains(WIRE_WORKSPACE), "{json}");
+        assert!(json.contains(&format!("\"workspaceId\":\"{WIRE_WORKSPACE}\"")), "{json}");
         assert!(!json.contains(&format!("\"{WORKSPACE}\"")), "{json}");
     }
+}
+
+// ── Project registration ────────────────────────────────────────────────────
+
+#[test]
+fn registering_a_project_returns_the_server_assigned_id() {
+    // The id the stub hands back under `workspaceId` is what the caller stores
+    // as the wire identity. A stub replying under any other key would make this
+    // fail with "no id in response", which is what production would do too.
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let id = register_workspace(
+        &config(&stub.base_url, &token),
+        "atlas",
+        Some("abc123"),
+        Some("https://example.invalid/atlas.git"),
+    )
+    .expect("registers");
+    assert_eq!(id, "ws-remote-1");
+}
+
+#[test]
+fn registering_a_taken_slug_is_refused_plainly() {
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let err = register_workspace(&config(&stub.base_url, &token), "taken", None, None)
+        .expect_err("a 409 is an error");
+    assert!(err.to_string().contains("already taken"), "{err}");
 }
 
 #[test]

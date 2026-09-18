@@ -53,7 +53,8 @@ const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
 /// — won that race forever, and the tab sat on "connecting" with nothing to
 /// report. Generous: a cold `node` start on a slow disk is seconds, not a
 /// minute, so expiry means the agent is not going to answer.
-const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Maximum time the exit path waits for the stderr reader to reach EOF before
 /// it builds the `Exited` error out of what was recorded. The reader normally
 /// completes immediately; the bound covers descendants which retain stderr.
@@ -82,6 +83,25 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// wait. Losing the race costs the turn's real stop reason and token counts,
 /// which is a fair price for a chat that unfreezes.
 const CANCEL_GRACE: Duration = Duration::from_secs(5);
+
+/// The clock above, held on the connection so a test can shorten it. The
+/// default is the constant; nothing in the app changes it.
+///
+/// [`INITIALIZE_TIMEOUT`] is not in here: it runs out inside
+/// [`AcpConnection::stdio`], before there is a connection to set it on, and a
+/// test reaches it with a paused clock instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionDeadlines {
+    pub cancel_grace: Duration,
+}
+
+impl Default for ConnectionDeadlines {
+    fn default() -> Self {
+        Self {
+            cancel_grace: CANCEL_GRACE,
+        }
+    }
+}
 
 /// What a session's `AcpThread` events are sent to.
 ///
@@ -124,6 +144,7 @@ pub struct AcpConnection {
     command: AgentServerCommand,
     request_elicitations: ElicitationStoreHandle,
     defaults: AcpConnectionDefaults,
+    deadlines: Mutex<ConnectionDeadlines>,
     thread_events: ThreadEventSink,
     debug_log: AcpDebugLog,
     _io_task: tokio::task::JoinHandle<()>,
@@ -365,6 +386,7 @@ impl AcpConnection {
             command,
             request_elicitations,
             defaults,
+            deadlines: Mutex::new(ConnectionDeadlines::default()),
             thread_events,
             debug_log,
             _io_task: io_task,
@@ -384,6 +406,23 @@ impl AcpConnection {
 
     pub fn agent_capabilities(&self) -> &acp::AgentCapabilities {
         &self.agent_capabilities
+    }
+
+    /// Shorten the cancel grace. Test-facing: the default is seconds, and a
+    /// test that waits it out proves nothing a shorter one would not. Applies
+    /// to turns started after the call.
+    pub fn set_deadlines(&self, deadlines: ConnectionDeadlines) {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = deadlines;
+    }
+
+    fn deadlines(&self) -> ConnectionDeadlines {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Runs one RPC on the connect/bind path under [`REQUEST_TIMEOUT`].
@@ -1106,6 +1145,7 @@ impl AgentConnection for AcpConnection {
         let cancel_waiter =
             sessions.with_session(&session_id, |session| session.cancel_signal.waiter());
         let cancel_probe = cancel_waiter.as_ref().map(CancelWaiter::probe);
+        let cancel_grace = self.deadlines().cancel_grace;
 
         async move {
             let result = match cancel_waiter {
@@ -1114,7 +1154,7 @@ impl AgentConnection for AcpConnection {
                     futures::pin_mut!(request);
                     let deadline = async move {
                         waiter.cancelled().await;
-                        tokio::time::sleep(CANCEL_GRACE).await;
+                        tokio::time::sleep(cancel_grace).await;
                     };
                     futures::pin_mut!(deadline);
 
@@ -1134,7 +1174,7 @@ impl AgentConnection for AcpConnection {
                             // "cancelled" means.
                             tracing::warn!(
                                 session = %session_id,
-                                grace_ms = CANCEL_GRACE.as_millis(),
+                                grace_ms = cancel_grace.as_millis(),
                                 "agent did not acknowledge a cancel; resolving the turn locally"
                             );
                             return Ok(acp::PromptResponse::new(acp::StopReason::Cancelled));

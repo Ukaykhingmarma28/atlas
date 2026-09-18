@@ -59,7 +59,11 @@ export function AddProjectMenu() {
               <>
                 <div
                   className="flex items-center gap-1.5 px-3 h-[30px] border-y border-[var(--border)] shrink-0"
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    // Keep keys from the popup's typeahead and arrow nav, but let Escape
+                    // bubble to the dismiss handler so it still closes the popup.
+                    if (e.key !== "Escape") e.stopPropagation();
+                  }}
                 >
                   <Search size={11} className="text-[var(--muted-foreground)] shrink-0" />
                   <input

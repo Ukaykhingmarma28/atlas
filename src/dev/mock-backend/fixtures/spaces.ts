@@ -29,12 +29,7 @@
 import { emit } from "@tauri-apps/api/event";
 import * as Y from "yjs";
 import { toBase64 } from "@/features/comms/lib/draft-sync";
-import type {
-  CanvasEdge,
-  CanvasNode,
-  CanvasPage,
-  PageTreeEntry,
-} from "@/features/canvas/stores/canvas-store";
+import type { CanvasEdge, CanvasFile, CanvasNode } from "@/features/canvas/stores/canvas-store";
 import { addEdge, addNode } from "@/features/spaces/lib/space-doc";
 import {
   encodeSpaceAwarenessState,
@@ -50,21 +45,9 @@ import type {
   SpaceServerMessage,
   SpaceSummary,
 } from "@/features/spaces/lib/spaces-api";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit } from "../types";
 import { abs, MOCK_ORG_ID, MOCK_PROJECT } from "../project";
 import { mockAssetUrl } from "./files";
-
-/**
- * The persisted canvas file. `CanvasFile` is declared but NOT exported by
- * `canvas-store.ts`, so it is restated here (v4 = multiple pages + a folder
- * tree); everything it is made of is imported from there.
- */
-interface CanvasFile {
-  version: 4;
-  pages: CanvasPage[];
-  tree: PageTreeEntry[];
-  activePageId: string;
-}
 
 const ISO = "2026-09-18T09:14:00.000Z";
 
@@ -468,7 +451,26 @@ function parseClientMessage(frame: string): SpaceClientMessage | null {
 
 // ── handlers ──────────────────────────────────────────────────────────────
 
-export const spacesHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface SpacesResponses {
+  load_canvas: string;
+  save_canvas: Unit;
+  canvas_media_upload: string;
+  canvas_media_data_url: string;
+  spaces_summary: SpaceSummary;
+  spaces_connect: Unit;
+  spaces_disconnect: Unit;
+  spaces_cycle: Unit;
+  spaces_send_control: Unit;
+  spaces_send_binary: Unit;
+  spaces_media_upload: SpaceMediaUploaded;
+  spaces_media_fetch: string;
+}
+
+export const spacesHandlers: TypedHandlers<SpacesResponses> = {
   // ── local canvas (.atlas/canvas.json) ───────────────────────────────────
   load_canvas: ({ projectPath }): string =>
     canvasFiles.get(String(projectPath)) ??

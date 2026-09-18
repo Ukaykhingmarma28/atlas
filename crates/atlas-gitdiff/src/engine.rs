@@ -119,7 +119,7 @@ pub fn build_file_diff(diff: &str, path: &str, language: &str) -> FileDiff {
         while i < lines.len() {
             match lines[i].kind {
                 RawKind::Context => {
-                    let text = lines[i].text.as_str();
+                    let text = without_cr(&lines[i].text);
                     rows.push(Row {
                         left: Some(Side {
                             line_no: old_ln,
@@ -153,6 +153,9 @@ pub fn build_file_diff(diff: &str, path: &str, language: &str) -> FileDiff {
                     }
                     stats.deletions += minus.len();
                     stats.additions += plus.len();
+                    let (minus, plus) = line_endings_for_display(&minus, &plus);
+                    let minus: Vec<&str> = minus.iter().map(String::as_str).collect();
+                    let plus: Vec<&str> = plus.iter().map(String::as_str).collect();
                     build_block(&minus, &plus, &mut old_ln, &mut new_ln, &mut rows);
                 }
             }
@@ -168,6 +171,25 @@ pub fn build_file_diff(diff: &str, path: &str, language: &str) -> FileDiff {
         stats,
         change_blocks,
     }
+}
+
+fn without_cr(text: &str) -> &str {
+    text.strip_suffix('\r').unwrap_or(text)
+}
+
+/// A CRLF file's lines keep their `\r` through parsing. Where every line in a
+/// change block ends the same way, the `\r` is noise and is dropped. Where
+/// the block mixes endings, it is the difference (possibly the only one), so
+/// it becomes a visible `␍` that the word diff then marks as changed.
+fn line_endings_for_display(minus: &[&str], plus: &[&str]) -> (Vec<String>, Vec<String>) {
+    let all = || minus.iter().chain(plus);
+    let mixed = all().any(|l| l.ends_with('\r')) && all().any(|l| !l.ends_with('\r'));
+    let show = |l: &&str| match l.strip_suffix('\r') {
+        Some(body) if mixed => format!("{body}␍"),
+        Some(body) => body.to_string(),
+        None => (*l).to_string(),
+    };
+    (minus.iter().map(show).collect(), plus.iter().map(show).collect())
 }
 
 fn one_segment(text: &str) -> Vec<Segment> {
@@ -350,5 +372,30 @@ new file mode 100644
         let fd = build_file_diff(diff, "x.png", "");
         assert!(fd.is_binary);
         assert!(fd.rows.is_empty());
+    }
+
+    #[test]
+    fn a_line_ending_change_shows_the_carriage_return() {
+        let fd = build_file_diff("@@ -1,2 +1,2 @@\n ctx\r\n-same\r\n+same\n", "f", "text");
+        assert_eq!(fd.rows.len(), 2);
+        let ctx = fd.rows[0].left.as_ref().unwrap();
+        assert_eq!(ctx.segments[0].text, "ctx", "a uniform CR is not shown");
+        let left = fd.rows[1].left.as_ref().unwrap();
+        let right = fd.rows[1].right.as_ref().unwrap();
+        assert!(left.segments.iter().any(|s| s.emph && s.text.contains('␍')));
+        assert!(right.segments.iter().all(|s| !s.text.contains('␍')));
+    }
+
+    #[test]
+    fn a_crlf_file_with_an_ordinary_edit_hides_its_carriage_returns() {
+        let fd = build_file_diff("@@ -1 +1 @@\n-old\r\n+new\r\n", "f", "text");
+        let texts: Vec<&str> = fd
+            .rows
+            .iter()
+            .flat_map(|r| [r.left.as_ref(), r.right.as_ref()])
+            .flatten()
+            .flat_map(|side| side.segments.iter().map(|s| s.text.as_str()))
+            .collect();
+        assert!(texts.iter().all(|t| !t.contains('\r') && !t.contains('␍')), "{texts:?}");
     }
 }

@@ -12,7 +12,7 @@ export interface GitFileStatus {
   staged: boolean;
 }
 
-interface GitLogEntry {
+export interface GitLogEntry {
   hash: string;
   short_hash: string;
   message: string;
@@ -20,7 +20,7 @@ interface GitLogEntry {
   date: string;
 }
 
-interface GitBranch {
+export interface GitBranch {
   name: string;
   is_current: boolean;
 }
@@ -79,7 +79,7 @@ export interface InProgress {
 /** Wire shape of the Rust `git_snapshot` command — everything the panel
  *  headers need in one IPC call (~4 concurrent spawns Rust-side, coalesced
  *  across concurrent callers). */
-interface GitSnapshotWire {
+export interface GitSnapshotWire {
   isRepo: boolean;
   branch: string;
   detached: boolean;
@@ -110,7 +110,7 @@ export interface ActiveGitOp {
   error: GitErrorPayload | null;
 }
 
-type GitOpEvent = {
+export type GitOpEvent = {
   opId: string;
   repo: string;
   kind: string;

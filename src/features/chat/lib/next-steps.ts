@@ -44,6 +44,16 @@ export function extractNextSteps(content: string): string[] {
 }
 
 /**
+ * Remove ONLY the injected directive — for user messages, which never carry an
+ * assistant `<next_steps>` block. Cutting at `<next_step` there too would
+ * truncate a prompt that merely mentions the tag.
+ */
+export function stripNextStepsDirective(content: string): string {
+  const dir = content.indexOf(NEXT_STEPS_MARKER);
+  return (dir >= 0 ? content.slice(0, dir) : content).replace(/\s+$/, "");
+}
+
+/**
  * Remove both the injected directive (from user messages, seen on resume) and
  * the assistant's `<next_steps>` block (closed OR still streaming) so neither is
  * ever shown. Applied at every display/persistence chokepoint; the raw content

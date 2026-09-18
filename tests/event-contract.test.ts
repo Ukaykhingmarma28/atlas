@@ -20,6 +20,16 @@ import { fileURLToPath } from "node:url";
  * type-checked routes exist for neither side, but they never cross the IPC
  * boundary — they are out of scope here on purpose.
  *
+ * Only *shipping* code counts on either side. `src/dev/` (the browser mock
+ * backend, which emits most channels itself so `bun run dev` has data) and
+ * test files are excluded from both scans: a mock `emit("atlas:agents")`
+ * must not stand in for the Rust emitter it imitates, or Rust could stop
+ * emitting and this suite would stay green.
+ *
+ * Listens that name the channel through an exported string constant
+ * (`listen(THREADS_CHANGED_EVENT, …)`) are resolved through every
+ * `export const X = "atlas:…"` in shipping code, so they are checked too.
+ *
  * If you add an event, nothing here needs updating — the sets are derived.
  */
 
@@ -48,27 +58,56 @@ function walk(dir: string, extensions: string[]): string[] {
   return out;
 }
 
+/** The mock backend under `src/dev/` and test files are not shipping code:
+ *  neither may produce, nor count as listening to, a real channel. */
+const TS_DEV_DIR = path.join(TS_SRC, "dev") + path.sep;
+function isShippingTs(file: string): boolean {
+  if (file.startsWith(TS_DEV_DIR)) return false;
+  return !/\.(?:test|spec)\.tsx?$/.test(file) && !file.includes(`${path.sep}__tests__${path.sep}`);
+}
+
+function shippingTsFiles(): string[] {
+  return walk(TS_SRC, [".ts", ".tsx"]).filter(isShippingTs);
+}
+
+/** `export const X = "atlas:…"` across shipping TS, so a listen that names
+ *  its channel through a constant resolves to the literal. */
+function eventConstants(): Map<string, string> {
+  const out = new Map<string, string>();
+  const decl = /\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=\s*"(atlas:[a-z0-9:_-]+)"/g;
+  for (const file of shippingTsFiles()) {
+    for (const m of readFileSync(file, "utf8").matchAll(decl)) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
 /** Events the frontend subscribes to via Tauri `listen`/`once`. The name may
  *  sit a line or two after the call (formatting), so the window after the
  *  call site is searched rather than demanding one exact shape. */
-function listenedEvents(): Map<string, string[]> {
+function listenedEvents(constants: Map<string, string>): Map<string, string[]> {
   const found = new Map<string, string[]>();
   const call = /\b(?:listen|once)\s*(?:<[^;]*?>)?\s*\(/g;
-  for (const file of walk(TS_SRC, [".ts", ".tsx"])) {
+  // First argument given as a bare identifier: `listen(THREADS_CHANGED_EVENT, …)`.
+  const identArg = /^\s*([A-Za-z_$][\w$]*)\s*[,)]/;
+  for (const file of shippingTsFiles()) {
     const src = readFileSync(file, "utf8");
     for (const m of src.matchAll(call)) {
+      const after = src.slice(m.index + m[0].length);
+      const ident = after.match(identArg);
       const window = src.slice(m.index, m.index + 200);
-      const name = window.match(/"(atlas:[a-z0-9:_-]+)"/);
+      const name =
+        (ident && constants.get(ident[1])) ?? window.match(/"(atlas:[a-z0-9:_-]+)"/)?.[1];
       if (!name) continue;
       const where = path.relative(REPO_ROOT, file);
-      found.set(name[1], [...(found.get(name[1]) ?? []), where]);
+      found.set(name, [...(found.get(name) ?? []), where]);
     }
   }
   return found;
 }
 
 /** Every `"atlas:…"` literal a producer could emit under: all Rust literals
- *  (emit sites + the consts they're built from) plus TS-side Tauri emits. */
+ *  (emit sites + the consts they're built from) plus Tauri emits from
+ *  shipping TS — never the mock backend's. */
 function producedEvents(): Set<string> {
   const out = new Set<string>();
   const literal = /"(atlas:[a-z0-9:_-]+)"/g;
@@ -78,19 +117,39 @@ function producedEvents(): Set<string> {
     }
   }
   const emitCall = /\bemit\s*\(\s*"(atlas:[a-z0-9:_-]+)"/g;
-  for (const file of walk(TS_SRC, [".ts", ".tsx"])) {
+  for (const file of shippingTsFiles()) {
     for (const m of readFileSync(file, "utf8").matchAll(emitCall)) out.add(m[1]);
   }
   return out;
 }
 
 describe("tauri event contract", () => {
-  const listened = listenedEvents();
+  const constants = eventConstants();
+  const listened = listenedEvents(constants);
   const produced = producedEvents();
 
   it("extracted enough of both sides to be meaningful", () => {
     expect(listened.size).toBeGreaterThanOrEqual(MIN_LISTENED);
     expect(produced.size).toBeGreaterThanOrEqual(MIN_PRODUCED);
+  });
+
+  it("resolves listens that name their channel through an exported constant", () => {
+    // Spot-check: each of these is only ever listened to via a constant, so
+    // if constant resolution broke they would silently drop out of the check.
+    for (const name of [
+      "atlas:threads-changed",
+      "atlas:themes-changed",
+      "atlas:icon-themes-changed",
+    ]) {
+      expect(listened.has(name), `${name} not seen as listened`).toBe(true);
+    }
+  });
+
+  it("does not count the mock backend or tests as a producer or a listener", () => {
+    const leaked = [...listened.values()]
+      .flat()
+      .filter((f) => f.startsWith(`src${path.sep}dev${path.sep}`) || /\.test\.tsx?$/.test(f));
+    expect(leaked).toEqual([]);
   });
 
   it("every listened event has a producer", () => {

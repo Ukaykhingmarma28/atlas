@@ -92,7 +92,7 @@ export function KnowledgeInspector({
               On this page
             </div>
             {outline.length === 0 ? (
-              <div className="text-text-muted italic text-xs">
+              <div className="text-muted-foreground italic text-xs">
                 Add H2 or H3 headings to build an outline
               </div>
             ) : (
@@ -145,7 +145,7 @@ export function KnowledgeInspector({
           <>
             <div className="eyebrow mb-2.5">Pages linking here · {backlinks.length}</div>
             {backlinks.length === 0 ? (
-              <div className="text-text-muted italic text-xs">
+              <div className="text-muted-foreground italic text-xs">
                 No backlinks yet. Reference this page from another note with
                 <span className="mono"> [[note-id]] </span>
                 and it'll show up here.

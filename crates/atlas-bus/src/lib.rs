@@ -8,15 +8,12 @@
 //!   agent event is published here; the Tauri window-emitter subscribes today,
 //!   and a cloud streamer can subscribe tomorrow with zero changes to the
 //!   producers. Lagging subscribers drop (never block the producer).
-//! - [`OutboundPipeline`] / [`InboundPipeline`] — ordered chains of
-//!   [`OutboundMiddleware`] / [`InboundMiddleware`]. Outbound observes every
-//!   emitted event (broadcast, telemetry, memory-ingest); inbound mutates an
-//!   outgoing prompt before it reaches the agent (context / skill / bootstrap
-//!   injection). The concrete middleware live in the host; this
-//!   crate only owns the plumbing.
+//! - [`OutboundPipeline`] — an ordered chain of [`OutboundMiddleware`] that
+//!   observes every emitted event (broadcast, telemetry, memory-ingest). The
+//!   concrete middleware live in the host; this crate only owns the plumbing.
 
 mod bus;
 mod middleware;
 
 pub use bus::EventBus;
-pub use middleware::{InboundMiddleware, InboundPipeline, OutboundMiddleware, OutboundPipeline};
+pub use middleware::{OutboundMiddleware, OutboundPipeline};

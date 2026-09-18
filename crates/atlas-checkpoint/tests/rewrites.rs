@@ -5,8 +5,9 @@
 //! nothing errors, and "trace any change back to the Session that produced it"
 //! becomes false without anyone noticing.
 
+mod support;
+
 use std::path::Path;
-use std::process::Command;
 
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{resolve_path, ToolName};
@@ -24,9 +25,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let fixture = Self { dir: tempfile::tempdir().unwrap() };
-        fixture.git(&["init", "--initial-branch=main"]);
-        fixture.git(&["config", "user.name", "Test Developer"]);
-        fixture.git(&["config", "user.email", "dev@example.com"]);
+        support::init_repo(fixture.path());
         fixture
     }
 
@@ -35,18 +34,7 @@ impl Fixture {
     }
 
     fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(self.path())
-            .args(args)
-            .output()
-            .expect("git runs");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).into_owned()
+        support::git(self.path(), args)
     }
 
     fn write(&self, path: &str, content: &str) {

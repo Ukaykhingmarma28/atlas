@@ -46,6 +46,23 @@ const SHADOW_RECIPE: &[&str] = &[
     "shadow-offset-y",
 ];
 
+/// The browser-default root font size a shadcn theme's `rem` values assume.
+const CSS_DEFAULT_ROOT_PX: f64 = 16.0;
+
+/// A `rem` or `em` radius as the px it meant in its source.
+///
+/// Atlas's root font size is 13px, not the browser's 16px, so tweakcn's
+/// `0.35rem` would land as 4.55px instead of the 5.6px its author saw — and the
+/// derived `calc(var(--radius) - 4px)` steps collapse to nearly square. Any
+/// other unit, or anything that is not a plain number, is left as written.
+fn radius_in_px(value: &str) -> Option<String> {
+    let value = value.trim();
+    let number = value.strip_suffix("rem").or_else(|| value.strip_suffix("em"))?;
+    let number: f64 = number.trim().parse().ok().filter(|n: &f64| n.is_finite() && *n >= 0.0)?;
+    let px = (number * CSS_DEFAULT_ROOT_PX * 1000.0).round() / 1000.0;
+    Some(format!("{px}px"))
+}
+
 /// A shadcn registry item (`{type, cssVars, css?}`).
 pub(crate) fn from_registry_item(
     value: &Value,
@@ -141,17 +158,27 @@ fn build(
     options: &ImportOptions,
 ) -> Result<Vec<ImportedTheme>, ThemeError> {
     let mut drafts = Vec::new();
+    let mut converted_radii = std::collections::BTreeSet::new();
     for (appearance, vars) in [("dark", dark), ("light", light)] {
         if vars.is_empty() {
             continue;
         }
         let mut draft = VariantDraft::new(appearance);
         for token in BASE_TOKENS {
-            if let Some(value) = vars.get(*token) {
-                draft.map_base(token, &format!("--{token} ({appearance})"), value);
-            } else if let Some(value) = theme_vars.get(*token) {
-                draft.map_base(token, &format!("--{token} (@theme)"), value);
+            let found = vars
+                .get(*token)
+                .map(|value| (format!("--{token} ({appearance})"), value))
+                .or_else(|| theme_vars.get(*token).map(|value| (format!("--{token} (@theme)"), value)));
+            let Some((source, value)) = found else { continue };
+            if *token == "radius" {
+                if let Some(px) = radius_in_px(value) {
+                    if draft.map_base(token, &source, &px) {
+                        converted_radii.insert((value.trim().to_string(), px));
+                    }
+                    continue;
+                }
             }
+            draft.map_base(token, &source, value);
         }
         // tweakcn writes the tracking token under Tailwind's own name.
         if draft.base_value("tracking-normal").is_none() {
@@ -196,6 +223,12 @@ fn build(
         }
     }
 
+    for (original, px) in &converted_radii {
+        report.note(format!(
+            "`radius` {original} was converted to {px}: the source assumes a {CSS_DEFAULT_ROOT_PX}px root, and Atlas's smaller root would have shrunk the whole radius scale"
+        ));
+    }
+
     if drafts.iter().any(|draft| draft.base_value("spacing").is_some()) {
         // Decision 20: kept in the file, honoured by nothing.
         report.warn(
@@ -207,4 +240,20 @@ fn build(
     );
 
     finish_theme(drafts, report, options).map(|theme| vec![theme])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rem_or_em_radius_becomes_the_px_its_source_meant() {
+        assert_eq!(radius_in_px("0.35rem").as_deref(), Some("5.6px"));
+        assert_eq!(radius_in_px(" 0.625rem ").as_deref(), Some("10px"));
+        assert_eq!(radius_in_px("0.5em").as_deref(), Some("8px"));
+        assert_eq!(radius_in_px("0rem").as_deref(), Some("0px"));
+        for kept in ["8px", "0", "calc(1rem - 2px)", "remrem", "-1rem", "1.2.3rem"] {
+            assert_eq!(radius_in_px(kept), None, "{kept:?} should be left as written");
+        }
+    }
 }
