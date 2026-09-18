@@ -103,7 +103,7 @@ export function SessionChatMessage({
   if (message.role === "user") {
     return (
       <div className="flex justify-end px-3 py-1.5">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--bg-elevated-2)] px-3.5 py-2 text-[13px] leading-[1.55] text-[var(--text-primary)]">
+        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--bg-elevated-2)] px-3.5 py-2 text-base leading-[1.55] text-[var(--text-primary)]">
           {message.content}
         </div>
       </div>
@@ -152,7 +152,7 @@ function Assistant({
           >
             <CachedMarkdown
               source={part.body}
-              className="text-[13px] leading-[1.6] text-[var(--text-secondary)]"
+              className="text-base leading-[1.6] text-[var(--text-secondary)]"
             />
           </div>
         ),
@@ -169,7 +169,7 @@ function Assistant({
 function Marker({ children }: { children: React.ReactNode }) {
   return (
     <div role="status" className="flex justify-center px-3 py-2">
-      <span className="text-[11.5px] text-[var(--text-tertiary)]">{children}</span>
+      <span className="text-sm text-[var(--text-tertiary)]">{children}</span>
     </div>
   );
 }
@@ -192,7 +192,7 @@ function Sources({ sources }: { sources: SourceRef[] }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex cursor-pointer items-center gap-1 text-[11px] text-[var(--text-ghost)] transition-colors hover:text-[var(--text-secondary)]"
+        className="flex cursor-pointer items-center gap-1 text-xs text-[var(--text-ghost)] transition-colors hover:text-[var(--text-secondary)]"
       >
         <ChevronDown size={11} className={cn("transition-transform", open && "rotate-180")} />
         Grounded in {sources.length} {sources.length === 1 ? "source" : "sources"}
@@ -210,7 +210,7 @@ function Sources({ sources }: { sources: SourceRef[] }) {
                 onClick={() => jumpToSource(source)}
                 disabled={!jumpable}
                 className={cn(
-                  "flex h-[22px] max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2 text-[10.5px] transition-colors",
+                  "flex h-[22px] max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2 text-xs transition-colors",
                   jumpable
                     ? "cursor-pointer text-[var(--text-tertiary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
                     : "cursor-default text-[var(--text-ghost)]",

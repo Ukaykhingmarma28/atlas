@@ -144,18 +144,14 @@ export function CodeBlock({
     >
       <div className="group/head flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
         <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-secondary)]">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text-secondary)]">
           {path ?? label ?? "Payload"}
         </span>
         {added > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-added)]">
-            +{added}
-          </span>
+          <span className="shrink-0 font-mono text-xs text-[var(--stat-added)]">+{added}</span>
         )}
         {removed > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-removed)]">
-            −{removed}
-          </span>
+          <span className="shrink-0 font-mono text-xs text-[var(--stat-removed)]">−{removed}</span>
         )}
         {/* The *original* text, not the parsed lines: a `Read` result is worth
          *  copying with its line numbers, and a diff with its signs. Stripping
@@ -169,7 +165,7 @@ export function CodeBlock({
           <div
             key={i}
             className={cn(
-              "relative flex min-w-max font-mono text-[11.5px] leading-[1.6]",
+              "relative flex min-w-max font-mono text-sm leading-[1.6]",
               line.sign === "add" && "bg-[var(--stat-added)]/[0.07]",
               line.sign === "del" && "bg-[var(--stat-removed)]/[0.07]",
             )}
@@ -201,7 +197,7 @@ export function CodeBlock({
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-xs text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             Show remaining {capped.toLocaleString()} lines
           </button>

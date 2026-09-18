@@ -32,7 +32,7 @@ import type { TimelineEntry } from "../types";
  */
 const STRIP =
   "relative z-0 mx-2 -mb-3.5 flex items-center justify-between gap-3 rounded-t-xl " +
-  "bg-[var(--bg-tertiary)] px-3.5 pt-1.5 pb-5 text-[11px]";
+  "bg-[var(--bg-tertiary)] px-3.5 pt-1.5 pb-5 text-xs";
 
 /** Checkpoints of one Session, newest first. */
 function sessionCheckpoints(entries: TimelineEntry[]): TimelineEntry[] {
@@ -144,21 +144,14 @@ export function CheckpointScopePicker({
           }
         />
         <Popover.Portal>
-          <Popover.Positioner
-            style={{ zIndex: "var(--z-max)" as unknown as number }}
-            align="start"
-            side="top"
-            sideOffset={8}
-          >
+          <Popover.Positioner className="z-popover" align="start" side="top" sideOffset={8}>
             <Popover.Popup
-              style={{
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-              }}
               className={cn(
                 "flex max-h-[380px] w-[340px] flex-col overflow-hidden rounded-xl select-none",
                 // Border, fill, blur and animation on ONE element — splitting them
                 // isolates the layer and flattens the backdrop blur.
                 "border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl",
+                "inset-highlight shadow-md",
                 "origin-[var(--transform-origin)] data-open:animate-scale-in",
               )}
             >
@@ -173,13 +166,13 @@ export function CheckpointScopePicker({
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search…"
                   aria-label="Search checkpoints"
-                  className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto hide-scrollbar">
                 {shown.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-[11px] text-[var(--text-tertiary)]">
+                  <p className="px-3 py-4 text-center text-xs text-[var(--text-tertiary)]">
                     No checkpoint matches.
                   </p>
                 ) : (
@@ -204,13 +197,13 @@ export function CheckpointScopePicker({
               <button
                 type="button"
                 onClick={() => onChange(null)}
-                className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 py-2 text-left transition-colors hover:bg-white/[0.05] cursor-pointer"
+                className="flex shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 py-2 text-left transition-colors hover:bg-bg-hover cursor-pointer"
               >
                 <Layers size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-                <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-primary)]">
+                <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-primary)]">
                   Full timeline
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
+                <span className="shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
                   {checkpoints.length} checkpoints
                 </span>
                 {isFull && <Check size={12} className="shrink-0 text-[var(--text-primary)]" />}
@@ -266,14 +259,14 @@ function Row({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-2 border-b border-white/[0.04] px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-white/[0.05] cursor-pointer"
+      className="flex w-full items-start gap-2 border-b border-white/[0.04] px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-bg-hover cursor-pointer"
     >
       <span className="mt-px shrink-0 text-[var(--text-tertiary)]">{icon}</span>
       <span className="min-w-0 flex-1">
         {/* Subject on its own line: it is what gets scanned. The sha, branch and
             diffstat are supporting detail and belong under it. */}
-        <span className="block truncate text-[11px] text-[var(--text-primary)]">{title}</span>
-        <span className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--text-tertiary)]">
+        <span className="block truncate text-xs text-[var(--text-primary)]">{title}</span>
+        <span className="flex items-center gap-1.5 font-mono text-2xs text-[var(--text-tertiary)]">
           <span className="min-w-0 truncate">{meta}</span>
           {added > 0 && <span className="text-[var(--diff-added-text)]">+{added}</span>}
           {removed > 0 && <span className="text-[var(--status-error)]">−{removed}</span>}
