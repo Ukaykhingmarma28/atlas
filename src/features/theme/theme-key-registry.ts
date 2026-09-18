@@ -151,9 +151,22 @@ export const THEME_KEY_REGISTRY = [
    * set this key explicitly to a SURFACE colour — the port mapped a background role
    * onto a text role — which rendered disabled text and comms timestamps at 1.06:1
    * to 1.66:1 against their own background, i.e. invisible. With the explicit values
-   * gone and a 0.2 mix, the sixteen shipped variants land between 1.70:1 and 4.22:1
+   * gone and a 0.2 mix, the sixteen shipped variants land between 1.98:1 and 4.22:1
    * (median 2.42) where `muted-foreground` itself has a median of 3.03:1. A larger
    * mix reaches 1.48:1 at the bottom of that range and is what the old 0.35 did.
+   * 
+   * The fraction is deliberately ONE value for every theme. The ratio of this key's
+   * contrast to `muted-foreground`'s is near-constant across the fleet (~0.82), so a
+   * variant that lands low here lands low because its own `muted-foreground` is low,
+   * not because the mix is wrong — at a 0.0 mix the three worst still sat at 2.05,
+   * 2.15 and 2.21. Varying the fraction per theme would buy almost nothing and cost
+   * the one property that makes a derived key predictable to an author: one key, one
+   * rule. Where the low reading WAS Atlas's to fix — `phosphor`, `chyral` and
+   * `mirage`, Atlas's own designs — it was fixed upstream at `muted-foreground`
+   * instead, which also lifts `syntax.comment`, `editor.gutter.foreground` and
+   * `terminal.ansi.bright_black` in the same themes. The remaining floor (`one-dark`
+   * at 1.98:1) comes from a ported third-party palette, and restating someone else's
+   * secondary text colour is exactly what a theme key must not do.
    */
   define("text.disabled", {
     base: "muted-foreground",
