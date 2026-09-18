@@ -966,7 +966,7 @@ export const commsHandlers: MockHandlers = {
   },
 
   // ── writing ─────────────────────────────────────────────────────────────
-  comms_send: ({ convId, body, replyToId, attachments }): { client_msg_id: string } => {
+  comms_send: ({ convId, body, replyToId, attachments }): { clientMsgId: string } => {
     const id = String(convId);
     const files = (attachments ?? []) as string[];
     const text = String(body ?? "");
@@ -980,10 +980,11 @@ export const commsHandlers: MockHandlers = {
       );
       push({ kind: "messageUpdated", conv_id: id, replaced_id: null, message: updated });
     }
-    // The frontend's own type says `client_msg_id`; Rust's `SendReceipt` is
-    // `#[serde(rename_all = "camelCase")]` and sends `clientMsgId`. Typed with
-    // the frontend's type as the house rule requires — nothing reads the value.
-    return { client_msg_id: `cmid_${message.id}` };
+    // Rust's `SendReceipt` is `#[serde(rename_all = "camelCase")]`, so the
+    // wire key is `clientMsgId`. The frontend type used to say `client_msg_id`
+    // (fixed) — nothing reads this value, the optimistic row is reconciled by
+    // the `ack` event instead.
+    return { clientMsgId: `cmid_${message.id}` };
   },
   comms_edit: ({ messageId, body }): null => {
     for (const [convId, list] of transcripts) {

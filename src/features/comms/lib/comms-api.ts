@@ -173,7 +173,13 @@ export const comms = {
     invoke<MessagePage>("comms_load_older", { convId, beforeSeq, limit }),
 
   send: (convId: string, body: string, replyToId?: string | null, attachments?: string[]) =>
-    invoke<{ client_msg_id: string }>("comms_send", {
+    // Rust's `SendReceipt` is `#[serde(rename_all = "camelCase")]`, so the
+    // wire key is `clientMsgId` — not `client_msg_id` (see `CommsMessage`,
+    // which uses the snake_case name for the LOCAL optimistic-row field, a
+    // separate thing). Nothing reads this value today (the optimistic row is
+    // reconciled by the `ack` event, keyed off `replaced_id`), so this was a
+    // latent type mismatch rather than a live bug — fixed to match the wire.
+    invoke<{ clientMsgId: string }>("comms_send", {
       convId,
       body,
       replyToId: replyToId ?? null,
