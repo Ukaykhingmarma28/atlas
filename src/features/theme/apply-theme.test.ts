@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
-import { applyTheme, appearanceForMode } from "./apply-theme";
+import { applyTheme, appearanceForMode, resolvedThemeCss } from "./apply-theme";
 import type { Theme } from "./lib/theme-api";
 
 /** Pretend the OS is asking for a light appearance. */
@@ -96,5 +99,91 @@ describe("applyTheme and the boot variables", () => {
     expect(boot().getPropertyValue("--atlas-boot-line")).toBe(cached.line);
     expect(boot().getPropertyValue("--atlas-boot-skeleton")).toBe(cached.skeleton);
     expect(boot().getPropertyValue("--atlas-boot-text")).toBe(cached.text);
+  });
+});
+
+/**
+ * The cold-start replay. The app's first render lands three IPC round trips
+ * before the first `applyTheme`, and it used to find no `--atlas-*` variable at
+ * all — transparent surfaces, and a dark flash for anyone on a light theme.
+ * `index.html` now replays the whole cached map into the same `<style>`; these
+ * run that inline script for real, against what `applyTheme` cached.
+ */
+describe("the launch replay in index.html", () => {
+  const themes = builtinThemes as Theme[];
+  const rosePine = themes.find((t) => t.id === "rose-pine")!;
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const html = readFileSync(path.join(repoRoot, "index.html"), "utf8");
+  const bootScript = html.match(
+    /<script>\s*(\(function \(\) \{[\s\S]*?atlas:launch-theme[\s\S]*?)<\/script>/,
+  )![1];
+
+  /** A cold start: nothing the previous page wrote is left but localStorage. */
+  function coldStart(): void {
+    document.getElementById("atlas-resolved-theme")?.remove();
+    document.documentElement.removeAttribute("style");
+    document.documentElement.className = "";
+    new Function(bootScript)();
+  }
+
+  it("caches the whole resolved map, not just the skeleton colours", () => {
+    const resolved = applyTheme(rosePine, "light");
+    const cached = JSON.parse(localStorage.getItem("atlas:launch-theme")!);
+    expect(cached.vars).toEqual(resolved.cssVars);
+    expect(cached.id).toBe("rose-pine");
+  });
+
+  it("writes exactly the block applyTheme would, before any module runs", () => {
+    const resolved = applyTheme(rosePine, "light");
+    coldStart();
+
+    const style = document.getElementById("atlas-resolved-theme");
+    expect(style?.textContent).toBe(resolvedThemeCss(resolved.cssVars));
+    expect(style?.textContent).toContain("--atlas-");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.dataset.themeAppearance).toBe("light");
+  });
+
+  it("drops no value from any built-in theme", () => {
+    // The replay skips a value it cannot write safely; no real theme may have one.
+    for (const theme of themes) {
+      for (const mode of ["dark", "light"] as const) {
+        const resolved = applyTheme(theme, mode);
+        coldStart();
+        expect(document.getElementById("atlas-resolved-theme")?.textContent, theme.id).toBe(
+          resolvedThemeCss(resolved.cssVars),
+        );
+      }
+    }
+  });
+
+  it("is the element applyTheme then rewrites, not a second one", () => {
+    applyTheme(rosePine, "light");
+    coldStart();
+    const dark = applyTheme(rosePine, "dark");
+
+    const blocks = document.querySelectorAll("#atlas-resolved-theme");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].textContent).toBe(resolvedThemeCss(dark.cssVars));
+  });
+
+  it("skips an entry that could close the block", () => {
+    localStorage.setItem(
+      "atlas:launch-theme",
+      JSON.stringify({
+        appearance: "dark",
+        vars: { "--background": "navy", "--x": "red}body{display:none", "bad name": "red" },
+      }),
+    );
+    coldStart();
+    expect(document.getElementById("atlas-resolved-theme")?.textContent).toBe(
+      "html:root{--background:navy}",
+    );
+  });
+
+  it("does nothing on a first run", () => {
+    localStorage.removeItem("atlas:launch-theme");
+    coldStart();
+    expect(document.getElementById("atlas-resolved-theme")).toBeNull();
   });
 });

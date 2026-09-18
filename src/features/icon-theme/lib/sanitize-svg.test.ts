@@ -64,6 +64,55 @@ describe("sanitizeSvg", () => {
     expect(out).not.toContain("javascript:");
   });
 
+  /**
+   * The overlay attack needs no URL and no script: an inline SVG is a box in
+   * the app's own layout, so `position:fixed; inset:0` on it covers the window
+   * — a phishing surface drawn by an icon theme.
+   */
+  it("drops layout from a style attribute and keeps the paint", () => {
+    const out = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" style="position:fixed;inset:0;z-index:2147483647;width:100vw"><path style="fill:currentColor;stroke-width:2;transform:scale(99)" d="M0 0"/></svg>',
+    )!;
+    expect(out).not.toMatch(/position|inset|z-index|100vw|transform/);
+    expect(out).toContain('style="fill:currentColor;stroke-width:2"');
+  });
+
+  it("drops a class, which would reach the app's own utilities", () => {
+    const out = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" class="fixed inset-0 z-tooltip"><path class="x" d="M0 0"/></svg>',
+    );
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("inset-0");
+  });
+
+  it("keeps a same-document url() in paint and drops an external one", () => {
+    const out = sanitizeSvg(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg">',
+        '<rect fill="url(#grad)" mask="url(\'#m\')"/>',
+        '<rect fill="url(https://evil.invalid/a.svg#g)" filter="url( data:image/svg+xml,x )"/>',
+        '<circle clip-path="url(&quot;//evil.invalid/c&quot;)" marker-end="url(#ok) url(http://evil.invalid)"/>',
+        "</svg>",
+      ].join(""),
+    )!;
+    expect(out).toContain('fill="url(#grad)"');
+    expect(out).toContain("mask=");
+    expect(out).not.toContain("evil.invalid");
+    expect(out).not.toContain("data:image");
+  });
+
+  it("drops a url() spelled with a CSS escape or hidden in image-set()", () => {
+    const out = sanitizeSvg(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg">',
+        '<rect fill="\\75 rl(https://evil.invalid/x)"/>',
+        '<rect style="fill:image-set(&quot;https://evil.invalid/y&quot; 1x)"/>',
+        "</svg>",
+      ].join(""),
+    )!;
+    expect(out).not.toContain("evil.invalid");
+  });
+
   it("hands sizing back to the call site", () => {
     // A theme's icon usually hardcodes 32×32; the row decides how big it is.
     const out = sanitizeSvg(

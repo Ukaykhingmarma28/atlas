@@ -37,13 +37,20 @@
          still leans on the `@layer base` .cm-editor fallback.
          Reproduce without a build: serve `dist/` behind a CSP whose style-src
          carries any nonce alongside 'unsafe-inline'. -->
-    <!-- The last theme's launch colours, replayed BEFORE first paint.
+    <!-- The last theme, replayed BEFORE first paint.
          `tokens.css` has not loaded here and neither has any module, so the
          only thing fast enough is localStorage, written by `applyTheme` on
-         every switch (`src/features/theme/apply-theme.ts`). A first run, a
-         cleared profile or a private window finds nothing and every rule below
-         falls back to the literal it always had, so this can only ever
-         improve the flash — never cause one. -->
+         every switch (`src/features/theme/apply-theme.ts`). Two things come
+         back from it: the seven `--atlas-boot-*` colours the skeleton below
+         paints with, and the WHOLE resolved variable map, written into the
+         same `<style id="atlas-resolved-theme">` applyTheme later rewrites —
+         so React's first render, which lands before the first applyTheme,
+         already has every `--atlas-*` key in the right theme. The block's text
+         must stay byte-identical to `resolvedThemeCss()` there;
+         `apply-theme.test.ts` runs this script to check. A first run, a
+         cleared profile or a private window finds nothing and every rule
+         falls back to `tokens.css` and the literals below, so this can only
+         ever improve the flash — never cause one. -->
     <script>
       (function () {
         try {
@@ -61,7 +68,26 @@
           set("--atlas-boot-text", cached.text);
           if (cached.appearance === "light" || cached.appearance === "dark") {
             set("--atlas-boot-scheme", cached.appearance);
+            root.classList.toggle("dark", cached.appearance === "dark");
+            root.setAttribute("data-theme-appearance", cached.appearance);
           }
+          if (typeof cached.id === "string") root.setAttribute("data-theme", cached.id);
+          var vars = cached.vars;
+          if (!vars || typeof vars !== "object") return;
+          var declarations = [];
+          for (var name in vars) {
+            var value = vars[name];
+            // Only a well-formed custom property survives: a corrupt or
+            // hand-edited entry must not be able to close the block.
+            if (!/^--[A-Za-z0-9-]+$/.test(name) || typeof value !== "string") continue;
+            if (/[;{}<\\]/.test(value)) continue;
+            declarations.push(name + ":" + value);
+          }
+          if (!declarations.length) return;
+          var style = document.createElement("style");
+          style.id = "atlas-resolved-theme";
+          style.textContent = "html:root{" + declarations.join(";") + "}";
+          document.head.appendChild(style);
         } catch (e) {
           /* a blocked or corrupt store just means the fallbacks below */
         }

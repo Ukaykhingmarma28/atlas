@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Copy, Hash, Link2, Play } from "lucide-react";
 import {
   EditorView,
@@ -9,7 +9,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
-import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, StateField } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { toast } from "sonner";
@@ -25,7 +25,6 @@ import { useDraftSession } from "../lib/use-draft-session";
 import { avatarHue } from "../lib/derive";
 import { useCommsStore } from "../stores/comms-store";
 import type { ChatConversation, PromptDraft } from "../types";
-import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 /**
  * The realtime Prompt Draft editor: one shared Y.Doc, everyone types at
@@ -40,11 +39,12 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
   const memberList = useCommsStore.use.members();
   const me = useCommsStore.use.me();
   const members = useMemo(() => new Map(memberList.map((m) => [m.id, m])), [memberList]);
-  const themeId = useSettingsStore((s) => s.settings.theme);
-  const [themeRevision, setThemeRevision] = useState(0);
-
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // The theme lives in its own compartment so a theme apply reconfigures it in
+  // place. It used to be a dependency of the effect below, so every apply
+  // destroyed the view — and the user's focus and undo history with it.
+  const themeCompartment = useRef(new Compartment()).current;
   const sent = meta.sent_at !== null;
 
   // ---- CodeMirror ---------------------------------------------------------
@@ -59,7 +59,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
         EditorView.lineWrapping,
         keymap.of([...historyKeymap, ...defaultKeymap]),
         cmPlaceholder("Write together…"),
-        editorThemeExtensions(),
+        themeCompartment.of(editorThemeExtensions()),
         yCollab(ytext, null),
         remoteCaretField,
         EditorState.readOnly.of(sent),
@@ -79,13 +79,18 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
     };
     // Recreated only on identity-level changes; yCollab owns doc content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, ytext, sent, themeId, themeRevision]);
+  }, [ready, ytext, sent]);
 
+  // Live-reskin on every theme apply, as `editor-panel.tsx` does.
   useEffect(() => {
-    const onTheme = () => setThemeRevision((revision) => revision + 1);
+    const onTheme = () => {
+      viewRef.current?.dispatch({
+        effects: themeCompartment.reconfigure(editorThemeExtensions()),
+      });
+    };
     window.addEventListener("atlas:theme-applied", onTheme);
     return () => window.removeEventListener("atlas:theme-applied", onTheme);
-  }, []);
+  }, [themeCompartment]);
 
   // Push peer carets into the editor as decorations whenever they move.
   useEffect(() => {

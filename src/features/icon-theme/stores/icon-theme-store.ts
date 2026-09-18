@@ -189,7 +189,7 @@ async function flush(): Promise<void> {
   if (pending.size === 0) return;
   const batch = [...pending.entries()];
   pending.clear();
-  const { themeId, appearance } = baseStore.getState();
+  const { themeId, appearance, generation: at } = baseStore.getState();
   if (themeId === MINIMAL_ICON_THEME_ID) return;
 
   let answers: (ResolvedIcon | null)[];
@@ -205,8 +205,11 @@ async function flush(): Promise<void> {
   }
   // The theme may have changed while the call was in flight; its caches were
   // cleared, and writing a stale answer into them would paint the old theme's
-  // icons under the new theme's name.
-  if (baseStore.getState().themeId !== themeId) return;
+  // icons under the new theme's name. The id alone is not enough: an
+  // appearance switch, or an install that rewrote the active theme's files,
+  // keeps the id and empties the caches all the same — the generation is what
+  // says "these caches are the ones this answer was for".
+  if (isStale(themeId, at)) return;
 
   const resolved: Record<string, ResolvedIcon | null> = {};
   batch.forEach(([key], index) => {
@@ -227,14 +230,21 @@ async function flush(): Promise<void> {
   }
 
   if (sawGlyph && state.fonts.length === 0) {
-    void loadFonts(themeId);
+    void loadFonts(themeId, at);
   }
   if (wantedImages.size > 0) {
-    void loadAssets(themeId, [...wantedImages]);
+    void loadAssets(themeId, at, [...wantedImages]);
   }
 }
 
-async function loadAssets(themeId: string, definitions: string[]): Promise<void> {
+/** Whether the caches have been thrown away since a request against `themeId`
+ *  at generation `at` started. See `flush`. */
+function isStale(themeId: string, at: number): boolean {
+  const state = baseStore.getState();
+  return state.themeId !== themeId || state.generation !== at;
+}
+
+async function loadAssets(themeId: string, at: number, definitions: string[]): Promise<void> {
   let assets: Record<string, IconAsset>;
   try {
     assets = await getIconThemeAssets(themeId, definitions);
@@ -242,7 +252,7 @@ async function loadAssets(themeId: string, definitions: string[]): Promise<void>
     console.warn("Icon assets failed to load", error);
     return;
   }
-  if (baseStore.getState().themeId !== themeId) return;
+  if (isStale(themeId, at)) return;
   const prepared: Record<string, PreparedIcon> = {};
   for (const [definition, asset] of Object.entries(assets)) {
     if (asset.kind === "svg") {
@@ -258,10 +268,10 @@ async function loadAssets(themeId: string, definitions: string[]): Promise<void>
   baseStore.setState((state) => ({ prepared: { ...state.prepared, ...prepared } }));
 }
 
-async function loadFonts(themeId: string): Promise<void> {
+async function loadFonts(themeId: string, at: number): Promise<void> {
   try {
     const fonts = await getIconThemeFonts(themeId);
-    if (baseStore.getState().themeId !== themeId) return;
+    if (isStale(themeId, at)) return;
     if (fonts.length > 0) baseStore.setState({ fonts });
   } catch (error) {
     console.warn("Icon theme fonts failed to load", error);

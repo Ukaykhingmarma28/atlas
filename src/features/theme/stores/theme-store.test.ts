@@ -121,3 +121,66 @@ describe("re-applying the active theme", () => {
     expect(applyTheme).not.toHaveBeenCalled();
   });
 });
+
+/** A cache-miss `apply` awaits a load, and a newer `apply` can land in that
+ *  gap. The older one used to paint anyway when its load finished — putting
+ *  back the theme the user had just switched away from. */
+describe("overlapping applies", () => {
+  it("lets the newest request win even when the older load finishes last", async () => {
+    vi.resetModules();
+    const fresh = await import("./theme-store");
+    let finishSlow!: (theme: typeof ATLAS) => void;
+    const SLOW = { ...ATLAS, id: "slow" };
+    const FAST = { ...ATLAS, id: "fast" };
+    getTheme.mockImplementation((id: string) =>
+      id === "slow"
+        ? new Promise((resolve) => {
+            finishSlow = resolve;
+          })
+        : Promise.resolve(FAST),
+    );
+
+    const older = fresh.useThemeStore.getState().actions.apply("slow", "dark");
+    await fresh.useThemeStore.getState().actions.apply("fast", "dark");
+    finishSlow(SLOW);
+    await older;
+
+    expect(applyTheme).toHaveBeenCalledTimes(1);
+    expect(applyTheme).toHaveBeenLastCalledWith(FAST, "dark", {});
+  });
+});
+
+/** `system` used to read the OS once per apply, so Atlas stayed on whatever
+ *  the OS said at launch until something else happened to re-apply. */
+describe("system mode", () => {
+  function fakeOs() {
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+    }));
+    return { listeners, flip: () => listeners.forEach((listener) => listener()) };
+  }
+
+  it("re-applies when the OS appearance changes, and stops once the mode is not system", async () => {
+    vi.resetModules();
+    const fresh = await import("./theme-store");
+    const os = fakeOs();
+    getTheme.mockResolvedValue(ATLAS);
+
+    await fresh.useThemeStore.getState().actions.apply("atlas", "system");
+    expect(applyTheme).toHaveBeenCalledTimes(1);
+    expect(os.listeners.size).toBe(1);
+
+    os.flip();
+    await vi.waitFor(() => expect(applyTheme).toHaveBeenCalledTimes(2));
+    expect(applyTheme).toHaveBeenLastCalledWith(ATLAS, "system", {});
+    // Served from the cache: only the variant changed, not the file.
+    expect(getTheme).toHaveBeenCalledTimes(1);
+
+    await fresh.useThemeStore.getState().actions.apply("atlas", "dark");
+    expect(os.listeners.size).toBe(0);
+    vi.unstubAllGlobals();
+  });
+});
