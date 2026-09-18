@@ -261,7 +261,7 @@ if [[ "${UNIVERSAL}" == "1" ]]; then
   log "Building DMG at ${DMG_OUT}"
   bash "$(dirname "$0")/layout-dmg.sh" "${UNI_STAGING}" "${DMG_OUT}" "Atlas"
   rm -rf "${UNI_STAGING}"
-  bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/dmg-icon.icns "${DMG_OUT}"
+  bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/Icon.icns "${DMG_OUT}"
   codesign --force --sign "${APPLE_SIGNING_IDENTITY}" "${DMG_OUT}"
 
   # Notarize the DMG via xcrun notarytool (Tauri's automated notarization
@@ -330,7 +330,7 @@ else
     rm -rf "${staging}"
 
     log "Setting DMG icon"
-    bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/dmg-icon.icns "${dmg_path}"
+    bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/Icon.icns "${dmg_path}"
 
     log "Signing DMG"
     codesign --force --sign "${APPLE_SIGNING_IDENTITY}" "${dmg_path}"
