@@ -16,6 +16,7 @@ import {
   type ResolvedIcon,
 } from "../lib/icon-theme-api";
 import { sanitizeSvg } from "../lib/sanitize-svg";
+import { clearIconThemePreviews } from "../lib/icon-preview";
 
 /**
  * The icon theme, as the UI consumes it.
@@ -279,7 +280,10 @@ export function startIconThemeCatalogListener(): void {
   listening = true;
   void onIconThemesChanged(() => {
     // An install or a removal can change the *active* theme's files, so the
-    // caches go as well as the catalog.
+    // caches go as well as the catalog — including the picker's per-theme
+    // preview cache, which is the only one keyed by a theme that is not this
+    // one and would otherwise show a removed theme's icons.
+    clearIconThemePreviews();
     pending.clear();
     baseStore.setState({ ...emptyCaches(), generation: nextGeneration() });
     void baseStore.getState().actions.load();

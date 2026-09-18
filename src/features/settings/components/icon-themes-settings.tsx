@@ -6,7 +6,8 @@ import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useIconThemeStore } from "@/features/icon-theme/stores/icon-theme-store";
-import { FileIcon } from "@/features/icon-theme/components/file-icon";
+import { IconThemePreview } from "@/features/icon-theme/components/icon-theme-preview";
+import { appearanceForMode } from "@/features/theme/apply-theme";
 import {
   installIconTheme,
   removeIconTheme,
@@ -28,18 +29,6 @@ import {
  * chosen.
  */
 
-/** The paths the preview strip shows. Chosen to look different under every
- *  theme worth having: a language, a config file, a lockfile, a folder. */
-const PREVIEW = [
-  { path: "src/main.ts", kind: "file" as const },
-  { path: "src/App.tsx", kind: "file" as const },
-  { path: "Cargo.toml", kind: "file" as const },
-  { path: "package.json", kind: "file" as const },
-  { path: "README.md", kind: "file" as const },
-  { path: "src", kind: "folder" as const },
-  { path: ".github", kind: "folder" as const },
-];
-
 export function IconThemesSettings() {
   const settings = useSettingsStore.use.settings();
   const { updateSettings } = useSettingsStore.use.actions();
@@ -52,21 +41,16 @@ export function IconThemesSettings() {
     void load();
   }, [load]);
 
+  // The association set a theme would actually be resolved through, so a card
+  // previews what applying it would give you. Icon themes have a third
+  // ("highContrast") that Atlas never asks for; `appearanceForMode` is the one
+  // `applyConfiguredIconTheme` is called with.
+  const appearance = appearanceForMode(settings.themeMode);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border bg-background px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Preview
-          </span>
-          <div className="flex items-center gap-2.5">
-            {PREVIEW.map((entry) => (
-              <FileIcon key={entry.path} path={entry.path} kind={entry.kind} size={16} />
-            ))}
-          </div>
-        </div>
-      </div>
-
+      {/* The strip that used to live here showed the ACTIVE theme — the one
+          theme nobody needs shown. Every card carries its own row now. */}
       <ScrollArea className="min-h-0 flex-1">
         <div className="p-2">
           <div className="grid grid-cols-2 gap-2">
@@ -81,10 +65,15 @@ export function IconThemesSettings() {
                     toast.success(`Applied “${theme.name}” icons`);
                   }}
                   className={cn(
-                    "group flex min-h-20 flex-col justify-between rounded-lg border bg-card p-3 text-left transition-colors",
+                    "group flex min-h-20 cursor-pointer flex-col justify-between rounded-lg border bg-card p-3 text-left transition-colors",
                     selected ? "border-primary" : "border-border hover:border-border-strong",
                   )}
                 >
+                  <IconThemePreview
+                    themeId={theme.id}
+                    appearance={appearance}
+                    className="mb-2.5 h-4"
+                  />
                   <div className="flex w-full items-start gap-1.5">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">

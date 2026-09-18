@@ -35,10 +35,39 @@ interface ThemeState {
   error: string | null;
   actions: {
     load: () => Promise<void>;
+    /**
+     * Fetch the full document for every catalog entry not already in `loaded`.
+     *
+     * `load` lists the catalog and `apply` reads one theme; a picker that
+     * PREVIEWS every theme needs all of them, and needs them as objects rather
+     * than summaries because only a full variant can be resolved. One batch of
+     * `get_theme` calls on opening the panel, then nothing: `loaded` is the
+     * cache, and the watcher already empties it when a file changes.
+     */
+    loadAll: () => Promise<void>;
     apply: (id: string, mode: ThemeMode, themeOverrides?: ThemeOverride) => Promise<void>;
     /** Re-run the last `apply` against freshly read theme data. */
     reapply: () => Promise<void>;
   };
+}
+
+/** Ids `loadAll` currently has in flight, so two callers make one request. */
+const inFlight = new Set<string>();
+
+/**
+ * Bumped every time `loaded` is deliberately emptied.
+ *
+ * A `loadAll` batch and the file watcher race: the watcher drops the cache to
+ * force a re-read, and a batch that started before it would merge the very
+ * documents that were just thrown away — and then be skipped on the retry,
+ * because its ids were still marked in flight. A batch that finishes into a
+ * different generation drops its results instead.
+ */
+let cacheGeneration = 0;
+
+function invalidateLoaded(): void {
+  cacheGeneration += 1;
+  inFlight.clear();
 }
 
 /** What `apply` was last asked for.
@@ -63,6 +92,25 @@ const baseStore = create<ThemeState>()((set, get) => ({
         set({ themes: catalog.themes, skipped: catalog.warnings, loading: false });
       } catch (error) {
         set({ loading: false, error: String(error) });
+      }
+    },
+    loadAll: async () => {
+      const { themes, loaded } = get();
+      const wanted = themes
+        .map((theme) => theme.id)
+        .filter((id) => !(id in loaded) && !inFlight.has(id));
+      if (wanted.length === 0) return;
+      const at = cacheGeneration;
+      for (const id of wanted) inFlight.add(id);
+      try {
+        const documents = await Promise.all(wanted.map(loadTheme));
+        if (at !== cacheGeneration) return;
+        const fetched: Record<string, Theme> = {};
+        for (const theme of documents) if (theme) fetched[theme.id] = theme;
+        if (Object.keys(fetched).length === 0) return;
+        set((state) => ({ loaded: { ...state.loaded, ...fetched } }));
+      } finally {
+        if (at === cacheGeneration) for (const id of wanted) inFlight.delete(id);
       }
     },
     apply: async (id, mode, themeOverrides = {}) => {
@@ -90,6 +138,7 @@ const baseStore = create<ThemeState>()((set, get) => ({
       if (!lastRequest) return;
       const { id, mode, themeOverrides } = lastRequest;
       // Drop the cached copy first: the whole point is to read the file again.
+      invalidateLoaded();
       set((state) => {
         const { [id]: _stale, ...rest } = state.loaded;
         return { loaded: rest };
@@ -115,6 +164,7 @@ export function startThemeCatalogListener(): void {
   if (listening) return;
   listening = true;
   void onThemesChanged(() => {
+    invalidateLoaded();
     baseStore.setState({ loaded: {} });
     void baseStore.getState().actions.load();
     void baseStore.getState().actions.reapply();
