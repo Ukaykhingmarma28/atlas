@@ -1424,9 +1424,9 @@
   .atlas-stream-caret {
     animation: none;
   }
-  /* Attribute selectors so variant classes (`data-[state=open]:animate-scale-in`)
-     match too. Only the name is swapped — duration, easing, delay and fill-mode
-     stay. `animate-fade-in` / `.atlas-fade-in` are already opacity-only. */
+  /* Attribute selectors so variant classes (`data-open:animate-scale-in`) match
+     too. Only the name is swapped — duration, easing, delay and fill-mode stay.
+     `animate-fade-in` / `.atlas-fade-in` are already opacity-only. */
   [class*="animate-scale-in"],
   [class*="animate-slide-in-right"],
   .atlas-pill-in,
@@ -1442,16 +1442,22 @@
   }
   /* A popover carries its enter AND exit classes at once, so the exit swap is
      scoped to the closing state — otherwise it would also win while opening
-     and fade the popover out on entry. Base UI marks that state with a bare
-     `data-closed` attribute where Radix used `data-state="closed"`; both are
-     listed so a surface that has not been migrated yet still matches, as do
-     elements with neither (plain exit classes). */
+     and fade the popover out on entry.
+
+     Base UI marks the states with bare `data-open` / `data-closed` attributes.
+     It never sets `data-state`, which is the Radix spelling — so the escape
+     hatch on the last two selectors has to exclude `data-open` as well. Guarded
+     only by `:not([data-state])`, an OPENING popup matched the exit rule (it has
+     `data-open`, not `data-state`) and won on specificity over the entrance rule
+     above, so reduced motion played the popup out as it appeared. The
+     `[data-state="closed"]` pair that used to sit here matched nothing: the
+     Radix→Base UI migration is complete and `data-state` appears nowhere in the
+     app. The last two are for elements with NEITHER attribute — a plain exit
+     class on something that is not a Base UI popup. */
   [data-closed][class*="animate-scale-out"],
   [data-closed][class*="animate-fade-out"],
-  [data-state="closed"][class*="animate-scale-out"],
-  [data-state="closed"][class*="animate-fade-out"],
-  [class*="animate-scale-out"]:not([data-state]):not([data-closed]),
-  [class*="animate-fade-out"]:not([data-state]):not([data-closed]) {
+  [class*="animate-scale-out"]:not([data-open]):not([data-closed]),
+  [class*="animate-fade-out"]:not([data-open]):not([data-closed]) {
     animation-name: atlas-rm-fade-out !important;
   }
   /* The two looping animations in the chrome: the capture dot's halo and the
