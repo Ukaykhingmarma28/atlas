@@ -18,7 +18,7 @@ export function PanelSkeleton({ rows = 6, label, className }: PanelSkeletonProps
   return (
     <div className={cn("h-full flex flex-col gap-2 p-3", className)}>
       {label && (
-        <div className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)] px-0.5">
+        <div className="text-2xs uppercase tracking-wider text-[var(--text-tertiary)] px-0.5">
           {label}
         </div>
       )}

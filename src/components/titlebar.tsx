@@ -148,12 +148,12 @@ export function Titlebar() {
       onMouseDown={handleDrag}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        "relative z-50 flex h-[30px] select-none items-center bg-[var(--bg-base)] border-b border-border",
+        "relative z-titlebar flex h-titlebar select-none items-center bg-[var(--bg-base)] border-b border-border",
         isWindows ? "pr-0" : "pr-3",
         isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
       )}
     >
-      <div className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex h-titlebar min-w-0 flex-1 items-center gap-1.5">
         <HintGroup>
           <ProjectToggle />
           {currentProject && <LeftPanelToggle />}
@@ -216,7 +216,7 @@ function WindowControls() {
   }, []);
 
   const button =
-    "flex h-[29px] w-[46px] items-center justify-center text-[#999] transition-colors duration-100";
+    "flex h-[29px] w-[46px] items-center justify-center text-text-tertiary transition-colors duration-100";
 
   return (
     <HintGroup>
@@ -224,7 +224,7 @@ function WindowControls() {
         <HintItem label="Minimize">
           <button
             onClick={() => void windowRef.current?.minimize()}
-            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+            className={cn(button, "hover:bg-bg-hover hover:text-text-primary")}
           >
             <Minus size={14} strokeWidth={1.25} />
           </button>
@@ -232,7 +232,7 @@ function WindowControls() {
         <HintItem label={isMaximized ? "Restore" : "Maximize"}>
           <button
             onClick={() => void windowRef.current?.toggleMaximize()}
-            className={cn(button, "hover:bg-[#ffffff14] hover:text-white")}
+            className={cn(button, "hover:bg-bg-hover hover:text-text-primary")}
           >
             {isMaximized ? (
               <Copy size={11} strokeWidth={1.25} className="-scale-x-100" />
@@ -340,7 +340,7 @@ function ProjectLabel({
               // inherited line-height the label spans set a taller line box than
               // the dot, and `items-center` centred the dot against *that* — which
               // is why it sat visibly high.
-              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-[#303030] bg-[#0C0C0C] px-2 text-[11px] leading-none font-medium transition-colors hover:bg-[#1f1f1f]"
+              className="group flex h-[19px] max-w-[320px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border-subtle bg-bg-elevated px-2 text-xs leading-none font-medium transition-colors hover:bg-bg-hover"
               title={health?.summary ?? "Session capture"}
               aria-label={health?.summary ?? "Session capture"}
             >
@@ -363,12 +363,7 @@ function ProjectLabel({
         />
         {path && (
           <Popover.Portal>
-            <Popover.Positioner
-              className="z-[var(--z-max)]"
-              side="bottom"
-              align="start"
-              sideOffset={6}
-            >
+            <Popover.Positioner className="z-popover" side="bottom" align="start" sideOffset={6}>
               <Popover.Popup
                 // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
                 // here: this wrapper would hold a transform for the duration, and
@@ -418,7 +413,7 @@ function DevModePill() {
     // it's an indicator, not a control (which also retires its old divider).
     <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
       <div
-        className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-[11px] leading-none font-medium text-white"
+        className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-xs leading-none font-medium text-white"
         style={{
           background: "linear-gradient(to bottom, #3b82f6, #2563eb)",
           boxShadow:
@@ -466,14 +461,14 @@ function ProjectToggle() {
       <button
         onClick={toggleSidebar}
         className={cn(
-          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-[#ffffff08] transition-all duration-150",
-          sidebarOpen ? "text-[#ccc]" : "text-[#555] hover:text-[#aaa]",
+          "relative flex items-center justify-center w-6 h-6 rounded hover:bg-bg-hover transition-all duration-150",
+          sidebarOpen ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
         )}
         aria-label={sidebarOpen ? "Hide projects" : "Show projects"}
       >
         <Layers size={14} />
         {count > 1 && (
-          <span className="absolute -bottom-0.5 -right-0.5 text-[7px] font-mono text-white">
+          <span className="absolute -bottom-0.5 -right-0.5 text-3xs font-mono text-text-primary">
             {count}
           </span>
         )}
@@ -490,7 +485,7 @@ function LeftPanelToggle() {
     <HintItem label={leftPanel.visible ? "Hide left panel" : "Show left panel"}>
       <button
         onClick={toggleLeftPanel}
-        className="flex items-center justify-center w-6 h-6 rounded text-[#555] hover:text-[#aaa] hover:bg-[#ffffff08] transition-all duration-150"
+        className="flex items-center justify-center w-6 h-6 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-all duration-150"
       >
         <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
       </button>
@@ -623,7 +618,7 @@ function useNotificationItem(): DockItem {
               ? "bg-[var(--status-error)]"
               : needsAttention
                 ? "bg-[var(--status-success)] animate-pulse"
-                : "bg-white",
+                : "bg-foreground",
           )}
           label={needsAttention ? "Something needs your attention" : "Unread notifications"}
         />

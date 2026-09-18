@@ -203,17 +203,17 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
   if (failed) {
     return (
       <details className="rounded-md border border-border-subtle bg-[var(--bg-elevated)]/30 p-2 text-text-tertiary">
-        <summary className="cursor-pointer text-[10.5px]">
+        <summary className="cursor-pointer text-xs">
           Diagram couldn't be rendered — show source
         </summary>
-        <pre className="mt-1.5 text-[10px] font-mono text-text-secondary overflow-auto whitespace-pre-wrap">
+        <pre className="mt-1.5 text-2xs font-mono text-text-secondary overflow-auto whitespace-pre-wrap">
           {code}
         </pre>
       </details>
     );
   }
   if (!svg) {
-    return <div className="p-3 text-[11px] text-text-tertiary">Rendering diagram…</div>;
+    return <div className="p-3 text-xs text-text-tertiary">Rendering diagram…</div>;
   }
   if (!controls) {
     return (
@@ -302,7 +302,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
             <button
               type="button"
               onClick={() => setZoom(1)}
-              className="cursor-pointer px-1 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+              className="cursor-pointer px-1 font-mono text-2xs tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -377,10 +377,10 @@ function Fullscreen({
     <div
       role="dialog"
       aria-label="Diagram"
-      className="animate-fade-in fixed inset-0 z-[var(--z-max)] flex flex-col bg-[var(--bg-base)]/95 backdrop-blur-2xl"
+      className="animate-fade-in fixed inset-0 z-modal flex flex-col bg-[var(--bg-base)]/95 backdrop-blur-2xl"
     >
       <header className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--border)] px-3">
-        <span className="text-[12px] text-[var(--text-secondary)]">Diagram</span>
+        <span className="text-sm text-[var(--text-secondary)]">Diagram</span>
         <div className="flex-1" />
         <HintGroup>
           <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
@@ -390,7 +390,7 @@ function Fullscreen({
             <button
               type="button"
               onClick={() => setZoom(1)}
-              className="cursor-pointer px-1.5 font-mono text-[11px] tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+              className="cursor-pointer px-1.5 font-mono text-xs tabular-nums text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
             >
               {Math.round(zoom * 100)}%
             </button>

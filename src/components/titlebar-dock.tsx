@@ -145,7 +145,7 @@ export function TitlebarDock({
         ref={pill}
         className={cn(
           "flex h-6 items-center gap-1 rounded-full px-1 py-0.5",
-          "border border-white/[0.07] bg-[#121212]",
+          "border border-border-subtle bg-bg-elevated",
         )}
       >
         {items.map((item, index) => (
@@ -163,10 +163,10 @@ export function TitlebarDock({
             aria-label={item.title ?? item.label}
             className={cn(
               "relative flex size-5 items-center justify-center rounded-full outline-none",
-              "text-[#666] transition-colors duration-150",
+              "text-text-tertiary transition-colors duration-150",
               item.disabled
                 ? "cursor-default opacity-60"
-                : "cursor-pointer hover:bg-white/[0.08] hover:text-[#ccc]",
+                : "cursor-pointer hover:bg-bg-hover hover:text-text-primary",
             )}
           >
             {item.icon}
@@ -209,15 +209,15 @@ export function TitlebarDock({
           arithmetic is relative to wherever the untranslated strip starts. */}
       <div
         ref={anchor}
-        className="pointer-events-none fixed left-0 z-[60] pt-1.5"
+        className="pointer-events-none fixed left-0 z-tooltip pt-1.5"
         style={{ top: geometry?.top ?? 0 }}
       >
         <div
           className={cn(
             "flex w-max",
-            "bg-black text-text-primary",
+            "bg-popover text-text-primary",
             "outline outline-1 outline-[var(--border)]",
-            "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
+            "shadow-md",
           )}
           style={{
             opacity: visible ? 1 : 0,
@@ -235,7 +235,7 @@ export function TitlebarDock({
                 ref={(el) => {
                   labels.current[index] = el;
                 }}
-                className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-[11px] leading-none"
+                className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-xs leading-none"
               >
                 {label}
               </div>
