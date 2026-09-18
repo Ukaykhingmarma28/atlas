@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { useReactFlow, useViewport } from "@xyflow/react";
 import { Popover } from "@base-ui/react/popover";
 import {
@@ -249,6 +249,7 @@ export function SpaceActionPill({
   following,
   onFollow,
   onBeforeExport,
+  containerRef,
 }: {
   convId: string;
   actors: ReadonlyMap<string, SpaceActor>;
@@ -256,6 +257,10 @@ export function SpaceActionPill({
   following: string | null;
   onFollow: (id: string | null) => void;
   onBeforeExport: () => void;
+  /** This Space's own wrapper — scopes the export to its DOM subtree so the
+   * local Canvas tab's `.react-flow__viewport` (or another Space) is never
+   * picked up instead. */
+  containerRef: RefObject<HTMLElement | null>;
 }) {
   const rf = useReactFlow();
   const me = useCommsStore.use.me();
@@ -272,8 +277,13 @@ export function SpaceActionPill({
     // Deselect so outlines/resize handles don't bleed into the image.
     onBeforeExport();
     await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const container = containerRef.current;
+    if (!container) {
+      setBusy(null);
+      return;
+    }
     try {
-      const res = await exportCanvas(format, rf);
+      const res = await exportCanvas(format, rf, container);
       if (res === "ok") toast.success(`Exported ${format.toUpperCase()}`);
       else if (res === "empty") toast("Nothing to export — the canvas is empty.");
     } catch (e) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { Download, Loader2, FileImage, FileType2, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -18,7 +18,14 @@ const FORMATS: Array<{
 ];
 
 /** Floating top-right export toolbar — download the canvas as PNG/JPEG/SVG/PDF. */
-export function CanvasExportToolbar() {
+export function CanvasExportToolbar({
+  containerRef,
+}: {
+  /** This Canvas instance's own wrapper — scopes the export to its DOM
+   * subtree so a hidden Spaces board (or another split column's Canvas
+   * tab) never gets picked up instead. */
+  containerRef: RefObject<HTMLElement | null>;
+}) {
   const rf = useReactFlow();
   const { setSelectedIds } = useCanvasStore.use.actions();
   const [open, setOpen] = useState(false);
@@ -31,8 +38,13 @@ export function CanvasExportToolbar() {
     setSelectedIds([]);
     // Let the deselect paint before capturing.
     await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const container = containerRef.current;
+    if (!container) {
+      setBusy(null);
+      return;
+    }
     try {
-      const res = await exportCanvas(format, rf);
+      const res = await exportCanvas(format, rf, container);
       if (res === "ok") toast.success(`Exported ${format.toUpperCase()}`);
       else if (res === "empty") toast("Nothing to export — the canvas is empty.");
     } catch (e) {

@@ -35,6 +35,7 @@ function filterChrome(el: HTMLElement): boolean {
 export async function exportCanvas(
   format: ExportFormat,
   rf: ReactFlowInstance,
+  container: ParentNode,
 ): Promise<ExportResult> {
   const nodes = rf.getNodes();
   if (nodes.length === 0) return "empty";
@@ -44,7 +45,12 @@ export async function exportCanvas(
     import("html-to-image"),
     import("jspdf"),
   ]);
-  const viewportEl = document.querySelector<HTMLElement>(".react-flow__viewport");
+  // Scoped to THIS instance's own container — Canvas and Spaces tabs (and
+  // split columns, or several Canvas tabs) can each have a mounted
+  // `.react-flow__viewport` at once, and a bare `document.querySelector`
+  // would rasterize whichever one happens to come first in DOM order rather
+  // than the board the caller actually owns.
+  const viewportEl = container.querySelector<HTMLElement>(".react-flow__viewport");
   if (!viewportEl) return "empty";
 
   const bounds = getNodesBounds(nodes);
