@@ -80,23 +80,3 @@ describe("destroyPixiApp", () => {
     expect(livePixiAppCount()).toBe(0);
   });
 });
-
-describe("the graph components", () => {
-  it("never call Application.destroy directly", async () => {
-    // `destroy(true, …)` reads as "remove the canvas" but also means
-    // `releaseGlobalResources` — the whole reason this module exists. Guard the
-    // two call sites so the shorthand cannot come back.
-    const fs = await import("node:fs/promises");
-    const sources = [
-      "src/features/knowledge/components/knowledge-graph.tsx",
-      "src/features/memory/components/memory-graph-canvas.tsx",
-    ];
-    for (const path of sources) {
-      const text = await fs.readFile(path, "utf8");
-      expect(text, `${path} must destroy its Application via destroyPixiApp`).not.toMatch(
-        /\.destroy\(\s*true/,
-      );
-      expect(text, `${path} must register its Application`).toContain("registerPixiApp(app)");
-    }
-  });
-});

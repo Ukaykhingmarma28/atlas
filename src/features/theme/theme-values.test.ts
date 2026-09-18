@@ -14,8 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
 import { applyTheme } from "./apply-theme";
 import type { Theme } from "./lib/theme-api";
-import { renderHook } from "@testing-library/react";
-import { act } from "react";
+import { act, renderHook } from "@testing-library/react";
 import { useSeriesPalette } from "@/features/usage/lib/palette";
 import { terminalTheme } from "@/features/terminal/lib/terminal-theme";
 import { graphPalette } from "@/components/graph-palette";
@@ -85,7 +84,7 @@ describe("the palettes a subsystem snapshots", () => {
   });
 
   it("rebuilds the chart series palette, through the hook a chart actually uses", () => {
-    const { result } = renderHook(() => useSeriesPalette());
+    const { result, unmount } = renderHook(() => useSeriesPalette());
     const dark = { first: result.current.seriesColor(0), other: result.current.otherColor };
 
     // The hook's only dependency is `useThemeVersion()`, so this is also the
@@ -96,5 +95,6 @@ describe("the palettes a subsystem snapshots", () => {
 
     expect(result.current.seriesColor(0)).not.toBe(dark.first);
     expect(result.current.otherColor).not.toBe(dark.other);
+    unmount();
   });
 });

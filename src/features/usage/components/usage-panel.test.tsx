@@ -3,13 +3,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixture } from "../lib/__fixtures__/dashboard";
+import { modelDisplay } from "../lib/derive";
 import { useUsageStore } from "../stores/usage-store";
 import { UsagePanel } from "./usage-panel";
 
 /**
  * happy-dom lays nothing out, so every rect is 0×0 and ResizeObserver does not exist —
  * the same stubs `timeline-sidebar.test.tsx` uses for its virtualized list. These tests
- * assert on what is IN the document, not where it is.
+ * assert on what is IN the document, not where it is. Every stub is undone after each
+ * case, so none of them outlives this file.
  */
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn((cmd: string) => Promise.reject(new Error(`unexpected invoke ${cmd}`))),
@@ -21,28 +23,32 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 const VIEWPORT = { width: 1200, height: 900 };
 beforeEach(() => {
-  cleanup();
-  HTMLElement.prototype.getBoundingClientRect = () =>
-    ({
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: VIEWPORT.width,
-      bottom: VIEWPORT.height,
-      ...VIEWPORT,
-      toJSON() {},
-    }) as DOMRect;
-  (globalThis as any).ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-  (globalThis as any).matchMedia = () => ({
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: VIEWPORT.width,
+        bottom: VIEWPORT.height,
+        ...VIEWPORT,
+        toJSON() {},
+      }) as DOMRect,
+  );
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal("matchMedia", () => ({
     matches: true,
     addEventListener() {},
     removeEventListener() {},
-  });
+  }));
   useUsageStore.setState({
     data: null,
     loading: false,
@@ -56,7 +62,11 @@ beforeEach(() => {
     search: "",
   } as never);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function seed(data = fixture(40)) {
   // `fetchedAt` now + a matching signature makes the mount-time refresh a no-op.
@@ -85,26 +95,33 @@ describe("UsagePanel", () => {
   });
 
   it("switches tables through the chip tabs", () => {
-    seed();
+    const d = seed();
     render(<UsagePanel />);
     fireEvent.click(screen.getByRole("tab", { name: /Models/ }));
     expect(useUsageStore.getState().table).toBe("models");
-    expect(screen.getAllByText(/gpt|Opus|Sonnet/i).length).toBeGreaterThan(0);
+    // One row per model the fixture recorded, under the name the table shows.
+    for (const model of new Set(d.daily.map((r) => r.model))) {
+      expect(screen.getByTitle(modelDisplay(model))).toBeInTheDocument();
+    }
   });
 
   it("narrows the sessions table with the search box", () => {
-    const d = seed();
+    seed();
     render(<UsagePanel />);
-    const rowsBefore = document.querySelectorAll('[role="tab"][aria-selected="true"]').length;
-    expect(rowsBefore).toBe(1);
+    const tab = screen.getByRole("tab", { name: /Sessions/ });
+    const shown = () =>
+      Number(
+        within(tab)
+          .getByText(/^[\d,]+$/)
+          .textContent!.replace(/,/g, ""),
+      );
+    const before = shown();
     fireEvent.change(screen.getByPlaceholderText("Search sessions"), {
       target: { value: "ledger" },
     });
-    const count = useUsageStore.getState().search;
-    expect(count).toBe("ledger");
-    // Every session title in the fixture that mentions "ledger" belongs to the "ledger" project or title.
-    const tab = screen.getByRole("tab", { name: /Sessions/ });
-    const shown = Number(within(tab).getByText(/\d/).textContent);
-    expect(shown).toBeLessThan(d.sessions.length);
+    expect(useUsageStore.getState().search).toBe("ledger");
+    // The fixture has a "ledger" project, so the search keeps some sessions and drops the rest.
+    expect(shown()).toBeGreaterThan(0);
+    expect(shown()).toBeLessThan(before);
   });
 });

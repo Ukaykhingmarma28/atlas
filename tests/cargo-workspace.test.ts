@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
  *      opt-level 1 to 0 — unless its opt-level is restated per package. That
  *      is a pure `tauri dev` slowdown with no compile error to announce it.
  *
- * Same approach as `ci-coverage.test.ts` and `cersei-containment.test.ts`:
- * line regexes over manifests we own, with floor assertions so a regex that
- * stops matching fails loudly instead of passing vacuously.
+ * Same approach as `ci-coverage.test.ts`: line regexes over manifests we own,
+ * with floor assertions so a regex that stops matching fails loudly instead of
+ * passing vacuously.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -428,5 +428,34 @@ describe("the build scripts follow the target dir into the workspace", () => {
       uncommented(read(path.join(REPO_ROOT, rel))).includes("src-tauri/target"),
     );
     expect(stale).toEqual([]);
+  });
+});
+
+describe("one rusqlite requirement across the workspace", () => {
+  it("declares the same rusqlite requirement everywhere it is declared", () => {
+    // Cargo rejects two `libsqlite3-sys` (it declares `links = "sqlite3"`),
+    // but it silently unifies differing requirements that happen to be
+    // compatible today. The first bump of one declaration then either splits
+    // the graph or drags the others along unreviewed, so drift is the bug.
+    // The pin itself, and why it is 0.39, is documented on the declaration in
+    // `crates/atlas-thread-metadata/Cargo.toml`.
+    // Both spellings: `rusqlite = { version = "x", … }` and `rusqlite = "x"`.
+    const DECL = /^\s*rusqlite\s*=\s*(?:\{[^}]*?version\s*=\s*"([^"]+)"|"([^"]+)")/gm;
+    const declaredIn = new Map<string, string[]>();
+    for (const manifest of [ROOT_MANIFEST, ...memberManifests()]) {
+      const found = [...uncommented(read(manifest)).matchAll(DECL)].map((m) => m[1] ?? m[2]);
+      if (found.length) declaredIn.set(path.relative(REPO_ROOT, manifest), found);
+    }
+
+    expect(
+      declaredIn.size,
+      "no manifest declares rusqlite — has the regex rotted?",
+    ).toBeGreaterThan(1);
+
+    const distinct = [...new Set([...declaredIn.values()].flat())];
+    expect(
+      distinct,
+      `rusqlite requirement drifted across ${[...declaredIn.keys()].join(", ")}`,
+    ).toHaveLength(1);
   });
 });
