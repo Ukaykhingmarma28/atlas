@@ -164,6 +164,7 @@ export function readSource() {
   const parsed = parseKeysToml(readFileSync(SOURCE, "utf8"));
   const groups = parsed.group ?? [];
   const keys = parsed.key ?? [];
+  const derived = parsed.derived ?? [];
   const tokens = new Set(baseTokens());
   const problems = [];
   const seen = new Set();
@@ -222,11 +223,36 @@ export function readSource() {
     }
   }
 
+  // A derived variable is a colour Atlas still writes but no theme may set:
+  // it is a pure transform of a key that IS settable. Validated here so a
+  // dangling `from` fails the build rather than resolving to `undefined`.
+  for (const entry of derived) {
+    const at = `derived \`${entry.name ?? "?"}\``;
+    for (const field of ["name", "description", "from", "op"]) {
+      if (typeof entry[field] !== "string") problems.push(`${at}: missing \`${field}\``);
+    }
+    if (typeof entry.name !== "string") continue;
+    if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test(entry.name)) {
+      problems.push(`${at}: not a dotted lower-case role name`);
+    }
+    if (seen.has(entry.name)) problems.push(`${at}: is also a settable key`);
+    if (entry.from !== undefined && !seen.has(entry.from)) {
+      problems.push(`${at}: \`from\` names no key`);
+    }
+    if (entry.op !== undefined && !(entry.op in OPERATIONS)) {
+      problems.push(`${at}: unknown op \`${entry.op}\``);
+    }
+    const amount = Number(entry.amount?.number);
+    if (!(amount > 0 && amount <= 1)) problems.push(`${at}: \`amount\` must be in (0, 1]`);
+  }
+
   // `.` and `_` both become `-`, so `a.b_c` and `a.b.c` would write the same
   // CSS variable and the second would silently win. Cheap to check, invisible
   // otherwise, and exactly the kind of thing a phase-2 rename could introduce.
+  // Derived variables share the `--atlas-` namespace, so they are checked with
+  // the keys rather than beside them.
   const byVar = new Map();
-  for (const key of keys) {
+  for (const key of [...keys, ...derived]) {
     if (typeof key.name !== "string") continue;
     const existing = byVar.get(cssVar(key.name));
     if (existing) problems.push(`keys \`${existing}\` and \`${key.name}\` share one CSS variable`);
@@ -239,6 +265,13 @@ export function readSource() {
 
   return {
     groups,
+    derived: derived.map((entry) => ({
+      name: entry.name,
+      description: entry.description,
+      from: entry.from,
+      op: entry.op,
+      amount: entry.amount?.number,
+    })),
     keys: keys.map((key) => ({
       name: key.name,
       group: key.group,
@@ -371,6 +404,39 @@ export const THEME_KEY_DEFINITION_BY_KEY = Object.fromEntries(
   THEME_KEY_REGISTRY.map((definition) => [definition.key, definition]),
 ) as Record<ThemeKey, (typeof THEME_KEY_REGISTRY)[number]>;
 
+export interface DerivedVarDefinition<Name extends string = string> {
+  name: Name;
+  cssVar: \`--atlas-\${string}\`;
+  /** The settable key this is a pure transform of. */
+  from: ThemeKey;
+  transform: ColorTransform;
+  description: string;
+}
+
+function derive<const Name extends string>(
+  name: Name,
+  rule: Omit<DerivedVarDefinition<Name>, "name" | "cssVar">,
+): DerivedVarDefinition<Name> {
+  return {
+    name,
+    cssVar: \`--atlas-\${name.replaceAll(".", "-").replaceAll("_", "-")}\`,
+    ...rule,
+  };
+}
+
+/**
+ * Colours Atlas still writes as \`--atlas-…\` custom properties, but that no
+ * theme may set: each is a pure transform of a key that IS settable, so a
+ * theme author steers it through that key and never restates it. They are
+ * deliberately absent from \`theme-keys.txt\` and from the JSON Schema, which is
+ * what makes writing one in a theme file an unknown-key warning.
+ */
+export const DERIVED_VAR_REGISTRY = [
+DERIVED_BODY
+] as const;
+
+export type DerivedVar = (typeof DERIVED_VAR_REGISTRY)[number]["name"];
+
 export function describeDerivation(definition: ThemeKeyDefinition): string {
   const sources = [
     definition.rule.palette ? \`palette.\${definition.rule.palette}\` : null,
@@ -381,7 +447,7 @@ export function describeDerivation(definition: ThemeKeyDefinition): string {
 }
 `;
 
-function renderRegistry({ keys }) {
+function renderRegistry({ keys, derived }) {
   const body = [];
   let group = null;
   for (const key of keys) {
@@ -403,7 +469,17 @@ function renderRegistry({ keys }) {
     body.push(`    description: "${key.description.replaceAll('"', '\\"')}",`);
     body.push("  }),");
   }
-  return `${REGISTRY_PREAMBLE}\n${body.join("\n")}\n${REGISTRY_EPILOGUE}`;
+  const derivedBody = derived.flatMap((entry) => [
+    `  derive("${entry.name}", {`,
+    `    from: "${entry.from}",`,
+    `    transform: ${OPERATIONS[entry.op].call}(${entry.amount}),`,
+    `    description: "${entry.description.replaceAll('"', '\\"')}",`,
+    "  }),",
+  ]);
+  return `${REGISTRY_PREAMBLE}\n${body.join("\n")}\n${REGISTRY_EPILOGUE.replace(
+    "DERIVED_BODY",
+    derivedBody.join("\n"),
+  )}`;
 }
 
 function renderKeyList({ keys }) {
@@ -411,7 +487,7 @@ function renderKeyList({ keys }) {
   return `${banner("#")}\n#\n# One key per line: the role name, a tab, and the hover text an author sees.\n${rows.join("\n")}\n`;
 }
 
-function renderDocs({ groups, keys }, current) {
+function renderDocs({ groups, keys, derived }, current) {
   const begin = current.indexOf(DOCS_BEGIN);
   const end = current.indexOf(DOCS_END);
   if (begin === -1 || end === -1 || end < begin) {
@@ -446,6 +522,26 @@ function renderDocs({ groups, keys }, current) {
         key.dark === key.light ? `\`${key.dark}\`` : `\`${key.dark}\` / \`${key.light}\``;
       out.push(
         `| \`${key.name}\` | ${sourceChainShort(key)} | ${transform} | ${fallback} | ${key.description} |`,
+      );
+    }
+    out.push("");
+  }
+
+  if (derived.length > 0) {
+    out.push(
+      "## Derived variables",
+      "",
+      `Atlas writes these **${derived.length}** \`--atlas-…\` custom properties too, but`,
+      "they are **not** theme keys: each is a pure transform of a key that is, so a",
+      "theme steers it through that key. Writing one in a theme file is an",
+      "unknown-key warning.",
+      "",
+      "| Variable | Derived from | Transform | What it colours |",
+      "|---|---|---|---|",
+    );
+    for (const entry of derived) {
+      out.push(
+        `| \`${entry.name}\` | \`${entry.from}\` | ${OPERATIONS[entry.op].docs(entry.amount)} | ${entry.description} |`,
       );
     }
     out.push("");

@@ -662,14 +662,6 @@
               ],
               "description": "Removed-line statistic. Source: palette.red → Atlas default."
             },
-            "status.error.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Error status background. Source: palette.red → base.destructive → Atlas default. Transform: alpha 0.12."
-            },
             "status.error.foreground": {
               "allOf": [
                 {
@@ -677,14 +669,6 @@
                 }
               ],
               "description": "Error status foreground. Source: palette.red → base.destructive → Atlas default."
-            },
-            "status.info.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Informational status background. Source: palette.blue → Atlas default. Transform: alpha 0.12."
             },
             "status.info.foreground": {
               "allOf": [
@@ -710,14 +694,6 @@
               ],
               "description": "Purple categorical status. Source: palette.purple → Atlas default."
             },
-            "status.success.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Success status background. Source: palette.green → Atlas default. Transform: alpha 0.12."
-            },
             "status.success.foreground": {
               "allOf": [
                 {
@@ -725,14 +701,6 @@
                 }
               ],
               "description": "Success status foreground. Source: palette.green → Atlas default."
-            },
-            "status.warning.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Warning status background. Source: palette.yellow → Atlas default. Transform: alpha 0.12."
             },
             "status.warning.foreground": {
               "allOf": [

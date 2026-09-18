@@ -1,7 +1,9 @@
 import type { Theme, ThemeAppearance, ThemeKeyValue, ThemeVariant } from "./lib/theme-api";
 import {
+  DERIVED_VAR_REGISTRY,
   THEME_KEY_REGISTRY,
   type Appearance,
+  type DerivedVar,
   type PaletteKey,
   type ThemeKey,
 } from "./theme-key-registry";
@@ -18,6 +20,8 @@ export interface ResolvedTheme {
   base: Record<string, string>;
   palette: Record<string, string>;
   keys: Record<ThemeKey, string>;
+  /** Colours Atlas derives from a key; see `DERIVED_VAR_REGISTRY`. */
+  derived: Record<DerivedVar, string>;
   cssVars: Record<`--${string}`, string>;
 }
 
@@ -60,5 +64,13 @@ export function resolveTheme(
     cssVars[definition.cssVar] = color;
   }
 
-  return { id: theme.id, appearance, base, palette, keys, cssVars };
+  // After the keys, because each one transforms a resolved key.
+  const derived = {} as Record<DerivedVar, string>;
+  for (const definition of DERIVED_VAR_REGISTRY) {
+    const color = definition.transform(keys[definition.from], context);
+    derived[definition.name] = color;
+    cssVars[definition.cssVar] = color;
+  }
+
+  return { id: theme.id, appearance, base, palette, keys, derived, cssVars };
 }

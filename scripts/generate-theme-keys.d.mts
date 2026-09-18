@@ -22,6 +22,16 @@ export interface ThemeKeySource {
   note?: string;
 }
 
+/** One `[[derived]]` entry: a colour Atlas writes but no theme may set. */
+export interface DerivedVarSource {
+  name: string;
+  description: string;
+  /** The settable key this transforms. */
+  from: string;
+  op: string;
+  amount: string;
+}
+
 export interface ThemeKeyGroup {
   name: string;
   description: string;
@@ -35,7 +45,11 @@ export const OUTPUTS: {
 };
 
 /** Parses and validates the source; throws with every problem it found. */
-export function readSource(): { groups: ThemeKeyGroup[]; keys: ThemeKeySource[] };
+export function readSource(): {
+  groups: ThemeKeyGroup[];
+  keys: ThemeKeySource[];
+  derived: DerivedVarSource[];
+};
 
 /** The generated files that no longer match the source. */
 export function staleOutputs(): { path: string; hint: string }[];

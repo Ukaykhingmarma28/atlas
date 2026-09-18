@@ -101,6 +101,28 @@ describe("the generated theme-key registry", () => {
     );
   });
 
+  /**
+   * A derived variable is Atlas's, not the author's. If one leaked into
+   * `theme-keys.txt` or the schema it would become settable in every editor
+   * and every loader, which is the whole thing this split exists to prevent.
+   */
+  it("keeps derived variables out of the author-facing key set", () => {
+    const keyNames = new Set(source.keys.map((key) => key.name));
+    const keyList = read(OUTPUTS.keyList);
+    const schemaKeys = JSON.parse(read(OUTPUTS.schema)).definitions.ThemeVariant.properties.keys;
+
+    expect(source.derived.length).toBeGreaterThan(0);
+    for (const entry of source.derived) {
+      expect(keyNames.has(entry.name), `${entry.name} is also a key`).toBe(false);
+      expect(keyList).not.toContain(`\n${entry.name}\t`);
+      expect(schemaKeys.properties[entry.name]).toBeUndefined();
+      // The transform is the point: an untransformed derivation is an alias.
+      expect(entry.op, entry.name).toBeTruthy();
+      expect(keyNames.has(entry.from), `${entry.name} derives from no key`).toBe(true);
+      expect(read(OUTPUTS.registry)).toContain(`derive("${entry.name}", {`);
+    }
+  });
+
   it("keeps each group's keys contiguous", () => {
     const seen: string[] = [];
     for (const key of source.keys) {

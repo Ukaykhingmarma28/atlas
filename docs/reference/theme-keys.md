@@ -54,7 +54,7 @@ later. Every non-CSS consumer subscribes to one of the last two.
 
 ## Full key list and derivation sources
 
-All **135** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
+All **131** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
 **Source** is the first thing Atlas tries after an explicit `keys` value:
 `P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the
 active appearance, shown here as dark / light. **Transform** is applied to
@@ -106,13 +106,9 @@ Success / warning / error / info, plus two categorical hues.
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
 | `status.success.foreground` | P:green → D | — | `#4d4d4d` / `#286983` | Success status foreground. |
-| `status.success.background` | P:green → D | alpha 0.12 | `rgba(77,77,77,0.12)` / `rgba(40,105,131,0.12)` | Success status background. |
 | `status.warning.foreground` | P:yellow → D | — | `#cd9731` / `#ea9d34` | Warning status foreground. |
-| `status.warning.background` | P:yellow → D | alpha 0.12 | `rgba(205,151,49,0.12)` / `rgba(234,157,52,0.12)` | Warning status background. |
 | `status.error.foreground` | P:red → B:destructive → D | — | `#f44747` / `#b4637a` | Error status foreground. |
-| `status.error.background` | P:red → B:destructive → D | alpha 0.12 | `rgba(244,71,71,0.12)` / `rgba(180,99,122,0.12)` | Error status background. |
 | `status.info.foreground` | P:blue → D | — | `#6796e6` / `#56949f` | Informational status foreground. |
-| `status.info.background` | P:blue → D | alpha 0.12 | `rgba(103,150,230,0.12)` / `rgba(86,148,159,0.12)` | Informational status background. |
 | `status.purple.foreground` | P:purple → D | — | `#999999` / `#907aa9` | Purple categorical status. |
 | `status.orange.foreground` | P:orange → D | — | `#cd9731` / `#d7827e` | Orange categorical status. |
 
@@ -278,6 +274,20 @@ Per-agent identity chips and small live indicators.
 | `stat.removed` | P:red → D | — | `#f85149` / `#b4637a` | Removed-line statistic. |
 | `capture.live` | P:green → D | — | `#3fb950` / `#286983` | Active capture indicator. |
 | `atlas.ants` | B:primary → D | — | `#ffffff` / `#907aa9` | Animated marching-ants stroke. |
+
+## Derived variables
+
+Atlas writes these **4** `--atlas-…` custom properties too, but
+they are **not** theme keys: each is a pure transform of a key that is, so a
+theme steers it through that key. Writing one in a theme file is an
+unknown-key warning.
+
+| Variable | Derived from | Transform | What it colours |
+|---|---|---|---|
+| `status.success.background` | `status.success.foreground` | alpha 0.12 | Tinted fill behind a success foreground. |
+| `status.warning.background` | `status.warning.foreground` | alpha 0.12 | Tinted fill behind a warning foreground. |
+| `status.error.background` | `status.error.foreground` | alpha 0.12 | Tinted fill behind an error foreground. |
+| `status.info.background` | `status.info.foreground` | alpha 0.12 | Tinted fill behind an informational foreground. |
 
 <!-- /generated:theme-keys -->
 

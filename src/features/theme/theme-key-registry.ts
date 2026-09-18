@@ -208,25 +208,11 @@ export const THEME_KEY_REGISTRY = [
     light: "#286983",
     description: "Success status foreground.",
   }),
-  define("status.success.background", {
-    palette: "green",
-    transform: alpha(0.12),
-    dark: "rgba(77,77,77,0.12)",
-    light: "rgba(40,105,131,0.12)",
-    description: "Success status background.",
-  }),
   define("status.warning.foreground", {
     palette: "yellow",
     dark: "#cd9731",
     light: "#ea9d34",
     description: "Warning status foreground.",
-  }),
-  define("status.warning.background", {
-    palette: "yellow",
-    transform: alpha(0.12),
-    dark: "rgba(205,151,49,0.12)",
-    light: "rgba(234,157,52,0.12)",
-    description: "Warning status background.",
   }),
   define("status.error.foreground", {
     palette: "red",
@@ -235,26 +221,11 @@ export const THEME_KEY_REGISTRY = [
     light: "#b4637a",
     description: "Error status foreground.",
   }),
-  define("status.error.background", {
-    palette: "red",
-    base: "destructive",
-    transform: alpha(0.12),
-    dark: "rgba(244,71,71,0.12)",
-    light: "rgba(180,99,122,0.12)",
-    description: "Error status background.",
-  }),
   define("status.info.foreground", {
     palette: "blue",
     dark: "#6796e6",
     light: "#56949f",
     description: "Informational status foreground.",
-  }),
-  define("status.info.background", {
-    palette: "blue",
-    transform: alpha(0.12),
-    dark: "rgba(103,150,230,0.12)",
-    light: "rgba(86,148,159,0.12)",
-    description: "Informational status background.",
   }),
   define("status.purple.foreground", {
     palette: "purple",
@@ -961,6 +932,58 @@ export type ThemeKey = (typeof THEME_KEY_REGISTRY)[number]["key"];
 export const THEME_KEY_DEFINITION_BY_KEY = Object.fromEntries(
   THEME_KEY_REGISTRY.map((definition) => [definition.key, definition]),
 ) as Record<ThemeKey, (typeof THEME_KEY_REGISTRY)[number]>;
+
+export interface DerivedVarDefinition<Name extends string = string> {
+  name: Name;
+  cssVar: `--atlas-${string}`;
+  /** The settable key this is a pure transform of. */
+  from: ThemeKey;
+  transform: ColorTransform;
+  description: string;
+}
+
+function derive<const Name extends string>(
+  name: Name,
+  rule: Omit<DerivedVarDefinition<Name>, "name" | "cssVar">,
+): DerivedVarDefinition<Name> {
+  return {
+    name,
+    cssVar: `--atlas-${name.replaceAll(".", "-").replaceAll("_", "-")}`,
+    ...rule,
+  };
+}
+
+/**
+ * Colours Atlas still writes as `--atlas-…` custom properties, but that no
+ * theme may set: each is a pure transform of a key that IS settable, so a
+ * theme author steers it through that key and never restates it. They are
+ * deliberately absent from `theme-keys.txt` and from the JSON Schema, which is
+ * what makes writing one in a theme file an unknown-key warning.
+ */
+export const DERIVED_VAR_REGISTRY = [
+  derive("status.success.background", {
+    from: "status.success.foreground",
+    transform: alpha(0.12),
+    description: "Tinted fill behind a success foreground.",
+  }),
+  derive("status.warning.background", {
+    from: "status.warning.foreground",
+    transform: alpha(0.12),
+    description: "Tinted fill behind a warning foreground.",
+  }),
+  derive("status.error.background", {
+    from: "status.error.foreground",
+    transform: alpha(0.12),
+    description: "Tinted fill behind an error foreground.",
+  }),
+  derive("status.info.background", {
+    from: "status.info.foreground",
+    transform: alpha(0.12),
+    description: "Tinted fill behind an informational foreground.",
+  }),
+] as const;
+
+export type DerivedVar = (typeof DERIVED_VAR_REGISTRY)[number]["name"];
 
 export function describeDerivation(definition: ThemeKeyDefinition): string {
   const sources = [

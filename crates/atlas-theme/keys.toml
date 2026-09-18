@@ -39,6 +39,23 @@
 #
 # Deleting a key, renaming one, or changing what it derives from is an edit to
 # this file and nothing else.
+#
+# ── `[[derived]]`: a colour Atlas writes but no theme may set ─────────────────
+#
+# Some `--atlas-…` variables the app reads are not judgement calls. A status
+# BADGE fill is its status FOREGROUND at 12% — an author who wants a different
+# green wants a different green, not two greens that must be kept in step. So
+# those live here instead of as keys: Atlas resolves them to exactly the value
+# a key would have produced, and they are absent from `theme-keys.txt` and from
+# the JSON Schema, so writing one in a theme file is an unknown-key warning.
+#
+#   name/description  as for a key.
+#   from              the settable key this transforms. Must exist above.
+#   op/amount         required — a derived variable with no transform would be
+#                     an alias, and an alias should just be the key itself.
+#
+# Reach for this when a colour is a FUNCTION of a key. Anything a theme author
+# would genuinely want to set independently is a key, however small.
 
 version = 1
 
@@ -285,32 +302,12 @@ dark = "#4d4d4d"
 light = "#286983"
 
 [[key]]
-name = "status.success.background"
-group = "Status"
-description = "Success status background."
-palette = "green"
-op = "alpha"
-amount = 0.12
-dark = "rgba(77,77,77,0.12)"
-light = "rgba(40,105,131,0.12)"
-
-[[key]]
 name = "status.warning.foreground"
 group = "Status"
 description = "Warning status foreground."
 palette = "yellow"
 dark = "#cd9731"
 light = "#ea9d34"
-
-[[key]]
-name = "status.warning.background"
-group = "Status"
-description = "Warning status background."
-palette = "yellow"
-op = "alpha"
-amount = 0.12
-dark = "rgba(205,151,49,0.12)"
-light = "rgba(234,157,52,0.12)"
 
 [[key]]
 name = "status.error.foreground"
@@ -322,33 +319,12 @@ dark = "#f44747"
 light = "#b4637a"
 
 [[key]]
-name = "status.error.background"
-group = "Status"
-description = "Error status background."
-palette = "red"
-base = "destructive"
-op = "alpha"
-amount = 0.12
-dark = "rgba(244,71,71,0.12)"
-light = "rgba(180,99,122,0.12)"
-
-[[key]]
 name = "status.info.foreground"
 group = "Status"
 description = "Informational status foreground."
 palette = "blue"
 dark = "#6796e6"
 light = "#56949f"
-
-[[key]]
-name = "status.info.background"
-group = "Status"
-description = "Informational status background."
-palette = "blue"
-op = "alpha"
-amount = 0.12
-dark = "rgba(103,150,230,0.12)"
-light = "rgba(86,148,159,0.12)"
 
 [[key]]
 name = "status.purple.foreground"
@@ -1316,3 +1292,36 @@ description = "Animated marching-ants stroke."
 base = "primary"
 dark = "#ffffff"
 light = "#907aa9"
+
+
+# ── Derived variables ─────────────────────────────────────────────────────────
+#
+# Not theme keys. See the header for what belongs here.
+
+[[derived]]
+name = "status.success.background"
+description = "Tinted fill behind a success foreground."
+from = "status.success.foreground"
+op = "alpha"
+amount = 0.12
+
+[[derived]]
+name = "status.warning.background"
+description = "Tinted fill behind a warning foreground."
+from = "status.warning.foreground"
+op = "alpha"
+amount = 0.12
+
+[[derived]]
+name = "status.error.background"
+description = "Tinted fill behind an error foreground."
+from = "status.error.foreground"
+op = "alpha"
+amount = 0.12
+
+[[derived]]
+name = "status.info.background"
+description = "Tinted fill behind an informational foreground."
+from = "status.info.foreground"
+op = "alpha"
+amount = 0.12

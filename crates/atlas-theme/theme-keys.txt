@@ -21,13 +21,9 @@ text.placeholder	Input placeholder text. Source: base.muted-foreground → Atlas
 text.disabled	Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.35 toward base.background.
 text.accent	Rare text-only signature accent. Source: palette.yellow → base.primary → Atlas default.
 status.success.foreground	Success status foreground. Source: palette.green → Atlas default.
-status.success.background	Success status background. Source: palette.green → Atlas default. Transform: alpha 0.12.
 status.warning.foreground	Warning status foreground. Source: palette.yellow → Atlas default.
-status.warning.background	Warning status background. Source: palette.yellow → Atlas default. Transform: alpha 0.12.
 status.error.foreground	Error status foreground. Source: palette.red → base.destructive → Atlas default.
-status.error.background	Error status background. Source: palette.red → base.destructive → Atlas default. Transform: alpha 0.12.
 status.info.foreground	Informational status foreground. Source: palette.blue → Atlas default.
-status.info.background	Informational status background. Source: palette.blue → Atlas default. Transform: alpha 0.12.
 status.purple.foreground	Purple categorical status. Source: palette.purple → Atlas default.
 status.orange.foreground	Orange categorical status. Source: palette.orange → Atlas default.
 selection.background	Document text selection. Source: base.primary → Atlas default. Transform: alpha 0.18.
