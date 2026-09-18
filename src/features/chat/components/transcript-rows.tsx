@@ -14,7 +14,7 @@
 //  3. Rows never subscribe to the chat store or the detail-panel store. Data
 //     arrives as props; actions are fired imperatively via `getState()`.
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   ChevronRight,
   Paperclip,
@@ -83,6 +83,8 @@ export const UserRowView = memo(function UserRowView({
   pinScopeKey: string;
   onToggleExpand: (id: string) => void;
 }) {
+  const clampRef = useRef<HTMLDivElement>(null);
+  const clampHeight = useWholeLineClamp(clampRef, !row.expanded);
   return (
     // Generous space BELOW the prompt: the gap is what separates one exchange
     // from the next, and a tight one made the agent's reply read as a
@@ -114,20 +116,37 @@ export const UserRowView = memo(function UserRowView({
           className={cn(
             // Apple-squircle read: one big continuous radius (no clipped
             // corner), a touch more padding — iMessage-adjacent geometry.
-            "atlas-prose atlas-prose--user min-w-0 max-w-full rounded-full bg-[var(--atlas-primary-muted)] px-4 py-2.5 select-text",
+            // A fixed 20px, NOT `rounded-full`: this bubble grows to many
+            // lines, and a radius of half its height turns it into an ellipse
+            // whose curve cuts off the first and last line at the corners.
+            // ratchet-allow: 20px sits above the `rounded-*` scale (xl = 12px), and
+            // a full radius clips multi-line bubbles.
+            "min-w-0 max-w-full rounded-[20px] bg-[var(--atlas-primary-muted)] px-4 py-2.5 select-text",
             // Entrance only for THE message sent just now (id-scoped).
             justSent && "atlas-bubble-in",
           )}
-          style={
-            row.expanded
-              ? undefined
-              : {
-                  maxHeight: M.userMaxLines * M.userLineHeight,
-                  overflow: "hidden",
-                }
-          }
         >
-          <CachedMarkdown source={row.text} unstyled priority={priority} />
+          {/* The clamp lives INSIDE the padding, not on the bubble: the bubble
+              is border-box, so a `max-height` there spent 20px of the budget
+              on padding and sliced the last line in half — and `overflow`
+              clips at the padding edge, so the cut line bled into the bottom
+              padding instead of stopping above it. Here the budget is pure
+              line boxes and the bubble's own padding stays clear. */}
+          <div
+            ref={clampRef}
+            style={row.expanded ? undefined : { maxHeight: clampHeight, overflow: "hidden" }}
+          >
+            {/* `.atlas-prose` goes on the markdown root itself, as it does for
+                the agent's prose: the block rules are `> *` selectors, and on
+                the bubble they matched this wrapper instead of the paragraphs,
+                so a multi-paragraph prompt rendered with no gaps at all. */}
+            <CachedMarkdown
+              source={row.text}
+              unstyled
+              priority={priority}
+              className="atlas-prose atlas-prose--user"
+            />
+          </div>
         </div>
         {row.contextBlocks > 0 && (
           <button
@@ -153,6 +172,60 @@ export const UserRowView = memo(function UserRowView({
     </Column>
   );
 });
+
+/** The clamp budget: `userMaxLines` lines of bubble text. */
+const USER_CLAMP_PX = M.userMaxLines * M.userLineHeight;
+
+/**
+ * The collapsed bubble's `max-height`, snapped down to the bottom of the last
+ * line that fits whole inside `USER_CLAMP_PX`.
+ *
+ * The budget alone is only exact for one unbroken paragraph. Paragraph gaps,
+ * list spacing and a fence's own line height all knock later lines off the
+ * 22px grid, so a fixed cut lands mid-glyph on most real prompts. Measured,
+ * not predicted: only the block that straddles the cut is read line by line,
+ * and a prompt short enough to fit costs one `scrollHeight` read.
+ *
+ * Re-measured on resize of the markdown root, which covers both a width change
+ * (the lines rewrap) and the raw-source placeholder swapping to parsed HTML.
+ */
+function useWholeLineClamp(ref: React.RefObject<HTMLDivElement | null>, active: boolean): number {
+  const [height, setHeight] = useState(USER_CLAMP_PX);
+  useLayoutEffect(() => {
+    const root = ref.current?.firstElementChild;
+    if (!active || !(root instanceof HTMLElement)) return;
+    const measure = () => {
+      if (root.scrollHeight <= USER_CLAMP_PX) {
+        setHeight(USER_CLAMP_PX);
+        return;
+      }
+      const base = root.getBoundingClientRect().top;
+      let fit = 0;
+      for (const child of Array.from(root.children)) {
+        const box = child.getBoundingClientRect();
+        if (box.top - base >= USER_CLAMP_PX) break;
+        if (box.bottom - base <= USER_CLAMP_PX) {
+          fit = box.bottom - base;
+          continue;
+        }
+        // The block the cut falls inside: keep its last whole line.
+        const range = document.createRange();
+        range.selectNodeContents(child);
+        for (const line of Array.from(range.getClientRects())) {
+          const bottom = line.bottom - base;
+          if (bottom <= USER_CLAMP_PX && bottom > fit) fit = bottom;
+        }
+        break;
+      }
+      setHeight(fit > 0 ? Math.ceil(fit) : USER_CLAMP_PX);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [ref, active]);
+  return height;
+}
 
 /**
  * "Show more" / "Show less", rendered only when the bubble is long enough that

@@ -1373,6 +1373,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         )}
 
         <div className="relative">
+          {/* Anchored to this whole stack, not to the composer: the card below
+              sits directly on top of the composer, so a pill anchored there
+              floated over the card's own buttons and answer field. */}
+          {showJumpToBottom && (
+            <JumpToBottomPill count={jumpCount} onClick={onScrollToBottomStable} />
+          )}
           {/* Permission / question prompt — an inline card pinned above the
               composer (plan reviews still render as a centered modal). */}
           <PermissionModal tabId={tabId} onSendMessage={onPermissionSend} />
@@ -1392,9 +1398,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             onStop={onStopStable}
             running={isBusyAgentStatus(session.status) || hasInFlightToolCalls(session)}
             stopping={!!session.stopping}
-            showJumpToBottom={showJumpToBottom}
-            jumpCount={jumpCount}
-            onScrollToBottom={onScrollToBottomStable}
           />
         </div>
       </div>
@@ -1544,18 +1547,12 @@ const ChatComposer = memo(function ChatComposer({
   onStop,
   running,
   stopping,
-  showJumpToBottom,
-  jumpCount,
-  onScrollToBottom,
 }: {
   tabId: string;
   onSend: (message: string, mentions: MentionData[], attachments?: ImageAttachment[]) => void;
   onStop: () => void;
   running: boolean;
   stopping: boolean;
-  showJumpToBottom: boolean;
-  jumpCount: number;
-  onScrollToBottom: () => void;
 }) {
   // OpenCode / Cursor / Kilo auth used to raise a "copy `cursor-agent login`"
   // pill here. It is gone: `atlas:auth-required` now routes ONLY to the
@@ -1569,42 +1566,6 @@ const ChatComposer = memo(function ChatComposer({
   return (
     <>
       <div className="relative">
-        {/* Floating row above the composer. Pills are conditionally
-            rendered (each gets its own slide-up + fade-in animation
-            via `.atlas-pill-in`); when the row is empty it doesn't
-            paint at all so it never blocks pointer events. */}
-        {/* The no-grant setup state (D15a) used to live here as a centred pill.
-            It moved into the composer itself (`AiGrantBar`, rendered from
-            `message-input.tsx`): it shared this `z-20` row with "Scroll to
-            bottom" and the two overlapped whenever both showed. */}
-        {showJumpToBottom && (
-          <div className="pointer-events-none absolute bottom-full inset-x-0 mb-2 z-20 flex justify-center">
-            <div className="pointer-events-auto flex items-center gap-2">
-              {showJumpToBottom && (
-                <button
-                  key="jump-to-bottom"
-                  onClick={onScrollToBottom}
-                  title="Jump to latest"
-                  style={{ backdropFilter: "blur(4px)" }}
-                  className={cn(
-                    "atlas-pill-in inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full",
-                    "border border-[var(--border)] bg-[var(--card)]",
-                    "text-xs leading-none font-medium text-[var(--secondary-foreground)]",
-                    "shadow-sm cursor-pointer transition-colors",
-                    "hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
-                  )}
-                >
-                  <ChevronDown size={11} />
-                  <span>
-                    {jumpCount > 0
-                      ? `${jumpCount} new message${jumpCount === 1 ? "" : "s"}`
-                      : "Scroll to bottom"}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
         <DisconnectedBanner tabId={tabId} />
         <MessageInput
           tabId={tabId}
@@ -1616,6 +1577,45 @@ const ChatComposer = memo(function ChatComposer({
         />
       </div>
     </>
+  );
+});
+
+/**
+ * "Scroll to bottom" / "N new messages", floated above the composer stack.
+ *
+ * The no-grant setup state (D15a) used to share this row as a centred pill. It
+ * moved into the composer itself (`AiGrantBar`, rendered from
+ * `message-input.tsx`), because the two overlapped whenever both showed. The
+ * wrapper is `pointer-events-none` so the empty width either side of the pill
+ * never swallows clicks meant for the transcript.
+ */
+const JumpToBottomPill = memo(function JumpToBottomPill({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute bottom-full inset-x-0 mb-2 z-20 flex justify-center">
+      <button
+        onClick={onClick}
+        title="Jump to latest"
+        style={{ backdropFilter: "blur(4px)" }}
+        className={cn(
+          "pointer-events-auto atlas-pill-in inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full",
+          "border border-[var(--border)] bg-[var(--card)]",
+          "text-xs leading-none font-medium text-[var(--secondary-foreground)]",
+          "shadow-sm cursor-pointer transition-colors",
+          "hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
+        )}
+      >
+        <ChevronDown size={11} />
+        <span>
+          {count > 0 ? `${count} new message${count === 1 ? "" : "s"}` : "Scroll to bottom"}
+        </span>
+      </button>
+    </div>
   );
 });
 
@@ -1654,13 +1654,22 @@ function WelcomeState() {
             radial gradient; on AMOLED black that halo read as a smudge behind
             the mark rather than a light source, and it competed with the
             dither field's own centre. The ring and the drop shadow are what
-            separate the mark from the panel. */}
+            separate the mark from the panel.
+
+            The radius is a PERCENTAGE so the ring follows the artwork's own
+            corner (rx 166 on a 600 viewBox ≈ 28%) at any size; a scale step
+            is tighter than that corner and left background wedges showing
+            inside the ring. The shadow is a soft, negatively-spread halo
+            under the mark, which no elevation step is — `shadow-lg` is the
+            dialog stack and read as a slab. */}
         <AtlasIcon
           size={60}
-          className="mb-5 rounded-xl ring-1 ring-[var(--atlas-element-active)] shadow-lg"
+          // ratchet-allow: the radius tracks the artwork's own corner, and the halo is not an elevation
+          className="mb-5 rounded-[28%] ring-1 ring-[var(--atlas-element-active)] shadow-[0_12px_50px_-12px_rgba(0,0,0,0.85)]"
         />
 
-        <h2 className="bg-gradient-to-b from-foreground to-foreground/55 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
+        {/* ratchet-allow: the one-off welcome headline sits between text-xl (20px) and text-2xl (24px) */}
+        <h2 className="bg-gradient-to-b from-foreground to-foreground/55 bg-clip-text text-[22px] font-semibold tracking-tight text-transparent">
           Atlas
         </h2>
         <p className="mt-1.5 text-base text-[var(--muted-foreground)]">
@@ -1674,7 +1683,11 @@ function WelcomeState() {
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text } }))
               }
-              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--atlas-border-strong)] hover:bg-[var(--card)] hover:shadow-md cursor-pointer"
+              // Hover lifts onto `--muted`, the next surface step up from the
+              // card, with a soft negatively-spread shadow under it. `shadow-md`
+              // is the menu elevation and turned a 2px lift into a floating slab.
+              // ratchet-allow: a hover lift halo, deliberately softer than any elevation step
+              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--atlas-border-strong)] hover:bg-[var(--muted)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)] cursor-pointer"
             >
               <div className="flex items-center justify-between">
                 <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--atlas-border-subtle)] bg-[var(--card)] text-[var(--muted-foreground)] transition-colors group-hover:text-[var(--foreground)]">

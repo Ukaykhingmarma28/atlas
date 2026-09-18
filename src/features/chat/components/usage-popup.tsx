@@ -41,7 +41,8 @@ function Headline({ view }: { view: SessionUsageView }) {
           Context · {fmtTokens(h.used)} / {fmtTokens(h.size)}
         </div>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
+          {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+          <span className="text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {value.toFixed(value >= 10 ? 0 : 1)}
             <span className="ml-0.5 text-md font-medium text-[var(--muted-foreground)]">%</span>
           </span>
@@ -69,7 +70,8 @@ function Headline({ view }: { view: SessionUsageView }) {
     return (
       <Card index={0} section="tokens-total">
         <div className={CAPTION}>Tokens · this session</div>
-        <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
+        {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+        <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmtTokens(Math.round(value))}
         </div>
       </Card>
@@ -78,7 +80,8 @@ function Headline({ view }: { view: SessionUsageView }) {
   return (
     <Card index={0} section="cost-total">
       <div className={CAPTION}>Cost · this session{h.estimated ? " · est." : ""}</div>
-      <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--foreground)]">
+      {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+      <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
         {fmtCost(value)}
       </div>
     </Card>
@@ -113,7 +116,8 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
       <div className="flex items-baseline justify-between">
         <span className={CAPTION}>Cost</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-lg leading-none font-semibold tabular-nums text-[var(--foreground)]">
+          {/* ratchet-allow: a subtotal one notch under text-lg (16px), which outshouted the rows */}
+          <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {fmtCost(cost.total)}
           </span>
           {cost.estimated ? <EstTag /> : null}

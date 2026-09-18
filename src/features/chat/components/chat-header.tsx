@@ -59,14 +59,16 @@ const CONTROL_H = "h-[26px]";
  * Outline-only controls on a near black header read as wireframes;
  * fill-plus-whisper reads as a surface.
  *
- * Foreground-tinted overlay keys rather than white alphas, so the controls
- * track the active theme (a light appearance gets a dark outline, not an
- * invisible white one) and still sit correctly on the translucent blurred
- * band behind them.
+ * Foreground-tinted rather than white alphas, so the controls track the active
+ * theme (a light appearance gets a dark outline, not an invisible white one)
+ * and still sit correctly on the translucent blurred band behind them. The
+ * border is mixed here rather than taken from `--border` / `--atlas-border-strong`:
+ * those are opaque greys tuned for panel edges, dimmer than 16% at rest and a
+ * much bigger jump than 22% on hover.
  */
 const OUTLINE = [
-  "border border-border bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)]",
-  "transition-colors hover:border-border-strong hover:bg-[var(--atlas-element-active)] hover:text-[var(--foreground)]",
+  "border border-[color-mix(in_srgb,var(--foreground)_16%,transparent)] bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)]",
+  "transition-colors hover:border-[color-mix(in_srgb,var(--foreground)_22%,transparent)] hover:bg-[var(--atlas-element-active)] hover:text-[var(--foreground)]",
 ].join(" ");
 
 interface ChatHeaderProps {

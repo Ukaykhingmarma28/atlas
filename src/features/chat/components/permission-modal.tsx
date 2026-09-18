@@ -325,7 +325,13 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   // Standard case — inline card above the composer.
   return (
     <div className="px-4 pt-2">
-      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md">
+      <div
+        // A card resting in the composer stack, not a menu: `shadow-md` is the
+        // menu elevation (0 16px 48px at 90%) and read as a black slab over the
+        // transcript. This sits between `shadow-sm` and that, with no step to name.
+        // ratchet-allow: an in-flow raised card, softer than the menu elevation
+        className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+      >
         <div className="flex items-start gap-2 px-3 pt-3">
           <div className="flex-1 min-w-0">
             <div className="text-base font-medium leading-snug text-foreground">

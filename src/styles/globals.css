@@ -2101,9 +2101,13 @@
   border-radius: 6px;
   overflow: hidden;
 }
+/* `break-word`, not `anywhere` (which `.atlas-prose` sets and cells would
+   otherwise inherit): both still break a long unbroken run inside a cell, but
+   `anywhere` also shrinks the cell's MIN-CONTENT width to a single character,
+   so auto layout squeezed short columns and split words like "Chan|ge". */
 .atlas-prose th,
 .atlas-prose td {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 .atlas-prose thead {
@@ -2133,7 +2137,9 @@
 /* User prompt bubbles run through the same prose renderer as the agent's
    replies, one step up the type scale (they sit in a tinted bubble at a
    narrower measure, where 13px reads small). The bubble owns the padding, so
-   the first and last blocks must not add their own. */
+   the first and last blocks must not add their own. Applied to the markdown
+   root inside the bubble, never the bubble itself: the `> *` rules have to
+   land on the blocks, not on the renderer's wrapper div. */
 .atlas-prose--user {
   font-size: 14px;
   line-height: 22px;
