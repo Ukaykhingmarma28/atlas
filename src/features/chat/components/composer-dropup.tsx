@@ -126,7 +126,7 @@ export function ComposerDropup({
   return (
     <div
       aria-hidden={!open}
-      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
+      className="absolute bottom-full right-0 z-popover mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
       style={{
         width,
         height: open ? panelHeight : 0,

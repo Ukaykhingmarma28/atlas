@@ -518,7 +518,7 @@ function FilterMenu({
         />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg">
+        <div className="absolute top-full left-0 z-popover mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg">
           <FilterOption
             label={`All ${label.toLowerCase()}s`}
             active={!value}

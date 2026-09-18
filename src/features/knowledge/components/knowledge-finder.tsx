@@ -82,7 +82,7 @@ export function KnowledgeFinder({
   };
 
   return (
-    <div className="absolute left-1/2 top-3 z-50 w-[460px] max-w-[90%] -translate-x-1/2">
+    <div className="absolute left-1/2 top-3 z-popover w-[460px] max-w-[90%] -translate-x-1/2">
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-md">
         <div className="flex items-center gap-2 px-3 h-9 border-b border-border-subtle">
           <Search size={13} className="shrink-0 text-muted-foreground" />

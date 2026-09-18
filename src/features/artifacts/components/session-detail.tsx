@@ -1672,14 +1672,14 @@ function FilterDrawer({
       {/* Scrim — subtle; the blurred panel carries the depth, as in the
        *  notification centre. Clicking it dismisses. */}
       <div
-        className="animate-fade-in absolute inset-0 z-40 scrim-soft"
+        className="animate-fade-in absolute inset-0 z-overlay scrim-soft"
         onClick={onClose}
         aria-hidden
       />
       <aside
         role="dialog"
         aria-label="Filters"
-        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-50 flex w-[340px] flex-col border-l border-[var(--border)] bg-[var(--card)]/60 shadow-md backdrop-blur-2xl"
+        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-modal flex w-[340px] flex-col border-l border-[var(--border)] bg-[var(--card)]/60 shadow-md backdrop-blur-2xl"
       >
         {/* No header row at all. With no active filters it was an empty strip
          *  holding one X — the close button floats over the content instead,

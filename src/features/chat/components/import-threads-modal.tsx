@@ -94,7 +94,7 @@ export function ImportThreadsModal({
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
             "border border-border bg-card shadow-md animate-scale-in",
           )}

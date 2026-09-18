@@ -238,7 +238,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
               // Anchor near the top (not vertically centered) with a viewport
               // cap, so a long plan never pushes the modal — and its Cancel
               // footer — below the window. The plan panel scrolls internally.
-              "fixed left-1/2 top-[5vh] z-50 -translate-x-1/2",
+              "fixed left-1/2 top-[5vh] z-modal -translate-x-1/2",
               "flex max-h-[90vh] w-[880px] max-w-[94vw] flex-col overflow-hidden",
               "rounded-md border border-border bg-card",
               "shadow-md animate-scale-in text-foreground",

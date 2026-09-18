@@ -73,8 +73,8 @@ function CommitPicker({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
+          <div className="fixed inset-0 z-overlay" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute left-0 right-0 top-full z-popover mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
             <div className="flex h-7 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2">
               <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
               <input

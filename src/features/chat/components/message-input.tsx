@@ -519,7 +519,7 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
+        className="absolute bottom-full left-0 z-popover mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -1869,8 +1869,8 @@ export function MessageInput({
             // (`z-20` in chat-panel.tsx), not just the PlanDock. This element
             // has a z-index, so it opens a stacking context, and every dropup
             // inside it — the model picker, the agent/mode picker, the toolbar
-            // tooltip — is trapped in it: their `z-50` sorts them against each
-            // other and against nothing else. At `z-10` the whole composer,
+            // tooltip — is trapped in it: their `z-popover` sorts them against
+            // each other and against nothing else. At `z-10` the whole composer,
             // menus included, painted UNDER the "Scroll to bottom" pill, which
             // also swallowed clicks on the menu's first row (the pill sets
             // `pointer-events-auto`). Raising the context is the fix; raising
@@ -1958,7 +1958,7 @@ export function MessageInput({
                       {/* Zed-style hover preview — a larger floating image above the
                         thumbnail. `pointer-events-none` so it never blocks the
                         remove button; only shown on hover. */}
-                      <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden group-hover:block">
+                      <div className="pointer-events-none absolute bottom-full left-0 z-popover mb-2 hidden group-hover:block">
                         <img
                           src={src}
                           alt=""

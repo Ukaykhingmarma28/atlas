@@ -130,6 +130,9 @@ export function SpaceCursors({ actors }: { actors: ReadonlyMap<string, SpaceActo
               if (el) paint(g);
             }
           }}
+          // ratchet-allow: local stacking inside xyflow's ViewportPortal, which
+          // opens its own context — this only has to outrank nodes and edges,
+          // so no app-wide layer applies. `z-popover` here would be a lie.
           className="pointer-events-none absolute z-50"
         >
           <MousePointer2 size={14} style={{ color: a.colour }} fill={a.colour} />
