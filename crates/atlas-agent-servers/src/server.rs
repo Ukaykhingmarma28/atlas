@@ -237,6 +237,15 @@ const GEMINI_AGENT_ID: &str = "gemini";
 /// Each is a fix for how that CLI behaves, not a capability decision — capability
 /// questions are answered by what the agent advertises at `initialize`.
 pub fn env_quirks(agent_id: &AgentId) -> HashMap<String, String> {
+    env_quirks_from(agent_id, |key| std::env::var(key).ok())
+}
+
+/// [`env_quirks`] against an explicit environment, so the pass-through can be
+/// tested without mutating the process's own.
+pub fn env_quirks_from(
+    agent_id: &AgentId,
+    host_env: impl Fn(&str) -> Option<String>,
+) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
     match agent_id.as_str() {
@@ -246,10 +255,14 @@ pub fn env_quirks(agent_id: &AgentId) -> HashMap<String, String> {
             env.insert("ANTHROPIC_API_KEY".to_owned(), String::new());
         }
         // Passed through explicitly because the CLI reads them from its own
-        // environment, which a spawned child does not inherit selectively.
+        // environment. The spawn inherits the host's today, so this is what
+        // keeps them there if it ever stops doing so. These are the two names
+        // codex's auth reads (`CODEX_API_KEY_ENV_VAR`, `OPENAI_API_KEY_ENV_VAR`
+        // in `vendor/codex/login/src/auth/manager.rs`); Zed's `custom.rs`
+        // spells the second `OPEN_AI_API_KEY`, which nothing reads.
         CODEX_AGENT_ID => {
-            for key in ["CODEX_API_KEY", "OPEN_AI_API_KEY"] {
-                if let Ok(value) = std::env::var(key) {
+            for key in ["CODEX_API_KEY", "OPENAI_API_KEY"] {
+                if let Some(value) = host_env(key) {
                     env.insert(key.to_owned(), value);
                 }
             }

@@ -3030,7 +3030,9 @@ mod tests {
 
         assert!(matches!(host.agent_for(CERSEI_AGENT_ID), Ok(Agent::Native)));
         for id in ["claude-code-ts", "codex", "opencode", "cursor", "kilo"] {
-            let err = host.agent_for(id).expect_err("{id} must not be runnable");
+            let Err(err) = host.agent_for(id) else {
+                panic!("{id} must not be runnable");
+            };
             // Fatal, not auth: signing in or retrying changes nothing, only
             // installing does.
             assert_eq!(err.class, ErrorClass::Fatal, "for {id}");
