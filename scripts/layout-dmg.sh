@@ -41,7 +41,12 @@ if [[ ! -d "${staging}/Atlas.app" ]]; then
 fi
 
 WINDOW_WIDTH=512
-WINDOW_HEIGHT=320
+# 320 (the background art's design height) + 32 for Finder's Path Bar, which
+# is a per-user Finder preference we can't control or detect from here. If
+# it's off (the macOS default) the extra 32pt is just more of the tileable
+# dot background below the icons; if it's on, it's exactly what the path bar
+# needs, so the background never comes up short either way.
+WINDOW_HEIGHT=352
 ICON_SIZE=128
 APP_POS_X=140
 APP_POS_Y=160

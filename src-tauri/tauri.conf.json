@@ -80,7 +80,7 @@
       "providerShortName": null,
       "dmg": {
         "background": "icons/dmg-background.png",
-        "windowSize": { "width": 512, "height": 320 },
+        "windowSize": { "width": 512, "height": 352 },
         "appPosition": { "x": 140, "y": 160 },
         "applicationFolderPosition": { "x": 372, "y": 160 }
       }
