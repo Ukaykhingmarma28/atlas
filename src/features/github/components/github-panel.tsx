@@ -37,10 +37,10 @@ import { metaFromSearch, type ClonedRepo, type GithubRepo } from "@/features/git
  */
 
 /** One cell of the row's action pill — the same 24px dock as the titlebar's
- *  (`titlebar-dock.tsx`): a `#121212` pill with a hairline, 20px round cells. */
+ *  (`titlebar-dock.tsx`): a `bg-card` pill with a hairline, 20px round cells. */
 const GROUP_BUTTON =
   "flex size-5 items-center justify-center rounded-full text-text-tertiary hover:text-text-primary hover:bg-bg-active cursor-pointer disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent";
-const GROUP = "flex items-center gap-px rounded-full border border-white/[0.07] bg-[#121212] p-0.5";
+const GROUP = "flex items-center gap-px rounded-full border border-border-subtle bg-card p-0.5";
 
 /** Top/bottom edge fades on a scroll container, only while there is more to scroll. */
 function useScrollEdges(ref: React.RefObject<HTMLDivElement | null>, deps: unknown[]) {
@@ -141,7 +141,7 @@ function BranchPicker({
           <button
             type="button"
             disabled={busy}
-            className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary cursor-pointer disabled:cursor-default"
+            className="flex items-center gap-1 text-2xs text-text-tertiary hover:text-text-primary cursor-pointer disabled:cursor-default"
             title="Switch to another remote branch"
           >
             <GitBranch size={9} />
@@ -151,14 +151,14 @@ function BranchPicker({
         }
       />
       <Popover.Portal>
-        <Popover.Positioner className="z-[9999]" align="start" sideOffset={4}>
+        <Popover.Positioner className="z-popover" align="start" sideOffset={4}>
           <Popover.Popup
-            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)]"
+            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-md"
             // Land in the filter box, not on the first row. Base UI's
             // initialFocus replaces Radix's onOpenAutoFocus + preventDefault.
             initialFocus={filterRef}
           >
-            <div className="flex items-center gap-1.5 h-[30px] px-2.5 border-b border-[var(--border)]">
+            <div className="flex items-center gap-1.5 h-control-lg px-2.5 border-b border-[var(--border)]">
               <Search size={10} className="shrink-0 text-text-tertiary" />
               <input
                 ref={filterRef}
@@ -168,21 +168,21 @@ function BranchPicker({
                   if (e.key === "Enter" && shown[0]) onSwitch(shown[0]);
                 }}
                 placeholder="Filter branches"
-                className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+                className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary"
               />
               {branches ? (
-                <span className="text-[9px] tabular-nums text-text-tertiary">{shown.length}</span>
+                <span className="text-3xs tabular-nums text-text-tertiary">{shown.length}</span>
               ) : null}
             </div>
-            <div className="max-h-[260px] overflow-y-auto hide-scrollbar py-1">
+            <div className="max-h-64 overflow-y-auto hide-scrollbar py-1">
               {error ? (
-                <div className="px-3 py-1.5 text-[10px] text-error">{error}</div>
+                <div className="px-3 py-1.5 text-2xs text-error">{error}</div>
               ) : !branches ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] text-text-tertiary">
+                <div className="flex items-center gap-2 px-3 py-1.5 text-2xs text-text-tertiary">
                   <Loader2 size={10} className="animate-spin" /> Fetching branches
                 </div>
               ) : shown.length === 0 ? (
-                <div className="px-3 py-1.5 text-[10px] text-text-tertiary">
+                <div className="px-3 py-1.5 text-2xs text-text-tertiary">
                   {filter ? "No branch matches" : "No branches"}
                 </div>
               ) : (
@@ -199,7 +199,7 @@ function BranchPicker({
                         if (!current) onSwitch(b);
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 px-3 h-[26px] text-[11px] text-left cursor-pointer outline-none",
+                        "flex w-full items-center gap-2 px-3 h-control-md text-xs text-left cursor-pointer outline-none",
                         current
                           ? "text-[var(--text-primary)]"
                           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--bg-hover)]",
@@ -299,17 +299,15 @@ function ClonedRow({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[9.5px] font-medium text-text-primary truncate">
-            {repo.display_name}
-          </div>
+          <div className="text-2xs font-medium text-text-primary truncate">{repo.display_name}</div>
           {meta?.description ? (
-            <p className="text-[10px] leading-snug text-text-tertiary mt-1 line-clamp-2">
+            <p className="text-2xs leading-snug text-text-tertiary mt-1 line-clamp-2">
               {meta.description}
             </p>
           ) : null}
           <div className="flex items-center gap-3 mt-2">
             {busy === "switch" ? (
-              <span className="flex items-center gap-1 text-[10px] text-text-tertiary">
+              <span className="flex items-center gap-1 text-2xs text-text-tertiary">
                 <Loader2 size={9} className="animate-spin" /> Switching…
               </span>
             ) : (
@@ -321,14 +319,14 @@ function ClonedRow({
               />
             )}
             {meta?.language ? (
-              <span className="text-[9px] text-text-tertiary">{meta.language}</span>
+              <span className="text-3xs text-text-tertiary">{meta.language}</span>
             ) : null}
             {meta ? (
               <>
-                <span className="flex items-center gap-0.5 text-[9px] text-text-tertiary">
+                <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
                   <Star size={8} /> {meta.stars.toLocaleString()}
                 </span>
-                <span className="flex items-center gap-0.5 text-[9px] text-text-tertiary">
+                <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
                   <GitFork size={8} /> {meta.forks.toLocaleString()}
                 </span>
               </>
@@ -508,7 +506,7 @@ export function GithubPanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Search */}
-      <div className="flex items-center gap-1.5 h-[32px] shrink-0 border-b border-border bg-bg-primary px-3">
+      <div className="flex items-center gap-1.5 h-control-lg shrink-0 border-b border-border bg-bg-primary px-3">
         <Search size={11} className="text-text-tertiary shrink-0" />
         <input
           value={query}
@@ -517,7 +515,7 @@ export function GithubPanel() {
             if (e.key === "Enter") handleSearch();
           }}
           placeholder="Search GitHub repositories..."
-          className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+          className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary"
         />
       </div>
 
@@ -545,10 +543,10 @@ export function GithubPanel() {
 
           {error && (
             <div className="px-3 py-6 text-center">
-              <p className="text-[11px] text-error">{error}</p>
+              <p className="text-xs text-error">{error}</p>
               <button
                 onClick={handleSearch}
-                className="mt-1 text-[10px] text-primary hover:underline cursor-pointer"
+                className="mt-1 text-2xs text-primary hover:underline cursor-pointer"
               >
                 Retry
               </button>
@@ -558,12 +556,12 @@ export function GithubPanel() {
           {!loading && !error && results.length === 0 && !searching && repos.length === 0 && (
             <div className="px-3 py-8 text-center">
               <GithubIcon size={16} className="text-text-tertiary mx-auto mb-2" />
-              <p className="text-[11px] text-text-tertiary">Search for repositories</p>
+              <p className="text-xs text-text-tertiary">Search for repositories</p>
             </div>
           )}
 
           {!loading && !error && results.length === 0 && searching && (
-            <div className="px-3 py-6 text-center text-[11px] text-text-tertiary">
+            <div className="px-3 py-6 text-center text-xs text-text-tertiary">
               No repositories found
             </div>
           )}
@@ -579,23 +577,23 @@ export function GithubPanel() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-primary truncate">
+                      <span className="text-xs font-medium text-primary truncate">
                         {repo.full_name}
                       </span>
                     </div>
                     {repo.description && (
-                      <p className="text-[10px] text-text-tertiary mt-0.5 line-clamp-2">
+                      <p className="text-2xs text-text-tertiary mt-0.5 line-clamp-2">
                         {repo.description}
                       </p>
                     )}
                     <div className="flex items-center gap-3 mt-1">
                       {repo.language && (
-                        <span className="text-[9px] text-text-tertiary">{repo.language}</span>
+                        <span className="text-3xs text-text-tertiary">{repo.language}</span>
                       )}
-                      <span className="flex items-center gap-0.5 text-[9px] text-text-tertiary">
+                      <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
                         <Star size={8} /> {repo.stars.toLocaleString()}
                       </span>
-                      <span className="flex items-center gap-0.5 text-[9px] text-text-tertiary">
+                      <span className="flex items-center gap-0.5 text-3xs text-text-tertiary">
                         <GitFork size={8} /> {repo.forks.toLocaleString()}
                       </span>
                     </div>
