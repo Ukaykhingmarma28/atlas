@@ -6,7 +6,6 @@ import { Button } from "@/ui/button";
 import { Icon } from "@/ui/icon";
 import { Hint } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
-import { LIGHT_APPEARANCE_ENABLED } from "@/features/theme/apply-theme";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -35,12 +34,11 @@ export function AtlasThemesSettings() {
     );
   }, [query, themes]);
 
-  // Light variants are loadable and persistable in schema 1; the button
-  // appears when `LIGHT_APPEARANCE_ENABLED` does, which is also what stops
-  // `system` resolving to light in the meantime.
-  const modes: ThemeMode[] = LIGHT_APPEARANCE_ENABLED
-    ? ["system", "dark", "light"]
-    : ["system", "dark"];
+  // All three, since the app-wide light pass is done. A theme with no light
+  // variant still resolves — `resolveTheme` falls back to its other variant,
+  // which is the documented schema-1 behaviour and is why picking Light with a
+  // dark-only theme selected is not an error state.
+  const modes: ThemeMode[] = ["system", "dark", "light"];
 
   // The import panel replaces the grid rather than floating over it: it is a
   // multi-step, scrolling surface (paste, convert, read the report, name the

@@ -90,6 +90,7 @@ export const ELEVATIONS = [
 export const Z_LAYERS = [
   { name: "panel", cssVar: "--z-panel", utility: "z-panel" },
   { name: "titlebar", cssVar: "--z-titlebar", utility: "z-titlebar" },
+  { name: "drawer", cssVar: "--z-drawer", utility: "z-drawer" },
   { name: "overlay", cssVar: "--z-overlay", utility: "z-overlay" },
   { name: "modal", cssVar: "--z-modal", utility: "z-modal" },
   { name: "popover", cssVar: "--z-popover", utility: "z-popover" },

@@ -39,20 +39,21 @@ function cacheLaunchColors(resolved: ResolvedTheme): void {
 }
 
 /**
- * The one switch for the light appearance. Flip it to `true` when the
- * app-wide light sweep is finished, and nothing else needs to change: the
- * Light button appears in the theme picker and `system` starts honouring the
- * OS again.
+ * Which appearance a mode resolves to.
  *
- * While it is `false`, `system` must resolve to `dark`. Hiding the Light
- * button alone was not enough — the OS decides what `system` means, so anyone
- * on a light Mac was landed in the unfinished light UI at boot, having never
- * chosen it and with no visible control to get out.
+ * `system` asks the OS. It used to be forced to `dark` behind a
+ * `LIGHT_APPEARANCE_ENABLED` flag while the light pass was unfinished —
+ * hiding the Light button alone was not enough, because the OS decides what
+ * `system` means and anyone on a light Mac was landed in the unfinished light
+ * UI at boot, having never chosen it and with no visible control to get out.
+ * Every folder has had its light pass now, so the flag is gone and `system`
+ * means what it says.
+ *
+ * A theme with no light variant is NOT a reason to refuse: `resolveTheme`
+ * falls back to the theme's other variant, which is the documented schema-1
+ * behaviour.
  */
-export const LIGHT_APPEARANCE_ENABLED = true;
-
 export function appearanceForMode(mode: ThemeMode): "dark" | "light" {
-  if (!LIGHT_APPEARANCE_ENABLED) return "dark";
   if (mode !== "system") return mode;
   if (typeof matchMedia === "undefined") return "dark";
   return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";

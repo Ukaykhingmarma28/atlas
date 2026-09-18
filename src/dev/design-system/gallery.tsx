@@ -418,6 +418,28 @@ function ElevationSection() {
           </div>
           <div className="caption">The one glass blur.</div>
         </div>
+        <div className="w-56">
+          <div className="glass-hud backdrop-blur-glass mb-2 flex h-20 items-center justify-center rounded-lg bg-gradient-to-b from-popover/85 to-card/90">
+            <span className="code text-secondary-foreground">glass-hud</span>
+          </div>
+          <div className="caption">The frosted HUD: hint keycaps, the sign-in dock.</div>
+        </div>
+        {/* The scrims read against the page, so they sit on it rather than on a
+            card — a dim shown over its own fill says nothing. */}
+        <div className="w-56">
+          <div className="scrim mb-2 flex h-20 items-center justify-center rounded-md">
+            <span className="code text-white">scrim</span>
+          </div>
+          <div className="caption">
+            Dialogs, palettes, a lightbox. Deliberately theme-invariant.
+          </div>
+        </div>
+        <div className="w-56">
+          <div className="scrim-soft mb-2 flex h-20 items-center justify-center rounded-md">
+            <span className="code text-foreground">scrim-soft</span>
+          </div>
+          <div className="caption">An in-panel drawer, where the panel carries the depth.</div>
+        </div>
       </div>
     </Section>
   );
