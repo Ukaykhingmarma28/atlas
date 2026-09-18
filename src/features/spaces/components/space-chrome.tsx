@@ -55,7 +55,7 @@ function SyncDot({ sync }: { sync: SyncState }) {
               <span
                 className={cn(
                   "h-[7px] w-[7px] rounded-full",
-                  sync === "synced" ? "bg-[#22c55e]" : "bg-[var(--status-error,#f66)]",
+                  sync === "synced" ? "bg-success" : "bg-error",
                 )}
               />
             )}
@@ -96,8 +96,8 @@ export function SpaceHeaderPill({
   return (
     <div
       className={cn(
-        "absolute left-3 top-3 z-20 flex items-center gap-1.5 py-1 pl-1 pr-1",
-        "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-2xl",
+        "absolute left-3 top-3 z-panel flex items-center gap-1.5 py-1 pl-1 pr-1",
+        "rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
       <Hint label={pagesOpen ? "Hide pages" : "Show pages"}>
@@ -114,7 +114,7 @@ export function SpaceHeaderPill({
           <PanelLeft size={13} />
         </button>
       </Hint>
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
       {/* The page name is the shorthand page selector — the dock is the long
           way round, and a canvas is usually two clicks from another page. */}
@@ -127,7 +127,7 @@ export function SpaceHeaderPill({
               className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-bg-hover"
             >
               <SyncDot sync={sync} />
-              <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
+              <span className="max-w-[180px] truncate text-sm font-semibold text-text-primary">
                 {active?.name || "Space"}
               </span>
               <ChevronDown size={11} className="shrink-0 text-text-tertiary" />
@@ -135,13 +135,8 @@ export function SpaceHeaderPill({
           }
         />
         <Popover.Portal>
-          <Popover.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={6}>
-            <Popover.Popup
-              style={{
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-              }}
-              className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-            >
+          <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--bg-elevated)]/95 backdrop-blur-2xl">
               <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
                 {selectable.map((p) => (
                   <button
@@ -152,7 +147,7 @@ export function SpaceHeaderPill({
                       setOpen(false);
                     }}
                     className={cn(
-                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
+                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-hover)]",
                       p.id === activePageId ? "text-text-primary" : "text-text-secondary",
                     )}
                   >
@@ -163,7 +158,7 @@ export function SpaceHeaderPill({
                   </button>
                 ))}
                 {selectable.length === 0 && (
-                  <div className="px-3 py-2 text-[10px] text-text-tertiary">No pages yet.</div>
+                  <div className="px-3 py-2 text-2xs text-text-tertiary">No pages yet.</div>
                 )}
               </div>
             </Popover.Popup>
@@ -171,7 +166,7 @@ export function SpaceHeaderPill({
         </Popover.Portal>
       </Popover.Root>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
       <ZoomReadout />
       <Hint label="Fit to view">
         <button
@@ -210,7 +205,7 @@ function ZoomReadout() {
             <button
               type="button"
               onClick={() => void rf.zoomTo(1, { duration: 200 })}
-              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-[10.5px] tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-xs tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
             >
               {pct}%
             </button>
@@ -314,8 +309,8 @@ export function SpaceActionPill({
   return (
     <div
       className={cn(
-        "absolute right-3 top-3 z-40 flex h-8 items-center gap-1 rounded-xl border border-white/10 px-1.5",
-        "bg-[var(--bg-secondary)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-2xl",
+        "absolute right-3 top-3 z-panel flex h-8 items-center gap-1 rounded-xl border border-border-subtle px-1.5",
+        "bg-[var(--bg-secondary)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
       {/* Presence */}
@@ -369,13 +364,13 @@ export function SpaceActionPill({
           </Tooltip>
         </div>
         {peers.length > 4 && (
-          <span className="pl-1.5 text-[9.5px] text-text-tertiary">+{peers.length - 4}</span>
+          <span className="pl-1.5 text-2xs text-text-tertiary">+{peers.length - 4}</span>
         )}
         {followers.length > 0 && (
           <Tooltip>
             <TooltipTrigger
               render={
-                <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--primary)]">
+                <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-2xs font-medium text-[var(--primary)]">
                   <Eye size={10} />
                   {followers.length}
                 </span>
@@ -390,7 +385,7 @@ export function SpaceActionPill({
         )}
       </div>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
       <Hint label="Open in web">
         <button
@@ -402,7 +397,7 @@ export function SpaceActionPill({
         </button>
       </Hint>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Hint label="Export canvas">
@@ -419,20 +414,15 @@ export function SpaceActionPill({
           />
         </Hint>
         <Popover.Portal>
-          <Popover.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
-            <Popover.Popup
-              style={{
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-              }}
-              className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-            >
+          <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--bg-elevated)]/95 backdrop-blur-2xl">
               <div className="flex w-[140px] flex-col py-1">
                 {FORMATS.map((f) => (
                   <button
                     key={f.format}
                     type="button"
                     onClick={() => void run(f.format)}
-                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
                   >
                     <f.icon size={12} className="shrink-0 text-text-tertiary" />
                     {f.label}

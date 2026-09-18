@@ -136,7 +136,7 @@ export function SpaceCursors({ actors }: { actors: ReadonlyMap<string, SpaceActo
           <span
             className={cn(
               "ml-3 -mt-0.5 block max-w-[140px] truncate rounded-full px-1.5 py-0.5",
-              "text-[9px] font-medium leading-none text-white",
+              "text-3xs font-medium leading-none text-white",
             )}
             style={{ backgroundColor: a.colour }}
           >

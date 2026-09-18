@@ -169,12 +169,12 @@ export function SpacePages({
 
   return (
     <div
-      className="flex h-full shrink-0 flex-col border-r border-border bg-[#090909]"
+      className="flex h-full shrink-0 flex-col border-r border-border bg-[var(--bg-secondary)]"
       style={{ width: 260 }}
     >
       {/* Quiet header — no divider, the local panel's recipe. */}
       <div className="flex h-8 shrink-0 items-center gap-1 px-2 pl-3">
-        <span className="flex-1 text-[10px] font-semibold uppercase leading-none tracking-wider text-text-tertiary">
+        <span className="flex-1 text-2xs font-semibold uppercase leading-none tracking-wider text-text-tertiary">
           Pages
         </span>
         <HintGroup>
@@ -219,7 +219,7 @@ export function SpacePages({
               )}
               <div
                 className={cn(
-                  "group/row flex cursor-pointer items-center gap-2 rounded py-2 pr-2 text-[11px]",
+                  "group/row flex cursor-pointer items-center gap-2 rounded py-2 pr-2 text-xs",
                   active
                     ? "bg-bg-selected text-text-primary"
                     : "text-text-secondary hover:bg-bg-hover",
@@ -271,12 +271,12 @@ export function SpacePages({
                         if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                         else if (e.key === "Escape") setRenamingId(null);
                       }}
-                      className="w-full min-w-0 rounded bg-bg-input px-1 text-[11px] text-text-primary outline-none"
+                      className="w-full min-w-0 rounded bg-bg-input px-1 text-xs text-text-primary outline-none"
                     />
                   ) : (
                     <>
                       <span
-                        className="block truncate text-[11.5px] font-medium leading-[1.35]"
+                        className="block truncate text-sm font-medium leading-[1.35]"
                         onDoubleClick={(e) => {
                           if (!editable) return;
                           e.stopPropagation();
@@ -285,7 +285,7 @@ export function SpacePages({
                       >
                         {page.name || "Untitled"}
                       </span>
-                      <span className="block truncate text-[10px] leading-[1.35] text-text-tertiary">
+                      <span className="block truncate text-2xs leading-[1.35] text-text-tertiary">
                         Updated {timeAgo(new Date(page.updated_at).toISOString(), { suffix: true })}
                       </span>
                     </>
@@ -299,7 +299,7 @@ export function SpacePages({
                       render={
                         <span className="flex min-w-0 shrink-0 items-center gap-1">
                           <CommsAvatar member={author} size={16} />
-                          <span className="max-w-[64px] truncate text-[9.5px] text-text-tertiary">
+                          <span className="max-w-[64px] truncate text-2xs text-text-tertiary">
                             {firstName(author.name)}
                           </span>
                         </span>
@@ -321,7 +321,7 @@ export function SpacePages({
                             e.stopPropagation();
                             create({ parent_id: page.id });
                           }}
-                          className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
+                          className="hidden size-control-sm cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
                         >
                           <FilePlus2 size={10} />
                         </button>
@@ -346,7 +346,7 @@ export function SpacePages({
                           e.stopPropagation();
                           session.deletePage(page.id);
                         }}
-                        className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
+                        className="flex size-control-sm cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
                       >
                         <Trash2 size={10} />
                       </button>
@@ -358,7 +358,7 @@ export function SpacePages({
           );
         })}
         {rows.length === 0 && (
-          <div className="px-2 py-3 text-[10px] text-text-tertiary">No pages yet.</div>
+          <div className="px-2 py-3 text-2xs text-text-tertiary">No pages yet.</div>
         )}
       </div>
     </div>
