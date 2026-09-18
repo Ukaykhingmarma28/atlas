@@ -79,10 +79,8 @@ const SettingsPanel = lazy(() =>
 const LogPanel = lazy(() =>
   import("@/features/log/components/log-panel").then((m) => ({ default: m.LogPanel })),
 );
-const MissionControlPanel = lazy(() =>
-  import("@/features/mission-control/components/mission-control-panel").then((m) => ({
-    default: m.MissionControlPanel,
-  })),
+const UsagePanel = lazy(() =>
+  import("@/features/usage/components/usage-panel").then((m) => ({ default: m.UsagePanel })),
 );
 const ArtifactsPanel = lazy(() =>
   import("@/features/artifacts/components/artifacts-panel").then((m) => ({
@@ -121,7 +119,7 @@ import {
   FileText,
   Columns2,
   House,
-  LayoutDashboard,
+  Gauge,
   Layers,
   Frame,
 } from "lucide-react";
@@ -147,7 +145,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   svg: Code,
   pdf: FileText,
   unsupported: Code,
-  "mission-control": LayoutDashboard,
+  usage: Gauge,
   artifacts: Layers,
   "comms-draft": FileText,
   spaces: Frame,
@@ -889,8 +887,8 @@ function TabContent({ tab }: { tab: Tab }) {
       return <SettingsPanel initialSection={tab.data.section as string | undefined} />;
     case "log":
       return <LogPanel />;
-    case "mission-control":
-      return <MissionControlPanel />;
+    case "usage":
+      return <UsagePanel />;
     case "artifacts":
       return <ArtifactsPanel />;
     case "media":

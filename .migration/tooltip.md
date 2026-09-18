@@ -77,8 +77,9 @@ src/ui/tooltip.test.tsx src/ui/hint-group.tsx` → clean.
   300ms delay, 300ms warm window, 180ms slide and 125/80ms fades in
   `tooltip-timing.ts` are untouched.
 - `src/features/mission-control/components/dashboard/*.tsx` — the `<Tooltip>`
-  in those files is **recharts**, not Radix, and is out of scope by the
-  no-third-party rule.
+  in those files was **recharts**, not Radix, and was out of scope by the
+  no-third-party rule. (That whole folder, and recharts with it, was replaced
+  by `src/features/usage/` upstream; the Usage tab's chart is plain divs.)
 - `src/styles/globals.css` reduced-motion block — the tooltip has no exit
   animation, so the `[data-state="closed"]` exit selectors there do not touch
   it. They are updated for `data-closed` in the popover/menu families.

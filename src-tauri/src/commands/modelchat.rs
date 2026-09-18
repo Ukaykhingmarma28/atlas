@@ -110,9 +110,9 @@ fn byok_pricing(app: &AppHandle, model: &str) -> Option<(f64, f64)> {
 }
 
 /// Append one usage line to `<app_config_dir>/byok-usage.jsonl` (read back by
-/// `mission_control_usage`). Fire-and-forget; failures are swallowed.
+/// `usage_dashboard`). Fire-and-forget; failures are swallowed.
 fn persist_byok_usage(app: &AppHandle, provider: &str, model: &str, input: u64, output: u64) {
-    let Some(path) = super::mission_control::byok_usage_path(app) else {
+    let Some(path) = super::usage_dashboard::byok_usage_path(app) else {
         return;
     };
     let cost = byok_pricing(app, model).map(|(p_in, p_out)| {

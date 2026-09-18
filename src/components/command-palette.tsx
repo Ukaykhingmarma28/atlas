@@ -22,6 +22,7 @@ import {
   Network,
   BrainCircuit,
   ScrollText,
+  Gauge,
   Code,
   GitBranch,
   ArrowLeftToLine,
@@ -88,6 +89,7 @@ export function CommandPalette({
     "knowledge-graph",
     "memory",
     "log",
+    "usage",
     "settings",
   ]);
   const openTab = (type: TabType, title: string) =>
@@ -194,6 +196,14 @@ export function CommandPalette({
         icon: ScrollText,
         category: "Open",
         action: () => openTab("log", "Log"),
+      },
+      {
+        id: "new-usage",
+        label: "Usage",
+        actionId: "usage.open",
+        icon: Gauge,
+        category: "Open",
+        action: () => openTab("usage", "Usage"),
       },
 
       // ── Layout toggles ──

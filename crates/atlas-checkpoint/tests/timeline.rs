@@ -420,6 +420,8 @@ fn context_occupancy_travels_separately_from_a_token_split() {
         capture
             .record_usage(
                 &session_id,
+                1,
+                None,
                 &TokenTotals { context_used: Some(853_100), context_size: Some(1_000_000), ..Default::default() },
             )
             .expect("usage recorded");
@@ -492,7 +494,7 @@ fn an_imported_sessions_duration_is_its_work_not_the_time_since_it_ran() {
     // old duration became "weeks".
     {
         let mut capture = Capture::new(&mut store, ProjectMode::Local);
-        capture.record_usage(&session_id, &TokenTotals { input_tokens: 10, ..Default::default() }).unwrap();
+        capture.record_usage(&session_id, 1, None, &TokenTotals { input_tokens: 10, ..Default::default() }).unwrap();
     }
 
     let rows = timeline::sessions(&store, WORKSPACE).expect("read");
@@ -578,7 +580,7 @@ fn recording_usage_does_not_count_as_activity() {
 
     {
         let mut capture = Capture::new(&mut store, ProjectMode::Local);
-        capture.record_usage(&session_id, &TokenTotals { input_tokens: 42, ..Default::default() }).unwrap();
+        capture.record_usage(&session_id, 1, None, &TokenTotals { input_tokens: 42, ..Default::default() }).unwrap();
     }
 
     let after = timeline::sessions(&store, WORKSPACE)
@@ -600,6 +602,8 @@ fn cache_tokens_reach_the_row_without_inflating_the_split() {
         capture
             .record_usage(
                 &session_id,
+                1,
+                None,
                 &TokenTotals {
                     input_tokens: 1_000,
                     output_tokens: 500,

@@ -235,6 +235,13 @@ pub struct TokenTotals {
     pub cache_creation_tokens: u64,
     #[serde(default)]
     pub cache_read_tokens: u64,
+    /// Reasoning / thinking output, for agents that report it apart.
+    ///
+    /// Informational only: never priced and never added to any total, because
+    /// every provider that reports it already counts it inside
+    /// `output_tokens`. Adding it again would bill the same tokens twice.
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     /// Context-window occupancy, for agents that only report that. Never
     /// presented as an input/output split.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -249,6 +256,66 @@ impl TokenTotals {
     pub fn has_usage_split(&self) -> bool {
         self.input_tokens > 0 || self.output_tokens > 0
     }
+
+    /// The five counters, in a fixed order: input, output, cache creation,
+    /// cache read, reasoning. The context gauge is not a counter and is left
+    /// out.
+    pub fn split(&self) -> [u64; 5] {
+        [
+            self.input_tokens,
+            self.output_tokens,
+            self.cache_creation_tokens,
+            self.cache_read_tokens,
+            self.reasoning_tokens,
+        ]
+    }
+
+    /// The inverse of [`Self::split`], with the gauge supplied separately.
+    pub fn from_split(split: [u64; 5], context_used: Option<u64>, context_size: Option<u64>) -> Self {
+        Self {
+            input_tokens: split[0],
+            output_tokens: split[1],
+            cache_creation_tokens: split[2],
+            cache_read_tokens: split[3],
+            reasoning_tokens: split[4],
+            context_used,
+            context_size,
+        }
+    }
+
+    /// Are all five counters zero — a gauge-only report, or nothing at all?
+    pub fn is_zero_split(&self) -> bool {
+        self.split().iter().all(|n| *n == 0)
+    }
+}
+
+/// What one turn ADDED to a Session's usage — one row of the per-turn ledger.
+///
+/// `token_totals` on the Session is a single cumulative figure. This is the
+/// difference between two consecutive cumulative reports, attributed to the
+/// turn that was open when it arrived, so usage can be dated by the day the
+/// work happened rather than the day the Session was last active.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageDeltaRow {
+    /// The `agent_session.id` row id — not the agent's native id.
+    pub session_id: String,
+    pub turn_seq: i64,
+    /// The model this turn ran on, when the reporter knew it. Falls back to
+    /// the Session's model at write time, so it is only `None` when neither
+    /// was ever recorded.
+    pub model: Option<String>,
+    pub recorded_at: DateTime<Utc>,
+    /// Deltas, never cumulative. The context gauge is always `None` here.
+    pub totals: TokenTotals,
+}
+
+/// How many Messages one turn holds, and when its first one was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnMessages {
+    pub session_id: String,
+    pub turn_seq: i64,
+    pub messages: u64,
+    pub first_at: DateTime<Utc>,
 }
 
 /// A recorded Session.

@@ -66,7 +66,8 @@ const EXEMPT: Record<string, string> = {
     "A pure builder for the two pixi scenes. Each scene subscribes and swaps the palette object it returns.",
   "src/features/canvas/lib/canvas-export.ts":
     "Runs once, on an explicit export. There is no live surface to keep in step — the colours are baked into a file the user asked for.",
-  "src/features/mission-control/lib/export.ts": "Same as `canvas-export.ts`: a one-shot export.",
+  "src/features/usage/lib/export.ts":
+    "Same as `canvas-export.ts`: a one-shot export. The Usage tab's PDF/JPEG capture reads the background once, at the moment the user asks for the file.",
 };
 
 function walk(dir: string): string[] {
@@ -108,7 +109,7 @@ describe("theme subscription contract", () => {
     for (const file of [
       "src/features/terminal/lib/terminal-theme.ts", // xterm
       "src/components/graph-palette.ts", // both pixi graphs
-      "src/features/mission-control/lib/chart-theme.ts", // recharts
+      "src/features/usage/lib/palette.ts", // the Usage tab's series colours
       "src/features/editor/themes/build-cm-theme.ts", // CodeMirror
       "src/components/mermaid-block.tsx", // mermaid
     ]) {

@@ -11,7 +11,7 @@ import {
   X,
   Pin,
   PinOff,
-  ChartPie,
+  Gauge,
   ChevronRight,
   ChevronDown,
   ChevronsDownUp,
@@ -927,23 +927,23 @@ export function ProjectSidebar() {
           <RailIconButton onClick={toggleAll} title={allCollapsed ? "Expand all" : "Collapse all"}>
             {allCollapsed ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
           </RailIconButton>
-          {/* Console sits with the other rail-chrome controls; the project "+"
-           *  moved down to the org row, next to search. Same singleton tab id
-           *  the org row used, so an open Console is focused, not duplicated. */}
+          {/* Usage sits with the other rail-chrome controls; the project "+"
+           *  moved down to the org row, next to search. Singleton tab id, so an
+           *  open Usage tab is focused, not duplicated. */}
           <RailIconButton
             onClick={() =>
               addTab({
-                id: "mission-control",
-                type: "mission-control",
-                title: "Console",
+                id: "usage",
+                type: "usage",
+                title: "Usage",
                 closable: true,
                 dirty: false,
                 data: {},
               })
             }
-            title="Console"
+            title="Usage"
           >
-            <ChartPie size={12} />
+            <Gauge size={12} />
           </RailIconButton>
         </HintGroup>
       </div>
@@ -1011,7 +1011,7 @@ export function ProjectSidebar() {
            *  their own collapsible "Modules" heading — the same disclosure the
            *  list below uses, so the rail reads as one outline — ending, as
            *  Linear's does, in "More", the ⌘⌥N module palette. Logs and Skills left
-           *  the rail: Console and Settings in the org row already reach them. */}
+           *  the rail: Usage and Settings in the org row already reach them. */}
           <nav className="pt-1 pb-1 space-y-px">
             <CaptureControl />
             <NavItem

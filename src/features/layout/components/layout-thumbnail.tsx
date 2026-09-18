@@ -3,7 +3,7 @@ import {
   Terminal,
   Brain,
   Globe,
-  LayoutDashboard,
+  Gauge,
   MessageSquare,
   Network,
   type LucideIcon,
@@ -18,7 +18,7 @@ const TYPE_ICON: Partial<Record<TabType, LucideIcon>> = {
   knowledge: Brain,
   "knowledge-graph": Network,
   browser: Globe,
-  "mission-control": LayoutDashboard,
+  usage: Gauge,
 };
 
 function ColIcon({ type }: { type: TabType }) {
