@@ -51,7 +51,13 @@ const CHANGE_NOTICE = "Modified by Atlas";
  * The rest of this file guards a *fork point*; these guard a *snapshot*. The
  * shared rule is that the licence never gets separated from what it covers.
  */
-const MATERIAL_VENDOR = path.join(REPO_ROOT, "crates", "atlas-icon-theme", "vendor", "material-icon-theme");
+const MATERIAL_VENDOR = path.join(
+  REPO_ROOT,
+  "crates",
+  "atlas-icon-theme",
+  "vendor",
+  "material-icon-theme",
+);
 const BUNDLED_MATERIAL_LICENSE = "licenses/Material-Icon-Theme-LICENSE.txt";
 
 function read(file: string): string {

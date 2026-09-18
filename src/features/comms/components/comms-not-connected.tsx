@@ -124,8 +124,14 @@ function DitherBackdrop() {
       // has to read the resolved one. `element.emphasis` is the theme's own
       // foreground at 16% — identical to the white it used to hardcode on a
       // dark theme, and an equally visible dark speckle on a light one, where
-      // hardcoded white was invisible. Re-read every frame: the loop redraws
-      // at ~12fps, so a theme switch lands within 80ms with no subscription.
+      // hardcoded white was invisible.
+      //
+      // theme-subscription-allow: re-read on every frame rather than cached at
+      // construction, and this loop never parks except while the document is
+      // hidden — so a switch lands within one 80ms step with nothing to
+      // subscribe to. (`dither-field` looks identical but DOES park, under
+      // `prefers-reduced-motion`, which is why that one takes `useThemeVersion`
+      // as an effect dependency.)
       ctx.fillStyle = themeDerived("element.emphasis");
 
       // Wind: mostly sideways, a little lift, plus a slow phase evolution so
