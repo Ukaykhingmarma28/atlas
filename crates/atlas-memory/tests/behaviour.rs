@@ -29,18 +29,18 @@ fn memory_type_debug_spelling_is_stable() {
 
 #[test]
 fn memory_type_from_str_is_case_insensitive() {
-    assert!(matches!(MemoryType::from_str("user"), Some(MemoryType::User)));
-    assert!(matches!(MemoryType::from_str("USER"), Some(MemoryType::User)));
+    assert!(matches!(MemoryType::parse("user"), Some(MemoryType::User)));
+    assert!(matches!(MemoryType::parse("USER"), Some(MemoryType::User)));
     assert!(matches!(
-        MemoryType::from_str("Project"),
+        MemoryType::parse("Project"),
         Some(MemoryType::Project)
     ));
     assert!(matches!(
-        MemoryType::from_str("reference"),
+        MemoryType::parse("reference"),
         Some(MemoryType::Reference)
     ));
-    assert!(MemoryType::from_str("nonsense").is_none());
-    assert!(MemoryType::from_str("").is_none());
+    assert!(MemoryType::parse("nonsense").is_none());
+    assert!(MemoryType::parse("").is_none());
 }
 
 // ─── GraphMemory ─────────────────────────────────────────────────────────────
@@ -281,31 +281,31 @@ fn memory_category_labels_are_stable() {
 fn memory_category_from_str_accepts_every_alias() {
     for s in ["preference", "userpreference", "user_preference", "PREFERENCE"] {
         assert!(
-            matches!(MemoryCategory::from_str(s), Some(MemoryCategory::UserPreference)),
+            matches!(MemoryCategory::parse(s), Some(MemoryCategory::UserPreference)),
             "{s}"
         );
     }
     for s in ["project", "projectfact", "project_fact"] {
         assert!(
-            matches!(MemoryCategory::from_str(s), Some(MemoryCategory::ProjectFact)),
+            matches!(MemoryCategory::parse(s), Some(MemoryCategory::ProjectFact)),
             "{s}"
         );
     }
     for s in ["pattern", "codepattern", "code_pattern"] {
         assert!(
-            matches!(MemoryCategory::from_str(s), Some(MemoryCategory::CodePattern)),
+            matches!(MemoryCategory::parse(s), Some(MemoryCategory::CodePattern)),
             "{s}"
         );
     }
     assert!(matches!(
-        MemoryCategory::from_str("decision"),
+        MemoryCategory::parse("decision"),
         Some(MemoryCategory::Decision)
     ));
     assert!(matches!(
-        MemoryCategory::from_str("constraint"),
+        MemoryCategory::parse("constraint"),
         Some(MemoryCategory::Constraint)
     ));
-    assert!(MemoryCategory::from_str("bogus").is_none());
+    assert!(MemoryCategory::parse("bogus").is_none());
 }
 
 // ─── parse_extraction_output ─────────────────────────────────────────────────

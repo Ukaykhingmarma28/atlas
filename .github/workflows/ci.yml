@@ -244,12 +244,14 @@ jobs:
             clippy: true
           - crate: atlas-embed
           - crate: atlas-git
+            clippy: true
           - crate: atlas-gitdiff
           - crate: atlas-icon-theme
             clippy: true
           - crate: atlas-kb-server
             release-build: true
           - crate: atlas-memory
+            clippy: true
           - crate: atlas-native-agent
             clippy: true
             sandbox: true
