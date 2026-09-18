@@ -367,7 +367,11 @@ export function FileTree() {
       try {
         const destPath = await resolveCollision(src, destDir);
         await invoke("fs_rename", { from: src, to: destPath });
-        void invoke("recent_files_rename", { oldPath: src, newPath: destPath }).catch(() => {});
+        void invoke("recent_files_rename", {
+          oldPath: src,
+          newPath: destPath,
+          workspaceId: activeProjectId(),
+        }).catch(() => {});
         // Refresh both ends — the source's old parent loses the entry
         // and the destination gains it. The fs-watcher would catch
         // both eventually but the user expects an immediate update.
