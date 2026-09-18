@@ -1,9 +1,9 @@
-import * as React from "react";
+import { Button as BaseButton } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * The house button (decision 32).
+ * The house button (decision 32), built on `@base-ui/react/button`.
  *
  * Shaped like shadcn's base-style `Button` — same file, same `buttonVariants`
  * export, same `variant` / `size` prop pair, same `data-slot` — so a later
@@ -13,22 +13,29 @@ import { cn } from "@/lib/utils";
  *  - **Sizes are Atlas control heights**, not shadcn's 32/36/40px. Atlas is a
  *    dense, px-based UI; `md` (26px) is the compact control the audit found
  *    everywhere, and it is the default.
- *  - **No `asChild`.** shadcn's version leans on a Slot primitive, and
- *    `class-variance-authority` was the only new dependency Foundations could
- *    add. Compose with `buttonVariants({ variant, size })` on the element
- *    instead: `<a className={buttonVariants({ variant: "ghost" })}>`. Base UI
- *    now ships a Button primitive that takes `render`, so this could change —
- *    but it is an API change to a primitive with hundreds of call sites, and
- *    belongs to its own decision rather than to the Base UI migration.
+ *  - **No `asChild`.** shadcn's version leans on a Slot primitive; this one
+ *    takes Base UI's own `render` prop instead — `<Button render={<a
+ *    href="/x" />}>` composes the element the same way, with props merged by
+ *    Base UI rather than a Slot clone. (Base UI's own guidance is to reserve
+ *    `render` for composing with *other components*, e.g. a Dialog/Menu
+ *    trigger — a plain link that should look like a button is styled
+ *    directly with `buttonVariants({ variant, size })` on an `<a>`, since a
+ *    link has its own keyboard semantics that Button's `role="button"`
+ *    handling isn't meant to replace.)
  *  - **Hover uses real tokens**, not `/90` opacity modifiers, which Tailwind v4
  *    compiles to `color-mix()`.
+ *
+ * `focusableWhenDisabled` defaults to Base UI's own default (`false`) — a
+ * disabled button is out of the tab order unless a call site opts in. See
+ * `IconButton` for why icon-only controls with a hint explaining the disabled
+ * state are the case that wants it.
  */
 const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap",
     "rounded border border-transparent font-medium select-none",
     "transition-colors duration-fast ease-out-strong",
-    "disabled:cursor-not-allowed disabled:opacity-50",
+    "data-disabled:cursor-not-allowed data-disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0",
   ],
   {
@@ -53,18 +60,27 @@ const buttonVariants = cva(
   },
 );
 
-export interface ButtonProps
-  extends React.ComponentProps<"button">, VariantProps<typeof buttonVariants> {}
+export interface ButtonProps extends BaseButton.Props, VariantProps<typeof buttonVariants> {}
 
 function Button({ className, variant, size, type = "button", ...props }: ButtonProps) {
   return (
-    <button
+    <BaseButton
       data-slot="button"
       type={type}
-      className={cn(buttonVariants({ variant, size }), className)}
+      className={(state) =>
+        cn(buttonVariants({ variant, size }), resolveClassName(className, state))
+      }
       {...props}
     />
   );
 }
 
-export { Button, buttonVariants };
+/** `className` accepts Base UI's plain-string form as well as its state-function form. */
+function resolveClassName<S>(
+  className: string | ((state: S) => string | undefined) | undefined,
+  state: S,
+) {
+  return typeof className === "function" ? className(state) : className;
+}
+
+export { Button, buttonVariants, resolveClassName };
