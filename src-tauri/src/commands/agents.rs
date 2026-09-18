@@ -524,6 +524,68 @@ struct RequestElicitation {
     url: Option<String>,
 }
 
+/// Session lifecycle into shared memory, for projects with sharing on — the
+/// sharing toggle switches all of shared memory, bookkeeping included. An end
+/// is recorded for any session whose start was (the store keeps that set), so
+/// a toggle flipped mid-session does not leave a row open.
+///
+/// The writes run on one thread of their own, in order: they touch disk (the
+/// sharing file, the scope's git lookup, SQLite, a first-open migration) and
+/// their callers are async tasks and the thread-event drain, which must not
+/// block. One ordered queue, not a task per write, because an end overtaking
+/// its start would be dropped. The quit path's grace covers the last writes.
+struct SharingGatedLifecycle {
+    writes: std::sync::mpsc::Sender<LifecycleWrite>,
+}
+
+enum LifecycleWrite {
+    Started { session_id: String, agent: String, cwd: String },
+    Ended { session_id: String },
+}
+
+impl SharingGatedLifecycle {
+    fn new(app: AppHandle) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<LifecycleWrite>();
+        std::thread::Builder::new()
+            .name("atlas-session-lifecycle".into())
+            .spawn(move || {
+                for write in rx {
+                    let memory = app.state::<SharedMemoryStore>();
+                    match write {
+                        LifecycleWrite::Started { session_id, agent, cwd } => {
+                            if app.state::<MemorySharingState>().is_enabled(&cwd) {
+                                memory.session_started(&session_id, &agent, &cwd);
+                            }
+                        }
+                        LifecycleWrite::Ended { session_id } => memory.session_ended(&session_id),
+                    }
+                }
+            })
+            .expect("the session lifecycle thread starts");
+        Self { writes: tx }
+    }
+
+    fn queue(&self, write: LifecycleWrite) {
+        let _ = self.writes.send(write);
+    }
+}
+
+impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
+    fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        self.queue(LifecycleWrite::Started {
+            session_id: session_id.to_string(),
+            agent: agent.to_string(),
+            cwd: cwd.to_string(),
+        });
+    }
+
+    fn session_ended(&self, session_id: &str) {
+        self.queue(LifecycleWrite::Ended {
+            session_id: session_id.to_string(),
+        });
+    }
+}
+
 /// Initialise the agent stack once the Tauri app is up so the sink has a real
 /// `AppHandle` to emit through. Called from `setup`.
 ///
@@ -574,6 +636,18 @@ pub fn install_manager(app: &AppHandle) {
         AgentHost::new(sink, config_dir, store.clone(), registry.clone())
     };
     app.manage(host.clone());
+
+    // Shared memory: every write is announced to the webview (the Shared tab
+    // re-pulls on it), and session start/end are recorded in the scope's
+    // sessions table.
+    {
+        let memory = app.state::<SharedMemoryStore>();
+        let emitter = app.clone();
+        memory.on_change(Arc::new(move |change: &super::shared_memory::MemoryChanged| {
+            let _ = emitter.emit(super::shared_memory::MEMORY_CHANGED_EVENT, change);
+        }));
+        host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone())));
+    }
 
     // Connect-phase events the webview needs but no delta carries: the install
     // status text ("Downloading Node.js…") for the `Starting …` row, and a

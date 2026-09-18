@@ -271,6 +271,43 @@ pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
     (updated_at, out)
 }
 
+// ── Change notification ──────────────────────────────────────────────────────
+
+/// The Tauri event every write to a scope's shared memory emits. The Shared
+/// tab re-pulls on it (`shared-memory-store.ts`).
+pub const MEMORY_CHANGED_EVENT: &str = "atlas:memory-changed";
+
+/// Payload of [`MEMORY_CHANGED_EVENT`]: which scope was written (its root —
+/// the repository's main worktree, or the launch directory outside git) and
+/// which kinds the write touched. Kinds are the six entry kinds (`plan`,
+/// `decision`, `file_changed`, `fact`, `failure`, `architecture`) plus
+/// `session` for lifecycle bookkeeping and the raw event kind for events that
+/// fold into no entry (todos).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryChanged {
+    pub root: String,
+    pub kinds: Vec<String>,
+}
+
+/// Called after every write. Installed once at startup to emit
+/// [`MEMORY_CHANGED_EVENT`]; tests install a recorder.
+pub type ChangeListener = Arc<dyn Fn(&MemoryChanged) + Send + Sync>;
+
+/// The kind a write of `kind` affects, as announced.
+fn affected_kind(kind: EventKind) -> &'static str {
+    match kind {
+        EventKind::PlanSet => EntryKind::Plan.as_str(),
+        EventKind::Decision => EntryKind::Decision.as_str(),
+        EventKind::FileChanged => EntryKind::FileChanged.as_str(),
+        EventKind::Fact => EntryKind::Fact.as_str(),
+        EventKind::Failure => EntryKind::Failure.as_str(),
+        EventKind::Architecture => EntryKind::Architecture.as_str(),
+        EventKind::SessionStart | EventKind::SessionEnd => "session",
+        other => other.as_str(),
+    }
+}
+
 // ── Session routing metadata ─────────────────────────────────────────────────
 
 /// Maps a live ACP `session_id` → its project cwd + agent label, so the
@@ -291,9 +328,16 @@ struct Inner {
     id_cache: Mutex<HashMap<String, String>>,
     /// session_id → routing metadata (populated by `agents_send`).
     sessions: Mutex<HashMap<String, SessionMeta>>,
+    /// Sessions whose start is recorded and whose end is not yet: where each
+    /// one's end goes, and that it goes only once. Separate from `sessions`
+    /// because routing is what turns capture on, and capture stays keyed to
+    /// the first send.
+    live: Mutex<HashMap<String, SessionMeta>>,
     /// Wall clock for event timestamps (ms). Injectable so the command
     /// contract can be pinned byte-for-byte in tests.
     clock: Clock,
+    /// Told about every write (see [`MemoryChanged`]).
+    on_change: Mutex<Option<ChangeListener>>,
 }
 
 /// Cheaply-cloneable handle to shared memory (Arc inside, like
@@ -321,8 +365,25 @@ impl SharedMemoryStore {
             inner: Arc::new(Inner {
                 id_cache: Mutex::new(HashMap::new()),
                 sessions: Mutex::new(HashMap::new()),
+                live: Mutex::new(HashMap::new()),
                 clock,
+                on_change: Mutex::new(None),
             }),
+        }
+    }
+
+    /// Install the listener told about every write. Replaces any earlier one.
+    pub fn on_change(&self, listener: ChangeListener) {
+        *self.inner.on_change.lock() = Some(listener);
+    }
+
+    fn announce(&self, store: &RecordStore, kinds: &[&str]) {
+        let listener = self.inner.on_change.lock().clone();
+        if let Some(listener) = listener {
+            listener(&MemoryChanged {
+                root: store.root().to_string_lossy().into_owned(),
+                kinds: kinds.iter().map(|k| (*k).to_string()).collect(),
+            });
         }
     }
 
@@ -384,6 +445,7 @@ impl SharedMemoryStore {
     pub fn append_event(&self, project_path: &str, raw: RawEvent) -> Result<u64, String> {
         let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
+        let kind = raw.kind;
         let row = store
             .append_event(
                 NewEvent {
@@ -396,7 +458,63 @@ impl SharedMemoryStore {
                 (self.inner.clock)(),
             )
             .map_err(|e| format!("{e:#}"))?;
+        self.announce(&store, &[affected_kind(kind)]);
         Ok(row.seq)
+    }
+
+    // ── Session lifecycle ────────────────────────────────────────────────────
+
+    /// Record that `session_id`, owned by `agent`, started in `cwd`: a
+    /// `session_start` event and the session's row. Best-effort — a failed
+    /// write is logged, never surfaced to the session.
+    pub fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        if cwd.is_empty() {
+            return;
+        }
+        // Already live (a rebind of an open session): its start stands.
+        if self.inner.live.lock().contains_key(session_id) {
+            return;
+        }
+        let written = store_for(cwd).and_then(|store| {
+            store
+                .session_started(session_id, agent, (self.inner.clock)())
+                .map_err(|e| format!("{e:#}"))?;
+            self.announce(&store, &[affected_kind(EventKind::SessionStart)]);
+            Ok(())
+        });
+        match written {
+            // Only a recorded start gets an end.
+            Ok(()) => {
+                self.inner.live.lock().insert(
+                    session_id.to_string(),
+                    SessionMeta {
+                        cwd: cwd.to_string(),
+                        agent: agent.to_string(),
+                    },
+                );
+            }
+            Err(e) => {
+                tracing::warn!(target: "atlas::shared_memory", "session start not recorded: {e}");
+            }
+        }
+    }
+
+    /// Record that `session_id` ended: a `session_end` event and the row's end
+    /// time. Only a session whose start was recorded, and only once.
+    pub fn session_ended(&self, session_id: &str) {
+        let Some(meta) = self.inner.live.lock().remove(session_id) else {
+            return;
+        };
+        let written = store_for(&meta.cwd).and_then(|store| {
+            store
+                .session_ended(session_id, &meta.agent, (self.inner.clock)())
+                .map_err(|e| format!("{e:#}"))?;
+            self.announce(&store, &[affected_kind(EventKind::SessionEnd)]);
+            Ok(())
+        });
+        if let Err(e) = written {
+            tracing::warn!(target: "atlas::shared_memory", "session end not recorded: {e}");
+        }
     }
 
     /// The summary view. Degrades to empty when the record can't be read.
@@ -430,7 +548,32 @@ impl SharedMemoryStore {
 
     /// Wipe a project's shared memory (events, entries, sessions).
     pub fn clear(&self, project_path: &str) -> Result<(), String> {
-        store_for(project_path)?.clear().map_err(|e| format!("{e:#}"))
+        let store = store_for(project_path)?;
+        store.clear().map_err(|e| format!("{e:#}"))?;
+        let mut kinds: Vec<&str> = [
+            EntryKind::Plan,
+            EntryKind::Decision,
+            EntryKind::FileChanged,
+            EntryKind::Fact,
+            EntryKind::Failure,
+            EntryKind::Architecture,
+        ]
+        .iter()
+        .map(|k| k.as_str())
+        .collect();
+        kinds.push("session");
+        self.announce(&store, &kinds);
+        Ok(())
+    }
+}
+
+impl super::agent_host::SessionLifecycle for SharedMemoryStore {
+    fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        SharedMemoryStore::session_started(self, session_id, agent, cwd);
+    }
+
+    fn session_ended(&self, session_id: &str) {
+        SharedMemoryStore::session_ended(self, session_id);
     }
 }
 
@@ -676,6 +819,55 @@ mod tests {
         assert_eq!(store.get_state(&p).decisions.len(), record::CAP_DECISIONS);
         // Storage keeps every one of them.
         assert_eq!(store_for(&p).unwrap().count(EntryKind::Decision).unwrap(), record::CAP_DECISIONS + 10);
+    }
+
+    /// Every writer announces its write: a manual append, a session's start
+    /// and end, and a clear — each with the scope root and what it touched.
+    #[test]
+    fn every_write_announces_a_change() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("changed"));
+        let heard = Arc::new(Mutex::new(Vec::<MemoryChanged>::new()));
+        store.on_change({
+            let heard = heard.clone();
+            Arc::new(move |change: &MemoryChanged| heard.lock().push(change.clone()))
+        });
+
+        append(&store, &p, EventKind::Decision, "db", serde_json::json!({"text": "Postgres"}));
+        store.session_started("s9", "codex", &p);
+        store.session_started("s9", "codex", &p); // a rebind: already live, no second start
+        store.session_ended("s9");
+        store.session_ended("s9"); // already ended: no write, no announcement
+        store.clear(&p).unwrap();
+
+        let root = Path::new(&p).canonicalize().unwrap().to_string_lossy().into_owned();
+        let heard = heard.lock().clone();
+        assert!(heard.iter().all(|c| c.root == root), "{heard:?}");
+        let kinds: Vec<Vec<String>> = heard.into_iter().map(|c| c.kinds).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                vec!["decision".to_string()],
+                vec!["session".to_string()],
+                vec!["session".to_string()],
+                ["plan", "decision", "file_changed", "fact", "failure", "architecture", "session"]
+                    .map(String::from)
+                    .to_vec(),
+            ]
+        );
+    }
+
+    /// The event name and payload shape the Shared tab listens for.
+    #[test]
+    fn the_change_payload_is_root_and_kinds() {
+        let change = MemoryChanged {
+            root: "/repo".into(),
+            kinds: vec!["plan".into()],
+        };
+        assert_eq!(MEMORY_CHANGED_EVENT, "atlas:memory-changed");
+        assert_eq!(
+            serde_json::to_value(&change).unwrap(),
+            serde_json::json!({"root": "/repo", "kinds": ["plan"]})
+        );
     }
 
     #[test]

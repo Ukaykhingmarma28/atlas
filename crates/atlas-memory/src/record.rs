@@ -742,10 +742,13 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
             )?;
             write_folded(tx, ev, entry_kind, &ev.key, &text, "", &matches)?;
         }
+        // A start on a known session is a reopen (a resumed conversation keeps
+        // its id): it is live again, so its old end no longer holds.
         EventKind::SessionStart => {
             tx.execute(
                 "INSERT INTO sessions (session_id, agent, started_at) VALUES (?1, ?2, ?3) \
-                 ON CONFLICT(session_id) DO UPDATE SET agent = excluded.agent, started_at = excluded.started_at",
+                 ON CONFLICT(session_id) DO UPDATE SET agent = excluded.agent, started_at = excluded.started_at, \
+                 ended_at = NULL",
                 params![ev.session_id, ev.agent, ev.ts],
             )?;
         }
@@ -947,6 +950,22 @@ pub(crate) mod tests {
         );
         let kinds: Vec<String> = store.events_newest(10).unwrap().into_iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec!["session_end", "session_start"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A session reopened after it ended (a resumed conversation keeps its
+    /// id) is live again: its row carries the new start and no end.
+    #[test]
+    fn a_reopened_session_is_live_again() {
+        let root = temp_root("sessions-reopen");
+        let store = open_scope(&root).unwrap();
+        store.session_started("s1", "codex", 10).unwrap();
+        store.session_ended("s1", "codex", 20).unwrap();
+        store.session_started("s1", "codex", 30).unwrap();
+        assert_eq!(
+            store.sessions().unwrap(),
+            vec![SessionRow { session_id: "s1".into(), agent: "codex".into(), started_at: Some(30), ended_at: None }]
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

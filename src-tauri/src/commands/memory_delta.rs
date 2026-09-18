@@ -237,6 +237,40 @@ mod tests {
         assert!(evs[0].payload["text"].as_str().unwrap().contains("Migrate auth"));
     }
 
+    /// An agent's plan update, captured from its delta stream, is a write to
+    /// shared memory — so it announces itself: one memory-changed carrying the
+    /// scope root and the plan kind. This is what the Shared tab re-pulls on.
+    #[test]
+    fn a_captured_plan_update_announces_the_change() {
+        let dir = std::env::temp_dir().join(format!("atlas-delta-changed-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let project = dir.to_string_lossy().to_string();
+        let store = SharedMemoryStore::new();
+        let heard = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        store.on_change({
+            let heard = heard.clone();
+            std::sync::Arc::new(move |change: &super::super::shared_memory::MemoryChanged| {
+                heard.lock().push(change.clone());
+            })
+        });
+        store.register_session("s1", &project, "claude-code");
+
+        ingest(
+            &SessionDeltaEnvelope {
+                agent_id: atlas_agent_wire::AgentId::new(),
+                session_id: "s1".into(),
+                delta: plan_delta(),
+            },
+            &store,
+        );
+
+        let heard = heard.lock().clone();
+        assert_eq!(heard.len(), 1, "{heard:?}");
+        assert_eq!(heard[0].root, dir.canonicalize().unwrap().to_string_lossy());
+        assert_eq!(heard[0].kinds, vec!["plan".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn decision_marker_extracted() {
         let evs = scan_assistant_text("We will use RS256 for signing.", "s1", "codex");
