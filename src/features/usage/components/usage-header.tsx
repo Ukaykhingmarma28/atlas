@@ -76,7 +76,7 @@ export function UsageHeader({
         />
         <DropdownMenu.Portal>
           <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
-            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border)] bg-popover py-1.5 shadow-xl text-sm text-[var(--secondary-foreground)]">
+            <DropdownMenu.Popup className="min-w-[170px] rounded-lg border border-[var(--border)] bg-popover py-1.5 shadow-md text-sm text-[var(--secondary-foreground)]">
               <Item
                 icon={<FileType2 size={13} />}
                 label="PDF report"

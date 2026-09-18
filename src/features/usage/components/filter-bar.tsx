@@ -151,7 +151,7 @@ function FacetPill({
         <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
           <DropdownMenu.Popup
             finalFocus={false}
-            className="w-[260px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 text-xs text-[var(--secondary-foreground)] shadow-md"
+            className="w-[260px] rounded-lg border border-[var(--border)] bg-popover py-1 text-xs text-[var(--secondary-foreground)] shadow-md"
           >
             {options.length > SEARCH_ABOVE && (
               <div className="mx-1.5 mb-1 flex h-control-md items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2">

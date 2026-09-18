@@ -131,7 +131,7 @@ export function UsageTables({
             {/* z-index on the Positioner, not the Popup — the Popup is
                 statically positioned inside it. */}
             <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
-              <DropdownMenu.Popup className="min-w-[160px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 text-xs text-[var(--secondary-foreground)] shadow-md">
+              <DropdownMenu.Popup className="min-w-[160px] rounded-lg border border-[var(--border)] bg-popover py-1 text-xs text-[var(--secondary-foreground)] shadow-md">
                 <DropdownMenu.RadioGroup value={sort} onValueChange={(v) => setSort(v as SortKey)}>
                   {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
                     <DropdownMenu.RadioItem
