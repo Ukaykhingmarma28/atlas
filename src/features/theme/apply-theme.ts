@@ -11,31 +11,66 @@ const LAUNCH_CACHE_KEY = "atlas:launch-theme";
 let activeTheme: ResolvedTheme | null = null;
 
 /**
- * Cache the handful of colours the boot skeleton needs.
+ * The handful of colours the boot skeleton needs.
  *
  * Deliberately NOT the whole resolved map: this is read synchronously on the
- * critical path of every cold start, and six values is a string small enough
- * that parsing it costs nothing. Failure is silent and harmless — `index.html`
- * falls back to the literals it has always had (a blocked or full store, or a
- * private window, all land there).
+ * critical path of every cold start, and seven values is a string small enough
+ * that parsing it costs nothing.
  */
-function cacheLaunchColors(resolved: ResolvedTheme): void {
+function launchColors(resolved: ResolvedTheme) {
+  return {
+    appearance: resolved.appearance,
+    background: resolved.base.background,
+    chrome: resolved.base.sidebar,
+    card: resolved.base.card,
+    line: resolved.keys["border.subtle"],
+    skeleton: resolved.keys["element.selected"],
+    text: resolved.base["muted-foreground"],
+  };
+}
+
+/**
+ * Cache them for the next cold start. Failure is silent and harmless —
+ * `index.html` falls back to the literals it has always had (a blocked or full
+ * store, or a private window, all land there).
+ */
+function cacheLaunchColors(colors: ReturnType<typeof launchColors>): void {
   try {
-    localStorage.setItem(
-      LAUNCH_CACHE_KEY,
-      JSON.stringify({
-        appearance: resolved.appearance,
-        background: resolved.base.background,
-        chrome: resolved.base.sidebar,
-        card: resolved.base.card,
-        line: resolved.keys["border.subtle"],
-        skeleton: resolved.keys["element.selected"],
-        text: resolved.base["muted-foreground"],
-      }),
-    );
+    localStorage.setItem(LAUNCH_CACHE_KEY, JSON.stringify(colors));
   } catch {
     /* an unavailable store just means the compiled-in fallbacks */
   }
+}
+
+/**
+ * Re-run, against the theme being applied now, what `index.html`'s inline boot
+ * script did at launch against the cached one.
+ *
+ * These are INLINE properties on `<html>`, set before any stylesheet loads, and
+ * `index.html` binds the root `background` and — the part that matters — the
+ * root `color-scheme` to them. An inline property on the element beats the
+ * `:root{…}` block `applyTheme` writes into `<head>`, so leaving them alone
+ * meant that after any runtime switch the page kept the PREVIOUS theme's
+ * `color-scheme` and root background for the rest of the session: native
+ * scrollbars, form controls, `<select>` popups and the caret all stayed on the
+ * old appearance while everything Atlas draws itself had already changed.
+ *
+ * Kept byte-for-byte in step with the `set(…)` calls in `index.html` — the two
+ * write the same property names from the same seven values, which is why both
+ * go through `launchColors()`.
+ */
+function applyBootVars(root: HTMLElement, colors: ReturnType<typeof launchColors>): void {
+  const set = (name: string, value: string | undefined) => {
+    if (value) root.style.setProperty(name, value);
+    else root.style.removeProperty(name);
+  };
+  set("--atlas-boot-bg", colors.background);
+  set("--atlas-boot-chrome", colors.chrome);
+  set("--atlas-boot-card", colors.card);
+  set("--atlas-boot-line", colors.line);
+  set("--atlas-boot-skeleton", colors.skeleton);
+  set("--atlas-boot-text", colors.text);
+  set("--atlas-boot-scheme", colors.appearance);
 }
 
 /**
@@ -83,7 +118,9 @@ export function applyTheme(
     .map(([name, value]) => `${name}:${value}`)
     .join(";");
   style.textContent = `:root{${declarations}}`;
-  cacheLaunchColors(resolved);
+  const colors = launchColors(resolved);
+  applyBootVars(root, colors);
+  cacheLaunchColors(colors);
   window.dispatchEvent(new CustomEvent("atlas:theme-applied"));
   return resolved;
 }

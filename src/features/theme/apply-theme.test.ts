@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appearanceForMode } from "./apply-theme";
+import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
+import { applyTheme, appearanceForMode } from "./apply-theme";
+import type { Theme } from "./lib/theme-api";
 
 /** Pretend the OS is asking for a light appearance. */
 function osPrefersLight(light: boolean): void {
@@ -51,5 +53,48 @@ describe("appearanceForMode", () => {
     // A non-DOM context — a test, or a module evaluated before the webview.
     vi.stubGlobal("matchMedia", undefined);
     expect(appearanceForMode("system")).toBe("dark");
+  });
+});
+
+/**
+ * `index.html` sets seven `--atlas-boot-*` INLINE properties on `<html>` from
+ * the cached launch colours, and binds the root `background` and `color-scheme`
+ * to them. An inline property beats the `:root{…}` block `applyTheme` writes
+ * into `<head>`, so an `applyTheme` that did not refresh them left the page on
+ * the PREVIOUS theme's `color-scheme` and root background for the whole
+ * session — native scrollbars, form controls and the caret following an
+ * appearance the user had already switched away from.
+ */
+describe("applyTheme and the boot variables", () => {
+  const themes = builtinThemes as Theme[];
+  const rosePine = themes.find((t) => t.id === "rose-pine")!;
+  const boot = () => document.documentElement.style;
+
+  it("refreshes them on every apply, appearance included", () => {
+    const dark = applyTheme(rosePine, "dark");
+    expect(boot().getPropertyValue("--atlas-boot-scheme")).toBe("dark");
+    expect(boot().getPropertyValue("--atlas-boot-bg")).toBe(dark.base.background);
+    expect(boot().getPropertyValue("--atlas-boot-card")).toBe(dark.base.card);
+
+    const light = applyTheme(rosePine, "light");
+    expect(light.appearance).toBe("light");
+    expect(boot().getPropertyValue("--atlas-boot-scheme")).toBe("light");
+    expect(boot().getPropertyValue("--atlas-boot-bg")).toBe(light.base.background);
+    // The point of the bug: the dark value must be GONE, not merely shadowed.
+    expect(boot().getPropertyValue("--atlas-boot-bg")).not.toBe(dark.base.background);
+  });
+
+  it("writes the same seven values it caches for the next cold start", () => {
+    const resolved = applyTheme(rosePine, "light");
+    const cached = JSON.parse(localStorage.getItem("atlas:launch-theme")!);
+
+    expect(cached.appearance).toBe(resolved.appearance);
+    expect(boot().getPropertyValue("--atlas-boot-scheme")).toBe(cached.appearance);
+    expect(boot().getPropertyValue("--atlas-boot-bg")).toBe(cached.background);
+    expect(boot().getPropertyValue("--atlas-boot-chrome")).toBe(cached.chrome);
+    expect(boot().getPropertyValue("--atlas-boot-card")).toBe(cached.card);
+    expect(boot().getPropertyValue("--atlas-boot-line")).toBe(cached.line);
+    expect(boot().getPropertyValue("--atlas-boot-skeleton")).toBe(cached.skeleton);
+    expect(boot().getPropertyValue("--atlas-boot-text")).toBe(cached.text);
   });
 });
