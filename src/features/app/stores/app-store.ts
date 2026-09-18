@@ -9,7 +9,11 @@ import {
   type ProjectGroup,
 } from "@/features/projects/stores/project-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import type { Organisation } from "@/features/organisations/types";
+import {
+  fromOrganisationWire,
+  toOrganisationWire,
+  type OrganisationWire,
+} from "@/features/organisations/types";
 import { registerFlush } from "@/features/projects/lib/flush-registry";
 import { persistHashOf } from "@/features/projects/lib/project-snapshot";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -48,8 +52,10 @@ export interface AppStateWire {
   workspaces?: Project[];
   groups?: ProjectGroup[];
   activeWorkspaceId?: string | null;
-  /** The Organisation layer above projects (v3). */
-  organisations?: Organisation[];
+  /** The Organisation layer above projects (v3). `OrganisationWire`, not
+   *  `Organisation`: the per-org active project is a frozen storage key too
+   *  (`activeWorkspaceId`), so it is translated on the way in. */
+  organisations?: OrganisationWire[];
   activeOrganisationId?: string | null;
   /** Sourced from `config.toml`, not `state.json` (issue #64) — folded into
    *  this same bootstrap response for one round trip, but written back
@@ -98,7 +104,9 @@ interface AppStatePatchWire {
   workspaces: Project[];
   groups: ProjectGroup[];
   activeWorkspaceId: string | null;
-  organisations: Organisation[];
+  /** Storage keys again, one level down: each org's last-active project rides
+   *  as `activeWorkspaceId`. See `OrganisationWire`. */
+  organisations: OrganisationWire[];
   activeOrganisationId: string | null;
 }
 
@@ -119,7 +127,7 @@ function buildAppStatePayload(): AppStatePatchWire {
     workspaces: ws.projects,
     groups: ws.groups,
     activeWorkspaceId: ws.activeProjectId,
-    organisations: org.organisations,
+    organisations: org.organisations.map(toOrganisationWire),
     activeOrganisationId: org.activeOrganisationId,
   };
 }
@@ -344,7 +352,7 @@ export const useAppStore = createSelectors(
         // with it. (Rust `migrate()` guarantees a default "Personal" org + an
         // `activeOrganisationId` on any pre-v3 state, so this is always set.)
         useOrgStore.getState().actions.hydrate({
-          organisations: payload.organisations ?? [],
+          organisations: (payload.organisations ?? []).map(fromOrganisationWire),
           activeOrganisationId: payload.activeOrganisationId ?? null,
         });
 

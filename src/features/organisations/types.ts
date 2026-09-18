@@ -29,13 +29,57 @@ export interface Organisation {
   /** ISO-8601 creation timestamp. */
   createdAt?: string;
   /** Per-org memory of the last active project (restore target on switch).
-   *  Local-only — the server has no active-project concept. */
+   *  Local-only — the server has no active-project concept.
+   *
+   *  Crosses the wire as `activeWorkspaceId`: see {@link OrganisationWire}. */
   activeProjectId?: string;
   /** Opt-in cloud sync (Chrome-profile model). `false` = local-only. */
   syncEnabled: boolean;
   /** Server `organization.id` once linked via "Turn on sync". Reconciliation
    *  seam for the auth branch. */
   remoteId?: string;
+}
+
+/**
+ * {@link Organisation} as it appears in `state.json` and in the
+ * `save_app_state` / `bootstrap_app_state` payloads. Mirrors
+ * `src-tauri/src/state/app_state.rs:Organisation` field for field.
+ *
+ * The ONE difference from {@link Organisation} is `activeWorkspaceId`. That is
+ * a **storage key, not a concept** — the same freeze that keeps the top-level
+ * `workspaces` / `activeWorkspaceId` keys (see `AppStateWire`), applied one
+ * level down. `AppStatePatch` carries no `deny_unknown_fields` and the field is
+ * `#[serde(default)]`, so sending `activeProjectId` here does not fail: Rust
+ * drops it, writes `null`, and the install silently loses every org's
+ * last-active project. Hence the explicit translation below rather than
+ * passing the store's objects through.
+ *
+ * `tests/state-payload-contract.test.ts` compares this type's keys against the
+ * Rust struct's serde names, so a future rename cannot re-open the hole.
+ */
+export interface OrganisationWire {
+  id: string;
+  name: string;
+  slug: string;
+  color?: string;
+  logo?: string;
+  createdAt?: string;
+  /** FROZEN storage key for {@link Organisation.activeProjectId}. */
+  activeWorkspaceId?: string;
+  syncEnabled: boolean;
+  remoteId?: string;
+}
+
+/** Store shape → wire shape. The only field that moves is the frozen key. */
+export function toOrganisationWire(o: Organisation): OrganisationWire {
+  const { activeProjectId, ...rest } = o;
+  return activeProjectId === undefined ? rest : { ...rest, activeWorkspaceId: activeProjectId };
+}
+
+/** Wire shape → store shape. Inverse of {@link toOrganisationWire}. */
+export function fromOrganisationWire(o: OrganisationWire): Organisation {
+  const { activeWorkspaceId, ...rest } = o;
+  return activeWorkspaceId === undefined ? rest : { ...rest, activeProjectId: activeWorkspaceId };
 }
 
 /**

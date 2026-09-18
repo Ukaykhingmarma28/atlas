@@ -73,6 +73,12 @@ pub struct Project {
     /// itself never syncs. `None` for local-only projects.
     #[serde(default)]
     pub git_url: Option<String>,
+    /// Pinned to the top of the sidebar and kept out of the hot-set LRU.
+    /// Frontend-owned; Rust only stores it. Absent from this struct until
+    /// `tests/state-payload-contract.test.ts` found it: `pin()` scheduled a
+    /// save and serde dropped the field, so a pin never survived a restart.
+    #[serde(default)]
+    pub pinned: bool,
     /// ISO-8601 timestamp of the last time this project was the active
     /// one; used to order the sidebar / pick a fallback on close.
     #[serde(default)]
@@ -91,6 +97,10 @@ pub struct ProjectGroup {
     /// payloads — `migrate()` backfills it to the default org.
     #[serde(default)]
     pub org_id: Option<String>,
+    /// Pinned groups float to the top of the Recent tier. See `Project::pinned`
+    /// for why this was missing.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// A top-level tenant that owns a set of projects (the Linear "workspace
@@ -271,6 +281,7 @@ impl AppState {
                     org_id: None,
                     color: None,
                     git_url: None,
+                    pinned: false,
                     last_active_at: None,
                 });
             }
@@ -601,6 +612,51 @@ mod tests {
     #[test]
     fn frontend_payload_carries_the_frozen_active_project_key() {
         assert_eq!(frontend_payload().active_workspace_id.as_deref(), Some("proj-1"));
+    }
+
+    /// The same freeze, one level down. `Organisation::active_workspace_id` is
+    /// a NESTED storage key inside the `organisations` array, which the
+    /// workspace→project rename missed: the frontend sent `activeProjectId`,
+    /// serde dropped it (no `deny_unknown_fields`, `#[serde(default)]`), and
+    /// `apply_patch` committed `None` over every org's last-active project.
+    /// The frontend now translates at the seam (`organisations/types.ts`
+    /// `toOrganisationWire`); this asserts what it must translate *to*.
+    #[test]
+    fn an_organisation_carries_the_frozen_nested_active_project_key() {
+        let org: Organisation = serde_json::from_value(serde_json::json!({
+            "id": "org-1",
+            "name": "Personal",
+            "slug": "personal",
+            "activeWorkspaceId": "proj-1",
+            "syncEnabled": false,
+        }))
+        .expect("wire organisation deserializes");
+        assert_eq!(org.active_workspace_id.as_deref(), Some("proj-1"));
+
+        // …and the app-side spelling is exactly the silent drop being guarded.
+        let renamed: Organisation = serde_json::from_value(serde_json::json!({
+            "id": "org-1",
+            "name": "Personal",
+            "slug": "personal",
+            "activeProjectId": "proj-1",
+            "syncEnabled": false,
+        }))
+        .expect("an unknown key is not an error — that is the whole problem");
+        assert_eq!(renamed.active_workspace_id, None);
+    }
+
+    /// `pinned` was frontend-only: `pin()` scheduled a save and serde threw the
+    /// field away, so a pinned project or group came back unpinned on the next
+    /// launch. Found by `tests/state-payload-contract.test.ts`.
+    #[test]
+    fn a_project_and_a_group_keep_their_pin() {
+        let patch: AppStatePatch = serde_json::from_value(serde_json::json!({
+            "workspaces": [{ "id": "p1", "name": "a", "path": "/a", "pinned": true }],
+            "groups": [{ "id": "g1", "name": "g", "pinned": true }],
+        }))
+        .expect("patch deserializes");
+        assert!(patch.workspaces[0].pinned);
+        assert!(patch.groups[0].pinned);
     }
 
     /// The regression test for the analytics bug: a settings save must not cost
