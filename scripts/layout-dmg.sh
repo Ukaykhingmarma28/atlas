@@ -51,6 +51,8 @@ APPS_POS_Y=160
 mkdir -p "${staging}/.background"
 cp "${background}" "${staging}/.background/dmg-background.png"
 
+volume_icon="${root}/src-tauri/icons/dmg-icon.icns"
+
 rw_dmg="$(mktemp -u "${TMPDIR:-/tmp}/atlas-layout-XXXXXX").dmg"
 mount_point=""
 
@@ -155,6 +157,21 @@ tell application "Finder"
   delay 3
 end tell
 EOF
+
+# The mounted volume's own icon (what shows in Finder's sidebar/Desktop while
+# it's mounted) is separate from the outer .dmg file's icon that
+# scripts/set-dmg-icon.sh stamps — that one only covers the .dmg as it sits
+# on disk before mounting. A volume picks up its custom icon from a
+# `.VolumeIcon.icns` file at its root plus the "has custom icon" Finder flag
+# on the root itself — but Finder's own open/close/"update disk" dance above
+# treats an icon set any earlier than this as a stale orphan and strips both
+# the file and the flag as part of its housekeeping. Apply it only now, after
+# Finder is done styling and before we ever touch the volume again.
+if [[ -f "${volume_icon}" ]]; then
+  cp "${volume_icon}" "${mount_point}/.VolumeIcon.icns"
+  SetFile -c icnC "${mount_point}/.VolumeIcon.icns"
+  SetFile -a C "${mount_point}"
+fi
 
 sync
 hdiutil detach "${mount_point}" >/dev/null
