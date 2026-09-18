@@ -552,7 +552,11 @@ function FileListPopover({
                 placeholder="Search files…"
                 className="flex-1 bg-transparent outline-none text-2xs text-foreground placeholder:text-muted-foreground"
                 autoFocus
-                onKeyDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  // Keep keys from the popup's typeahead and arrow nav, but let Escape
+                  // bubble to the dismiss handler so it still closes the popup.
+                  if (e.key !== "Escape") e.stopPropagation();
+                }}
               />
             </div>
             <div className="overflow-y-auto py-1 hide-scrollbar">

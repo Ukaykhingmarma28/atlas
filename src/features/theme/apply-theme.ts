@@ -3,22 +3,38 @@ import { resolveTheme, type ResolvedTheme, type ThemeOverride } from "./resolve-
 
 const STYLE_ID = "atlas-resolved-theme";
 /**
- * Where `index.html` looks for the last theme's launch colours. Read by an
- * inline script before any module — and before `tokens.css` — so the boot
- * skeleton paints in the theme the user chose instead of flashing black.
+ * The selector the resolved block is written under — here and, from the launch
+ * cache, by `index.html`'s inline boot script.
+ *
+ * `html:root` rather than `:root` for the specificity. The boot script creates
+ * this `<style>` inside `<head>` before any stylesheet exists, so on a cold
+ * start it sits BEFORE `tokens.css`; at plain `:root` the compiled-in Atlas-dark
+ * fallbacks there would win on source order and undo the replay. One extra type
+ * selector makes the resolved theme win wherever the element sits.
+ */
+const THEME_SELECTOR = "html:root";
+/**
+ * Where `index.html` looks for the last theme at launch. Read by an inline
+ * script before any module — and before `tokens.css` — so the first frame
+ * paints in the theme the user chose instead of flashing black.
  */
 const LAUNCH_CACHE_KEY = "atlas:launch-theme";
 let activeTheme: ResolvedTheme | null = null;
 
 /**
- * The handful of colours the boot skeleton needs.
+ * What the next cold start replays before any module has loaded.
  *
- * Deliberately NOT the whole resolved map: this is read synchronously on the
- * critical path of every cold start, and seven values is a string small enough
- * that parsing it costs nothing.
+ * The seven named colours feed the boot skeleton's `--atlas-boot-*` inline
+ * properties. `vars` is the WHOLE resolved map, which `index.html` writes into
+ * the same `<style id="atlas-resolved-theme">` this module owns. It used to be
+ * only the seven, and the app's first render — which happens three IPC round
+ * trips before the first `applyTheme` — had no `--atlas-*` variable at all:
+ * transparent surfaces, and a dark flash for anyone on a light theme. A couple
+ * of hundred short strings is still nothing to parse on the critical path.
  */
-function launchColors(resolved: ResolvedTheme) {
+function launchCache(resolved: ResolvedTheme) {
   return {
+    id: resolved.id,
     appearance: resolved.appearance,
     background: resolved.base.background,
     chrome: resolved.base.sidebar,
@@ -26,17 +42,27 @@ function launchColors(resolved: ResolvedTheme) {
     line: resolved.keys["border.subtle"],
     skeleton: resolved.keys["element.selected"],
     text: resolved.base["muted-foreground"],
+    vars: resolved.cssVars,
   };
 }
 
+/** The resolved block's stylesheet text. `index.html` builds the identical
+ *  string from the cached `vars`, so the two never disagree about a frame. */
+export function resolvedThemeCss(cssVars: Record<string, string>): string {
+  const declarations = Object.entries(cssVars)
+    .map(([name, value]) => `${name}:${value}`)
+    .join(";");
+  return `${THEME_SELECTOR}{${declarations}}`;
+}
+
 /**
- * Cache them for the next cold start. Failure is silent and harmless —
- * `index.html` falls back to the literals it has always had (a blocked or full
- * store, or a private window, all land there).
+ * Cache it for the next cold start. Failure is silent and harmless —
+ * `index.html` falls back to `tokens.css` and the literals it has always had
+ * (a blocked or full store, or a private window, all land there).
  */
-function cacheLaunchColors(colors: ReturnType<typeof launchColors>): void {
+function cacheLaunchTheme(cache: ReturnType<typeof launchCache>): void {
   try {
-    localStorage.setItem(LAUNCH_CACHE_KEY, JSON.stringify(colors));
+    localStorage.setItem(LAUNCH_CACHE_KEY, JSON.stringify(cache));
   } catch {
     /* an unavailable store just means the compiled-in fallbacks */
   }
@@ -57,9 +83,9 @@ function cacheLaunchColors(colors: ReturnType<typeof launchColors>): void {
  *
  * Kept byte-for-byte in step with the `set(…)` calls in `index.html` — the two
  * write the same property names from the same seven values, which is why both
- * go through `launchColors()`.
+ * go through `launchCache()`.
  */
-function applyBootVars(root: HTMLElement, colors: ReturnType<typeof launchColors>): void {
+function applyBootVars(root: HTMLElement, colors: ReturnType<typeof launchCache>): void {
   const set = (name: string, value: string | undefined) => {
     if (value) root.style.setProperty(name, value);
     else root.style.removeProperty(name);
@@ -114,13 +140,10 @@ export function applyTheme(
     style.id = STYLE_ID;
     document.head.append(style);
   }
-  const declarations = Object.entries(resolved.cssVars)
-    .map(([name, value]) => `${name}:${value}`)
-    .join(";");
-  style.textContent = `:root{${declarations}}`;
-  const colors = launchColors(resolved);
-  applyBootVars(root, colors);
-  cacheLaunchColors(colors);
+  style.textContent = resolvedThemeCss(resolved.cssVars);
+  const cache = launchCache(resolved);
+  applyBootVars(root, cache);
+  cacheLaunchTheme(cache);
   window.dispatchEvent(new CustomEvent("atlas:theme-applied"));
   return resolved;
 }

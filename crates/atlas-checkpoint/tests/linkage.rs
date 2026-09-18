@@ -5,8 +5,9 @@
 //! a silently missing or silently wrong Checkpoint — so each is asserted on the
 //! stored rows rather than on the code path that produced them.
 
+mod support;
+
 use std::path::Path;
-use std::process::Command;
 
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::tools::{resolve_path, ToolName};
@@ -25,9 +26,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let fixture = Self { dir: tempfile::tempdir().unwrap() };
-        fixture.git(&["init", "--initial-branch=main"]);
-        fixture.git(&["config", "user.name", "Test Developer"]);
-        fixture.git(&["config", "user.email", "dev@example.com"]);
+        support::init_repo(fixture.path());
         fixture
     }
 
@@ -36,18 +35,7 @@ impl Fixture {
     }
 
     fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(self.path())
-            .args(args)
-            .output()
-            .expect("git runs");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).into_owned()
+        support::git(self.path(), args)
     }
 
     fn write(&self, path: &str, content: &str) {
@@ -67,7 +55,7 @@ impl Fixture {
     /// Commit with an explicit (historical) commit date.
     fn commit_all_at(&self, message: &str, date: &str) -> String {
         self.git(&["add", "-A"]);
-        let output = Command::new("git")
+        let output = support::git_command()
             .arg("-C")
             .arg(self.path())
             .env("GIT_COMMITTER_DATE", date)
@@ -406,6 +394,67 @@ fn one_session_spanning_several_commits_produces_one_checkpoint_each() {
     fixture.walk(&store);
     let checkpoints = store.checkpoints_for_session(&session).unwrap();
     assert_eq!(checkpoints.len(), 3);
+}
+
+#[test]
+fn one_turn_writing_several_new_files_committed_together_produces_one_checkpoint() {
+    // The (Session, commit) pair is the identity, so two files from separate
+    // tool calls in one turn must not become two Checkpoints on one commit.
+    let fixture = Fixture::new();
+    fixture.write("seed", "seed");
+    fixture.commit_all("initial");
+    let mut store = fixture.store();
+    fixture.walk(&store);
+
+    let one = "pub fn one() {}\n";
+    fixture.write("src/one.rs", one);
+    let session = session_wrote(&fixture, &mut store, "s1", "src/one.rs", one, false);
+
+    // A second tool call in the same turn.
+    let two = "pub fn two() {}\n";
+    fixture.write("src/two.rs", two);
+    let mut capture = Capture::new(&mut store, ProjectMode::Local);
+    let call = capture
+        .record_tool_call(
+            &session,
+            ToolCallContent {
+                turn_seq: 1,
+                native_call_id: Some("s1-two"),
+                tool_name: ToolName::Write,
+                title: None,
+                kind: Some("edit"),
+                status: ToolStatus::Completed,
+                locations: &serde_json::json!([]),
+                arguments: None,
+                result: None,
+            },
+        )
+        .expect("tool call");
+    let resolved = resolve_path("src/two.rs", fixture.path());
+    capture
+        .record_file_write(
+            &session,
+            &call,
+            1,
+            FileWrite {
+                path: &resolved,
+                sha256_after: Some(hash_written_content(two.as_bytes())),
+                sketch_after: atlas_checkpoint::sketch::sketch(two.as_bytes()),
+                existed_before: false,
+                deleted: false,
+            },
+        )
+        .expect("file write");
+
+    let commit = fixture.commit_all("add both");
+    fixture.walk(&store);
+
+    let checkpoints = store.checkpoints_for_session(&session).unwrap();
+    assert_eq!(checkpoints.len(), 1, "one commit should be one Checkpoint");
+    assert_eq!(checkpoints[0].commit_sha, commit);
+    let mut files = checkpoints[0].files_touched.clone();
+    files.sort();
+    assert_eq!(files, vec!["src/one.rs".to_string(), "src/two.rs".to_string()]);
 }
 
 #[test]

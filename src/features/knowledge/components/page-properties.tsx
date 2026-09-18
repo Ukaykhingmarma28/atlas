@@ -175,7 +175,7 @@ function Row({
           color: "var(--muted-foreground)",
         }}
       >
-        <Icon size={12} className="text-text-muted" strokeWidth={1.5} />
+        <Icon size={12} className="text-muted-foreground" strokeWidth={1.5} />
         <span>{label}</span>
       </span>
       <span

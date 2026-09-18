@@ -132,7 +132,7 @@ export const CallActivity = memo(function CallActivity({
             </span>
           )}
           {call.recording_state === "failed" && (
-            <span className="rounded-full bg-card px-1.5 py-px text-2xs font-medium text-status-error">
+            <span className="rounded-full bg-card px-1.5 py-px text-2xs font-medium text-error">
               Recording failed
             </span>
           )}

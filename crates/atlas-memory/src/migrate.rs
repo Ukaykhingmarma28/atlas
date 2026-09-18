@@ -139,16 +139,15 @@ mod tests {
         v.iter().map(|x| x / norm).collect()
     }
 
-    fn tmp_root(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "atlas-memory-migrate-{}-{}",
-            std::process::id(),
-            name
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_root(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     /// Write a legacy `index.json` under `root/.atlas/memory-index/`.
@@ -169,7 +168,7 @@ mod tests {
 
     #[test]
     fn migrates_legacy_index_without_reembedding() {
-        let root = tmp_root("happy");
+        let (_tmp, root) = tmp_root("happy");
         let va = unit_vec(3);
         let vb = unit_vec(50);
         write_legacy(
@@ -206,13 +205,11 @@ mod tests {
         let mi = root.join(".atlas").join("memory-index");
         assert!(!mi.join("index.json").exists(), "index.json should be gone");
         assert!(mi.join("index.json.bak").exists(), "index.json.bak expected");
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn second_open_is_a_noop() {
-        let root = tmp_root("idempotent");
+        let (_tmp, root) = tmp_root("idempotent");
         write_legacy(&root, LEGACY_MODEL, DIM, &[("only", "h", unit_vec(11))]);
 
         let first = MemoryEngine::open(root.clone());
@@ -226,15 +223,13 @@ mod tests {
         assert!(second.manifest.key_for("only").is_some());
 
         // Calling migrate directly again is a clean no-op.
-        let mut third = MemoryEngine::open(root.clone());
+        let mut third = MemoryEngine::open(root);
         assert_eq!(migrate(&mut third).unwrap(), MigrationOutcome::NothingToDo);
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn mismatched_model_needs_rebuild_and_leaves_file() {
-        let root = tmp_root("mismatch");
+        let (_tmp, root) = tmp_root("mismatch");
         // Wrong model name → cannot reuse vectors.
         write_legacy(&root, "some-other-model", DIM, &[("x", "h", unit_vec(1))]);
 
@@ -246,19 +241,15 @@ mod tests {
         // Legacy file untouched.
         let idx = root.join(".atlas").join("memory-index").join("index.json");
         assert!(idx.exists(), "legacy index.json must remain on mismatch");
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn mismatched_dim_needs_rebuild() {
-        let root = tmp_root("dim");
+        let (_tmp, root) = tmp_root("dim");
         // Correct model, wrong dim header → rebuild.
         write_legacy(&root, LEGACY_MODEL, 256, &[("x", "h", vec![0.1f32; 256])]);
 
-        let mut engine = MemoryEngine::open(root.clone());
+        let mut engine = MemoryEngine::open(root);
         assert_eq!(migrate(&mut engine).unwrap(), MigrationOutcome::NeedsRebuild);
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

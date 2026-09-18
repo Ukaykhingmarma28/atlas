@@ -422,7 +422,7 @@ export function LogPanel() {
       </div>
 
       {/* Header row */}
-      <div className="flex items-center h-6 shrink-0 border-b border-border-subtle bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground font-medium">
+      <div className="flex items-center h-control-sm shrink-0 border-b border-border-subtle bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground font-medium">
         {table.getHeaderGroups().map((hg) => (
           <div key={hg.id} className="flex items-center w-full">
             {hg.headers.map((h) => (
@@ -543,7 +543,7 @@ function SourceFilter({
                     else next.delete(s);
                     onChange(next);
                   }}
-                  className="flex items-center gap-2 px-3 h-6 text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer outline-none capitalize"
+                  className="flex items-center gap-2 px-3 h-control-sm text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer outline-none capitalize"
                 >
                   <span
                     className={cn(
@@ -601,7 +601,7 @@ function ProjectScopeFilter({
                 onClick={() => onChange(v)}
                 disabled={v === "current" && !hasProject}
                 className={cn(
-                  "flex items-center gap-2 px-3 h-6 text-xs cursor-pointer outline-none",
+                  "flex items-center gap-2 px-3 h-control-sm text-xs cursor-pointer outline-none",
                   value === v
                     ? "text-[var(--foreground)] bg-[var(--atlas-element-selected)]"
                     : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",

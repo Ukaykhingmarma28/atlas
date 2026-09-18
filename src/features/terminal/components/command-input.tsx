@@ -106,7 +106,7 @@ function rawKeyBytes(
   return e.altKey ? [0x1b, ...bytes] : bytes;
 }
 
-interface RawPathCompletion {
+export interface RawPathCompletion {
   name: string;
   is_dir: boolean;
 }

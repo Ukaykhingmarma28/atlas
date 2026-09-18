@@ -40,10 +40,31 @@ for line in sys.stdin:
         sys.stdout.flush()
 "#;
 
-fn python() -> Option<&'static str> {
-    ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+/// `python3` from `PATH`, else from the usual install locations; `None` means
+/// the python-backed tests skip.
+///
+/// Except under CI, where a missing interpreter is a failure: a runner without
+/// python3 would otherwise report these tests green having run none of them.
+fn python() -> Option<PathBuf> {
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("python3"))
+            .find(|candidate| candidate.is_file())
+    });
+    let found = on_path.or_else(|| {
+        [
+            "/usr/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+        ]
         .into_iter()
-        .find(|path| std::path::Path::new(path).exists())
+        .map(PathBuf::from)
+        .find(|candidate| candidate.is_file())
+    });
+    if found.is_none() && std::env::var_os("CI").is_some_and(|ci| !ci.is_empty()) {
+        panic!("python3 is not on PATH, and CI is set: these tests would skip rather than run");
+    }
+    found
 }
 
 fn thread_events() -> ThreadEventSink {
@@ -105,7 +126,7 @@ fn fake_agent_command_with_pid_file(
             },
         );
     Some(AgentServerCommand {
-        path: PathBuf::from(python),
+        path: python,
         args: vec!["-c".to_string(), script],
         env: Some(HashMap::new()),
     })
@@ -212,24 +233,38 @@ async fn a_missing_binary_fails_to_spawn() {
     );
 }
 
-/// The handshake has no timeout, and this pins that as the current state
-/// rather than as a guarantee.
+/// A child that is alive but never answers `initialize` fails the connect
+/// after [`INITIALIZE_TIMEOUT`] with a typed `TimedOut` naming the phase
+/// (ADR-0008) — before the deadline, the tab sat on "connecting" forever.
 ///
-/// Named for what it checks. It used to be called
-/// `an_agent_that_never_answers_does_not_hang_forever`, which claimed the
-/// opposite of its own assertion: it passes *because* the connect hangs. The
-/// cancel grace added for a wedged turn does not apply here — there is no
-/// session to cancel until `initialize` returns, so recovery on this path is
-/// still the caller's problem (`AgentHost::kill`).
-#[tokio::test]
-async fn an_agent_that_never_answers_initialize_leaves_the_connect_pending() {
-    let connect = connect(command("/bin/sh", &["-c", "sleep 30"]));
-    let result = tokio::time::timeout(std::time::Duration::from_secs(2), connect).await;
+/// On a paused clock: the runtime jumps to the next timer whenever it is idle,
+/// so the real 60s deadline runs out in no wall time, and the elapsed time on
+/// that clock says the connect gave up AT the deadline, not early.
+#[tokio::test(start_paused = true)]
+async fn an_agent_that_never_answers_initialize_times_out_at_the_deadline() {
+    let started = tokio::time::Instant::now();
+    let error = connect(command("/bin/sh", &["-c", "sleep 30"]))
+        .await
+        .expect_err("a silent agent must fail the connect, not park it");
+    let elapsed = started.elapsed();
 
+    let load_error = error
+        .downcast_ref::<LoadError>()
+        .expect("expected a LoadError the manager can carry");
+    match load_error {
+        LoadError::TimedOut { phase, after, .. } => {
+            assert_eq!(
+                phase.as_ref(),
+                "initialize",
+                "the hop that stalled is named"
+            );
+            assert_eq!(*after, INITIALIZE_TIMEOUT);
+        }
+        other => panic!("expected TimedOut, got {other:?}"),
+    }
     assert!(
-        result.is_err(),
-        "a silent agent is expected to leave the connect pending; \
-         if this now resolves, a timeout was added and this test should assert it"
+        elapsed >= INITIALIZE_TIMEOUT && elapsed < INITIALIZE_TIMEOUT * 2,
+        "gave up after {elapsed:?}, not at the {INITIALIZE_TIMEOUT:?} deadline"
     );
 }
 
@@ -324,7 +359,7 @@ fn session_agent_command(config_options: serde_json::Value) -> Option<AgentServe
     let python = python()?;
     let script = SESSION_AGENT.replace("CONFIG_OPTIONS", &config_options.to_string());
     Some(AgentServerCommand {
-        path: PathBuf::from(python),
+        path: python,
         args: vec!["-c".to_string(), script],
         env: Some(HashMap::new()),
     })
@@ -499,7 +534,7 @@ for line in sys.stdin:
 
 fn permission_agent_command() -> Option<AgentServerCommand> {
     Some(AgentServerCommand {
-        path: PathBuf::from(python()?),
+        path: python()?,
         args: vec!["-c".to_string(), PERMISSION_AGENT.to_string()],
         env: Some(HashMap::new()),
     })
@@ -645,7 +680,7 @@ async fn an_embedded_terminal_in_tool_call_meta_is_created_and_streams() {
         return;
     };
     let command = AgentServerCommand {
-        path: PathBuf::from(python),
+        path: python,
         args: vec!["-c".to_string(), EMBEDDED_TERMINAL_AGENT.to_string()],
         env: Some(HashMap::new()),
     };
@@ -731,29 +766,34 @@ for line in sys.stdin:
 
 fn wedged_agent_command() -> Option<AgentServerCommand> {
     Some(AgentServerCommand {
-        path: PathBuf::from(python()?),
+        path: python()?,
         args: vec!["-c".to_string(), WEDGED_AGENT.to_string()],
         env: Some(HashMap::new()),
     })
 }
 
-/// ATL-232. `cancel` is a notification — no response, no obligation — so an
-/// agent that ignores it left the prompt future pending forever and the only
-/// way out was quitting Atlas. The turn now resolves locally once the agent has
-/// had its grace period to answer for itself.
-///
-/// Deliberately a real child process over real pipes: the defect is that
-/// nothing in the stack owns a clock, and a mock transport would supply the
-/// very thing whose absence is under test.
-#[tokio::test]
-async fn a_cancel_the_agent_ignores_still_ends_the_turn() {
+/// The cancel grace the wedged-agent tests run with, in place of the real
+/// seconds-long one. Every bound below is stated in multiples of it, so the
+/// tests say the same thing whatever the production constant is.
+const TEST_CANCEL_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// A session on the wedged agent, with the cancel grace shortened. The thread
+/// is returned because the session registry holds it only weakly.
+async fn wedged_session() -> Option<(
+    Arc<AcpConnection>,
+    acp::SessionId,
+    atlas_acp_thread::AcpThreadHandle,
+)> {
     use atlas_acp_thread::AgentConnection as _;
 
-    let Some(command) = wedged_agent_command() else {
-        eprintln!("skipping: no python3 on this machine");
-        return;
-    };
-    let connection = Arc::new(connect(command).await.expect("handshake failed"));
+    let connection = Arc::new(
+        connect(wedged_agent_command()?)
+            .await
+            .expect("handshake failed"),
+    );
+    connection.set_deadlines(ConnectionDeadlines {
+        cancel_grace: TEST_CANCEL_GRACE,
+    });
     let thread = connection
         .clone()
         .new_session(vec![std::env::temp_dir()])
@@ -764,6 +804,25 @@ async fn a_cancel_the_agent_ignores_still_ends_the_turn() {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .session_id()
         .clone();
+    Some((connection, session_id, thread))
+}
+
+/// ATL-232. `cancel` is a notification — no response, no obligation — so an
+/// agent that ignores it left the prompt future pending forever and the only
+/// way out was quitting Atlas. The turn now resolves locally once the agent has
+/// had its grace period to answer for itself — and not before.
+///
+/// Deliberately a real child process over real pipes: the defect is that
+/// nothing in the stack owns a clock, and a mock transport would supply the
+/// very thing whose absence is under test.
+#[tokio::test]
+async fn a_cancel_the_agent_ignores_still_ends_the_turn() {
+    use atlas_acp_thread::AgentConnection as _;
+
+    let Some((connection, session_id, _thread)) = wedged_session().await else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
 
     let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
         session_id.clone(),
@@ -775,45 +834,39 @@ async fn a_cancel_the_agent_ignores_still_ends_the_turn() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert!(!prompt.is_finished(), "the agent was supposed to go silent");
 
+    let cancelled_at = std::time::Instant::now();
     connection.cancel(&session_id);
 
-    // Generous against the grace period: what is under test is that a bound
-    // exists at all, not its exact value.
-    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+    let response = tokio::time::timeout(TEST_CANCEL_GRACE * 10, prompt)
         .await
         .expect("the turn outlived its cancel grace — this is the ATL-232 hang")
         .expect("prompt task panicked")
         .expect("a cancelled turn is a normal stop, not an error");
+    let waited = cancelled_at.elapsed();
 
     assert_eq!(
         response.stop_reason,
         acp::StopReason::Cancelled,
         "a locally-resolved cancel must still read as cancelled"
     );
+    assert!(
+        waited >= TEST_CANCEL_GRACE,
+        "the turn was resolved after {waited:?}, before the agent's \
+         {TEST_CANCEL_GRACE:?} grace to answer for itself ran out"
+    );
 }
 
 /// Pressing Stop twice is what a user does when nothing appears to happen, and
 /// the composer leaves the button live while a stop is pending. Every press
-/// must be harmless.
+/// must be harmless — and none may restart the clock.
 #[tokio::test]
 async fn cancelling_repeatedly_is_harmless() {
     use atlas_acp_thread::AgentConnection as _;
 
-    let Some(command) = wedged_agent_command() else {
+    let Some((connection, session_id, _thread)) = wedged_session().await else {
         eprintln!("skipping: no python3 on this machine");
         return;
     };
-    let connection = Arc::new(connect(command).await.expect("handshake failed"));
-    let thread = connection
-        .clone()
-        .new_session(vec![std::env::temp_dir()])
-        .await
-        .expect("session/new failed");
-    let session_id = thread
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .session_id()
-        .clone();
 
     let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
         session_id.clone(),
@@ -821,19 +874,38 @@ async fn cancelling_repeatedly_is_harmless() {
     )));
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    for _ in 0..5 {
-        connection.cancel(&session_id);
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
+    // Presses keep coming for four graces, so they land both before and after
+    // the turn ends. A press that restarted the clock would hold the turn open
+    // until a grace after the LAST one; the first press's grace must end it.
+    let first_press = std::time::Instant::now();
+    let presser = tokio::spawn({
+        let connection = connection.clone();
+        let session_id = session_id.clone();
+        async move {
+            while first_press.elapsed() < TEST_CANCEL_GRACE * 4 {
+                connection.cancel(&session_id);
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    });
 
-    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+    let response = tokio::time::timeout(TEST_CANCEL_GRACE * 10, prompt)
         .await
         .expect("repeated cancels must not postpone the deadline")
         .expect("prompt task panicked")
         .expect("a cancelled turn is a normal stop, not an error");
+    let waited = first_press.elapsed();
     assert_eq!(response.stop_reason, acp::StopReason::Cancelled);
+    assert!(
+        waited < TEST_CANCEL_GRACE * 3,
+        "the turn ended {waited:?} after the first press — later presses \
+         pushed the {TEST_CANCEL_GRACE:?} deadline back"
+    );
 
     // Cancelling a turn that already ended must not panic or wedge anything.
+    presser
+        .await
+        .expect("a cancel after the turn ended panicked");
     connection.cancel(&session_id);
 }
 
@@ -844,21 +916,10 @@ async fn cancelling_repeatedly_is_harmless() {
 async fn an_uncancelled_turn_is_not_capped_by_the_grace_period() {
     use atlas_acp_thread::AgentConnection as _;
 
-    let Some(command) = wedged_agent_command() else {
+    let Some((connection, session_id, _thread)) = wedged_session().await else {
         eprintln!("skipping: no python3 on this machine");
         return;
     };
-    let connection = Arc::new(connect(command).await.expect("handshake failed"));
-    let thread = connection
-        .clone()
-        .new_session(vec![std::env::temp_dir()])
-        .await
-        .expect("session/new failed");
-    let session_id = thread
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .session_id()
-        .clone();
 
     let prompt = tokio::spawn(connection.clone().prompt(acp::PromptRequest::new(
         session_id,
@@ -866,7 +927,7 @@ async fn an_uncancelled_turn_is_not_capped_by_the_grace_period() {
     )));
 
     // Well past the grace period, with no cancel sent.
-    tokio::time::sleep(std::time::Duration::from_secs(7)).await;
+    tokio::time::sleep(TEST_CANCEL_GRACE * 4).await;
     assert!(
         !prompt.is_finished(),
         "an uncancelled turn was resolved by the cancel deadline — the clock \
@@ -931,7 +992,7 @@ fn fs_escape_agent_command(outside: &std::path::Path, result_file: &std::path::P
         .replace("OUTSIDE", &format!("{:?}", outside.display().to_string()))
         .replace("RESULT_FILE", &format!("{:?}", result_file.display().to_string()));
     Some(AgentServerCommand {
-        path: PathBuf::from(python()?),
+        path: python()?,
         args: vec!["-c".to_string(), script],
         env: Some(HashMap::new()),
     })
@@ -1042,7 +1103,7 @@ for line in sys.stdin:
         return;
     };
     let command = AgentServerCommand {
-        path: PathBuf::from(python),
+        path: python,
         args: vec!["-c".to_string(), script.to_string()],
         env: Some(HashMap::new()),
     };
@@ -1097,7 +1158,7 @@ for line in sys.stdin:
         return;
     };
     let command = AgentServerCommand {
-        path: PathBuf::from(python),
+        path: python,
         args: vec!["-c".to_string(), script.to_string()],
         env: Some(HashMap::new()),
     };
@@ -1148,21 +1209,10 @@ for line in sys.stdin:
 async fn a_cancel_racing_the_prompt_is_still_seen() {
     use atlas_acp_thread::AgentConnection as _;
 
-    let Some(command) = wedged_agent_command() else {
+    let Some((connection, session_id, _thread)) = wedged_session().await else {
         eprintln!("skipping: no python3 on this machine");
         return;
     };
-    let connection = Arc::new(connect(command).await.expect("handshake failed"));
-    let thread = connection
-        .clone()
-        .new_session(vec![std::env::temp_dir()])
-        .await
-        .expect("session/new failed");
-    let session_id = thread
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .session_id()
-        .clone();
 
     // No sleep between the two: the cancel is meant to land in the window
     // between the prompt being created and its request being written.
@@ -1182,7 +1232,7 @@ async fn a_cancel_racing_the_prompt_is_still_seen() {
     });
 
     canceller.await.expect("canceller panicked");
-    let response = tokio::time::timeout(std::time::Duration::from_secs(30), prompt)
+    let response = tokio::time::timeout(TEST_CANCEL_GRACE * 10, prompt)
         .await
         .expect("a cancel racing the prompt was dropped, and the turn hung")
         .expect("prompt task panicked")

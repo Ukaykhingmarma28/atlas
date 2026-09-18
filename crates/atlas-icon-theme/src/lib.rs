@@ -24,7 +24,7 @@
 //! cache is dropped when a theme is installed or removed.
 
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -109,7 +109,9 @@ enum Source {
     /// the vendored tree, which is what relative `iconPath`s resolve against.
     Embedded { doc_dir: &'static str },
     /// An unpacked VS Code extension under the user's icon-theme directory.
-    Directory { document: PathBuf },
+    /// `root` is the extension directory: every file the theme names must
+    /// resolve inside it, however many `..` its paths carry.
+    Directory { root: PathBuf, document: PathBuf },
 }
 
 /// A theme with its document parsed, as the cache holds it.
@@ -218,9 +220,9 @@ struct IconThemeContribution {
 }
 
 impl ExtensionManifest {
-    fn read(path: &Path) -> Result<Self, IconThemeError> {
-        let source = std::fs::read_to_string(path)
-            .map_err(|source| IconThemeError::Io { path: path.to_path_buf(), source })?;
+    fn read(root: &Path) -> Result<Self, IconThemeError> {
+        let path = root.join("package.json");
+        let source = read_text_within(root, &path, MAX_DOCUMENT_BYTES)?;
         serde_json::from_str(&source).map_err(|error| IconThemeError::Parse {
             origin: path.display().to_string(),
             message: error.to_string(),
@@ -234,15 +236,18 @@ impl ExtensionManifest {
 /// a `.vsix`, unpacked. Public so a test can exercise a theme without one being
 /// installed in the real config directory.
 pub fn load_from_directory(id: &str, root: &Path) -> Result<LoadedIconTheme, IconThemeError> {
-    let manifest = ExtensionManifest::read(&root.join("package.json"))?;
+    let manifest = ExtensionManifest::read(root)?;
     let contribution =
         manifest.contributes.icon_themes.first().ok_or_else(|| IconThemeError::Parse {
             origin: root.join("package.json").display().to_string(),
             message: "declares no `contributes.iconThemes`".to_string(),
         })?;
-    let document_path = resolve_relative(root, &contribution.path);
-    let source = std::fs::read_to_string(&document_path)
-        .map_err(|source| IconThemeError::Io { path: document_path.clone(), source })?;
+    let document_path =
+        resolve_relative(root, root, &contribution.path).ok_or_else(|| IconThemeError::Parse {
+            origin: root.join("package.json").display().to_string(),
+            message: format!("`{}` points outside the extension", contribution.path),
+        })?;
+    let source = read_text_within(root, &document_path, MAX_DOCUMENT_BYTES)?;
     let document = IconThemeDocument::parse(&source, &document_path.display().to_string())?;
     let summary = IconThemeSummary {
         id: id.to_string(),
@@ -261,7 +266,7 @@ pub fn load_from_directory(id: &str, root: &Path) -> Result<LoadedIconTheme, Ico
     Ok(LoadedIconTheme {
         summary,
         document: Some(document),
-        source: Source::Directory { document: document_path },
+        source: Source::Directory { root: root.to_path_buf(), document: document_path },
     })
 }
 
@@ -284,22 +289,92 @@ fn load_material() -> Result<LoadedIconTheme, IconThemeError> {
     })
 }
 
-/// Join a relative `iconPath` onto a directory, folding `.` and `..`.
+/// Ceilings on what one file a theme names may weigh. A theme is a
+/// third-party artifact, so an `iconPath` of `../../../../dev/zero` or a
+/// 4 GB "font" has to fail as a missing icon rather than as the app running
+/// out of memory. Material's document is 444 KB and its largest SVG 30 KB.
+const MAX_DOCUMENT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_ASSET_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FONT_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Join a relative `iconPath` onto `base`, folding `.` and `..`, without ever
+/// leaving `root`.
 ///
 /// Material's paths look like `./../icons/git.svg` relative to `dist/`, so
-/// this has to actually normalise rather than concatenate.
-fn resolve_relative(root: &Path, relative: &str) -> PathBuf {
-    let mut out = root.to_path_buf();
+/// this has to actually normalise rather than concatenate — and a `..` that
+/// would climb above the extension directory is refused (`None`) rather than
+/// followed, because the path is the theme's to choose and the directory it
+/// escapes into is the user's.
+fn resolve_relative(root: &Path, base: &Path, relative: &str) -> Option<PathBuf> {
+    let mut segments: Vec<String> = base
+        .strip_prefix(root)
+        .ok()?
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
     for segment in relative.replace('\\', "/").split('/') {
         match segment {
             "" | "." => {}
             ".." => {
-                out.pop();
+                segments.pop()?;
             }
-            other => out.push(other),
+            // A drive prefix would make `push` replace the whole path.
+            other if other.contains(':') => return None,
+            other => segments.push(other.to_string()),
         }
     }
-    out
+    let mut out = root.to_path_buf();
+    out.extend(segments);
+    Some(out)
+}
+
+/// Read a file the theme names, provided it is a regular file, inside `root`
+/// once symlinks are resolved, and no larger than `cap`.
+///
+/// [`resolve_relative`] already keeps `..` inside the extension; this is the
+/// second half, for a symlink that points out of it and for a device node or
+/// FIFO that would never finish reading.
+fn read_within(root: &Path, path: &Path, cap: u64) -> Result<Vec<u8>, IconThemeError> {
+    let io_error = |source| IconThemeError::Io { path: path.to_path_buf(), source };
+    let canonical_root = root.canonicalize().map_err(io_error)?;
+    let canonical = path.canonicalize().map_err(io_error)?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(IconThemeError::Parse {
+            origin: path.display().to_string(),
+            message: "resolves outside the extension directory".to_string(),
+        });
+    }
+    let metadata = std::fs::metadata(&canonical).map_err(io_error)?;
+    if !metadata.is_file() {
+        return Err(IconThemeError::Parse {
+            origin: path.display().to_string(),
+            message: "is not a regular file".to_string(),
+        });
+    }
+    if metadata.len() > cap {
+        return Err(IconThemeError::Parse {
+            origin: path.display().to_string(),
+            message: format!("is {} bytes, past the {cap} accepted", metadata.len()),
+        });
+    }
+    let file = std::fs::File::open(&canonical).map_err(io_error)?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    // `take` as well as the metadata check: a file can grow between the two.
+    file.take(cap + 1).read_to_end(&mut bytes).map_err(io_error)?;
+    if bytes.len() as u64 > cap {
+        return Err(IconThemeError::Parse {
+            origin: path.display().to_string(),
+            message: format!("grew past the {cap} bytes accepted while being read"),
+        });
+    }
+    Ok(bytes)
+}
+
+fn read_text_within(root: &Path, path: &Path, cap: u64) -> Result<String, IconThemeError> {
+    String::from_utf8(read_within(root, path, cap)?).map_err(|_| IconThemeError::Parse {
+        origin: path.display().to_string(),
+        message: "is not UTF-8 text".to_string(),
+    })
 }
 
 /// The same, over the embedded tree's virtual paths.
@@ -366,13 +441,32 @@ fn load_uncached(id: &str) -> Result<LoadedIconTheme, IconThemeError> {
         }),
         MATERIAL_ICON_THEME_ID => load_material(),
         other => {
-            let dir = user_icon_theme_dir()
-                .map(|dir| dir.join(other))
-                .filter(|dir| dir.is_dir())
+            let root = user_icon_theme_dir()
                 .ok_or_else(|| IconThemeError::NotFound { id: other.to_string() })?;
+            let dir = installed_dir_in(&root, other)?;
             load_from_directory(other, &dir)
         }
     }
+}
+
+/// The directory an installed theme lives in, or `NotFound`.
+///
+/// `id` arrives over IPC, so it is checked twice: as a plain directory name
+/// (no separator, no `..`, no leading dot), and then — after symlinks are
+/// resolved — as a path that really is a child of the icon-theme directory.
+/// Without both, `remove_icon_theme("..")` was `remove_dir_all` on
+/// `~/.config/atlas`.
+fn installed_dir_in(root: &Path, id: &str) -> Result<PathBuf, IconThemeError> {
+    let not_found = || IconThemeError::NotFound { id: id.to_string() };
+    if !is_valid_id(id) {
+        return Err(not_found());
+    }
+    let canonical_root = root.canonicalize().map_err(|_| not_found())?;
+    let dir = root.join(id).canonicalize().map_err(|_| not_found())?;
+    if dir.parent() != Some(canonical_root.as_path()) || !dir.is_dir() {
+        return Err(not_found());
+    }
+    Ok(dir)
 }
 
 /// Every installed theme, built-ins first.
@@ -404,8 +498,16 @@ pub fn list() -> Vec<IconThemeSummary> {
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return out;
     };
-    let mut installed: Vec<PathBuf> =
-        entries.filter_map(Result::ok).map(|entry| entry.path()).filter(|p| p.is_dir()).collect();
+    // A dot-directory is not a theme: `.<id>.installing` is an install's
+    // staging copy, left behind if Atlas quit mid-unpack.
+    let mut installed: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir()
+                && path.file_name().and_then(|name| name.to_str()).is_some_and(is_valid_id)
+        })
+        .collect();
     installed.sort();
     for path in installed {
         let Some(id) = path.file_name().and_then(|name| name.to_str()) else {
@@ -559,10 +661,9 @@ fn read_asset(theme: &LoadedIconTheme, relative: &str) -> Option<IconAsset> {
             embedded_asset(&virtual_path)
                 .map(|source| IconAsset::Svg { source: source.to_string() })
         }
-        Source::Directory { document } => {
-            let dir = document.parent()?;
-            let path = resolve_relative(dir, relative);
-            let bytes = std::fs::read(&path).ok()?;
+        Source::Directory { root, document } => {
+            let path = resolve_relative(root, document.parent()?, relative)?;
+            let bytes = read_within(root, &path, MAX_ASSET_BYTES).ok()?;
             Some(asset_from_bytes(&path, bytes))
         }
     }
@@ -653,8 +754,9 @@ fn read_font_bytes(theme: &LoadedIconTheme, relative: &str) -> Option<Vec<u8>> {
         // The bundled theme has no fonts, and the build script packs SVG text
         // only — a font would have to be a directory theme.
         Source::Fallback | Source::Embedded { .. } => None,
-        Source::Directory { document } => {
-            std::fs::read(resolve_relative(document.parent()?, relative)).ok()
+        Source::Directory { root, document } => {
+            let path = resolve_relative(root, document.parent()?, relative)?;
+            read_within(root, &path, MAX_FONT_BYTES).ok()
         }
     }
 }
@@ -682,6 +784,9 @@ fn base64_encode(bytes: &[u8]) -> String {
 /// Install a `.vsix` payload as `id`, replacing any theme already under that
 /// id. The bytes are whatever the caller downloaded; this does the unpacking.
 pub fn install_vsix(id: &str, archive_bytes: &[u8]) -> Result<IconThemeSummary, IconThemeError> {
+    if !is_valid_id(id) {
+        return Err(IconThemeError::Install { message: format!("\"{id}\" is not a usable id") });
+    }
     if is_built_in(id) {
         return Err(IconThemeError::Install {
             message: format!("\"{id}\" is built in and cannot be replaced"),
@@ -721,10 +826,8 @@ pub fn remove(id: &str) -> Result<(), IconThemeError> {
             message: format!("\"{id}\" is built in and cannot be removed"),
         });
     }
-    let dir = user_icon_theme_dir()
-        .map(|dir| dir.join(id))
-        .filter(|dir| dir.is_dir())
-        .ok_or_else(|| IconThemeError::NotFound { id: id.to_string() })?;
+    let root = user_icon_theme_dir().ok_or_else(|| IconThemeError::NotFound { id: id.to_string() })?;
+    let dir = installed_dir_in(&root, id)?;
     std::fs::remove_dir_all(&dir)
         .map_err(|source| IconThemeError::Io { path: dir.clone(), source })?;
     invalidate_cache();
@@ -736,12 +839,13 @@ pub fn is_built_in(id: &str) -> bool {
 }
 
 /// An id is a single path segment used as a directory name, so a value with a
-/// separator or a `..` in it would escape the icon-theme directory.
+/// separator or a `..` in it would escape the icon-theme directory. A leading
+/// dot is refused too: that namespace is the installer's staging directories,
+/// and it covers `.` and `..` besides.
 pub fn is_valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
-        && id != "."
-        && id != ".."
+        && !id.starts_with('.')
         && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
@@ -837,6 +941,8 @@ mod tests {
         assert!(!is_valid_id("a/b"));
         assert!(!is_valid_id(".."));
         assert!(!is_valid_id(""));
+        assert!(!is_valid_id(".pub.theme.installing"));
+        assert!(!is_valid_id("/etc"));
     }
 
     #[test]
@@ -852,9 +958,106 @@ mod tests {
         assert_eq!(resolve_relative_virtual("dist", "./../icons/git.svg"), "icons/git.svg");
         assert_eq!(resolve_relative_virtual("", "./icons/a.svg"), "icons/a.svg");
         assert_eq!(
-            resolve_relative(Path::new("/root/dist"), "./../icons/a.svg"),
-            PathBuf::from("/root/icons/a.svg")
+            resolve_relative(Path::new("/root"), Path::new("/root/dist"), "./../icons/a.svg"),
+            Some(PathBuf::from("/root/icons/a.svg"))
         );
+    }
+
+    #[test]
+    fn a_relative_path_cannot_climb_above_the_extension_root() {
+        let root = Path::new("/themes/x");
+        let dist = Path::new("/themes/x/dist");
+        assert_eq!(resolve_relative(root, dist, "../../../../dev/zero"), None);
+        assert_eq!(resolve_relative(root, dist, "../../y/icons/a.svg"), None);
+        assert_eq!(resolve_relative(root, root, ".."), None);
+        assert_eq!(resolve_relative(root, dist, "C:/Windows/win.ini"), None);
+        // A leading slash is still relative to the root, never the filesystem's.
+        assert_eq!(
+            resolve_relative(root, dist, "/etc/passwd"),
+            Some(PathBuf::from("/themes/x/dist/etc/passwd"))
+        );
+    }
+
+    /// The `.vsix` path escape: a theme whose `iconPath` walks out of its own
+    /// directory, or through a symlink out of it, or at something that is not
+    /// a regular file, gets no bytes — and a file past the cap is refused
+    /// rather than inlined.
+    #[test]
+    fn asset_reads_stay_inside_the_theme_and_under_the_cap() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("theme");
+        std::fs::create_dir_all(root.join("icons")).expect("mkdir");
+        std::fs::write(dir.path().join("secret.svg"), "<svg>secret</svg>").expect("write");
+        std::fs::write(root.join("icons/ok.svg"), "<svg/>").expect("write");
+        std::fs::write(root.join("icons/big.svg"), vec![b' '; MAX_ASSET_BYTES as usize + 1])
+            .expect("write");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.path().join("secret.svg"), root.join("icons/link.svg"))
+            .expect("symlink");
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"t","contributes":{"iconThemes":[{"path":"./theme.json"}]}}"#,
+        )
+        .expect("write");
+        std::fs::write(
+            root.join("theme.json"),
+            r#"{"iconDefinitions":{
+                "ok":{"iconPath":"./icons/ok.svg"},
+                "escape":{"iconPath":"../secret.svg"},
+                "link":{"iconPath":"./icons/link.svg"},
+                "big":{"iconPath":"./icons/big.svg"},
+                "dir":{"iconPath":"./icons"}
+            },"file":"ok"}"#,
+        )
+        .expect("write");
+        let theme = load_from_directory("t", &root).expect("loads");
+        let ids: Vec<String> =
+            ["ok", "escape", "link", "big", "dir"].iter().map(|id| id.to_string()).collect();
+        let assets = icon_assets(&theme, &ids);
+        assert_eq!(assets.keys().cloned().collect::<Vec<_>>(), vec!["ok".to_string()]);
+    }
+
+    #[test]
+    fn a_manifest_pointing_outside_the_extension_does_not_load() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("theme");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"t","contributes":{"iconThemes":[{"path":"../../outside.json"}]}}"#,
+        )
+        .expect("write");
+        let error = load_from_directory("t", &root).unwrap_err();
+        assert!(error.to_string().contains("outside the extension"), "{error}");
+    }
+
+    /// `remove_icon_theme("..")` used to be `remove_dir_all(~/.config/atlas)`.
+    #[test]
+    fn an_installed_theme_dir_is_always_a_child_of_the_icon_theme_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("icon-themes");
+        std::fs::create_dir_all(root.join("pub.theme")).expect("mkdir");
+        std::fs::create_dir_all(root.join(".pub.theme.installing")).expect("mkdir");
+        std::fs::create_dir_all(dir.path().join("elsewhere")).expect("mkdir");
+        assert!(installed_dir_in(&root, "pub.theme").is_ok());
+        for bad in ["..", ".", "", "../elsewhere", "/etc", "a/b", ".pub.theme.installing"] {
+            assert!(installed_dir_in(&root, bad).is_err(), "accepted {bad:?}");
+        }
+        let absolute = dir.path().join("elsewhere").display().to_string();
+        assert!(installed_dir_in(&root, &absolute).is_err(), "accepted an absolute path");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path().join("elsewhere"), root.join("sneaky"))
+                .expect("symlink");
+            assert!(installed_dir_in(&root, "sneaky").is_err(), "followed a symlink out");
+        }
+        // And the public entry points refuse before touching anything.
+        assert!(remove("..").is_err());
+        assert!(remove("/").is_err());
+        assert!(remove(&absolute).is_err());
+        assert!(dir.path().join("elsewhere").is_dir());
+        assert!(load("..").is_err());
+        assert!(install_vsix("..", b"").is_err());
     }
 
     #[test]

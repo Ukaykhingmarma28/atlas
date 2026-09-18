@@ -21,9 +21,8 @@ import { fileURLToPath } from "node:url";
  * adding a dependency on one is the most ordinary edit there is — it compiles,
  * it passes clippy, and the only symptom is in the shipped binary.
  *
- * This is the same shape as `cersei-containment.test.ts`: an allowlist of
- * manifests permitted to name the dependency, enforced over every manifest
- * Atlas owns.
+ * The shape is an allowlist of manifests permitted to name the dependency,
+ * enforced over every manifest Atlas owns.
  *
  * **#45 opened the first hole in it, on purpose**, and **#54 widened it to its
  * final shape.** The seam crate links the engine — that is what "rewire the

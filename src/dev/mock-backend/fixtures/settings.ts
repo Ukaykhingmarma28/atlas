@@ -9,20 +9,10 @@
 // it, and `reveal` is the only call that ever returns a full value (Rust holds
 // the secret and ships `last4` in the list, so the fake does the same).
 
+import type { CliStatus } from "@/features/settings/components/settings-panel";
 import type { EnvEntry, EnvKeyMeta, ProfileInfo } from "@/features/settings/lib/byok-api";
 import type { ModelPrice } from "@/features/settings/stores/model-pricing-store";
-import type { MockHandlers } from "../types";
-
-/**
- * `CliStatus` is declared inline in `settings-panel.tsx` rather than exported,
- * so it is restated here (Rust: `commands/cli.rs::CliStatus`).
- */
-interface CliStatus {
-  installed: boolean;
-  path: string | null;
-  installedVersion: string | null;
-  currentVersion: string;
-}
+import type { TypedHandlers, Unit, Unread } from "../types";
 
 const price = (input: number, output: number, cacheRead = 0, cacheWrite = 0): ModelPrice => ({
   input,
@@ -133,7 +123,24 @@ function providerOf(envVar: string): string {
   return envVar.replace(/_?API_?KEY$/i, "").toLowerCase() || "custom";
 }
 
-export const settingsHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface SettingsResponses {
+  models_pricing_get: Record<string, ModelPrice>;
+  models_pricing_refresh: Unread;
+  cli_status: CliStatus;
+  cli_install_helper: CliStatus;
+  byok_env_list: EnvKeyMeta[];
+  byok_env_entries: EnvEntry[];
+  byok_profile_info: ProfileInfo;
+  byok_env_reveal: string | null;
+  byok_env_set: string;
+  byok_env_unset: Unit;
+}
+
+export const settingsHandlers: TypedHandlers<SettingsResponses> = {
   models_pricing_get: (): Record<string, ModelPrice> => PRICING,
   models_pricing_refresh: () => null,
 

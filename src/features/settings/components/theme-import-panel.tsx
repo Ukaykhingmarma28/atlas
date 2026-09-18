@@ -13,8 +13,10 @@ import {
   commitThemeImport,
   exportThemeShadcn,
   previewThemeImport,
+  themeIdSlug,
   type ShadcnExport,
   type ThemeImportCandidate,
+  type ThemeOrigin,
   type ThemeImportPreview,
   type ThemeImportReport,
 } from "@/features/theme/lib/theme-import-api";
@@ -40,7 +42,8 @@ type Source = "paste" | "url" | "file";
 interface Props {
   themes: ThemeSummary[];
   onClose: () => void;
-  /** Called with the new theme's id once it is on disk. */
+  /** Called with the new theme's id — the one Rust saved it under — once it
+   *  is on disk. */
   onImported: (id: string) => void;
 }
 
@@ -78,12 +81,22 @@ export function ThemeImportPanel({ themes, onClose, onImported }: Props) {
           ))}
         </div>
       </div>
-      {mode === "import" ? <ImportView onImported={onImported} /> : <ExportView themes={themes} />}
+      {mode === "import" ? (
+        <ImportView themes={themes} onImported={onImported} />
+      ) : (
+        <ExportView themes={themes} />
+      )}
     </div>
   );
 }
 
-function ImportView({ onImported }: { onImported: (id: string) => void }) {
+function ImportView({
+  themes,
+  onImported,
+}: {
+  themes: ThemeSummary[];
+  onImported: (id: string) => void;
+}) {
   const [source, setSource] = useState<Source>("paste");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
@@ -211,31 +224,57 @@ function ImportView({ onImported }: { onImported: (id: string) => void }) {
         )}
 
         {preview?.themes.map((candidate) => (
-          <CandidateCard key={candidate.id} candidate={candidate} onImported={onImported} />
+          <CandidateCard
+            key={candidate.id}
+            candidate={candidate}
+            themes={themes}
+            onImported={onImported}
+          />
         ))}
       </div>
     </ScrollArea>
   );
 }
 
+/**
+ * What saving under `id` would collide with. The preview's `existing` answers
+ * for the id it proposed; once the user edits the id, the catalog answers for
+ * the id Rust will actually save under.
+ */
+function originOf(
+  id: string,
+  candidate: ThemeImportCandidate,
+  themes: ThemeSummary[],
+): ThemeOrigin {
+  if (id === candidate.id) return candidate.existing;
+  const match = themes.find((theme) => theme.id === id);
+  if (!match) return "new";
+  return match.builtIn ? "built-in" : "user";
+}
+
 function CandidateCard({
   candidate,
+  themes,
   onImported,
 }: {
   candidate: ThemeImportCandidate;
+  themes: ThemeSummary[];
   onImported: (id: string) => void;
 }) {
   const [name, setName] = useState(candidate.name);
   const [id, setId] = useState(candidate.id);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const savedId = useMemo(() => themeIdSlug(id), [id]);
+  const existing = originOf(savedId, candidate, themes);
 
   const save = async () => {
     setSaving(true);
     try {
-      await commitThemeImport(candidate.toml, id, name);
+      // Rust slugs the typed id; the id it saved under is the one to apply.
+      const committed = await commitThemeImport(candidate.toml, id, name);
       setSaved(true);
-      onImported(id);
+      onImported(committed.id);
       toast.success(`Imported “${name}”`);
     } catch (cause) {
       toast.error(String(cause));
@@ -254,12 +293,12 @@ function CandidateCard({
             {variant}
           </Badge>
         ))}
-        {candidate.existing === "built-in" && (
+        {existing === "built-in" && (
           <Badge size="sm" variant="warning">
             Shadows a built-in
           </Badge>
         )}
-        {candidate.existing === "user" && (
+        {existing === "user" && (
           <Badge size="sm" variant="warning">
             Replaces an import
           </Badge>
@@ -286,7 +325,7 @@ function CandidateCard({
       <div className="flex flex-wrap items-end gap-2 border-t border-border-subtle pt-2">
         <Field label="Name" value={name} onChange={setName} className="min-w-40 flex-1" />
         <Field label="Id" value={id} onChange={setId} className="min-w-32 flex-1" />
-        <Button size="sm" onClick={() => void save()} disabled={saving || !id.trim()}>
+        <Button size="sm" onClick={() => void save()} disabled={saving || !savedId}>
           {saved && <Icon icon={Check} size="sm" />}
           {saving ? "Saving…" : saved ? "Saved" : "Add theme"}
         </Button>

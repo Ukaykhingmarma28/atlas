@@ -253,7 +253,7 @@ export function MemoryTimelineView() {
   return (
     <div className="h-full flex flex-col bg-[var(--background)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 h-8 shrink-0 border-b border-[var(--border)] text-2xs text-[var(--muted-foreground)]">
+      <div className="flex items-center gap-3 px-3 h-control-lg shrink-0 border-b border-[var(--border)] text-2xs text-[var(--muted-foreground)]">
         <span className="text-xs font-medium text-[var(--secondary-foreground)]">Timeline</span>
         <span className="tabular-nums">
           {timeline.branches.length} branches · {timeline.commits.length} commits ·{" "}

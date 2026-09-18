@@ -741,6 +741,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "tempfile",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "toml_edit 0.24.1+spec-1.1.0",
@@ -876,7 +877,6 @@ dependencies = [
 name = "atlas-bus"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "tokio",
  "tracing",
 ]
@@ -987,6 +987,7 @@ dependencies = [
  "grafeo",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

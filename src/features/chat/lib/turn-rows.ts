@@ -24,7 +24,7 @@ import {
   isFileCreated,
 } from "./tool-files";
 import { splitAtlasContext } from "./atlas-context";
-import { stripNextSteps } from "./next-steps";
+import { stripNextSteps, stripNextStepsDirective } from "./next-steps";
 
 // ── Row kinds ──────────────────────────────────────────────────────────────
 
@@ -623,7 +623,7 @@ function derivedUser(m: ChatMessage): UserDerived {
           blockCount: m.atlasContextBlockCount ?? 0,
         }
       : splitAtlasContext(m.content);
-  const text = stripNextSteps(split.prose).trim();
+  const text = stripNextStepsDirective(split.prose).trim();
   const v: UserDerived = {
     text,
     contextBlocks: split.context ? split.blockCount : 0,

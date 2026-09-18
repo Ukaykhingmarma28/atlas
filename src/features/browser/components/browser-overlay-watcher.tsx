@@ -15,11 +15,13 @@ import { useBrowserOverlayStore } from "../stores/browser-overlay-store";
  *   [data-browser-suppress]— opt-in marker for custom overlays
  * Deliberately NOT tooltips, so hovering a control doesn't flash the browser.
  * A tooltip is anchored too, so its Positioner matches `[data-open][data-side]`
- * — elements that ARE or CONTAIN a tooltip popup are skipped. (Filtered in JS:
+ * — elements that ARE, CONTAIN or sit INSIDE a tooltip popup are skipped. The
+ * inside case is the tooltip's Arrow, which carries both attributes itself. (Filtered in JS:
  * `:has()` is missing from older WKWebViews, and an unsupported selector would
  * make querySelector throw.)
  */
-const TOOLTIP_SELECTOR = '[role="tooltip"], [data-slot="tooltip-content"]';
+const TOOLTIP_SELECTOR =
+  '[role="tooltip"], [data-slot="tooltip-content"], [data-slot="tooltip-arrow"]';
 
 const OVERLAY_SELECTOR =
   '[role="dialog"], [role="menu"], [role="listbox"], [data-hint-overlay], [data-browser-suppress], [data-overlay], [data-modal], [data-open][data-side]';
@@ -37,7 +39,7 @@ export function BrowserOverlayWatcher() {
       const overlays = document.querySelectorAll(OVERLAY_SELECTOR);
       setOverlayOpen(
         Array.from(overlays).some(
-          (el) => !el.matches(TOOLTIP_SELECTOR) && !el.querySelector(TOOLTIP_SELECTOR),
+          (el) => !el.closest(TOOLTIP_SELECTOR) && !el.querySelector(TOOLTIP_SELECTOR),
         ),
       );
     };

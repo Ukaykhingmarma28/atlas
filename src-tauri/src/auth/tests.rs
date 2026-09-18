@@ -18,6 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::backoff::{Backoff, BASE, CEILING};
+use super::config::resolve_auth_base;
 use super::core::AuthFailure;
 use super::*;
 
@@ -382,18 +383,18 @@ const PIXELS: &str = "not-really-a-png-but-nothing-here-decodes-it";
 
 #[test]
 fn auth_base_prefers_the_environment_and_trims_slashes() {
-    // Serialised implicitly: this is the only test touching the process env.
-    std::env::set_var("ATLAS_AUTH_URL", "http://localhost:8787/api/auth/");
-    assert_eq!(auth_base(), "http://localhost:8787/api/auth");
-
-    std::env::set_var("ATLAS_AUTH_URL", "   ");
-    assert!(
-        auth_base().starts_with("https://"),
-        "a blank override must fall through to the built-in default"
+    let staging = Some("https://staging.example/api/auth");
+    assert_eq!(
+        resolve_auth_base(Some("http://localhost:8787/api/auth/"), staging),
+        "http://localhost:8787/api/auth"
     );
-
-    std::env::remove_var("ATLAS_AUTH_URL");
-    assert_eq!(auth_base(), "https://auth.tryatlas.cc/api/auth");
+    assert_eq!(
+        resolve_auth_base(Some("   "), staging),
+        "https://staging.example/api/auth",
+        "a blank override falls through to the next rung"
+    );
+    assert_eq!(resolve_auth_base(None, staging), "https://staging.example/api/auth");
+    assert_eq!(resolve_auth_base(None, None), "https://auth.tryatlas.cc/api/auth");
 }
 
 // ----------------------------------------------------------------- storage

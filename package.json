@@ -20,6 +20,7 @@
     "format": "oxfmt --write src/",
     "format:check": "oxfmt --check src/",
     "test": "vitest run",
+    "test:contracts": "vitest run tests/",
     "theme:keys": "node scripts/generate-theme-keys.mjs",
     "theme:keys:check": "node scripts/generate-theme-keys.mjs --check",
     "test:rust": "bash scripts/test-rust.sh",

@@ -99,7 +99,7 @@ function FileRow({
     <div
       onClick={onSelect}
       className={cn(
-        "group flex items-center gap-1.5 h-6 px-2 cursor-pointer text-xs",
+        "group flex items-center gap-1.5 h-control-sm px-2 cursor-pointer text-xs",
         selected ? "bg-element-selected" : "hover:bg-element-hover",
       )}
     >
@@ -386,7 +386,7 @@ export function ChangesView() {
         {/* Staged */}
         {staged.length > 0 && (
           <div>
-            <div className="flex items-center justify-between px-2 h-6 sticky top-0 bg-[var(--sidebar)] border-b border-border-subtle">
+            <div className="flex items-center justify-between px-2 h-control-sm sticky top-0 bg-[var(--sidebar)] border-b border-border-subtle">
               <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Staged ({staged.length})
               </span>
@@ -414,7 +414,7 @@ export function ChangesView() {
 
         {/* Unstaged */}
         <div>
-          <div className="flex items-center justify-between px-2 h-6 sticky top-0 bg-[var(--sidebar)] border-b border-border-subtle">
+          <div className="flex items-center justify-between px-2 h-control-sm sticky top-0 bg-[var(--sidebar)] border-b border-border-subtle">
             <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
               Changes ({unstaged.length})
             </span>

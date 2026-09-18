@@ -12,7 +12,7 @@ import type {
   SessionSnapshot,
   ToolCall,
 } from "@/types/agents";
-import type { MockHandlers } from "./types";
+import type { TypedHandlers, Unit } from "./types";
 import { text, tool, tools } from "./fixtures/chat";
 import {
   askUserQuestionMulti,
@@ -50,6 +50,12 @@ const at = (s: FakeSession) => ({ agent_id: s.key.agent_id, session_id: s.key.se
 
 export function sendDelta(delta: AgentDelta): Promise<void> {
   return emit("atlas:agents", delta);
+}
+
+function sessionOrThrow(key: SessionKey): FakeSession {
+  const s = sessions.get(key.session_id);
+  if (!s) throw new Error(`session ${key.session_id} not found`);
+  return s;
 }
 
 function snapshot(s: FakeSession, withMessages: boolean): SessionSnapshot {
@@ -338,7 +344,24 @@ export function requestPermissionQuestionMulti(): Promise<void> {
   });
 }
 
-export const agentHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface AgentResponses {
+  agents_spawn: AgentInfo;
+  agents_new_session: SessionInit;
+  agents_snapshot: SessionSnapshot;
+  agents_snapshot_meta: SessionSnapshot;
+  agents_list_running: AgentInfo[];
+  agents_replay_transcript: SessionMessage[];
+  agents_drop_session: Unit;
+  agents_cancel: Unit;
+  agents_respond_permission: Unit;
+  agents_send: Unit;
+}
+
+export const agentHandlers: TypedHandlers<AgentResponses> = {
   agents_spawn: ({ pluginId }): AgentInfo => ({
     agent_id: `agent-${pluginId}`,
     spec_id: pluginId,
@@ -359,14 +382,9 @@ export const agentHandlers: MockHandlers = {
     }
     return { key, current_mode: null, available_modes: [] };
   },
-  agents_snapshot: ({ key }) => {
-    const s = sessions.get(key.session_id);
-    return s ? snapshot(s, true) : null;
-  },
-  agents_snapshot_meta: ({ key }) => {
-    const s = sessions.get(key.session_id);
-    return s ? snapshot(s, false) : null;
-  },
+  // Rust answers an unknown key with `Err`, never `null`.
+  agents_snapshot: ({ key }) => snapshot(sessionOrThrow(key), true),
+  agents_snapshot_meta: ({ key }) => snapshot(sessionOrThrow(key), false),
   agents_list_running: () => [],
   agents_replay_transcript: () => [],
   agents_drop_session: () => null,

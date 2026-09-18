@@ -46,6 +46,41 @@ const SUBSCRIBER =
   /\b(?:onThemeApplied|useThemeVersion)\s*\(|THEME_APPLIED_EVENT|atlas:theme-applied/;
 
 const ALLOW_MARKER = /theme-subscription-allow:\s*(.*)$/m;
+
+/**
+ * Source with its comments blanked out, so READER and SUBSCRIBER only see
+ * code. Without this, a file whose only mention of `atlas:theme-applied` (or
+ * `onThemeApplied(`) is in a doc comment counted as subscribed — prose saying
+ * "we should listen for this" satisfied the check exactly as a listener did.
+ * String and template literals are skipped over intact, so a `//` inside a
+ * URL string is not taken for a comment and `"atlas:theme-applied"` in code
+ * still counts. The allow marker is read from the raw text, since it IS a
+ * comment.
+ */
+function stripComments(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && next === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+      out += " ";
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
 const MIN_REASON = 40;
 
 /**
@@ -87,13 +122,14 @@ interface Reader {
 }
 
 const readers: Reader[] = walk(SRC).flatMap((file) => {
-  const text = readFileSync(file, "utf8");
-  if (!READER.test(text)) return [];
-  const marker = ALLOW_MARKER.exec(text);
+  const raw = readFileSync(file, "utf8");
+  const code = stripComments(raw);
+  if (!READER.test(code)) return [];
+  const marker = ALLOW_MARKER.exec(raw);
   return [
     {
       where: path.relative(REPO_ROOT, file),
-      subscribes: SUBSCRIBER.test(text),
+      subscribes: SUBSCRIBER.test(code),
       allowReason: marker ? marker[1].trim() : null,
     },
   ];
@@ -118,6 +154,18 @@ describe("theme subscription contract", () => {
         `${file} no longer reads a resolved theme value — has it moved?`,
       ).toContain(file);
     }
+  });
+
+  it("a subscription named only in a comment does not count", () => {
+    // Self-test for the comment stripping the checks above rely on.
+    const commented = [
+      "// listens for atlas:theme-applied via onThemeApplied(cb)",
+      "/* useThemeVersion() would go here; THEME_APPLIED_EVENT */",
+      'const url = "https://example.invalid/x"; // onThemeApplied(',
+    ].join("\n");
+    expect(SUBSCRIBER.test(stripComments(commented))).toBe(false);
+    expect(stripComments(commented)).toContain('"https://example.invalid/x"');
+    expect(SUBSCRIBER.test(stripComments('listen("atlas:theme-applied", cb);'))).toBe(true);
   });
 
   it("every resolved-value reader hears about a theme change", () => {
@@ -179,8 +227,8 @@ describe("theme subscription contract", () => {
     };
     for (const [builder, owners] of Object.entries(owns)) {
       for (const owner of owners) {
-        const text = readFileSync(path.join(REPO_ROOT, owner), "utf8");
-        expect(SUBSCRIBER.test(text), `${owner} stopped subscribing for ${builder}`).toBe(true);
+        const code = stripComments(readFileSync(path.join(REPO_ROOT, owner), "utf8"));
+        expect(SUBSCRIBER.test(code), `${owner} stopped subscribing for ${builder}`).toBe(true);
       }
     }
   });

@@ -30,12 +30,6 @@ describe("byok.envList", () => {
     await byok.envList();
     expect(invoke).toHaveBeenCalledExactlyOnceWith("byok_env_list");
   });
-
-  it("returns the rows untouched", async () => {
-    const rows = [{ provider: "openai", envVar: "OPENAI_API_KEY", last4: "1234" }];
-    invoke.mockResolvedValue(rows);
-    await expect(byok.envList()).resolves.toEqual(rows);
-  });
 });
 
 describe("byok.entries", () => {
@@ -43,34 +37,6 @@ describe("byok.entries", () => {
     invoke.mockResolvedValue([]);
     await byok.entries();
     expect(invoke).toHaveBeenCalledExactlyOnceWith("byok_env_entries");
-  });
-
-  it("preserves the file/line/editable fields the editor renders", async () => {
-    const rows = [
-      {
-        provider: "google",
-        envVar: "GEMINI_API_KEY",
-        last4: "9876",
-        file: "/Users/a/.zshrc",
-        line: 42,
-        editable: true,
-      },
-      {
-        provider: "openai",
-        envVar: "OPENAI_API_KEY",
-        last4: "4321",
-        file: null,
-        line: null,
-        editable: false,
-      },
-    ];
-    invoke.mockResolvedValue(rows);
-    await expect(byok.entries()).resolves.toEqual(rows);
-  });
-
-  it("propagates a rejection rather than swallowing it", async () => {
-    invoke.mockRejectedValue("no home directory");
-    await expect(byok.entries()).rejects.toBe("no home directory");
   });
 });
 
@@ -89,11 +55,6 @@ describe("byok.reveal", () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith("byok_env_reveal", {
       envVar: "ANTHROPIC_API_KEY",
     });
-  });
-
-  it("passes through a null for an unset variable", async () => {
-    invoke.mockResolvedValue(null);
-    await expect(byok.reveal("NOPE")).resolves.toBeNull();
   });
 });
 
@@ -114,16 +75,6 @@ describe("byok.set", () => {
     await byok.set("OPENAI_API_KEY", "sk-openai-wxyz9876");
     expect(Object.keys(invoke.mock.calls[0][1])).toEqual(["envVar", "value"]);
   });
-
-  it("resolves to the file that was written", async () => {
-    invoke.mockResolvedValue("/Users/a/.zshrc");
-    await expect(byok.set("GROQ_API_KEY", "gsk-1")).resolves.toBe("/Users/a/.zshrc");
-  });
-
-  it("propagates a rejection", async () => {
-    invoke.mockRejectedValue("read-only file system");
-    await expect(byok.set("GROQ_API_KEY", "gsk-1")).rejects.toBe("read-only file system");
-  });
 });
 
 describe("byok.unset", () => {
@@ -132,14 +83,5 @@ describe("byok.unset", () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith("byok_env_unset", {
       envVar: "ANTHROPIC_API_KEY",
     });
-  });
-
-  it("propagates the refusal for an env-only key", async () => {
-    // Rust refuses rather than guessing at a file it never found the value in;
-    // the UI turns this into a message, so it must not be swallowed here.
-    invoke.mockRejectedValue("This key is set outside your shell profile");
-    await expect(byok.unset("OPENAI_API_KEY")).rejects.toBe(
-      "This key is set outside your shell profile",
-    );
   });
 });

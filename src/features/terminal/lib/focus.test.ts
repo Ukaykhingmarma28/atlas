@@ -48,4 +48,13 @@ describe("focusedTerminalId", () => {
       ),
     ).toBeNull();
   });
+
+  it("is null when the focused terminal tab has no terminal state yet", () => {
+    expect(
+      focusedTerminalId(
+        { tabs, focusedGroupId: "main", activeByGroup: { main: "term-tab", g2: "editor" } },
+        { tabs: {} },
+      ),
+    ).toBeNull();
+  });
 });

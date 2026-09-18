@@ -50,9 +50,8 @@ const THREAD_PROJECTS_KEY = ["thread-projects"] as const;
 type SidebarAgent = "claude" | "codex" | "opencode" | "cursor" | "kilo" | "cersei" | (string & {});
 
 export function sidebarAgentOf(agentType: string | undefined): SidebarAgent {
-  // A live codex-acp session and the ~/.codex disk row it produces MUST fold
-  // into one band, or twin suppression, row icon, and delete routing all miss
-  // each other (claude-acp folds via the startsWith below).
+  // The registry ids and the older native ids a thread row may carry fold
+  // into one band per agent, or the row icon and resume routing split.
   if (agentType === "codex-acp") return "codex";
   if (
     agentType === "codex" ||
@@ -62,7 +61,17 @@ export function sidebarAgentOf(agentType: string | undefined): SidebarAgent {
     agentType === "cersei"
   )
     return agentType;
-  if (!agentType || agentType === "custom" || agentType.startsWith("claude")) return "claude";
+  // The real Claude ids only. A `startsWith("claude")` also caught registry
+  // agents such as "claude-foo" and resumed their history through claude-acp.
+  if (
+    !agentType ||
+    agentType === "custom" ||
+    agentType === "claude" ||
+    agentType === "claude-acp" ||
+    agentType === "claude-code" ||
+    agentType === "claude-code-ts"
+  )
+    return "claude";
   // Registry-installed external agent: its plugin id IS its identity.
   return agentType;
 }
@@ -93,8 +102,8 @@ function itemFromThread(thread: ThreadRow, projectName: string, isCurrent: boole
 }
 
 /** Band → the registry id resume must spawn through. The claude/codex bands
- *  come from disk listings that predate any live session, so they need an
- *  explicit mapping back to the registry entries that own those stores. The
+ *  fold several ids (see `sidebarAgentOf`), so they need an explicit mapping
+ *  back to the registry entries that own those threads. The
  *  old values ("claude-code"/"codex") named plugin ids the registry-only port
  *  deleted, so resuming those rows spawned UnknownSpec — a silent dead click. */
 export const AGENT_TYPE_BY_SIDEBAR: Partial<Record<string, SwitchableAgent>> = {

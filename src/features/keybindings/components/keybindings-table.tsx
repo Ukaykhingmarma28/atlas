@@ -131,7 +131,7 @@ export function KeybindingsTable({
       {groups.map((g) => (
         <Fragment key={g.title}>
           {g.title && (
-            <div className="px-3 pt-2.5 pb-1 text-2xs uppercase tracking-wider text-text-muted">
+            <div className="px-3 pt-2.5 pb-1 text-2xs uppercase tracking-wider text-muted-foreground">
               {g.title}
             </div>
           )}
@@ -155,14 +155,14 @@ export function KeybindingsTable({
 
       {unknownIds.length > 0 && (
         <>
-          <div className="px-3 pt-3 pb-1 text-2xs uppercase tracking-wider text-text-muted">
+          <div className="px-3 pt-3 pb-1 text-2xs uppercase tracking-wider text-muted-foreground">
             Unknown commands
           </div>
           {unknownIds.map((id) => (
             <div key={id} className={cn(GRID, "h-[28px] px-2 text-xs text-muted-foreground")}>
               <span />
               <span className="truncate font-mono text-xs">{id}</span>
-              <span className="text-text-muted">not in this version of Atlas</span>
+              <span className="text-muted-foreground">not in this version of Atlas</span>
               <span />
               <button
                 type="button"
@@ -268,13 +268,13 @@ function Row({
               >
                 {row.def.title}
               </span>
-              <span className="hidden truncate font-mono text-2xs text-text-muted @[640px]:inline">
+              <span className="hidden truncate font-mono text-2xs text-muted-foreground @[640px]:inline">
                 {row.id}
               </span>
             </div>
             <div className="flex min-w-0 items-center gap-2">
               {row.bindings.length === 0 ? (
-                <span className="text-text-muted">—</span>
+                <span className="text-muted-foreground">—</span>
               ) : (
                 row.bindings.map((b) => <KbdKeys key={b.serialized} keys={displayKeys(b.combo)} />)
               )}
@@ -327,7 +327,7 @@ function Row({
               )}
             </div>
             <span className="truncate font-mono text-2xs text-muted-foreground">
-              {WHEN_LABELS[row.def.when] || <span className="text-text-muted">—</span>}
+              {WHEN_LABELS[row.def.when] || <span className="text-muted-foreground">—</span>}
             </span>
             <span
               className={cn(

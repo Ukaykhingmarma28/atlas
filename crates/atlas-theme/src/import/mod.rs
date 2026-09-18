@@ -40,6 +40,32 @@ pub use report::{DerivedKey, Fidelity, ImportCounts, ImportReport as Report, Ign
 /// eight is room to spare and a hard stop on a cycle a path check missed.
 const MAX_INCLUDE_DEPTH: usize = 8;
 
+/// The most a theme source may weigh — a file, a fetched URL, or one file of
+/// an `include` chain. The largest real VS Code theme is a few hundred KB; this
+/// is a hard stop on a path that names `/dev/zero` or a multi-GB file.
+pub const MAX_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Read a theme source off disk: a regular file, no larger than
+/// [`MAX_SOURCE_BYTES`], as UTF-8.
+pub fn read_source_file(path: &Path) -> std::io::Result<String> {
+    use std::io::{Error, ErrorKind, Read};
+    let file = std::fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(Error::new(ErrorKind::InvalidInput, "not a regular file"));
+    }
+    if metadata.len() > MAX_SOURCE_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "larger than the 4 MB a theme may be"));
+    }
+    let mut text = String::new();
+    // `take` too: the file can grow between the metadata read and this one.
+    file.take(MAX_SOURCE_BYTES + 1).read_to_string(&mut text)?;
+    if text.len() as u64 > MAX_SOURCE_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "larger than the 4 MB a theme may be"));
+    }
+    Ok(text)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportFormat {
@@ -277,7 +303,7 @@ fn resolve_includes(
             unresolved.push(format!("{target} (cycle)"));
             break;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Ok(text) = read_source_file(&path) else {
             unresolved.push(target);
             break;
         };
@@ -297,9 +323,15 @@ fn merge_theme(parent: Value, child: Value) -> Value {
     // A non-object on either side is not a theme document; keep the other.
     let Value::Object(parent) = parent else { return child };
     let Value::Object(mut child) = child else { return Value::Object(parent) };
+    // The child's own `include` is the hop being resolved right now; the
+    // parent's is the next one, and has to survive the merge for the walk in
+    // `resolve_includes` to take it. Dropping it stopped every chain at one hop.
+    child.remove("include");
     for (key, parent_value) in parent {
         match key.as_str() {
-            "include" => {}
+            "include" => {
+                child.insert(key, parent_value);
+            }
             "colors" | "semanticTokenColors" => {
                 let merged = match (parent_value, child.remove(&key)) {
                     (Value::Object(mut base), Some(Value::Object(over))) => {
@@ -327,9 +359,6 @@ fn merge_theme(parent: Value, child: Value) -> Value {
             }
         }
     }
-    // The chain is walked one hop at a time, so the merged value must not carry
-    // the parent's own `include` forward as if it were the child's.
-    child.remove("include");
     Value::Object(child)
 }
 
@@ -407,6 +436,10 @@ mod tests {
         assert_eq!(slug("Rosé Pine Dawn"), "rose-pine-dawn");
         assert_eq!(slug("  One Dark Pro!! "), "one-dark-pro");
         assert_eq!(slug("!!!"), "");
+        // Mirrored by `themeIdSlug`'s test in `theme-import-api.test.ts`.
+        assert_eq!(slug("Straße Æther"), "strasse-aether");
+        assert_eq!(slug("Ωmega--Theme_2"), "mega-theme-2");
+        assert_eq!(slug("my-theme"), "my-theme");
     }
 
     #[test]
@@ -430,6 +463,64 @@ mod tests {
         let value: Value = serde_json::from_str(&strip_jsonc(source)).unwrap();
         assert_eq!(value["name"], "T");
         assert_eq!(value["colors"]["editor.background"], "#000000");
+    }
+
+    fn write(dir: &Path, name: &str, body: &str) {
+        std::fs::write(dir.join(name), body).unwrap();
+    }
+
+    /// Dark+ → dark_vs → (dark_defaults) is the shape every built-in VS Code
+    /// theme has. The walk used to stop after the first hop because the merge
+    /// dropped the parent's own `include`.
+    #[test]
+    fn an_include_chain_is_followed_past_the_first_hop() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "b.json", r##"{"include":"./c.json","colors":{"b":"#bbbbbb","shared":"#b0b0b0"}}"##);
+        write(dir.path(), "c.json", r##"{"colors":{"c":"#cccccc","shared":"#c0c0c0"},"tokenColors":[{"scope":"c"}]}"##);
+        let source = r##"{"include":"./b.json","colors":{"a":"#aaaaaa"},"tokenColors":[{"scope":"a"}]}"##;
+        let resolved = resolve_includes(source, Some(dir.path()), &ImportOptions::default()).unwrap();
+        assert_eq!(resolved.includes, ["./b.json", "./c.json"]);
+        assert!(resolved.unresolved.is_empty(), "{:?}", resolved.unresolved);
+        let colors = &resolved.value["colors"];
+        assert_eq!(colors["a"], "#aaaaaa");
+        assert_eq!(colors["b"], "#bbbbbb");
+        assert_eq!(colors["c"], "#cccccc");
+        assert_eq!(colors["shared"], "#b0b0b0", "the nearer file wins");
+        // The base's rules come first, so the includer's win a tie.
+        assert_eq!(resolved.value["tokenColors"][0]["scope"], "c");
+        assert_eq!(resolved.value["tokenColors"][1]["scope"], "a");
+        assert!(resolved.value.get("include").is_none());
+    }
+
+    #[test]
+    fn an_include_chain_past_the_depth_limit_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        for index in 0..=MAX_INCLUDE_DEPTH {
+            write(dir.path(), &format!("{index}.json"), &format!(r#"{{"include":"./{}.json"}}"#, index + 1));
+        }
+        let source = r#"{"include":"./0.json"}"#;
+        let resolved = resolve_includes(source, Some(dir.path()), &ImportOptions::default()).unwrap();
+        assert_eq!(resolved.includes.len(), MAX_INCLUDE_DEPTH);
+        assert!(resolved.unresolved.iter().any(|entry| entry.contains("deeper than")), "{:?}", resolved.unresolved);
+    }
+
+    #[test]
+    fn an_include_cycle_is_reported_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "a.json", r#"{"include":"./b.json"}"#);
+        write(dir.path(), "b.json", r#"{"include":"./a.json"}"#);
+        let resolved = resolve_includes(r#"{"include":"./a.json"}"#, Some(dir.path()), &ImportOptions::default()).unwrap();
+        assert!(resolved.unresolved.iter().any(|entry| entry.contains("cycle")), "{:?}", resolved.unresolved);
+    }
+
+    #[test]
+    fn an_oversized_include_is_unresolved_rather_than_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = format!(r#"{{"colors":{{}},"pad":"{}"}}"#, "x".repeat(MAX_SOURCE_BYTES as usize));
+        write(dir.path(), "big.json", &big);
+        let resolved = resolve_includes(r#"{"include":"./big.json"}"#, Some(dir.path()), &ImportOptions::default()).unwrap();
+        assert!(resolved.includes.is_empty());
+        assert_eq!(resolved.unresolved, ["./big.json"]);
     }
 
     #[test]

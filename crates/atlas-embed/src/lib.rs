@@ -71,6 +71,10 @@ pub struct Embedder {
 /// compile/run on this machine — hence the guarded load + request-time
 /// fallback.
 pub(crate) fn gpu_device() -> Option<Device> {
+    #[cfg(test)]
+    if let Some(device) = test_seam::fake_gpu_device() {
+        return Some(device);
+    }
     #[cfg(all(target_os = "macos", feature = "metal"))]
     {
         match Device::new_metal(0) {
@@ -90,6 +94,10 @@ pub(crate) fn gpu_device() -> Option<Device> {
 
 /// Whether the platform-appropriate GPU backend is compiled into this build.
 pub(crate) fn gpu_compiled() -> bool {
+    #[cfg(test)]
+    if test_seam::fake_gpu() {
+        return true;
+    }
     cfg!(any(
         all(target_os = "macos", feature = "metal"),
         all(not(target_os = "macos"), feature = "cuda")
@@ -186,9 +194,11 @@ impl Embedder {
         device: Device,
         on_gpu: bool,
     ) -> Result<EmbedderCore> {
+        #[cfg(test)]
+        test_seam::fault(on_gpu, test_seam::Fault::PanicInBuild);
         let weights_path = model_dir.join("model.safetensors");
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path.clone()], DTYPE, &device)
+            VarBuilder::from_mmaped_safetensors(std::slice::from_ref(&weights_path), DTYPE, &device)
                 .with_context(|| format!("mmap {}", weights_path.display()))?
         };
         let model = BertModel::load(vb, config).context("load BERT weights")?;
@@ -260,6 +270,8 @@ impl Embedder {
             .read()
             .map_err(|_| anyhow!("embedder core lock poisoned"))?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            test_seam::fault(core.on_gpu, test_seam::Fault::PanicInForward);
             Self::forward_raw(&core.model, &core.device, &ids)
         }))
         .unwrap_or_else(|_| Err(anyhow!("embedding kernel panicked on {}", self.backend())))
@@ -312,6 +324,59 @@ pub(crate) fn write_gpu_marker(model_dir: &Path, reason: &str) {
         format!("{reason}\n"),
     );
 }
+
+/// Test-only stand-in for a GPU, so the load-time and request-time fallbacks
+/// can run on a machine (and a build) with no Metal or CUDA.
+///
+/// With [`FAKE_GPU`](test_seam::FAKE_GPU) set, the build reports a GPU
+/// backend and [`gpu_device`] hands back `Device::Cpu` flagged as the GPU,
+/// which exercises exactly the code a real GPU would. [`Fault`] then makes
+/// the "GPU" core panic where candle's kernels do: while the weights load
+/// (the metallib mismatch) or inside a forward pass (lazy pipeline
+/// compilation). Every knob is thread-local, so parallel tests cannot see each
+/// other's settings; none of it exists outside `cfg(test)`.
+#[cfg(test)]
+pub(crate) mod test_seam {
+    use std::cell::Cell;
+
+    use candle_core::Device;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Fault {
+        None,
+        PanicInBuild,
+        PanicInForward,
+    }
+
+    thread_local! {
+        pub(crate) static FAKE_GPU: Cell<bool> = const { Cell::new(false) };
+        pub(crate) static FAULT: Cell<Fault> = const { Cell::new(Fault::None) };
+        /// How many times the load path asked for a GPU device.
+        pub(crate) static GPU_ATTEMPTS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn fake_gpu() -> bool {
+        FAKE_GPU.with(Cell::get)
+    }
+
+    pub(crate) fn fake_gpu_device() -> Option<Device> {
+        if !fake_gpu() {
+            return None;
+        }
+        GPU_ATTEMPTS.with(|n| n.set(n.get() + 1));
+        Some(Device::Cpu)
+    }
+
+    /// Panic if the core is the (fake) GPU one and `at` is the armed fault.
+    pub(crate) fn fault(on_gpu: bool, at: Fault) {
+        if on_gpu && FAULT.with(Cell::get) == at {
+            panic!("injected GPU kernel panic ({at:?})");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 // ── Vector store ────────────────────────────────────────────────────────────
 

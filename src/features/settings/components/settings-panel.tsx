@@ -173,7 +173,8 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
         </div>
       ) : activeSection === "appearance" ? (
         <div className="flex-1 min-w-0 min-h-0">
-          <AppearanceSettings />
+          {/* Interface zoom lives in General, so this pane is the theme picker alone. */}
+          <AtlasThemesSettings />
         </div>
       ) : activeSection === "icons" ? (
         <div className="flex-1 min-w-0 min-h-0">
@@ -197,7 +198,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
   );
 }
 
-interface CliStatus {
+export interface CliStatus {
   installed: boolean;
   path: string | null;
   installedVersion: string | null;
@@ -321,6 +322,12 @@ function GeneralSettings() {
           </div>
         </div>
       )}
+      <SettingRow
+        label="Interface zoom"
+        description="Scales the whole interface — text, icons and spacing together."
+      >
+        <ZoomControl />
+      </SettingRow>
       <SettingRow
         label="Enter to send"
         description="Enter sends your message; Shift+Enter inserts a newline — the Slack/Discord/ChatGPT convention. Turn off to restore the old behavior, where only ⌘/Ctrl+Enter sends and Enter always inserts a newline. ⌘/Ctrl+Enter always sends either way."
@@ -523,7 +530,8 @@ function GeneralSettings() {
   );
 }
 
-function AppearanceSettings() {
+/** Interface zoom stepper. Also reachable anywhere via the view.zoom* shortcuts. */
+function ZoomControl() {
   const settings = useSettingsStore.use.settings();
   const { updateSettings } = useSettingsStore.use.actions();
 
@@ -534,56 +542,44 @@ function AppearanceSettings() {
   const zoomResetKeys = useActionShortcut("view.zoomReset")?.label;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* One theme controls the interface, editor, terminal, diffs, and syntax. */}
-      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
-        <span className="px-2.5 text-xs font-medium text-foreground">Theme</span>
-
-        {/* Interface zoom — right-aligned control (like Skills' scope control). */}
-        <div className="ml-auto flex items-center gap-1 pr-0.5">
-          <Hint label="Zoom out" shortcut={zoomOutKeys}>
-            <button
-              type="button"
-              onClick={() => setScale(settings.uiScale - SCALE_STEP)}
-              disabled={settings.uiScale <= MIN_SCALE}
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
-                "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
-                "disabled:opacity-40 disabled:cursor-not-allowed",
-              )}
-            >
-              <Minus size={12} />
-            </button>
-          </Hint>
-          <Hint label="Reset to 100%" shortcut={zoomResetKeys}>
-            <button
-              type="button"
-              onClick={() => setScale(DEFAULT_SCALE)}
-              className="h-6 min-w-[44px] rounded-md px-1.5 text-xs font-medium tabular-nums text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
-            >
-              {scalePct}%
-            </button>
-          </Hint>
-          <Hint label="Zoom in" shortcut={zoomInKeys}>
-            <button
-              type="button"
-              onClick={() => setScale(settings.uiScale + SCALE_STEP)}
-              disabled={settings.uiScale >= MAX_SCALE}
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
-                "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
-                "disabled:opacity-40 disabled:cursor-not-allowed",
-              )}
-            >
-              <Plus size={12} />
-            </button>
-          </Hint>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1">
-        <AtlasThemesSettings />
-      </div>
+    <div className="flex items-center gap-1">
+      <Hint label="Zoom out" shortcut={zoomOutKeys}>
+        <button
+          type="button"
+          onClick={() => setScale(settings.uiScale - SCALE_STEP)}
+          disabled={settings.uiScale <= MIN_SCALE}
+          className={cn(
+            "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
+            "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
+            "disabled:opacity-40 disabled:cursor-not-allowed",
+          )}
+        >
+          <Minus size={12} />
+        </button>
+      </Hint>
+      <Hint label="Reset to 100%" shortcut={zoomResetKeys}>
+        <button
+          type="button"
+          onClick={() => setScale(DEFAULT_SCALE)}
+          className="h-6 min-w-[44px] rounded-md px-1.5 text-xs font-medium tabular-nums text-secondary-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
+        >
+          {scalePct}%
+        </button>
+      </Hint>
+      <Hint label="Zoom in" shortcut={zoomInKeys}>
+        <button
+          type="button"
+          onClick={() => setScale(settings.uiScale + SCALE_STEP)}
+          disabled={settings.uiScale >= MAX_SCALE}
+          className={cn(
+            "flex h-6 w-6 items-center justify-center rounded-full border border-border text-secondary-foreground",
+            "hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer",
+            "disabled:opacity-40 disabled:cursor-not-allowed",
+          )}
+        >
+          <Plus size={12} />
+        </button>
+      </Hint>
     </div>
   );
 }

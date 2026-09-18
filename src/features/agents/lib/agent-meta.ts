@@ -55,11 +55,21 @@ const FIRST_PARTY: readonly FirstPartyAgent[] = [
   "cersei",
 ];
 
+/** Ids that ARE Claude Code: the retired built-in specs and the registry's
+ *  ACP adapter. Deliberately a list, not `startsWith("claude")`. */
+const CLAUDE_CODE_IDS: ReadonlySet<string> = new Set([
+  "claude",
+  "claude-code-ts",
+  "claude-code-rs",
+  "claude-acp",
+]);
+
 /** Map an agentType OR plugin id to first-party identity, when it is one. */
 function firstPartyOf(id: string): FirstPartyAgent | null {
   if (FIRST_PARTY.includes(id as FirstPartyAgent)) return id as FirstPartyAgent;
-  if (id === "claude-code-ts" || id === "claude-code-rs" || id.startsWith("claude"))
-    return "claude-code";
+  // The real Claude ids only — the registry's `claude-acp` is Claude Code and
+  // keeps its mark, but a third-party `claude-*` agent must not borrow it.
+  if (CLAUDE_CODE_IDS.has(id)) return "claude-code";
   return null;
 }
 
@@ -133,7 +143,10 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
  *  the switcher highlighted the wrong row. One implementation, one behaviour. */
 export function switchableAgentOf(agentType: string | undefined): AgentType {
   if (!agentType || agentType === "custom") return NATIVE_AGENT_ID;
-  if (agentType.startsWith("claude")) return "claude-code";
+  // Only the retired built-in spec ids alias to the persisted "claude-code".
+  // `claude-acp` is a registry agent whose identity is its plugin id (see
+  // `agentTypeFromPluginId`), and a third-party `claude-*` is its own agent.
+  if (agentType === "claude-code-ts" || agentType === "claude-code-rs") return "claude-code";
   return agentType;
 }
 

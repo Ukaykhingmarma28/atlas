@@ -48,7 +48,7 @@ interface TermGit {
   dirty: boolean;
 }
 
-interface RawGitStatus {
+export interface RawGitStatus {
   is_repo: boolean;
   branch: string;
   ahead: number;

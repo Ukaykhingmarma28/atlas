@@ -46,7 +46,7 @@ export interface MemoryGraphData {
   nodes: MemoryNode[];
   edges: MemoryEdge[];
 }
-interface GraphLayout {
+export interface GraphLayout {
   positions: Record<string, { x: number; y: number }>;
 }
 

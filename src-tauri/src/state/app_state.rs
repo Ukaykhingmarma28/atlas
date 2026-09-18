@@ -509,10 +509,12 @@ impl AppState {
 mod tests {
     use super::*;
 
-    fn tmp_state_path() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("atlas-state-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("state.json")
+    /// A `state.json` path in its own temp directory. Keep the `TempDir` alive
+    /// for the test: dropping it deletes the directory.
+    fn tmp_state_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        (dir, path)
     }
 
     fn state_file_with_legacy_settings(path: &Path) {
@@ -537,7 +539,7 @@ mod tests {
     /// not destroy it.
     #[test]
     fn a_save_before_migration_preserves_the_legacy_settings() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         state_file_with_legacy_settings(&path);
 
         let state = AppState { settings_config_migrated: false, ..AppState::default() };
@@ -555,7 +557,7 @@ mod tests {
     /// in `state.json` forever.
     #[test]
     fn a_save_after_migration_drops_the_legacy_settings() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         state_file_with_legacy_settings(&path);
 
         let state = AppState { settings_config_migrated: true, ..AppState::default() };
@@ -568,7 +570,7 @@ mod tests {
     /// fresh state always wins on its own fields.
     #[test]
     fn merging_lets_the_live_state_win_on_its_own_fields() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         std::fs::write(
             &path,
             serde_json::json!({ "version": 1, "settingsConfigMigrated": false, "recentProjects": [

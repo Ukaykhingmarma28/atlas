@@ -1,5 +1,6 @@
 import { detectLanguage, PLAINTEXT } from "@/features/editor/lib/languages";
 import { sanitizeSvg } from "./sanitize-svg";
+import { fontFaceCss, safeFontIdent } from "./font-face-css";
 import {
   getIconThemeAssets,
   getIconThemeFonts,
@@ -61,25 +62,14 @@ const EMPTY: IconThemePreview = { icons: ICON_PREVIEW_ROW.map(() => null), fontF
  * glyphs in another theme's font.
  */
 function previewFamily(themeId: string, fontId: string): string {
-  return `atlas-icon-preview-${themeId}-${fontId}`;
+  // Both halves come from an installed theme, so both go through the same
+  // reduction the `@font-face` text does — see `font-face-css.ts`.
+  return safeFontIdent(`atlas-icon-preview-${themeId}-${fontId}`);
 }
 
 function faceCss(themeId: string, fonts: IconFontFace[]): string {
   return fonts
-    .map((font) => {
-      const src = font.src
-        .map((source) => `url("${source.url}") format("${source.format}")`)
-        .join(", ");
-      if (!src) return "";
-      return [
-        "@font-face {",
-        `  font-family: "${previewFamily(themeId, font.id)}";`,
-        `  src: ${src};`,
-        `  font-weight: ${font.weight ?? "normal"};`,
-        `  font-style: ${font.style ?? "normal"};`,
-        "}",
-      ].join("\n");
-    })
+    .map((font) => fontFaceCss(previewFamily(themeId, font.id), font))
     .filter(Boolean)
     .join("\n");
 }

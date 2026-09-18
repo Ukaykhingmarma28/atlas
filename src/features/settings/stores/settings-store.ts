@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { applyUiScale } from "@/features/settings/lib/ui-scale";
 import { applyConfiguredTheme } from "@/features/theme/stores/theme-store";
-import { appearanceForMode } from "@/features/theme/apply-theme";
+import { appearanceForMode, getActiveTheme } from "@/features/theme/apply-theme";
+import { THEME_APPLIED_EVENT } from "@/features/theme/theme-values";
 import { applyConfiguredIconTheme } from "@/features/icon-theme/stores/icon-theme-store";
 import {
   updateSettings as updateAtlasConfig,
@@ -56,12 +57,50 @@ interface SettingsState {
   };
 }
 
+/** Structural equality for JSON-shaped settings values. Key order is ignored:
+ *  the optimistic object is built in the UI and the reconciled one is parsed
+ *  from Rust, and the two need not list the same keys in the same order. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left).filter((key) => left[key] !== undefined);
+  if (keys.length !== Object.keys(right).filter((key) => right[key] !== undefined).length) {
+    return false;
+  }
+  return keys.every((key) => sameValue(left[key], right[key]));
+}
+
+/** The icon theme + appearance last handed to `applyConfiguredIconTheme`, so a
+ *  theme apply that leaves both where they were costs nothing. */
+let appliedIcons: { id: string; appearance: "dark" | "light" } | null = null;
+
+/** Icons follow the appearance the theme ACTUALLY resolved to, not the mode
+ *  that was asked for: a dark-only theme (Monokai, Vesper) under Light paints
+ *  dark, and light icons on it would be the wrong half of the theme's own
+ *  `light` association section. Before the first apply there is no resolved
+ *  theme yet, so the requested mode is the best guess — the
+ *  `atlas:theme-applied` listener below corrects it the moment one lands. */
+function applyIcons(iconTheme: string, themeMode: AppSettings["themeMode"]): void {
+  const appearance = getActiveTheme()?.appearance ?? appearanceForMode(themeMode);
+  if (appliedIcons?.id === iconTheme && appliedIcons.appearance === appearance) return;
+  appliedIcons = { id: iconTheme, appearance };
+  applyConfiguredIconTheme(iconTheme, appearance);
+}
+
 /** Re-apply every settings-driven side effect whose value actually changed
  *  between `previous` and `next`. Shared by `updateSettings` (both the
  *  optimistic apply and the reconciled result), `hydrate`, and the
  *  `atlas:config-changed` listener below — one path so a hot-reloaded
  *  external edit re-applies UI scale/theme/explorer state exactly like a
- *  UI-driven change does. */
+ *  UI-driven change does.
+ *
+ *  "Changed" is by VALUE. Every IPC result is a freshly parsed object, so a
+ *  reference test on `themeOverrides` re-applied the whole theme on every
+ *  settings write, twice (the reconcile and the `atlas:config-changed` echo) —
+ *  and each apply collapses mermaid diagrams and re-themes every terminal. */
 function applySettingsSideEffects(next: AppSettings, previous: AppSettings): void {
   // Toggling hidden-files visibility must re-apply the explorer's dotfile
   // filter immediately. `refresh()` reconciles the root and every expanded
@@ -75,15 +114,14 @@ function applySettingsSideEffects(next: AppSettings, previous: AppSettings): voi
   if (
     next.theme !== previous.theme ||
     next.themeMode !== previous.themeMode ||
-    next.themeOverrides !== previous.themeOverrides
+    !sameValue(next.themeOverrides, previous.themeOverrides)
   ) {
     applyConfiguredTheme(next.theme, next.themeMode, next.themeOverrides);
   }
-  // Icons follow `themeMode` too: a theme's `light` association section is
-  // chosen by the same appearance the colours are.
-  if (next.iconTheme !== previous.iconTheme || next.themeMode !== previous.themeMode) {
-    applyConfiguredIconTheme(next.iconTheme, appearanceForMode(next.themeMode));
-  }
+  // A theme or mode change reaches the icons through `atlas:theme-applied`,
+  // once the appearance it resolves to is known; only a new icon theme has to
+  // be applied from here.
+  if (next.iconTheme !== previous.iconTheme) applyIcons(next.iconTheme, next.themeMode);
 }
 
 /** How many times a settings write adopts the latest generation and retries
@@ -200,7 +238,7 @@ export const useSettingsStore = createSelectors(
         applyConfiguredTheme(settings.theme, settings.themeMode, settings.themeOverrides);
         // The icon catalog is only listed here; no icon is fetched until a
         // row asks for one (decision 12).
-        applyConfiguredIconTheme(settings.iconTheme, appearanceForMode(settings.themeMode));
+        applyIcons(settings.iconTheme, settings.themeMode);
       },
     },
   })),
@@ -218,6 +256,16 @@ void onConfigChanged(({ settings, generation }) => {
   useSettingsStore.setState({ settings, configGeneration: generation, configError: null });
   applySettingsSideEffects(settings, previous);
 });
+
+// Every theme apply — a settings change, the OS flipping appearance under
+// `system`, a hot-reloaded theme file — can change the appearance the icons
+// should follow. See `applyIcons`.
+if (typeof window !== "undefined") {
+  window.addEventListener(THEME_APPLIED_EVENT, () => {
+    const { settings } = useSettingsStore.getState();
+    applyIcons(settings.iconTheme, settings.themeMode);
+  });
+}
 
 // A malformed external edit (or a write Rust rejected) — `settings` is
 // unchanged, this is purely "tell the user".

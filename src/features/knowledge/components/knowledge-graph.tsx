@@ -890,7 +890,7 @@ function EmptyState() {
   return (
     <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-2">
       <div className="text-sm">No notes yet — create some and reference them with</div>
-      <div className="mono text-xs text-text-muted">[[note-id]]</div>
+      <div className="mono text-xs text-muted-foreground">[[note-id]]</div>
       <div className="text-sm">to see them connect here.</div>
     </div>
   );

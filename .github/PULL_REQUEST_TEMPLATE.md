@@ -33,10 +33,15 @@ Only the things CI can't check for you:
 - [ ] New behaviour has a test; a bug fix has a test that fails without it
 - [ ] You've run the app and used the change in a window
 
-CI now runs, on every PR: `bun run lint`, `bun run format:check`, `bun run
-typecheck`, `bun run test`, `bun run build`, `cargo test` for all 14 crates,
-and `cargo test` for `src-tauri`. So there are no boxes for those — if it
-compiles and passes locally, CI is checking it too.
+CI runs, on every PR: `bun run lint`, `bun run format:check`, `bun run
+typecheck`, `bun run test` and `bun run build`; `cargo test` plus one clippy
+pass for every crate under `crates/`, each in its own job (`-D warnings` for
+the crates flagged `clippy: true` in `ci.yml`, the workspace lint table for the
+rest); `cargo test --lib` and clippy for `src-tauri`, on macOS; and the engine
+dialect (`codex-api`) with the vendored crates Atlas has edited. So there are no
+boxes for those. Locally, `bun run test:rust` runs a subset of CI's Rust tests
+(its header says what it skips) and no clippy — for a crate you touched, run `cargo clippy --locked --all-targets`
+(with `-- -D warnings` if it's flagged) before pushing, or let CI tell you.
 What CI still can't judge is whether the change actually works in a window, and
 whether the behaviour you added is covered by a test.
 

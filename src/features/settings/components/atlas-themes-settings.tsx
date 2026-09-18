@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, Search, X } from "lucide-react";
+import { AlertTriangle, Download, Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -18,6 +18,96 @@ import type {
 } from "@/features/theme/lib/theme-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { ThemeImportPanel } from "./theme-import-panel";
+
+// All three, since the app-wide light pass is done. A theme with no light
+// variant still resolves — `resolveTheme` falls back to its other variant,
+// which is the documented schema-1 behaviour and is why picking Light with a
+// dark-only theme selected is not an error state.
+const MODES = [
+  { mode: "system", label: "System", icon: Monitor },
+  { mode: "dark", label: "Dark", icon: Moon },
+  { mode: "light", label: "Light", icon: Sun },
+] as const satisfies readonly { mode: ThemeMode; label: string; icon: typeof Monitor }[];
+
+/**
+ * Segmented System / Dark / Light control. One thumb slides under the equal-width
+ * segments instead of each segment swapping its own background, so a change reads
+ * as movement rather than a flicker. Arrow keys move the selection, as they do
+ * in any native radio group.
+ */
+function ModeSwitch({
+  value,
+  systemAppearance,
+  onChange,
+}: {
+  value: ThemeMode;
+  systemAppearance: ThemeAppearance;
+  onChange: (mode: ThemeMode) => void;
+}) {
+  const index = Math.max(
+    0,
+    MODES.findIndex((m) => m.mode === value),
+  );
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (index + step + MODES.length) % MODES.length;
+    onChange(MODES[next].mode);
+    event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=radio]")[next]?.focus();
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Appearance mode"
+      onKeyDown={onKeyDown}
+      className="relative grid shrink-0 grid-cols-3 rounded-full border border-border bg-card p-0.5"
+    >
+      <span
+        aria-hidden
+        className="absolute inset-y-0.5 left-0.5 w-[calc((100%-4px)/3)] rounded-full bg-element-selected ring-1 ring-border transition-transform duration-200 ease-out-strong motion-reduce:transition-none"
+        style={{ transform: `translateX(${index * 100}%)` }}
+      />
+      {MODES.map(({ mode, label, icon }) => {
+        const active = value === mode;
+        const button = (
+          <button
+            key={mode}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={label}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(mode)}
+            className={cn(
+              "relative z-10 flex h-control-xs cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring",
+              active ? "text-foreground" : "text-muted-foreground hover:text-secondary-foreground",
+            )}
+          >
+            <Icon icon={icon} size="xs" />
+            {/* Icon-only when the toolbar is narrow: three labelled segments
+                are ~200px, and below that the labels overlap each other. */}
+            <span className="hidden @lg:inline">{label}</span>
+          </button>
+        );
+        return mode === "system" ? (
+          <Hint key={mode} label={`Follow the OS — currently ${systemAppearance}`}>
+            {button}
+          </Hint>
+        ) : (
+          button
+        );
+      })}
+    </div>
+  );
+}
 
 export function AtlasThemesSettings() {
   const settings = useSettingsStore.use.settings();
@@ -75,12 +165,6 @@ export function AtlasThemesSettings() {
     );
   }, [query, themes]);
 
-  // All three, since the app-wide light pass is done. A theme with no light
-  // variant still resolves — `resolveTheme` falls back to its other variant,
-  // which is the documented schema-1 behaviour and is why picking Light with a
-  // dark-only theme selected is not an error state.
-  const modes: ThemeMode[] = ["system", "dark", "light"];
-
   // The import panel replaces the grid rather than floating over it: it is a
   // multi-step, scrolling surface (paste, convert, read the report, name the
   // theme) and a dialog would fight the settings pane for height.
@@ -101,35 +185,17 @@ export function AtlasThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3">
-        <span className="text-xs font-medium text-secondary-foreground">Mode</span>
-        <div className="flex rounded-md border border-border bg-card p-0.5">
-          {modes.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => updateSettings({ themeMode: mode })}
-              className={cn(
-                "rounded px-2 py-1 text-2xs capitalize transition-colors",
-                settings.themeMode === mode
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-background px-3">
+      {/* One toolbar: filter the catalog, pick the mode, import a new theme.
+          A container, so the mode switch can drop its labels on a narrow pane;
+          narrower still, it wraps rather than squeezing the search to nothing. */}
+      <div className="@container flex min-h-[36px] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border bg-background px-3 py-1">
         <Search size={11} className="shrink-0 text-muted-foreground" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search themes…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-20 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
         {query && (
           <Hint label="Clear search">
@@ -142,6 +208,11 @@ export function AtlasThemesSettings() {
             </button>
           </Hint>
         )}
+        <ModeSwitch
+          value={settings.themeMode}
+          systemAppearance={appearanceForMode("system")}
+          onChange={(mode) => updateSettings({ themeMode: mode })}
+        />
         <Hint label="Convert a shadcn, Zed or VS Code theme">
           <Button size="xs" variant="outline" onClick={() => setImporting(true)}>
             <Icon icon={Download} size="xs" />

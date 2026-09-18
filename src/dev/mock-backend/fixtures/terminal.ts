@@ -33,20 +33,10 @@
 //   not found             anything unscripted → exit 127
 
 import type { Channel } from "@tauri-apps/api/core";
-import type { MockHandlers } from "../types";
+import type { RawPathCompletion } from "@/features/terminal/components/command-input";
+import type { TypedHandlers, Unread } from "../types";
 import { MOCK_PROJECT } from "../project";
 import { fileText, listDir, mockFilePaths } from "./files";
-
-/**
- * `terminal_path_complete`'s row shape. The Rust struct (`PathCompletion` in
- * `commands/terminal.rs`) serializes with no rename, and the frontend restates
- * it inline as `RawPathCompletion` in `command-input.tsx` — so it is restated
- * a third time here rather than imported.
- */
-interface PathCompletion {
-  name: string;
-  is_dir: boolean;
-}
 
 // The composer's cwd badge also calls `git_status_fresh`, which is the git
 // domain's command and is faked in `fixtures/git.ts` — not here, so the two
@@ -582,7 +572,26 @@ const COMMANDS = [
   ]),
 ].sort();
 
-export const terminalHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface TerminalResponses {
+  terminal_create: string;
+  terminal_write_text: Unread;
+  terminal_write: Unread;
+  terminal_resize: Unread;
+  terminal_ack: Unread;
+  terminal_close: Unread;
+  terminal_kill_foreground: boolean;
+  terminal_zsh_dir: string | null;
+  terminal_list_commands: string[];
+  terminal_path_complete: RawPathCompletion[];
+  terminal_resolve_path: string | null;
+  resolve_path: string | null;
+}
+
+export const terminalHandlers: TypedHandlers<TerminalResponses> = {
   terminal_create: ({ cols, rows, cwd, onOutput }): string => {
     const id = `pty-${++nextId}`;
     const session: FakeSession = {
@@ -663,7 +672,7 @@ export const terminalHandlers: MockHandlers = {
 
   terminal_list_commands: (): string[] => COMMANDS,
 
-  terminal_path_complete: ({ cwd, token }): PathCompletion[] => {
+  terminal_path_complete: ({ cwd, token }): RawPathCompletion[] => {
     const raw = String(token ?? "");
     const at = raw.lastIndexOf("/");
     const dirPart = at === -1 ? "" : raw.slice(0, at + 1);

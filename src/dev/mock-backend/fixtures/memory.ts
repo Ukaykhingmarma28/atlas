@@ -21,6 +21,7 @@
 import { emit } from "@tauri-apps/api/event";
 import type {
   MemoryEdge,
+  GraphLayout,
   MemoryGraphData,
   MemoryNode,
 } from "@/features/memory/components/memory-graph-canvas";
@@ -40,7 +41,7 @@ import type {
   TimelineSession,
 } from "@/features/memory/lib/memory-timeline-api";
 import type { EventKind, MemoryEvent, SharedState } from "@/features/memory/lib/shared-memory-api";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers, Unit, Unread } from "../types";
 import { fileText } from "./files";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
@@ -526,12 +527,6 @@ function queryGraph(projectPath: string, query: string, topK: number): QueryHit[
 }
 
 // ── Graph layout ────────────────────────────────────────────────────────────
-
-/** `GraphLayout` is declared inline in `memory-graph-canvas.tsx` (it isn't
- *  exported); Rust: `GraphLayout` in `commands/memory_graph.rs`. */
-interface GraphLayout {
-  positions: Record<string, { x: number; y: number }>;
-}
 
 /**
  * A layout somebody has already dragged into shape: kinds cluster in bands, so
@@ -1334,7 +1329,34 @@ function timelineFor(projectPath: string): MemoryTimeline {
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
-export const memoryHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the type argument of its
+ * `invoke<T>`, or `Unread` where it awaits only success or failure.
+ */
+export interface MemoryResponses {
+  memory_embed_status: EmbedStatus;
+  memory_embed_download: Unit;
+  memory_index_build: MemoryGraphData & { dim: number; doc_count: number };
+  memory_index_query: QueryHit[];
+  memory_graph_layout_load: GraphLayout;
+  memory_graph_layout_save: Unread;
+  memory_policies: Policy[];
+  memory_policy_update: Unit;
+  memory_sharing_get: boolean;
+  memory_sharing_set: Unit;
+  memory_summarizer_get: SummarizerPref;
+  memory_summarizer_set: Unit;
+  memory_get_state: SharedState;
+  memory_list_events: MemoryEvent[];
+  memory_query: MemoryEvent[];
+  memory_append_event: number;
+  memory_clear_project: Unit;
+  memory_timeline: MemoryTimeline;
+  memory_timeline_cached: MemoryTimeline | null;
+  memory_indexer_close_project: Unread;
+}
+
+export const memoryHandlers: TypedHandlers<MemoryResponses> = {
   // ── embedding model ──────────────────────────────────────────────────────
   memory_embed_status: (): EmbedStatus => ({
     downloaded: MODEL_READY,

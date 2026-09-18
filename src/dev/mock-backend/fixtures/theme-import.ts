@@ -19,13 +19,15 @@
 // importer no longer produces.
 
 import type { Theme } from "@/features/theme/lib/theme-api";
-import type {
-  ShadcnExport,
-  ThemeImportCandidate,
-  ThemeImportPreview,
-  ThemeImportReport,
+import {
+  themeIdSlug,
+  type CommittedThemeImport,
+  type ShadcnExport,
+  type ThemeImportCandidate,
+  type ThemeImportPreview,
+  type ThemeImportReport,
 } from "@/features/theme/lib/theme-import-api";
-import type { MockHandlers } from "../types";
+import type { TypedHandlers } from "../types";
 import importedThemesJson from "./imported-themes.json";
 import builtinThemesJson from "./builtin-themes.json";
 
@@ -454,7 +456,12 @@ function countFamilies(theme: Theme): Record<string, number> {
  */
 export const importedUserThemes: Theme[] = [];
 
-function install(toml: string, id: string, name: string): string {
+function install(toml: string, typedId: string, name: string): CommittedThemeImport {
+  // Rust slugs the typed id before saving, and the reply's `id` is the one the
+  // panel applies — so a typed "My Theme!" has to come back as "my-theme" here
+  // too, or the mock would hide exactly the mismatch the reply exists to fix.
+  const id = themeIdSlug(typedId);
+  if (!id) throw new Error("a theme id needs at least one letter or digit");
   // The preview's TOML is a stub here, so the theme is taken from the snapshot
   // the same preview was built from, then renamed the way Rust renames it.
   const source = imported.find((theme) => toml.includes(`id = "${theme.id}"`)) ?? imported[0];
@@ -462,15 +469,25 @@ function install(toml: string, id: string, name: string): string {
   const existing = importedUserThemes.findIndex((theme) => theme.id === id);
   if (existing >= 0) importedUserThemes[existing] = installed;
   else importedUserThemes.push(installed);
-  return `~/.config/atlas/themes/${id}.toml`;
+  return { id, path: `~/.config/atlas/themes/${id}.toml` };
 }
 
-export const themeImportHandlers: MockHandlers = {
+/**
+ * What the frontend reads from each command below — the return type of its
+ * wrapper in `theme-import-api.ts`, which `invoke` infers its `T` from.
+ */
+export interface ThemeImportResponses {
+  preview_theme_import: ThemeImportPreview;
+  commit_theme_import: CommittedThemeImport;
+  export_theme_shadcn: ShadcnExport;
+}
+
+export const themeImportHandlers: TypedHandlers<ThemeImportResponses> = {
   preview_theme_import: ({ input }): ThemeImportPreview => {
     const args = (input ?? {}) as { text?: string; url?: string; path?: string };
     return { ...previewFor(args), origin: originOf(args) };
   },
-  commit_theme_import: ({ toml, id, name }): string =>
+  commit_theme_import: ({ toml, id, name }): CommittedThemeImport =>
     install(String(toml), String(id), String(name)),
   export_theme_shadcn: ({ id }): ShadcnExport => exportOf(String(id)),
 };
