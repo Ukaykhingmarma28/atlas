@@ -283,7 +283,7 @@ function GeneralSettings() {
     <div className="space-y-6">
       <SectionTitle title="General" subtitle="Application preferences" />
       {configError && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+        <div className="rounded-md border border-warning/40 bg-warning-muted p-3 space-y-2">
           <p className="text-sm font-medium text-foreground">
             Atlas is using the last valid settings — config.toml has a problem
           </p>

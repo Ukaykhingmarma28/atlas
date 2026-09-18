@@ -90,10 +90,10 @@ function OrgAvatar({
       className={cn(
         "flex shrink-0 items-center justify-center rounded-md border border-border px-[3px]",
         "inset-highlight font-sans font-semibold uppercase leading-none shadow-sm",
-        // White reads on a saturated org colour and nowhere else; the untinted
-        // keycap is a surface and takes the surface's own foreground. The
-        // gradient used to be a fixed near-black, which on a light theme put a
-        // black key in a cream sidebar.
+        // ratchet-allow: white reads on a saturated org colour and nowhere
+        // else; the untinted keycap is a surface and takes the surface's own
+        // foreground. The gradient used to be a fixed near-black, which on a
+        // light theme put a black key in a cream sidebar.
         org.color ? "text-white" : "text-card-foreground",
       )}
       style={{

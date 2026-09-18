@@ -85,7 +85,7 @@ export function GitErrorDialog() {
                   )}
                   <button
                     onClick={() => actions.dismissErrorDialog()}
-                    // `text-primary-foreground`, never `text-white`: `--primary`
+                    // `text-primary-foreground`, never the literal white utility: `--primary`
                     // IS white in this theme, so a white label on it renders an
                     // empty button. Every other filled accent button in the app
                     // pairs the fill with the inverse token for this reason.

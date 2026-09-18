@@ -70,8 +70,10 @@ export function avatarElement(
   // ratchet-allow: an identity hue derived from the member id, not a theme colour.
   fallback.style.backgroundColor = member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)";
   fallback.className =
-    "flex shrink-0 items-center justify-center rounded-full font-medium leading-none " +
-    "text-white/90 select-none tracking-tight";
+    // ratchet-allow: the initials ride on that same identity hue, which is
+    // saturated at a fixed lightness; white is what reads on all of them.
+    "text-white/90 flex shrink-0 items-center justify-center rounded-full " +
+    "font-medium leading-none select-none tracking-tight";
   fallback.textContent = initials(member?.name ?? "Unknown");
   return fallback;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,13 +28,21 @@ import { fileURLToPath } from "node:url";
  * If you are reaching for one, read what the existing entries argue before
  * adding another — "it has a lot of them" is not one of the arguments.
  *
- * Scope is `src/features/**` and `src/components/**`: the app's own surfaces.
- * `src/ui` and `src/styles` are the design system itself and define these
- * values; `src/dev` is the dev-only mock backend and never ships.
+ * Scope is every folder that renders: `src/features`, `src/components`,
+ * `src/ui` and `src/dev`. `src/styles` is the only wholesale exclusion left —
+ * it IS the scale, so "use the scale instead" cannot apply to it.
+ *
+ * `src/ui` and `src/dev` used to be excluded wholesale on the same argument,
+ * and the argument was untrue of almost every file in them: the 2026-09-18
+ * review found a hardcoded white canvas ink and a literal 50%-black popover
+ * shadow hiding in `src/ui`, neither of which defines anything. Of the 19 files
+ * in `src/ui` exactly those two carried a violation, so there is no residue to
+ * exempt. `src/dev` keeps a narrow exemption for the fixture files whose
+ * CONTENT is colours (theme files, fake source listings) — see `EXEMPT_FILES`.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN_ROOTS = ["src/features", "src/components"];
+const SCAN_ROOTS = ["src/features", "src/components", "src/ui", "src/dev"];
 
 interface Rule {
   id: string;
@@ -72,9 +80,36 @@ const RULES: Rule[] = [
     pattern: /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/g,
   },
   {
-    id: "bg-white-black",
-    instead: "bg-background / bg-card / bg-bg-elevated — white and black are not theme-neutral.",
-    pattern: /\bbg-(?:white|black)(?:\/\d+)?\b/g,
+    id: "white-black-utility",
+    instead:
+      "a token: bg-background / bg-card / text-foreground / border-border. White and " +
+      "black are not theme-neutral, and `bg-` was never the only way to write one.",
+    // Every utility that takes a colour, not just `bg-`. Thirteen sites were
+    // using `text-white`, `border-black/20` and friends in plain sight.
+    pattern:
+      /\b(?:bg|text|border|ring|fill|stroke|divide|outline|decoration|caret|shadow|accent|from|via|to)-(?:white|black)(?:\/\d+)?\b/g,
+  },
+  {
+    id: "tailwind-palette",
+    instead:
+      "a status or base token: text-warning / bg-warning-muted / text-success / " +
+      "border-error. Tailwind's stock ramps are a second palette no theme can reach.",
+    // Tailwind's own named scales. A theme cannot restate `amber-500`, so a
+    // config-error banner painted in it stays amber in all sixteen variants.
+    pattern:
+      /\b(?:bg|text|border|ring|fill|stroke|divide|outline|decoration|caret|shadow|accent|from|via|to)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|\d{3})(?:\/\d+)?\b/g,
+  },
+  {
+    id: "bare-z-index",
+    instead:
+      "z-panel / z-titlebar / z-drawer / z-overlay / z-modal / z-popover / z-toast / " +
+      "z-tooltip / z-drag (decision 28). Below 50 is local stacking and is fine.",
+    // Decision 28 bans ARBITRARY z-index at or above 60, which is a numeric test
+    // for a semantic defect: three dialogs shipped at a bare `z-50`, under their
+    // own `z-overlay` (100) scrim, and passed it. `z-50` is Tailwind's stock top
+    // and is what "float above everything" reaches for, which in a codebase with
+    // named layers running to 500 is exactly the wrong instinct.
+    pattern: /\bz-(?:[5-9]\d|\d{3,})\b/g,
   },
   {
     id: "inline-numeric-style",
@@ -145,6 +180,28 @@ const EXEMPT_FILES: Record<string, string> = {
     "Shape 2, of a kind: the last-resort screen after React has unmounted the " +
     "app. It is styled entirely inline, on purpose, so that it renders when " +
     "whatever broke was the thing that paints everything else.",
+  "src/dev/mock-backend/badge.ts":
+    "Shape 2, of a kind: the unmocked-command counter, injected into the DOM " +
+    "by the dev mock backend. It has to stay legible over whatever theme is " +
+    "being tested, INCLUDING a broken one, which is the situation it reports.",
+};
+
+/**
+ * Whole DIRECTORIES that are exempt. Same bar as `EXEMPT_FILES`, and there is
+ * exactly one shape that qualifies: a file whose COLOURS ARE ITS CONTENT.
+ *
+ * `src/dev` as a whole is NOT exempt — it renders, it is where every visual
+ * check happens, and the gallery is the surface the scales are judged on. But
+ * the mock fixtures are theme files and fake source listings: a fake `.tsx`
+ * with `bg-red-500` in it is a string the editor renders as text, not a class
+ * anything applies, and a built-in theme's JSON is 1,274 colour literals by
+ * construction.
+ */
+const EXEMPT_DIRS: Record<string, string> = {
+  "src/dev/mock-backend/fixtures":
+    "The colours ARE the fixture: built-in and imported theme files (a theme " +
+    "is nothing but literals), and the text of fake source files the editor " +
+    "and diff surfaces render as content rather than apply as classes.",
 };
 
 /**
@@ -161,7 +218,9 @@ const EXEMPT_FILES: Record<string, string> = {
  * the colon fails the suite.
  */
 const ALLOW_MARKER = /ratchet-allow:\s*(.*)$/;
-const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
+// `{/*` too: in TSX, a comment above markup is a JSX expression, and a marker
+// that only worked outside JSX would be a marker that cannot reach the markup.
+const COMMENT_LINE = /^\s*(?:\{?\/\*|\/\/|\*)/;
 const MIN_REASON = 20;
 
 function walk(dir: string): string[] {
@@ -175,6 +234,15 @@ function walk(dir: string): string[] {
     }
   }
   return out;
+}
+
+/** Would this file count against any rule if it were not exempt?
+ *
+ *  `match`, never `test`: the patterns are `/g`, so `test` carries `lastIndex`
+ *  between calls and answers a different question each time it is asked. */
+function violates(file: string): boolean {
+  const text = readFileSync(file, "utf8");
+  return RULES.some((rule) => text.match(rule.pattern) !== null);
 }
 
 interface ScanResult {
@@ -198,6 +266,7 @@ function scan(): ScanResult {
   for (const file of files) {
     const where = path.relative(REPO_ROOT, file);
     if (where in EXEMPT_FILES) continue;
+    if (Object.keys(EXEMPT_DIRS).some((dir) => where.startsWith(`${dir}/`))) continue;
     const lines = readFileSync(file, "utf8").split("\n");
     // Line by line rather than whole-file, so one allowed site does not exempt
     // its neighbours.
@@ -254,11 +323,55 @@ describe("design-system ratchet", () => {
   });
 
   it("every exempt file states why", () => {
-    const thin = Object.entries(EXEMPT_FILES)
+    const thin = [...Object.entries(EXEMPT_FILES), ...Object.entries(EXEMPT_DIRS)]
       .filter(([, reason]) => reason.trim().length < 40)
       .map(([file]) => file);
-    expect(thin, "An exempt file with no argument next to it is a number someone gave up on.")
-      .toEqual([]);
+    expect(
+      thin,
+      "An exempt file with no argument next to it is a number someone gave up on.",
+    ).toEqual([]);
+  });
+
+  /**
+   * An exemption for a path that no longer exists is not harmless: it is an
+   * argument for a file nobody can read, and the next person to move a file
+   * silently loses (or keeps) an exemption without noticing. Nothing else here
+   * would fail — a missing path simply never matches.
+   */
+  it("every exemption still points at something", () => {
+    const missing = [
+      ...Object.keys(EXEMPT_FILES).filter(
+        (file) =>
+          !existsSync(path.join(REPO_ROOT, file)) || !statSync(path.join(REPO_ROOT, file)).isFile(),
+      ),
+      ...Object.keys(EXEMPT_DIRS).filter(
+        (dir) =>
+          !existsSync(path.join(REPO_ROOT, dir)) ||
+          !statSync(path.join(REPO_ROOT, dir)).isDirectory(),
+      ),
+    ];
+    expect(
+      missing,
+      "These exemptions name a path that is gone. Delete the entry, or fix the path.",
+    ).toEqual([]);
+  });
+
+  /**
+   * And an exemption for a file that no longer violates anything is dead
+   * weight: it turns off scanning for a file that would now pass, so the next
+   * violation added to it is invisible.
+   */
+  it("every exemption is still earning it", () => {
+    const idle = [
+      ...Object.keys(EXEMPT_FILES).filter((file) => !violates(path.join(REPO_ROOT, file))),
+      ...Object.keys(EXEMPT_DIRS).filter(
+        (dir) => !walk(path.join(REPO_ROOT, dir)).some((file) => violates(file)),
+      ),
+    ];
+    expect(
+      idle,
+      "These exemptions no longer suppress anything. Delete the entry and let the file be scanned.",
+    ).toEqual([]);
   });
 
   for (const rule of RULES) {
@@ -266,7 +379,7 @@ describe("design-system ratchet", () => {
       expect(
         counts[rule.id],
         [
-          `${counts[rule.id]} \`${rule.id}\` in src/features + src/components; the target is 0.`,
+          `${counts[rule.id]} \`${rule.id}\` in ${SCAN_ROOTS.join(" + ")}; the target is 0.`,
           `Use instead: ${rule.instead}`,
           `Worst files: ${worst[rule.id].join(", ") || "none"}`,
           "",

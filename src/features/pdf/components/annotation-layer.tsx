@@ -217,6 +217,10 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
           key={n.id}
           type="button"
           onClick={() => (tool === "erase" ? remove(pdfPath, n.id) : select(n.id))}
+          // ratchet-allow: a note pin drawn ON the PDF page, filled with the
+          // highlighter colour the user picked (same argument as the exempt
+          // `pdf-annotation-store` and `pdf-toolbar`). Atlas's theme does not
+          // reach inside someone else's document.
           className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/20 text-2xs font-bold text-black/70 shadow-sm"
           style={{
             left: n.x * pageW,

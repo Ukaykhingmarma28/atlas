@@ -21,8 +21,8 @@ import { cn } from "@/lib/utils";
  * radial hollow keeps the middle calm so copy sits on black.
  *
  * The ink is the theme's `foreground`, read as a RESOLVED value rather than a
- * `var()`: a canvas cannot resolve a custom property. It was `rgba(255,255,255,
- * …)`, which made the chat welcome's hero art invisible on any light theme. The
+ * `var()`: a canvas cannot resolve a custom property. It used to be a hardcoded
+ * white, which made the chat welcome's hero art invisible on any light theme. The
  * effect takes `useThemeVersion()` as a dependency, so a live theme switch tears
  * the loop down and repaints in the new ink.
  */

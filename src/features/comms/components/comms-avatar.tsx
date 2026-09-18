@@ -51,6 +51,8 @@ export const CommsAvatar = memo(function CommsAvatar({
             // ratchet-allow: an identity hue derived from the member id, not a theme colour.
             backgroundColor: member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)",
           }}
+          // ratchet-allow: the initials ride on that same identity hue, which is
+          // saturated at a fixed lightness; white is what reads on all of them.
           className="flex items-center justify-center rounded-full font-medium leading-none text-white/90 select-none tracking-tight"
         >
           {initials(label)}

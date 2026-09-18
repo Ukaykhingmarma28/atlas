@@ -298,7 +298,7 @@ export function MergeBranchDialog({
               <button
                 onClick={() => void doMerge()}
                 disabled={!canMerge}
-                // `text-primary-foreground` on the accent fill, never `text-white` —
+                // `text-primary-foreground` on the accent fill, never the white literal —
                 // see the note in `git-error-dialog`.
                 className={cn(
                   "flex items-center gap-1.5 px-3 h-7 rounded text-xs font-medium transition-colors",

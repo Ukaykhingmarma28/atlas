@@ -139,6 +139,9 @@ export function SpaceCursors({ actors }: { actors: ReadonlyMap<string, SpaceActo
           <span
             className={cn(
               "ml-3 -mt-0.5 block max-w-[140px] truncate rounded-full px-1.5 py-0.5",
+              // ratchet-allow: the name rides on the collaborator's OWN cursor
+              // colour, which is theirs and saturated; white is the only label
+              // that reads on every value in that palette.
               "text-3xs font-medium leading-none text-white",
             )}
             style={{ backgroundColor: a.colour }}

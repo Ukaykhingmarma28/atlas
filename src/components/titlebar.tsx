@@ -435,6 +435,9 @@ function DevModePill() {
     // it's an indicator, not a control (which also retires its old divider).
     <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
       <div
+        // ratchet-allow: the label on the dev-build capsule, whose fill is the
+        // fixed blue above — it is an out-of-band marker that must look the same
+        // in every theme, which is the whole point of it.
         className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-xs leading-none font-medium text-white"
         style={{ background: DEV_PILL_FILL, boxShadow: DEV_PILL_GLOW }}
       >

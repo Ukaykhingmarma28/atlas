@@ -428,6 +428,7 @@ function ElevationSection() {
             card — a dim shown over its own fill says nothing. */}
         <div className="w-56">
           <div className="scrim mb-2 flex h-20 items-center justify-center rounded-md">
+            {/* ratchet-allow: the scrim below is deliberately theme-invariant black, so its label is deliberately white. */}
             <span className="code text-white">scrim</span>
           </div>
           <div className="caption">

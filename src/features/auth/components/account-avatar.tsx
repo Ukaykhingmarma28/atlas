@@ -58,6 +58,8 @@ function Initial({ user, size }: { user: AccountUser; size: number }) {
         // ratchet-allow: an identity hue derived from the account id, not a theme colour.
         backgroundColor: `hsl(${hueFor(user.id)} 42% 40%)`,
       }}
+      // ratchet-allow: the initial rides on that same identity hue, which is
+      // saturated at a fixed lightness; white is what reads on all of them.
       className="flex items-center justify-center shrink-0 rounded-full font-medium leading-none text-white/90 select-none"
     >
       {letter}
