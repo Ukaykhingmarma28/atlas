@@ -421,13 +421,24 @@ const EDGE_SEEDS: [string, string, string][] = [
 
 const nodeTs = new Map(NODE_SEEDS.map((seed) => [seed[0], seed[5] === 0 ? 0 : ago(seed[5])]));
 
+/** Deterministic pseudo-random in [0, 1) from a string — stand-in for the
+ *  cosine score `BruteForce::all_pairs_topk` would have produced. */
+function hashUnit(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0) / 0xffffffff;
+}
+
 /** Rust orients every edge older → newer so the UI can trace influence
- *  forward in time; unknown timestamps (0) sort oldest. */
+ *  forward in time; unknown timestamps (0) sort oldest. Weight mirrors
+ *  `memory_graph.rs`: an explicit `link` is always 1, a `similarity` edge
+ *  carries the cosine score that put it above `SIM_THRESHOLD` (0.35). */
 function orientedEdges(): MemoryEdge[] {
   return EDGE_SEEDS.map(([a, b, kind]) => {
     const older = (nodeTs.get(a) ?? 0) <= (nodeTs.get(b) ?? 0) ? a : b;
     const newer = older === a ? b : a;
-    return { from: older, to: newer, kind };
+    const weight = kind === "link" ? 1 : 0.35 + hashUnit(a + "|" + b) * 0.6;
+    return { from: older, to: newer, weight, kind };
   });
 }
 
@@ -784,10 +795,6 @@ const S4 = "0193f0dd-4444-7000-9000-dddddddddddd";
  * registry — enough for the view's agent and kind filters to have more than one
  * option each, and for a plan to be superseded twice so the Plans tab shows a
  * history rather than a single row.
- *
- * `failure` and `architecture` are missing on purpose: Rust's `EventKind` has
- * both, but the TS union in `shared-memory-api.ts` does not, so they cannot be
- * typed here. Their derived buckets are seeded below instead.
  */
 const EVENT_SEEDS: EventSeed[] = [
   [(5 * DAY) / MIN, "claude", S1, "session_start", "", { cwd: MOCK_PROJECT.path }],
@@ -817,6 +824,14 @@ const EVENT_SEEDS: EventSeed[] = [
     "decision",
     "colour-source",
     { text: "Tokens are the only colour source; no hex literals in JSX." },
+  ],
+  [
+    (5 * DAY) / MIN - 15,
+    "claude",
+    S1,
+    "architecture",
+    "",
+    { text: "web holds no state; every write goes through the Hono API." },
   ],
   [
     (5 * DAY) / MIN - 20,
@@ -865,6 +880,24 @@ const EVENT_SEEDS: EventSeed[] = [
     { text: "Keep withRetry's 4xx passthrough — a 409 from /v2 is a real conflict." },
   ],
   [
+    (3 * DAY) / MIN - 20,
+    "codex",
+    S2,
+    "failure",
+    "",
+    {
+      text: "Patching the palette by hand — regenerate from tokens.json instead, the hand edits get clobbered.",
+    },
+  ],
+  [
+    (3 * DAY) / MIN - 22,
+    "codex",
+    S2,
+    "architecture",
+    "",
+    { text: "Sessions are opaque tokens in Redis, keyed by a hash of the cookie value." },
+  ],
+  [
     (3 * DAY) / MIN - 24,
     "codex",
     S2,
@@ -901,6 +934,16 @@ const EVENT_SEEDS: EventSeed[] = [
     // derived view while both stay in the event log.
     "retry-policy",
     { text: "Keep the 4xx passthrough, and log the 409 body before rethrowing." },
+  ],
+  [
+    (26 * HOUR) / MIN - 20,
+    "opencode",
+    S3,
+    "failure",
+    "",
+    {
+      text: "Disabling the focus listener globally broke the session refresh; scope it to the admin table.",
+    },
   ],
   [
     (26 * HOUR) / MIN - 30,
@@ -963,32 +1006,6 @@ const eventLog = new Map<string, MemoryEvent[]>([[MOCK_PROJECT.path, seededEvent
  *  view's "No shared memory yet" state. */
 const eventsFor = (projectPath: string): MemoryEvent[] => eventLog.get(projectPath) ?? [];
 
-/**
- * The two buckets the TS `EventKind` union cannot express (see `EVENT_SEEDS`),
- * seeded straight into the derived view so `memory_get_state` still answers
- * with the shape a project that has been worked in produces.
- */
-const SEEDED_FAILURES = [
-  {
-    seq: 12,
-    agent: "codex",
-    text: "Patching the palette by hand — regenerate from tokens.json instead, the hand edits get clobbered.",
-  },
-  {
-    seq: 19,
-    agent: "opencode",
-    text: "Disabling the focus listener globally broke the session refresh; scope it to the admin table.",
-  },
-];
-const SEEDED_ARCHITECTURE = [
-  { seq: 7, agent: "claude", text: "web holds no state; every write goes through the Hono API." },
-  {
-    seq: 21,
-    agent: "codex",
-    text: "Sessions are opaque tokens in Redis, keyed by a hash of the cookie value.",
-  },
-];
-
 /** The same fold Rust runs (`shared_memory.rs::SharedState::apply`), so an
  *  appended event changes the derived view and a clear empties it. */
 function foldEvents(events: MemoryEvent[]): SharedState {
@@ -998,8 +1015,8 @@ function foldEvents(events: MemoryEvent[]): SharedState {
     decisions: [],
     recentChanges: [],
     facts: [],
-    failures: SEEDED_FAILURES,
-    architecture: SEEDED_ARCHITECTURE,
+    failures: [],
+    architecture: [],
     sessionAgents: {},
     updatedAt: 0,
   };
@@ -1030,6 +1047,12 @@ function foldEvents(events: MemoryEvent[]): SharedState {
     } else if (event.kind === "fact" && text) {
       state.facts = state.facts.filter((fact) => fact.text !== text);
       state.facts.push({ seq: event.seq, agent: event.agent, text });
+    } else if (event.kind === "failure" && text) {
+      state.failures = state.failures.filter((f) => f.text !== text);
+      state.failures.push({ seq: event.seq, agent: event.agent, text });
+    } else if (event.kind === "architecture" && text) {
+      state.architecture = state.architecture.filter((a) => a.text !== text);
+      state.architecture.push({ seq: event.seq, agent: event.agent, text });
     } else if (event.kind === "session_start") {
       state.sessionAgents[event.sessionId] = event.agent;
     }

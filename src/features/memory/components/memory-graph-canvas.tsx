@@ -37,6 +37,8 @@ export interface MemoryEdge {
   // Oriented older → newer: `from` plausibly influenced `to`.
   from: string;
   to: string;
+  /** Cosine similarity for a `similarity` edge; always 1 for an explicit `link`. */
+  weight: number;
   kind: string; // "similarity" | "link"
 }
 export interface MemoryGraphData {
