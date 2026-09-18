@@ -88,7 +88,7 @@ export function IconThemesSettings() {
                     </div>
                     {!theme.builtIn && <RemoveButton id={theme.id} name={theme.name} />}
                   </div>
-                  <div className="mt-2 flex items-center gap-1 text-3xs uppercase tracking-wide text-text-muted">
+                  <div className="mt-2 flex items-center gap-1 text-3xs uppercase tracking-wide text-muted-foreground">
                     {theme.id === MINIMAL_ICON_THEME_ID ? (
                       <span>Atlas defaults</span>
                     ) : theme.builtIn ? (
@@ -198,7 +198,7 @@ function OpenVsxSection() {
         <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
           Install from Open VSX
         </span>
-        <span className="text-2xs text-text-muted">open-vsx.org</span>
+        <span className="text-2xs text-muted-foreground">open-vsx.org</span>
       </div>
 
       <div className="flex h-[28px] items-center gap-1.5 rounded-md border border-border bg-card px-2">
@@ -270,7 +270,7 @@ function OpenVsxSection() {
                     <span className="truncate text-sm font-medium text-foreground">
                       {hit.displayName}
                     </span>
-                    <span className="shrink-0 text-2xs text-text-muted">
+                    <span className="shrink-0 text-2xs text-muted-foreground">
                       {hit.namespace} · {hit.license}
                     </span>
                   </div>

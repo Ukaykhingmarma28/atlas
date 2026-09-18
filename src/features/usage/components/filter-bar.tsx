@@ -165,7 +165,11 @@ function FacetPill({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    // Keep keys from the popup's typeahead and arrow nav, but let Escape
+                    // bubble to the dismiss handler so it still closes the popup.
+                    if (e.key !== "Escape") e.stopPropagation();
+                  }}
                   placeholder={`Filter ${oneLabel}s`}
                   className="w-full bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                 />

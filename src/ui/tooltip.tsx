@@ -246,7 +246,10 @@ function TooltipContent({
           {...props}
         >
           {children}
-          <TooltipPrimitive.Arrow style={(state) => arrowStyle(state.side)}>
+          <TooltipPrimitive.Arrow
+            data-slot="tooltip-arrow"
+            style={(state) => arrowStyle(state.side)}
+          >
             <ArrowSvg />
           </TooltipPrimitive.Arrow>
         </TooltipPrimitive.Popup>

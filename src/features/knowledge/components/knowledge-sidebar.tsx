@@ -279,7 +279,7 @@ export function KnowledgeSidebar({
               <Hint label="Clear recently opened">
                 <button
                   onClick={onClearRecents}
-                  className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-status-error transition-all cursor-pointer"
+                  className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-error transition-all cursor-pointer"
                 >
                   <Trash2 size={11} />
                 </button>
@@ -336,7 +336,11 @@ export function KnowledgeSidebar({
                   }}
                   title={repo.path}
                 >
-                  <GitBranch size={11} className="text-text-muted shrink-0" strokeWidth={1.5} />
+                  <GitBranch
+                    size={11}
+                    className="text-muted-foreground shrink-0"
+                    strokeWidth={1.5}
+                  />
                   <span className="truncate flex-1 text-left">{repo.display_name}</span>
                   <Hint label="Remove repo">
                     <button
@@ -345,7 +349,7 @@ export function KnowledgeSidebar({
                         e.stopPropagation();
                         handleDeleteRepo(repo.name);
                       }}
-                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:text-error text-text-muted transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:text-error text-muted-foreground transition-opacity"
                     >
                       <Trash2 size={10} />
                     </button>

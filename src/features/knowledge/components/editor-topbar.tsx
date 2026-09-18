@@ -63,9 +63,9 @@ export function EditorTopbar({
       >
         {breadcrumbs.map((segment, i) => (
           <span key={i} className="flex items-center" style={{ gap: 6 }}>
-            <Folder size={11} className="text-text-muted shrink-0" strokeWidth={1.5} />
+            <Folder size={11} className="text-muted-foreground shrink-0" strokeWidth={1.5} />
             <span className="truncate">{segment}</span>
-            <ChevronRight size={10} className="text-text-muted shrink-0" />
+            <ChevronRight size={10} className="text-muted-foreground shrink-0" />
           </span>
         ))}
         <span className="flex items-center text-foreground truncate" style={{ gap: 5 }}>

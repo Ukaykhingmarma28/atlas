@@ -63,7 +63,7 @@ export function GitDiffModal({
           className="fixed top-8.5 left-4 right-4 bottom-6 z-modal flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--sidebar)] shadow-md focus:outline-none data-open:animate-scale-in"
         >
           <Dialog.Title className="sr-only">{title ?? "Changes"}</Dialog.Title>
-          <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+          <div className="flex h-control-lg shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
             <span className="truncate text-xs font-medium text-[var(--secondary-foreground)]">
               {title ?? "Changes"}
             </span>

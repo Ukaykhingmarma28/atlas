@@ -158,7 +158,9 @@ export function KeybindingRecorder({
             <div
               className={cn(
                 "flex h-8 items-center justify-center rounded-md border bg-card px-2 font-mono text-sm",
-                combo ? "border-border-strong text-foreground" : "border-border text-text-muted",
+                combo
+                  ? "border-border-strong text-foreground"
+                  : "border-border text-muted-foreground",
               )}
             >
               {combo
@@ -186,9 +188,9 @@ export function KeybindingRecorder({
                   keybinding
                 </button>
               ) : combo ? (
-                <span className="text-text-muted">No other command uses this keybinding</span>
+                <span className="text-muted-foreground">No other command uses this keybinding</span>
               ) : (
-                <span className="text-text-muted">Esc to cancel · ⌫ to clear</span>
+                <span className="text-muted-foreground">Esc to cancel · ⌫ to clear</span>
               )}
             </div>
           </div>

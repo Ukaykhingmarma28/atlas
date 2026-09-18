@@ -178,8 +178,11 @@ export function ProvidersSettings() {
           <DropdownMenu.Portal>
             <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
               <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md py-1 min-w-[180px]">
+                {/* Base UI keeps the menu open on a checkbox item by default;
+                    Radix closed it, and this toggle is a one-shot filter. */}
                 <DropdownMenu.CheckboxItem
                   checked={configuredOnly}
+                  closeOnClick
                   onCheckedChange={(c) => setConfiguredOnly(!!c)}
                   className="flex items-center gap-2 px-3 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
                 >
@@ -285,7 +288,7 @@ function ProviderTableRow({
           {entry ? (
             <span className="text-secondary-foreground">••••{entry.last4}</span>
           ) : (
-            <span className="text-text-muted">—</span>
+            <span className="text-muted-foreground">—</span>
           )}
         </span>
         <span className={cn(COL.source, "flex items-center gap-1.5 min-w-0")}>

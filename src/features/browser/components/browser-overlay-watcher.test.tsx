@@ -38,6 +38,16 @@ describe("BrowserOverlayWatcher", () => {
     expect(overlayOpen()).toBe(false);
   });
 
+  // Base UI's Tooltip.Arrow carries `data-open` and `data-side` itself, so it
+  // matches the anchored-popup selector from INSIDE the tooltip popup.
+  it("ignores the arrow inside a tooltip", () => {
+    mount(
+      '<div data-open data-side="top"><div data-slot="tooltip-content" data-open data-side="top">Refresh<span data-open data-side="top"><svg></svg></span></div></div>',
+    );
+    render(<BrowserOverlayWatcher />);
+    expect(overlayOpen()).toBe(false);
+  });
+
   it("still counts a real overlay open alongside a tooltip", () => {
     mount(
       '<div data-open data-side="bottom"><div data-slot="tooltip-content"></div></div><div role="dialog"></div>',

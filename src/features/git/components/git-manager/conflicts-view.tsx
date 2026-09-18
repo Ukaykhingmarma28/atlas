@@ -57,7 +57,7 @@ export function ConflictsView({ onOpenFile }: { onOpenFile: (path: string) => vo
 
   return (
     <div className="shrink-0 border-b border-border">
-      <div className="flex items-center justify-between px-2 h-6 bg-[var(--sidebar)] border-b border-border-subtle">
+      <div className="flex items-center justify-between px-2 h-control-sm bg-[var(--sidebar)] border-b border-border-subtle">
         <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
           Conflicts ({state.files.length})
         </span>

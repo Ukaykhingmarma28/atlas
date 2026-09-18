@@ -113,7 +113,7 @@ export function ProfileBar() {
             }}
             className={cn(
               "h-6 w-[200px] rounded-md border border-border-strong bg-card px-2 text-xs",
-              "text-foreground outline-none placeholder:text-text-muted",
+              "text-foreground outline-none placeholder:text-muted-foreground",
             )}
           />
         </div>
@@ -157,7 +157,7 @@ export function ProfileBar() {
                     {p.builtIn ? (
                       <Lock size={10} className="text-muted-foreground" />
                     ) : (
-                      <span className="text-2xs tabular-nums text-text-muted">
+                      <span className="text-2xs tabular-nums text-muted-foreground">
                         {Object.keys(p.bindings).length || ""}
                       </span>
                     )}

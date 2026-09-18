@@ -284,7 +284,7 @@ function CommitSessions({ sha }: { sha: string }) {
         <button
           key={s.sessionId}
           onClick={() => open(s.sessionId)}
-          className="mt-1 w-full rounded border border-border bg-bg-raised px-2 py-1.5 text-left hover:bg-element-hover group"
+          className="mt-1 w-full rounded border border-border bg-card px-2 py-1.5 text-left hover:bg-element-hover group"
           title="Open this Session in the Timeline"
         >
           <div className="flex items-start gap-1.5">

@@ -68,11 +68,11 @@ function ModeSwitch({
       role="radiogroup"
       aria-label="Appearance mode"
       onKeyDown={onKeyDown}
-      className="relative grid grid-cols-3 rounded-full border border-border bg-card p-0.5"
+      className="relative grid shrink-0 grid-cols-3 rounded-full border border-border bg-card p-0.5"
     >
       <span
         aria-hidden
-        className="absolute inset-y-0.5 left-0.5 w-[calc((100%-4px)/3)] rounded-full bg-element-selected shadow-[0_0_0_1px_var(--border)] transition-transform duration-200 ease-out-strong motion-reduce:transition-none"
+        className="absolute inset-y-0.5 left-0.5 w-[calc((100%-4px)/3)] rounded-full bg-element-selected ring-1 ring-border transition-transform duration-200 ease-out-strong motion-reduce:transition-none"
         style={{ transform: `translateX(${index * 100}%)` }}
       />
       {MODES.map(({ mode, label, icon }) => {
@@ -83,15 +83,18 @@ function ModeSwitch({
             type="button"
             role="radio"
             aria-checked={active}
+            aria-label={label}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(mode)}
             className={cn(
-              "relative z-10 flex h-[20px] cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring",
+              "relative z-10 flex h-control-xs cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring",
               active ? "text-foreground" : "text-muted-foreground hover:text-secondary-foreground",
             )}
           >
             <Icon icon={icon} size="xs" />
-            {label}
+            {/* Icon-only when the toolbar is narrow: three labelled segments
+                are ~200px, and below that the labels overlap each other. */}
+            <span className="hidden @lg:inline">{label}</span>
           </button>
         );
         return mode === "system" ? (
@@ -182,15 +185,17 @@ export function AtlasThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* One toolbar: filter the catalog, pick the mode, import a new theme. */}
-      <div className="flex h-[36px] shrink-0 items-center gap-1.5 border-b border-border bg-background px-3">
+      {/* One toolbar: filter the catalog, pick the mode, import a new theme.
+          A container, so the mode switch can drop its labels on a narrow pane;
+          narrower still, it wraps rather than squeezing the search to nothing. */}
+      <div className="@container flex min-h-[36px] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border bg-background px-3 py-1">
         <Search size={11} className="shrink-0 text-muted-foreground" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search themes…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-20 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
         {query && (
           <Hint label="Clear search">
