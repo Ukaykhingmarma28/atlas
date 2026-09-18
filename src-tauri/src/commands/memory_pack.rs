@@ -8,9 +8,11 @@
 //!      session for this project, so a freshly-switched agent resumes context.
 //!      Built by [`build_session_handoff`] / [`parse_handoff_turns`].
 //!
-//! [`compose_injection`] stitches the (optional) blocks in front of the user's
-//! text. Every builder returns `Option`/empty so an absent source is a true
-//! no-op (no delimiters, no allocation) — see the empty-pack hardening rule.
+//! [`compose_injection`] stitches every present block in front of the user's
+//! text, inside one `<atlas-memory>` envelope that tells the agent the content
+//! is background and must not be saved. Every builder returns `Option`/empty so
+//! an absent source is a true no-op (no delimiters, no envelope, no allocation)
+//! — see the empty-pack hardening rule.
 //!
 //! Disk-touching entry points are kept thin around pure functions
 //! (`curate_pack`, `parse_handoff_turns`, `pick_newest_session`) so the ranking,
@@ -170,10 +172,7 @@ pub fn parse_handoff_turns(jsonl: &str, max_turns: usize) -> Vec<(String, String
 fn user_message_text(v: &serde_json::Value) -> Option<String> {
     let content = v.get("message")?.get("content")?;
     if let Some(s) = content.as_str() {
-        if atlas_agent_transcript::is_injected_user_text(s) {
-            return None;
-        }
-        return Some(s.trim().to_string());
+        return prose_only(s);
     }
     if let Some(arr) = content.as_array() {
         let has_tool_result = arr
@@ -193,12 +192,27 @@ fn user_message_text(v: &serde_json::Value) -> Option<String> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        if atlas_agent_transcript::is_injected_user_text(&text) {
-            return None;
-        }
-        return Some(text.trim().to_string());
+        return prose_only(&text);
     }
     None
+}
+
+/// What the user actually said in a recorded user turn, or `None` if they said
+/// nothing.
+///
+/// The turn on disk is the *wire* prompt, so it carries whatever Atlas
+/// prepended. Stripping first and judging second is what keeps the question
+/// inside a context-carrying turn eligible for the handoff: the envelope opens
+/// with `<`, which [`is_injected_user_text`] reads as machinery, so testing the
+/// raw text would drop the user's words along with the scaffolding.
+///
+/// [`is_injected_user_text`]: atlas_agent_transcript::is_injected_user_text
+fn prose_only(raw: &str) -> Option<String> {
+    let text = atlas_agent_transcript::strip_injected_context(raw);
+    if atlas_agent_transcript::is_injected_user_text(&text) {
+        return None;
+    }
+    Some(text.trim().to_string())
 }
 
 fn assistant_message_text(v: &serde_json::Value) -> Option<String> {
@@ -239,28 +253,21 @@ pub fn wrap_handoff(body: &str, turn_count: usize, attribution: &str) -> String 
 
 // ── Composition ──────────────────────────────────────────────────────────────
 
-/// Prepend the (optional) already-wrapped blocks to the user's text. With both
-/// blocks absent this returns `user_text` unchanged (zero-overhead no-op).
-pub fn compose_injection(
-    pack_block: Option<&str>,
-    handoff_block: Option<&str>,
-    user_text: &str,
-) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    if let Some(p) = pack_block {
-        if !p.is_empty() {
-            parts.push(p);
-        }
+/// Prepend the already-wrapped `blocks` to the user's text inside one
+/// `<atlas-memory>` envelope. With no block present this returns `user_text`
+/// unchanged (zero-overhead no-op).
+///
+/// One envelope for the whole prompt, not one per block: the note line that
+/// opens it tells the agent the content is background and must not be saved,
+/// and repeating that per block would spend the budget on the same sentence
+/// four times. Every Atlas reader strips the envelope again
+/// (`atlas_agent_transcript::strip_injected_context`), so an agent that saves
+/// the prompt anyway cannot feed it back into the corpus.
+pub fn compose_injection(blocks: &[&str], user_text: &str) -> String {
+    match atlas_agent_transcript::wrap_memory_envelope(blocks) {
+        Some(envelope) => format!("{envelope}\n\n{user_text}"),
+        None => user_text.to_string(),
     }
-    if let Some(h) = handoff_block {
-        if !h.is_empty() {
-            parts.push(h);
-        }
-    }
-    if parts.is_empty() {
-        return user_text.to_string();
-    }
-    format!("{}\n\n{}", parts.join("\n\n"), user_text)
 }
 
 /// Does this turn's text open with a slash command (`/skill-name [args]`)?
@@ -411,6 +418,32 @@ mod tests {
         assert_eq!(turns[7].1, "m19");
     }
 
+    /// The handoff reads the *wire* prompt the previous session recorded, so a
+    /// turn that carried context must hand off the user's words and none of the
+    /// scaffolding wrapped around them.
+    #[test]
+    fn test_transcript_turn_drops_the_envelope_and_keeps_the_question() {
+        let wire = compose_injection(
+            &["--- PROJECT MEMORY ---\nuse RS256\n--- END PROJECT MEMORY ---"],
+            "why is auth failing?",
+        );
+        let line = serde_json::json!({
+            "type": "user",
+            "message": { "content": wire },
+        })
+        .to_string();
+        let turns = parse_handoff_turns(&line, 8);
+        assert_eq!(turns, vec![("User".to_string(), "why is auth failing?".to_string())]);
+    }
+
+    /// A turn that was *only* context is not a turn the user took.
+    #[test]
+    fn test_transcript_turn_that_is_only_context_is_dropped() {
+        let wire = compose_injection(&["--- PROJECT MEMORY ---\nx\n--- END PROJECT MEMORY ---"], "");
+        let line = serde_json::json!({ "type": "user", "message": { "content": wire } }).to_string();
+        assert!(parse_handoff_turns(&line, 8).is_empty());
+    }
+
     #[test]
     fn test_pick_newest_session() {
         let t0 = SystemTime::UNIX_EPOCH;
@@ -429,20 +462,48 @@ mod tests {
 
     #[test]
     fn test_compose_injection_empty_is_passthrough() {
-        assert_eq!(compose_injection(None, None, "hello"), "hello");
-        assert_eq!(compose_injection(Some(""), Some(""), "hello"), "hello");
+        assert_eq!(compose_injection(&[], "hello"), "hello");
+        assert_eq!(compose_injection(&["", "  "], "hello"), "hello");
     }
 
+    /// The exact wire text of a first send carrying every block: one envelope,
+    /// the do-not-persist line first, every present block inside it in push
+    /// order, and the user's own words after it — outside the tag, so the agent
+    /// can tell the request from the background.
     #[test]
-    fn test_compose_injection_both() {
-        let out = compose_injection(Some("PACK"), Some("HANDOFF"), "user text");
-        assert_eq!(out, "PACK\n\nHANDOFF\n\nuser text");
+    fn test_compose_injection_wraps_every_block_in_one_envelope() {
+        let out = compose_injection(&["SHARED", "INDEX", "PACK", "HANDOFF"], "user text");
+        assert_eq!(
+            out,
+            "<atlas-memory>\n\
+             Background context from Atlas, not part of the user's message. \
+             Do not save any of it to your own memory.\n\
+             SHARED\n\nINDEX\n\nPACK\n\nHANDOFF\n\
+             </atlas-memory>\n\nuser text"
+        );
+        assert_eq!(out.matches("<atlas-memory>").count(), 1);
     }
 
     #[test]
     fn test_compose_injection_pack_only() {
-        let out = compose_injection(Some("PACK"), None, "u");
-        assert_eq!(out, "PACK\n\nu");
+        let out = compose_injection(&["PACK"], "u");
+        assert!(out.starts_with("<atlas-memory>\n"));
+        assert!(out.ends_with("PACK\n</atlas-memory>\n\nu"));
+    }
+
+    /// The envelope is a round trip: what `agents_send` composes is exactly what
+    /// every Atlas reader takes back off, so an agent that saves the prompt into
+    /// its own memory files contributes none of it back to the corpus.
+    #[test]
+    fn test_compose_injection_round_trips_through_the_strip() {
+        let out = compose_injection(
+            &["--- SHARED MEMORY ---\nUse RS256\n--- END SHARED MEMORY ---"],
+            "what changed?",
+        );
+        assert_eq!(
+            atlas_agent_transcript::strip_injected_context(&out),
+            "what changed?"
+        );
     }
 
     #[test]
@@ -484,7 +545,7 @@ mod tests {
     fn test_injection_would_displace_a_slash_command() {
         let text = "/improve-codebase-architecture";
         assert!(is_slash_command(text));
-        let injected = compose_injection(Some("--- PROJECT MEMORY ---\nx"), None, text);
+        let injected = compose_injection(&["--- PROJECT MEMORY ---\nx"], text);
         assert!(
             !injected.starts_with('/'),
             "injection moves the command off byte 0 — callers must skip it for slash turns"

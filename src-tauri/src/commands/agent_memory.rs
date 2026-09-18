@@ -617,11 +617,26 @@ pub(crate) fn claude_memory_dir(project_path: &str) -> std::path::PathBuf {
         .join("memory")
 }
 
+/// Read one of another agent's own files with the injected-context envelope
+/// taken back out.
+///
+/// Claude Code saves the prompts it receives into these files, and Atlas
+/// prepends an `<atlas-memory>` envelope to every prompt — so without this the
+/// corpus re-absorbs Atlas's own past injections, embeds them, and pushes the
+/// copies back on the next turn. The reader is where the loop is cut: the files
+/// themselves belong to another program and are left exactly as they are.
+///
+/// `None` for a file that does not exist, same as the plain read it replaces.
+fn read_without_injected_context(path: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    Some(atlas_agent_transcript::strip_injected_context(&raw))
+}
+
 fn read_claude(project_path: &str) -> ClaudeMemory {
     let home = dirs::home_dir().unwrap_or_default();
     let mem_dir = claude_memory_dir(project_path);
 
-    let index = std::fs::read_to_string(mem_dir.join("MEMORY.md")).ok();
+    let index = read_without_injected_context(&mem_dir.join("MEMORY.md"));
 
     let mut entries: Vec<MemoryFile> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(&mem_dir) {
@@ -634,7 +649,7 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            let Ok(raw) = std::fs::read_to_string(&path) else {
+            let Some(raw) = read_without_injected_context(&path) else {
                 continue;
             };
             let modified_ms = ent
@@ -662,8 +677,8 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
     // Stable, human order: type then title.
     entries.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.title.cmp(&b.title)));
 
-    let project_md = std::fs::read_to_string(Path::new(project_path).join("CLAUDE.md")).ok();
-    let global_md = std::fs::read_to_string(home.join(".claude").join("CLAUDE.md")).ok();
+    let project_md = read_without_injected_context(&Path::new(project_path).join("CLAUDE.md"));
+    let global_md = read_without_injected_context(&home.join(".claude").join("CLAUDE.md"));
 
     ClaudeMemory {
         memory_dir: mem_dir.to_string_lossy().to_string(),
@@ -727,12 +742,11 @@ async fn read_codex(project_path: &str) -> CodexMemory {
     let home = dirs::home_dir().unwrap_or_default();
     let codex_dir = home.join(".codex");
 
-    let agents_md = tokio::fs::read_to_string(Path::new(project_path).join("AGENTS.md"))
-        .await
-        .ok();
-    let global_agents_md = tokio::fs::read_to_string(codex_dir.join("AGENTS.md"))
-        .await
-        .ok();
+    // Stripped for the same reason as the `CLAUDE.md` pair in `read_claude`:
+    // these are instruction files an agent can echo an Atlas prompt into, and
+    // the corpus must not re-absorb Atlas's own injections from either agent.
+    let agents_md = read_without_injected_context(&Path::new(project_path).join("AGENTS.md"));
+    let global_agents_md = read_without_injected_context(&codex_dir.join("AGENTS.md"));
 
     let db = newest_state_db(&codex_dir);
     let threads = match &db {
@@ -828,4 +842,106 @@ async fn query_codex_threads(db: &Path, project_path: &str) -> Vec<CodexThread> 
             atlas_agent_transcript::strip_injected_context(&t.first_user_message);
     }
     threads
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch() -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("atlas-memory-read-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// The pollution loop, end to end at the reader: Claude saved a prompt Atlas
+    /// had prefixed into one of its own memory files. Reading that file back
+    /// must yield the user's fact and none of Atlas's injected block — otherwise
+    /// the corpus embeds its own echo and pushes it again next turn.
+    #[test]
+    fn a_saved_injection_contributes_nothing_to_the_corpus() {
+        let dir = scratch();
+        let path = dir.join("recycled.md");
+        let injected = crate::commands::memory_pack::compose_injection(
+            &["--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---"],
+            "The team prefers bun over npm.",
+        );
+        std::fs::write(&path, format!("---\nname: recycled\n---\n\n{injected}\n")).unwrap();
+
+        let body = read_without_injected_context(&path).expect("the file exists");
+        assert!(body.contains("The team prefers bun over npm."));
+        for leaked in ["<atlas-memory>", "SHARED MEMORY", "Use RS256", "Do not save any of it"] {
+            assert!(!body.contains(leaked), "{leaked:?} was re-absorbed into the corpus");
+        }
+        // Frontmatter still parses: the strip is line-based and leaves the fence.
+        let (meta, _) = parse_frontmatter(&body);
+        assert_eq!(meta.name.as_deref(), Some("recycled"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_without_an_envelope_is_read_verbatim() {
+        let dir = scratch();
+        let path = dir.join("plain.md");
+        std::fs::write(&path, "---\nname: plain\n---\n\nJWT signing is RS256.").unwrap();
+        assert_eq!(
+            read_without_injected_context(&path).as_deref(),
+            Some("---\nname: plain\n---\n\nJWT signing is RS256.")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The same strip, one reader over: an agent whose transcript Atlas captured
+    /// echoed the prefixed prompt back, so the capture row holds the envelope.
+    /// The corpus must take it off there too, or the leak simply moves house.
+    #[test]
+    fn a_captured_transcript_is_stripped_identically() {
+        use atlas_checkpoint::{model::WorkspaceMode, Capture, SessionKey, Source, Store};
+
+        let dir = scratch();
+        let project = dir.to_string_lossy().to_string();
+        let wire = crate::commands::memory_pack::compose_injection(
+            &["--- SHARED MEMORY ---\n[FACTS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---"],
+            "why is auth failing?",
+        );
+        {
+            let mut store = Store::open(dir.join(".atlas")).expect("store opens");
+            let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+            capture
+                .record_prompt(
+                    &SessionKey {
+                        workspace_id: project.clone(),
+                        source: Source::Acp,
+                        native_session_id: "sess-1".into(),
+                    },
+                    &wire,
+                    1,
+                    // Not claude/codex/cersei: those have richer readers of their
+                    // own and `read_capture_docs` skips them.
+                    Some("opencode"),
+                    None,
+                    Some(&project),
+                )
+                .expect("prompt recorded");
+        } // writer dropped — `read_capture_docs` opens its own reader
+
+        let docs = read_capture_docs(&project);
+        let doc = docs.first().expect("one captured session in the corpus");
+        assert!(doc.text.contains("why is auth failing?"));
+        for leaked in ["<atlas-memory>", "SHARED MEMORY", "Use RS256", "Do not save any of it"] {
+            for field in [&doc.text, &doc.title, &doc.summary] {
+                assert!(!field.contains(leaked), "{leaked:?} survived into the corpus");
+            }
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_file_reads_as_absent() {
+        assert!(read_without_injected_context(&scratch().join("nope.md")).is_none());
+    }
 }

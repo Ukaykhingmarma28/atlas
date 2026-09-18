@@ -48,6 +48,8 @@ Shared memory also records **session lifecycle** (session start and end, todo ad
 
 Terms that are *not* shared memory: **capture** (raw transcripts, see Timeline), **knowledge notes** (user-written pages in the Knowledge panel), the **codebase index** (derived from source), and any agent's own memory files (`CLAUDE.md`, `AGENTS.md`, Claude's auto-memory directory). These may be *sources* shared memory cites or imports, but an entry in them is not an entry in shared memory.
 
+Everything Atlas prepends to a user's message travels inside one **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>`, opening with a line that tells the agent the content is background and must not be saved. The user's own words stay outside it, so the agent can tell the request from the context; slash-command turns ship bare, because a command only resolves at byte 0. Every Atlas reader strips the envelope back off (`atlas_agent_transcript::strip_injected_context`): the Claude memory directory, capture transcripts, the session handoff. That is what stops the loop where an agent saved Atlas's injected block into its own memory file and Atlas read the copy back in as if it were a new fact.
+
 ## Talking to a model (Atlas Agent)
 
 - **Atlas gateway** — Atlas's own LLM broker (`docs/reference/atlas-ai-api.md`), an

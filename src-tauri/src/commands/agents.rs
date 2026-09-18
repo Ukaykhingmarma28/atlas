@@ -1396,29 +1396,27 @@ pub async fn agents_send(
 
     // v1 bootstrap: on the very first send only, also prepend the curated pack +
     // recent-session handoff (retained as the clock-0 onboarding layer, bounded
-    // by INJECT_BUDGET_SECS inside `build_injection`).
-    let base = if !sharing.already_sent(&key) {
+    // by INJECT_BUDGET_SECS inside `build_bootstrap_blocks`).
+    let bootstrap = if !sharing.already_sent(&key) {
         let pref = sharing.summarizer_pref(&cwd);
-        let built = build_injection(&app, &cwd, &key.session_id, &pref, &text).await;
+        let built = build_bootstrap_blocks(&app, &cwd, &key.session_id, &pref).await;
         sharing.mark_sent(&key);
         built
     } else {
-        text
+        Vec::new()
     };
 
-    // Compose: [working memory] + [relevant index] + (bootstrap +) user text.
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(b) = shared_block {
-        parts.push(b);
-    }
-    if let Some(b) = index_block {
-        parts.push(b);
-    }
-    let prefixed = if parts.is_empty() {
-        base
-    } else {
-        format!("{}\n\n{}", parts.join("\n\n"), base)
-    };
+    // Compose: one `<atlas-memory>` envelope holding [working memory] +
+    // [relevant index] + (bootstrap), then the user's text after it. The blocks
+    // go inside the tag and the user's words stay outside it, so the agent can
+    // tell background from request — and so every Atlas reader can take the
+    // background back off again.
+    let blocks: Vec<&str> = [shared_block.as_deref(), index_block.as_deref()]
+        .into_iter()
+        .flatten()
+        .chain(bootstrap.iter().map(String::as_str))
+        .collect();
+    let prefixed = memory_pack::compose_injection(&blocks, &text);
     host.send(
         &key,
         prompt::with_resource_links(prompt::compose(prefixed, images), links),
@@ -1426,15 +1424,19 @@ pub async fn agents_send(
     .map_err(|e| e.to_string())
 }
 
-/// Assemble the memory-prefixed message. Everything runs inside a single
-/// [`INJECT_BUDGET_SECS`] timeout; on elapse it falls back to the bare text.
-async fn build_injection(
+/// The first-send-only blocks: curated pack, then recent-session handoff.
+///
+/// Returns them in push order for the caller to put inside the envelope, empty
+/// when neither source has anything — the envelope does the joining, so there
+/// is exactly one place that decides what a present block is. Everything runs
+/// inside a single [`INJECT_BUDGET_SECS`] timeout; on elapse the turn ships
+/// without them rather than late.
+async fn build_bootstrap_blocks(
     app: &AppHandle,
     cwd: &str,
     session_id: &str,
     pref: &SummarizerPref,
-    user_text: &str,
-) -> String {
+) -> Vec<String> {
     let cwd = cwd.to_string();
     let session_id = session_id.to_string();
 
@@ -1472,18 +1474,18 @@ async fn build_injection(
             None
         };
 
-        memory_pack::compose_injection(pack.as_deref(), handoff_block.as_deref(), user_text)
+        [pack, handoff_block].into_iter().flatten().collect::<Vec<String>>()
     })
     .await;
 
     match built {
-        Ok(s) => s,
+        Ok(blocks) => blocks,
         Err(_) => {
             tracing::warn!(
                 target: "atlas::memory_sharing",
-                "memory injection exceeded {INJECT_BUDGET_SECS}s budget; sending bare text"
+                "memory injection exceeded {INJECT_BUDGET_SECS}s budget; sending without the first-send pack and handoff"
             );
-            user_text.to_string()
+            Vec::new()
         }
     }
 }

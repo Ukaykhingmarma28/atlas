@@ -23,6 +23,14 @@ const INJECTED_CORES = [
   "RECENT SESSION",
 ];
 
+// Since the loop fix, every one of those blocks ships inside a single envelope
+// whose first line tells the agent the content is background and must not be
+// saved. Mirrors `MEMORY_ENVELOPE_*` in `crates/atlas-agent-transcript`; the two
+// must change together. Transcripts written before the envelope existed carry
+// the bare blocks, so both shapes stay recognised.
+const MEMORY_ENVELOPE_OPEN = "<atlas-memory>";
+const MEMORY_ENVELOPE_CLOSE = "</atlas-memory>";
+
 /** One Atlas-injected context block, recovered rather than discarded. */
 export interface InjectedBlock {
   /** The marker's label — `SHARED MEMORY`, `RELEVANT PROJECT MEMORY`, … */
@@ -30,9 +38,10 @@ export interface InjectedBlock {
   body: string;
 }
 
-/** Split Atlas-injected `--- LABEL ---` … `--- END LABEL ---` blocks out of a
- *  prompt, returning both halves. Line-based and position-agnostic; mirrors the
- *  Rust `strip_injected_context`.
+/** Split Atlas-injected context out of a prompt, returning both halves — the
+ *  `<atlas-memory>` envelope and the bare `--- LABEL ---` … `--- END LABEL ---`
+ *  blocks it wraps. Line-based and position-agnostic; mirrors the Rust
+ *  `strip_injected_context`.
  *
  *  The blocks are *kept* here because two callers want opposite things from the
  *  same parse: the chat renderer drops them (they are scaffolding the agent
@@ -44,12 +53,33 @@ export function extractInjectedContext(text: string): {
   prose: string;
   blocks: InjectedBlock[];
 } {
-  if (!text.includes("--- ")) return { prose: text, blocks: [] }; // fast path
+  // fast path
+  if (!text.includes("--- ") && !text.includes(MEMORY_ENVELOPE_OPEN))
+    return { prose: text, blocks: [] };
   const out: string[] = [];
   const blocks: InjectedBlock[] = [];
   let open: { label: string; end: string; lines: string[] } | null = null;
+  // Inside the envelope but between blocks sits Atlas's own note line, which is
+  // neither prose nor a block — dropped rather than shown as either.
+  let inEnvelope = false;
   for (const line of text.split("\n")) {
     const l = line.trim();
+    if (l === MEMORY_ENVELOPE_OPEN) {
+      inEnvelope = true;
+      continue;
+    }
+    if (l === MEMORY_ENVELOPE_CLOSE) {
+      inEnvelope = false;
+      // The envelope closing also closes whatever block was still open. Without
+      // this an unterminated block runs past the tag and swallows the user's
+      // message into its body — the Rust side cannot reach that state (it skips
+      // the whole envelope in one piece), and the two parsers must agree.
+      if (open) {
+        blocks.push({ label: open.label, body: open.lines.join("\n").trim() });
+        open = null;
+      }
+      continue;
+    }
     if (open !== null) {
       if (l === open.end) {
         blocks.push({ label: open.label, body: open.lines.join("\n").trim() });
@@ -66,6 +96,7 @@ export function extractInjectedContext(text: string): {
         continue;
       }
     }
+    if (inEnvelope) continue;
     out.push(line);
   }
   // An unterminated block is still a block — a truncated prompt preview cuts the
@@ -84,7 +115,7 @@ export function stripInjectedContext(text: string): string {
  *  suffix. Each block in the context starts with a `## ` heading
  *  (see `composePrompt`) so block count is a regex over the body. The prose is
  *  also cleaned of any injected shared-memory blocks so resumed sessions don't
- *  render the raw `--- SHARED MEMORY ---` scaffolding. */
+ *  render the raw `<atlas-memory>` scaffolding. */
 export function splitAtlasContext(content: string): SplitContext {
   const idx = content.indexOf(ATLAS_CONTEXT_MARKER);
   if (idx === -1) {
