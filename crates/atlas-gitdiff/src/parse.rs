@@ -33,7 +33,11 @@ pub struct ParsedDiff {
 
 fn hunk_header_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^@@+ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").unwrap())
+    // `@@ -a,b +c,d @@`, or a combined diff's `@@@ -a,b -c,d +e,f @@@` (one
+    // more `@` and one more old range per extra parent).
+    RE.get_or_init(|| {
+        Regex::new(r"^(@@+) -(\d+)(?:,(\d+))?(?: -\d+(?:,\d+)?)* \+(\d+)(?:,(\d+))? @@+").unwrap()
+    })
 }
 
 /// Parse `git diff` (single- or multi-file) unified output into hunks. Lines
@@ -42,16 +46,34 @@ fn hunk_header_re() -> &'static Regex {
 /// A hunk ends when the line counts in its `@@` header are used up, not at the
 /// next `@@`: otherwise the next file's `---`/`+++` headers would read as a
 /// removed and an added line of the previous hunk.
+///
+/// Lines are split on `\n` alone, so a CRLF file's `\r` stays in the line's
+/// text: a change that only converts line endings keeps its one real
+/// difference.
+///
+/// A combined diff (`diff --cc`, what `git diff` prints for a conflicted
+/// merge) is read against its FIRST parent — the same two-sided view `git
+/// diff` gives of an ordinary change. Its hunks carry one prefix column per
+/// parent; only the first decides the line's kind, and a line that exists
+/// only in another parent is dropped.
 pub fn parse_unified(diff: &str) -> ParsedDiff {
     let mut out = ParsedDiff::default();
     let mut cur: Option<Hunk> = None;
     // Lines still owed to the open hunk: (old side, new side).
     let mut left = (0u32, 0u32);
+    // Prefix columns per line: 1 for a plain diff, one per parent for combined.
+    let mut columns = 1usize;
 
-    for line in diff.lines() {
+    for raw in diff.split_terminator('\n') {
+        // Header and marker lines are recognised without a trailing `\r`, so
+        // a diff whose own lines were converted to CRLF still parses.
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
         // A new file always closes the open hunk, even if its header's counts
         // were wrong.
-        if line.starts_with("diff --git ") {
+        if line.starts_with("diff --git ")
+            || line.starts_with("diff --cc ")
+            || line.starts_with("diff --combined ")
+        {
             if let Some(h) = cur.take() {
                 out.hunks.push(h);
             }
@@ -65,11 +87,12 @@ pub fn parse_unified(diff: &str) -> ParsedDiff {
             if let Some(h) = cur.take() {
                 out.hunks.push(h);
             }
-            let old_start = caps[1].parse().unwrap_or(0);
-            let new_start = caps[3].parse().unwrap_or(0);
+            columns = caps[1].len() - 1;
+            let old_start = caps[2].parse().unwrap_or(0);
+            let new_start = caps[4].parse().unwrap_or(0);
             // An omitted count means one line (`-40` is `-40,1`).
             let count = |i: usize| caps.get(i).map_or(Some(1), |m| m.as_str().parse().ok());
-            left = (count(2).unwrap_or(0), count(4).unwrap_or(0));
+            left = (count(3).unwrap_or(0), count(5).unwrap_or(0));
             cur = Some(Hunk {
                 old_start,
                 new_start,
@@ -86,22 +109,19 @@ pub fn parse_unified(diff: &str) -> ParsedDiff {
         if line.starts_with('\\') {
             continue;
         }
-        let (kind, rest) = match line.as_bytes().first() {
-            Some(b'+') => (RawKind::Plus, &line[1..]),
-            Some(b'-') => (RawKind::Minus, &line[1..]),
-            Some(b' ') => (RawKind::Context, &line[1..]),
-            // A truly empty line inside a hunk = a blank context line.
-            None => (RawKind::Context, ""),
-            _ => continue,
+        let Some((kind, rest)) = classify(raw, columns) else {
+            continue;
         };
-        hunk.lines.push(RawLine {
-            kind,
-            text: rest.to_string(),
-        });
-        match kind {
-            RawKind::Context => left = (left.0.saturating_sub(1), left.1.saturating_sub(1)),
-            RawKind::Minus => left.0 = left.0.saturating_sub(1),
-            RawKind::Plus => left.1 = left.1.saturating_sub(1),
+        if let Some(kind) = kind {
+            hunk.lines.push(RawLine {
+                kind,
+                text: rest.to_string(),
+            });
+            match kind {
+                RawKind::Context => left = (left.0.saturating_sub(1), left.1.saturating_sub(1)),
+                RawKind::Minus => left.0 = left.0.saturating_sub(1),
+                RawKind::Plus => left.1 = left.1.saturating_sub(1),
+            }
         }
         if left == (0, 0) {
             if let Some(h) = cur.take() {
@@ -113,6 +133,31 @@ pub fn parse_unified(diff: &str) -> ParsedDiff {
         out.hunks.push(h);
     }
     out
+}
+
+/// Split a hunk line into its kind and text. `None`: not a hunk line at all.
+/// `Some((None, _))`: a combined-diff line absent from both the first parent
+/// and the result, which the two-sided view has no place for.
+fn classify(line: &str, columns: usize) -> Option<(Option<RawKind>, &str)> {
+    // A truly empty line inside a hunk = a blank context line (some tools strip
+    // the leading space from an empty context line).
+    if line.is_empty() || line == "\r" {
+        return Some((Some(RawKind::Context), ""));
+    }
+    let prefix = line.as_bytes().get(..columns)?;
+    if !prefix.iter().all(|b| matches!(b, b' ' | b'+' | b'-')) {
+        return None;
+    }
+    let rest = &line[columns..];
+    let kind = match prefix[0] {
+        b'+' => Some(RawKind::Plus),
+        b'-' => Some(RawKind::Minus),
+        // In the first parent and the result, unless another parent's column
+        // says the result doesn't have it (then it's in neither).
+        _ if prefix.contains(&b'-') => None,
+        _ => Some(RawKind::Context),
+    };
+    Some((kind, rest))
 }
 
 #[cfg(test)]
@@ -195,13 +240,25 @@ mod tests {
     }
 
     #[test]
-    fn crlf_line_endings_are_stripped_with_the_newline() {
-        // `str::lines` treats `\r\n` as one terminator, so a CRLF file's lines
-        // arrive without the `\r` — and a CRLF-only change renders as a
+    fn a_crlf_only_change_keeps_its_carriage_return() {
+        // git's own output is LF-terminated; a `\r` before the `\n` is part of
+        // the file's line. Dropping it would turn a line-ending change into a
         // removed and an added line with identical text.
-        let parsed = parse_unified("@@ -1 +1 @@\r\n-a\r\n+a\n");
+        let parsed = parse_unified("@@ -1 +1 @@\n-a\r\n+a\n");
         assert_eq!(parsed.hunks.len(), 1);
-        assert_eq!(kinds(&parsed.hunks[0]), [(M, "a"), (P, "a")]);
+        assert_eq!(kinds(&parsed.hunks[0]), [(M, "a\r"), (P, "a")]);
+    }
+
+    #[test]
+    fn a_diff_converted_to_crlf_still_parses() {
+        let parsed = parse_unified(
+            "diff --git a/f b/f\r\n--- a/f\r\n+++ b/f\r\n@@ -1,2 +1,2 @@\r\n keep\r\n-old\r\n+new\r\n\\ No newline at end of file\r\n",
+        );
+        assert_eq!(parsed.hunks.len(), 1);
+        assert_eq!(
+            kinds(&parsed.hunks[0]),
+            [(C, "keep\r"), (M, "old\r"), (P, "new\r")]
+        );
     }
 
     #[test]
@@ -281,20 +338,51 @@ mod tests {
     }
 
     #[test]
-    fn a_combined_merge_diff_is_not_parsed() {
-        // `git diff` during a conflicted merge emits combined hunks
-        // (`@@@ -a -b +c @@@`, two-column line prefixes). The header regex
-        // expects one old range, so nothing is collected — an empty result
-        // rather than lines misclassified by their first column.
-        let parsed = parse_unified("@@@ -1,2 -1,2 +1,3 @@@\n  a\n++b\n");
-        assert!(parsed.hunks.is_empty());
+    fn a_combined_merge_diff_is_read_against_its_first_parent() {
+        // `git diff` during a conflicted merge: two prefix columns, one per
+        // parent. A `-` in a column: that parent has the line, the result
+        // doesn't; a `+`: the result has it, that parent doesn't. So ` -` is
+        // in parent 2 only and neither side shows it; `- ` is removed from
+        // parent 1; `++` and `+ ` are added relative to parent 1; ` +` is in
+        // parent 1 and the result (context).
+        let parsed = parse_unified(
+            "diff --cc f.rs\n\
+             index 1,2..3\n\
+             --- a/f.rs\n\
+             +++ b/f.rs\n\
+             @@@ -1,3 -1,3 +1,4 @@@\n  \
+             same\n \
+             -theirs\n\
+             - ours\n\
+             ++merged\n \
+             +from_ours\n\
+             + from_theirs\n\
+             diff --cc g.rs\n\
+             @@@ -5 -5 +5 @@@\n\
+             --gone\n\
+             ++here\n",
+        );
+        assert_eq!(parsed.hunks.len(), 2);
+        let h = &parsed.hunks[0];
+        assert_eq!((h.old_start, h.new_start), (1, 1));
+        assert_eq!(
+            kinds(h),
+            [
+                (C, "same"),
+                (M, "ours"),
+                (P, "merged"),
+                (C, "from_ours"),
+                (P, "from_theirs"),
+            ]
+        );
+        assert_eq!(
+            kinds(&parsed.hunks[1]),
+            [(M, "gone"), (P, "here")]
+        );
     }
 
-    /// The module docs promise multi-file input, but the parser has no notion
-    /// of a hunk's length: once a hunk is open, the next file's `--- a/…` and
-    /// `+++ b/…` headers read as a removed and an added line of the previous
-    /// file. Ignored until the parser counts hunk lines (or resets on
-    /// `diff --git`) — run with `--ignored` to see it fail.
+    /// Once a hunk is open, the next file's `--- a/…` and `+++ b/…` headers
+    /// must not read as a removed and an added line of the previous file.
     #[test]
     fn a_multi_file_diff_does_not_leak_headers_into_the_previous_hunk() {
         let parsed = parse_unified(
