@@ -53,7 +53,7 @@ export function LayoutSwitcher({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[var(--z-overlay)]" />
+        <Dialog.Backdrop className="fixed inset-0 bg-black/70 backdrop-blur-sm z-overlay" />
         <Dialog.Popup
           ref={contentRef}
           tabIndex={-1}
@@ -62,12 +62,12 @@ export function LayoutSwitcher({
           // preventDefault + focus(): hand it the element to land on.
           initialFocus={contentRef}
           aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)] w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-[var(--shadow-overlay)] p-5 outline-none"
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-modal w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-md p-5 outline-none"
         >
-          <Dialog.Title className="text-[13px] font-semibold text-[var(--text-primary)] mb-0.5">
+          <Dialog.Title className="text-base font-semibold text-[var(--text-primary)] mb-0.5">
             Choose a layout
           </Dialog.Title>
-          <p className="text-[11px] text-[var(--text-tertiary)] mb-4">
+          <p className="text-xs text-[var(--text-tertiary)] mb-4">
             Rearranges panels and tabs into a ready-made project.
           </p>
 
@@ -85,17 +85,15 @@ export function LayoutSwitcher({
                 )}
               >
                 <LayoutThumbnail template={t} />
-                <div className="mt-2 text-[12px] font-medium text-[var(--text-primary)]">
-                  {t.name}
-                </div>
-                <div className="text-[10px] text-[var(--text-tertiary)] leading-snug line-clamp-2">
+                <div className="mt-2 text-sm font-medium text-[var(--text-primary)]">{t.name}</div>
+                <div className="text-2xs text-[var(--text-tertiary)] leading-snug line-clamp-2">
                   {t.description}
                 </div>
               </button>
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-center gap-3 text-[10px] text-[var(--text-tertiary)]">
+          <div className="mt-4 flex items-center justify-center gap-3 text-2xs text-[var(--text-tertiary)]">
             <Hint k="↑ ↓ ← →" label="navigate" />
             <Hint k="⏎" label="apply" />
             <Hint k="esc" label="close" />
@@ -109,7 +107,7 @@ export function LayoutSwitcher({
 function Hint({ k, label }: { k: string; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border)] font-mono text-[9px] text-[var(--text-secondary)]">
+      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border)] font-mono text-3xs text-[var(--text-secondary)]">
         {k}
       </kbd>
       {label}

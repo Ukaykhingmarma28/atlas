@@ -446,7 +446,7 @@ const TabColumn = memo(function TabColumn({
                     if (e.key === "Enter" || e.key === " ") setActiveTab(tab.id);
                   }}
                   className={cn(
-                    "group relative flex items-center gap-1.5 pl-3 h-full text-[12px] font-medium shrink-0 cursor-pointer select-none border-r border-border",
+                    "group relative flex items-center gap-1.5 pl-3 h-full text-sm font-medium shrink-0 cursor-pointer select-none border-r border-border",
                     "transition-[background-color,color] duration-150",
                     tab.closable ? "pr-7" : "pr-3",
                     isActive
@@ -483,7 +483,7 @@ const TabColumn = memo(function TabColumn({
                           "absolute right-1.5 top-1/2 -translate-y-1/2",
                           "inline-flex items-center justify-center w-4 h-4 rounded-full",
                           "text-text-tertiary opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                          "hover:bg-[#ffffff22] hover:text-text-primary transition-[opacity,transform] duration-150",
+                          "hover:bg-bg-hover hover:text-text-primary transition-[opacity,transform] duration-150",
                         )}
                       >
                         <X size={10} strokeWidth={2.2} />
@@ -637,7 +637,7 @@ const TabContentContainer = memo(function TabContentContainer({
       <div
         ref={ref}
         style={{ flex: "1 1 0%", minHeight: 0, overflow: "hidden" }}
-        className="flex items-center justify-center text-[12px] text-text-tertiary"
+        className="flex items-center justify-center text-sm text-text-tertiary"
       >
         Empty split — open a tab with +{newTabHint ? ` or ${newTabHint}` : ""}
       </div>
@@ -783,7 +783,7 @@ function ProjectlessCenter() {
             if (e.key === "Enter") setAtHome(true);
           }}
           className={cn(
-            "flex items-center gap-1.5 border-r border-border px-3 text-[12px] font-medium cursor-pointer select-none",
+            "flex items-center gap-1.5 border-r border-border px-3 text-sm font-medium cursor-pointer select-none",
             active === null
               ? "bg-bg-surface text-text-primary"
               : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
@@ -813,7 +813,7 @@ function ProjectlessCenter() {
                 }
               }}
               className={cn(
-                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border pl-3 text-[12px] font-medium",
+                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border pl-3 text-sm font-medium",
                 "transition-[background-color,color] duration-150",
                 tab.closable ? "pr-7" : "pr-3",
                 isActive
@@ -844,7 +844,7 @@ function ProjectlessCenter() {
                       "absolute right-1.5 top-1/2 -translate-y-1/2",
                       "inline-flex h-4 w-4 items-center justify-center rounded-full",
                       "text-text-tertiary opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
-                      "transition-[opacity,transform] duration-150 hover:bg-[#ffffff22] hover:text-text-primary",
+                      "transition-[opacity,transform] duration-150 hover:bg-bg-hover hover:text-text-primary",
                     )}
                   >
                     <X size={10} strokeWidth={2.2} />
@@ -985,13 +985,13 @@ function NewTabDropdown({
         />
       </HintItem>
       <DropdownMenu.Portal>
-        <DropdownMenu.Positioner style={{ zIndex: 99999 }} align="start" sideOffset={4}>
+        <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
           <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border bg-bg-secondary shadow-lg py-1">
             {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
               <DropdownMenu.Item
                 key={type}
                 onClick={() => handleAdd(type, label)}
-                className="flex items-center gap-2 px-3 h-[30px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
+                className="flex items-center gap-2 px-3 h-[30px] text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
               >
                 <Icon size={12} className="text-text-tertiary" />
                 {label}
