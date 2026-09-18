@@ -182,16 +182,8 @@ export function AtlasThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3">
-        <span className="text-xs font-medium text-secondary-foreground">Mode</span>
-        <ModeSwitch
-          value={settings.themeMode}
-          systemAppearance={appearanceForMode("system")}
-          onChange={(mode) => updateSettings({ themeMode: mode })}
-        />
-      </div>
-
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-background px-3">
+      {/* One toolbar: filter the catalog, pick the mode, import a new theme. */}
+      <div className="flex h-[36px] shrink-0 items-center gap-1.5 border-b border-border bg-background px-3">
         <Search size={11} className="shrink-0 text-muted-foreground" />
         <input
           value={query}
@@ -211,6 +203,11 @@ export function AtlasThemesSettings() {
             </button>
           </Hint>
         )}
+        <ModeSwitch
+          value={settings.themeMode}
+          systemAppearance={appearanceForMode("system")}
+          onChange={(mode) => updateSettings({ themeMode: mode })}
+        />
         <Hint label="Convert a shadcn, Zed or VS Code theme">
           <Button size="xs" variant="outline" onClick={() => setImporting(true)}>
             <Icon icon={Download} size="xs" />
