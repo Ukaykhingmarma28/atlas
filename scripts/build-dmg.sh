@@ -48,6 +48,12 @@ if ! rustup target list --installed | grep -qx "${TARGET}"; then
   rustup target add "${TARGET}"
 fi
 
+# Before SDKROOT: it may switch DEVELOPER_DIR, which changes what xcrun finds.
+source scripts/select-xcode.sh
+if [[ "${ATLAS_ACTOOL_OK}" != "1" ]]; then
+  log "WARNING: no Xcode 26+ actool — this build gets the flat Icon.icns, not the Liquid Glass icon"
+fi
+
 # The C-building dependencies need an SDK path. The macOS SDK is universal, so
 # the same root serves both architectures — this is about it being SET, not
 # about which arch it points at.

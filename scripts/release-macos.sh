@@ -115,6 +115,16 @@ else
   for t in "${TARGETS[@]}"; do ensure_target "${t}"; done
 fi
 
+# Before SDKROOT: it may switch DEVELOPER_DIR, which changes what xcrun finds.
+# A release without the Liquid Glass icon is a broken release, so no actool is
+# fatal here, where the dev build (build-dmg.sh) only warns.
+source "$(dirname "$0")/select-xcode.sh"
+if [[ "${ATLAS_ACTOOL_OK}" != "1" ]]; then
+  err "Xcode 26+ is required to compile the Liquid Glass app icon (actool)."
+  err "Install it, or point DEVELOPER_DIR at one."
+  exit 1
+fi
+
 # The C-building dependencies need an SDK path. The macOS SDK is universal, so
 # one root serves both architectures — what matters is that it is SET, which it
 # is not in a login shell that never sourced a dev profile.
