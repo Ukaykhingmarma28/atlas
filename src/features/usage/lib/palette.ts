@@ -11,9 +11,13 @@
  * file used to hold ten hand-picked greys chosen for one AMOLED-black theme;
  * on Rosé Pine Dawn they were invisible.
  *
- * Five tokens, more series than that: `seriesColor` cycles them and dims each
- * further lap toward the background, so an eleventh project is still separable
- * without inventing an eleventh token (decision 18 — role tokens only).
+ * Five tokens, more series than that: `seriesColor` cycles them and pulls each
+ * further lap toward the background or the foreground — alternating which,
+ * lap over lap — so an eleventh project is still separable without inventing
+ * an eleventh token (decision 18 — role tokens only). Alternating the target
+ * instead of just deepening the same fade means two laps can share a fade
+ * *amount* without sharing a resolved colour, so the cycle doesn't visibly
+ * repeat until far past any table Atlas renders.
  *
  * Read it through `useSeriesPalette()`. The hook subscribes to
  * `atlas:theme-applied`, so a chart repaints on a theme switch; the
@@ -26,9 +30,10 @@ import { themeBase, themeColor, useThemeVersion } from "@/features/theme/theme-v
 /** The five series tokens, in the order a theme author sees them. */
 const SERIES_TOKENS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"] as const;
 
-/** How far each extra lap of the cycle is pulled toward the background. */
-const LAP_FADE = 0.25;
-const MAX_LAP_FADE = 0.6;
+/** How far each extra pair of laps pulls the base colour toward its target. */
+const PASS_FADE = 0.22;
+/** Cap on that pull — short of the target colour, so a series is never lost. */
+const MAX_PASS_FADE = 0.55;
 
 export interface SeriesPalette {
   /** Stable colour for the nth series, cycling `chart-1..5`. */
@@ -39,13 +44,23 @@ export interface SeriesPalette {
 
 function buildSeriesPalette(): SeriesPalette {
   const background = themeBase("background");
+  const foreground = themeBase("foreground");
   const series = SERIES_TOKENS.map((token) => themeBase(token));
 
   return {
     seriesColor: (index) => {
       const color = series[index % series.length];
       const lap = Math.floor(index / series.length);
-      return lap === 0 ? color : mix(color, background, Math.min(lap * LAP_FADE, MAX_LAP_FADE));
+      if (lap === 0) return color;
+      // Odd laps darken toward the background, even laps lighten toward the
+      // foreground; `pass` only advances every two laps, so consecutive laps
+      // land on opposite sides of the base colour instead of the same fade
+      // getting deeper each time. Two laps land on the same `amount` well
+      // before they land on the same resolved colour.
+      const pass = Math.ceil(lap / 2);
+      const amount = Math.min(pass * PASS_FADE, MAX_PASS_FADE);
+      const target = lap % 2 === 1 ? background : foreground;
+      return mix(color, target, amount);
     },
     // "Other" is the bucket the reader is meant to look past, which is the
     // same instruction `text.disabled` carries everywhere else.
