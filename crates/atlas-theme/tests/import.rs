@@ -199,6 +199,21 @@ fn a_zed_family_becomes_one_atlas_theme_per_member() {
     assert!(ignored.contains_key("app chrome"), "{ignored:?}");
 }
 
+/// Regression test: `players[0].selection` used to fan out to
+/// `terminal.selection` too, which is a `[[derived]]` variable in keys.toml
+/// (derived from the shadcn `primary` token), not a settable `[[key]]` — so
+/// every Zed import wrote an unknown key and loaded with a warning.
+/// `finish_theme` writes the converted TOML and re-reads it through
+/// `parse_theme`, which is what actually raises `ThemeWarning`s, so checking
+/// `theme.warnings` here is checking exactly what the app would show the user
+/// on import, not just the in-memory draft.
+#[test]
+fn a_zed_import_loads_with_no_unknown_key_warnings() {
+    for entry in import(ZED, "zed-rose-pine.json") {
+        assert!(entry.theme.warnings.is_empty(), "{}: {:?}", entry.theme.id, entry.theme.warnings);
+    }
+}
+
 // ── VS Code ─────────────────────────────────────────────────────────────────
 
 #[test]

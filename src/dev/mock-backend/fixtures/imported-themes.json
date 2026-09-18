@@ -245,16 +245,9 @@
         "terminal.background": "#191724ff",
         "terminal.cursor": "#c4a7e7ff",
         "terminal.foreground": "#e0def4ff",
-        "terminal.selection": "#c4a7e733",
         "text.disabled": "#6e6a86ff"
       }
-    },
-    "warnings": [
-      {
-        "key": "dark.keys.terminal.selection",
-        "message": "unknown theme key; preserved for forward compatibility"
-      }
-    ]
+    }
   },
   {
     "schema": 1,
@@ -387,16 +380,9 @@
         "terminal.background": "#faf4edff",
         "terminal.cursor": "#907aa9ff",
         "terminal.foreground": "#575279ff",
-        "terminal.selection": "#c4a7e733",
         "text.disabled": "#6e6a86ff"
       }
-    },
-    "warnings": [
-      {
-        "key": "light.keys.terminal.selection",
-        "message": "unknown theme key; preserved for forward compatibility"
-      }
-    ]
+    }
   },
   {
     "schema": 1,

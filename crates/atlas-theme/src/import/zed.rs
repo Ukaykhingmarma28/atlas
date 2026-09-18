@@ -220,7 +220,14 @@ fn map_players(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mu
         draft.map_color_key("terminal.cursor", "players[0].cursor", cursor);
     }
     if let Some(selection) = first.get("selection").and_then(Value::as_str) {
-        for target in ["selection.background", "editor.selection.background", "terminal.selection"] {
+        // `terminal.selection` is a *derived* variable (`[[derived]]` in
+        // keys.toml, not `[[key]]`): Atlas always computes it from the shadcn
+        // `primary` base token at 30% alpha, and no theme may set it directly —
+        // writing it here loaded every Zed import with an unknown-key warning.
+        // `derive_base_tokens` below already sources `primary` from Zed's
+        // `text.accent`, so the derived value still reflects the imported
+        // theme; there is nothing left for this loop to write.
+        for target in ["selection.background", "editor.selection.background"] {
             draft.map_color_key(target, "players[0].selection", selection);
         }
     }
