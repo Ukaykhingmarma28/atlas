@@ -63,8 +63,8 @@ export function CanvasToolbar({
   return (
     <div
       className={cn(
-        "absolute left-3 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1 p-1",
-        "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-[var(--shadow-overlay)]",
+        "absolute left-3 top-1/2 -translate-y-1/2 z-panel flex flex-col items-center gap-1 p-1",
+        "rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 backdrop-blur-2xl shadow-md",
       )}
     >
       {TOOLS.map((t) => (
@@ -76,7 +76,7 @@ export function CanvasToolbar({
         />
       ))}
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
 
       {SHAPES.map((t) => (
         <ToolButton
@@ -87,7 +87,7 @@ export function CanvasToolbar({
         />
       ))}
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
       <Hint label="Insert image" side="right">
         <button
           type="button"
@@ -98,7 +98,7 @@ export function CanvasToolbar({
         </button>
       </Hint>
 
-      <div className="my-0.5 h-px w-5 bg-white/10" />
+      <div className="my-0.5 h-px w-5 bg-border-subtle" />
       <Hint label="Undo" shortcut="⌘Z" side="right">
         <button
           type="button"

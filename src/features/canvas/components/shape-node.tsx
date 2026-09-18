@@ -92,7 +92,7 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected }: NodePro
           ref={ref}
           className={cn(
             "max-w-full whitespace-pre-wrap break-words text-center outline-none",
-            "text-[12px] leading-snug text-[var(--text-primary)] caret-[var(--primary)]",
+            "text-sm leading-snug text-[var(--text-primary)] caret-[var(--primary)]",
             // An empty contentEditable has no line box, so the caret can't render;
             // a min line-height gives it one when the shape has no text yet.
             "min-h-[1.25em] min-w-[2px]",
