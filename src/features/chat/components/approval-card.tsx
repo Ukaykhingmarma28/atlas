@@ -133,7 +133,7 @@ export function ApprovalCard({
   }, [answer, q, step, goNext]);
 
   return (
-    <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+    <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
       <div className="px-4 pt-3.5 pb-4">
         {/* Header: icon, question, step counter. */}
         <div className="flex items-start gap-2.5">
@@ -289,7 +289,7 @@ export function ApprovalCard({
                 className={cn(
                   "flex h-9 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
                   isAnswered(answer)
-                    ? "cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--atlas-element-primary-hover)]"
+                    ? "cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--atlas-primary-hover)]"
                     : "cursor-default bg-[var(--bg-base)] text-[var(--text-ghost)]",
                 )}
               >

@@ -95,10 +95,10 @@ export function ImportThreadsModal({
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
+            "border border-border bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
           )}
         >
-          <div className="flex items-center gap-3 border-b border-border-default px-4 py-2.5">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
             <Dialog.Title className="text-[13px] font-semibold text-text-primary">
               Import sessions
             </Dialog.Title>
@@ -136,7 +136,7 @@ export function ImportThreadsModal({
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2.5">
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
             <Dialog.Close className="rounded px-2.5 py-1 text-[11px] text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer">
               Cancel
             </Dialog.Close>

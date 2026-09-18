@@ -363,7 +363,7 @@ export function ChangesView() {
             onClick={() => run(() => actions.opControl(opKind, "continue"))}
             disabled={hasConflicts}
             title={hasConflicts ? "Resolve all conflicts first" : undefined}
-            className="px-2 h-6 rounded text-[10px] font-medium bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-element-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-2 h-6 rounded text-[10px] font-medium bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Continue
           </button>
@@ -380,7 +380,7 @@ export function ChangesView() {
       {inProgressLabel && <ConflictsView onOpenFile={openFile} />}
 
       {/* File lists — bounded so the diff region below gets room. */}
-      <div className="shrink-0 max-h-[45%] overflow-y-auto hide-scrollbar border-b border-border-default">
+      <div className="shrink-0 max-h-[45%] overflow-y-auto hide-scrollbar border-b border-border">
         {/* Staged */}
         {staged.length > 0 && (
           <div>
@@ -424,7 +424,7 @@ export function ChangesView() {
                 >
                   Stage all
                 </button>
-                <span className="w-px h-3 bg-border-default" />
+                <span className="w-px h-3 bg-border" />
                 <button
                   onClick={() => setConfirmRevertAll(true)}
                   className="text-[10px] text-text-tertiary hover:text-[var(--status-error)]"
@@ -474,12 +474,12 @@ export function ChangesView() {
       <GitOpOutput />
 
       {/* Commit form */}
-      <div className="shrink-0 border-t border-border-default p-2 space-y-1.5">
+      <div className="shrink-0 border-t border-border p-2 space-y-1.5">
         <input
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
           placeholder={amend ? "Amend message (empty = keep original)" : "Summary (required)"}
-          className="w-full h-7 rounded-md border border-border-default bg-bg-input px-2 text-[11px] text-text-primary outline-none focus:border-border-focus"
+          className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-[11px] text-text-primary outline-none focus:border-border-strong"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doCommit();
           }}
@@ -507,7 +507,7 @@ export function ChangesView() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
             rows={3}
-            className="w-full rounded-md border border-border-default bg-bg-input px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-border-focus resize-none"
+            className="w-full rounded-md border border-border bg-bg-input px-2 py-1.5 text-[11px] text-text-primary outline-none focus:border-border-strong resize-none"
           />
         )}
         {showCoAuthors && (
@@ -515,7 +515,7 @@ export function ChangesView() {
             value={coAuthors}
             onChange={(e) => setCoAuthors(e.target.value)}
             placeholder="Co-authors: Name <email>, Name <email>"
-            className="w-full h-7 rounded-md border border-border-default bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-focus"
+            className="w-full h-7 rounded-md border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
             title="Added as Co-authored-by trailers"
           />
         )}
@@ -539,7 +539,7 @@ export function ChangesView() {
           <button
             onClick={doCommit}
             disabled={!canCommit}
-            className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-elevated)]"
+            className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-elevated)]"
           >
             {committing ? (
               <Loader2 size={11} className="animate-spin" />

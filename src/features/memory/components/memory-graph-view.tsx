@@ -60,7 +60,7 @@ export function MemoryGraphView() {
     return (
       <Centered>
         <div className="text-center max-w-[360px] px-6 space-y-3">
-          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
+          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)] flex items-center justify-center">
             <Sparkles size={22} className="text-[var(--text-secondary)]" />
           </div>
           <div className="space-y-1">
@@ -130,7 +130,7 @@ export function MemoryGraphView() {
           )}
           <button
             onClick={() => (phase === "download-failed" ? void download() : void init(projectPath))}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} />
             Retry
@@ -285,10 +285,10 @@ function GraphReady({
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
       {/* Query bar */}
-      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
+      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
         {/* Tree / Graph toggle — top-left. Tree (the decision tree) is the
             primary view, so it sits first. */}
-        <div className="flex items-center gap-0.5 h-6 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] p-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 h-6 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5 shrink-0">
           <button
             onClick={() => setView("tree")}
             title="Decision tree"
@@ -314,7 +314,7 @@ function GraphReady({
             <Network size={11} /> Graph
           </button>
         </div>
-        <div className="flex items-center gap-1.5 h-6 flex-1 max-w-[440px] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 focus-within:border-[var(--border-strong)]">
+        <div className="flex items-center gap-1.5 h-6 flex-1 max-w-[440px] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 focus-within:border-[var(--border-strong)]">
           <Search size={12} className="text-[var(--text-tertiary)] shrink-0" />
           <input
             value={query}
@@ -380,7 +380,7 @@ function GraphReady({
 
           {/* Time scrubber — watch memory accrue; drag to a moment in time. */}
           {hasTime && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-9 shadow-[var(--shadow-overlay)]">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-9 shadow-[var(--shadow-overlay)]">
               <Hint label={playing ? "Pause" : "Play timeline"} side="top">
                 <button
                   onClick={() => setPlaying((p) => !p)}
@@ -411,7 +411,7 @@ function GraphReady({
 
           {/* Impact-mode legend (graph only, while a node is selected). */}
           {selected && viewMode === "graph" && (
-            <div className="absolute right-3 top-[26px] flex items-center gap-3 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-7 text-[10px] text-[var(--text-tertiary)]">
+            <div className="absolute right-3 top-[26px] flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-2.5 h-7 text-[10px] text-[var(--text-tertiary)]">
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full" style={{ background: "#fafafa" }} /> impacted
               </span>
@@ -424,7 +424,7 @@ function GraphReady({
           {/* Selected node detail card. Read-only: the per-agent memory views it
               used to open were removed with the agent dropdown. */}
           {selected && (
-            <div className="absolute left-[26px] bottom-3 max-w-[340px] text-left rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm shadow-[var(--shadow-overlay)] p-3">
+            <div className="absolute left-[26px] bottom-3 max-w-[340px] text-left rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm shadow-[var(--shadow-overlay)] p-3">
               <div className="flex items-center gap-1.5 mb-1">
                 <SourceDot source={selected.source} />
                 <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">
@@ -443,7 +443,7 @@ function GraphReady({
         </div>
 
         {results.length > 0 && (
-          <aside className="w-[280px] shrink-0 border-l border-[var(--border-default)] overflow-y-auto hide-scrollbar bg-[var(--bg-sidebar)]">
+          <aside className="w-[280px] shrink-0 border-l border-[var(--border)] overflow-y-auto hide-scrollbar bg-[var(--bg-sidebar)]">
             <div className="px-3 h-[28px] flex items-center text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-subtle)] sticky top-0 bg-[var(--bg-sidebar)]">
               Results
             </div>

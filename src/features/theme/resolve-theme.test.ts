@@ -29,6 +29,7 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--diff-sx": "component-local diff transform",
   "--i": "component-local animation index",
   "--atlas-pulse-color": "component-local animation colour",
+  "--atlas-ants-color": "component-local animation colour",
   "--atlas-beam-travel": "component-local animation distance",
 };
 

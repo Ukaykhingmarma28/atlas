@@ -59,7 +59,7 @@ export function ThemeImportPanel({ themes, onClose, onImported }: Props) {
   const [mode, setMode] = useState<"import" | "export">("import");
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-tab-strip shrink-0 items-center gap-1 border-b border-border-default bg-bg-primary px-2">
+      <div className="flex h-tab-strip shrink-0 items-center gap-1 border-b border-border bg-bg-primary px-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
           <Icon icon={ArrowLeft} size="sm" />
           Themes
@@ -156,9 +156,9 @@ function ImportView({ onImported }: { onImported: (id: string) => void }) {
             spellCheck={false}
             rows={8}
             className={cn(
-              "w-full resize-y rounded border border-border-default bg-bg-input p-2",
+              "w-full resize-y rounded border border-border bg-bg-input p-2",
               "code text-text-primary outline-none placeholder:text-text-tertiary",
-              "focus:border-border-focus",
+              "focus:border-border-strong",
             )}
           />
         )}
@@ -245,7 +245,7 @@ function CandidateCard({
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-md border border-border-default bg-bg-secondary p-3">
+    <section className="flex flex-col gap-2 rounded-md border border-border bg-bg-secondary p-3">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="heading truncate text-text-primary">{candidate.report.sourceName}</span>
         <FidelityBadge report={candidate.report} />
@@ -480,7 +480,7 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
         {error && <p className="text-xs text-error">{error}</p>}
 
         {result && (
-          <section className="flex flex-col gap-2 rounded-md border border-border-default bg-bg-secondary p-3">
+          <section className="flex flex-col gap-2 rounded-md border border-border bg-bg-secondary p-3">
             <div className="flex items-center gap-1.5">
               <span className="heading text-text-primary">{result.name}</span>
               <Badge size="sm" variant="secondary">

@@ -392,7 +392,7 @@ export function CommandPalette({
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
             "w-[520px] max-h-[400px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
+            "bg-[var(--bg-secondary)] border border-[var(--border)]",
             "shadow-[var(--shadow-overlay)]",
             "flex flex-col",
           )}
@@ -404,7 +404,7 @@ export function CommandPalette({
           {/* `shrink-0`: without it the flex column compresses this fixed-height
               search bar when the list overflows `max-h` (the command list is
               long), making it render at half height. */}
-          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
+          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border)]">
             <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
             <input
               ref={inputRef}

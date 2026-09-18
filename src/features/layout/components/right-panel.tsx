@@ -57,7 +57,7 @@ export function RightPanel() {
 
   return (
     <div className="atlas-vibrant-panel h-full flex flex-col bg-[var(--panel-bg-2)]">
-      <div className="flex items-center border-b border-border-default px-1 h-[29px] shrink-0 gap-0.5 overflow-x-auto hide-scrollbar">
+      <div className="flex items-center border-b border-border px-1 h-[29px] shrink-0 gap-0.5 overflow-x-auto hide-scrollbar">
         {sections.map((s) => (
           <button
             key={s.id}

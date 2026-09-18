@@ -79,7 +79,7 @@ export function GitManagerPanel() {
       )}
       {/* Toolbar: branch + sync */}
       <HintGroup>
-        <div className="shrink-0 flex items-center gap-1 px-1.5 h-[29px] border-b border-border-default">
+        <div className="shrink-0 flex items-center gap-1 px-1.5 h-[29px] border-b border-border">
           <BranchSwitcher />
           <HintItem label={`Merge a branch into ${current?.name ?? "the current branch"}`}>
             <button
@@ -127,7 +127,7 @@ export function GitManagerPanel() {
       </HintGroup>
 
       {/* View tabs */}
-      <div className="shrink-0 flex items-center gap-0.5 px-1.5 h-[29px] border-b border-border-default">
+      <div className="shrink-0 flex items-center gap-0.5 px-1.5 h-[29px] border-b border-border">
         <ViewTab active={view === "changes"} onClick={() => setView("changes")}>
           Changes{changedCount > 0 ? ` (${changedCount})` : ""}
         </ViewTab>

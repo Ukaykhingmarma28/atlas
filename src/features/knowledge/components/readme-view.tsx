@@ -23,7 +23,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
         rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={{
           h1: (p) => (
-            <h1 className="text-[26px] font-bold tracking-tight mt-8 mb-3 pb-2 border-b border-[var(--border-default)]">
+            <h1 className="text-[26px] font-bold tracking-tight mt-8 mb-3 pb-2 border-b border-[var(--border)]">
               {p.children}
             </h1>
           ),
@@ -74,26 +74,26 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
           },
           pre: (p) => (
             <pre
-              className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-4 text-[12.5px] my-4 overflow-x-auto"
+              className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-[12.5px] my-4 overflow-x-auto"
               style={{ whiteSpace: "pre", wordBreak: "normal" }}
             >
               {p.children}
             </pre>
           ),
           blockquote: (p) => (
-            <blockquote className="border-l-2 border-[var(--border-default)] pl-4 my-3 text-[var(--text-secondary)]">
+            <blockquote className="border-l-2 border-[var(--border)] pl-4 my-3 text-[var(--text-secondary)]">
               {p.children}
             </blockquote>
           ),
           hr: () => <hr className="my-6 border-[var(--border-subtle)]" />,
           table: (p) => (
-            <div className="my-4 rounded-md border border-[var(--border-default)] overflow-x-auto">
+            <div className="my-4 rounded-md border border-[var(--border)] overflow-x-auto">
               <table className="w-full text-[13px] border-collapse">{p.children}</table>
             </div>
           ),
           thead: (p) => <thead className="bg-[var(--bg-elevated)]">{p.children}</thead>,
           th: (p) => (
-            <th className="px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border-default)] border-r last:border-r-0">
+            <th className="px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
               {p.children}
             </th>
           ),
@@ -106,7 +106,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
             </td>
           ),
           details: (p) => (
-            <details className="my-3 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3 py-2">
+            <details className="my-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
               {p.children}
             </details>
           ),

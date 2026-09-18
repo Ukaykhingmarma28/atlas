@@ -245,7 +245,7 @@ function SplitView({
           {i > 0 && (
             <Separator
               className={cn(
-                "bg-border-default hover:bg-primary data-[separator=active]:bg-primary transition-colors",
+                "bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors",
                 horizontal ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
               )}
             />
@@ -298,7 +298,7 @@ function PaneView({
         isActivePane && groupFocused && "ring-1 ring-[#ffffff08] ring-inset",
       )}
     >
-      <div className="flex items-center h-[32px] shrink-0 border-b border-border-default bg-bg-primary px-1 gap-0.5">
+      <div className="flex items-center h-[32px] shrink-0 border-b border-border bg-bg-primary px-1 gap-0.5">
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto hide-scrollbar">
           {pane.terminals.map((ptyId) => (
             <div

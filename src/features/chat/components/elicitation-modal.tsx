@@ -91,11 +91,11 @@ export function ElicitationModal({
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
-            "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
+            "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
             "shadow-[var(--shadow-overlay)] text-text-primary",
           )}
         >
-          <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
+          <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
             <HelpCircle className="mt-0.5 size-4 text-text-tertiary" />
             <div className="min-w-0">
               <Dialog.Title className="text-sm font-medium">The agent has a question</Dialog.Title>
@@ -109,7 +109,7 @@ export function ElicitationModal({
             {pending.mode === "url" && pending.url && (
               <button
                 onClick={() => void openUrl(pending.url!)}
-                className="flex w-full items-center gap-2 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
                 <span className="min-w-0 flex-1 truncate">Open page</span>
@@ -138,7 +138,7 @@ export function ElicitationModal({
                   <button
                     onClick={() => set(f.name, !values[f.name])}
                     className={cn(
-                      "flex items-center gap-2 self-start rounded-sm border border-border-default px-2.5 py-1 text-[11px] transition-colors",
+                      "flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-[11px] transition-colors",
                       values[f.name]
                         ? "bg-bg-selected text-text-primary"
                         : "text-text-secondary hover:bg-bg-hover",
@@ -172,7 +172,7 @@ export function ElicitationModal({
                             );
                           }}
                           className={cn(
-                            "rounded-sm border border-border-default px-2 py-1 text-[11px] transition-colors",
+                            "rounded-sm border border-border px-2 py-1 text-[11px] transition-colors",
                             picked
                               ? "bg-bg-selected text-text-primary"
                               : "text-text-secondary hover:bg-bg-hover",
@@ -192,7 +192,7 @@ export function ElicitationModal({
                     }
                     spellCheck={false}
                     autoComplete="off"
-                    className="h-8 w-full rounded-sm border border-border-default bg-bg-base px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-focus,var(--border-default))]"
+                    className="h-8 w-full rounded-sm border border-border bg-bg-base px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-strong"
                   />
                 )}
               </div>
@@ -202,7 +202,7 @@ export function ElicitationModal({
               <button
                 disabled={busy || !complete}
                 onClick={() => void respond("accept", pending.mode === "form" ? values : {})}
-                className="h-7 rounded-sm border border-border-default px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+                className="h-7 rounded-sm border border-border px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
               >
                 {pending.mode === "url" ? "I'm done" : "Send"}
               </button>

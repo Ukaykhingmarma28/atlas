@@ -162,7 +162,7 @@ export function SessionChatPanel({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--bg-base)]">
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border-default)] pl-3 pr-2">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] pl-3 pr-2">
         <ThreadPicker
           title={thread?.title ?? UNTITLED}
           metas={metas}
@@ -177,7 +177,7 @@ export function SessionChatPanel({
         {detail.summary.agent && (
           <span
             title={`Recorded by ${detail.summary.agent}`}
-            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-tertiary)]"
+            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-tertiary)]"
           >
             <AgentGlyph agent={detail.summary.agent} mono />
           </span>
@@ -296,8 +296,8 @@ function ThreadPicker({
       />
       <Popover.Portal>
         <Popover.Positioner className="z-[var(--z-max)]" align="start" sideOffset={6}>
-          <Popover.Popup className="flex max-h-[380px] w-[280px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
-            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
+          <Popover.Popup className="flex max-h-[380px] w-[280px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-2.5">
               <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
               <input
                 value={query}
@@ -362,7 +362,7 @@ function ThreadPicker({
                 onNew();
                 setOpen(false);
               }}
-              className="flex h-8 shrink-0 cursor-pointer items-center gap-2 border-t border-[var(--border-default)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="flex h-8 shrink-0 cursor-pointer items-center gap-2 border-t border-[var(--border)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               <Plus size={12} />
               New chat
@@ -406,7 +406,7 @@ function NeedsKey({ loaded }: { loaded: boolean }) {
       <button
         type="button"
         onClick={openProviderSettings}
-        className="mt-1 flex h-7 cursor-pointer items-center rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+        className="mt-1 flex h-7 cursor-pointer items-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
       >
         Add a key in Settings
       </button>
@@ -465,7 +465,7 @@ function Starters({ disabled, onPick }: { disabled: boolean; onPick: (question: 
               onClick={() => onPick(text)}
               style={{ animationDelay: `${120 + i * 50}ms` }}
               className={cn(
-                "group atlas-fade-in flex flex-col gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] p-2.5 text-left transition-all duration-150",
+                "group atlas-fade-in flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2.5 text-left transition-all duration-150",
                 disabled
                   ? "cursor-default opacity-50"
                   : "cursor-pointer hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)]",
@@ -538,7 +538,7 @@ function Composer({
       {/* `relative z-10` is load-bearing: the strip above is positioned, and
           positioned elements paint over non-positioned siblings regardless of
           DOM order — without this the strip would cover the composer. */}
-      <div className="relative z-10 overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] focus-within:border-[var(--border-focus)]">
+      <div className="relative z-10 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] focus-within:border-[var(--border-strong)]">
         <ChatInput
           ref={inputRef}
           // Fixed, not conditional: `ChatInput` reads its placeholder when the

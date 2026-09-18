@@ -5,7 +5,7 @@ import { useStopAgentsConfirmStore } from "../lib/stop-agents-confirm";
 
 /** The app's pill-button language (matches the create-org dialog footer). */
 const pillButton =
-  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
+  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
 
 /**
  * Global "this will stop running agents" confirmation, driven by
@@ -26,7 +26,7 @@ export function StopAgentsDialog() {
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
-            "w-[380px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border-default)]",
+            "w-[380px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border)]",
             "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
             "shadow-[var(--shadow-overlay)] animate-scale-in",
           )}

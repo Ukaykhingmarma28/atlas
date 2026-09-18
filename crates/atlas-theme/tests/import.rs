@@ -155,9 +155,10 @@ fn a_zed_family_becomes_one_atlas_theme_per_member() {
     assert!(dark.dark.is_some() && dark.light.is_none(), "a family member has one appearance");
     assert!(imported[1].theme.light.is_some());
 
-    // Zed's `border` is Atlas's `border.default` — the leaf-and-prefix rule.
-    assert_eq!(color(dark, "dark", "border.default"), "#26233aff");
-    assert_eq!(color(dark, "dark", "border.variant"), "#3b3b4fff");
+    // Zed's `border` has no theme key of its own any more; it carries the
+    // shadcn `border` token, and `border.disabled` is the low-emphasis one.
+    assert_eq!(dark.dark.as_ref().unwrap().base["border"], "#26233aff");
+    assert_eq!(color(dark, "dark", "border.subtle"), "#2a2a3aff");
 
     // All 16 ANSI colours transfer.
     let variant = dark.dark.as_ref().unwrap();
@@ -222,9 +223,9 @@ fn text_mate_scopes_resolve_by_specificity_with_the_later_rule_winning() {
     let imported = import_themes(VSCODE, None, Some(fixtures()), &options("vscode")).unwrap();
     let theme = &imported[0].theme;
 
-    // `constant.language.null` is more specific than `constant`, so the null
-    // colour is the specific rule's, not the generic one's.
-    assert_eq!(color(theme, "dark", "syntax.null"), "#e06c75");
+    // `constant.character.escape` is more specific than `constant`, so the
+    // escape colour is the specific rule's and not the generic one's.
+    assert_eq!(color(theme, "dark", "syntax.constant"), "#d19a66");
     assert_eq!(color(theme, "dark", "syntax.number"), "#d19a66");
     assert_eq!(color(theme, "dark", "syntax.string"), "#98c379");
     assert_eq!(color(theme, "dark", "syntax.escape"), "#56b6c2");

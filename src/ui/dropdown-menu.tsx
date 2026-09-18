@@ -52,7 +52,7 @@ function DropdownMenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
 const POPUP = [
   "max-h-(--available-height) min-w-[11rem] overflow-y-auto overflow-x-hidden",
   "rounded-lg p-0.5",
-  "bg-bg-overlay border border-border-default text-text-primary shadow-md",
+  "bg-bg-overlay border border-border text-text-primary shadow-md",
   "origin-[var(--transform-origin)] animate-scale-in outline-none",
 ];
 
@@ -239,7 +239,7 @@ function DropdownMenuSeparator({
   return (
     <MenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-border-default", className)}
+      className={cn("-mx-1 my-1 h-px bg-border", className)}
       {...props}
     />
   );

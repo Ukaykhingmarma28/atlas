@@ -228,7 +228,7 @@ function Chip({
   onClear: () => void;
 }) {
   return (
-    <span className="flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-base)] pl-2.5 pr-1.5 text-[11px] text-[var(--text-secondary)]">
+    <span className="flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-base)] pl-2.5 pr-1.5 text-[11px] text-[var(--text-secondary)]">
       {field && <span className="shrink-0 text-[var(--text-ghost)]">{field}</span>}
       <span className="min-w-0 truncate">{label}</span>
       <Hint label={`Clear ${field ?? "search"}`}>

@@ -153,12 +153,12 @@ function BranchPicker({
       <Popover.Portal>
         <Popover.Positioner className="z-[9999]" align="start" sideOffset={4}>
           <Popover.Popup
-            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)]"
+            className="atlas-menu-pop w-[260px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)]"
             // Land in the filter box, not on the first row. Base UI's
             // initialFocus replaces Radix's onOpenAutoFocus + preventDefault.
             initialFocus={filterRef}
           >
-            <div className="flex items-center gap-1.5 h-[30px] px-2.5 border-b border-[var(--border-default)]">
+            <div className="flex items-center gap-1.5 h-[30px] px-2.5 border-b border-[var(--border)]">
               <Search size={10} className="shrink-0 text-text-tertiary" />
               <input
                 ref={filterRef}
@@ -295,7 +295,7 @@ function ClonedRow({
   return (
     <div
       data-testid="cloned-repo"
-      className="px-3 py-3 border-b border-border-default hover:bg-bg-hover group"
+      className="px-3 py-3 border-b border-border hover:bg-bg-hover group"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -508,7 +508,7 @@ export function GithubPanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Search */}
-      <div className="flex items-center gap-1.5 h-[32px] shrink-0 border-b border-border-default bg-bg-primary px-3">
+      <div className="flex items-center gap-1.5 h-[32px] shrink-0 border-b border-border bg-bg-primary px-3">
         <Search size={11} className="text-text-tertiary shrink-0" />
         <input
           value={query}
@@ -574,7 +574,7 @@ export function GithubPanel() {
             return (
               <div
                 key={repo.full_name}
-                className="px-3 py-2.5 border-b border-border-default hover:bg-bg-hover group"
+                className="px-3 py-2.5 border-b border-border hover:bg-bg-hover group"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">

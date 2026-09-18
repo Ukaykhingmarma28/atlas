@@ -33,7 +33,7 @@ async function getMermaid() {
   const foreground = themeBase("foreground");
   const textColor = themeBase("secondary-foreground");
   const border = themeColor("border.strong");
-  const line = themeColor("text.muted");
+  const line = themeBase("muted-foreground");
   const fontFamily = themeBase("font-sans");
 
   const paletteKey = [
@@ -218,7 +218,7 @@ export function MermaidBlock({ code, controls = false }: { code: string; control
   if (!controls) {
     return (
       <div
-        className="overflow-auto rounded-md border border-border-default bg-[var(--bg-base)] p-2 [&_svg]:h-auto [&_svg]:max-w-full"
+        className="overflow-auto rounded-md border border-border bg-[var(--bg-base)] p-2 [&_svg]:h-auto [&_svg]:max-w-full"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
@@ -281,7 +281,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((z + delta) * 100) / 100)));
 
   return (
-    <div className="group/diagram relative overflow-hidden rounded-md border border-border-default bg-[var(--bg-base)]">
+    <div className="group/diagram relative overflow-hidden rounded-md border border-border bg-[var(--bg-base)]">
       <div className="hide-scrollbar max-h-[420px] overflow-auto p-2">
         <div
           // `top left` so zooming grows into the scrollable area rather than
@@ -294,7 +294,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
 
       {/* Revealed on hover: at rest the diagram is the content, not a widget. */}
       <HintGroup>
-        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-0 backdrop-blur-xl transition-opacity focus-within:opacity-100 group-hover/diagram:opacity-100">
           <IconButton label="Zoom out" onClick={() => step(-ZOOM_STEP)} disabled={zoom <= MIN_ZOOM}>
             <Minus size={12} />
           </IconButton>
@@ -310,7 +310,7 @@ function DiagramViewer({ svg, code }: { svg: string; code: string }) {
           <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
             <Plus size={12} />
           </IconButton>
-          <span aria-hidden className="mx-0.5 h-3 w-px bg-[var(--border-default)]" />
+          <span aria-hidden className="mx-0.5 h-3 w-px bg-[var(--border)]" />
           <IconButton label="Open full screen" onClick={() => setFull(true)}>
             <Maximize2 size={11} />
           </IconButton>
@@ -379,7 +379,7 @@ function Fullscreen({
       aria-label="Diagram"
       className="animate-fade-in fixed inset-0 z-[var(--z-max)] flex flex-col bg-[var(--bg-base)]/95 backdrop-blur-2xl"
     >
-      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--border-default)] px-3">
+      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--border)] px-3">
         <span className="text-[12px] text-[var(--text-secondary)]">Diagram</span>
         <div className="flex-1" />
         <HintGroup>
@@ -398,7 +398,7 @@ function Fullscreen({
           <IconButton label="Zoom in" onClick={() => step(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM}>
             <Plus size={13} />
           </IconButton>
-          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
+          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border)]" />
           <IconButton label="Copy diagram source" onClick={onCopy}>
             {copied ? (
               <Check size={12} className="text-[var(--capture-live)]" />
@@ -409,7 +409,7 @@ function Fullscreen({
           <IconButton label="Export as PNG" onClick={onExport} disabled={saving}>
             <Download size={12} />
           </IconButton>
-          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border-default)]" />
+          <span aria-hidden className="mx-1 h-3.5 w-px bg-[var(--border)]" />
           <IconButton label="Close" onClick={onClose}>
             <X size={13} />
           </IconButton>

@@ -74,35 +74,24 @@ function define<const Key extends string>(
  * exactly one explicit → palette → base → Atlas-default derivation rule.
  */
 export const THEME_KEY_REGISTRY = [
-  define("border.default", {
-    base: "border",
-    dark: "#1e1e1e",
-    light: "#d8d3cc",
-    description: "Default separator and control border.",
-  }),
   define("border.subtle", {
     base: "sidebar-border",
     dark: "#141414",
     light: "#ebe5de",
     description: "Low-emphasis separator.",
   }),
+  /**
+   * Sourced from `border`, not `ring`. It used to be `ring`, and decision 31 then
+   * made `ring` a real accent — so a theme that set `ring` and left this alone got
+   * a brand-coloured hairline everywhere it wanted a strong grey one. The two roles
+   * are genuinely different: `ring` is the focus RING, this is the strongest
+   * BORDER, and a focused control's border is this rather than a third key.
+   */
   define("border.strong", {
-    base: "ring",
+    base: "border",
     dark: "#3d3d3d",
     light: "#b8b1aa",
-    description: "High-emphasis border.",
-  }),
-  define("border.focus", {
-    base: "ring",
-    dark: "#3d3d3d",
-    light: "#907aa9",
-    description: "Focused-control border.",
-  }),
-  define("border.variant", {
-    base: "sidebar-border",
-    dark: "#141414",
-    light: "#ebe5de",
-    description: "Alternate low-emphasis border.",
+    description: "High-emphasis border, including a focused control's.",
   }),
 
   define("element.hover", {
@@ -138,55 +127,21 @@ export const THEME_KEY_REGISTRY = [
     light: "rgba(0,0,0,0.06)",
     description: "Top-edge highlight on a raised surface.",
   }),
-  define("element.primary_hover", {
+  define("primary.hover", {
     base: "primary",
     transform: lighter(0.15),
     dark: "#cccccc",
     light: "#a290b5",
     description: "Hovered primary-brand fill.",
   }),
-  define("element.primary_muted", {
+  define("primary.muted", {
     base: "primary",
     transform: alpha(0.06),
     dark: "rgba(255,255,255,0.06)",
     light: "rgba(144,122,169,0.08)",
     description: "Muted primary-brand fill.",
   }),
-  define("ghost_element.hover", {
-    base: "foreground",
-    transform: alpha(0.03),
-    dark: "rgba(255,255,255,0.03)",
-    light: "rgba(0,0,0,0.03)",
-    description: "Hover overlay for ghost controls.",
-  }),
-  define("ghost_element.selected", {
-    base: "foreground",
-    transform: alpha(0.05),
-    dark: "rgba(255,255,255,0.05)",
-    light: "rgba(0,0,0,0.05)",
-    description: "Selected overlay for ghost controls.",
-  }),
-  define("ghost_element.active", {
-    base: "foreground",
-    transform: alpha(0.07),
-    dark: "rgba(255,255,255,0.07)",
-    light: "rgba(0,0,0,0.07)",
-    description: "Pressed overlay for ghost controls.",
-  }),
 
-  define("text.muted", {
-    base: "muted-foreground",
-    dark: "#585858",
-    light: "#797593",
-    description: "Muted prose and metadata.",
-  }),
-  define("text.placeholder", {
-    base: "muted-foreground",
-    transform: towardBackground(0.12),
-    dark: "#777777",
-    light: "#9893a5",
-    description: "Input placeholder text.",
-  }),
   define("text.disabled", {
     base: "muted-foreground",
     transform: towardBackground(0.35),
@@ -194,19 +149,12 @@ export const THEME_KEY_REGISTRY = [
     light: "#b8b1aa",
     description: "Disabled and unavailable text.",
   }),
-  define("text.accent", {
-    palette: "yellow",
-    base: "primary",
-    dark: "#ffff00",
-    light: "#907aa9",
-    description: "Rare text-only signature accent.",
-  }),
 
   define("status.success.foreground", {
     palette: "green",
-    dark: "#4d4d4d",
+    dark: "#3fb950",
     light: "#286983",
-    description: "Success status foreground.",
+    description: "Success status foreground, and the live-capture indicator.",
   }),
   define("status.warning.foreground", {
     palette: "yellow",
@@ -226,18 +174,6 @@ export const THEME_KEY_REGISTRY = [
     dark: "#6796e6",
     light: "#56949f",
     description: "Informational status foreground.",
-  }),
-  define("status.purple.foreground", {
-    palette: "purple",
-    dark: "#999999",
-    light: "#907aa9",
-    description: "Purple categorical status.",
-  }),
-  define("status.orange.foreground", {
-    palette: "orange",
-    dark: "#cd9731",
-    light: "#d7827e",
-    description: "Orange categorical status.",
   }),
 
   define("selection.background", {
@@ -265,13 +201,6 @@ export const THEME_KEY_REGISTRY = [
     dark: "#d4d4d4",
     light: "#575279",
     description: "Terminal cursor.",
-  }),
-  define("terminal.selection", {
-    base: "primary",
-    transform: alpha(0.3),
-    dark: "rgba(255,255,255,0.3)",
-    light: "rgba(144,122,169,0.3)",
-    description: "Terminal selection.",
   }),
   define("terminal.ansi.black", {
     base: "background",
@@ -469,36 +398,6 @@ export const THEME_KEY_REGISTRY = [
     light: "#56949f",
     description: "Properties and object keys.",
   }),
-  define("syntax.boolean", {
-    palette: "orange",
-    dark: "#e0b070",
-    light: "#d7827e",
-    description: "Booleans.",
-  }),
-  define("syntax.null", {
-    palette: "orange",
-    dark: "#e0b070",
-    light: "#d7827e",
-    description: "Null-like literals.",
-  }),
-  define("syntax.meta", {
-    palette: "yellow",
-    dark: "#d9b47a",
-    light: "#907aa9",
-    description: "Pragmas and metadata.",
-  }),
-  define("syntax.builtin", {
-    palette: "red",
-    dark: "#e59a72",
-    light: "#b4637a",
-    description: "Built-in symbols.",
-  }),
-  define("syntax.punctuation", {
-    base: "muted-foreground",
-    dark: "#9a9a9a",
-    light: "#797593",
-    description: "Punctuation.",
-  }),
 
   define("editor.background", {
     base: "background",
@@ -562,31 +461,7 @@ export const THEME_KEY_REGISTRY = [
     light: "#907aa9",
     description: "Matching bracket outline.",
   }),
-  define("editor.fold.background", {
-    base: "secondary",
-    dark: "#1a1a1a",
-    light: "#f2e9e1",
-    description: "Fold placeholder background.",
-  }),
-  define("editor.fold.border", {
-    base: "border",
-    dark: "#2a2a2a",
-    light: "#cecacd",
-    description: "Fold placeholder border.",
-  }),
-  define("editor.fold.foreground", {
-    base: "muted-foreground",
-    dark: "#8a8a8a",
-    light: "#797593",
-    description: "Fold placeholder foreground.",
-  }),
 
-  define("scrollbar.track.background", {
-    base: "background",
-    dark: "#000000",
-    light: "#faf4ed",
-    description: "Scrollbar track.",
-  }),
   define("scrollbar.thumb.background", {
     base: "foreground",
     transform: alpha(0.16),
@@ -601,47 +476,11 @@ export const THEME_KEY_REGISTRY = [
     light: "rgba(0,0,0,0.26)",
     description: "Hovered scrollbar thumb.",
   }),
-  define("tab.active.background", {
-    base: "accent",
-    dark: "#171717",
-    light: "#f2e9e1",
-    description: "Active tab background.",
-  }),
-  define("tab.inactive.background", {
-    base: "sidebar",
-    dark: "#0a0a0a",
-    light: "#fffaf3",
-    description: "Inactive tab background.",
-  }),
-  define("tab.active.border", {
-    base: "primary",
-    dark: "#ffffff",
-    light: "#907aa9",
-    description: "Active tab indicator.",
-  }),
-  define("panel.rail.background", {
-    base: "sidebar",
-    dark: "#0f0f0f",
-    light: "#fffaf3",
-    description: "Project rail background.",
-  }),
   define("panel.background", {
     base: "sidebar",
     dark: "#060706",
     light: "#fffaf3",
     description: "Panel background.",
-  }),
-  define("panel.elevated.background", {
-    base: "card",
-    dark: "#0d0e0d",
-    light: "#f2e9e1",
-    description: "Elevated panel background.",
-  }),
-  define("panel.overlay.background", {
-    base: "popover",
-    dark: "#1c1c1c",
-    light: "#f2e9e1",
-    description: "Panel overlay background.",
   }),
   define("panel.input.background", {
     base: "background",
@@ -652,136 +491,49 @@ export const THEME_KEY_REGISTRY = [
 
   define("diff.added.background", {
     palette: "green",
-    transform: alpha(0.08),
-    dark: "rgba(77,77,77,0.08)",
-    light: "rgba(40,105,131,0.08)",
-    description: "Added diff region.",
+    transform: alpha(0.13),
+    dark: "#0d2211",
+    light: "rgba(40,105,131,0.13)",
+    description: "Added line or hunk.",
+  }),
+  define("diff.added.emphasis", {
+    palette: "green",
+    transform: alpha(0.34),
+    dark: "rgba(52,211,153,0.34)",
+    light: "rgba(40,105,131,0.34)",
+    description: "Changed words inside an added line.",
   }),
   define("diff.added.text", {
     palette: "green",
     dark: "#3fb950",
     light: "#286983",
-    description: "Added diff text.",
+    description: "Added diff text, and the +N line statistic.",
   }),
   define("diff.removed.background", {
-    palette: "red",
-    transform: alpha(0.08),
-    dark: "rgba(119,119,119,0.08)",
-    light: "rgba(180,99,122,0.08)",
-    description: "Removed diff region.",
-  }),
-  define("diff.removed.text", {
-    palette: "red",
-    dark: "#777777",
-    light: "#b4637a",
-    description: "Removed diff text.",
-  }),
-  define("diff.modified.background", {
-    palette: "blue",
-    transform: alpha(0.08),
-    dark: "rgba(192,192,192,0.08)",
-    light: "rgba(86,148,159,0.08)",
-    description: "Modified diff region.",
-  }),
-  define("diff.add_line.background", {
-    palette: "green",
-    transform: alpha(0.13),
-    dark: "#0d2211",
-    light: "rgba(40,105,131,0.13)",
-    description: "Added line background.",
-  }),
-  define("diff.remove_line.background", {
     palette: "red",
     transform: alpha(0.13),
     dark: "#220d0d",
     light: "rgba(180,99,122,0.13)",
-    description: "Removed line background.",
+    description: "Removed line or hunk.",
+  }),
+  define("diff.removed.emphasis", {
+    palette: "red",
+    transform: alpha(0.34),
+    dark: "rgba(244,63,63,0.34)",
+    light: "rgba(180,99,122,0.34)",
+    description: "Changed words inside a removed line.",
+  }),
+  define("diff.removed.text", {
+    palette: "red",
+    dark: "#f85149",
+    light: "#b4637a",
+    description: "Removed diff text, and the -N line statistic.",
   }),
   define("diff.context.background", {
     base: "background",
     dark: "#0a0a0a",
     light: "#faf4ed",
     description: "Unchanged diff context.",
-  }),
-  define("diff.add_side.background", {
-    palette: "green",
-    transform: alpha(0.13),
-    dark: "rgba(34,197,94,0.13)",
-    light: "rgba(40,105,131,0.13)",
-    description: "Side-by-side addition.",
-  }),
-  define("diff.remove_side.background", {
-    palette: "red",
-    transform: alpha(0.13),
-    dark: "rgba(244,63,63,0.13)",
-    light: "rgba(180,99,122,0.13)",
-    description: "Side-by-side removal.",
-  }),
-  define("diff.emphasis_added.background", {
-    palette: "green",
-    transform: alpha(0.34),
-    dark: "rgba(52,211,153,0.34)",
-    light: "rgba(40,105,131,0.34)",
-    description: "Intraline addition.",
-  }),
-  define("diff.emphasis_removed.background", {
-    palette: "red",
-    transform: alpha(0.34),
-    dark: "rgba(244,63,63,0.34)",
-    light: "rgba(180,99,122,0.34)",
-    description: "Intraline removal.",
-  }),
-
-  define("comms.outer.background", {
-    base: "sidebar",
-    dark: "#0f0f0f",
-    light: "#fffaf3",
-    description: "Team chat outer surface.",
-  }),
-  define("comms.surface.background", {
-    base: "background",
-    dark: "#000000",
-    light: "#faf4ed",
-    description: "Team chat transcript surface.",
-  }),
-  define("comms.mention.background", {
-    base: "foreground",
-    transform: alpha(0.16),
-    dark: "rgba(255,255,255,0.16)",
-    light: "rgba(0,0,0,0.1)",
-    description: "Current-user mention background.",
-  }),
-  define("comms.mention.foreground", {
-    base: "foreground",
-    dark: "#ffffff",
-    light: "#575279",
-    description: "Current-user mention text.",
-  }),
-  define("comms.other_mention.background", {
-    base: "foreground",
-    transform: alpha(0.08),
-    dark: "rgba(255,255,255,0.08)",
-    light: "rgba(0,0,0,0.06)",
-    description: "Other-user mention background.",
-  }),
-  define("comms.other_mention.foreground", {
-    base: "muted-foreground",
-    dark: "#cfcfcf",
-    light: "#797593",
-    description: "Other-user mention text.",
-  }),
-  define("comms.unread.foreground", {
-    palette: "green",
-    dark: "#b8b8b8",
-    light: "#286983",
-    description: "Unread and presence indicator.",
-  }),
-  define("comms.unread_strong.foreground", {
-    palette: "green",
-    transform: towardBackground(0.2),
-    dark: "#8a8a8a",
-    light: "#286983",
-    description: "Strong unread indicator.",
   }),
 
   define("agent.claude.foreground", {
@@ -901,30 +653,6 @@ export const THEME_KEY_REGISTRY = [
     light: "rgba(234,157,52,0.1)",
     description: "Kilo identity background.",
   }),
-  define("stat.added", {
-    palette: "green",
-    dark: "#3fb950",
-    light: "#286983",
-    description: "Added-line statistic.",
-  }),
-  define("stat.removed", {
-    palette: "red",
-    dark: "#f85149",
-    light: "#b4637a",
-    description: "Removed-line statistic.",
-  }),
-  define("capture.live", {
-    palette: "green",
-    dark: "#3fb950",
-    light: "#286983",
-    description: "Active capture indicator.",
-  }),
-  define("atlas.ants", {
-    base: "primary",
-    dark: "#ffffff",
-    light: "#907aa9",
-    description: "Animated marching-ants stroke.",
-  }),
 ] as const;
 
 export type ThemeKey = (typeof THEME_KEY_REGISTRY)[number]["key"];
@@ -936,8 +664,10 @@ export const THEME_KEY_DEFINITION_BY_KEY = Object.fromEntries(
 export interface DerivedVarDefinition<Name extends string = string> {
   name: Name;
   cssVar: `--atlas-${string}`;
-  /** The settable key this is a pure transform of. */
-  from: ThemeKey;
+  /** The settable key this transforms, or null when it transforms a base token. */
+  from: ThemeKey | null;
+  /** The base token this transforms, or null when it transforms a key. */
+  base: string | null;
   transform: ColorTransform;
   description: string;
 }
@@ -963,23 +693,39 @@ function derive<const Name extends string>(
 export const DERIVED_VAR_REGISTRY = [
   derive("status.success.background", {
     from: "status.success.foreground",
+    base: null,
     transform: alpha(0.12),
     description: "Tinted fill behind a success foreground.",
   }),
   derive("status.warning.background", {
     from: "status.warning.foreground",
+    base: null,
     transform: alpha(0.12),
     description: "Tinted fill behind a warning foreground.",
   }),
   derive("status.error.background", {
     from: "status.error.foreground",
+    base: null,
     transform: alpha(0.12),
     description: "Tinted fill behind an error foreground.",
   }),
   derive("status.info.background", {
     from: "status.info.foreground",
+    base: null,
     transform: alpha(0.12),
     description: "Tinted fill behind an informational foreground.",
+  }),
+  derive("element.emphasis", {
+    from: null,
+    base: "foreground",
+    transform: alpha(0.16),
+    description: "The strongest neutral overlay — a chat mention addressed to you.",
+  }),
+  derive("terminal.selection", {
+    from: null,
+    base: "primary",
+    transform: alpha(0.3),
+    description: "Terminal selection.",
   }),
 ] as const;
 

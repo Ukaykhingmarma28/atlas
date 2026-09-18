@@ -54,8 +54,8 @@ export function BranchSwitcher() {
       />
       <Popover.Portal>
         <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="start" sideOffset={4}>
-          <Popover.Popup className="w-[260px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
-            <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border-default shrink-0">
+          <Popover.Popup className="w-[260px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
+            <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border shrink-0">
               <Search size={11} className="text-text-tertiary shrink-0" />
               <input
                 value={query}
@@ -92,7 +92,7 @@ export function BranchSwitcher() {
                   />
                   <span className="truncate flex-1 font-mono">{b.name}</span>
                   {b.isRemote && (
-                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border-default rounded px-1">
+                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
                       remote
                     </span>
                   )}
@@ -138,14 +138,14 @@ export function BranchSwitcher() {
               )}
             </div>
 
-            <div className="border-t border-border-default p-1.5 shrink-0">
+            <div className="border-t border-border p-1.5 shrink-0">
               {creating ? (
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   autoFocus
                   placeholder="new-branch-name"
-                  className="w-full h-7 rounded border border-border-default bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-focus"
+                  className="w-full h-7 rounded border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && newName.trim()) {
                       void run(() => actions.createBranch(newName.trim()));

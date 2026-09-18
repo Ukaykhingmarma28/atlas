@@ -182,37 +182,13 @@
               ],
               "description": "OpenCode identity chip. Source: base.muted-foreground → Atlas default."
             },
-            "atlas.ants": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Animated marching-ants stroke. Source: base.primary → Atlas default."
-            },
-            "border.default": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Default separator and control border. Source: base.border → Atlas default."
-            },
-            "border.focus": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Focused-control border. Source: base.ring → Atlas default."
-            },
             "border.strong": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "High-emphasis border. Source: base.ring → Atlas default."
+              "description": "High-emphasis border, including a focused control's. Source: base.border → Atlas default."
             },
             "border.subtle": {
               "allOf": [
@@ -222,109 +198,21 @@
               ],
               "description": "Low-emphasis separator. Source: base.sidebar-border → Atlas default."
             },
-            "border.variant": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Alternate low-emphasis border. Source: base.sidebar-border → Atlas default."
-            },
-            "capture.live": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Active capture indicator. Source: palette.green → Atlas default."
-            },
-            "comms.mention.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Current-user mention background. Source: base.foreground → Atlas default. Transform: alpha 0.16."
-            },
-            "comms.mention.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Current-user mention text. Source: base.foreground → Atlas default."
-            },
-            "comms.other_mention.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Other-user mention background. Source: base.foreground → Atlas default. Transform: alpha 0.08."
-            },
-            "comms.other_mention.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Other-user mention text. Source: base.muted-foreground → Atlas default."
-            },
-            "comms.outer.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Team chat outer surface. Source: base.sidebar → Atlas default."
-            },
-            "comms.surface.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Team chat transcript surface. Source: base.background → Atlas default."
-            },
-            "comms.unread.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Unread and presence indicator. Source: palette.green → Atlas default."
-            },
-            "comms.unread_strong.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Strong unread indicator. Source: palette.green → Atlas default. Transform: mix 0.2 toward base.background."
-            },
-            "diff.add_line.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Added line background. Source: palette.green → Atlas default. Transform: alpha 0.13."
-            },
-            "diff.add_side.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Side-by-side addition. Source: palette.green → Atlas default. Transform: alpha 0.13."
-            },
             "diff.added.background": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Added diff region. Source: palette.green → Atlas default. Transform: alpha 0.08."
+              "description": "Added line or hunk. Source: palette.green → Atlas default. Transform: alpha 0.13."
+            },
+            "diff.added.emphasis": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThemeKeyValue"
+                }
+              ],
+              "description": "Changed words inside an added line. Source: palette.green → Atlas default. Transform: alpha 0.34."
             },
             "diff.added.text": {
               "allOf": [
@@ -332,7 +220,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Added diff text. Source: palette.green → Atlas default."
+              "description": "Added diff text, and the +N line statistic. Source: palette.green → Atlas default."
             },
             "diff.context.background": {
               "allOf": [
@@ -342,53 +230,21 @@
               ],
               "description": "Unchanged diff context. Source: base.background → Atlas default."
             },
-            "diff.emphasis_added.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Intraline addition. Source: palette.green → Atlas default. Transform: alpha 0.34."
-            },
-            "diff.emphasis_removed.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Intraline removal. Source: palette.red → Atlas default. Transform: alpha 0.34."
-            },
-            "diff.modified.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Modified diff region. Source: palette.blue → Atlas default. Transform: alpha 0.08."
-            },
-            "diff.remove_line.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Removed line background. Source: palette.red → Atlas default. Transform: alpha 0.13."
-            },
-            "diff.remove_side.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Side-by-side removal. Source: palette.red → Atlas default. Transform: alpha 0.13."
-            },
             "diff.removed.background": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Removed diff region. Source: palette.red → Atlas default. Transform: alpha 0.08."
+              "description": "Removed line or hunk. Source: palette.red → Atlas default. Transform: alpha 0.13."
+            },
+            "diff.removed.emphasis": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThemeKeyValue"
+                }
+              ],
+              "description": "Changed words inside a removed line. Source: palette.red → Atlas default. Transform: alpha 0.34."
             },
             "diff.removed.text": {
               "allOf": [
@@ -396,7 +252,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Removed diff text. Source: palette.red → Atlas default."
+              "description": "Removed diff text, and the -N line statistic. Source: palette.red → Atlas default."
             },
             "editor.active_line.background": {
               "allOf": [
@@ -429,30 +285,6 @@
                 }
               ],
               "description": "Code editor caret. Source: base.foreground → Atlas default."
-            },
-            "editor.fold.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Fold placeholder background. Source: base.secondary → Atlas default."
-            },
-            "editor.fold.border": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Fold placeholder border. Source: base.border → Atlas default."
-            },
-            "editor.fold.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Fold placeholder foreground. Source: base.muted-foreground → Atlas default."
             },
             "editor.foreground": {
               "allOf": [
@@ -526,22 +358,6 @@
               ],
               "description": "Hover overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.04."
             },
-            "element.primary_hover": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: lighten 0.15."
-            },
-            "element.primary_muted": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Muted primary-brand fill. Source: base.primary → Atlas default. Transform: alpha 0.06."
-            },
             "element.selected": {
               "allOf": [
                 {
@@ -549,30 +365,6 @@
                 }
               ],
               "description": "Selected overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.06."
-            },
-            "ghost_element.active": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Pressed overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.07."
-            },
-            "ghost_element.hover": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Hover overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.03."
-            },
-            "ghost_element.selected": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Selected overlay for ghost controls. Source: base.foreground → Atlas default. Transform: alpha 0.05."
             },
             "panel.background": {
               "allOf": [
@@ -582,14 +374,6 @@
               ],
               "description": "Panel background. Source: base.sidebar → Atlas default."
             },
-            "panel.elevated.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Elevated panel background. Source: base.card → Atlas default."
-            },
             "panel.input.background": {
               "allOf": [
                 {
@@ -598,21 +382,21 @@
               ],
               "description": "Panel input background. Source: base.background → Atlas default."
             },
-            "panel.overlay.background": {
+            "primary.hover": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Panel overlay background. Source: base.popover → Atlas default."
+              "description": "Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: lighten 0.15."
             },
-            "panel.rail.background": {
+            "primary.muted": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Project rail background. Source: base.sidebar → Atlas default."
+              "description": "Muted primary-brand fill. Source: base.primary → Atlas default. Transform: alpha 0.06."
             },
             "scrollbar.thumb.background": {
               "allOf": [
@@ -630,14 +414,6 @@
               ],
               "description": "Hovered scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.26."
             },
-            "scrollbar.track.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Scrollbar track. Source: base.background → Atlas default."
-            },
             "selection.background": {
               "allOf": [
                 {
@@ -645,22 +421,6 @@
                 }
               ],
               "description": "Document text selection. Source: base.primary → Atlas default. Transform: alpha 0.18."
-            },
-            "stat.added": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Added-line statistic. Source: palette.green → Atlas default."
-            },
-            "stat.removed": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Removed-line statistic. Source: palette.red → Atlas default."
             },
             "status.error.foreground": {
               "allOf": [
@@ -678,29 +438,13 @@
               ],
               "description": "Informational status foreground. Source: palette.blue → Atlas default."
             },
-            "status.orange.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Orange categorical status. Source: palette.orange → Atlas default."
-            },
-            "status.purple.foreground": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Purple categorical status. Source: palette.purple → Atlas default."
-            },
             "status.success.foreground": {
               "allOf": [
                 {
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Success status foreground. Source: palette.green → Atlas default."
+              "description": "Success status foreground, and the live-capture indicator. Source: palette.green → Atlas default."
             },
             "status.warning.foreground": {
               "allOf": [
@@ -717,22 +461,6 @@
                 }
               ],
               "description": "Markup attributes. Source: palette.yellow → Atlas default."
-            },
-            "syntax.boolean": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Booleans. Source: palette.orange → Atlas default."
-            },
-            "syntax.builtin": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Built-in symbols. Source: palette.red → Atlas default."
             },
             "syntax.comment": {
               "allOf": [
@@ -782,22 +510,6 @@
               ],
               "description": "Keywords and control flow. Source: palette.purple → Atlas default."
             },
-            "syntax.meta": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Pragmas and metadata. Source: palette.yellow → Atlas default."
-            },
-            "syntax.null": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Null-like literals. Source: palette.orange → Atlas default."
-            },
             "syntax.number": {
               "allOf": [
                 {
@@ -821,14 +533,6 @@
                 }
               ],
               "description": "Properties and object keys. Source: palette.cyan → Atlas default."
-            },
-            "syntax.punctuation": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Punctuation. Source: base.muted-foreground → Atlas default."
             },
             "syntax.regexp": {
               "allOf": [
@@ -869,30 +573,6 @@
                 }
               ],
               "description": "Variables. Source: base.foreground → Atlas default."
-            },
-            "tab.active.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Active tab background. Source: base.accent → Atlas default."
-            },
-            "tab.active.border": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Active tab indicator. Source: base.primary → Atlas default."
-            },
-            "tab.inactive.background": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Inactive tab background. Source: base.sidebar → Atlas default."
             },
             "terminal.ansi.black": {
               "allOf": [
@@ -1046,22 +726,6 @@
               ],
               "description": "Terminal default foreground. Source: base.foreground → Atlas default."
             },
-            "terminal.selection": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Terminal selection. Source: base.primary → Atlas default. Transform: alpha 0.3."
-            },
-            "text.accent": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Rare text-only signature accent. Source: palette.yellow → base.primary → Atlas default."
-            },
             "text.disabled": {
               "allOf": [
                 {
@@ -1069,22 +733,6 @@
                 }
               ],
               "description": "Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.35 toward base.background."
-            },
-            "text.muted": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Muted prose and metadata. Source: base.muted-foreground → Atlas default."
-            },
-            "text.placeholder": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThemeKeyValue"
-                }
-              ],
-              "description": "Input placeholder text. Source: base.muted-foreground → Atlas default. Transform: mix 0.12 toward base.background."
             }
           },
           "type": "object"

@@ -370,7 +370,7 @@ export const BlockTerminal = memo(function BlockTerminal({
 
       {/* Search bar over the block history */}
       {search.open && !altScreen && (
-        <div className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-2 py-1 shadow-[var(--shadow-overlay)]">
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-overlay)] px-2 py-1 shadow-[var(--shadow-overlay)]">
           <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
           <input
             ref={searchInputRef}
@@ -442,7 +442,7 @@ export const BlockTerminal = memo(function BlockTerminal({
       {/* Atlas-owned footer stays visible below both block and alternate-screen
           modes. Keeping process controls outside the PTY viewport prevents them
           from obscuring application content. */}
-      <div className="relative z-20 flex min-h-[29px] items-center gap-2 border-t border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-[5px]">
+      <div className="relative z-20 flex min-h-[29px] items-center gap-2 border-t border-[var(--border)] bg-[var(--bg-base)] px-3 py-[5px]">
         {busy || altScreen ? (
           <Loader2 size={13} className="shrink-0 animate-spin text-[var(--primary)]" />
         ) : (
@@ -479,7 +479,7 @@ export const BlockTerminal = memo(function BlockTerminal({
             neighbours are visible: stop control needs `busy`, the badge hides
             in alt-screen and below the 300px container query. */}
         {busy && !altScreen && (
-          <span className="hidden h-3 w-px shrink-0 bg-[var(--border-default)] @[300px]:block" />
+          <span className="hidden h-3 w-px shrink-0 bg-[var(--border)] @[300px]:block" />
         )}
         {!altScreen && <StatusBadge cwd={cwd} git={git} />}
       </div>
@@ -536,7 +536,7 @@ function StatusBadge({ cwd, git }: { cwd: string; git: TermGit | null }) {
       </span>
       {git && (
         <>
-          <span className="hidden h-3 w-px bg-[var(--border-default)] @[420px]:block" />
+          <span className="hidden h-3 w-px bg-[var(--border)] @[420px]:block" />
           <span
             className="hidden min-w-0 items-center gap-1 @[420px]:flex"
             title={`On branch ${git.branch}`}
@@ -609,7 +609,7 @@ const BlockCard = memo(function BlockCard({
 
   return (
     <div
-      className="group mb-2 overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-raised)]"
+      className="group mb-2 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-raised)]"
       // A finished block skips layout and paint while off screen — without a
       // virtualizer and without promoting a layer (Safari 18+; older WebKit
       // ignores it). Never on the live card: its height changes every flush

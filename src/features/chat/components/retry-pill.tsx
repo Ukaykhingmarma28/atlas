@@ -38,7 +38,7 @@ export function RetryPill({ tabId }: { tabId: string }) {
   return (
     <div
       data-testid="retry-pill"
-      className="mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]"
+      className="mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]"
       title={retry.lastError}
     >
       <RotateCw size={12} className="animate-spin text-[var(--text-tertiary)]" />

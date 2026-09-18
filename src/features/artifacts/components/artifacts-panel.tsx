@@ -108,7 +108,7 @@ function PeriodPill({
   onChange: (next: GroupPeriod) => void;
 }) {
   return (
-    <div className="flex h-7 shrink-0 items-center rounded-full border border-[var(--border-default)] p-0.5">
+    <div className="flex h-7 shrink-0 items-center rounded-full border border-[var(--border)] p-0.5">
       {PERIODS.map((p) => (
         <button
           key={p.value}
@@ -495,7 +495,7 @@ export function ArtifactsPanel() {
             are known here.
             
             30% of the way from the default border to the strong one — the
-            hairline at `--border-default` disappeared against the card's own
+            hairline at `--border` disappeared against the card's own
             ring at this length.
 
             `z-40` because it has to beat the pane's own overlays, not merely
@@ -521,7 +521,7 @@ export function ArtifactsPanel() {
               left: CARD_INSET + sidebarWidth,
               background: resizing
                 ? undefined
-                : "color-mix(in srgb, var(--border-strong) 30%, var(--border-default))",
+                : "color-mix(in srgb, var(--border-strong) 30%, var(--border))",
             }}
           />
         )}
@@ -664,7 +664,7 @@ export function ArtifactsPanel() {
                     />
                   </div>
                   <aside
-                    className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border-default)]"
+                    className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border)]"
                     style={{ width: chatOpen ? CHAT_WIDTH : 0 }}
                     aria-hidden={!chatOpen}
                   >
@@ -720,7 +720,7 @@ export function ArtifactsPanel() {
  */
 function BoardSearch({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
   return (
-    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-strong)]">
+    <div className="flex h-7 w-[220px] min-w-0 shrink items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-base)] px-3 transition-colors focus-within:border-[var(--border-strong)]">
       <Search size={13} strokeWidth={1.6} className="block shrink-0 text-[var(--text-tertiary)]" />
       <input
         value={query}
@@ -896,9 +896,9 @@ function BoardFilter({
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner className="z-[var(--z-max)]" side="bottom" align="end" sideOffset={4}>
-          <Popover.Popup className="flex max-h-[420px] w-[262px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
+          <Popover.Popup className="flex max-h-[420px] w-[262px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
             {active > 0 && (
-              <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
+              <div className="flex h-[28px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
                 <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
                   {active} active
                 </span>
@@ -921,7 +921,7 @@ function BoardFilter({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects…"
-              className="h-[28px] shrink-0 border-b border-[var(--border-default)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
             />
 
             <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
@@ -1070,7 +1070,7 @@ function NotFound({ onBack }: { onBack: () => void }) {
       <button
         type="button"
         onClick={onBack}
-        className="mt-3 cursor-pointer rounded-md border border-[var(--border-default)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         Back to sessions
       </button>

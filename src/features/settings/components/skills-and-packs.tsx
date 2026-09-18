@@ -32,12 +32,12 @@ export function SkillsAndPacks() {
       {/* Header — Atlas logo + title, then underline/bottom-border tab switchers
           (like the API Keys table) for Discover/My Skills and Global/Project.
           Height matches the Source Control panel header (h-[29px]). */}
-      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="flex items-center gap-1.5 px-1.5">
           <AtlasIcon size={13} />
           <span className="text-[12px] font-semibold text-text-primary">Skills</span>
         </div>
-        <span className="mx-1 h-3.5 w-px bg-border-default" />
+        <span className="mx-1 h-3.5 w-px bg-border" />
         {TABS.map((t) => (
           <UnderlineTab
             key={t.id}

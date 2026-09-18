@@ -514,12 +514,12 @@ function AgentOAuthModal({
           <Dialog.Popup
             className={cn(
               "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
-              "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
+              "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
               "shadow-[var(--shadow-overlay)] text-text-primary",
             )}
             style={centred}
           >
-            <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
+            <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
               <Info className="mt-0.5 size-4 text-text-tertiary" />
               <div>
                 <Dialog.Title className="text-sm font-medium">Sign in to {label}</Dialog.Title>
@@ -558,7 +558,7 @@ function AgentOAuthModal({
                           toast.success("Command copied.");
                         }}
                         title="Copy — then run it in a terminal and try again."
-                        className="w-full rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 text-left font-mono text-[11px] text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                        className="w-full rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left font-mono text-[11px] text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
                       >
                         {phase.manualCommand}
                       </button>
@@ -566,7 +566,7 @@ function AgentOAuthModal({
                   )}
                   <button
                     onClick={() => setNonce((n) => n + 1)}
-                    className="ml-2 rounded-sm border border-border-default px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                    className="ml-2 rounded-sm border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                   >
                     Try again
                   </button>
@@ -601,7 +601,7 @@ function AgentOAuthModal({
                             ? setPhase({ kind: "env", method: m, methods: phase.methods })
                             : void run(m)
                         }
-                        className="group flex items-center gap-3 rounded-sm border border-border-default bg-bg-base px-3 py-2.5 text-left transition-colors hover:bg-bg-hover"
+                        className="group flex items-center gap-3 rounded-sm border border-border bg-bg-base px-3 py-2.5 text-left transition-colors hover:bg-bg-hover"
                       >
                         <span className="flex-1 min-w-0">
                           <span className="block text-xs font-medium text-text-primary">
@@ -657,14 +657,14 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
       {url && (
         <button
           onClick={() => void openUrl(url)}
-          className="flex w-full items-center gap-2 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
           <span className="min-w-0 flex-1 truncate">Open sign-in page</span>
         </button>
       )}
       {tail.length > 0 && (
-        <div className="max-h-28 overflow-y-auto rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5">
+        <div className="max-h-28 overflow-y-auto rounded-sm border border-border bg-bg-base px-2.5 py-1.5">
           {tail.map((line, i) => (
             <p key={i} className="font-mono text-[11px] text-text-tertiary break-all">
               {line}
@@ -789,7 +789,7 @@ function EnvPhase({
         {env.map((v) => (
           <div
             key={v.name}
-            className="flex items-center gap-2 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5"
+            className="flex items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5"
           >
             <Check
               className={cn(
@@ -815,7 +815,7 @@ function EnvPhase({
       {method.link && (
         <button
           onClick={() => void openUrl(method.link!)}
-          className="flex items-center gap-2 self-start rounded-sm border border-border-default px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          className="flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
         >
           <ExternalLink className="size-3.5" /> Get API key
         </button>
@@ -825,7 +825,7 @@ function EnvPhase({
           onClick={onContinue}
           disabled={blocked !== null}
           title={blocked ?? undefined}
-          className="h-7 rounded-sm border border-border-default px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+          className="h-7 rounded-sm border border-border px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
         >
           Continue
         </button>

@@ -55,10 +55,10 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
             // Radix's onOpenAutoFocus + preventDefault + focus() is one
             // Base UI prop: hand initialFocus the element to land on.
             initialFocus={searchRef}
-            className="w-[292px] rounded-lg border border-border-default bg-bg-overlay shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in"
+            className="w-[292px] rounded-lg border border-border bg-bg-overlay shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in"
           >
-            <div className="border-b border-border-default p-1.5">
-              <div className="flex items-center gap-1.5 rounded-md border border-border-default bg-bg-input px-2 py-1 focus-within:border-border-focus">
+            <div className="border-b border-border p-1.5">
+              <div className="flex items-center gap-1.5 rounded-md border border-border bg-bg-input px-2 py-1 focus-within:border-border-strong">
                 <Search size={11} className="shrink-0 text-text-ghost" />
                 <input
                   ref={searchRef}

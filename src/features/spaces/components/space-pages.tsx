@@ -169,7 +169,7 @@ export function SpacePages({
 
   return (
     <div
-      className="flex h-full shrink-0 flex-col border-r border-border-default bg-[#090909]"
+      className="flex h-full shrink-0 flex-col border-r border-border bg-[#090909]"
       style={{ width: 260 }}
     >
       {/* Quiet header — no divider, the local panel's recipe. */}
@@ -321,7 +321,7 @@ export function SpacePages({
                             e.stopPropagation();
                             create({ parent_id: page.id });
                           }}
-                          className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
+                          className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
                         >
                           <FilePlus2 size={10} />
                         </button>
@@ -346,7 +346,7 @@ export function SpacePages({
                           e.stopPropagation();
                           session.deletePage(page.id);
                         }}
-                        className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
+                        className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
                       >
                         <Trash2 size={10} />
                       </button>
@@ -382,7 +382,7 @@ function RoundButton({
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border-default text-text-secondary outline-none transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border text-text-secondary outline-none transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
       >
         {icon}
       </button>

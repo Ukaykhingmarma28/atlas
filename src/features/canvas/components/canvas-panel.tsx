@@ -63,7 +63,7 @@ export function CanvasPanel() {
         />
         <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-12 left-6 right-6 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
+          className="fixed top-12 left-6 right-6 bottom-6 rounded-xl border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">Spaces</Dialog.Title>

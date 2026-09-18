@@ -306,7 +306,7 @@ export const CommsConversation = memo(function CommsConversation({
               height={`${TOP_FADE}px`}
               strength={2}
               layers={4}
-              tint="color-mix(in srgb, var(--comms-surface) 90%, transparent)"
+              tint="color-mix(in srgb, var(--background) 90%, transparent)"
               style={{ zIndex: 3 }}
             />
 
@@ -345,7 +345,7 @@ export const CommsConversation = memo(function CommsConversation({
                     <button
                       type="button"
                       onClick={() => actions.retryConversation(conv.id)}
-                      className="mt-1 flex h-[26px] items-center gap-1.5 rounded-md border border-border-default bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+                      className="mt-1 flex h-[26px] items-center gap-1.5 rounded-md border border-border bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
                     >
                       <RefreshCw size={11} />
                       Try again
@@ -403,7 +403,7 @@ export const CommsConversation = memo(function CommsConversation({
               )}
               style={{
                 background:
-                  "linear-gradient(to bottom, transparent, var(--comms-surface) 72%, var(--comms-surface))",
+                  "linear-gradient(to bottom, transparent, var(--background) 72%, var(--background))",
               }}
             />
           </div>
@@ -418,7 +418,7 @@ export const CommsConversation = memo(function CommsConversation({
                   style={{ backdropFilter: "blur(4px)" }}
                   className={cn(
                     "atlas-pill-in pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5",
-                    "border border-border-default bg-bg-elevated",
+                    "border border-border bg-bg-elevated",
                     "text-[11px] font-medium leading-none text-text-secondary",
                     "shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-colors cursor-pointer",
                     "hover:bg-bg-hover hover:text-text-primary",
@@ -492,7 +492,7 @@ function SubTabStrip({
     { id: "files", label: "Files", icon: Folder },
   ];
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border-default px-2">
+    <div className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border px-2">
       {tabs.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -558,7 +558,7 @@ function ConversationHeader({
     // the right side grow, and a centred title would drift with every
     // addition. `min-w-0` on both keeps a long name truncating rather than
     // shoving the buttons off the edge.
-    <div className="flex h-[38px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+    <div className="flex h-[38px] shrink-0 items-center gap-1 border-b border-border px-2">
       {/* Back to the tab's home view — the panel has no sidebar to fall back on. */}
       <Hint label="Back to chats">
         <button
@@ -634,7 +634,7 @@ function ConversationHeader({
               members={members}
               onJump={onJumpToMessage}
             />
-            <div className="mx-1 h-4 w-px bg-border-default" />
+            <div className="mx-1 h-4 w-px bg-border" />
           </>
         )}
         <div className="flex items-center gap-0.5">
@@ -653,7 +653,7 @@ function ConversationHeader({
                       <CommsAvatar
                         member={members.get(id) ?? null}
                         size={18}
-                        className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                        className="ring-2 ring-[var(--background)] rounded-full"
                       />
                     </span>
                   }

@@ -205,7 +205,7 @@ export function KnowledgeSidebar({
             </HintItem>
             <DropdownMenu.Portal>
               <DropdownMenu.Positioner className="z-[9999]" align="end" sideOffset={4}>
-                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-border bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
                   <DropdownMenu.Item
                     onClick={onImportFiles}
                     className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
@@ -242,7 +242,7 @@ export function KnowledgeSidebar({
               if (!folderInputValue.trim()) onFolderInputCancel?.();
             }}
             placeholder="Folder name…"
-            className="w-full bg-bg-input border border-border-default rounded text-[11px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-border-focus transition-colors"
+            className="w-full bg-bg-input border border-border rounded text-[11px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-border-strong transition-colors"
             style={{ height: 26, padding: "0 8px" }}
           />
         </div>

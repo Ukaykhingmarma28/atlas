@@ -582,7 +582,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
   return (
     <div className="h-full flex flex-col bg-bg-base" onMouseDownCapture={focusThisGroup}>
       {/* Address bar */}
-      <div className="flex items-center gap-1.5 px-2 h-[36px] shrink-0 border-b border-border-default bg-bg-primary">
+      <div className="flex items-center gap-1.5 px-2 h-[36px] shrink-0 border-b border-border bg-bg-primary">
         {/* The live webview paints over anything below this bar, so the
             address-bar tooltips open upward. */}
         <HintGroup side="top">
@@ -614,7 +614,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           </HintItem>
         </HintGroup>
 
-        <div className="flex-1 flex items-center gap-2 h-7 rounded border border-border-default bg-bg-secondary px-2 focus-within:ring-1 focus-within:ring-border-focus">
+        <div className="flex-1 flex items-center gap-2 h-7 rounded border border-border bg-bg-secondary px-2 focus-within:ring-1 focus-within:ring-border-strong">
           <Globe size={11} className="text-text-tertiary shrink-0" />
           <input
             value={inputUrl}
@@ -685,7 +685,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
 
       {/* Search bar (Reader only) */}
       {!isLive && searchOpen && (
-        <div className="flex items-center gap-1.5 px-2 h-[32px] shrink-0 border-b border-border-default bg-bg-primary">
+        <div className="flex items-center gap-1.5 px-2 h-[32px] shrink-0 border-b border-border bg-bg-primary">
           <Search size={11} className="text-text-tertiary shrink-0" />
           <input
             value={searchQuery}
@@ -709,7 +709,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           {embedError && (
             <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-auto bg-bg-base z-10">
               <div className="flex max-w-[380px] flex-col items-center gap-4 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border-default bg-bg-secondary">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-bg-secondary">
                   <Globe size={22} className="text-text-tertiary" />
                 </div>
                 <div className="space-y-1.5">
@@ -732,14 +732,14 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                   </button>
                   <button
                     onClick={openBrowserWindow}
-                    className="flex items-center justify-center gap-2 rounded-md border border-border-default bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
                   >
                     <AppWindow size={14} />
                     Open in a new window
                   </button>
                   <button
                     onClick={openExternal}
-                    className="flex items-center justify-center gap-2 rounded-md border border-border-default bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
                   >
                     <ExternalLink size={14} />
                     Open in default browser
@@ -753,7 +753,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
           {createdRef.current && overlayOpen && (
             <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-auto">
               <div className="flex max-w-[380px] flex-col items-center gap-4 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border-default bg-bg-secondary">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-bg-secondary">
                   <Globe size={22} className="text-text-tertiary" />
                 </div>
                 <div className="space-y-1.5">
@@ -777,7 +777,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                   </button>
                   <button
                     onClick={openExternal}
-                    className="flex items-center justify-center gap-2 rounded-md border border-border-default bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+                    className="flex items-center justify-center gap-2 rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
                   >
                     <ExternalLink size={14} />
                     Open in default browser
@@ -803,7 +803,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                           setInputUrl(`https://${site}`);
                           navigate(site);
                         }}
-                        className="px-2.5 py-1 rounded border border-border-default bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
+                        className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
                       >
                         {site}
                       </button>
@@ -843,7 +843,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                 )}
                 {!loading && !error && page && (
                   <div className="select-text">
-                    <div className="px-4 py-3 border-b border-border-default">
+                    <div className="px-4 py-3 border-b border-border">
                       <h1 className="text-[15px] font-semibold text-text-primary leading-snug">
                         {page.title}
                       </h1>
@@ -874,7 +874,7 @@ export function BrowserPanel({ tabId, initialUrl, groupId }: BrowserPanelProps) 
                           <button
                             key={site}
                             onClick={() => fetchPage(`https://${site}`)}
-                            className="px-2.5 py-1 rounded border border-border-default bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
+                            className="px-2.5 py-1 rounded border border-border bg-bg-secondary text-[10px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors font-mono cursor-pointer"
                           >
                             {site}
                           </button>
@@ -964,7 +964,7 @@ function NativeOnlyNotice() {
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6">
       <div className="flex max-w-[380px] flex-col items-center gap-4 text-center">
-        <div className="flex size-control-lg items-center justify-center rounded-full border border-border-default bg-bg-secondary">
+        <div className="flex size-control-lg items-center justify-center rounded-full border border-border bg-bg-secondary">
           <AppWindow size={16} className="text-text-tertiary" />
         </div>
         <div className="space-y-1.5">

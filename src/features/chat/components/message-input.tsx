@@ -285,7 +285,7 @@ function CerseiMemoryPill() {
       onClick={reindex}
       disabled={indexing}
       title="Codebase index that grounds the agent's memory recall — click to re-index"
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
         <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
@@ -318,7 +318,7 @@ function EffortPill({ tabId }: { tabId: string }) {
   return (
     <button
       onClick={cycle}
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
       title="Reasoning effort (thinking budget) — Anthropic models"
     >
       <Brain
@@ -505,7 +505,7 @@ function ComposerGroupsMenu({
       "flex items-center px-1.5 h-6.5 rounded-full border text-[10px] leading-none font-medium transition-colors cursor-pointer",
       active
         ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-        : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+        : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
     );
 
   return (
@@ -516,7 +516,7 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -565,7 +565,7 @@ function ComposerGroupsMenu({
                     close();
                   }}
                 />
-                <div className="h-px bg-[var(--border-default)]" />
+                <div className="h-px bg-[var(--border)]" />
                 <button
                   onClick={() => {
                     close();
@@ -1872,7 +1872,7 @@ export function MessageInput({
             // its exposed bottom strip; the INNER surface below holds the
             // input + send button (the focus ring lives there — the "active
             // field" is the input surface, not the toolbar).
-            "relative z-30 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]",
+            "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]",
             "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
             // Drag-over highlight: a clear accent ring while OS files hover.
             isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
@@ -1915,11 +1915,11 @@ export function MessageInput({
               // `.atlas-chat-cm-host` block) the field collapses and the
               // button hangs out over the footer. The floor makes the
               // geometry hold even with no editor mounted at all.
-              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)]",
+              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg-base)]",
               "transition-[border-color,box-shadow] duration-150",
               // Focus treatment at HALF strength: the full border-focus +
               // /20 accent ring read far too loud on the nested surface.
-              "focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))]",
+              "focus-within:border-[color-mix(in_srgb,var(--border-strong)_50%,var(--border))]",
               "focus-within:ring-1 focus-within:ring-[var(--primary)]/10",
               // The disabled dim, scoped to the field the lock actually
               // applies to (see the shell above). No red tint — the send
@@ -1937,13 +1937,13 @@ export function MessageInput({
                       <img
                         src={src}
                         alt="attachment"
-                        className="h-14 w-14 object-cover rounded-lg border border-[var(--border-default)]"
+                        className="h-14 w-14 object-cover rounded-lg border border-[var(--border)]"
                       />
                       {/* Right, not top: the hover preview opens above the thumbnail. */}
                       <Hint label="Remove image" side="right">
                         <button
                           onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
-                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
                         >
                           <X size={9} />
                         </button>
@@ -1955,7 +1955,7 @@ export function MessageInput({
                         <img
                           src={src}
                           alt=""
-                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border-default)] object-contain bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
                         />
                       </div>
                     </div>
@@ -2022,7 +2022,7 @@ export function MessageInput({
                   // button at 8px top centers at 22px at EVERY UI scale.
                   "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
                   buttonEnabled
-                    ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-default)] cursor-pointer"
+                    ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border)] cursor-pointer"
                     : "border-transparent text-[var(--text-tertiary)] cursor-not-allowed",
                 )}
               >
@@ -2138,7 +2138,7 @@ function QueueChip({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]">
+    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]">
       <button
         onClick={onEdit}
         className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--text-primary)]"

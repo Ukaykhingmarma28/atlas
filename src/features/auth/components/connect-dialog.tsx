@@ -65,11 +65,11 @@ export function ConnectDialog() {
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
-            "w-[440px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
+            "w-[440px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
             "shadow-[var(--shadow-overlay)] text-text-primary",
           )}
         >
-          <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
+          <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
             <MonitorSmartphone className="mt-0.5 size-4 text-text-tertiary" />
             <div>
               <Dialog.Title className="text-sm font-medium">
@@ -92,7 +92,7 @@ export function ConnectDialog() {
                 <p className="text-xs text-[var(--status-error)]">{error}</p>
                 <button
                   onClick={() => void beginSignIn()}
-                  className="mt-3 rounded border border-border-default px-2.5 py-1 text-xs text-text-primary transition-colors hover:bg-[#ffffff08]"
+                  className="mt-3 rounded border border-border px-2.5 py-1 text-xs text-text-primary transition-colors hover:bg-[#ffffff08]"
                 >
                   Try again
                 </button>
@@ -104,14 +104,14 @@ export function ConnectDialog() {
                     {/* `select-all` so a click-drag grabs the whole code and
                         nothing else — the clipboard button is the fast path,
                         not the only one, and it can be refused by the OS. */}
-                    <div className="rounded border border-border-default bg-[var(--bg-base)] px-3 py-4">
+                    <div className="rounded border border-border bg-[var(--bg-base)] px-3 py-4">
                       <p className="select-all text-center font-mono text-[22px] tracking-[0.3em] text-text-primary">
                         {connecting.userCode}
                       </p>
                       <button
                         onClick={() => void copyCode()}
                         className={cn(
-                          "mx-auto mt-3 flex items-center gap-1.5 rounded border border-border-default",
+                          "mx-auto mt-3 flex items-center gap-1.5 rounded border border-border",
                           "cursor-pointer px-2.5 py-1 text-[11px] transition-colors",
                           "text-text-secondary hover:bg-[#ffffff08] hover:text-text-primary",
                         )}
@@ -153,7 +153,7 @@ export function ConnectDialog() {
             )}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-border-default px-4 py-2.5">
+          <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
             <button
               onClick={() => (done ? closeDialog() : void cancelSignIn())}
               className="rounded px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-[#ffffff08] hover:text-text-primary"

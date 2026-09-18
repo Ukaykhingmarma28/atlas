@@ -34,7 +34,7 @@ export function WelcomeScreen() {
         {/* Primary action */}
         <button
           onClick={handleOpenFolder}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)] transition-colors text-left group"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)] transition-colors text-left group"
         >
           <FolderOpen size={14} className="text-[var(--primary)] shrink-0" />
           <span className="text-[12px] font-medium text-[var(--text-primary)]">Open Folder</span>
@@ -87,7 +87,7 @@ export function WelcomeScreen() {
         <div className="text-center">
           <span className="text-[10px] text-[var(--text-tertiary)]">
             Press{" "}
-            <kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[9px] font-mono">
+            <kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-[9px] font-mono">
               {paletteHint}
             </kbd>{" "}
             for command palette

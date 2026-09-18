@@ -319,7 +319,7 @@ export function MemoryTreeView({
                             ? HL
                             : isRoot || t.id === hoverId
                               ? "var(--border-strong)"
-                              : "var(--border-default)"
+                              : "var(--border)"
                         }
                         strokeWidth={1}
                       />

@@ -39,11 +39,11 @@ export function SkillModalShell({
             // Centered in the viewport.
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[86vh] w-[760px] max-w-[94vw] flex-col overflow-hidden",
-            "rounded-lg border border-border-default bg-bg-elevated",
+            "rounded-lg border border-border bg-bg-elevated",
             "shadow-[var(--shadow-overlay)] animate-scale-in text-text-primary",
           )}
         >
-          <div className="flex items-start gap-3 border-b border-border-default px-4 py-3">
+          <div className="flex items-start gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0 flex-1">
               <Dialog.Title className="truncate text-sm font-semibold">{title}</Dialog.Title>
               {subtitle && (
@@ -64,7 +64,7 @@ export function SkillModalShell({
             <section className="min-h-0 min-w-0 flex-1 overflow-auto hide-scrollbar px-5 py-4">
               {children}
             </section>
-            <aside className="min-h-0 w-[280px] shrink-0 overflow-auto hide-scrollbar border-l border-border-default px-4 py-4">
+            <aside className="min-h-0 w-[280px] shrink-0 overflow-auto hide-scrollbar border-l border-border px-4 py-4">
               {actions}
             </aside>
           </div>
@@ -140,10 +140,10 @@ export function ModalAction({
       className={cn(
         "flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-[12px] font-medium transition-colors disabled:opacity-50",
         variant === "primary"
-          ? "border-border-default text-text-primary hover:bg-bg-hover"
+          ? "border-border text-text-primary hover:bg-bg-hover"
           : variant === "danger"
             ? "border-error/40 text-error hover:bg-error/10"
-            : "border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            : "border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary",
       )}
     >
       {busy ? (

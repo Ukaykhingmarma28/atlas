@@ -176,12 +176,12 @@ export function MergeBranchDialog({
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
         <Dialog.Popup
-          className="fixed left-1/2 top-[22%] -translate-x-1/2 z-[var(--z-modal)] w-[420px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border-default shadow-[var(--shadow-overlay)] flex flex-col"
+          className="fixed left-1/2 top-[22%] -translate-x-1/2 z-[var(--z-modal)] w-[420px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border shadow-[var(--shadow-overlay)] flex flex-col"
           // Keep focus on the filter input (rendered below), not the list.
           // `false` is Base UI's spelling of Radix's preventDefault() here.
           initialFocus={false}
         >
-          <div className="px-4 pt-3.5 pb-3 border-b border-border-default">
+          <div className="px-4 pt-3.5 pb-3 border-b border-border">
             <Dialog.Title className="text-[13px] font-semibold text-text-primary flex items-center gap-1.5">
               <GitMerge size={13} className="text-text-secondary shrink-0" />
               <span>
@@ -195,7 +195,7 @@ export function MergeBranchDialog({
           </div>
 
           {/* Filter */}
-          <div className="flex items-center gap-1.5 px-3 h-[32px] border-b border-border-default shrink-0">
+          <div className="flex items-center gap-1.5 px-3 h-[32px] border-b border-border shrink-0">
             <Search size={11} className="text-text-tertiary shrink-0" />
             <input
               value={query}
@@ -229,7 +229,7 @@ export function MergeBranchDialog({
                   />
                   <span className="truncate flex-1 font-mono">{b.name}</span>
                   {b.isRemote && (
-                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border-default rounded px-1">
+                    <span className="shrink-0 text-[8px] font-mono uppercase tracking-wide text-text-tertiary border border-border rounded px-1">
                       remote
                     </span>
                   )}
@@ -244,7 +244,7 @@ export function MergeBranchDialog({
           </div>
 
           {/* Preview + actions */}
-          <div className="border-t border-border-default px-3 py-2.5 flex flex-col gap-2.5">
+          <div className="border-t border-border px-3 py-2.5 flex flex-col gap-2.5">
             {fetching && (
               <p className="text-[10px] text-text-tertiary flex items-center gap-1.5">
                 <Loader2 size={10} className="animate-spin shrink-0" />
@@ -289,7 +289,7 @@ export function MergeBranchDialog({
                 className={cn(
                   "px-3 h-7 rounded text-[11px] font-medium transition-colors",
                   canMerge
-                    ? "text-text-primary border border-border-default hover:bg-bg-hover"
+                    ? "text-text-primary border border-border hover:bg-bg-hover"
                     : "text-text-tertiary bg-bg-hover cursor-not-allowed",
                 )}
               >

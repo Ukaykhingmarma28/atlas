@@ -239,11 +239,11 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
               // footer — below the window. The plan panel scrolls internally.
               "fixed left-1/2 top-[5vh] z-50 -translate-x-1/2",
               "flex max-h-[90vh] w-[880px] max-w-[94vw] flex-col overflow-hidden",
-              "rounded-md border border-border-default bg-bg-elevated",
+              "rounded-md border border-border bg-bg-elevated",
               "shadow-[var(--shadow-overlay)] animate-scale-in text-text-primary",
             )}
           >
-            <div className="flex items-start gap-3 border-b border-border-default px-4 py-3">
+            <div className="flex items-start gap-3 border-b border-border px-4 py-3">
               <ClipboardList className="mt-0.5 size-4 text-primary" />
               <div className="flex-1">
                 <Dialog.Title className="text-sm font-medium">Review plan</Dialog.Title>
@@ -263,7 +263,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                   <Markdown>{planMarkdown}</Markdown>
                 </div>
               </section>
-              <aside className="flex w-[320px] shrink-0 flex-col border-l border-border-default">
+              <aside className="flex w-[320px] shrink-0 flex-col border-l border-border">
                 <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
                   {optionList}
                   {bypassOptionId && (
@@ -271,7 +271,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                       type="button"
                       onClick={() => resolve(bypassOptionId, "bypassPermissions")}
                       className={cn(
-                        "mt-2 flex w-full items-center gap-2 rounded-md border border-border-default px-2.5 py-2 text-left",
+                        "mt-2 flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-left",
                         "text-[12px] text-text-primary transition-colors hover:bg-bg-base",
                       )}
                     >
@@ -285,7 +285,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
                     </button>
                   )}
                 </div>
-                <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2.5">
+                <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
                   <button
                     type="button"
                     onClick={cancel}
@@ -324,7 +324,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   // Standard case — inline card above the composer.
   return (
     <div className="px-4 pt-2">
-      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
         <div className="flex items-start gap-2 px-3 pt-3">
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-medium leading-snug text-text-primary">
@@ -338,7 +338,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
 
         <div className="px-3 py-2.5">{optionList}</div>
 
-        <div className="border-t border-border-default px-3 py-2.5">
+        <div className="border-t border-border px-3 py-2.5">
           <textarea
             ref={textRef}
             value={draft}
@@ -351,7 +351,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
             }}
             rows={1}
             placeholder="Tell the agent what to do instead…"
-            className="w-full resize-none rounded-md border border-border-default bg-bg-base px-2.5 py-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-focus)]"
+            className="w-full resize-none rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[var(--border-strong)]"
           />
         </div>
       </div>
@@ -378,10 +378,10 @@ function PermissionOption({
   const label = relabelAgentBrand(option.name, agentType);
 
   const tone = isPrimary
-    ? "border-transparent bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-element-primary-hover)]"
+    ? "border-transparent bg-[var(--primary)] text-[var(--bg-base)] hover:bg-[var(--atlas-primary-hover)]"
     : reject
-      ? "border-border-default bg-bg-base text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
-      : "border-border-default bg-bg-base text-text-primary hover:bg-bg-hover";
+      ? "border-border bg-bg-base text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
+      : "border-border bg-bg-base text-text-primary hover:bg-bg-hover";
 
   return (
     <button
@@ -421,7 +421,7 @@ function ToolCallPreview({ tc }: { tc: PendingPermission["toolCall"] }) {
   const formatted = inputValue !== undefined ? safeStringify(inputValue, 2) : null;
   if (!formatted) return null;
   return (
-    <div className="mx-3 mt-2 rounded-md border border-border-default bg-bg-base px-3 py-2">
+    <div className="mx-3 mt-2 rounded-md border border-border bg-bg-base px-3 py-2">
       <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary">
         {formatted}
       </pre>

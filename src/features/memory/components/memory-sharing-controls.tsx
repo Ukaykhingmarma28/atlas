@@ -57,8 +57,8 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
         className={cn(
           "flex items-center gap-1 h-6 px-2 rounded-full border text-[10px] font-medium transition-colors cursor-pointer outline-none",
           enabled
-            ? "border-[var(--border-default)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+            ? "border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
+            : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
         )}
       >
         <Share2 size={11} />
@@ -72,7 +72,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
             render={
               <button
                 type="button"
-                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
+                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
               >
                 <SlidersHorizontal size={12} />
               </button>
@@ -81,14 +81,14 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
         </Hint>
         <Popover.Portal>
           <Popover.Positioner className="z-[9999]" align="end" side="bottom" sideOffset={6}>
-            <Popover.Popup className="w-[300px] rounded-md border border-border-default bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]">
+            <Popover.Popup className="w-[300px] rounded-md border border-border bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]">
               <div className="eyebrow mb-2">Recent-session handoff</div>
               <p className="mb-2.5 text-[11px] leading-snug text-text-tertiary">
                 How the previous session's tail is summarized before it is injected into the next
                 agent.
               </p>
 
-              <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-bg-elevated p-0.5">
                 <ModeSeg
                   active={pref.mode === "raw"}
                   label="Raw"

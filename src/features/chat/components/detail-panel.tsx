@@ -88,11 +88,11 @@ export function DetailPanel({ tabId, messages }: { tabId: string; messages: Chat
   return (
     <div
       style={{ width: Math.max(DETAIL_MIN_WIDTH, Math.min(DETAIL_MAX_WIDTH, width)) }}
-      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
     >
       <div
         onMouseDown={onResizeStart}
-        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border-default transition-colors hover:bg-primary"
+        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border transition-colors hover:bg-primary"
         title="Drag to resize"
       />
       <PanelBody target={target} byId={byId} onClose={onClose} />
@@ -171,7 +171,7 @@ function Header({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex h-[32px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
+    <div className="flex h-[32px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         {icon}
         <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">

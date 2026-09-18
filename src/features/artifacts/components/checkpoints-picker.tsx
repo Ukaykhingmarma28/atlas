@@ -92,8 +92,8 @@ export function CheckpointsPicker({
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-          <Popover.Popup className="flex max-h-[380px] w-[320px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
-            <div className="flex h-[30px] shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
+          <Popover.Popup className="flex max-h-[380px] w-[320px] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[#000] shadow-xl data-closed:animate-scale-out data-open:animate-scale-in">
+            <div className="flex h-[30px] shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
               <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
                 Checkpoints
               </span>
@@ -112,7 +112,7 @@ export function CheckpointsPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search commits…"
-              className="h-[28px] shrink-0 border-b border-[var(--border-default)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+              className="h-[28px] shrink-0 border-b border-[var(--border)] bg-transparent px-3 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
             />
 
             <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
@@ -189,7 +189,7 @@ export function CheckpointsPicker({
             {/* The project is on its own line only when the list spans more than
                 one — inside a filtered board it is the same value on every row. */}
             {rows !== null && filtered.length > 0 && (
-              <p className="shrink-0 border-t border-[var(--border-default)] px-3 py-1 text-[9px] text-[var(--text-ghost)]">
+              <p className="shrink-0 border-t border-[var(--border)] px-3 py-1 text-[9px] text-[var(--text-ghost)]">
                 {new Set(filtered.map((r) => r.projectPath)).size > 1
                   ? `Across ${new Set(filtered.map((r) => r.projectPath)).size} projects`
                   : filtered[0].projectName}

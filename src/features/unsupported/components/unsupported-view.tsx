@@ -27,12 +27,12 @@ export function UnsupportedView({ filePath }: UnsupportedViewProps) {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border-default)] shrink-0 text-[11px] font-mono text-[var(--text-tertiary)] truncate">
+      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border)] shrink-0 text-[11px] font-mono text-[var(--text-tertiary)] truncate">
         {filePath}
       </div>
       <div className="flex-1 min-h-0 flex items-center justify-center px-6">
         <div className="flex flex-col items-center gap-4 text-center max-w-md">
-          <div className="size-12 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
+          <div className="size-12 rounded-full bg-[var(--bg-elevated)] border border-[var(--border)] flex items-center justify-center">
             <FileX2 className="size-5 text-[var(--text-tertiary)]" />
           </div>
           <div className="space-y-1">
@@ -44,7 +44,7 @@ export function UnsupportedView({ filePath }: UnsupportedViewProps) {
           </div>
           <button
             onClick={handleOpenInFinder}
-            className="flex items-center gap-1.5 px-3 h-7 rounded border border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+            className="flex items-center gap-1.5 px-3 h-7 rounded border border-[var(--border)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
           >
             <FolderOpen size={12} />
             Open in Finder

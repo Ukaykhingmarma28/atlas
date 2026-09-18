@@ -129,7 +129,7 @@ export function ProvidersSettings() {
   return (
     <div className="h-full flex flex-col bg-bg-base">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border-default">
+      <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -148,7 +148,7 @@ export function ProvidersSettings() {
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border-default bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-focus)]">
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-strong)]">
           <Search size={11} className="text-text-tertiary shrink-0" />
           <input
             value={query}
@@ -177,7 +177,7 @@ export function ProvidersSettings() {
           </Hint>
           <DropdownMenu.Portal>
             <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={4}>
-              <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1 min-w-[180px]">
+              <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1 min-w-[180px]">
                 <DropdownMenu.CheckboxItem
                   checked={configuredOnly}
                   onCheckedChange={(c) => setConfiguredOnly(!!c)}
@@ -217,7 +217,7 @@ export function ProvidersSettings() {
 
       <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
             <span className={COL.provider}>Provider</span>
             <span className={COL.env}>Env Var</span>
             <span className={COL.category}>Category</span>
@@ -304,7 +304,7 @@ function ProviderTableRow({
             </span>
           ) : (
             <span
-              className="flex items-center gap-1 text-[10px] font-medium text-text-tertiary border border-border-default rounded-full px-1.5 h-[18px]"
+              className="flex items-center gap-1 text-[10px] font-medium text-text-tertiary border border-border rounded-full px-1.5 h-[18px]"
               title="Set outside your shell profile — Atlas can read it but not edit it."
             >
               <Lock size={9} />

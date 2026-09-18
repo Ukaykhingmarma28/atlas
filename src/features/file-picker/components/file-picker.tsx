@@ -179,7 +179,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
         <Dialog.Popup
           className={cn(
             "fixed left-1/2 top-[18%] z-50 -translate-x-1/2",
-            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-2xl",
+            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-2xl",
             "flex flex-col overflow-hidden",
           )}
         >
@@ -190,7 +190,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={project ? "Search files by name or path…" : "Open a project first"}
             disabled={!project}
-            className="px-4 h-11 bg-transparent border-b border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+            className="px-4 h-11 bg-transparent border-b border-[var(--border)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
           />
           <div ref={scrollRef} className="max-h-[420px] overflow-y-auto hide-scrollbar">
             {showEmpty ? (
@@ -244,7 +244,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] font-mono">
+          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-[10px] text-[var(--text-tertiary)] font-mono">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleReindex}

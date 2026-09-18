@@ -52,7 +52,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           pre(props) {
             return (
               <pre
-                className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 text-[12px] my-2 overflow-hidden"
+                className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-[12px] my-2 overflow-hidden"
                 style={{
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
@@ -93,14 +93,14 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           },
           blockquote(props) {
             return (
-              <blockquote className="border-l-2 border-[var(--border-default)] pl-3 my-2 text-[var(--text-secondary)]">
+              <blockquote className="border-l-2 border-[var(--border)] pl-3 my-2 text-[var(--text-secondary)]">
                 {props.children}
               </blockquote>
             );
           },
           table(props) {
             return (
-              <div className="my-3 rounded-md border border-[var(--border-default)] overflow-hidden">
+              <div className="my-3 rounded-md border border-[var(--border)] overflow-hidden">
                 <table className="w-full text-[12px] border-collapse">{props.children}</table>
               </div>
             );
@@ -110,7 +110,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           },
           th(props) {
             return (
-              <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border-default)] border-r last:border-r-0">
+              <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
                 {props.children}
               </th>
             );

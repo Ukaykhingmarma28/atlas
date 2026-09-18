@@ -57,7 +57,7 @@ export function FeaturedAgentOffers({
 
   return (
     <>
-      <div className="h-px bg-[var(--border-default)]" />
+      <div className="h-px bg-[var(--border)]" />
       <div className="px-3 pb-0.5 pt-1.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
         Available to install
       </div>
@@ -85,7 +85,7 @@ export function FeaturedAgentOffers({
               {/* Same tile as the marketplace's, and the same reason for the
                   explicit text color: registry icons are monochrome
                   `currentColor` art, so the container decides legibility. */}
-              <span className="flex size-4 shrink-0 items-center justify-center rounded border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-secondary)]">
+              <span className="flex size-4 shrink-0 items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-secondary)]">
                 {offer.iconDataUrl ? (
                   <ExternalAgentIcon dataUrl={offer.iconDataUrl} size={10} />
                 ) : (

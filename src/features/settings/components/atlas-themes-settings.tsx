@@ -62,9 +62,9 @@ export function AtlasThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border-default bg-bg-primary px-3">
+      <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-primary px-3">
         <span className="text-[11px] font-medium text-text-secondary">Mode</span>
-        <div className="flex rounded-md border border-border-default bg-bg-secondary p-0.5">
+        <div className="flex rounded-md border border-border bg-bg-secondary p-0.5">
           {modes.map((mode) => (
             <button
               key={mode}
@@ -83,7 +83,7 @@ export function AtlasThemesSettings() {
         </div>
       </div>
 
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-default bg-bg-primary px-3">
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-bg-primary px-3">
         <Search size={11} className="shrink-0 text-text-tertiary" />
         <input
           value={query}
@@ -156,7 +156,7 @@ export function AtlasThemesSettings() {
                 }}
                 className={cn(
                   "flex min-h-24 flex-col justify-between rounded-lg border bg-bg-secondary p-3 text-left transition-colors",
-                  selected ? "border-primary" : "border-border-default hover:border-border-strong",
+                  selected ? "border-primary" : "border-border hover:border-border-strong",
                 )}
               >
                 <div>

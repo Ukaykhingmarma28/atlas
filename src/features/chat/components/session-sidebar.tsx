@@ -659,7 +659,7 @@ export const SessionSidebar = memo(function SessionSidebar({
         "relative flex flex-col",
         asDropdown
           ? "h-[min(420px,60vh)] w-[340px]"
-          : "shrink-0 h-full border-r border-[var(--border-default)] bg-[var(--bg-sidebar)]",
+          : "shrink-0 h-full border-r border-[var(--border)] bg-[var(--bg-sidebar)]",
       )}
     >
       {/* Search — full-width row matching the GitHub panel's search */}
@@ -668,7 +668,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           "flex items-center gap-1.5 h-[32px] shrink-0 px-3",
           // The dropdown sits on a blurred, translucent panel — an opaque fill
           // here would punch a solid rectangle through the blur.
-          asDropdown ? "border-b border-white/5" : "border-b border-border-default bg-bg-primary",
+          asDropdown ? "border-b border-white/5" : "border-b border-border bg-bg-primary",
         )}
       >
         <Search size={11} className="text-text-tertiary shrink-0" />
@@ -742,7 +742,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                   active
                     ? "bg-[var(--bg-selected)] text-[var(--text-primary)] opacity-100"
                     : "text-[var(--text-secondary)] opacity-80 hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-                  !isLast && "border-b border-[var(--border-default)]",
+                  !isLast && "border-b border-[var(--border)]",
                 )}
               >
                 {/* `pr-12` reserves the hover actions' full footprint: two 16px
@@ -840,7 +840,7 @@ export const SessionSidebar = memo(function SessionSidebar({
             // solid strip through the picker's blurred panel.
             asDropdown
               ? "border-t border-white/5"
-              : "border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]",
+              : "border-t border-[var(--border)] bg-[var(--bg-sidebar)]",
           )}
         >
           <HintItem label={sidebarHint ? `Hide sidebar (${sidebarHint})` : "Hide sidebar"}>
@@ -867,7 +867,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       {!asDropdown && (
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -right-px w-px h-full bg-border-default hover:bg-primary transition-colors cursor-col-resize"
+          className="absolute top-0 -right-px w-px h-full bg-border hover:bg-primary transition-colors cursor-col-resize"
           title="Drag to resize"
         />
       )}

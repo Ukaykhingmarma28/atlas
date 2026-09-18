@@ -61,7 +61,7 @@ function loadModelIds(provider: string): Promise<string[]> {
 }
 
 const PILL_CLASS =
-  "flex min-w-0 items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none cursor-pointer";
+  "flex min-w-0 items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none cursor-pointer";
 
 export function ProviderModelPills({
   provider,
@@ -244,7 +244,7 @@ export function ProviderModelPills({
       />
       <Popover.Portal>
         <Popover.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
-          <Popover.Popup className="w-[360px] overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
+          <Popover.Popup className="w-[360px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
             <div className="flex max-h-[420px]">
               {/* Provider rail — ALWAYS shown, lists every chat provider. Ones
                   without a key are dimmed; selecting one shows the setup prompt. */}
@@ -333,7 +333,7 @@ export function ProviderModelPills({
                     </div>
                     <button
                       onClick={openApiKeys}
-                      className="rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                      className="rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
                     >
                       Set up key in Settings
                     </button>

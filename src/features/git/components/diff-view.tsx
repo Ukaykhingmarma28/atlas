@@ -144,7 +144,7 @@ export function DiffView({
 
   const header = filters ? (
     <HintGroup>
-      <div className="shrink-0 border-b border-border-default">
+      <div className="shrink-0 border-b border-border">
         <div className="flex items-center justify-between px-3 pt-2">
           <span className="text-[10px] font-mono text-text-tertiary">
             {files.length} file{files.length !== 1 ? "s" : ""}{" "}
@@ -176,7 +176,7 @@ export function DiffView({
           </div>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5">
-          <div className="flex-1 flex items-center gap-1.5 h-6 rounded border border-border-default bg-bg-secondary px-2">
+          <div className="flex-1 flex items-center gap-1.5 h-6 rounded border border-border bg-bg-secondary px-2">
             <Search size={10} className="text-text-tertiary shrink-0" />
             <input
               value={query}
@@ -241,7 +241,7 @@ export function DiffView({
                       data-index={vr.index}
                       ref={virtualizer.measureElement}
                       style={base}
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-t-md border border-border-default bg-[#0F0F0F] hover:bg-[#141414] cursor-pointer group"
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-t-md border border-border bg-[#0F0F0F] hover:bg-[#141414] cursor-pointer group"
                       onClick={() => toggleFile(file.path)}
                     >
                       <ChevronRight
@@ -300,7 +300,7 @@ export function DiffView({
                     data-index={vr.index}
                     ref={virtualizer.measureElement}
                     style={{ ...base, backgroundColor: "var(--diff-context-bg, #0a0a0a)" }}
-                    className="group/hunk flex items-center gap-2 px-2 h-[22px] border-x border-border-default text-[10px] font-mono text-text-tertiary"
+                    className="group/hunk flex items-center gap-2 px-2 h-[22px] border-x border-border text-[10px] font-mono text-text-tertiary"
                   >
                     <span className="truncate flex-1 text-[var(--status-info,#6ea8fe)]/70 select-text">
                       {row.hunk.header}
@@ -318,7 +318,7 @@ export function DiffView({
                                 row.hunkIndex,
                               )
                             }
-                            className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                            className="px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                           >
                             {label("Stage")}
                           </button>
@@ -334,7 +334,7 @@ export function DiffView({
                                 row.hunkIndex,
                               )
                             }
-                            className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                            className="px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                           >
                             {label("Unstage")}
                           </button>
@@ -350,7 +350,7 @@ export function DiffView({
                                 row.hunkIndex,
                               )
                             }
-                            className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-[var(--status-error)] hover:bg-bg-hover"
+                            className="px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-[var(--status-error)] hover:bg-bg-hover"
                           >
                             {label("Discard")}
                           </button>
@@ -373,7 +373,7 @@ export function DiffView({
                       height: 8,
                       backgroundColor: "var(--diff-context-bg, #0a0a0a)",
                     }}
-                    className="border-x border-b border-border-default rounded-b-md"
+                    className="border-x border-b border-border rounded-b-md"
                   />
                 );
               }
@@ -411,7 +411,7 @@ export function DiffView({
                           ? "var(--diff-remove-line-bg, #220d0d)"
                           : "var(--diff-context-bg, #0a0a0a)",
                   }}
-                  className="flex text-[11px] font-mono leading-[20px] select-text border-x border-border-default"
+                  className="flex text-[11px] font-mono leading-[20px] select-text border-x border-border"
                 >
                   <span
                     className={cn(
@@ -490,7 +490,7 @@ function LangFilterPopover({
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
-          <Popover.Popup className="w-[140px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
+          <Popover.Popup className="w-[140px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
             <button
               onClick={() => onSelect(null)}
               className={cn(
@@ -541,8 +541,8 @@ function FileListPopover({
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
-          <Popover.Popup className="w-[280px] max-h-[300px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
-            <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border-default shrink-0">
+          <Popover.Popup className="w-[280px] max-h-[300px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] flex flex-col">
+            <div className="flex items-center gap-1.5 px-2 h-[30px] border-b border-border shrink-0">
               <Search size={10} className="text-text-tertiary shrink-0" />
               <input
                 value={search}

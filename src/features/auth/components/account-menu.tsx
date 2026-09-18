@@ -37,7 +37,7 @@ const ITEMS: Array<{
 // `body`, so it is not competing with the title bar, but it does share a
 // stacking context with every dialog and overlay in the app.
 const CONTENT_CLASS =
-  "min-w-[228px] max-w-[300px] rounded-md border border-[var(--border-default)] " +
+  "min-w-[228px] max-w-[300px] rounded-md border border-[var(--border)] " +
   "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
 
 /**
@@ -64,7 +64,7 @@ const ITEM_CLASS =
 
 // Hoisted for the same reason as the two above: this menu now has three
 // separators, and a rule one of them disagreed with would be visible.
-const SEPARATOR_CLASS = "my-1 h-px bg-[var(--border-default)]";
+const SEPARATOR_CLASS = "my-1 h-px bg-[var(--border)]";
 
 /**
  * The menu behind the title bar's avatar — who you are, the parts of Settings

@@ -223,7 +223,7 @@ export function SkillsMarketplace({
     <div className="flex h-full min-h-0 flex-col">
       {/* Search — full-width flush bar (mixed into the content), like the
           GitHub panel's search. */}
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-default bg-bg-primary px-3">
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border bg-bg-primary px-3">
         <Search size={11} className="shrink-0 text-text-tertiary" />
         <input
           value={query}
@@ -256,7 +256,7 @@ export function SkillsMarketplace({
       <div className="min-h-0 flex-1 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
           {/* sticky header */}
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
             <span className={cn(COL.rank, "text-right pr-2")}>#</span>
             <span className={COL.skill}>{query.trim() ? "Results" : "Popular"}</span>
             <span className={COL.source}>Source</span>
@@ -373,7 +373,7 @@ function InstallButton({
       type="button"
       disabled={installing}
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border-default px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
     >
       {installing ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
       Install
@@ -506,7 +506,7 @@ function SkillDetailModal({
               {otherCounts.map(([kind, n]) => (
                 <span
                   key={kind}
-                  className="inline-flex items-center gap-1 rounded-full border border-border-default bg-bg-base px-2 py-0.5 text-[10px] text-text-tertiary"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-base px-2 py-0.5 text-[10px] text-text-tertiary"
                 >
                   <Boxes size={10} />
                   {n} {KIND_LABEL[kind]}

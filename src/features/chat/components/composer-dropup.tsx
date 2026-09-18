@@ -28,7 +28,7 @@ export function composerPillClass(open: boolean, opts: { disabled?: boolean } = 
     "flex h-6.5 items-center rounded-full border px-1.5 text-[10px] font-medium leading-none transition-colors",
     open
       ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-      : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
+      : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
     opts.disabled
       ? "cursor-default"
       : "cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
@@ -126,7 +126,7 @@ export function ComposerDropup({
   return (
     <div
       aria-hidden={!open}
-      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+      className="absolute bottom-full right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
       style={{
         width,
         height: open ? panelHeight : 0,

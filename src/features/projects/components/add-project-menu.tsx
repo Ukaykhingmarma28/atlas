@@ -47,7 +47,7 @@ export function AddProjectMenu() {
         {/* Compact menu primitive — mirrors the source-control "filter files"
          *  dropdown: 26px rows, px-3 on both sides, border-b search header. */}
         <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-          <DropdownMenu.Popup className="w-[280px] max-h-[360px] rounded-lg border border-[var(--border-default)] bg-[#000] shadow-xl text-[var(--text-secondary)] flex flex-col overflow-hidden">
+          <DropdownMenu.Popup className="w-[280px] max-h-[360px] rounded-lg border border-[var(--border)] bg-[#000] shadow-xl text-[var(--text-secondary)] flex flex-col overflow-hidden">
             <DropdownMenu.Item
               onClick={() => void pickAndAddProject()}
               className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default shrink-0"
@@ -58,7 +58,7 @@ export function AddProjectMenu() {
             {recentProjects.length > 0 && (
               <>
                 <div
-                  className="flex items-center gap-1.5 px-3 h-[30px] border-y border-[var(--border-default)] shrink-0"
+                  className="flex items-center gap-1.5 px-3 h-[30px] border-y border-[var(--border)] shrink-0"
                   onKeyDown={(e) => e.stopPropagation()}
                 >
                   <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
@@ -93,7 +93,7 @@ export function AddProjectMenu() {
                 </div>
                 <DropdownMenu.Item
                   onClick={() => clearRecents()}
-                  className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none border-t border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer shrink-0"
+                  className="w-full flex items-center gap-2 px-3 h-[28px] text-[11px] outline-none border-t border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-pointer shrink-0"
                 >
                   <Trash2 size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Clear recent projects</span>

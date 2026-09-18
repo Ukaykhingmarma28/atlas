@@ -33,7 +33,7 @@ export function GitOpOutput() {
   const failed = !activeOp.running && activeOp.error !== null;
 
   return (
-    <div className="shrink-0 border-t border-border-default">
+    <div className="shrink-0 border-t border-border">
       <button
         onClick={() => setCollapsed((c) => !c)}
         className="flex w-full items-center gap-1.5 px-2 h-[22px] text-[10px] text-text-tertiary hover:text-text-secondary"

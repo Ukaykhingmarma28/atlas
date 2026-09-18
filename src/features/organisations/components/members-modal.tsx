@@ -176,7 +176,7 @@ export function MembersModal({
         />
         <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
+          className="fixed top-8.5 left-4 right-4 bottom-6 rounded-xl border border-[var(--border)] bg-[var(--bg-sidebar)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">Members of {org.name}</Dialog.Title>
@@ -213,7 +213,7 @@ export function MembersModal({
           </div>
 
           {/* Toolbar — tabs with counts + search. */}
-          <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border-default">
+          <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border">
             {(
               [
                 ["members", "Members", members.length],
@@ -235,7 +235,7 @@ export function MembersModal({
               </button>
             ))}
             <div className="flex-1" />
-            <div className="flex items-center gap-1.5 h-6 rounded-md border border-border-default bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-focus)]">
+            <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-strong)]">
               <Search size={11} className="text-text-tertiary shrink-0" />
               <input
                 value={query}
@@ -248,7 +248,7 @@ export function MembersModal({
 
           {/* Invite bar — admin only; the API refuses anyone else anyway. */}
           {isAdmin && (
-            <div className="flex items-center gap-2 px-3 h-[44px] shrink-0 border-b border-border-default">
+            <div className="flex items-center gap-2 px-3 h-[44px] shrink-0 border-b border-border">
               <UserPlus size={12} className="text-text-tertiary shrink-0" />
               <EmailChipsInput
                 emails={inviteEmails}
@@ -261,7 +261,7 @@ export function MembersModal({
                 role={inviteRole}
                 onSelect={setInviteRole}
                 trigger={
-                  <button className="flex items-center gap-1 h-7 rounded-md border border-border-default bg-bg-elevated px-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors cursor-pointer shrink-0">
+                  <button className="flex items-center gap-1 h-7 rounded-md border border-border bg-bg-elevated px-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors cursor-pointer shrink-0">
                     {ROLE_LABELS[inviteRole]}
                   </button>
                 }
@@ -274,7 +274,7 @@ export function MembersModal({
                     : undefined
                 }
                 onClick={() => void submitInvite()}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-text-primary cursor-pointer transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium leading-none text-text-primary cursor-pointer transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
               >
                 {inviting ? <Loader2 size={11} className="animate-spin" /> : <UserPlus size={11} />}
                 Invite
@@ -287,7 +287,7 @@ export function MembersModal({
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-auto hide-scrollbar">
               <div style={{ minWidth: TABLE_MIN_W }}>
-                <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+                <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
                   <span className={COL.person}>{tab === "members" ? "Person" : "Email"}</span>
                   <span className={COL.role}>Role</span>
                   <span className={COL.joined}>{tab === "members" ? "Joined" : "Status"}</span>
@@ -410,7 +410,7 @@ function MemberRow({
               </Hint>
               <DropdownMenu.Portal>
                 <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-                  <DropdownMenu.Popup className="min-w-[168px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                  <DropdownMenu.Popup className="min-w-[168px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
                     <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
                       Role
                     </div>
@@ -424,7 +424,7 @@ function MemberRow({
                         {member.role === r && <Check size={11} />}
                       </DropdownMenu.Item>
                     ))}
-                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
                     {/* An admin can't leave: doing so could strip the org of its
                         last admin, leaving nobody able to invite, change roles or
                         delete it. Hand the role over first. */}
@@ -565,7 +565,7 @@ function EmailChipsInput({
     <div
       // FIXED height, never `min-h` + wrap: the bar must not grow the moment a
       // chip appears. Overflowing chips scroll sideways instead.
-      className="flex-1 min-w-0 flex items-center gap-1 h-7 rounded-md border border-border-default bg-bg-elevated px-1.5 overflow-x-auto hide-scrollbar focus-within:border-[var(--border-focus)] cursor-text"
+      className="flex-1 min-w-0 flex items-center gap-1 h-7 rounded-md border border-border bg-bg-elevated px-1.5 overflow-x-auto hide-scrollbar focus-within:border-[var(--border-strong)] cursor-text"
       onClick={(e) => {
         // Clicking the padding should focus the field, like a real input.
         const input = e.currentTarget.querySelector("input");
@@ -580,9 +580,7 @@ function EmailChipsInput({
             className={cn(
               // h-5 + a 14px avatar keeps the chip inside the 28px field.
               "inline-flex shrink-0 items-center gap-1 rounded-full border pl-0.5 pr-1 h-5 text-[11px] max-w-[220px]",
-              valid
-                ? "border-border-default bg-bg-base text-text-primary"
-                : "border-error text-error",
+              valid ? "border-border bg-bg-base text-text-primary" : "border-error text-error",
             )}
           >
             <AccountAvatar user={{ id: email, name: "", email, avatarPath: null }} size={14} />
@@ -658,7 +656,7 @@ function RolePicker({
       <DropdownMenu.Trigger render={trigger} />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-[var(--z-max)]" align="end" sideOffset={4}>
-          <DropdownMenu.Popup className="min-w-[150px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+          <DropdownMenu.Popup className="min-w-[150px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
             {ROLES.map((r) => (
               <DropdownMenu.Item
                 key={r}

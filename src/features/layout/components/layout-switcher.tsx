@@ -62,7 +62,7 @@ export function LayoutSwitcher({
           // preventDefault + focus(): hand it the element to land on.
           initialFocus={contentRef}
           aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)] w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-[var(--shadow-overlay)] p-5 outline-none"
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)] w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-[var(--shadow-overlay)] p-5 outline-none"
         >
           <Dialog.Title className="text-[13px] font-semibold text-[var(--text-primary)] mb-0.5">
             Choose a layout
@@ -81,7 +81,7 @@ export function LayoutSwitcher({
                   "text-left rounded-xl border p-2.5 transition-colors outline-none",
                   i === selected
                     ? "border-[var(--primary)] bg-[var(--bg-active)]"
-                    : "border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
+                    : "border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
                 )}
               >
                 <LayoutThumbnail template={t} />
@@ -109,7 +109,7 @@ export function LayoutSwitcher({
 function Hint({ k, label }: { k: string; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border-default)] font-mono text-[9px] text-[var(--text-secondary)]">
+      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border)] font-mono text-[9px] text-[var(--text-secondary)]">
         {k}
       </kbd>
       {label}

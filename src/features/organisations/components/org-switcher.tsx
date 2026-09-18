@@ -593,7 +593,7 @@ function DeleteOrgDialog({
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
-            "w-[400px] max-w-[92vw] rounded-lg border border-border-default",
+            "w-[400px] max-w-[92vw] rounded-lg border border-border",
             "bg-[var(--bg-elevated)] p-5 shadow-[var(--shadow-overlay)] animate-scale-in",
           )}
         >

@@ -232,13 +232,13 @@ function TooltipContent({
           style={
             {
               "--color-background": "var(--bg-overlay)",
-              "--color-border": "var(--border-default)",
+              "--color-border": "var(--border)",
             } as React.CSSProperties
           }
           className={cn(
             "group w-fit text-balance rounded-md px-2.5 py-1 text-xs",
             "bg-[var(--bg-overlay)] text-text-primary",
-            "outline outline-1 outline-[var(--border-default)]",
+            "outline outline-1 outline-[var(--border)]",
             "animate-scale-in origin-[var(--transform-origin)]",
             instant && "animate-none",
             className,

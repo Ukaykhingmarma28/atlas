@@ -26,8 +26,10 @@ export interface ThemeKeySource {
 export interface DerivedVarSource {
   name: string;
   description: string;
-  /** The settable key this transforms. */
-  from: string;
+  /** The settable key this transforms; absent when `base` is set. */
+  from?: string;
+  /** The shadcn base token this transforms; absent when `from` is set. */
+  base?: string;
   op: string;
   amount: string;
 }

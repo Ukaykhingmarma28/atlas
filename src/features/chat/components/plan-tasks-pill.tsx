@@ -171,7 +171,7 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
           "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-[10px] font-medium leading-none transition-colors cursor-pointer",
           open
             ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+            : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
         )}
         title="Implementation plan"
       >

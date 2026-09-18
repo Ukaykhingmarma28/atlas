@@ -110,7 +110,7 @@ export function KeybindingRecorder({
     >
       <div
         className={cn(
-          "w-[440px] rounded-lg border border-border-default bg-[var(--bg-overlay)]/95 backdrop-blur-xl",
+          "w-[440px] rounded-lg border border-border bg-[var(--bg-overlay)]/95 backdrop-blur-xl",
           "shadow-[var(--shadow-overlay)] p-3 animate-in fade-in-0 duration-150",
         )}
       >
@@ -158,9 +158,7 @@ export function KeybindingRecorder({
             <div
               className={cn(
                 "flex h-8 items-center justify-center rounded-md border bg-bg-elevated px-2 font-mono text-[12px]",
-                combo
-                  ? "border-border-strong text-text-primary"
-                  : "border-border-default text-text-muted",
+                combo ? "border-border-strong text-text-primary" : "border-border text-text-muted",
               )}
             >
               {combo

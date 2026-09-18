@@ -52,7 +52,7 @@ export function ExportButton({ detail }: { detail: Detail }) {
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner className="z-[var(--z-max)]" align="end" sideOffset={6}>
-          <Popover.Popup className="w-[184px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 p-1 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+          <Popover.Popup className="w-[184px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/90 p-1 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
             <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
             <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
           </Popover.Popup>

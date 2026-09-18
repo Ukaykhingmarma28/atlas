@@ -44,7 +44,7 @@ export function MediaViewer({ filePath }: MediaViewerProps) {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border-default)] shrink-0 text-[11px] font-mono text-[var(--text-tertiary)] truncate">
+      <div className="flex items-center px-3 h-[32px] border-b border-[var(--border)] shrink-0 text-[11px] font-mono text-[var(--text-tertiary)] truncate">
         {filePath}
       </div>
       {kind === "image" ? (

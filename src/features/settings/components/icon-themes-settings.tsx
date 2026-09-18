@@ -54,7 +54,7 @@ export function IconThemesSettings() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border-default bg-bg-primary px-3 py-2">
+      <div className="shrink-0 border-b border-border bg-bg-primary px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
             Preview
@@ -82,9 +82,7 @@ export function IconThemesSettings() {
                   }}
                   className={cn(
                     "group flex min-h-20 flex-col justify-between rounded-lg border bg-bg-secondary p-3 text-left transition-colors",
-                    selected
-                      ? "border-primary"
-                      : "border-border-default hover:border-border-strong",
+                    selected ? "border-primary" : "border-border hover:border-border-strong",
                   )}
                 >
                   <div className="flex w-full items-start gap-1.5">
@@ -204,7 +202,7 @@ function OpenVsxSection() {
   };
 
   return (
-    <div className="mt-4 border-t border-border-default pt-3">
+    <div className="mt-4 border-t border-border pt-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-2xs font-semibold uppercase tracking-wider text-text-tertiary">
           Install from Open VSX
@@ -212,7 +210,7 @@ function OpenVsxSection() {
         <span className="text-2xs text-text-muted">open-vsx.org</span>
       </div>
 
-      <div className="flex h-[28px] items-center gap-1.5 rounded-md border border-border-default bg-bg-secondary px-2">
+      <div className="flex h-[28px] items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2">
         <Search size={11} className="shrink-0 text-text-tertiary" />
         <input
           value={query}
@@ -274,7 +272,7 @@ function OpenVsxSection() {
             return (
               <div
                 key={hit.id}
-                className="flex items-center gap-2 rounded-md border border-border-default bg-bg-secondary px-2 py-1.5"
+                className="flex items-center gap-2 rounded-md border border-border bg-bg-secondary px-2 py-1.5"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1.5">
@@ -293,7 +291,7 @@ function OpenVsxSection() {
                   onClick={() => install(hit)}
                   className={cn(
                     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-2 text-2xs font-medium transition-colors",
-                    "border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+                    "border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                   )}
                 >

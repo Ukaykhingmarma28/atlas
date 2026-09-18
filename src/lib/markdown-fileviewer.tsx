@@ -35,7 +35,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
         rehypePlugins={[...(trusted ? [rehypeRaw] : []), rehypeHighlight]}
         components={{
           h1: (p) => (
-            <h1 className="mt-8 mb-3 border-b border-[var(--border-default)] pb-2 text-[26px] font-bold tracking-tight">
+            <h1 className="mt-8 mb-3 border-b border-[var(--border)] pb-2 text-[26px] font-bold tracking-tight">
               {p.children}
             </h1>
           ),
@@ -100,7 +100,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
 
           pre: (p) => (
             <pre
-              className="my-4 overflow-x-auto rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[12.5px]"
+              className="my-4 overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] text-[12.5px]"
               style={{
                 whiteSpace: "pre",
                 wordBreak: "normal",
@@ -112,7 +112,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
           ),
 
           blockquote: (p) => (
-            <blockquote className="my-3 border-l-2 border-[var(--border-default)] pl-4 text-[var(--text-secondary)]">
+            <blockquote className="my-3 border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)]">
               {p.children}
             </blockquote>
           ),
@@ -121,7 +121,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
 
           table: (p) => (
             <div
-              className="my-4 overflow-x-auto rounded-md border border-[var(--border-default)]"
+              className="my-4 overflow-x-auto rounded-md border border-[var(--border)]"
               onWheel={handleWheel}
             >
               <table className="min-w-max text-[13px] ">{p.children}</table>
@@ -135,7 +135,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
           ),
 
           th: (p) => (
-            <th className="border-r border-[var(--border-default)] border-b border-[var(--border-default)] px-3 py-2 text-left text-[12px] font-semibold whitespace-nowrap text-[var(--text-secondary)] last:border-r-0">
+            <th className="border-r border-[var(--border)] border-b border-[var(--border)] px-3 py-2 text-left text-[12px] font-semibold whitespace-nowrap text-[var(--text-secondary)] last:border-r-0">
               {p.children}
             </th>
           ),
@@ -148,7 +148,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
 
           ...(trusted && {
             details: (p) => (
-              <details className="my-3 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3 py-2">
+              <details className="my-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
                 {p.children}
               </details>
             ),

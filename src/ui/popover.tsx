@@ -58,7 +58,7 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             "max-h-(--available-height) w-72 overflow-hidden rounded-lg p-2.5",
-            "bg-bg-overlay border border-border-default text-text-primary shadow-md",
+            "bg-bg-overlay border border-border text-text-primary shadow-md",
             "text-sm outline-none",
             "origin-[var(--transform-origin)] animate-scale-in",
             className,

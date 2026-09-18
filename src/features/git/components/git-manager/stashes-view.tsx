@@ -23,7 +23,7 @@ export function StashesView() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="shrink-0 border-b border-border-default p-2">
+      <div className="shrink-0 border-b border-border p-2">
         <button
           onClick={() => run(() => actions.stashPush())}
           disabled={files.length === 0}

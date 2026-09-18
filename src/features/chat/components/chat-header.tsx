@@ -212,7 +212,7 @@ function ChatHeaderImpl({
             />
             <DropdownMenu.Portal>
               <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="end" sideOffset={6}>
-                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]">
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] py-1 shadow-[var(--shadow-overlay)]">
                   <MenuLabel>Filter messages</MenuLabel>
                   {(["all", "user", "assistant"] as const).map((f) => (
                     <DropdownMenu.Item

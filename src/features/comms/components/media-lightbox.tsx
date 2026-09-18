@@ -94,11 +94,11 @@ export function MediaLightbox() {
             // would be overwritten for the length of the animation and the
             // panel would fly in from the viewport's centre-bottom-right.
             "fixed inset-0 z-[var(--z-modal)] m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
-            "flex flex-col overflow-hidden rounded-xl border border-border-default bg-bg-base",
+            "flex flex-col overflow-hidden rounded-xl border border-border bg-bg-base",
             "shadow-[var(--shadow-overlay)] animate-scale-in outline-none",
           )}
         >
-          <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-default px-3">
+          <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
             <Dialog.Title className="min-w-0 flex-1 truncate text-[11.5px] text-text-secondary">
               {item?.filename ?? ""}
             </Dialog.Title>

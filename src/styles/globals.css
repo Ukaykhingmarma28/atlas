@@ -82,10 +82,8 @@
   --color-text-ghost: var(--text-ghost);
   --color-text-inverse: var(--text-inverse);
 
-  --color-border-default: var(--border-default);
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
-  --color-border-focus: var(--border-focus);
 
   --color-success: var(--status-success);
   --color-warning: var(--status-warning);
@@ -967,7 +965,7 @@
     cursor: pointer;
   }
   .reader-content a:hover {
-    color: var(--atlas-element-primary-hover);
+    color: var(--atlas-primary-hover);
   }
   .reader-content img {
     max-width: 100%;
@@ -1500,7 +1498,7 @@
   background-color: var(--bg-hover) !important;
 }
 .cm-panel.cm-search input[type="text"]:focus {
-  border-color: var(--border-focus, var(--primary)) !important;
+  border-color: var(--border-strong) !important;
   background-color: var(--bg-input) !important;
 }
 .cm-panel.cm-search input[type="text"]::placeholder {

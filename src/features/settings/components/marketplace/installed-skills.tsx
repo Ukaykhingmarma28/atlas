@@ -298,7 +298,7 @@ export function InstalledSkills({
 
       <div className="min-h-0 flex-1 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
             <span className={COL.name}>Name</span>
             <span className={COL.origin}>Origin</span>
             <span className={COL.tools}>Tools</span>
@@ -445,7 +445,7 @@ function OnOff({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-bg-elevated p-0.5">
       {([true, false] as const).map((v) => (
         <button
           key={String(v)}
@@ -568,7 +568,7 @@ function PackManageModal({
             busyFor={(t) => busy === `pack:${pack.pack.name}:${t.id}`}
             onClick={(t) => onToggle(t.id, !projected.has(t.id))}
           />
-          <div className="flex flex-col gap-2 border-t border-border-default pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <PackUpdate
               scope={scope}
               name={pack.pack.name}
@@ -648,7 +648,7 @@ function SkillManageModal({
             busyFor={(t) => busy === `skill:${skill.name}:${t.id}`}
             onClick={(t, status) => onToggle(t.id, status)}
           />
-          <div className="flex flex-col gap-2 border-t border-border-default pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <ModalAction icon={ExternalLink} label="Open in editor" onClick={onOpen} />
             {scope === "project" && (
               <ModalAction
@@ -721,7 +721,7 @@ function PackUpdate({
   };
 
   const base =
-    "flex w-full items-center gap-2 rounded-md border border-border-default px-2.5 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary";
+    "flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary";
   if (state === "checking")
     return (
       <span className={base}>

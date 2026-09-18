@@ -20,7 +20,7 @@ export function LayoutsSettings() {
         <h2 className="text-sm font-semibold text-text-primary">Layouts</h2>
         <p className="text-[11px] text-text-tertiary mt-0.5">
           Rearrange panels and tabs into a ready-made project. Press{" "}
-          <kbd className="px-1 py-0.5 rounded bg-bg-elevated border border-border-default font-mono text-[9px]">
+          <kbd className="px-1 py-0.5 rounded bg-bg-elevated border border-border font-mono text-[9px]">
             {switcherHint}
           </kbd>{" "}
           anytime to switch layouts.
@@ -33,7 +33,7 @@ export function LayoutsSettings() {
             key={t.id}
             onClick={() => apply(t)}
             className={cn(
-              "text-left rounded-xl border border-border-default bg-bg-secondary p-3",
+              "text-left rounded-xl border border-border bg-bg-secondary p-3",
               "hover:border-[var(--border-strong)] transition-colors outline-none",
             )}
           >

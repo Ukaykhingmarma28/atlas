@@ -20,7 +20,7 @@ export function ChartTooltip({ active, payload, label }: TipProps) {
   if (rows.length === 0) return null;
   const total = rows.reduce((n, p) => n + (Number(p.value) || 0), 0);
   return (
-    <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-2 shadow-lg text-[11px] min-w-[150px]">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-2 shadow-lg text-[11px] min-w-[150px]">
       {label != null && (
         <div className="text-[10px] text-[var(--text-tertiary)] mb-1 font-mono">
           {String(label)}

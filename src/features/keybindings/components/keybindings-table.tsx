@@ -111,7 +111,7 @@ export function KeybindingsTable({
       <div
         className={cn(
           GRID,
-          "sticky top-0 z-10 h-[26px] border-b border-border-default bg-bg-primary px-2",
+          "sticky top-0 z-10 h-[26px] border-b border-border bg-bg-primary px-2",
           "text-[10px] font-semibold uppercase tracking-wider text-text-tertiary",
         )}
       >

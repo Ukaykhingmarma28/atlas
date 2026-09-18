@@ -41,7 +41,7 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
   const { setTool, setColor } = usePdfAnnotationStore.use.actions();
 
   return (
-    <div className="flex items-center gap-2 px-3 h-[36px] shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-base)]">
+    <div className="flex items-center gap-2 px-3 h-[36px] shrink-0 border-b border-[var(--border)] bg-[var(--bg-base)]">
       {/* Tools */}
       <HintGroup>
         <div className="flex items-center gap-0.5">
@@ -64,7 +64,7 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
         </div>
       </HintGroup>
 
-      <div className="h-4 w-px bg-[var(--border-default)]" />
+      <div className="h-4 w-px bg-[var(--border)]" />
 
       {/* Colors */}
       <HintGroup>

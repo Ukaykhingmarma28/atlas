@@ -149,7 +149,7 @@ function SectionHead({
           type="button"
           disabled={refreshing}
           onClick={onRefresh}
-          className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
+          className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
         >
           <RefreshCw size={9} className={refreshing ? "animate-spin" : ""} />
         </button>

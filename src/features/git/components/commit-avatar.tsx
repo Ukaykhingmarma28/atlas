@@ -51,7 +51,7 @@ export function CommitAvatar({ email, size = 16, className }: CommitAvatarProps)
 
   return (
     <span
-      className={`relative inline-flex items-center justify-center rounded-full overflow-hidden shrink-0 bg-[var(--bg-elevated)] border border-[var(--border-default)] ${
+      className={`relative inline-flex items-center justify-center rounded-full overflow-hidden shrink-0 bg-[var(--bg-elevated)] border border-[var(--border)] ${
         className ?? ""
       }`}
       style={{ width: size, height: size }}

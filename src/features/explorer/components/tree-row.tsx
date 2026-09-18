@@ -167,7 +167,7 @@ export function TreeRow({
         "absolute left-0 right-0 flex items-center gap-1.5 text-left rounded-md mx-1",
         "transition-colors group select-none",
         isEditing ? "cursor-text" : "cursor-pointer",
-        "focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus",
+        "focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong",
         // Selection fill (multi-select) takes visual priority over the
         // active-file pill; callers make the two mutually exclusive.
         isSelected
@@ -179,7 +179,7 @@ export function TreeRow({
         // Atlas's monochromatic surfaces: a muted accent fill with a
         // hairline inset accent ring, not a heavy outline.
         isDropTarget &&
-          "bg-[var(--atlas-element-primary-muted)] ring-1 ring-inset ring-primary/40 text-text-primary",
+          "bg-[var(--atlas-primary-muted)] ring-1 ring-inset ring-primary/40 text-text-primary",
         // Source row dimmed while drag is in flight.
         isDragging && "opacity-40",
         isCut && "opacity-50",
@@ -262,8 +262,8 @@ export function TreeRow({
             else onCancel?.();
           }}
           className={cn(
-            "flex-1 min-w-0 font-mono text-[11px] leading-4 bg-bg-input border border-border-default rounded px-1 py-0.5",
-            "text-text-primary outline-none focus:border-border-focus",
+            "flex-1 min-w-0 font-mono text-[11px] leading-4 bg-bg-input border border-border rounded px-1 py-0.5",
+            "text-text-primary outline-none focus:border-border-strong",
           )}
         />
       ) : (

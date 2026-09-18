@@ -35,7 +35,7 @@
 
   --xy-node-background-color: var(--card);
   --xy-node-color: var(--card-foreground);
-  --xy-node-border: 1px solid var(--atlas-border-default);
+  --xy-node-border: 1px solid var(--border);
   --xy-node-boxshadow-selected: 0 0 0 1px var(--primary);
   --xy-node-group-background-color: var(--atlas-element-hover);
 }

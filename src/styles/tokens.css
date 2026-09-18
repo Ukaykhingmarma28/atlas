@@ -62,37 +62,33 @@
   --bg-overlay: var(--popover);
   --bg-tertiary: var(--popover);
   --bg-input: var(--atlas-panel-input-background);
-  --bg-tab-active: var(--atlas-tab-active-background);
-  --bg-tab-inactive: var(--atlas-tab-inactive-background);
+  --bg-tab-active: var(--accent);
+  --bg-tab-inactive: var(--sidebar);
   --bg-hover: var(--atlas-element-hover);
   --bg-selected: var(--atlas-element-selected);
   --bg-active: var(--atlas-element-active);
   --selection-bg: var(--atlas-selection-background);
   --bg-canvas: var(--atlas-panel-background);
-  --bg-rail: var(--atlas-panel-rail-background);
+  --bg-rail: var(--atlas-panel-background);
   --bg-elevated: var(--card);
-  --bg-elevated-2: var(--atlas-panel-elevated-background);
-  --panel-rail-bg: var(--atlas-panel-rail-background);
+  --bg-elevated-2: var(--card);
+  --panel-rail-bg: var(--atlas-panel-background);
   --panel-bg: var(--atlas-panel-background);
-  --panel-bg-2: var(--atlas-panel-elevated-background);
+  --panel-bg-2: var(--card);
 
   --text-primary: var(--foreground);
   --text-secondary: var(--secondary-foreground);
   --text-tertiary: var(--muted-foreground);
   --text-ghost: var(--atlas-text-disabled);
   --text-inverse: var(--primary-foreground);
-  --text-accent: var(--atlas-text-accent);
-  --text-muted: var(--atlas-text-muted);
+  --text-muted: var(--muted-foreground);
 
-  --border-default: var(--atlas-border-default);
   --border-subtle: var(--atlas-border-subtle);
   --border-strong: var(--atlas-border-strong);
-  --border-focus: var(--atlas-border-focus);
-  --border-variant: var(--atlas-border-variant);
 
   --accent-primary: var(--primary);
-  --accent-primary-hover: var(--atlas-element-primary-hover);
-  --accent-primary-muted: var(--atlas-element-primary-muted);
+  --accent-primary-hover: var(--atlas-primary-hover);
+  --accent-primary-muted: var(--atlas-primary-muted);
   --accent-secondary: var(--muted-foreground);
 
   --status-success: var(--atlas-status-success-foreground);
@@ -104,26 +100,25 @@
   --status-error-muted: var(--atlas-status-error-background);
   --status-info: var(--atlas-status-info-foreground);
   --status-info-muted: var(--atlas-status-info-background);
-  --status-purple: var(--atlas-status-purple-foreground);
-  --status-orange: var(--atlas-status-orange-foreground);
   --danger: var(--destructive);
   --warning: var(--atlas-status-warning-foreground);
-  --stat-added: var(--atlas-stat-added);
-  --stat-removed: var(--atlas-stat-removed);
-  --capture-live: var(--atlas-capture-live);
+  --stat-added: var(--atlas-diff-added-text);
+  --stat-removed: var(--atlas-diff-removed-text);
+  --capture-live: var(--atlas-status-success-foreground);
 
-  --diff-added-bg: var(--atlas-diff-added-background);
   --diff-added-text: var(--atlas-diff-added-text);
-  --diff-removed-bg: var(--atlas-diff-removed-background);
   --diff-removed-text: var(--atlas-diff-removed-text);
-  --diff-modified-bg: var(--atlas-diff-modified-background);
-  --diff-add-line-bg: var(--atlas-diff-add-line-background);
-  --diff-remove-line-bg: var(--atlas-diff-remove-line-background);
   --diff-context-bg: var(--atlas-diff-context-background);
-  --diff-add-side-bg: var(--atlas-diff-add-side-background);
-  --diff-remove-side-bg: var(--atlas-diff-remove-side-background);
-  --diff-emph-add-bg: var(--atlas-diff-emphasis-added-background);
-  --diff-emph-remove-bg: var(--atlas-diff-emphasis-removed-background);
+  /* One added fill and one removed fill, for both diff renderers. The inline
+     view and the side-by-side view used to read two different keys, and the
+     side-by-side pair was a hardcoded green/red every theme file repeated
+     verbatim — so a themed diff and an unthemed one sat next to each other. */
+  --diff-add-line-bg: var(--atlas-diff-added-background);
+  --diff-remove-line-bg: var(--atlas-diff-removed-background);
+  --diff-add-side-bg: var(--atlas-diff-added-background);
+  --diff-remove-side-bg: var(--atlas-diff-removed-background);
+  --diff-emph-add-bg: var(--atlas-diff-added-emphasis);
+  --diff-emph-remove-bg: var(--atlas-diff-removed-emphasis);
 
   --cm-bg: var(--atlas-editor-background);
   --cm-fg: var(--atlas-editor-foreground);
@@ -135,9 +130,12 @@
   --cm-selection-bg: var(--atlas-editor-selection-background);
   --cm-bracket-bg: var(--atlas-editor-match-bracket-background);
   --cm-bracket-outline: var(--atlas-editor-match-bracket-border);
-  --cm-fold-bg: var(--atlas-editor-fold-background);
-  --cm-fold-border: var(--atlas-editor-fold-border);
-  --cm-fold-fg: var(--atlas-editor-fold-foreground);
+  /* The fold placeholder is a secondary surface with a secondary label on it;
+     it had three theme keys of its own and no author ever wanted them to
+     differ from that. */
+  --cm-fold-bg: var(--secondary);
+  --cm-fold-border: var(--border);
+  --cm-fold-fg: var(--secondary-foreground);
   --cm-comment: var(--atlas-syntax-comment);
   --cm-keyword: var(--atlas-syntax-keyword);
   --cm-string: var(--atlas-syntax-string);
@@ -150,16 +148,7 @@
   --cm-constant: var(--atlas-syntax-constant);
   --cm-regexp: var(--atlas-syntax-regexp);
   --cm-property: var(--atlas-syntax-property);
-  --cm-meta: var(--atlas-syntax-meta);
-
-  --comms-outer: var(--atlas-comms-outer-background);
-  --comms-surface: var(--atlas-comms-surface-background);
-  --comms-mention-bg: var(--atlas-comms-mention-background);
-  --comms-mention-text: var(--atlas-comms-mention-foreground);
-  --comms-mention-other-bg: var(--atlas-comms-other-mention-background);
-  --comms-mention-other-text: var(--atlas-comms-other-mention-foreground);
-  --comms-unread: var(--atlas-comms-unread-foreground);
-  --comms-unread-deep: var(--atlas-comms-unread-strong-foreground);
+  --cm-meta: var(--atlas-syntax-attribute);
 
   --agent-claude-chip: var(--atlas-agent-claude-foreground);
   --agent-claude-chip-bg: var(--atlas-agent-claude-background);
@@ -262,8 +251,6 @@
   --duration-fast: 120ms;
   --duration-base: 180ms;
   --duration-slow: 260ms;
-
-  --atlas-ants-color: var(--atlas-atlas-ants);
 
   /* Z-index layers (decision 28). Every floating surface names a layer; nothing
      writes a number. `popover` sits ABOVE `modal` so a menu opened inside a

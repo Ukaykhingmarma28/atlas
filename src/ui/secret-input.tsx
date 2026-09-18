@@ -55,7 +55,7 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
     <HintGroup>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-md border border-border-default bg-bg-elevated",
+          "group flex items-center gap-1 rounded-md border border-border bg-bg-elevated",
           "px-2 h-8 transition-colors focus-within:border-primary",
           className,
         )}

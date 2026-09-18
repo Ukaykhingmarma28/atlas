@@ -74,8 +74,8 @@ function buildChartPalette(): ChartPalette {
 
   return {
     axes: {
-      grid: themeColor("border.default"),
-      axis: themeColor("text.muted"),
+      grid: themeBase("border"),
+      axis: themeBase("muted-foreground"),
       tickFont: 11,
       cursor: themeColor("element.hover"),
     },

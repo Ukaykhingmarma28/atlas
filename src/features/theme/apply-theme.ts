@@ -30,7 +30,7 @@ function cacheLaunchColors(resolved: ResolvedTheme): void {
         card: resolved.base.card,
         line: resolved.keys["border.subtle"],
         skeleton: resolved.keys["element.selected"],
-        text: resolved.keys["text.muted"],
+        text: resolved.base["muted-foreground"],
       }),
     );
   } catch {

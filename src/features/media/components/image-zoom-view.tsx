@@ -130,7 +130,7 @@ export function ImageZoomView({ src, alt, fill, checkerboard }: ImageZoomViewPro
 
       {/* Zoom controls — at the bottom of the view, so tooltips open upward. */}
       <HintGroup side="top">
-        <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1 py-0.5 shadow-[var(--shadow-overlay)]">
+        <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-1 py-0.5 shadow-[var(--shadow-overlay)]">
           <HintItem label="Zoom out">
             <button
               type="button"

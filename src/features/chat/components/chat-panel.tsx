@@ -1487,7 +1487,7 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
     !agentCatalogEntry(pluginId)?.installed;
   if (removed) return null;
   return (
-    <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[12px]">
+    <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-[12px]">
       <span className="select-text text-[var(--text-secondary)]">
         {bindError
           ? `The agent exited while starting (${bindError.slice(0, 160)}). Your message is back in the queue — restart to try again.`
@@ -1588,7 +1588,7 @@ const ChatComposer = memo(function ChatComposer({
                   style={{ backdropFilter: "blur(4px)" }}
                   className={cn(
                     "atlas-pill-in inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full",
-                    "border border-[var(--border-default)] bg-[var(--bg-elevated)]",
+                    "border border-[var(--border)] bg-[var(--bg-elevated)]",
                     "text-[11px] leading-none font-medium text-[var(--text-secondary)]",
                     "shadow-[0_2px_8px_rgba(0,0,0,0.35)] cursor-pointer transition-colors",
                     "hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
@@ -1674,7 +1674,7 @@ function WelcomeState() {
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text } }))
               }
-              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)] cursor-pointer"
+              className="group relative flex flex-col gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)] hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.7)] cursor-pointer"
             >
               <div className="flex items-center justify-between">
                 <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)] transition-colors group-hover:text-[var(--text-primary)]">

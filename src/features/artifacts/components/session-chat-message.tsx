@@ -210,7 +210,7 @@ function Sources({ sources }: { sources: SourceRef[] }) {
                 onClick={() => jumpToSource(source)}
                 disabled={!jumpable}
                 className={cn(
-                  "flex h-[22px] max-w-full items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-raised)] px-2 text-[10.5px] transition-colors",
+                  "flex h-[22px] max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2 text-[10.5px] transition-colors",
                   jumpable
                     ? "cursor-pointer text-[var(--text-tertiary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
                     : "cursor-default text-[var(--text-ghost)]",

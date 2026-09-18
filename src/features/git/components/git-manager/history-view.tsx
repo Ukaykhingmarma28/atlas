@@ -35,7 +35,7 @@ export function HistoryView() {
   if (selected) {
     return (
       <div className="h-full flex flex-col">
-        <div className="shrink-0 border-b border-border-default">
+        <div className="shrink-0 border-b border-border">
           <HintGroup>
             <div className="flex items-center gap-2 px-2 h-[30px]">
               <HintItem label="Back to history">
@@ -97,7 +97,7 @@ export function HistoryView() {
                 onChange={(e) => setTagName(e.target.value)}
                 autoFocus
                 placeholder="tag name → Enter"
-                className="w-full h-7 rounded border border-border-default bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-focus"
+                className="w-full h-7 rounded border border-border bg-bg-input px-2 text-[11px] font-mono text-text-primary outline-none focus:border-border-strong"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && tagName.trim()) {
                     void run(() => actions.createTag(tagName.trim(), selected.hash));
@@ -154,7 +154,7 @@ export function HistoryView() {
                   e.stopPropagation();
                   void run(() => actions.undoCommit());
                 }}
-                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                className="absolute right-2 top-1.5 opacity-0 group-hover:opacity-100 px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                 title="Undo this commit — changes return to the staged area (blocked once pushed)"
               >
                 Undo
@@ -199,7 +199,7 @@ function ResetMenu({ onReset }: { onReset: (mode: "soft" | "mixed" | "hard") => 
       </HintItem>
       <Popover.Portal>
         <Popover.Positioner style={{ zIndex: 99999 }} side="bottom" align="end" sideOffset={4}>
-          <Popover.Popup className="w-[200px] rounded-lg border border-border-default bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
+          <Popover.Popup className="w-[200px] rounded-lg border border-border bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1">
             <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-text-tertiary">
               Reset to here
             </div>
@@ -281,7 +281,7 @@ function CommitSessions({ sha }: { sha: string }) {
         <button
           key={s.sessionId}
           onClick={() => open(s.sessionId)}
-          className="mt-1 w-full rounded border border-border-default bg-bg-raised px-2 py-1.5 text-left hover:bg-bg-hover group"
+          className="mt-1 w-full rounded border border-border bg-bg-raised px-2 py-1.5 text-left hover:bg-bg-hover group"
           title="Open this Session in the Timeline"
         >
           <div className="flex items-start gap-1.5">

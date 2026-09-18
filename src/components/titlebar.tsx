@@ -148,7 +148,7 @@ export function Titlebar() {
       onMouseDown={handleDrag}
       onDoubleClick={handleDoubleClick}
       className={cn(
-        "relative z-50 flex h-[30px] select-none items-center bg-[var(--bg-base)] border-b border-border-default",
+        "relative z-50 flex h-[30px] select-none items-center bg-[var(--bg-base)] border-b border-border",
         isWindows ? "pr-0" : "pr-3",
         isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
       )}

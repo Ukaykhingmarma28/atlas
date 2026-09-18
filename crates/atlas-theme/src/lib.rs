@@ -943,7 +943,9 @@ mod tests {
     #[test]
     fn every_theme_key_carries_a_description() {
         let docs = theme_key_docs().collect::<Vec<_>>();
-        assert!(docs.len() > 100, "{} keys", docs.len());
+        // Floor guard only — the count is `keys.toml`'s to know, and the
+        // 2026-09-18 key-set audit changed it once already.
+        assert!(docs.len() > 50, "{} keys", docs.len());
         for (key, description) in &docs {
             assert!(!key.is_empty() && !key.contains(' '), "key {key:?}");
             assert!(description.ends_with('.'), "{key} description: {description:?}");

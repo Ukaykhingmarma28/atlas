@@ -38,12 +38,12 @@ function badgeClass(kind: RefBadge["kind"], isCurrent: boolean) {
     return "bg-[var(--muted-foreground)]/15 text-[var(--muted-foreground)] border-[var(--muted-foreground)]/30";
   }
   if (kind === "remote") {
-    return "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border-default)]";
+    return "bg-[var(--bg-elevated)] text-[var(--text-tertiary)] border-[var(--border)]";
   }
   if (isCurrent) {
     return "bg-[var(--primary)]/20 text-[var(--primary)] border-[var(--primary)]/40";
   }
-  return "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-default)]";
+  return "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border)]";
 }
 
 export const CommitRowView = memo(function CommitRowView({

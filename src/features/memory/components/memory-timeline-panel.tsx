@@ -43,11 +43,11 @@ export function MemoryTimelinePanel({
       <aside
         className={cn(
           "absolute right-0 top-0 bottom-0 z-30 w-[330px] flex flex-col",
-          "border-l border-[var(--border-default)] bg-[var(--bg-elevated)]/75 backdrop-blur-2xl",
+          "border-l border-[var(--border)] bg-[var(--bg-elevated)]/75 backdrop-blur-2xl",
           "shadow-[var(--shadow-overlay)] animate-slide-in-right",
         )}
       >
-        <div className="flex items-start gap-2 px-3 h-[40px] shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex items-start gap-2 px-3 h-[40px] shrink-0 border-b border-[var(--border)]">
           <div className="flex-1 min-w-0 pt-1">
             <div className="text-[11px] font-medium text-[var(--text-primary)] truncate">
               {title}

@@ -49,7 +49,7 @@ export function SvgViewer({ filePath }: SvgViewerProps) {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center gap-2 px-3 h-[32px] border-b border-[var(--border-default)] shrink-0">
+      <div className="flex items-center gap-2 px-3 h-[32px] border-b border-[var(--border)] shrink-0">
         <span className="flex-1 min-w-0 truncate text-[11px] font-mono text-[var(--text-tertiary)]">
           {filePath}
         </span>

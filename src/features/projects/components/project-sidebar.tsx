@@ -255,7 +255,7 @@ const ProjectRow = memo(function ProjectRow({
                     // commitRename → edit mode exits. `finalFocus={false}`
                     // leaves focus alone so the input keeps it.
                     finalFocus={false}
-                    className="min-w-[148px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
+                    className="min-w-[148px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]"
                   >
                     <DropdownMenu.Item
                       onClick={() => beginRenameProject(ws.id)}
@@ -274,7 +274,7 @@ const ProjectRow = memo(function ProjectRow({
                     >
                       <Copy size={11} /> Copy path
                     </DropdownMenu.Item>
-                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
                     <DropdownMenu.SubmenuRoot>
                       <DropdownMenu.SubmenuTrigger className="flex items-center justify-between px-2.5 h-6 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default">
                         Move to group <ChevronRight size={11} />
@@ -285,7 +285,7 @@ const ProjectRow = memo(function ProjectRow({
                           side="right"
                           align="start"
                         >
-                          <DropdownMenu.Popup className="min-w-[140px] rounded-md border border-[var(--border-default)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
+                          <DropdownMenu.Popup className="min-w-[140px] rounded-md border border-[var(--border)] bg-black py-0.5 shadow-[var(--shadow-overlay)] text-[11px] text-[var(--text-secondary)]">
                             {groups.map((g) => (
                               <DropdownMenu.Item
                                 key={g.id}
@@ -306,7 +306,7 @@ const ProjectRow = memo(function ProjectRow({
                             </DropdownMenu.Item>
                             {ws.groupId && (
                               <>
-                                <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                                <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
                                 <DropdownMenu.Item
                                   onClick={() => setGroup(ws.id, null)}
                                   className="px-2.5 h-6 flex items-center outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-default"
@@ -319,7 +319,7 @@ const ProjectRow = memo(function ProjectRow({
                         </DropdownMenu.Positioner>
                       </DropdownMenu.Portal>
                     </DropdownMenu.SubmenuRoot>
-                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border-default)]" />
+                    <DropdownMenu.Separator className="my-0.5 h-px bg-[var(--border)]" />
                     <DropdownMenu.Item
                       onClick={() => void closeProject(ws.id)}
                       className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--bg-hover)] hover:text-[var(--status-error,#f44)] cursor-default"
@@ -966,7 +966,7 @@ export function ProjectSidebar() {
           one object: rows disappear under its rounded top edge rather than
           sliding past a straight seam. */}
       <div
-        className="relative mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--comms-surface)]"
+        className="relative mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--background)]"
         style={{
           // Same reasoning as CommsSurface: on a near-black panel the shadow
           // has almost nothing to darken, so the ring carries the edge.
@@ -990,7 +990,7 @@ export function ProjectSidebar() {
           className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-6 rounded-t-[10px]"
           style={{
             background:
-              "linear-gradient(to bottom, var(--comms-surface) 20%, color-mix(in srgb, var(--comms-surface) 55%, transparent) 60%, transparent)",
+              "linear-gradient(to bottom, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
           }}
         />
         <div
@@ -998,7 +998,7 @@ export function ProjectSidebar() {
           className="pointer-events-none absolute inset-x-0 bottom-[30px] z-[2] h-6"
           style={{
             background:
-              "linear-gradient(to top, var(--comms-surface) 20%, color-mix(in srgb, var(--comms-surface) 55%, transparent) 60%, transparent)",
+              "linear-gradient(to top, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
           }}
         />
         <RailScroll

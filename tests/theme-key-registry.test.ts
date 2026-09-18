@@ -13,11 +13,13 @@ import {
 /**
  * The theme-key registry has one source: `crates/atlas-theme/keys.toml`.
  *
- * The same 135 facts used to live in five files — the TS registry, the Rust key
+ * The same facts used to live in five files — the TS registry, the Rust key
  * list, the JSON Schema, this repo's reference doc and the public one — each
  * hand-edited. Nothing compiled differently when they disagreed, so they did:
  * a "134 keys" count that was really 135, and a scrollbar rule documented as
  * "alpha/lighten" that is plain alpha, both shipped and both survived review.
+ * The count is deliberately not restated here either: it is `keys.toml`'s to
+ * know, and the 2026-09-18 audit changed it once already.
  *
  * So this suite is the whole point of the generator. `bun run theme:keys`
  * rewrites every derived file; this fails the build the moment one of them
@@ -36,7 +38,7 @@ const read = (relative: string) => readFileSync(path.join(REPO_ROOT, relative), 
 describe("the generated theme-key registry", () => {
   it("has a source with every key described", () => {
     // Floor guard: an empty parse would make every assertion below vacuous.
-    expect(source.keys.length).toBeGreaterThan(100);
+    expect(source.keys.length).toBeGreaterThan(50);
     for (const key of source.keys) {
       expect(key.description, key.name).toMatch(/\.$/);
       expect(key.palette ?? key.base, `${key.name} has no derivation source`).toBeTruthy();
@@ -118,7 +120,9 @@ describe("the generated theme-key registry", () => {
       expect(schemaKeys.properties[entry.name]).toBeUndefined();
       // The transform is the point: an untransformed derivation is an alias.
       expect(entry.op, entry.name).toBeTruthy();
-      expect(keyNames.has(entry.from), `${entry.name} derives from no key`).toBe(true);
+      expect(Boolean(entry.from) !== Boolean(entry.base), entry.name).toBe(true);
+      if (entry.from)
+        expect(keyNames.has(entry.from), `${entry.name} derives from no key`).toBe(true);
       expect(read(OUTPUTS.registry)).toContain(`derive("${entry.name}", {`);
     }
   });

@@ -29,7 +29,7 @@ const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 /** The shared popup surface, so Content and SubContent cannot drift apart. */
 const POPUP = [
   "min-w-[11rem] overflow-hidden rounded-lg p-0.5",
-  "bg-bg-overlay border border-border-default text-text-primary shadow-md",
+  "bg-bg-overlay border border-border text-text-primary shadow-md",
   "origin-[var(--transform-origin)] animate-scale-in",
 ];
 
@@ -213,7 +213,7 @@ function ContextMenuSeparator({
   return (
     <ContextMenuPrimitive.Separator
       data-slot="context-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-border-default", className)}
+      className={cn("-mx-1 my-1 h-px bg-border", className)}
       {...props}
     />
   );

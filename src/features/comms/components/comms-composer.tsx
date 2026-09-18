@@ -415,7 +415,7 @@ export function CommsComposer({
               ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40"
               : overLimit
                 ? "border-error"
-                : "border-border-default",
+                : "border-border",
           )}
         >
           {isDropTarget && (
@@ -437,7 +437,7 @@ export function CommsComposer({
           {/* Inner input surface. The disabled dimming, when it exists, belongs
             HERE and not on the shell — on the shell it fades the toolbar and
             every popover anchored to it. */}
-          <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--primary)]/10">
+          <div className="relative m-1 rounded-xl border border-border bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-strong)_50%,var(--border))] focus-within:ring-1 focus-within:ring-[var(--primary)]/10">
             {/* EVERY vertical value here is literal px, and that is the whole
               point. Atlas's UI-scale shrinks the root font-size, so a rem-based
               `py-2` renders ~6px rather than 8px while `min-h-[34px]` stays a
@@ -480,7 +480,7 @@ export function CommsComposer({
                 className={cn(
                   "flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
                   canSend
-                    ? "text-text-primary hover:border-border-default hover:bg-bg-hover cursor-pointer"
+                    ? "text-text-primary hover:border-border hover:bg-bg-hover cursor-pointer"
                     : "text-text-tertiary cursor-not-allowed",
                 )}
               >
@@ -503,7 +503,7 @@ export function CommsComposer({
                   disabled={atLimit}
                   onClick={onPickFiles}
                   className={cn(
-                    "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-secondary transition-colors",
+                    "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border bg-bg-elevated text-text-secondary transition-colors",
                     atLimit
                       ? "cursor-not-allowed opacity-50"
                       : "hover:bg-bg-hover hover:text-text-primary cursor-pointer",
@@ -594,7 +594,7 @@ export function CommsComposer({
 }
 
 function Divider() {
-  return <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border-default" />;
+  return <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />;
 }
 
 /**
@@ -644,9 +644,7 @@ function AttachmentChip({
     <div
       className={cn(
         "group/chip relative flex h-[26px] max-w-[220px] items-center gap-1.5 overflow-hidden rounded-md border px-2 text-[11px]",
-        failed
-          ? "border-error text-error"
-          : "border-border-default bg-bg-elevated text-text-secondary",
+        failed ? "border-error text-error" : "border-border bg-bg-elevated text-text-secondary",
       )}
     >
       {/* Progress paints behind the label rather than as a separate bar — the
@@ -654,7 +652,7 @@ function AttachmentChip({
       {attachment.state === "uploading" && (
         <span
           aria-hidden
-          className="absolute inset-y-0 left-0 bg-[var(--comms-unread)]/20 transition-[width] duration-200"
+          className="absolute inset-y-0 left-0 bg-[var(--status-success)]/20 transition-[width] duration-200"
           style={{ width: `${pct}%` }}
         />
       )}

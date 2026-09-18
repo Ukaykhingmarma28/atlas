@@ -83,7 +83,7 @@ export function ModelsManager() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="shrink-0 border-b border-border-default px-4 py-2.5 flex items-center gap-2">
+      <div className="shrink-0 border-b border-border px-4 py-2.5 flex items-center gap-2">
         <div className="relative w-[240px]">
           <Search
             size={13}
@@ -100,7 +100,7 @@ export function ModelsManager() {
             }}
             placeholder="Filter models…"
             className={cn(
-              "w-full h-7 pl-8 pr-2.5 rounded-md bg-bg-elevated border border-border-default",
+              "w-full h-7 pl-8 pr-2.5 rounded-md bg-bg-elevated border border-border",
               "text-[11px] text-text-primary placeholder:text-text-tertiary",
               "focus:outline-none focus:border-border-strong",
             )}
@@ -115,7 +115,7 @@ export function ModelsManager() {
         ) : (
           <div className="min-w-[560px]">
             {/* header */}
-            <div className="sticky top-0 z-10 flex items-center gap-3 px-4 h-8 bg-bg-primary border-b border-border-default text-[10px] uppercase tracking-wider text-text-tertiary">
+            <div className="sticky top-0 z-10 flex items-center gap-3 px-4 h-8 bg-bg-primary border-b border-border text-[10px] uppercase tracking-wider text-text-tertiary">
               <div className={COL.name}>Model</div>
               <div className={COL.size}>Size</div>
               <div className={COL.dim}>Dim</div>
@@ -160,7 +160,7 @@ export function ModelsManager() {
                       <button
                         type="button"
                         onClick={() => void doDownload(m)}
-                        className="inline-flex items-center gap-1 h-6 rounded-md px-2 text-[10px] font-medium border border-border-default bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors"
+                        className="inline-flex items-center gap-1 h-6 rounded-md px-2 text-[10px] font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors"
                       >
                         <Download size={11} /> Download
                       </button>
@@ -189,7 +189,7 @@ export function ModelsManager() {
                             : "Download this model first"
                         }
                         onClick={() => void doUse(m)}
-                        className="h-6 rounded-md px-2 text-[10px] font-medium border border-border-default bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="h-6 rounded-md px-2 text-[10px] font-medium border border-border bg-bg-elevated text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {busy ? <Loader2 size={11} className="animate-spin" /> : "Use"}
                       </button>
@@ -264,7 +264,7 @@ function ConfirmReindex({
       onClick={onCancel}
     >
       <div
-        className="w-[380px] rounded-lg border border-border-default bg-bg-primary p-4 shadow-xl"
+        className="w-[380px] rounded-lg border border-border bg-bg-primary p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-2.5">
@@ -282,7 +282,7 @@ function ConfirmReindex({
           <button
             type="button"
             onClick={onCancel}
-            className="h-7 rounded-md px-3 text-[11px] font-medium border border-border-default bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
+            className="h-7 rounded-md px-3 text-[11px] font-medium border border-border bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
           >
             Cancel
           </button>

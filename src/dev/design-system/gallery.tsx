@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronRight, Copy, Plus, Search, Settings, Trash2, X } from "lucide-react";
-import { describeDerivation, THEME_KEY_REGISTRY } from "@/features/theme/theme-key-registry";
+import {
+  describeDerivation,
+  DERIVED_VAR_REGISTRY,
+  THEME_KEY_REGISTRY,
+} from "@/features/theme/theme-key-registry";
 import { useThemeStore } from "@/features/theme/stores/theme-store";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import { Badge } from "@/ui/badge";
@@ -152,7 +156,7 @@ function Swatch({
   return (
     <div className="flex items-center gap-2 py-1">
       <div
-        className="size-control-md shrink-0 rounded border border-border-default"
+        className="size-control-md shrink-0 rounded border border-border"
         style={{ background: `var(${cssVar})` }}
       />
       <div className="min-w-0">
@@ -179,7 +183,7 @@ function Swatch({
  */
 function UtilityCheck() {
   return (
-    <div className="mt-4 border-t border-border-default pt-3">
+    <div className="mt-4 border-t border-border pt-3">
       <div className="eyebrow mb-2">Tailwind utilities</div>
       <div className="flex gap-1">
         <div className="h-control-sm flex-1 rounded bg-chart-1" title="bg-chart-1" />
@@ -206,6 +210,7 @@ function UtilityCheck() {
 const COLOUR_VARS = [
   ...BASE_COLOR_TOKENS.map((token) => `--${token}`),
   ...THEME_KEY_REGISTRY.map((definition) => definition.cssVar as string),
+  ...DERIVED_VAR_REGISTRY.map((definition) => definition.cssVar as string),
 ];
 
 function ColourSections() {
@@ -253,6 +258,24 @@ function ColourSections() {
           </div>
         </Section>
       ))}
+
+      <Section
+        title="Derived variables"
+        decision={`${DERIVED_VAR_REGISTRY.length} variables`}
+        note="Written like a theme key, but no theme may set one: each is a pure transform of a key or a base token, so an author steers it through that."
+      >
+        <div className="grid grid-cols-2 gap-x-6 md:grid-cols-3">
+          {DERIVED_VAR_REGISTRY.map((definition) => (
+            <Swatch
+              key={definition.name}
+              cssVar={definition.cssVar}
+              label={definition.name}
+              value={values[definition.cssVar]}
+              derivation={definition.from ? definition.from : `base.${definition.base}`}
+            />
+          ))}
+        </div>
+      </Section>
     </>
   );
 }
@@ -321,10 +344,7 @@ function ControlHeightSection() {
         <Row key={height.name} name={height.utility} value={values[height.cssVar]}>
           <div className="flex items-center gap-3">
             <div
-              className={cn(
-                height.utility,
-                "w-40 rounded border border-border-default bg-bg-elevated",
-              )}
+              className={cn(height.utility, "w-40 rounded border border-border bg-bg-elevated")}
             />
             <span className="caption">{height.use}</span>
           </div>
@@ -333,10 +353,7 @@ function ControlHeightSection() {
       {LAYOUT_CONSTANTS.map((constant) => (
         <Row key={constant.name} name={constant.utility} value={values[constant.cssVar]}>
           <div
-            className={cn(
-              constant.utility,
-              "w-40 rounded border border-dashed border-border-default",
-            )}
+            className={cn(constant.utility, "w-40 rounded border border-dashed border-border")}
           />
         </Row>
       ))}
@@ -356,10 +373,7 @@ function RadiusSection() {
         {RADII.map((radius) => (
           <div key={radius.name} className="w-44">
             <div
-              className={cn(
-                radius.name,
-                "mb-2 h-16 w-full border border-border-default bg-bg-elevated",
-              )}
+              className={cn(radius.name, "mb-2 h-16 w-full border border-border bg-bg-elevated")}
             />
             <div className="code text-text-secondary">{radius.name}</div>
             <div className="caption">{values[radius.cssVar] || "—"}</div>
@@ -403,7 +417,7 @@ function ElevationSection() {
           <div className="caption">The top edge, from the `element.highlight` key.</div>
         </div>
         <div className="w-56">
-          <div className="backdrop-blur-glass mb-2 flex h-20 items-center justify-center rounded-md border border-border-default">
+          <div className="backdrop-blur-glass mb-2 flex h-20 items-center justify-center rounded-md border border-border">
             <span className="code text-text-secondary">backdrop-blur-glass</span>
           </div>
           <div className="caption">The one glass blur.</div>
@@ -438,7 +452,7 @@ function ZIndexSection() {
               key={layer.name}
               className={cn(
                 layer.utility,
-                "absolute flex h-8 w-40 items-center rounded-md border border-border-default bg-bg-elevated px-2 shadow-md",
+                "absolute flex h-8 w-40 items-center rounded-md border border-border bg-bg-elevated px-2 shadow-md",
               )}
               style={{ top: i * 14, left: i * 12 }}
             >
@@ -538,7 +552,7 @@ function StateSection() {
         <Input size="sm" placeholder="Focusable field" className="w-48" />
         <button
           type="button"
-          className="focus-ring-none rounded border border-border-default px-2 py-1 text-xs text-text-secondary"
+          className="focus-ring-none rounded border border-border px-2 py-1 text-xs text-text-secondary"
         >
           focus-ring-none (opts out)
         </button>
@@ -861,7 +875,7 @@ function OverlaySection() {
           <ContextMenu>
             <ContextMenuTrigger
               render={
-                <div className="flex h-24 w-full max-w-md items-center justify-center rounded-md border border-dashed border-border-default bg-bg-surface">
+                <div className="flex h-24 w-full max-w-md items-center justify-center rounded-md border border-dashed border-border bg-bg-surface">
                   <span className="caption">Right-click anywhere in here</span>
                 </div>
               }
@@ -997,7 +1011,7 @@ function Header() {
   };
 
   return (
-    <header className="z-titlebar sticky top-0 -mx-8 mb-2 flex items-center gap-3 border-b border-border-default bg-bg-base px-8 py-3 backdrop-blur-glass">
+    <header className="z-titlebar sticky top-0 -mx-8 mb-2 flex items-center gap-3 border-b border-border bg-bg-base px-8 py-3 backdrop-blur-glass">
       <div>
         <div className="heading">Atlas design system</div>
         <div className="caption">
@@ -1008,7 +1022,7 @@ function Header() {
       <label className="label flex items-center gap-2">
         Theme
         <select
-          className="h-control-md rounded border border-border-default bg-bg-input px-2 text-xs text-text-primary"
+          className="h-control-md rounded border border-border bg-bg-input px-2 text-xs text-text-primary"
           value={themeId}
           onChange={(e) => apply(e.target.value, mode)}
         >
@@ -1023,7 +1037,7 @@ function Header() {
       <label className="label flex items-center gap-2">
         Mode
         <select
-          className="h-control-md rounded border border-border-default bg-bg-input px-2 text-xs text-text-primary"
+          className="h-control-md rounded border border-border bg-bg-input px-2 text-xs text-text-primary"
           value={mode}
           onChange={(e) => apply(themeId, e.target.value as ThemeMode)}
         >

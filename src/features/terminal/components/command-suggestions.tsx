@@ -73,7 +73,7 @@ export function CommandSuggestions({
       className={cn(
         "atlas-cmd-suggest",
         "rounded-md overflow-hidden flex flex-col",
-        "bg-[var(--bg-overlay)] border border-[var(--border-default)]",
+        "bg-[var(--bg-overlay)] border border-[var(--border)]",
         "shadow-[var(--shadow-overlay)]",
       )}
       onMouseDown={(e) => e.preventDefault()}
@@ -114,7 +114,7 @@ export function CommandSuggestions({
           );
         })}
       </div>
-      <div className="border-t border-[var(--border-default)] px-2.5 h-[22px] flex items-center justify-end gap-2 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] shrink-0">
+      <div className="border-t border-[var(--border)] px-2.5 h-[22px] flex items-center justify-end gap-2 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] shrink-0">
         <span>⇥ ↑↓ cycle · ↵ run · ⎋</span>
       </div>
     </div>,

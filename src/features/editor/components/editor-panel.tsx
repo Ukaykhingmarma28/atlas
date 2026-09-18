@@ -443,7 +443,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     <div style={{ background: "#000000", height: containerHeight || "100%", overflow: "hidden" }}>
       {/* Breadcrumb toolbar */}
       <div
-        className="flex items-center px-3 border-b border-border-default bg-bg-primary overflow-hidden"
+        className="flex items-center px-3 border-b border-border bg-bg-primary overflow-hidden"
         style={{ height: TOOLBAR_HEIGHT }}
       >
         <Breadcrumbs filePath={path} projectPath={projectPath} />
@@ -459,13 +459,13 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
               type="button"
               onClick={() => void forceReload()}
               title="This file changed on disk. Reload discards your unsaved edits."
-              className="inline-flex items-center gap-1 h-[20px] px-2 rounded-full border border-border-default bg-bg-elevated text-[10px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+              className="inline-flex items-center gap-1 h-[20px] px-2 rounded-full border border-border bg-bg-elevated text-[10px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
             >
               <RefreshCw size={10} /> Disk changed · Reload
             </button>
           )}
           {isMarkdownFile && (
-            <div className="inline-flex items-center h-[20px] rounded-full border border-border-default bg-bg-elevated p-[2px] text-[10px] font-medium shrink-0">
+            <div className="inline-flex items-center h-[20px] rounded-full border border-border bg-bg-elevated p-[2px] text-[10px] font-medium shrink-0">
               <button
                 type="button"
                 onClick={() => setRenderMode("editor")}

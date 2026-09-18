@@ -97,7 +97,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       {/* Settings nav — collapses to an icon rail (labels become tooltips). */}
       <div
         className={cn(
-          "shrink-0 border-r border-border-default bg-bg-primary pt-2 flex flex-col",
+          "shrink-0 border-r border-border bg-bg-primary pt-2 flex flex-col",
           navCollapsed ? "w-[44px]" : "w-[180px]",
         )}
       >
@@ -134,7 +134,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
           <button
             onClick={toggleNav}
             className={cn(
-              "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border-default text-[11px] font-medium text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
+              "mt-1 flex items-center h-[30px] whitespace-nowrap border-t border-border text-[11px] font-medium text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
               navCollapsed ? "justify-center px-0" : "gap-2 px-4",
             )}
           >
@@ -293,7 +293,7 @@ function GeneralSettings() {
               type="button"
               onClick={() => void openConfigFile()}
               className={cn(
-                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
                 "text-text-primary hover:bg-bg-hover transition-colors",
               )}
             >
@@ -304,7 +304,7 @@ function GeneralSettings() {
               onClick={() => void recreateConfigDefaults()}
               disabled={resettingConfig}
               className={cn(
-                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+                "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
                 "text-text-primary hover:bg-bg-hover transition-colors",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
@@ -351,7 +351,7 @@ function GeneralSettings() {
           value={String(settings.terminalNotifyMinDurationMs)}
           disabled={!settings.terminalNotifications}
           onChange={(e) => updateSettings({ terminalNotifyMinDurationMs: Number(e.target.value) })}
-          className="h-7 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-40"
+          className="h-7 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-40"
         >
           <option value="5000">5 seconds</option>
           <option value="10000">10 seconds</option>
@@ -469,7 +469,7 @@ function GeneralSettings() {
           type="button"
           onClick={() => useFeedbackStore.getState().actions.openPanel("settings")}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
             "text-text-primary hover:bg-bg-hover transition-colors",
           )}
         >
@@ -494,7 +494,7 @@ function GeneralSettings() {
           onClick={() => void installCli()}
           disabled={installing}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
             "text-text-primary hover:bg-bg-hover transition-colors",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
@@ -511,7 +511,7 @@ function GeneralSettings() {
           onClick={() => void updatePricing()}
           disabled={pricingLoading}
           className={cn(
-            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+            "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
             "text-text-primary hover:bg-bg-hover transition-colors",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
@@ -536,7 +536,7 @@ function AppearanceSettings() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* One theme controls the interface, editor, terminal, diffs, and syntax. */}
-      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+      <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
         <span className="px-2.5 text-[11px] font-medium text-text-primary">Theme</span>
 
         {/* Interface zoom — right-aligned control (like Skills' scope control). */}
@@ -547,7 +547,7 @@ function AppearanceSettings() {
               onClick={() => setScale(settings.uiScale - SCALE_STEP)}
               disabled={settings.uiScale <= MIN_SCALE}
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-text-secondary",
                 "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
@@ -570,7 +570,7 @@ function AppearanceSettings() {
               onClick={() => setScale(settings.uiScale + SCALE_STEP)}
               disabled={settings.uiScale >= MAX_SCALE}
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border border-border-default text-text-secondary",
+                "flex h-6 w-6 items-center justify-center rounded-full border border-border text-text-secondary",
                 "hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
@@ -644,7 +644,7 @@ function UpdatesSettings() {
       onClick={() => void checkNow()}
       disabled={checking}
       className={cn(
-        "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border-default bg-bg-elevated",
+        "h-7 rounded-md px-2.5 text-[11px] font-medium border border-border bg-bg-elevated",
         "text-text-primary hover:bg-bg-hover transition-colors",
         "disabled:opacity-50 disabled:cursor-not-allowed",
       )}
@@ -692,7 +692,7 @@ function AboutSettings() {
   return (
     <div className="space-y-4">
       <SectionTitle title="About" subtitle="Atlas IDE" />
-      <div className="rounded-lg border border-border-default bg-bg-secondary p-4 space-y-2">
+      <div className="rounded-lg border border-border bg-bg-secondary p-4 space-y-2">
         <div className="flex items-center gap-2">
           <AtlasIcon size={40} className="rounded-xl" />
           <div>

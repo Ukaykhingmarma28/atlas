@@ -206,7 +206,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
         className={cn(
           "atlas-slash-picker",
           "rounded-lg overflow-hidden",
-          "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
+          "bg-[var(--bg-secondary)] border border-[var(--border)]",
           "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
           "flex flex-col",
         )}
@@ -253,7 +253,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
                   </span>
                   {needsArgs && (
                     <span
-                      className="shrink-0 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] border border-[var(--border-default)] rounded-full px-1.5 py-px"
+                      className="shrink-0 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] border border-[var(--border)] rounded-full px-1.5 py-px"
                       title="This command takes arguments — type them after the command, then press Enter."
                     >
                       {argsHint(cmd)}
@@ -275,7 +275,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
             </div>
           )}
         </div>
-        <div className="border-t border-[var(--border-default)] px-3 h-[24px] flex items-center justify-between text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider shrink-0">
+        <div className="border-t border-[var(--border)] px-3 h-[24px] flex items-center justify-between text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider shrink-0">
           <span>{footerLabel ?? "Commands"}</span>
           <span>↑↓ · ↵ run · ⎋ close</span>
         </div>

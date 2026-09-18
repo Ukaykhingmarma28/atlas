@@ -87,10 +87,10 @@ export function ThreadHistoryView({
           className={cn(
             "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
+            "border border-border bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
           )}
         >
-          <div className="flex items-center gap-3 border-b border-border-default px-4 py-2.5">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
             <Dialog.Title className="text-[13px] font-semibold text-text-primary">
               History
             </Dialog.Title>
@@ -126,7 +126,7 @@ export function ThreadHistoryView({
             </Dialog.Close>
           </div>
 
-          <div className="flex items-center gap-1.5 border-b border-border-default px-3 h-[32px] shrink-0">
+          <div className="flex items-center gap-1.5 border-b border-border px-3 h-[32px] shrink-0">
             <Search size={11} className="shrink-0 text-text-tertiary" />
             <input
               value={search}

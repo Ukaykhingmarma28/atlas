@@ -116,7 +116,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-default px-1.5">
+      <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border px-1.5">
         <span className="flex min-w-0 items-center gap-1 pl-1 text-[11px] font-medium text-text-secondary">
           <Hash size={11} className="shrink-0 text-text-tertiary" />
           <span className="truncate">{conv.name ?? "conversation"}</span>
@@ -156,7 +156,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
                       <CommsAvatar
                         member={members.get(p.userId) ?? null}
                         size={16}
-                        className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                        className="ring-2 ring-[var(--background)] rounded-full"
                       />
                     </span>
                   }
@@ -173,7 +173,7 @@ export function DraftEditor({ conv, draft }: { conv: ChatConversation; draft: Pr
                     <CommsAvatar
                       member={members.get(me) ?? null}
                       size={16}
-                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
+                      className="ring-2 ring-[var(--background)] rounded-full"
                     />
                   </span>
                 }

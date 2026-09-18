@@ -232,10 +232,10 @@ export function MemoryTimelineCalendar({
     <div ref={containerRef} className="relative flex h-full w-full">
       {/* ── Left branch list (#141414) ── */}
       <div
-        className="shrink-0 flex flex-col border-r border-[var(--border-default)]"
+        className="shrink-0 flex flex-col border-r border-[var(--border)]"
         style={{ width: GUTTER, background: PANEL }}
       >
-        <div className="flex items-center px-3 h-[32px] shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-default)]">
+        <div className="flex items-center px-3 h-[32px] shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border)]">
           Branches
         </div>
         <div className="flex-1 overflow-y-auto hide-scrollbar">
@@ -281,7 +281,7 @@ export function MemoryTimelineCalendar({
       {/* ── Week calendar ── */}
       <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-base)]">
         {/* Week nav */}
-        <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
           <Hint label="Previous week with activity">
             <button
               onClick={goPrev}
@@ -302,7 +302,7 @@ export function MemoryTimelineCalendar({
           </Hint>
           <button
             onClick={goToday}
-            className="h-6 px-2.5 rounded-md border border-[var(--border-default)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="h-6 px-2.5 rounded-md border border-[var(--border)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             Today
           </button>
@@ -312,7 +312,7 @@ export function MemoryTimelineCalendar({
         </div>
 
         {/* Day-column headers */}
-        <div className="flex shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex shrink-0 border-b border-[var(--border)]">
           {days.map((d) => {
             const isToday = d === todayStart;
             return (
@@ -369,7 +369,7 @@ export function MemoryTimelineCalendar({
                         "group w-full max-w-full min-w-0 flex items-start gap-1.5 pl-1.5 pr-1 py-1 rounded-md border text-left cursor-pointer transition-all",
                         sel
                           ? "border-[var(--text-secondary)] bg-[var(--bg-elevated-2)]"
-                          : "border-[var(--border-default)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)]",
+                          : "border-[var(--border)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)]",
                       )}
                       style={{ opacity: dimmed ? 0.28 : 1 }}
                     >

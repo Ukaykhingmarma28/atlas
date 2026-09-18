@@ -40,7 +40,7 @@ export interface GraphPalette {
 export function graphPalette(): GraphPalette {
   const primary = themeBase("foreground");
   const secondary = themeBase("secondary-foreground");
-  const muted = themeColor("text.muted");
+  const muted = themeBase("muted-foreground");
   return {
     primary: hexOf(primary),
     secondary: hexOf(secondary),
@@ -50,7 +50,7 @@ export function graphPalette(): GraphPalette {
     // edge that has to out-read an ordinary one.
     edgeDefault: hexOf(themeColor("border.strong")),
     edgeSelected: hexOf(secondary),
-    edgeDim: hexOf(themeColor("border.default")),
+    edgeDim: hexOf(themeBase("border")),
     edgeLink: hexOf(muted),
     ancestor: hexOf(themeColor("status.info.foreground")),
     labelPrimary: primary,

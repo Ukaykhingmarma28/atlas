@@ -110,7 +110,7 @@ export function CommsHome() {
       <div className="shrink-0 px-2 pt-2 pb-1">
         {/* Radius matches the surface card it sits in (CommsSurface's
             `rounded-[10px]`) — a tighter corner read as a different family. */}
-        <div className="flex items-center gap-1.5 rounded-[10px] border border-border-default bg-bg-input px-2.5 py-[5px] focus-within:border-border-focus">
+        <div className="flex items-center gap-1.5 rounded-[10px] border border-border bg-bg-input px-2.5 py-[5px] focus-within:border-border-strong">
           <Search size={12} className="shrink-0 text-text-ghost" />
           <input
             value={query}
@@ -432,9 +432,7 @@ function ContactRow({
  */
 function Badges({ unread, mentions }: { unread: number; mentions: number }) {
   if (mentions > 0) {
-    return (
-      <KeycapBadge ink="var(--comms-mention-text)" label={mentions > 9 ? "9+" : String(mentions)} />
-    );
+    return <KeycapBadge ink="var(--foreground)" label={mentions > 9 ? "9+" : String(mentions)} />;
   }
   if (unread > 0) {
     return (

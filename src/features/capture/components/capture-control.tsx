@@ -41,7 +41,7 @@ export function CaptureControl() {
           data: {},
         })
       }
-      className="group/nav flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-[12px] leading-none text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
+      className="group/nav flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-[12px] leading-none text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:ring-1 focus-visible:ring-[var(--border-strong)]"
       title="Sessions recorded across this Organisation"
     >
       <AtlasIcon

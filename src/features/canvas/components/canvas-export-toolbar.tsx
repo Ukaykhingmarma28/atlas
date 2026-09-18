@@ -61,7 +61,7 @@ export function CanvasExportToolbar() {
       {open && !busy && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute right-0 top-full z-50 mt-1 w-[140px] overflow-hidden rounded-lg border border-border-default bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-overlay)]">
+          <div className="absolute right-0 top-full z-50 mt-1 w-[140px] overflow-hidden rounded-lg border border-border bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-overlay)]">
             {FORMATS.map((f) => (
               <button
                 key={f.format}

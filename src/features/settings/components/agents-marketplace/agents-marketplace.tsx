@@ -264,7 +264,7 @@ export function AgentsMarketplace() {
   return (
     <div className="h-full flex flex-col">
       {/* Header — a single row: search + filter pills left, refresh right. */}
-      <div className="shrink-0 px-4 py-2 border-b border-[var(--border-default)]">
+      <div className="shrink-0 px-4 py-2 border-b border-[var(--border)]">
         <div className="flex items-center gap-2">
           <div className="relative flex-1 max-w-[320px]">
             <Search
@@ -275,7 +275,7 @@ export function AgentsMarketplace() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search registry"
-              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--border-focus,var(--border-default))]"
+              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-border-strong"
             />
             {query && (
               <Hint label="Clear search">
@@ -288,7 +288,7 @@ export function AgentsMarketplace() {
               </Hint>
             )}
           </div>
-          <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
             {(
               [
                 ["all", "All"],
@@ -362,7 +362,7 @@ export function AgentsMarketplace() {
                 <button
                   onClick={() => void refresh()}
                   disabled={refreshing}
-                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:cursor-default"
+                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:cursor-default"
                 >
                   <RefreshCw size={10} className={cn(refreshing && "animate-spin")} />
                   {refreshing ? "Retrying…" : "Try again"}
@@ -439,12 +439,12 @@ const AgentCard = memo(function AgentCard({
     [entry.id, entry.installed],
   );
   return (
-    <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3.5 py-3 flex flex-col gap-1.5">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3.5 py-3 flex flex-col gap-1.5">
       <div className="flex items-center gap-2.5">
         {/* Explicit color, not inherited: registry icons are monochrome
             `currentColor` art, so the tile is what decides whether they are
             legible. See ExternalAgentIcon. */}
-        <span className="flex items-center justify-center size-7 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-primary)] shrink-0">
+        <span className="flex items-center justify-center size-7 rounded-md border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-primary)] shrink-0">
           {entry.iconDataUrl ? (
             <ExternalAgentIcon dataUrl={entry.iconDataUrl} size={16} />
           ) : (
@@ -549,7 +549,7 @@ function CardAction({
   const kind = installKind(state);
   if (installing) {
     return (
-      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] tabular-nums">
+      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border)] tabular-nums">
         <Loader2 size={10} className="animate-spin" />
         {pct !== null ? `${Math.round(pct)}%` : "Installing…"}
       </span>
@@ -568,7 +568,7 @@ function CardAction({
               if (ok) onUninstall(entry);
             });
         }}
-        className="h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        className="h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
       >
         Remove
       </button>
@@ -583,7 +583,7 @@ function CardAction({
     return (
       <span className="flex items-center gap-1.5">
         <span
-          className="flex items-center gap-1 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-tertiary)] border border-[var(--border-default)]"
+          className="flex items-center gap-1 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-tertiary)] border border-[var(--border)]"
           title={
             catalog?.resolvedPath ? `Found at ${catalog.resolvedPath}` : "Found on your system"
           }
@@ -598,7 +598,7 @@ function CardAction({
               ? `Add it, running your own copy at ${catalog.resolvedPath}. Nothing is downloaded.`
               : "Add it, running the copy already on your system. Nothing is downloaded."
           }
-          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
         >
           Install
         </button>
@@ -612,8 +612,8 @@ function CardAction({
       className={cn(
         "flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium border transition-colors",
         entry.platformSupported
-          ? "text-[var(--text-primary)] border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] cursor-pointer"
-          : "text-[var(--text-tertiary)] border-[var(--border-default)] opacity-50 cursor-not-allowed",
+          ? "text-[var(--text-primary)] border-[var(--border)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] cursor-pointer"
+          : "text-[var(--text-tertiary)] border-[var(--border)] opacity-50 cursor-not-allowed",
       )}
     >
       <Download size={10} />

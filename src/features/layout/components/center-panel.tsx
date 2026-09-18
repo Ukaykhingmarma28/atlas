@@ -311,7 +311,7 @@ const ProjectColumns = memo(function ProjectColumns({
       {view.groupOrder.map((gid, i) => (
         <Fragment key={gid}>
           {i > 0 && (
-            <Separator className="w-px bg-border-default hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
+            <Separator className="w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
           )}
           {/* Sizes are percentages: v4 reads bare numbers as PIXELS and
               unit-less strings as percentages. `order` is gone — panels are
@@ -389,14 +389,14 @@ const TabColumn = memo(function TabColumn({
       {tabBarVisible && (
         <div
           className={cn(
-            "flex items-stretch h-[29px] shrink-0 bg-bg-base border-b border-border-default transition-opacity",
+            "flex items-stretch h-[29px] shrink-0 bg-bg-base border-b border-border transition-opacity",
             // When split, dim the UNFOCUSED columns' tab bars so the focused
             // one stands out (the focused pane also shows a white dot, below).
             !soloColumn && !isFocused && "opacity-45",
           )}
         >
           <HintGroup>
-            <div className="flex items-center justify-center gap-0.5 w-[44px] border-r border-border-default shrink-0">
+            <div className="flex items-center justify-center gap-0.5 w-[44px] border-r border-border shrink-0">
               <HintItem label="Back">
                 <button
                   onClick={navigateTabBack}
@@ -446,7 +446,7 @@ const TabColumn = memo(function TabColumn({
                     if (e.key === "Enter" || e.key === " ") setActiveTab(tab.id);
                   }}
                   className={cn(
-                    "group relative flex items-center gap-1.5 pl-3 h-full text-[12px] font-medium shrink-0 cursor-pointer select-none border-r border-border-default",
+                    "group relative flex items-center gap-1.5 pl-3 h-full text-[12px] font-medium shrink-0 cursor-pointer select-none border-r border-border",
                     "transition-[background-color,color] duration-150",
                     tab.closable ? "pr-7" : "pr-3",
                     isActive
@@ -772,7 +772,7 @@ function ProjectlessCenter() {
 
   return (
     <div className="flex h-full w-full flex-col bg-bg-surface">
-      <div className="flex h-9 shrink-0 items-stretch border-b border-border-default bg-bg-base">
+      <div className="flex h-9 shrink-0 items-stretch border-b border-border bg-bg-base">
         {/* Home is a pseudo-tab, not a store tab: it cannot close and it is
             simply "no allowed tab selected". */}
         <div
@@ -783,7 +783,7 @@ function ProjectlessCenter() {
             if (e.key === "Enter") setAtHome(true);
           }}
           className={cn(
-            "flex items-center gap-1.5 border-r border-border-default px-3 text-[12px] font-medium cursor-pointer select-none",
+            "flex items-center gap-1.5 border-r border-border px-3 text-[12px] font-medium cursor-pointer select-none",
             active === null
               ? "bg-bg-surface text-text-primary"
               : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
@@ -813,7 +813,7 @@ function ProjectlessCenter() {
                 }
               }}
               className={cn(
-                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border-default pl-3 text-[12px] font-medium",
+                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border pl-3 text-[12px] font-medium",
                 "transition-[background-color,color] duration-150",
                 tab.closable ? "pr-7" : "pr-3",
                 isActive
@@ -926,7 +926,7 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
   return (
     <div className="h-full flex items-center justify-center">
       <div className="text-center space-y-3">
-        <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border-default flex items-center justify-center mx-auto">
+        <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border flex items-center justify-center mx-auto">
           <Icon size={24} className="text-text-tertiary" />
         </div>
         <div>
@@ -986,7 +986,7 @@ function NewTabDropdown({
       </HintItem>
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner style={{ zIndex: 99999 }} align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border-default bg-bg-secondary shadow-lg py-1">
+          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border bg-bg-secondary shadow-lg py-1">
             {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
               <DropdownMenu.Item
                 key={type}

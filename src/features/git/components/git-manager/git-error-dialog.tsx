@@ -31,10 +31,10 @@ export function GitErrorDialog() {
     <Dialog.Root open={payload !== null} onOpenChange={(o) => !o && actions.dismissErrorDialog()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-[var(--z-modal)] w-[440px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border-default shadow-[var(--shadow-overlay)] flex flex-col">
+        <Dialog.Popup className="fixed left-1/2 top-[24%] -translate-x-1/2 z-[var(--z-modal)] w-[440px] rounded-xl overflow-hidden bg-[var(--bg-elevated)] border border-border shadow-[var(--shadow-overlay)] flex flex-col">
           {payload && (
             <>
-              <div className="px-4 pt-3.5 pb-3 border-b border-border-default">
+              <div className="px-4 pt-3.5 pb-3 border-b border-border">
                 <Dialog.Title className="text-[13px] font-semibold text-text-primary flex items-center gap-1.5">
                   <AlertTriangle size={13} className="text-[var(--status-error)] shrink-0" />
                   {gitErrorTitle(payload)}
@@ -61,7 +61,7 @@ export function GitErrorDialog() {
                 </div>
               )}
 
-              <div className="border-t border-border-default px-3 py-2.5 flex items-center justify-between gap-2">
+              <div className="border-t border-border px-3 py-2.5 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex items-center gap-2">
                   {payload.command && (
                     <span className="truncate font-mono text-[10px] text-text-tertiary">

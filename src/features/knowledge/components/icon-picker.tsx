@@ -237,7 +237,7 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
             height: 26,
             padding: "0 8px",
             background: "var(--bg-input)",
-            border: "1px solid var(--border-default)",
+            border: "1px solid var(--border)",
             borderRadius: 5,
             fontSize: 12,
             color: "var(--text-primary)",

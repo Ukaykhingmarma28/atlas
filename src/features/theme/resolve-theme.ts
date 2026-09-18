@@ -64,10 +64,13 @@ export function resolveTheme(
     cssVars[definition.cssVar] = color;
   }
 
-  // After the keys, because each one transforms a resolved key.
+  // After the keys, because a derived variable may transform a resolved one.
   const derived = {} as Record<DerivedVar, string>;
   for (const definition of DERIVED_VAR_REGISTRY) {
-    const color = definition.transform(keys[definition.from], context);
+    // Every base token is present by the time a variant parses, so the `??`
+    // is only there to keep `withAlpha` total for a hand-built variant.
+    const source = definition.from ? keys[definition.from] : (base[definition.base ?? ""] ?? "");
+    const color = definition.transform(source, context);
     derived[definition.name] = color;
     cssVars[definition.cssVar] = color;
   }

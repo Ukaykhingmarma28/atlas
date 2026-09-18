@@ -102,7 +102,7 @@ export function CreateChannelMenu() {
                     "flex h-[14px] w-[14px] items-center justify-center rounded border transition-colors",
                     isPrivate
                       ? "border-white/40 bg-white/15 text-text-primary"
-                      : "border-border-default text-transparent",
+                      : "border-border text-transparent",
                   )}
                 >
                   <Check size={10} />

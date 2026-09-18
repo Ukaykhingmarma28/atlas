@@ -88,14 +88,14 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
       <aside
         className={cn(
           "fixed right-0 top-0 bottom-0 z-[9999] w-[400px] flex flex-col",
-          "border-l border-[var(--border-default)]",
+          "border-l border-[var(--border)]",
           "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl backdrop-saturate-150",
           "shadow-[var(--shadow-overlay)] animate-slide-in-right",
         )}
       >
         {/* Header — matches the tab-bar height (29px) so the two rows align. */}
         <HintGroup>
-          <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border-default shrink-0">
+          <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border shrink-0">
             <HintItem label="Change icon">
               <button
                 type="button"

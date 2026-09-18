@@ -84,7 +84,7 @@ function PieTip({
   const p = payload[0];
   const v = Number(p.value) || 0;
   return (
-    <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-[11px]">
+    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-[11px]">
       <div className="text-[var(--text-secondary)]">{p.payload?.name ?? p.name}</div>
       <div className="font-mono text-[var(--text-primary)]">
         {fmtTokens(v)} · {total > 0 ? Math.round((v / total) * 100) : 0}%

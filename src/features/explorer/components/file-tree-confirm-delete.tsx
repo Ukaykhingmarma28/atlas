@@ -46,7 +46,7 @@ export function FileTreeConfirmDelete({
           className={cn(
             "fixed left-1/2 top-[30%] -translate-x-1/2 z-[var(--z-modal)]",
             "w-[380px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
+            "bg-[var(--bg-secondary)] border border-[var(--border)]",
             "shadow-[var(--shadow-overlay)]",
             "p-4 flex flex-col gap-3",
           )}

@@ -1460,7 +1460,7 @@ export function App() {
         toastOptions={{
           style: {
             background: "var(--bg-elevated)",
-            border: "1px solid var(--border-default)",
+            border: "1px solid var(--border)",
             color: "var(--text-primary)",
             fontSize: "var(--font-size-sm)",
           },

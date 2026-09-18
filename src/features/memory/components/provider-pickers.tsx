@@ -45,14 +45,14 @@ function PickerDropdown({
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         render={
-          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
+          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
             {trigger}
           </button>
         }
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
-          <DropdownMenu.Popup className="max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
+          <DropdownMenu.Popup className="max-h-[340px] min-w-[180px] overflow-y-auto rounded-md border border-border bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]">
             {children}
           </DropdownMenu.Popup>
         </DropdownMenu.Positioner>
@@ -89,7 +89,7 @@ function ModelCombo({
     >
       <Popover.Trigger
         render={
-          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border-default bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
+          <button className="flex min-w-0 items-center gap-1.5 h-[26px] rounded-full border border-border bg-bg-elevated px-2 text-[10px] font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors outline-none cursor-pointer">
             {loading && <Loader2 size={11} className="animate-spin text-text-tertiary" />}
             <span className="max-w-[160px] truncate font-mono">
               {value || (loading ? "Loading…" : "Select model")}
@@ -100,7 +100,7 @@ function ModelCombo({
       />
       <Popover.Portal>
         <Popover.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
-          <Popover.Popup className="w-[260px] overflow-hidden rounded-md border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)]">
+          <Popover.Popup className="w-[260px] overflow-hidden rounded-md border border-border bg-bg-elevated shadow-[var(--shadow-overlay)]">
             <div className="flex items-center gap-1.5 h-8 border-b border-border-subtle px-2.5">
               <Search size={12} className="shrink-0 text-text-tertiary" />
               <input

@@ -64,7 +64,7 @@ const ITEM_CLASS =
   "data-[highlighted]:text-[var(--text-primary)]";
 
 const CONTENT_CLASS =
-  "atlas-menu-pop rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] " +
+  "atlas-menu-pop rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] " +
   "shadow-[var(--shadow-overlay)] py-1";
 
 // Shared search-box header for the searchable submenus. `stopPropagation`
@@ -88,7 +88,7 @@ function SearchBox({
   // from stealing keystrokes once the box has focus.
   return (
     <div
-      className="mx-1 mb-1 flex items-center gap-1.5 rounded border border-[var(--border-default)] px-2 h-[26px]"
+      className="mx-1 mb-1 flex items-center gap-1.5 rounded border border-[var(--border)] px-2 h-[26px]"
       onKeyDown={(e) => e.stopPropagation()}
     >
       <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
@@ -146,7 +146,7 @@ export function ComposerAddMenu({
             <button
               disabled={disabled}
               className={cn(
-                "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border-default)]",
+                "flex items-center justify-center w-6.5 h-6.5 rounded-full border border-[var(--border)]",
                 "bg-[var(--bg-elevated)] text-[var(--text-secondary)] transition-colors outline-none",
                 disabled
                   ? "opacity-50 cursor-default"
@@ -202,7 +202,7 @@ export function ComposerAddMenu({
               </DropdownMenu.Portal>
             </DropdownMenu.SubmenuRoot>
 
-            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
 
             <GithubSubmenu projectPath={projectPath} onCloneRepo={onCloneRepo} />
 
@@ -222,7 +222,7 @@ export function ComposerAddMenu({
                 SWITCHING lives on the agent pill, not here — this menu is about
                 what you attach to a message, and the pill's picker now offers
                 one-click installs of its own (see FeaturedAgentOffers). */}
-            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+            <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
             <button
               type="button"
               onClick={() => {
@@ -328,7 +328,7 @@ function GithubSubmenu({
                           />
                         </DropdownMenu.Item>
                       ))}
-                      <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+                      <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
                     </>
                   )}
 

@@ -410,7 +410,7 @@ body {
 
 .card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px 14px;
   transition: background 120ms ease-out;

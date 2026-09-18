@@ -262,7 +262,7 @@ function StatusEditor({
               width: "100%",
               height: 26,
               padding: "0 8px",
-              border: "1px solid var(--border-default)",
+              border: "1px solid var(--border)",
               borderRadius: 5,
               fontSize: 12,
               outline: "none",

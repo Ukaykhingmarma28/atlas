@@ -56,7 +56,7 @@ export function ConflictsView({ onOpenFile }: { onOpenFile: (path: string) => vo
   if (!state || state.files.length === 0) return null;
 
   return (
-    <div className="shrink-0 border-b border-border-default">
+    <div className="shrink-0 border-b border-border">
       <div className="flex items-center justify-between px-2 h-[24px] bg-[var(--bg-sidebar)] border-b border-border-subtle">
         <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider">
           Conflicts ({state.files.length})
@@ -83,14 +83,14 @@ export function ConflictsView({ onOpenFile }: { onOpenFile: (path: string) => vo
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 shrink-0">
               <button
                 onClick={() => void resolve(f.path, "ours")}
-                className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                className="px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                 title="Keep your version"
               >
                 Ours
               </button>
               <button
                 onClick={() => void resolve(f.path, "theirs")}
-                className="px-1.5 h-[16px] rounded border border-border-default text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                className="px-1.5 h-[16px] rounded border border-border text-[9px] text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                 title="Take their version"
               >
                 Theirs

@@ -536,7 +536,7 @@ export function KnowledgePanel() {
           {/* 4px col-resize hit area; invisible until hover. */}
           <div
             onMouseDown={(e) => startResize(e, "sidebar")}
-            className="shrink-0 cursor-col-resize hover:bg-border-focus/60 transition-colors"
+            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors"
             style={{ width: 4, marginLeft: -2, marginRight: -2, zIndex: 5 }}
           />
         </>
@@ -723,7 +723,7 @@ export function KnowledgePanel() {
         <>
           <div
             onMouseDown={(e) => startResize(e, "inspector")}
-            className="shrink-0 cursor-col-resize hover:bg-border-focus/60 transition-colors"
+            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors"
             style={{ width: 4, marginLeft: -2, marginRight: -2, zIndex: 5 }}
           />
           <KnowledgeInspector
@@ -1044,7 +1044,7 @@ function RepoEmpty({ path }: { path: string }) {
         <button
           onClick={open}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 rounded border border-border-default",
+            "flex items-center gap-1 px-2 py-1 rounded border border-border",
             "text-[10px] text-text-secondary hover:bg-bg-hover cursor-pointer",
           )}
         >
@@ -1053,7 +1053,7 @@ function RepoEmpty({ path }: { path: string }) {
         <button
           onClick={() => navigator.clipboard.writeText(path)}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 rounded border border-border-default",
+            "flex items-center gap-1 px-2 py-1 rounded border border-border",
             "text-[10px] text-text-secondary hover:bg-bg-hover cursor-pointer",
           )}
         >

@@ -226,7 +226,7 @@ export function MemoryTimelineView() {
           <p className="text-[12px] text-[var(--text-tertiary)]">Couldn't build the timeline.</p>
           <button
             onClick={() => projectPath && void loadTimeline(projectPath, true)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -253,7 +253,7 @@ export function MemoryTimelineView() {
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-3 px-3 h-[32px] shrink-0 border-b border-[var(--border)] text-[10px] text-[var(--text-tertiary)]">
         <span className="text-[11px] font-medium text-[var(--text-secondary)]">Timeline</span>
         <span className="tabular-nums">
           {timeline.branches.length} branches · {timeline.commits.length} commits ·{" "}
@@ -261,13 +261,13 @@ export function MemoryTimelineView() {
         </span>
         <div className="flex-1" />
         {/* Day-range segmented toggle (auto via breakpoint, user-overridable). */}
-        <div className="flex items-center rounded-md border border-[var(--border-default)] overflow-hidden h-6">
+        <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden h-6">
           {([3, 4, 7] as const).map((n) => (
             <button
               key={n}
               onClick={() => setPersistedDayCount(n)}
               className={cn(
-                "px-2 h-6 text-[10px] tabular-nums transition-colors cursor-pointer border-l border-[var(--border-default)] first:border-l-0",
+                "px-2 h-6 text-[10px] tabular-nums transition-colors cursor-pointer border-l border-[var(--border)] first:border-l-0",
                 dayCount === n
                   ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",

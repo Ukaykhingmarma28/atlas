@@ -309,7 +309,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
           type="button"
           onClick={() => virtualizer.scrollToIndex(0, { align: "start" })}
           className={cn(
-            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/85 px-3 text-[11px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--text-primary)]",
+            "pointer-events-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/85 px-3 text-[11px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] backdrop-blur-xl transition-opacity duration-150 hover:text-[var(--text-primary)]",
             edges.top ? "opacity-100" : "pointer-events-none opacity-0",
           )}
           tabIndex={edges.top ? undefined : -1}

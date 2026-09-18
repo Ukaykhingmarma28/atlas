@@ -228,7 +228,7 @@ export function readSource() {
   // dangling `from` fails the build rather than resolving to `undefined`.
   for (const entry of derived) {
     const at = `derived \`${entry.name ?? "?"}\``;
-    for (const field of ["name", "description", "from", "op"]) {
+    for (const field of ["name", "description", "op"]) {
       if (typeof entry[field] !== "string") problems.push(`${at}: missing \`${field}\``);
     }
     if (typeof entry.name !== "string") continue;
@@ -236,8 +236,14 @@ export function readSource() {
       problems.push(`${at}: not a dotted lower-case role name`);
     }
     if (seen.has(entry.name)) problems.push(`${at}: is also a settable key`);
+    if ((entry.from === undefined) === (entry.base === undefined)) {
+      problems.push(`${at}: needs exactly one of \`from\` (a key) or \`base\` (a base token)`);
+    }
     if (entry.from !== undefined && !seen.has(entry.from)) {
       problems.push(`${at}: \`from\` names no key`);
+    }
+    if (entry.base !== undefined && !tokens.has(entry.base)) {
+      problems.push(`${at}: unknown base token \`${entry.base}\``);
     }
     if (entry.op !== undefined && !(entry.op in OPERATIONS)) {
       problems.push(`${at}: unknown op \`${entry.op}\``);
@@ -269,6 +275,7 @@ export function readSource() {
       name: entry.name,
       description: entry.description,
       from: entry.from,
+      base: entry.base,
       op: entry.op,
       amount: entry.amount?.number,
     })),
@@ -407,8 +414,10 @@ export const THEME_KEY_DEFINITION_BY_KEY = Object.fromEntries(
 export interface DerivedVarDefinition<Name extends string = string> {
   name: Name;
   cssVar: \`--atlas-\${string}\`;
-  /** The settable key this is a pure transform of. */
-  from: ThemeKey;
+  /** The settable key this transforms, or null when it transforms a base token. */
+  from: ThemeKey | null;
+  /** The base token this transforms, or null when it transforms a key. */
+  base: string | null;
   transform: ColorTransform;
   description: string;
 }
@@ -471,7 +480,8 @@ function renderRegistry({ keys, derived }) {
   }
   const derivedBody = derived.flatMap((entry) => [
     `  derive("${entry.name}", {`,
-    `    from: "${entry.from}",`,
+    `    from: ${entry.from ? `"${entry.from}"` : "null"},`,
+    `    base: ${entry.base ? `"${entry.base}"` : "null"},`,
     `    transform: ${OPERATIONS[entry.op].call}(${entry.amount}),`,
     `    description: "${entry.description.replaceAll('"', '\\"')}",`,
     "  }),",
@@ -540,8 +550,9 @@ function renderDocs({ groups, keys, derived }, current) {
       "|---|---|---|---|",
     );
     for (const entry of derived) {
+      const source = entry.from ? `\`${entry.from}\`` : `\`base.${entry.base}\``;
       out.push(
-        `| \`${entry.name}\` | \`${entry.from}\` | ${OPERATIONS[entry.op].docs(entry.amount)} | ${entry.description} |`,
+        `| \`${entry.name}\` | ${source} | ${OPERATIONS[entry.op].docs(entry.amount)} | ${entry.description} |`,
       );
     }
     out.push("");

@@ -63,11 +63,11 @@ export function GitDiffModal({
           // Scales in from 95%. Without it the modal simply blinked into
           // existence, and an abrupt appearance reads as a slow one — there is
           // no motion to tell the eye that anything is arriving.
-          className="fixed top-8.5 left-4 right-4 bottom-6 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] focus:outline-none data-open:animate-scale-in"
+          className="fixed top-8.5 left-4 right-4 bottom-6 flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] focus:outline-none data-open:animate-scale-in"
           style={{ zIndex: "var(--z-modal)" as unknown as number }}
         >
           <Dialog.Title className="sr-only">{title ?? "Changes"}</Dialog.Title>
-          <div className="flex h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
+          <div className="flex h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
             <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
               {title ?? "Changes"}
             </span>

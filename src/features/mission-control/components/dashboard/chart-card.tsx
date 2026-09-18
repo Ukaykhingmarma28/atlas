@@ -22,7 +22,7 @@ export function ChartCard({
       // the layer instead of repainting the SVG chart each frame (WKWebView).
       style={{ transform: "translateZ(0)" }}
       className={cn(
-        "rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] flex flex-col min-w-0",
+        "rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col min-w-0",
         className,
       )}
     >

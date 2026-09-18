@@ -70,7 +70,7 @@ export function ChatSearchPalette({
           className={cn(
             "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
             "w-[560px] max-h-[440px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
+            "bg-[var(--bg-secondary)] border border-[var(--border)]",
             "shadow-[var(--shadow-overlay)]",
             "flex flex-col",
           )}
@@ -79,7 +79,7 @@ export function ChatSearchPalette({
           initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Find user message</Dialog.Title>
-          <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border-default)] shrink-0">
+          <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border)] shrink-0">
             <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
             <input
               ref={inputRef}
@@ -121,7 +121,7 @@ export function ChatSearchPalette({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--atlas-element-primary-muted)]",
+                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--atlas-primary-muted)]",
                       )}
                     >
                       <User size={10} className="text-[var(--primary)]" />
@@ -144,7 +144,7 @@ export function ChatSearchPalette({
               })
             )}
           </div>
-          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] shrink-0">
+          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border)] text-[10px] text-[var(--text-tertiary)] shrink-0">
             <KbdGroup>
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>

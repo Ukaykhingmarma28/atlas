@@ -8,9 +8,9 @@
 //! derivation chain — and, more to the point, the same report entries for it.
 //!
 //! **Why the palette matters more than it looks.** It is optional in the file
-//! format, but `docs/reference/theme-keys.md` shows 40-odd theme keys resolving
-//! through it — every status colour, every agent chip, both diff families,
-//! `stat.*`, `capture.live`. An import that skips the palette produces a theme
+//! format, but `docs/reference/theme-keys.md` shows half the theme keys
+//! resolving through it — every status colour, every ANSI colour, every diff
+//! tint. An import that skips the palette produces a theme
 //! whose editor is the author's and whose chrome is Atlas's, which looks like a
 //! half-finished port. Guessing it from the ANSI ramp costs nothing and is
 //! right far more often than it is wrong.
@@ -58,10 +58,6 @@ impl VariantDraft {
 
     pub fn key_color(&self, key: &str) -> Option<&str> {
         self.keys.get(key).map(ThemeKeyValue::color)
-    }
-
-    pub fn has_key(&self, key: &str) -> bool {
-        self.keys.contains_key(key)
     }
 
     /// First writer wins, so an importer can list its preferred source first
@@ -210,8 +206,8 @@ impl VariantDraft {
             ("yellow", &["terminal.ansi.yellow", "syntax.attribute", "status.warning.foreground"], &[]),
             ("blue", &["terminal.ansi.blue", "syntax.function", "status.info.foreground"], &["primary"]),
             ("cyan", &["terminal.ansi.cyan", "syntax.type"], &[]),
-            ("purple", &["terminal.ansi.magenta", "syntax.keyword", "status.purple.foreground"], &[]),
-            ("orange", &["syntax.number", "terminal.ansi.bright_red", "status.orange.foreground"], &[]),
+            ("purple", &["terminal.ansi.magenta", "syntax.keyword"], &[]),
+            ("orange", &["syntax.number", "terminal.ansi.bright_red"], &[]),
             ("pink", &["syntax.escape", "terminal.ansi.bright_magenta", "syntax.regexp"], &[]),
         ];
         for (name, keys, tokens) in SOURCES {

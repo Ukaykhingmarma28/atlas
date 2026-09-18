@@ -25,7 +25,12 @@
 import { useSyncExternalStore } from "react";
 import { getActiveTheme } from "./apply-theme";
 import { parseColor } from "./color";
-import { THEME_KEY_REGISTRY, type ThemeKey } from "./theme-key-registry";
+import {
+  DERIVED_VAR_REGISTRY,
+  THEME_KEY_REGISTRY,
+  type DerivedVar,
+  type ThemeKey,
+} from "./theme-key-registry";
 
 export const THEME_APPLIED_EVENT = "atlas:theme-applied";
 
@@ -41,6 +46,23 @@ const DEFAULTS = Object.fromEntries(
 /** The resolved colour for a theme key. Always a concrete CSS colour. */
 export function themeColor(key: ThemeKey): string {
   return getActiveTheme()?.keys[key] ?? DEFAULTS[key];
+}
+
+/**
+ * The resolved colour for a derived variable — one Atlas computes from a key
+ * or a base token and no theme may set (`terminal.selection`, …).
+ *
+ * Before the first `applyTheme` there is nothing to transform, so this falls
+ * back to the same per-appearance defaults `themeColor` uses, run through the
+ * variable's own transform with an empty context.
+ */
+export function themeDerived(name: DerivedVar): string {
+  const active = getActiveTheme();
+  if (active) return active.derived[name];
+  const definition = DERIVED_VAR_REGISTRY.find((entry) => entry.name === name);
+  if (!definition) return "";
+  const source = definition.from ? DEFAULTS[definition.from] : "";
+  return definition.transform(source, { base: {}, palette: {}, appearance: "dark" });
 }
 
 /**

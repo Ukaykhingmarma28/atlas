@@ -35,13 +35,13 @@ export function KeybindingsSearch({
   const empty = !state.query && !state.recorded;
 
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+    <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border px-2">
       <div
         className={cn(
           "flex h-6 flex-1 items-center gap-1.5 rounded-md border bg-bg-elevated px-2",
           state.recordKeys
             ? "border-border-strong"
-            : "border-border-default focus-within:border-border-strong",
+            : "border-border focus-within:border-border-strong",
         )}
       >
         {state.recordKeys ? (

@@ -380,8 +380,8 @@ function ReactionRow({
           className={cn(
             "flex h-[21px] items-center gap-1 rounded-full border px-1.5 text-[11px] leading-none transition-colors cursor-pointer",
             c.mine
-              ? "border-[var(--comms-unread)]/60 bg-[var(--comms-unread)]/15 text-text-primary"
-              : "border-border-default bg-bg-elevated text-text-secondary hover:bg-bg-hover",
+              ? "border-[var(--status-success)]/60 bg-[var(--status-success)]/15 text-text-primary"
+              : "border-border bg-bg-elevated text-text-secondary hover:bg-bg-hover",
           )}
         >
           <span>{c.emoji}</span>
@@ -516,10 +516,10 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
           void saveAttachment(attachment);
         }
       }}
-      className="group/file flex max-w-[420px] cursor-pointer items-center gap-2 rounded-lg border border-border-default bg-bg-elevated px-2.5 py-2 transition-colors hover:border-border-strong hover:bg-bg-hover"
+      className="group/file flex max-w-[420px] cursor-pointer items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2.5 py-2 transition-colors hover:border-border-strong hover:bg-bg-hover"
     >
       {progress ? (
-        <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[var(--comms-unread)]">
+        <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[var(--status-success)]">
           <ArcProgress got={progress.got} total={progress.total} />
         </span>
       ) : (
@@ -640,7 +640,7 @@ function HoverActions({
     <HintGroup side="top">
       <div
         className={cn(
-          "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border-default bg-bg-overlay p-0.5 shadow-[var(--shadow-md)]",
+          "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border bg-bg-overlay p-0.5 shadow-[var(--shadow-md)]",
           "opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100",
           forceShow && "opacity-100",
         )}
@@ -662,7 +662,7 @@ function HoverActions({
               align="end"
               sideOffset={6}
             >
-              <Popover.Popup className="w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
+              <Popover.Popup className="w-[212px] rounded-lg border border-border bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
                 <div className="grid grid-cols-7 gap-0.5">
                   {/* Built FROM the allowlist, so no button here can be refused. */}
                   {CHAT_REACTION_EMOJI.map((e) => (
@@ -707,7 +707,7 @@ function HoverActions({
               align="end"
               sideOffset={6}
             >
-              <DropdownMenu.Popup className="min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
+              <DropdownMenu.Popup className="min-w-[168px] rounded-lg border border-border bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] origin-[var(--transform-origin)] animate-scale-in">
                 <DropdownMenu.Item onClick={onCopy} className={menuItem}>
                   <Copy size={12} /> Copy text
                 </DropdownMenu.Item>
@@ -717,7 +717,7 @@ function HoverActions({
                   {pinned ? "Unpin for everyone" : "Pin for everyone"}
                 </DropdownMenu.Item>
                 {(canEdit || canDelete) && (
-                  <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
                 )}
                 {/* Author only — an admin can delete but never rewrite. */}
                 {canEdit && (

@@ -17,7 +17,7 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3.5 py-3 flex flex-col gap-1.5",
+        "rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-3 flex flex-col gap-1.5",
         className,
       )}
     >

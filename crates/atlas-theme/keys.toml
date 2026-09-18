@@ -50,7 +50,8 @@
 # the JSON Schema, so writing one in a theme file is an unknown-key warning.
 #
 #   name/description  as for a key.
-#   from              the settable key this transforms. Must exist above.
+#   from              the settable key this transforms, OR
+#   base              the shadcn base token it transforms. Exactly one of the two.
 #   op/amount         required — a derived variable with no transform would be
 #                     an alias, and an alias should just be the key itself.
 #
@@ -67,7 +68,7 @@ description = "Separators and control outlines."
 
 [[group]]
 name = "Elements and overlays"
-description = "Hover/selected/pressed overlays, and the raised-surface edge."
+description = "Hover/selected/pressed overlays, the raised edge, and the brand fills."
 
 [[group]]
 name = "Text"
@@ -75,7 +76,7 @@ description = "Prose roles that are not a base token."
 
 [[group]]
 name = "Status"
-description = "Success / warning / error / info, plus two categorical hues."
+description = "Success / warning / error / info."
 
 [[group]]
 name = "Selection"
@@ -95,30 +96,18 @@ description = "The code editor's own chrome."
 
 [[group]]
 name = "Chrome surfaces"
-description = "Scrollbars, tabs, panels — the app frame."
+description = "Scrollbars and panel surfaces — the app frame."
 
 [[group]]
 name = "Diff"
-description = "Added / removed / modified regions, inline and side-by-side."
-
-[[group]]
-name = "Team chat"
-description = "The comms panel."
+description = "Added and removed regions, inline and side-by-side."
 
 [[group]]
 name = "Agents and indicators"
-description = "Per-agent identity chips and small live indicators."
+description = "Per-agent identity chips."
 
 
 # ── Borders ───────────────────────────────────────────────────────────────────
-
-[[key]]
-name = "border.default"
-group = "Borders"
-description = "Default separator and control border."
-base = "border"
-dark = "#1e1e1e"
-light = "#d8d3cc"
 
 [[key]]
 name = "border.subtle"
@@ -131,26 +120,17 @@ light = "#ebe5de"
 [[key]]
 name = "border.strong"
 group = "Borders"
-description = "High-emphasis border."
-base = "ring"
+description = "High-emphasis border, including a focused control's."
+base = "border"
 dark = "#3d3d3d"
 light = "#b8b1aa"
-
-[[key]]
-name = "border.focus"
-group = "Borders"
-description = "Focused-control border."
-base = "ring"
-dark = "#3d3d3d"
-light = "#907aa9"
-
-[[key]]
-name = "border.variant"
-group = "Borders"
-description = "Alternate low-emphasis border."
-base = "sidebar-border"
-dark = "#141414"
-light = "#ebe5de"
+note = """
+Sourced from `border`, not `ring`. It used to be `ring`, and decision 31 then
+made `ring` a real accent — so a theme that set `ring` and left this alone got
+a brand-coloured hairline everywhere it wanted a strong grey one. The two roles
+are genuinely different: `ring` is the focus RING, this is the strongest
+BORDER, and a focused control's border is this rather than a third key.
+"""
 
 
 # ── Elements and overlays ─────────────────────────────────────────────────────
@@ -201,7 +181,7 @@ instead of the white-on-white one a hardcoded highlight would give it.
 """
 
 [[key]]
-name = "element.primary_hover"
+name = "primary.hover"
 group = "Elements and overlays"
 description = "Hovered primary-brand fill."
 base = "primary"
@@ -211,7 +191,7 @@ dark = "#cccccc"
 light = "#a290b5"
 
 [[key]]
-name = "element.primary_muted"
+name = "primary.muted"
 group = "Elements and overlays"
 description = "Muted primary-brand fill."
 base = "primary"
@@ -220,56 +200,8 @@ amount = 0.06
 dark = "rgba(255,255,255,0.06)"
 light = "rgba(144,122,169,0.08)"
 
-[[key]]
-name = "ghost_element.hover"
-group = "Elements and overlays"
-description = "Hover overlay for ghost controls."
-base = "foreground"
-op = "alpha"
-amount = 0.03
-dark = "rgba(255,255,255,0.03)"
-light = "rgba(0,0,0,0.03)"
-
-[[key]]
-name = "ghost_element.selected"
-group = "Elements and overlays"
-description = "Selected overlay for ghost controls."
-base = "foreground"
-op = "alpha"
-amount = 0.05
-dark = "rgba(255,255,255,0.05)"
-light = "rgba(0,0,0,0.05)"
-
-[[key]]
-name = "ghost_element.active"
-group = "Elements and overlays"
-description = "Pressed overlay for ghost controls."
-base = "foreground"
-op = "alpha"
-amount = 0.07
-dark = "rgba(255,255,255,0.07)"
-light = "rgba(0,0,0,0.07)"
-
 
 # ── Text ──────────────────────────────────────────────────────────────────────
-
-[[key]]
-name = "text.muted"
-group = "Text"
-description = "Muted prose and metadata."
-base = "muted-foreground"
-dark = "#585858"
-light = "#797593"
-
-[[key]]
-name = "text.placeholder"
-group = "Text"
-description = "Input placeholder text."
-base = "muted-foreground"
-op = "toward_background"
-amount = 0.12
-dark = "#777777"
-light = "#9893a5"
 
 [[key]]
 name = "text.disabled"
@@ -281,24 +213,15 @@ amount = 0.35
 dark = "#333333"
 light = "#b8b1aa"
 
-[[key]]
-name = "text.accent"
-group = "Text"
-description = "Rare text-only signature accent."
-palette = "yellow"
-base = "primary"
-dark = "#ffff00"
-light = "#907aa9"
-
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
 [[key]]
 name = "status.success.foreground"
 group = "Status"
-description = "Success status foreground."
+description = "Success status foreground, and the live-capture indicator."
 palette = "green"
-dark = "#4d4d4d"
+dark = "#3fb950"
 light = "#286983"
 
 [[key]]
@@ -325,22 +248,6 @@ description = "Informational status foreground."
 palette = "blue"
 dark = "#6796e6"
 light = "#56949f"
-
-[[key]]
-name = "status.purple.foreground"
-group = "Status"
-description = "Purple categorical status."
-palette = "purple"
-dark = "#999999"
-light = "#907aa9"
-
-[[key]]
-name = "status.orange.foreground"
-group = "Status"
-description = "Orange categorical status."
-palette = "orange"
-dark = "#cd9731"
-light = "#d7827e"
 
 
 # ── Selection ─────────────────────────────────────────────────────────────────
@@ -381,16 +288,6 @@ description = "Terminal cursor."
 base = "foreground"
 dark = "#d4d4d4"
 light = "#575279"
-
-[[key]]
-name = "terminal.selection"
-group = "Terminal"
-description = "Terminal selection."
-base = "primary"
-op = "alpha"
-amount = 0.3
-dark = "rgba(255,255,255,0.3)"
-light = "rgba(144,122,169,0.3)"
 
 [[key]]
 name = "terminal.ansi.black"
@@ -660,46 +557,6 @@ palette = "cyan"
 dark = "#c8c8c8"
 light = "#56949f"
 
-[[key]]
-name = "syntax.boolean"
-group = "Syntax"
-description = "Booleans."
-palette = "orange"
-dark = "#e0b070"
-light = "#d7827e"
-
-[[key]]
-name = "syntax.null"
-group = "Syntax"
-description = "Null-like literals."
-palette = "orange"
-dark = "#e0b070"
-light = "#d7827e"
-
-[[key]]
-name = "syntax.meta"
-group = "Syntax"
-description = "Pragmas and metadata."
-palette = "yellow"
-dark = "#d9b47a"
-light = "#907aa9"
-
-[[key]]
-name = "syntax.builtin"
-group = "Syntax"
-description = "Built-in symbols."
-palette = "red"
-dark = "#e59a72"
-light = "#b4637a"
-
-[[key]]
-name = "syntax.punctuation"
-group = "Syntax"
-description = "Punctuation."
-base = "muted-foreground"
-dark = "#9a9a9a"
-light = "#797593"
-
 
 # ── Editor ────────────────────────────────────────────────────────────────────
 
@@ -787,40 +644,8 @@ base = "ring"
 dark = "#3d3d3d"
 light = "#907aa9"
 
-[[key]]
-name = "editor.fold.background"
-group = "Editor"
-description = "Fold placeholder background."
-base = "secondary"
-dark = "#1a1a1a"
-light = "#f2e9e1"
-
-[[key]]
-name = "editor.fold.border"
-group = "Editor"
-description = "Fold placeholder border."
-base = "border"
-dark = "#2a2a2a"
-light = "#cecacd"
-
-[[key]]
-name = "editor.fold.foreground"
-group = "Editor"
-description = "Fold placeholder foreground."
-base = "muted-foreground"
-dark = "#8a8a8a"
-light = "#797593"
-
 
 # ── Chrome surfaces ───────────────────────────────────────────────────────────
-
-[[key]]
-name = "scrollbar.track.background"
-group = "Chrome surfaces"
-description = "Scrollbar track."
-base = "background"
-dark = "#000000"
-light = "#faf4ed"
 
 [[key]]
 name = "scrollbar.thumb.background"
@@ -843,60 +668,12 @@ dark = "rgba(255,255,255,0.26)"
 light = "rgba(0,0,0,0.26)"
 
 [[key]]
-name = "tab.active.background"
-group = "Chrome surfaces"
-description = "Active tab background."
-base = "accent"
-dark = "#171717"
-light = "#f2e9e1"
-
-[[key]]
-name = "tab.inactive.background"
-group = "Chrome surfaces"
-description = "Inactive tab background."
-base = "sidebar"
-dark = "#0a0a0a"
-light = "#fffaf3"
-
-[[key]]
-name = "tab.active.border"
-group = "Chrome surfaces"
-description = "Active tab indicator."
-base = "primary"
-dark = "#ffffff"
-light = "#907aa9"
-
-[[key]]
-name = "panel.rail.background"
-group = "Chrome surfaces"
-description = "Project rail background."
-base = "sidebar"
-dark = "#0f0f0f"
-light = "#fffaf3"
-
-[[key]]
 name = "panel.background"
 group = "Chrome surfaces"
 description = "Panel background."
 base = "sidebar"
 dark = "#060706"
 light = "#fffaf3"
-
-[[key]]
-name = "panel.elevated.background"
-group = "Chrome surfaces"
-description = "Elevated panel background."
-base = "card"
-dark = "#0d0e0d"
-light = "#f2e9e1"
-
-[[key]]
-name = "panel.overlay.background"
-group = "Chrome surfaces"
-description = "Panel overlay background."
-base = "popover"
-dark = "#1c1c1c"
-light = "#f2e9e1"
 
 [[key]]
 name = "panel.input.background"
@@ -912,53 +689,7 @@ light = "#fffaf3"
 [[key]]
 name = "diff.added.background"
 group = "Diff"
-description = "Added diff region."
-palette = "green"
-op = "alpha"
-amount = 0.08
-dark = "rgba(77,77,77,0.08)"
-light = "rgba(40,105,131,0.08)"
-
-[[key]]
-name = "diff.added.text"
-group = "Diff"
-description = "Added diff text."
-palette = "green"
-dark = "#3fb950"
-light = "#286983"
-
-[[key]]
-name = "diff.removed.background"
-group = "Diff"
-description = "Removed diff region."
-palette = "red"
-op = "alpha"
-amount = 0.08
-dark = "rgba(119,119,119,0.08)"
-light = "rgba(180,99,122,0.08)"
-
-[[key]]
-name = "diff.removed.text"
-group = "Diff"
-description = "Removed diff text."
-palette = "red"
-dark = "#777777"
-light = "#b4637a"
-
-[[key]]
-name = "diff.modified.background"
-group = "Diff"
-description = "Modified diff region."
-palette = "blue"
-op = "alpha"
-amount = 0.08
-dark = "rgba(192,192,192,0.08)"
-light = "rgba(86,148,159,0.08)"
-
-[[key]]
-name = "diff.add_line.background"
-group = "Diff"
-description = "Added line background."
+description = "Added line or hunk."
 palette = "green"
 op = "alpha"
 amount = 0.13
@@ -966,14 +697,50 @@ dark = "#0d2211"
 light = "rgba(40,105,131,0.13)"
 
 [[key]]
-name = "diff.remove_line.background"
+name = "diff.added.emphasis"
 group = "Diff"
-description = "Removed line background."
+description = "Changed words inside an added line."
+palette = "green"
+op = "alpha"
+amount = 0.34
+dark = "rgba(52,211,153,0.34)"
+light = "rgba(40,105,131,0.34)"
+
+[[key]]
+name = "diff.added.text"
+group = "Diff"
+description = "Added diff text, and the +N line statistic."
+palette = "green"
+dark = "#3fb950"
+light = "#286983"
+
+[[key]]
+name = "diff.removed.background"
+group = "Diff"
+description = "Removed line or hunk."
 palette = "red"
 op = "alpha"
 amount = 0.13
 dark = "#220d0d"
 light = "rgba(180,99,122,0.13)"
+
+[[key]]
+name = "diff.removed.emphasis"
+group = "Diff"
+description = "Changed words inside a removed line."
+palette = "red"
+op = "alpha"
+amount = 0.34
+dark = "rgba(244,63,63,0.34)"
+light = "rgba(180,99,122,0.34)"
+
+[[key]]
+name = "diff.removed.text"
+group = "Diff"
+description = "Removed diff text, and the -N line statistic."
+palette = "red"
+dark = "#f85149"
+light = "#b4637a"
 
 [[key]]
 name = "diff.context.background"
@@ -983,118 +750,6 @@ base = "background"
 dark = "#0a0a0a"
 light = "#faf4ed"
 
-[[key]]
-name = "diff.add_side.background"
-group = "Diff"
-description = "Side-by-side addition."
-palette = "green"
-op = "alpha"
-amount = 0.13
-dark = "rgba(34,197,94,0.13)"
-light = "rgba(40,105,131,0.13)"
-
-[[key]]
-name = "diff.remove_side.background"
-group = "Diff"
-description = "Side-by-side removal."
-palette = "red"
-op = "alpha"
-amount = 0.13
-dark = "rgba(244,63,63,0.13)"
-light = "rgba(180,99,122,0.13)"
-
-[[key]]
-name = "diff.emphasis_added.background"
-group = "Diff"
-description = "Intraline addition."
-palette = "green"
-op = "alpha"
-amount = 0.34
-dark = "rgba(52,211,153,0.34)"
-light = "rgba(40,105,131,0.34)"
-
-[[key]]
-name = "diff.emphasis_removed.background"
-group = "Diff"
-description = "Intraline removal."
-palette = "red"
-op = "alpha"
-amount = 0.34
-dark = "rgba(244,63,63,0.34)"
-light = "rgba(180,99,122,0.34)"
-
-
-# ── Team chat ─────────────────────────────────────────────────────────────────
-
-[[key]]
-name = "comms.outer.background"
-group = "Team chat"
-description = "Team chat outer surface."
-base = "sidebar"
-dark = "#0f0f0f"
-light = "#fffaf3"
-
-[[key]]
-name = "comms.surface.background"
-group = "Team chat"
-description = "Team chat transcript surface."
-base = "background"
-dark = "#000000"
-light = "#faf4ed"
-
-[[key]]
-name = "comms.mention.background"
-group = "Team chat"
-description = "Current-user mention background."
-base = "foreground"
-op = "alpha"
-amount = 0.16
-dark = "rgba(255,255,255,0.16)"
-light = "rgba(0,0,0,0.1)"
-
-[[key]]
-name = "comms.mention.foreground"
-group = "Team chat"
-description = "Current-user mention text."
-base = "foreground"
-dark = "#ffffff"
-light = "#575279"
-
-[[key]]
-name = "comms.other_mention.background"
-group = "Team chat"
-description = "Other-user mention background."
-base = "foreground"
-op = "alpha"
-amount = 0.08
-dark = "rgba(255,255,255,0.08)"
-light = "rgba(0,0,0,0.06)"
-
-[[key]]
-name = "comms.other_mention.foreground"
-group = "Team chat"
-description = "Other-user mention text."
-base = "muted-foreground"
-dark = "#cfcfcf"
-light = "#797593"
-
-[[key]]
-name = "comms.unread.foreground"
-group = "Team chat"
-description = "Unread and presence indicator."
-palette = "green"
-dark = "#b8b8b8"
-light = "#286983"
-
-[[key]]
-name = "comms.unread_strong.foreground"
-group = "Team chat"
-description = "Strong unread indicator."
-palette = "green"
-op = "toward_background"
-amount = 0.2
-dark = "#8a8a8a"
-light = "#286983"
 
 
 # ── Agents and indicators ─────────────────────────────────────────────────────
@@ -1261,38 +916,6 @@ amount = 0.1
 dark = "rgba(240,197,61,0.1)"
 light = "rgba(234,157,52,0.1)"
 
-[[key]]
-name = "stat.added"
-group = "Agents and indicators"
-description = "Added-line statistic."
-palette = "green"
-dark = "#3fb950"
-light = "#286983"
-
-[[key]]
-name = "stat.removed"
-group = "Agents and indicators"
-description = "Removed-line statistic."
-palette = "red"
-dark = "#f85149"
-light = "#b4637a"
-
-[[key]]
-name = "capture.live"
-group = "Agents and indicators"
-description = "Active capture indicator."
-palette = "green"
-dark = "#3fb950"
-light = "#286983"
-
-[[key]]
-name = "atlas.ants"
-group = "Agents and indicators"
-description = "Animated marching-ants stroke."
-base = "primary"
-dark = "#ffffff"
-light = "#907aa9"
-
 
 # ── Derived variables ─────────────────────────────────────────────────────────
 #
@@ -1325,3 +948,17 @@ description = "Tinted fill behind an informational foreground."
 from = "status.info.foreground"
 op = "alpha"
 amount = 0.12
+
+[[derived]]
+name = "element.emphasis"
+description = "The strongest neutral overlay — a chat mention addressed to you."
+base = "foreground"
+op = "alpha"
+amount = 0.16
+
+[[derived]]
+name = "terminal.selection"
+description = "Terminal selection."
+base = "primary"
+op = "alpha"
+amount = 0.3

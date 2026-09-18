@@ -18,11 +18,11 @@
  */
 import type { ITheme } from "@xterm/xterm";
 import { withAlpha } from "@/features/theme/color";
-import { alphaOf, themeColor } from "@/features/theme/theme-values";
+import { alphaOf, themeColor, themeDerived } from "@/features/theme/theme-values";
 
 /** Build an xterm `ITheme` from the active theme's `terminal.*` keys. */
 export function terminalTheme(): ITheme {
-  const selection = themeColor("terminal.selection");
+  const selection = themeDerived("terminal.selection");
   return {
     background: themeColor("terminal.background"),
     foreground: themeColor("terminal.foreground"),

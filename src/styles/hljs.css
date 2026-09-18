@@ -56,9 +56,12 @@ code.hljs {
   color: var(--atlas-syntax-keyword);
 }
 
+/* Built-ins and symbols are language-provided constants; CodeMirror already
+   colours `standard(variableName)` with `syntax.constant`, so both code
+   surfaces agree. */
 .hljs-built_in,
 .hljs-symbol {
-  color: var(--atlas-syntax-builtin);
+  color: var(--atlas-syntax-constant);
 }
 
 /* A bare `.hljs-title` is highlight.js's fallthrough for a named entity, so it
@@ -117,16 +120,21 @@ code.hljs {
   color: var(--atlas-syntax-property);
 }
 
+/* Pragmas, shebangs, front-matter fences. `syntax.attribute` is what
+   CodeMirror already gives `tags.meta` — one concept, one colour. */
 .hljs-meta {
-  color: var(--atlas-syntax-meta);
+  color: var(--atlas-syntax-attribute);
 }
 
 .hljs-operator {
   color: var(--atlas-syntax-operator);
 }
 
+/* Punctuation is the quietest thing on the line, which is what
+   `muted-foreground` is for; it had a key of its own that no theme ever set
+   to anything else. */
 .hljs-punctuation {
-  color: var(--atlas-syntax-punctuation);
+  color: var(--muted-foreground);
 }
 
 .hljs-char.escape_ {
@@ -161,10 +169,10 @@ code.hljs {
    uses, so a diff in chat matches the diff in the source-control panel. */
 .hljs-addition {
   color: var(--atlas-diff-added-text);
-  background-color: var(--atlas-diff-add-line-background);
+  background-color: var(--atlas-diff-added-background);
 }
 
 .hljs-deletion {
   color: var(--atlas-diff-removed-text);
-  background-color: var(--atlas-diff-remove-line-background);
+  background-color: var(--atlas-diff-removed-background);
 }

@@ -141,7 +141,7 @@ export const AudioPlayer = memo(function AudioPlayer({
 
   return (
     <HintGroup>
-      <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border-default bg-bg-elevated px-2.5 py-2">
+      <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2.5 py-2">
         {src && (
           <audio
             ref={audioRef}
@@ -167,7 +167,7 @@ export const AudioPlayer = memo(function AudioPlayer({
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-active text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
           >
             {buffering ? (
-              <span className="text-[var(--comms-unread)]">
+              <span className="text-[var(--status-success)]">
                 <ArcProgress got={bufferProgress?.got ?? 0} total={bufferProgress?.total ?? 0} />
               </span>
             ) : playing ? (
@@ -198,7 +198,7 @@ export const AudioPlayer = memo(function AudioPlayer({
                   key={i}
                   className={cn(
                     "min-w-0 flex-1 rounded-full transition-colors duration-100",
-                    played ? "bg-[var(--comms-unread)]" : "bg-border-strong",
+                    played ? "bg-[var(--status-success)]" : "bg-border-strong",
                   )}
                   style={{ height: `${Math.round(4 + p * 18)}px` }}
                 />

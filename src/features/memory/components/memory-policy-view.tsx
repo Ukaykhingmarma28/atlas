@@ -134,7 +134,7 @@ export function MemoryPolicyView() {
     return (
       <Centered>
         <div className="text-center max-w-[360px] px-6 space-y-3">
-          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
+          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)] flex items-center justify-center">
             <Sparkles size={22} className="text-[var(--text-secondary)]" />
           </div>
           <p className="text-[13px] font-medium text-[var(--text-primary)]">
@@ -192,7 +192,7 @@ export function MemoryPolicyView() {
           )}
           <button
             onClick={() => void init(projectPath)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -204,7 +204,7 @@ export function MemoryPolicyView() {
   // phase === "ready"
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
+      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
         <span className="text-[11px] font-medium text-[var(--text-secondary)]">
           Preferences
           <span className="ml-1.5 text-[9px] text-[var(--text-tertiary)] tabular-nums">
@@ -270,13 +270,13 @@ export function MemoryPolicyView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter…"
-              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-focus)]"
+              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-strong)]"
             />
           </div>
 
           <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
             <div style={{ minWidth: TABLE_MIN_W }}>
-              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border-default)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
                 <span className={COL.policy}>Policy</span>
                 <span className={COL.value}>Value</span>
                 <span className={COL.source}>Source</span>
@@ -309,7 +309,7 @@ function FilterGroup<T extends string>({
   options: readonly (readonly [T, string])[];
 }) {
   return (
-    <div className="flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] p-0.5">
+    <div className="flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5">
       {options.map(([v, label]) => (
         <button
           key={v}
@@ -366,7 +366,7 @@ function PolicyRow({
               "shrink-0 rounded px-1 py-px text-[8.5px] font-semibold uppercase tracking-wide border",
               policy.category === "strong"
                 ? "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]"
-                : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
+                : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
             )}
             title={
               policy.category === "strong"
@@ -394,7 +394,7 @@ function PolicyRow({
             "w-full bg-transparent outline-none text-[12px] text-[var(--text-secondary)] rounded px-1.5 py-1 border transition-colors",
             dirty
               ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-              : "border-transparent hover:border-[var(--border-default)]",
+              : "border-transparent hover:border-[var(--border)]",
           )}
         />
       </div>

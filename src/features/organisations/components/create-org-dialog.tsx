@@ -160,7 +160,7 @@ export function CreateOrgDialog({
     "h-8 w-full rounded-lg border border-[#303030] bg-[#0C0C0C] px-2.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition-colors focus:border-[#4a4a4a]";
   /** The app's pill-button language (matches "Save to KB" / "Commit changes"). */
   const pillButton =
-    "inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
+    "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -179,7 +179,7 @@ export function CreateOrgDialog({
           }}
           className={cn(
             "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
-            "w-[400px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border-default)]",
+            "w-[400px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border)]",
             // Frosted, same language as the notification overlay.
             "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
             "shadow-[var(--shadow-overlay)] animate-scale-in",

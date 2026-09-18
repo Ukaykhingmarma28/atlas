@@ -65,7 +65,7 @@ export function NotificationPanel() {
       <aside
         className={cn(
           "fixed right-0 top-0 bottom-0 z-[9999] w-[360px] flex flex-col",
-          "border-l border-[var(--border-default)]",
+          "border-l border-[var(--border)]",
           "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
           "shadow-[var(--shadow-overlay)] animate-slide-in-right",
         )}
@@ -73,7 +73,7 @@ export function NotificationPanel() {
         aria-label="Notifications"
       >
         {/* Header — matches the window titlebar height (30px). */}
-        <div className="flex items-center gap-2 px-4 h-[30px] shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex items-center gap-2 px-4 h-[30px] shrink-0 border-b border-[var(--border)]">
           <Bell size={13} className="text-text-secondary" strokeWidth={1.5} />
           <span className="text-[12px] font-semibold text-text-primary">Notifications</span>
           <div className="flex-1" />

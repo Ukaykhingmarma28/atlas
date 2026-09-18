@@ -60,7 +60,7 @@ function CommitPicker({
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Inspect a commit's changes"
-        className="flex h-6 w-full min-w-0 items-center gap-1 rounded border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)]"
+        className="flex h-6 w-full min-w-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none hover:bg-[var(--bg-hover)]"
       >
         {branch && (
           <span className="flex shrink-0 items-center gap-0.5 rounded bg-[var(--bg-secondary)] px-1 py-px text-[9px] text-[var(--text-tertiary)]">
@@ -74,7 +74,7 @@ function CommitPicker({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
             <div className="flex h-7 items-center gap-1.5 border-b border-[var(--border-subtle)] px-2">
               <Search size={11} className="shrink-0 text-[var(--text-tertiary)]" />
               <input
@@ -348,8 +348,8 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
     });
 
   return (
-    <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)]">
-      <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border-default)] px-2">
+    <div className="flex h-full w-full flex-col border-r border-[var(--border)] bg-[var(--bg-secondary)]">
+      <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border)] px-2">
         <GitCommit size={12} className="shrink-0 text-[var(--text-tertiary)]" />
         {!hidePicker && (
           <CommitPicker commit={commit} branch={branch} log={log} onPick={onPickCommit} />

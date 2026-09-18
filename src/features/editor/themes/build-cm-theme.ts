@@ -32,6 +32,7 @@ const EDITOR_LINE_HEIGHT = "20px";
 export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeColors {
   const key = (name: keyof ResolvedTheme["keys"], fallback: string) =>
     theme?.keys[name] ?? fallback;
+  const token = (name: string, fallback: string) => theme?.base[name] ?? fallback;
   return {
     bg: key("editor.background", "#000000"),
     fg: key("editor.foreground", "#d4d4d4"),
@@ -43,9 +44,11 @@ export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeC
     selectionBg: key("editor.selection.background", "#303030"),
     matchBracketBg: key("editor.match_bracket.background", "#2d2d2d"),
     matchBracketOutline: key("editor.match_bracket.border", "#3d3d3d"),
-    foldBg: key("editor.fold.background", "#1a1a1a"),
-    foldBorder: key("editor.fold.border", "#2a2a2a"),
-    foldFg: key("editor.fold.foreground", "#8a8a8a"),
+    // The fold placeholder is a secondary surface with a secondary label; it
+    // does not need three theme keys of its own.
+    foldBg: token("secondary", "#0f0f0f"),
+    foldBorder: token("border", "#1e1e1e"),
+    foldFg: token("secondary-foreground", "#aaaaaa"),
     comment: key("syntax.comment", "#8f8f8f"),
     keyword: key("syntax.keyword", "#c9a2f5"),
     string: key("syntax.string", "#9ecf8a"),
@@ -61,15 +64,18 @@ export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeC
     escape: key("syntax.escape", "#e59a72"),
     definition: key("syntax.definition", "#ffffff"),
     propertyName: key("syntax.property", "#c8c8c8"),
-    bool: key("syntax.boolean", "#e0b070"),
-    null: key("syntax.null", "#e0b070"),
-    addLineBg: key("diff.add_line.background", "#0d2211"),
-    removeLineBg: key("diff.remove_line.background", "#220d0d"),
+    // Booleans and nulls ARE constants; three keys for one role is two too
+    // many, and every built-in theme set all three to the same colour.
+    bool: key("syntax.constant", "#e0b070"),
+    null: key("syntax.constant", "#e0b070"),
+    addLineBg: key("diff.added.background", "#0d2211"),
+    removeLineBg: key("diff.removed.background", "#220d0d"),
     contextBg: key("diff.context.background", "#0a0a0a"),
-    addSideBg: key("diff.add_side.background", "rgba(34,197,94,0.13)"),
-    removeSideBg: key("diff.remove_side.background", "rgba(244,63,63,0.13)"),
-    emphAddBg: key("diff.emphasis_added.background", "rgba(52,211,153,0.34)"),
-    emphRemoveBg: key("diff.emphasis_removed.background", "rgba(244,63,63,0.34)"),
+    // Side-by-side reads the same fill as inline: they are the same diff.
+    addSideBg: key("diff.added.background", "#0d2211"),
+    removeSideBg: key("diff.removed.background", "#220d0d"),
+    emphAddBg: key("diff.added.emphasis", "rgba(52,211,153,0.34)"),
+    emphRemoveBg: key("diff.removed.emphasis", "rgba(244,63,63,0.34)"),
   };
 }
 

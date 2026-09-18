@@ -121,15 +121,15 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
   });
 
   return (
-    <div className="h-full flex flex-col rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] overflow-hidden">
+    <div className="h-full flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-2.5 h-[38px] shrink-0 border-b border-[var(--border-default)]">
+      <div className="flex items-center gap-2 px-2.5 h-[38px] shrink-0 border-b border-[var(--border)]">
         <span className="text-[12px] font-medium text-[var(--text-primary)] mr-1">
           Activity log
         </span>
         <span className="text-[10px] text-[var(--text-tertiary)]">{filtered.length}</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-1.5 h-[26px] rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-2 w-[180px]">
+        <div className="flex items-center gap-1.5 h-[26px] rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 w-[180px]">
           <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
           <input
             value={query}
@@ -155,7 +155,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
       </div>
 
       {/* Header */}
-      <div className="flex items-center h-[26px] shrink-0 border-b border-[var(--border-default)] px-3 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+      <div className="flex items-center h-[26px] shrink-0 border-b border-[var(--border)] px-3 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
         <span className="w-[120px] shrink-0">Time</span>
         <span className="w-[80px] shrink-0">Source</span>
         <span className="w-[150px] shrink-0">Project</span>
@@ -215,7 +215,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
 
       {/* Pagination footer */}
       {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)]">
+        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border)] text-[10px] text-[var(--text-tertiary)]">
           <span className="font-mono tabular-nums">
             {clampedPage * PAGE_SIZE + 1}–{Math.min(filtered.length, (clampedPage + 1) * PAGE_SIZE)}{" "}
             of {filtered.length}
@@ -261,7 +261,7 @@ function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "h-[26px] rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] px-2 text-[11px] text-[var(--text-secondary)] outline-none max-w-[150px]",
+        "h-[26px] rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 text-[11px] text-[var(--text-secondary)] outline-none max-w-[150px]",
       )}
     >
       {options.map((o) => (

@@ -102,7 +102,7 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
 
   return (
     <div
-      className="flex h-full shrink-0 flex-col border-r border-border-default bg-[var(--bg-secondary)]"
+      className="flex h-full shrink-0 flex-col border-r border-border bg-[var(--bg-secondary)]"
       style={{ width }}
     >
       <div className="flex h-8 shrink-0 items-center gap-1 px-2 pl-3">
@@ -113,7 +113,7 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
           <button
             type="button"
             onClick={() => createPage(null)}
-            className="flex h-5 w-5 items-center justify-center rounded-full border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer"
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary outline-none transition-colors cursor-pointer"
           >
             <Plus size={12} />
           </button>

@@ -12,6 +12,16 @@ are all generated from it by `bun run theme:keys`, and `bun run test` fails if
 any of them is stale. Editing a key means editing that file; `resolve-theme.ts`
 is the only place the derivation order itself lives.
 
+**A key exists only where an author needs that surface to differ from the base
+tokens.** Everything else Atlas derives and does not ask about: a status badge's
+tinted fill is its status foreground at 12%, a focused control's border is the
+strong border, booleans are constants. The 2026-09-18 audit cut the set on
+exactly that test — 135 keys down to this list — and the colours that came off
+it did not disappear, they became **derived variables** (table at the bottom) or
+plain base tokens. Removing a key is a soft break: an unknown key still loads,
+with a warning, so a theme written for a newer Atlas keeps working on an older
+one and the other way round.
+
 An explicit key is written as a dotted TOML key (or as nested tables). A key
 may not also be a prefix, so use `terminal.ansi.red`, never both `terminal`
 and `terminal.ansi.red`. The schema enumerates the dotted form, which is what
@@ -40,6 +50,7 @@ recharts colour prop, and mermaid's `themeVariables`. They read
 | | |
 |---|---|
 | `themeColor(key)` | the resolved colour for a theme key |
+| `themeDerived(name)` | the resolved colour for a derived variable |
 | `themeBase(token)` | the resolved colour for a base token (`chart-1`, `card`, …) |
 | `themeHex(key)` / `hexOf(value)` | the same as pixi's 24-bit integer |
 | `onThemeApplied(fn)` | imperative repaint hook — a live xterm, a running pixi scene |
@@ -54,7 +65,7 @@ later. Every non-CSS consumer subscribes to one of the last two.
 
 ## Full key list and derivation sources
 
-All **131** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
+All **87** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
 **Source** is the first thing Atlas tries after an explicit `keys` value:
 `P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the
 active appearance, shown here as dark / light. **Transform** is applied to
@@ -66,15 +77,12 @@ Separators and control outlines.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `border.default` | B:border → D | — | `#1e1e1e` / `#d8d3cc` | Default separator and control border. |
 | `border.subtle` | B:sidebar-border → D | — | `#141414` / `#ebe5de` | Low-emphasis separator. |
-| `border.strong` | B:ring → D | — | `#3d3d3d` / `#b8b1aa` | High-emphasis border. |
-| `border.focus` | B:ring → D | — | `#3d3d3d` / `#907aa9` | Focused-control border. |
-| `border.variant` | B:sidebar-border → D | — | `#141414` / `#ebe5de` | Alternate low-emphasis border. |
+| `border.strong` | B:border → D | — | `#3d3d3d` / `#b8b1aa` | High-emphasis border, including a focused control's. |
 
 ### Elements and overlays
 
-Hover/selected/pressed overlays, and the raised-surface edge.
+Hover/selected/pressed overlays, the raised edge, and the brand fills.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
@@ -82,11 +90,8 @@ Hover/selected/pressed overlays, and the raised-surface edge.
 | `element.selected` | B:foreground → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(0,0,0,0.06)` | Selected overlay for ordinary elements. |
 | `element.active` | B:foreground → D | alpha 0.08 | `rgba(255,255,255,0.08)` / `rgba(0,0,0,0.08)` | Pressed overlay for ordinary elements. |
 | `element.highlight` | B:foreground → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(0,0,0,0.06)` | Top-edge highlight on a raised surface. |
-| `element.primary_hover` | B:primary → D | lighten 0.15 | `#cccccc` / `#a290b5` | Hovered primary-brand fill. |
-| `element.primary_muted` | B:primary → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(144,122,169,0.08)` | Muted primary-brand fill. |
-| `ghost_element.hover` | B:foreground → D | alpha 0.03 | `rgba(255,255,255,0.03)` / `rgba(0,0,0,0.03)` | Hover overlay for ghost controls. |
-| `ghost_element.selected` | B:foreground → D | alpha 0.05 | `rgba(255,255,255,0.05)` / `rgba(0,0,0,0.05)` | Selected overlay for ghost controls. |
-| `ghost_element.active` | B:foreground → D | alpha 0.07 | `rgba(255,255,255,0.07)` / `rgba(0,0,0,0.07)` | Pressed overlay for ghost controls. |
+| `primary.hover` | B:primary → D | lighten 0.15 | `#cccccc` / `#a290b5` | Hovered primary-brand fill. |
+| `primary.muted` | B:primary → D | alpha 0.06 | `rgba(255,255,255,0.06)` / `rgba(144,122,169,0.08)` | Muted primary-brand fill. |
 
 ### Text
 
@@ -94,23 +99,18 @@ Prose roles that are not a base token.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `text.muted` | B:muted-foreground → D | — | `#585858` / `#797593` | Muted prose and metadata. |
-| `text.placeholder` | B:muted-foreground → D | mix 0.12 → B:background | `#777777` / `#9893a5` | Input placeholder text. |
 | `text.disabled` | B:muted-foreground → D | mix 0.35 → B:background | `#333333` / `#b8b1aa` | Disabled and unavailable text. |
-| `text.accent` | P:yellow → B:primary → D | — | `#ffff00` / `#907aa9` | Rare text-only signature accent. |
 
 ### Status
 
-Success / warning / error / info, plus two categorical hues.
+Success / warning / error / info.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `status.success.foreground` | P:green → D | — | `#4d4d4d` / `#286983` | Success status foreground. |
+| `status.success.foreground` | P:green → D | — | `#3fb950` / `#286983` | Success status foreground, and the live-capture indicator. |
 | `status.warning.foreground` | P:yellow → D | — | `#cd9731` / `#ea9d34` | Warning status foreground. |
 | `status.error.foreground` | P:red → B:destructive → D | — | `#f44747` / `#b4637a` | Error status foreground. |
 | `status.info.foreground` | P:blue → D | — | `#6796e6` / `#56949f` | Informational status foreground. |
-| `status.purple.foreground` | P:purple → D | — | `#999999` / `#907aa9` | Purple categorical status. |
-| `status.orange.foreground` | P:orange → D | — | `#cd9731` / `#d7827e` | Orange categorical status. |
 
 ### Selection
 
@@ -129,7 +129,6 @@ The PTY surface and the 16 ANSI colours.
 | `terminal.foreground` | B:foreground → D | — | `#d4d4d4` / `#575279` | Terminal default foreground. |
 | `terminal.background` | B:background → D | — | `#000000` / `#faf4ed` | Terminal background. |
 | `terminal.cursor` | B:foreground → D | — | `#d4d4d4` / `#575279` | Terminal cursor. |
-| `terminal.selection` | B:primary → D | alpha 0.3 | `rgba(255,255,255,0.3)` / `rgba(144,122,169,0.3)` | Terminal selection. |
 | `terminal.ansi.black` | B:background → D | lighten 0.12 | `#1e1e1e` / `#575279` | ANSI black. |
 | `terminal.ansi.red` | P:red → D | — | `#f44747` / `#b4637a` | ANSI red. |
 | `terminal.ansi.green` | P:green → D | — | `#98c379` / `#286983` | ANSI green. |
@@ -168,11 +167,6 @@ CodeMirror and Markdown highlighting.
 | `syntax.escape` | P:pink → D | — | `#e59a72` / `#d7827e` | Escape sequences. |
 | `syntax.definition` | B:foreground → D | — | `#ffffff` / `#464261` | Definitions and strong prose. |
 | `syntax.property` | P:cyan → D | — | `#c8c8c8` / `#56949f` | Properties and object keys. |
-| `syntax.boolean` | P:orange → D | — | `#e0b070` / `#d7827e` | Booleans. |
-| `syntax.null` | P:orange → D | — | `#e0b070` / `#d7827e` | Null-like literals. |
-| `syntax.meta` | P:yellow → D | — | `#d9b47a` / `#907aa9` | Pragmas and metadata. |
-| `syntax.builtin` | P:red → D | — | `#e59a72` / `#b4637a` | Built-in symbols. |
-| `syntax.punctuation` | B:muted-foreground → D | — | `#9a9a9a` / `#797593` | Punctuation. |
 
 ### Editor
 
@@ -190,65 +184,35 @@ The code editor's own chrome.
 | `editor.selection.background` | B:primary → D | alpha 0.24 | `#303030` / `#dfdad9` | Editor selection. |
 | `editor.match_bracket.background` | B:accent → D | — | `#2d2d2d` / `#dfdad9` | Matching bracket background. |
 | `editor.match_bracket.border` | B:ring → D | — | `#3d3d3d` / `#907aa9` | Matching bracket outline. |
-| `editor.fold.background` | B:secondary → D | — | `#1a1a1a` / `#f2e9e1` | Fold placeholder background. |
-| `editor.fold.border` | B:border → D | — | `#2a2a2a` / `#cecacd` | Fold placeholder border. |
-| `editor.fold.foreground` | B:muted-foreground → D | — | `#8a8a8a` / `#797593` | Fold placeholder foreground. |
 
 ### Chrome surfaces
 
-Scrollbars, tabs, panels — the app frame.
+Scrollbars and panel surfaces — the app frame.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `scrollbar.track.background` | B:background → D | — | `#000000` / `#faf4ed` | Scrollbar track. |
 | `scrollbar.thumb.background` | B:foreground → D | alpha 0.16 | `rgba(255,255,255,0.16)` / `rgba(0,0,0,0.16)` | Scrollbar thumb. |
 | `scrollbar.thumb.hover` | B:foreground → D | alpha 0.26 | `rgba(255,255,255,0.26)` / `rgba(0,0,0,0.26)` | Hovered scrollbar thumb. |
-| `tab.active.background` | B:accent → D | — | `#171717` / `#f2e9e1` | Active tab background. |
-| `tab.inactive.background` | B:sidebar → D | — | `#0a0a0a` / `#fffaf3` | Inactive tab background. |
-| `tab.active.border` | B:primary → D | — | `#ffffff` / `#907aa9` | Active tab indicator. |
-| `panel.rail.background` | B:sidebar → D | — | `#0f0f0f` / `#fffaf3` | Project rail background. |
 | `panel.background` | B:sidebar → D | — | `#060706` / `#fffaf3` | Panel background. |
-| `panel.elevated.background` | B:card → D | — | `#0d0e0d` / `#f2e9e1` | Elevated panel background. |
-| `panel.overlay.background` | B:popover → D | — | `#1c1c1c` / `#f2e9e1` | Panel overlay background. |
 | `panel.input.background` | B:background → D | — | `#0a0a0a` / `#fffaf3` | Panel input background. |
 
 ### Diff
 
-Added / removed / modified regions, inline and side-by-side.
+Added and removed regions, inline and side-by-side.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `diff.added.background` | P:green → D | alpha 0.08 | `rgba(77,77,77,0.08)` / `rgba(40,105,131,0.08)` | Added diff region. |
-| `diff.added.text` | P:green → D | — | `#3fb950` / `#286983` | Added diff text. |
-| `diff.removed.background` | P:red → D | alpha 0.08 | `rgba(119,119,119,0.08)` / `rgba(180,99,122,0.08)` | Removed diff region. |
-| `diff.removed.text` | P:red → D | — | `#777777` / `#b4637a` | Removed diff text. |
-| `diff.modified.background` | P:blue → D | alpha 0.08 | `rgba(192,192,192,0.08)` / `rgba(86,148,159,0.08)` | Modified diff region. |
-| `diff.add_line.background` | P:green → D | alpha 0.13 | `#0d2211` / `rgba(40,105,131,0.13)` | Added line background. |
-| `diff.remove_line.background` | P:red → D | alpha 0.13 | `#220d0d` / `rgba(180,99,122,0.13)` | Removed line background. |
+| `diff.added.background` | P:green → D | alpha 0.13 | `#0d2211` / `rgba(40,105,131,0.13)` | Added line or hunk. |
+| `diff.added.emphasis` | P:green → D | alpha 0.34 | `rgba(52,211,153,0.34)` / `rgba(40,105,131,0.34)` | Changed words inside an added line. |
+| `diff.added.text` | P:green → D | — | `#3fb950` / `#286983` | Added diff text, and the +N line statistic. |
+| `diff.removed.background` | P:red → D | alpha 0.13 | `#220d0d` / `rgba(180,99,122,0.13)` | Removed line or hunk. |
+| `diff.removed.emphasis` | P:red → D | alpha 0.34 | `rgba(244,63,63,0.34)` / `rgba(180,99,122,0.34)` | Changed words inside a removed line. |
+| `diff.removed.text` | P:red → D | — | `#f85149` / `#b4637a` | Removed diff text, and the -N line statistic. |
 | `diff.context.background` | B:background → D | — | `#0a0a0a` / `#faf4ed` | Unchanged diff context. |
-| `diff.add_side.background` | P:green → D | alpha 0.13 | `rgba(34,197,94,0.13)` / `rgba(40,105,131,0.13)` | Side-by-side addition. |
-| `diff.remove_side.background` | P:red → D | alpha 0.13 | `rgba(244,63,63,0.13)` / `rgba(180,99,122,0.13)` | Side-by-side removal. |
-| `diff.emphasis_added.background` | P:green → D | alpha 0.34 | `rgba(52,211,153,0.34)` / `rgba(40,105,131,0.34)` | Intraline addition. |
-| `diff.emphasis_removed.background` | P:red → D | alpha 0.34 | `rgba(244,63,63,0.34)` / `rgba(180,99,122,0.34)` | Intraline removal. |
-
-### Team chat
-
-The comms panel.
-
-| Key | Source | Transform | D (dark / light) | What it colours |
-|---|---|---|---|---|
-| `comms.outer.background` | B:sidebar → D | — | `#0f0f0f` / `#fffaf3` | Team chat outer surface. |
-| `comms.surface.background` | B:background → D | — | `#000000` / `#faf4ed` | Team chat transcript surface. |
-| `comms.mention.background` | B:foreground → D | alpha 0.16 | `rgba(255,255,255,0.16)` / `rgba(0,0,0,0.1)` | Current-user mention background. |
-| `comms.mention.foreground` | B:foreground → D | — | `#ffffff` / `#575279` | Current-user mention text. |
-| `comms.other_mention.background` | B:foreground → D | alpha 0.08 | `rgba(255,255,255,0.08)` / `rgba(0,0,0,0.06)` | Other-user mention background. |
-| `comms.other_mention.foreground` | B:muted-foreground → D | — | `#cfcfcf` / `#797593` | Other-user mention text. |
-| `comms.unread.foreground` | P:green → D | — | `#b8b8b8` / `#286983` | Unread and presence indicator. |
-| `comms.unread_strong.foreground` | P:green → D | mix 0.2 → B:background | `#8a8a8a` / `#286983` | Strong unread indicator. |
 
 ### Agents and indicators
 
-Per-agent identity chips and small live indicators.
+Per-agent identity chips.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
@@ -270,14 +234,10 @@ Per-agent identity chips and small live indicators.
 | `agent.opencode.background` | B:muted-foreground → D | alpha 0.1 | `rgba(156,163,175,0.1)` / `rgba(121,117,147,0.1)` | OpenCode identity background. |
 | `agent.kilo.foreground` | P:yellow → D | — | `#f0c53d` / `#ea9d34` | Kilo identity chip. |
 | `agent.kilo.background` | P:yellow → D | alpha 0.1 | `rgba(240,197,61,0.1)` / `rgba(234,157,52,0.1)` | Kilo identity background. |
-| `stat.added` | P:green → D | — | `#3fb950` / `#286983` | Added-line statistic. |
-| `stat.removed` | P:red → D | — | `#f85149` / `#b4637a` | Removed-line statistic. |
-| `capture.live` | P:green → D | — | `#3fb950` / `#286983` | Active capture indicator. |
-| `atlas.ants` | B:primary → D | — | `#ffffff` / `#907aa9` | Animated marching-ants stroke. |
 
 ## Derived variables
 
-Atlas writes these **4** `--atlas-…` custom properties too, but
+Atlas writes these **6** `--atlas-…` custom properties too, but
 they are **not** theme keys: each is a pure transform of a key that is, so a
 theme steers it through that key. Writing one in a theme file is an
 unknown-key warning.
@@ -288,6 +248,8 @@ unknown-key warning.
 | `status.warning.background` | `status.warning.foreground` | alpha 0.12 | Tinted fill behind a warning foreground. |
 | `status.error.background` | `status.error.foreground` | alpha 0.12 | Tinted fill behind an error foreground. |
 | `status.info.background` | `status.info.foreground` | alpha 0.12 | Tinted fill behind an informational foreground. |
+| `element.emphasis` | `base.foreground` | alpha 0.16 | The strongest neutral overlay — a chat mention addressed to you. |
+| `terminal.selection` | `base.primary` | alpha 0.3 | Terminal selection. |
 
 <!-- /generated:theme-keys -->
 
@@ -303,20 +265,34 @@ single token or key in the next cell.
 | `--bg-sidebar` | base `sidebar` |
 | `--bg-raised`, `--bg-secondary`, `--bg-elevated` | base `card` |
 | `--bg-overlay`, `--bg-tertiary` | base `popover` |
-| `--bg-input`, `--bg-canvas`, `--bg-rail`, `--panel-rail-bg`, `--panel-bg`, `--panel-bg-2` | corresponding `panel.*.background` key |
-| `--bg-tab-active`, `--bg-tab-inactive` | `tab.*.background` key |
-| `--bg-hover`, `--bg-selected`, `--bg-active`, `--selection-bg`, `--bg-elevated-2` | corresponding `element.*`, `selection.background`, or `panel.elevated.background` key |
+| `--bg-input`, `--bg-canvas`, `--bg-rail`, `--panel-rail-bg`, `--panel-bg` | `panel.input.background`, `panel.background` |
+| `--bg-elevated-2`, `--panel-bg-2` | base `card` |
+| `--bg-tab-active`, `--bg-tab-inactive` | base `accent`, base `sidebar` |
+| `--bg-hover`, `--bg-selected`, `--bg-active`, `--selection-bg` | `element.hover`, `element.selected`, `element.active`, `selection.background` |
 | `--text-primary`, `--text-secondary`, `--text-tertiary`, `--text-inverse` | base `foreground`, `secondary-foreground`, `muted-foreground`, `primary-foreground` |
-| `--text-ghost`, `--text-muted`, `--text-accent` | `text.disabled`, `text.muted`, `text.accent` |
-| `--border-default`, `--border-subtle`, `--border-strong`, `--border-focus`, `--border-variant` | corresponding `border.*` key |
-| `--accent-primary`, `--accent-primary-hover`, `--accent-primary-muted`, `--accent-secondary` | base `primary`, `element.primary_hover`, `element.primary_muted`, base `muted-foreground` |
-| `--status-*`, `--danger`, `--warning` | corresponding `status.*` key or base `destructive` |
-| `--stat-added`, `--stat-removed`, `--capture-live`, `--atlas-ants-color` | `stat.added`, `stat.removed`, `capture.live`, `atlas.ants` |
-| `--diff-*` | corresponding `diff.*` key |
-| `--cm-bg`, `--cm-fg`, `--cm-caret`, `--cm-gutter-*`, `--cm-active-*`, `--cm-selection-*`, `--cm-bracket-*`, `--cm-fold-*` | corresponding `editor.*` key |
-| `--cm-comment`, `--cm-keyword`, `--cm-string`, `--cm-number`, `--cm-type`, `--cm-func`, `--cm-variable`, `--cm-tag`, `--cm-attr`, `--cm-constant`, `--cm-regexp`, `--cm-property`, `--cm-meta` | corresponding `syntax.*` key |
-| `--comms-*` | corresponding `comms.*` key |
-| `--agent-*-chip`, `--agent-*-chip-bg` | corresponding `agent.*.foreground` or `agent.*.background` key |
+| `--text-ghost`, `--text-muted` | `text.disabled`, base `muted-foreground` |
+| `--border-default`, `--border-focus`, `--border-variant` | **gone** — use `var(--border)`, `border.strong`, `border.subtle` |
+| `--border-subtle`, `--border-strong` | corresponding `border.*` key |
+| `--accent-primary`, `--accent-primary-hover`, `--accent-primary-muted`, `--accent-secondary` | base `primary`, `primary.hover`, `primary.muted`, base `muted-foreground` |
+| `--status-success`, `--status-warning`, `--status-error`, `--status-info` | corresponding `status.*.foreground` key |
+| `--status-*-muted`, `--status-success-bg` | corresponding `status.*.background` **derived variable** |
+| `--status-purple`, `--status-orange`, `--text-accent`, `--atlas-ants-color` | **gone** — no consumer; the marching-ants colour is set per call site |
+| `--danger`, `--warning` | base `destructive`, `status.warning.foreground` |
+| `--stat-added`, `--stat-removed`, `--capture-live` | `diff.added.text`, `diff.removed.text`, `status.success.foreground` |
+| `--diff-add-line-bg`, `--diff-add-side-bg` | `diff.added.background` (one fill for both renderers) |
+| `--diff-remove-line-bg`, `--diff-remove-side-bg` | `diff.removed.background` |
+| `--diff-emph-add-bg`, `--diff-emph-remove-bg` | `diff.added.emphasis`, `diff.removed.emphasis` |
+| `--diff-added-text`, `--diff-removed-text`, `--diff-context-bg` | corresponding `diff.*` key |
+| `--diff-added-bg`, `--diff-removed-bg`, `--diff-modified-bg` | **gone** — no consumer |
+| `--cm-bg`, `--cm-fg`, `--cm-caret`, `--cm-gutter-*`, `--cm-active-*`, `--cm-selection-*`, `--cm-bracket-*` | corresponding `editor.*` key |
+| `--cm-fold-bg`, `--cm-fold-border`, `--cm-fold-fg` | base `secondary`, `border`, `secondary-foreground` |
+| `--cm-comment`, `--cm-keyword`, `--cm-string`, `--cm-number`, `--cm-type`, `--cm-func`, `--cm-variable`, `--cm-tag`, `--cm-attr`, `--cm-constant`, `--cm-regexp`, `--cm-property` | corresponding `syntax.*` key |
+| `--cm-meta` | `syntax.attribute` — CodeMirror already coloured `tags.meta` with it |
+| `--comms-outer`, `--comms-surface` | base `sidebar`, base `background` |
+| `--comms-unread`, `--comms-unread-deep` | `status.success.foreground` |
+| `--comms-mention-text`, `--comms-mention-bg` | base `foreground`, the `element.emphasis` derived variable |
+| `--comms-mention-other-bg`, `--comms-mention-other-text` | **gone** — no consumer |
+| `--agent-*-chip`, `--agent-*-chip-bg` | `agent.chip.foreground`, `agent.chip.background`, plus the non-themeable brand hues beside `agentMeta()` |
 
 `--font-size-*`, `--space-*`, radius, shadow, z-index and motion variables
 are not theme keys. Their current rendered values are deliberately preserved

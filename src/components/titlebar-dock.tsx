@@ -216,7 +216,7 @@ export function TitlebarDock({
           className={cn(
             "flex w-max",
             "bg-black text-text-primary",
-            "outline outline-1 outline-[var(--border-default)]",
+            "outline outline-1 outline-[var(--border)]",
             "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
           )}
           style={{

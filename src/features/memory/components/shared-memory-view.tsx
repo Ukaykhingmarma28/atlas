@@ -124,9 +124,9 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   return (
     <div className={cn("h-full flex flex-col bg-[var(--bg-base)]", className)}>
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
+      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
         {/* Events / Plans toggle — pill group, matches the Memory nav. */}
-        <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5">
           <SegBtn
             active={tab === "events"}
             onClick={() => setTab("events")}
@@ -163,7 +163,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 w-[190px] focus-within:border-[var(--border-strong)]">
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 w-[190px] focus-within:border-[var(--border-strong)]">
           <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
           <input
             value={query}
@@ -299,7 +299,7 @@ function EventDetail({ event: e }: { event: MemoryEvent }) {
         {e.sessionId && <MetaChip label="Session" value={e.sessionId.slice(0, 8)} mono />}
       </div>
       {detail && (
-        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2">
           <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
             {detail}
           </pre>
@@ -401,7 +401,7 @@ function PlanRow({
             <MetaChip label="Agent" value={agentMetaForSource(e.agent).label} />
             <MetaChip label="When" value={fmtDateTime(e.ts)} />
           </div>
-          <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2">
             <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
               {text || "—"}
             </pre>
@@ -416,7 +416,7 @@ function PlanRow({
 
 function HeaderRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border-default)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
       {children}
     </div>
   );
@@ -507,7 +507,7 @@ function FilterMenu({
           "flex items-center gap-1 h-6 rounded-md border px-2 text-[11px] transition-colors cursor-pointer",
           active
             ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
+            : "border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
         )}
       >
         <ListFilter size={11} className="shrink-0" />
@@ -518,7 +518,7 @@ function FilterMenu({
         />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-lg">
+        <div className="absolute top-full left-0 z-50 mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-1 shadow-lg">
           <FilterOption
             label={`All ${label.toLowerCase()}s`}
             active={!value}
@@ -644,7 +644,7 @@ function IconButton({
       <button
         type="button"
         onClick={onClick}
-        className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:scale-[0.96]"
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:scale-[0.96]"
       >
         {children}
       </button>
@@ -655,7 +655,7 @@ function IconButton({
 function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]">
+      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]">
         <Share2 size={16} />
       </div>
       <div className="flex flex-col gap-1">

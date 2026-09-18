@@ -162,7 +162,7 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
               disabled={isBusy}
               className={cn(
                 "inline-flex items-center gap-1 h-5 px-2 rounded-full",
-                "border border-border-default bg-bg-elevated text-[var(--text-primary)]",
+                "border border-border bg-bg-elevated text-[var(--text-primary)]",
                 "text-[10px] font-medium leading-none cursor-pointer",
                 "hover:bg-bg-hover transition-colors",
                 "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
@@ -190,7 +190,7 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
             <DropdownMenu.Popup
               className={cn(
                 "min-w-[200px] rounded-md p-0.5",
-                "bg-black border border-border-default",
+                "bg-black border border-border",
                 "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
                 "text-text-primary",
               )}
@@ -207,7 +207,7 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
                 disabled={!hasNote}
                 onSelect={handleExportNoteHtml}
               />
-              <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
+              <DropdownMenu.Separator className="h-px bg-border my-0.5" />
               <ExportMenuItem
                 icon={FileText}
                 label="Export project as .md"
@@ -218,7 +218,7 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
                 label="Export project as .html"
                 onSelect={handleExportProjectHtml}
               />
-              <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
+              <DropdownMenu.Separator className="h-px bg-border my-0.5" />
               <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />
             </DropdownMenu.Popup>
           </DropdownMenu.Positioner>

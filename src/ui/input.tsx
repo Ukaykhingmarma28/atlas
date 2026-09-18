@@ -7,19 +7,19 @@ import { cn } from "@/lib/utils";
  *
  * shadcn's base-style `Input` in shape — one `<input>`, a `data-slot`, class
  * composition through `className` — sized on the Atlas control heights and
- * drawn with the theme's own `--input` / `--border-default` tokens.
+ * drawn with the theme's own `--input` / `--border` tokens.
  *
  * It keeps the global `:focus-visible` ring rather than drawing its own: one
  * focus indicator across the whole app is the point of decision 31. The border
- * still lifts to `--border-focus` on focus, which is the "this field is live"
+ * still lifts to `--border-strong` on focus, which is the "this field is live"
  * signal a ring alone does not give a mouse user.
  */
 const inputVariants = cva(
   [
     "w-full min-w-0 rounded border bg-bg-input text-text-primary",
-    "border-border-default transition-colors duration-fast ease-out-strong",
+    "border-border transition-colors duration-fast ease-out-strong",
     "placeholder:text-text-tertiary",
-    "focus:border-border-focus",
+    "focus:border-border-strong",
     "disabled:cursor-not-allowed disabled:opacity-50",
     "aria-invalid:border-destructive",
   ],

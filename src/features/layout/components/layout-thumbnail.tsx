@@ -31,7 +31,7 @@ function ColIcon({ type }: { type: TabType }) {
  *  per split column with its tab-type icon). Pure CSS, monochrome/AMOLED. */
 export function LayoutThumbnail({ template }: { template: LayoutTemplate }) {
   return (
-    <div className="aspect-[16/10] w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-base)] p-1 flex gap-1">
+    <div className="aspect-[16/10] w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] p-1 flex gap-1">
       {template.panels.left && (
         <div className="w-1.5 rounded-[2px] bg-[var(--bg-elevated)] shrink-0" />
       )}

@@ -517,7 +517,7 @@ export function SessionDetail({
           {/* The search field, between the two control clusters and centred in the
            *  measure. Same pill as the memory Timeline's: floating, blurred, no
            *  box around it — it belongs to the content, not to a toolbar. */}
-          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 px-4 shadow-[var(--shadow-overlay)] backdrop-blur-2xl">
+          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 px-4 shadow-[var(--shadow-overlay)] backdrop-blur-2xl">
             <Search size={15} className="shrink-0 text-[var(--text-tertiary)]" />
             <input
               value={search}
@@ -548,7 +548,7 @@ export function SessionDetail({
             )}
           </div>
 
-          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-xl">
+          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-xl">
             <BarButton
               label="Next prompt"
               bare
@@ -557,7 +557,7 @@ export function SessionDetail({
             >
               <ChevronsDown size={14} strokeWidth={1.6} />
             </BarButton>
-            <span aria-hidden className="h-4 w-px bg-[var(--border-default)]" />
+            <span aria-hidden className="h-4 w-px bg-[var(--border)]" />
             <BarButton
               label={chatOpen ? "Close chat" : "Ask about this session"}
               bare
@@ -684,8 +684,8 @@ function Masthead({ detail }: { detail: Detail }) {
 
       <div
         className={cn(
-          "mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border-default)]",
-          "[&>*+*]:border-l [&>*+*]:border-[var(--border-default)]",
+          "mt-[22px] grid grid-cols-4 overflow-hidden rounded-md border border-[var(--border)]",
+          "[&>*+*]:border-l [&>*+*]:border-[var(--border)]",
         )}
       >
         <Metric label="Active" value={formatDuration(s.activeSeconds)} sub={clock(s)} />
@@ -856,7 +856,7 @@ function costLabel(cost: number): string {
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-raised)] px-2.5 font-mono text-[10.5px] text-[var(--text-tertiary)]">
+    <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 font-mono text-[10.5px] text-[var(--text-tertiary)]">
       {children}
     </span>
   );
@@ -1139,7 +1139,7 @@ function Node({
             ? "border-[var(--border-strong)]/50 bg-[var(--bg-elevated-2)] text-[var(--text-secondary)]"
             : kind === "response"
               ? "border-[var(--border-strong)]/50 bg-[var(--bg-elevated-2)] text-[var(--text-secondary)]"
-              : "border-[var(--border-default)] bg-[var(--bg-raised)] text-[var(--text-tertiary)]";
+              : "border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-tertiary)]";
 
   // Tool calls and thinking stay small. They are punctuation between turns, not
   // turns themselves, and giving them an avatar-sized marker would flatten the
@@ -1371,7 +1371,7 @@ function CallTable({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-md border border-[var(--border-default)]",
+        "overflow-hidden rounded-md border border-[var(--border)]",
         dense ? "mt-2.5" : "mt-5",
       )}
     >
@@ -1518,7 +1518,7 @@ function Checkpoint({ entry }: { entry: TimelineEntry }) {
         "mt-2.5 overflow-hidden rounded-md border",
         orphaned
           ? "border-dashed border-[var(--border-strong)]"
-          : "border-[var(--border-default)] bg-[var(--bg-raised)]",
+          : "border-[var(--border)] bg-[var(--bg-raised)]",
       )}
     >
       <div className="flex items-center gap-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
@@ -1672,7 +1672,7 @@ function FilterDrawer({
       <aside
         role="dialog"
         aria-label="Filters"
-        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-50 flex w-[340px] flex-col border-l border-[var(--border-default)] bg-[var(--bg-elevated)]/60 shadow-[var(--shadow-overlay)] backdrop-blur-2xl"
+        className="animate-slide-in-right absolute bottom-0 right-0 top-0 z-50 flex w-[340px] flex-col border-l border-[var(--border)] bg-[var(--bg-elevated)]/60 shadow-[var(--shadow-overlay)] backdrop-blur-2xl"
       >
         {/* No header row at all. With no active filters it was an empty strip
          *  holding one X — the close button floats over the content instead,
@@ -1701,7 +1701,7 @@ function FilterDrawer({
                   setFailedOnly(false);
                   setTools(() => new Set());
                 }}
-                className="h-[22px] cursor-pointer rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                className="h-[22px] cursor-pointer rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
               >
                 Reset
               </button>
@@ -1800,7 +1800,7 @@ function FilterDrawer({
             </dl>
 
             {s.source === "external_jsonl" && (
-              <p className="mt-4 rounded-md border border-dashed border-[var(--border-default)] px-3 py-2.5 text-[11.5px] leading-[1.55] text-[var(--text-tertiary)]">
+              <p className="mt-4 rounded-md border border-dashed border-[var(--border)] px-3 py-2.5 text-[11.5px] leading-[1.55] text-[var(--text-tertiary)]">
                 Imported session — read from a transcript on disk. Commits aren&apos;t linked to
                 imported history, and token usage wasn&apos;t recorded.
               </p>
@@ -1861,7 +1861,7 @@ function CheckpointJump({
         render={
           <button
             type="button"
-            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-raised)] px-3 text-left text-[12.5px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 text-left text-[12.5px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           >
             <span className="flex-1">Jump to</span>
             <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
@@ -1870,10 +1870,10 @@ function CheckpointJump({
       />
       <Popover.Portal>
         <Popover.Positioner className="z-[var(--z-max)]" align="start" sideOffset={6}>
-          <Popover.Popup className="flex max-h-[320px] w-[var(--anchor-width)] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/95 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+          <Popover.Popup className="flex max-h-[320px] w-[var(--anchor-width)] origin-[var(--transform-origin)] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/95 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
             {/* The search only appears when there is enough to search. */}
             {checkpoints.length > 4 && (
-              <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-2.5">
+              <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-2.5">
                 <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                 <input
                   value={query}
@@ -1978,7 +1978,7 @@ function FilterChip({
           ? "cursor-default border-[var(--border-subtle)] text-[var(--text-ghost)]"
           : on
             ? "cursor-pointer border-[var(--border-strong)] bg-[var(--bg-active)] text-[var(--text-primary)]"
-            : "cursor-pointer border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]",
+            : "cursor-pointer border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]",
       )}
     >
       {dot && enabled && (
@@ -2038,8 +2038,7 @@ function BarButton({
           disabled
             ? "cursor-default text-[var(--text-ghost)]"
             : "cursor-pointer text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
-          !bare &&
-            "border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 backdrop-blur-xl",
+          !bare && "border border-[var(--border)] bg-[var(--bg-elevated)]/70 backdrop-blur-xl",
           !bare && "shadow-[var(--shadow-overlay)]",
           active && !bare && "border-[var(--border-strong)] text-[var(--text-primary)]",
         )}
@@ -2116,7 +2115,7 @@ function Clamp({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 text-[11.5px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-[11.5px] text-[var(--text-secondary)] shadow-[var(--shadow-overlay)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           >
             <ChevronDown
               size={12}

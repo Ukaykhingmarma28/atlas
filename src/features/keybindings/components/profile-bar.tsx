@@ -18,7 +18,7 @@ import { useKeybindingsStore } from "../stores/keybindings-store";
 
 // Same recipe as the account menu so every Atlas dropdown reads alike.
 const CONTENT_CLASS =
-  "min-w-[200px] max-w-[280px] rounded-md border border-[var(--border-default)] " +
+  "min-w-[200px] max-w-[280px] rounded-md border border-[var(--border)] " +
   "bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1";
 const ITEM_CLASS =
   "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-pointer outline-none " +
@@ -94,7 +94,7 @@ export function ProfileBar() {
   };
 
   return (
-    <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+    <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
       {naming ? (
         <div className="flex items-center gap-1.5 px-2">
           <span className="text-[11px] font-normal text-text-tertiary">Profile</span>
@@ -163,7 +163,7 @@ export function ProfileBar() {
                     )}
                   </DropdownMenu.Item>
                 ))}
-                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-default)]" />
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
                 <DropdownMenu.Item
                   onClick={() => {
                     openingInput.current = true;
@@ -232,7 +232,7 @@ export function ProfileBar() {
         >
           <Trash2 size={12} />
         </IconButton>
-        <span className="mx-1 h-3.5 w-px bg-border-default" />
+        <span className="mx-1 h-3.5 w-px bg-border" />
         <IconButton label="Open keybindings.json" onClick={() => void openKeybindingsFile()}>
           <FileJson size={12} />
         </IconButton>

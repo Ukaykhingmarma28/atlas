@@ -132,7 +132,7 @@ export function CommsPanel() {
     // an empty 29px strip labelled "Team Chat" only repeats what the panel
     // already is. The placeholder gets the whole surface.
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)] pt-1.5">
+      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)] pt-1.5">
         <CommsSurface>
           <CommsNotConnected org={activeOrg} />
         </CommsSurface>
@@ -150,7 +150,7 @@ export function CommsPanel() {
   if (conversations.length === 0 && connection.state !== "open") {
     const terminal = connection.state === "unavailable";
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)]">
+      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
         <div className="flex h-[38px] shrink-0 items-center pl-2">
           <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-white/[0.07] pl-2.5 pr-2.5 text-[11.5px] font-medium text-text-primary select-none">
             <MessagesSquare size={11} className="shrink-0 opacity-70" />
@@ -173,7 +173,7 @@ export function CommsPanel() {
   }
 
   return (
-    <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--comms-outer)]">
+    <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
       {/* The header lives on the BACKDROP, not the card — that separation is
           the whole depth trick. Taller than the old 29px band so the tabs
           breathe like the reference. */}
@@ -210,7 +210,7 @@ export function CommsPanel() {
             <button
               type="button"
               onClick={() => actions.newTab()}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none cursor-pointer"
             >
               <Plus size={14} />
             </button>
@@ -253,7 +253,7 @@ export function CommsPanel() {
 function CommsSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--comms-surface)]"
+      className="mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--background)]"
       style={{
         // Pure black on #0f0f0f leaves a drop shadow almost nothing to darken,
         // so the hairline ring carries the edge; the shadow just softens it.
@@ -332,9 +332,9 @@ function TabButton({
       <span className="max-w-[110px] truncate">{label}</span>
 
       {mentions > 0 ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--comms-mention-text)]" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--foreground)]" />
       ) : unread > 0 ? (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--comms-unread)]" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-success)]" />
       ) : null}
 
       <Hint label="Close tab">
@@ -384,7 +384,7 @@ function CommsConnecting({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-1 flex h-[26px] items-center rounded-md border border-border-default bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+          className="mt-1 flex h-[26px] items-center rounded-md border border-border bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
         >
           Try again
         </button>

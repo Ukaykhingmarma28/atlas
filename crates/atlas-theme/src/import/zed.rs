@@ -32,46 +32,31 @@ use crate::{ThemeError, ThemeKeyValue};
 
 /// Zed style key → Atlas theme key. One source may feed several targets.
 const STYLE_MAP: &[(&str, &[&str])] = &[
-    ("border", &["border.default"]),
-    ("border.variant", &["border.variant"]),
-    ("border.focused", &["border.focus"]),
     ("border.selected", &["border.strong"]),
     ("border.disabled", &["border.subtle"]),
+    ("border.variant", &["border.subtle"]),
     ("element.hover", &["element.hover"]),
     ("element.selected", &["element.selected"]),
     ("element.active", &["element.active"]),
-    ("ghost_element.hover", &["ghost_element.hover"]),
-    ("ghost_element.selected", &["ghost_element.selected"]),
-    ("ghost_element.active", &["ghost_element.active"]),
-    ("text.muted", &["text.muted"]),
-    ("text.placeholder", &["text.placeholder"]),
     ("text.disabled", &["text.disabled"]),
-    ("text.accent", &["text.accent"]),
-    ("success", &["status.success.foreground", "comms.unread.foreground", "comms.unread_strong.foreground"]),
+    ("success", &["status.success.foreground"]),
     ("warning", &["status.warning.foreground"]),
     ("error", &["status.error.foreground"]),
     ("info", &["status.info.foreground"]),
-    ("created", &["diff.added.text", "stat.added"]),
-    ("created.background", &["diff.added.background", "diff.add_line.background", "diff.add_side.background", "diff.emphasis_added.background"]),
-    ("deleted", &["diff.removed.text", "stat.removed"]),
-    ("deleted.background", &["diff.removed.background", "diff.remove_line.background", "diff.remove_side.background", "diff.emphasis_removed.background"]),
-    ("modified.background", &["diff.modified.background"]),
-    ("editor.background", &["editor.background", "diff.context.background", "panel.input.background", "scrollbar.track.background"]),
+    ("created", &["diff.added.text"]),
+    ("created.background", &["diff.added.background", "diff.added.emphasis"]),
+    ("deleted", &["diff.removed.text"]),
+    ("deleted.background", &["diff.removed.background", "diff.removed.emphasis"]),
+    ("editor.background", &["editor.background", "diff.context.background", "panel.input.background"]),
     ("editor.foreground", &["editor.foreground", "editor.caret"]),
     ("editor.gutter.background", &["editor.gutter.background"]),
-    ("editor.line_number", &["editor.gutter.foreground", "editor.fold.foreground"]),
+    ("editor.line_number", &["editor.gutter.foreground"]),
     ("editor.active_line_number", &["editor.active_line.gutter_foreground"]),
     ("editor.active_line.background", &["editor.active_line.background"]),
     ("editor.document_highlight.read_background", &["editor.match_bracket.background"]),
-    ("elevated_surface.background", &["panel.elevated.background", "panel.overlay.background", "editor.fold.background"]),
-    ("surface.background", &["panel.background", "comms.outer.background"]),
-    ("background", &["comms.surface.background"]),
-    ("panel.background", &["panel.rail.background"]),
-    ("scrollbar.track.background", &["scrollbar.track.background"]),
+    ("surface.background", &["panel.background"]),
     ("scrollbar.thumb.background", &["scrollbar.thumb.background"]),
     ("scrollbar.thumb.hover_background", &["scrollbar.thumb.hover"]),
-    ("tab.active_background", &["tab.active.background"]),
-    ("tab.inactive_background", &["tab.inactive.background"]),
     ("terminal.background", &["terminal.background"]),
     ("terminal.foreground", &["terminal.foreground"]),
     ("terminal.ansi.black", &["terminal.ansi.black"]),
@@ -105,17 +90,12 @@ const SYNTAX_MAP: &[(&str, &[&str])] = &[
     ("syntax.variable", &["variable"]),
     ("syntax.operator", &["operator"]),
     ("syntax.tag", &["tag"]),
-    ("syntax.attribute", &["attribute"]),
-    ("syntax.constant", &["constant"]),
+    ("syntax.attribute", &["attribute", "preproc", "embedded"]),
+    ("syntax.constant", &["constant", "constant.builtin", "boolean"]),
     ("syntax.regexp", &["string.regex"]),
     ("syntax.escape", &["string.escape"]),
     ("syntax.definition", &["title", "constructor"]),
     ("syntax.property", &["property"]),
-    ("syntax.boolean", &["boolean"]),
-    ("syntax.null", &["constant.builtin", "constant"]),
-    ("syntax.meta", &["preproc", "embedded"]),
-    ("syntax.builtin", &["variable.special", "variant"]),
-    ("syntax.punctuation", &["punctuation", "punctuation.delimiter"]),
 ];
 
 /// Zed style keys that exist, are understood, and have nowhere to go.
@@ -132,16 +112,27 @@ const IGNORED_PREFIXES: &[(&str, &str, &str)] = &[
     ("status_bar", "app chrome", "Atlas's status bar follows the panel tokens"),
     ("title_bar", "app chrome", "Atlas's title bar follows the panel tokens"),
     ("toolbar", "app chrome", "Atlas's toolbars follow the panel tokens"),
-    ("tab_bar", "app chrome", "Atlas's tab strip follows the tab tokens"),
+    ("tab_bar", "app chrome", "Atlas's tab strip follows the accent and sidebar tokens"),
+    ("tab", "app chrome", "Atlas's tab strip follows the accent and sidebar tokens"),
     ("pane", "app chrome", "Atlas has no per-pane border role"),
     ("panel.focused_border", "app chrome", "Atlas has one focus border role"),
     ("drop_target", "app chrome", "Atlas draws drop targets from the primary token"),
-    ("link_text", "app chrome", "Atlas links follow text.accent"),
+    ("link_text", "app chrome", "Atlas links follow `primary`"),
     ("search.match", "app chrome", "Atlas search highlighting follows the selection token"),
     ("success.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
     ("warning.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
     ("error.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
     ("info.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
+    ("modified.background", "vcs", "Atlas tints only additions and removals"),
+    ("border", "base tokens", "Zed's border roles are carried into the shadcn `border` and `ring` tokens"),
+    ("background", "base tokens", "carried into the shadcn `background` token"),
+    ("elevated_surface", "base tokens", "carried into the shadcn `card` and `popover` tokens"),
+    ("text.muted", "base tokens", "carried into the shadcn `muted-foreground` token"),
+    ("text.accent", "base tokens", "carried into the shadcn `primary` token"),
+    ("text.placeholder", "text roles", "Atlas's placeholder follows `muted-foreground`"),
+    ("ghost_element", "element overlays", "Atlas has one overlay ladder, not a ghost variant"),
+    ("panel.background", "app chrome", "Atlas's project rail follows the panel tokens"),
+    ("scrollbar.track", "app chrome", "Atlas paints the scrollbar track transparent"),
     ("conflict", "vcs", "Atlas shows conflicts through the status tokens"),
     ("renamed", "vcs", "Atlas has no renamed-file colour"),
     ("ignored", "vcs", "Atlas has no ignored-file colour"),
@@ -202,7 +193,6 @@ fn import_one(
         }
     }
     map_syntax(style, &mut draft, &mut report);
-    fill_gaps(&mut draft);
 
     draft.fill_palette();
     derive_base_tokens(&mut draft, style);
@@ -284,38 +274,6 @@ fn map_syntax(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mut
             "syntax scopes",
             "Atlas has 20 syntax roles; Zed's finer scopes collapse onto them and the surplus is dropped",
         );
-    }
-}
-
-/// Zed roles Atlas wants but Zed does not name, taken from the nearest thing it
-/// does. Kept separate from [`STYLE_MAP`] so a reader can tell "Zed said this"
-/// from "Atlas worked this out".
-fn fill_gaps(draft: &mut VariantDraft) {
-    const GAPS: &[(&str, &str)] = &[
-        ("editor.fold.border", "border"),
-        ("border.subtle", "border.variant"),
-        ("panel.rail.background", "surface.background"),
-        ("comms.mention.foreground", "text.accent"),
-        ("comms.other_mention.foreground", "text.muted"),
-    ];
-    for (target, source) in GAPS {
-        if draft.has_key(target) {
-            continue;
-        }
-        // The source is itself an Atlas key filled above, so this is a copy
-        // inside the draft rather than a second read of the Zed style.
-        let mapped = match *source {
-            "border" => draft.key_color("border.default"),
-            "border.variant" => draft.key_color("border.variant"),
-            "surface.background" => draft.key_color("panel.background"),
-            "text.accent" => draft.key_color("text.accent"),
-            "text.muted" => draft.key_color("text.muted"),
-            _ => None,
-        }
-        .map(str::to_string);
-        if let Some(value) = mapped {
-            draft.map_color_key(target, source, &value);
-        }
     }
 }
 

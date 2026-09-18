@@ -30,7 +30,7 @@ export function MemoryPanel() {
   return (
     <div className="h-full flex flex-col bg-[var(--bg-base)]">
       {/* Header: nav (left) · sharing controls (right) */}
-      <div className="flex items-center h-[32px] shrink-0 border-b border-[var(--border-default)] px-2">
+      <div className="flex items-center h-[32px] shrink-0 border-b border-[var(--border)] px-2">
         <PillGroup>
           <PillSeg
             active={sub === "graph"}
@@ -87,7 +87,7 @@ export function MemoryPanel() {
 /** Rounded container that groups the segmented nav pills. */
 function PillGroup({ children }: { children: React.ReactNode }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
       {children}
     </div>
   );

@@ -652,7 +652,7 @@ export function FileTree() {
           (h-[29px] border-b) so the divider reads as one continuous straight
           line across the file tree and the tab bar. No refresh button — the
           file-tree updates live off the filesystem watcher. */}
-      <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border-default">
+      <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border">
         <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
           {rootPath ? basename(rootPath) : "Files"}
         </span>
@@ -684,7 +684,7 @@ export function FileTree() {
               className={cn(
                 "flex-1 overflow-auto hide-scrollbar px-1.5 pb-2 relative",
                 dropTargetPath === ROOT_DROP &&
-                  "bg-[var(--atlas-element-primary-muted)] ring-1 ring-inset ring-primary/40",
+                  "bg-[var(--atlas-primary-muted)] ring-1 ring-inset ring-primary/40",
               )}
               onMouseDown={onContainerMouseDown}
               // Esc clears the multi-selection (keydown bubbles up from the

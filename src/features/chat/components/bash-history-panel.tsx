@@ -105,17 +105,17 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
       />
       <div
         style={{ width: bashPanel.width }}
-        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
       >
         {/* Left-edge resize handle */}
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -left-px w-px h-full bg-border-default hover:bg-primary transition-colors cursor-col-resize z-10"
+          className="absolute top-0 -left-px w-px h-full bg-border hover:bg-primary transition-colors cursor-col-resize z-10"
           title="Drag to resize"
         />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border-default)] shrink-0">
+        <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border)] shrink-0">
           <div className="flex items-center gap-1.5">
             <TerminalSquare size={11} className="text-[var(--text-tertiary)]" />
             <span className="text-[11px] font-medium text-[var(--text-secondary)]">Bash calls</span>

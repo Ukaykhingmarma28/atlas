@@ -488,14 +488,14 @@ export function GitDiffPanel({
           onSelect={onSelectFile}
         />
       </Panel>
-      <Separator className="w-px bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize" />
+      <Separator className="w-px bg-border hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize" />
 
       {/* Main column: toolbar + diff body */}
       <Panel id="git-diff-tree-diff" className="min-w-0">
         <div className="flex h-full min-w-0 flex-col">
           {/* Toolbar */}
           <HintGroup>
-            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
+            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
               <HintItem label={treeCollapsed ? "Show changed files" : "Hide changed files"}>
                 <button
                   onClick={toggleTree}

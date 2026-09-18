@@ -53,7 +53,7 @@ const SOURCES: LogSource[] = [
 const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string }> = {
   agent: {
     text: "text-[var(--primary)]",
-    bg: "bg-[var(--atlas-element-primary-muted)]",
+    bg: "bg-[var(--atlas-primary-muted)]",
     border: "border-[var(--primary)]/30",
   },
   canvas: {
@@ -63,7 +63,7 @@ const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string
   },
   chat: {
     text: "text-[var(--primary)]",
-    bg: "bg-[var(--atlas-element-primary-muted)]",
+    bg: "bg-[var(--atlas-primary-muted)]",
     border: "border-[var(--primary)]/30",
   },
   git: {
@@ -79,7 +79,7 @@ const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string
   github: {
     text: "text-[var(--text-primary)]",
     bg: "bg-[var(--bg-elevated)]",
-    border: "border-[var(--border-default)]",
+    border: "border-[var(--border)]",
   },
   editor: {
     text: "text-[var(--status-success)]",
@@ -89,16 +89,16 @@ const SOURCE_COLOR: Record<LogSource, { text: string; bg: string; border: string
   project: {
     text: "text-[var(--text-secondary)]",
     bg: "bg-[var(--bg-elevated)]",
-    border: "border-[var(--border-default)]",
+    border: "border-[var(--border)]",
   },
   system: {
     text: "text-[var(--text-tertiary)]",
     bg: "bg-[var(--bg-elevated)]",
-    border: "border-[var(--border-default)]",
+    border: "border-[var(--border)]",
   },
   atlas: {
     text: "text-[var(--primary)]",
-    bg: "bg-[var(--atlas-element-primary-muted)]",
+    bg: "bg-[var(--atlas-primary-muted)]",
     border: "border-[var(--primary)]/30",
   },
 };
@@ -314,7 +314,7 @@ export function LogPanel() {
                     className={cn(
                       "p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer transition-colors",
                       e.pinned
-                        ? "text-[var(--primary)] hover:text-[var(--atlas-element-primary-hover)]"
+                        ? "text-[var(--primary)] hover:text-[var(--atlas-primary-hover)]"
                         : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
                     )}
                   >
@@ -369,8 +369,8 @@ export function LogPanel() {
   return (
     <div className="h-full flex flex-col bg-bg-base">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 h-[34px] shrink-0 border-b border-border-default">
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border-default bg-bg-elevated px-2 min-w-[240px] focus-within:border-[var(--border-focus)]">
+      <div className="flex items-center gap-2 px-3 h-[34px] shrink-0 border-b border-border">
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-bg-elevated px-2 min-w-[240px] focus-within:border-[var(--border-strong)]">
           <Search size={11} className="text-text-tertiary shrink-0" />
           <input
             value={search}
@@ -393,7 +393,7 @@ export function LogPanel() {
           className={cn(
             "flex items-center gap-1 px-2 h-6 rounded text-[10px] cursor-pointer outline-none transition-colors",
             showPinnedOnly
-              ? "text-[var(--primary)] bg-[var(--atlas-element-primary-muted)]"
+              ? "text-[var(--primary)] bg-[var(--atlas-primary-muted)]"
               : "text-text-tertiary hover:text-text-primary hover:bg-bg-hover",
           )}
           title="Pinned only"
@@ -530,7 +530,7 @@ function SourceFilter({
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
             {SOURCES.map((s) => {
               const checked = active.has(s);
               return (
@@ -550,7 +550,7 @@ function SourceFilter({
                       "w-3 h-3 rounded-sm border flex items-center justify-center",
                       checked
                         ? "bg-[var(--primary)] border-[var(--primary)]"
-                        : "border-[var(--border-default)]",
+                        : "border-[var(--border)]",
                     )}
                   >
                     {checked && <Check size={9} className="text-white" />}
@@ -589,7 +589,7 @@ function ProjectScopeFilter({
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={4}>
-          <DropdownMenu.Popup className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
+          <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[var(--shadow-overlay)] py-1 min-w-[160px]">
             {(
               [
                 { v: "all", label: "All projects" },
