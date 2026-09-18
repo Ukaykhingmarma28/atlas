@@ -927,24 +927,6 @@ export function ProjectSidebar() {
           <RailIconButton onClick={toggleAll} title={allCollapsed ? "Expand all" : "Collapse all"}>
             {allCollapsed ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
           </RailIconButton>
-          {/* Usage sits with the other rail-chrome controls; the project "+"
-           *  moved down to the org row, next to search. Singleton tab id, so an
-           *  open Usage tab is focused, not duplicated. */}
-          <RailIconButton
-            onClick={() =>
-              addTab({
-                id: "usage",
-                type: "usage",
-                title: "Usage",
-                closable: true,
-                dirty: false,
-                data: {},
-              })
-            }
-            title="Usage"
-          >
-            <Gauge size={12} />
-          </RailIconButton>
         </HintGroup>
       </div>
 
@@ -1078,6 +1060,25 @@ export function ProjectSidebar() {
                   onClick={() => toggleRightPanelMode("source-control")}
                 />
                 <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />
+                {/* Usage is a module, not rail chrome. It was up with the pin
+                 *  and collapse-all buttons, which are controls on the SIDEBAR
+                 *  ITSELF — Usage opens a tab, like every row here. Same
+                 *  singleton id either way, so an open Usage tab is focused
+                 *  rather than duplicated. */}
+                <NavItem
+                  icon={<Gauge size={14} />}
+                  label="Usage"
+                  onClick={() =>
+                    addTab({
+                      id: "usage",
+                      type: "usage",
+                      title: "Usage",
+                      closable: true,
+                      dirty: false,
+                      data: {},
+                    })
+                  }
+                />
                 <NavItem
                   icon={<Ellipsis size={14} />}
                   label="More"
