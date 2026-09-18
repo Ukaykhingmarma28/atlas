@@ -320,9 +320,9 @@ export function CommsComposer({
           // the two pickers in the app read as one component.
           <div
             className={cn(
-              "absolute bottom-full left-2 right-2 z-[var(--z-dropdown)] mb-1 flex flex-col overflow-hidden rounded-lg",
-              "border border-white/10 bg-black",
-              "shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.6)]",
+              "absolute bottom-full left-2 right-2 z-popover mb-1 flex flex-col overflow-hidden rounded-lg",
+              "border border-border bg-popover",
+              "shadow-lg inset-highlight",
             )}
             // Selecting with the mouse must not blur the textarea first.
             onMouseDown={(e) => e.preventDefault()}
@@ -338,25 +338,27 @@ export function CommsComposer({
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => insertMention(m)}
                   className={cn(
-                    "flex h-[26px] w-full items-center gap-1.5 px-2 text-left transition-colors cursor-pointer",
-                    i === highlighted ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
+                    "flex h-control-md w-full items-center gap-1.5 px-2 text-left transition-colors cursor-pointer",
+                    i === highlighted
+                      ? "bg-[var(--atlas-element-selected)]"
+                      : "hover:bg-[var(--atlas-element-hover)]",
                   )}
                 >
                   <CommsAvatar member={m} size={16} />
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-text-primary">
+                  <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
                     {m.name}
                   </span>
                 </button>
               ))}
             </div>
-            <div className="flex h-[26px] shrink-0 items-center justify-between border-t border-white/10 px-2">
-              <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+            <div className="flex h-control-md shrink-0 items-center justify-between border-t border-border px-2">
+              <span className="flex items-center gap-1.5 text-3xs text-text-tertiary">
                 <Kbd>↑↓</Kbd>
                 <span>navigate</span>
                 <Kbd>↵</Kbd>
                 <span>select</span>
               </span>
-              <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+              <span className="flex items-center gap-1.5 text-3xs text-text-tertiary">
                 <Kbd>esc</Kbd>
                 <span>close</span>
               </span>
@@ -379,10 +381,10 @@ export function CommsComposer({
           ) : (
             <CornerUpRight size={11} className="shrink-0 -scale-y-100 text-text-tertiary" />
           )}
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+          <span className="shrink-0 text-2xs font-medium uppercase tracking-wide text-text-tertiary">
             {editing ? "Editing" : "Replying to"}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[11px] text-text-secondary">
+          <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">
             {editing ? null : (memberMap.get(intentTarget?.author_id ?? "")?.name ?? "Unknown")}
             {intentTarget && !editing ? " · " : ""}
             {intentTarget?.deleted
@@ -410,7 +412,7 @@ export function CommsComposer({
           className={cn(
             // `z-10` so the shell paints over — and visually tucks — the reply
             // strip's lower half.
-            "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-colors",
+            "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-sm transition-colors",
             isDropTarget
               ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40"
               : overLimit
@@ -420,7 +422,7 @@ export function CommsComposer({
         >
           {isDropTarget && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
-              <span className="rounded-full bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+              <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs font-medium text-text-secondary shadow">
                 Drop files to attach
               </span>
             </div>
@@ -462,7 +464,7 @@ export function CommsComposer({
               ) : (
                 // Same geometry, so the composer does not resize when the real
                 // editor lands. Only ever seen on a cold first open.
-                <div className="px-[10px] py-[8px] text-[12.5px] leading-[18px] text-text-ghost">
+                <div className="px-[10px] py-[8px] text-base leading-[18px] text-text-ghost">
                   {draft || placeholder}
                 </div>
               )}
@@ -478,7 +480,7 @@ export function CommsComposer({
                 disabled={!canSend}
                 onClick={submit}
                 className={cn(
-                  "flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
+                  "flex h-control-md w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
                   canSend
                     ? "text-text-primary hover:border-border hover:bg-bg-hover cursor-pointer"
                     : "text-text-tertiary cursor-not-allowed",
@@ -537,7 +539,7 @@ export function CommsComposer({
               {bytes > CHAT_BODY_MAX_BYTES * 0.8 && (
                 <span
                   className={cn(
-                    "mr-1 text-[9.5px] tabular-nums",
+                    "mr-1 text-2xs tabular-nums",
                     overLimit ? "text-error" : "text-text-ghost",
                   )}
                 >
@@ -643,7 +645,7 @@ function AttachmentChip({
   return (
     <div
       className={cn(
-        "group/chip relative flex h-[26px] max-w-[220px] items-center gap-1.5 overflow-hidden rounded-md border px-2 text-[11px]",
+        "group/chip relative flex h-control-md max-w-[220px] items-center gap-1.5 overflow-hidden rounded-md border px-2 text-xs",
         failed ? "border-error text-error" : "border-border bg-bg-elevated text-text-secondary",
       )}
     >

@@ -48,7 +48,7 @@ export const CommsAvatar = memo(function CommsAvatar({
             width: size,
             height: size,
             fontSize: Math.round(size * 0.4),
-            backgroundColor: member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "#2a2a2a",
+            backgroundColor: member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)",
           }}
           className="flex items-center justify-center rounded-full font-medium leading-none text-white/90 select-none tracking-tight"
         >
@@ -61,7 +61,7 @@ export const CommsAvatar = memo(function CommsAvatar({
           style={{ width: dot, height: dot }}
           className={cn(
             "absolute -bottom-px -right-px rounded-full border-2 border-[var(--background)]",
-            online ? "bg-[var(--status-success)]" : "bg-[#3d3d3d]",
+            online ? "bg-[var(--status-success)]" : "bg-border-strong",
           )}
         />
       )}

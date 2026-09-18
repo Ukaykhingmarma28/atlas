@@ -59,7 +59,7 @@ function OrgAvatar({
   if (org.logo) {
     return (
       <span
-        className="flex shrink-0 items-center justify-center overflow-hidden rounded-[6px]"
+        className="flex shrink-0 items-center justify-center overflow-hidden rounded-md"
         style={{ width: size, height: size }}
       >
         <img src={org.logo} alt="" className="h-full w-full object-cover" />
@@ -69,7 +69,7 @@ function OrgAvatar({
   if (plain) {
     return (
       <span
-        className="flex shrink-0 items-center justify-center rounded-[5px] font-semibold text-[var(--text-primary)]"
+        className="flex shrink-0 items-center justify-center rounded-md font-semibold text-[var(--text-primary)]"
         style={{
           width: size,
           height: size,
@@ -87,7 +87,7 @@ function OrgAvatar({
       // glyphs at a legible size do not fit inside `size` with any breathing
       // room, and the previous fixed square + `tracking-wide` had them touching
       // both edges. A keycap is allowed to be wider than it is tall.
-      className="flex shrink-0 items-center justify-center rounded-[6px] px-[3px] font-sans font-semibold uppercase leading-none"
+      className="flex shrink-0 items-center justify-center rounded-md px-[3px] font-sans font-semibold uppercase leading-none"
       style={{
         minWidth: size,
         height: size,
@@ -240,7 +240,7 @@ export function OrgSwitcher() {
         <DropdownMenu.Trigger
           render={
             <button
-              className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-[12px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer min-w-0"
+              className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer min-w-0"
               title="Switch organisation"
             >
               <OrgAvatar org={active} size={18} />
@@ -273,15 +273,12 @@ export function OrgSwitcher() {
               border + translucent fill + backdrop blur + the grow-from-the-
               trigger animation, ALL on this one element. Splitting them across
               a wrapper isolates the layer and kills the blur. */}
-          <DropdownMenu.Positioner style={{ zIndex: 9999 }} align="start" sideOffset={6}>
+          <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={6}>
             <DropdownMenu.Popup
-              style={{
-                // No inset top highlight: on a card this size it draws a bright
-                // line across the whole head of the menu, which reads as a second
-                // border above the first.
-                boxShadow: "0 16px 48px rgba(0,0,0,0.95)",
-              }}
-              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--text-secondary)]"
+              // No inset top highlight: on a card this size it draws a bright
+              // line across the whole head of the menu, which reads as a second
+              // border above the first.
+              className="flex max-h-[min(480px,70vh)] w-[268px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-[var(--bg-elevated)]/95 shadow-md backdrop-blur-2xl atlas-panel-in-tl select-none text-[var(--text-secondary)]"
             >
               {/* Head: a filter field with the refresh beside it, no rule under
                   it — the same row the chat session picker opens with. The list
@@ -294,7 +291,7 @@ export function OrgSwitcher() {
                   onKeyDown={(e) => e.stopPropagation()}
                   placeholder="Search organisations…"
                   aria-label="Search organisations"
-                  className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
                 {/* Manual re-sync — only meaningful with a credential to pull
                     with. Silent on failure: Rust keeps the last-known list. */}
@@ -325,7 +322,7 @@ export function OrgSwitcher() {
 
               <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pb-1">
                 {filteredOrgs.length === 0 && (
-                  <div className="px-2.5 py-3 text-center text-[11px] text-[var(--text-ghost)]">
+                  <div className="px-2.5 py-3 text-center text-xs text-[var(--text-ghost)]">
                     No organisations match.
                   </div>
                 )}
@@ -337,7 +334,7 @@ export function OrgSwitcher() {
                     return (
                       <div
                         key={org.id}
-                        className="mx-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5"
+                        className="mx-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5"
                         onKeyDown={(e) => e.stopPropagation()}
                       >
                         <OrgAvatar org={org} size={16} plain />
@@ -350,7 +347,7 @@ export function OrgSwitcher() {
                             if (e.key === "Escape") setEditingId(null);
                           }}
                           onBlur={submitRename}
-                          className="flex-1 min-w-0 bg-transparent outline-none text-[12px] text-[var(--text-primary)]"
+                          className="flex-1 min-w-0 bg-transparent outline-none text-sm text-[var(--text-primary)]"
                         />
                       </div>
                     );
@@ -369,7 +366,7 @@ export function OrgSwitcher() {
                         // Inset rows (a margin, a radius) rather than full-bleed
                         // stripes: the highlight then reads as a chip inside the
                         // card, which is what the chat menus do.
-                        "group/org mx-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-[11.5px] outline-none transition-colors",
+                        "group/org mx-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-sm outline-none transition-colors",
                         isActive && "bg-[var(--bg-active)] text-[var(--text-primary)]",
                         access.ok
                           ? "cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -428,7 +425,7 @@ export function OrgSwitcher() {
                 })}
               </div>
 
-              <DropdownMenu.Separator className="h-px shrink-0 bg-white/5" />
+              <DropdownMenu.Separator className="h-px shrink-0 bg-border-subtle" />
 
               {/* Create organisation — opens the name + handle modal (the handle
                   is globally unique, so it needs a real form, not an inline input). */}
@@ -437,7 +434,7 @@ export function OrgSwitcher() {
                   setOpen(false);
                   setCreateOpen(true);
                 }}
-                className="mx-1 mt-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                className="mx-1 mt-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 <Plus size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                 <span className="flex-1 text-left">Create organisation…</span>
@@ -451,7 +448,7 @@ export function OrgSwitcher() {
                     setOpen(false);
                     setMembersOpen(true);
                   }}
-                  className="mx-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
                 >
                   <Users size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                   <span className="flex-1 text-left">Invite &amp; Manage members</span>
@@ -461,7 +458,7 @@ export function OrgSwitcher() {
                   title={
                     activeIsSynced ? "Sign in to manage members" : "Turn on sync to manage members"
                   }
-                  className="mx-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
+                  className="mx-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] opacity-40 select-none"
                 >
                   <Users size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Invite &amp; Manage members</span>
@@ -480,7 +477,7 @@ export function OrgSwitcher() {
                     else toast.error("Could not copy the organisation ID");
                   }}
                   title={copyableOrgId}
-                  className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
                 >
                   <Copy size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                   <span className="flex-1 text-left">Copy organisation ID</span>
@@ -488,14 +485,14 @@ export function OrgSwitcher() {
               ) : (
                 <div
                   title="Turn on sync to give this organisation an ID"
-                  className="mx-1 mb-1 flex h-[26px] w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] opacity-40 select-none"
+                  className="mx-1 mb-1 flex h-control-md w-[calc(100%-8px)] shrink-0 cursor-not-allowed items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] opacity-40 select-none"
                 >
                   <Copy size={12} className="shrink-0" />
                   <span className="flex-1 text-left">Copy organisation ID</span>
                 </div>
               )}
 
-              <DropdownMenu.Separator className="h-px shrink-0 bg-white/5" />
+              <DropdownMenu.Separator className="h-px shrink-0 bg-border-subtle" />
 
               {/* Sync toggle for the ACTIVE org — in the footer (not under the org
                *  list) so it's unambiguous which org it applies to. Signed out,
@@ -503,7 +500,7 @@ export function OrgSwitcher() {
               {syncing ? (
                 <div
                   title="Syncing…"
-                  className="mx-1 my-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] select-none"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] select-none"
                 >
                   <Loader2
                     size={12}
@@ -514,7 +511,7 @@ export function OrgSwitcher() {
               ) : isSyncedOrg(active) ? (
                 <div
                   title="This organisation is synced with your Atlas account"
-                  className="mx-1 my-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] select-none"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] select-none"
                 >
                   <Cloud size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                   <span className="flex-1 text-left truncate">{active.name} is synced</span>
@@ -541,7 +538,7 @@ export function OrgSwitcher() {
                       ? "Create this organisation in your Atlas account"
                       : "Sign in to sync this organisation"
                   }
-                  className="mx-1 my-1 flex h-[26px] w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-[11px] text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="mx-1 my-1 flex h-control-md w-[calc(100%-8px)] items-center gap-2 rounded-md px-1.5 text-xs text-[var(--text-secondary)] outline-none transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer"
                 >
                   <Cloud size={12} className="shrink-0" />
                   <span className="flex-1 text-left truncate">Turn on sync for {active.name}…</span>
@@ -588,19 +585,19 @@ function DeleteOrgDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-max)] bg-black/60 backdrop-blur-sm" />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60 backdrop-blur-sm" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "w-[400px] max-w-[92vw] rounded-lg border border-border",
-            "bg-[var(--bg-elevated)] p-5 shadow-[var(--shadow-overlay)] animate-scale-in",
+            "bg-[var(--bg-elevated)] p-5 shadow-lg animate-scale-in",
           )}
         >
-          <Dialog.Title className="text-[14px] font-medium text-[var(--text-primary)]">
+          <Dialog.Title className="text-md font-medium text-[var(--text-primary)]">
             Delete “{org?.name}”?
           </Dialog.Title>
-          <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
             This permanently removes the organisation
             {projectCount > 0 && (
               <>
@@ -618,7 +615,7 @@ function DeleteOrgDialog({
             <button
               onClick={onClose}
               disabled={deleting}
-              className="px-3 h-8 rounded-md text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 h-8 rounded-md text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -634,7 +631,7 @@ function DeleteOrgDialog({
                 }
               }}
               disabled={deleting}
-              className="px-3 h-8 rounded-md text-[12px] font-medium bg-error text-white hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="px-3 h-8 rounded-md text-sm font-medium bg-error text-white hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {deleting && <Loader2 size={12} className="animate-spin" />}
               {deleting ? "Deleting…" : "Delete organisation"}

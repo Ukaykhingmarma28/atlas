@@ -159,7 +159,7 @@ const COMPONENTS: Components = {
     if (!className) {
       return (
         <code
-          className="rounded px-1 py-px font-mono text-[11px] bg-white/[0.07] text-text-primary"
+          className="rounded px-1 py-px font-mono text-xs bg-[var(--atlas-element-selected)] text-text-primary"
           {...rest}
         >
           {children}
@@ -178,12 +178,12 @@ const COMPONENTS: Components = {
     return (
       <pre
         className={cn(
-          "my-1.5 overflow-x-auto rounded-md px-2.5 py-2 font-mono text-[11px] leading-[1.55] hide-scrollbar",
-          "bg-black/50 border border-border-subtle",
+          "my-1.5 overflow-x-auto rounded-md px-2.5 py-2 font-mono text-xs leading-[1.55] hide-scrollbar",
+          "bg-card border border-border-subtle",
         )}
       >
         {lang && (
-          <span className="mb-1 block text-[9px] uppercase tracking-wide opacity-45">{lang}</span>
+          <span className="mb-1 block text-3xs uppercase tracking-wide opacity-45">{lang}</span>
         )}
         {props.children}
       </pre>
@@ -249,30 +249,22 @@ const COMPONENTS: Components = {
   // A chat bubble is not a document: headings step down in weight and spacing,
   // not up to document sizes. h4-h6 stop growing and go quiet instead.
   h1: (props) => (
-    <h1 className="mt-2 mb-1 text-[14px] font-semibold text-text-primary">{props.children}</h1>
+    <h1 className="mt-2 mb-1 text-md font-semibold text-text-primary">{props.children}</h1>
   ),
   h2: (props) => (
-    <h2 className="mt-2 mb-1 text-[13px] font-semibold text-text-primary">{props.children}</h2>
+    <h2 className="mt-2 mb-1 text-base font-semibold text-text-primary">{props.children}</h2>
   ),
   h3: (props) => (
-    <h3 className="mt-1.5 mb-0.5 text-[12.5px] font-semibold text-text-primary">
-      {props.children}
-    </h3>
+    <h3 className="mt-1.5 mb-0.5 text-base font-semibold text-text-primary">{props.children}</h3>
   ),
   h4: (props) => (
-    <h4 className="mt-1.5 mb-0.5 text-[12.5px] font-semibold text-text-secondary">
-      {props.children}
-    </h4>
+    <h4 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h4>
   ),
   h5: (props) => (
-    <h5 className="mt-1.5 mb-0.5 text-[12.5px] font-semibold text-text-secondary">
-      {props.children}
-    </h5>
+    <h5 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h5>
   ),
   h6: (props) => (
-    <h6 className="mt-1.5 mb-0.5 text-[12.5px] font-semibold text-text-secondary">
-      {props.children}
-    </h6>
+    <h6 className="mt-1.5 mb-0.5 text-base font-semibold text-text-secondary">{props.children}</h6>
   ),
 
   hr: () => <hr className="my-2 border-0 border-t border-border-subtle" />,
@@ -282,12 +274,12 @@ const COMPONENTS: Components = {
   // to a word per line, which is how a table stops being a table.
   table: (props) => (
     <div className="my-1.5 overflow-x-auto hide-scrollbar rounded-md border border-border-subtle">
-      <table className="w-max min-w-full border-collapse text-[11px]">{props.children}</table>
+      <table className="w-max min-w-full border-collapse text-xs">{props.children}</table>
     </div>
   ),
-  thead: (props) => <thead className="bg-white/[0.04]">{props.children}</thead>,
+  thead: (props) => <thead className="bg-[var(--atlas-element-hover)]">{props.children}</thead>,
   th: (props) => (
-    <th className="whitespace-nowrap border-b border-border-subtle px-2 py-1 text-left text-[10px] font-semibold text-text-secondary">
+    <th className="whitespace-nowrap border-b border-border-subtle px-2 py-1 text-left text-2xs font-semibold text-text-secondary">
       {props.children}
     </th>
   ),

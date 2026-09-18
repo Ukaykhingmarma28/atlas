@@ -63,7 +63,7 @@ export function AtlasThemesSettings() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[36px] shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-primary px-3">
-        <span className="text-[11px] font-medium text-text-secondary">Mode</span>
+        <span className="text-xs font-medium text-text-secondary">Mode</span>
         <div className="flex rounded-md border border-border bg-bg-secondary p-0.5">
           {modes.map((mode) => (
             <button
@@ -71,7 +71,7 @@ export function AtlasThemesSettings() {
               type="button"
               onClick={() => updateSettings({ themeMode: mode })}
               className={cn(
-                "rounded px-2 py-1 text-[10px] capitalize transition-colors",
+                "rounded px-2 py-1 text-2xs capitalize transition-colors",
                 settings.themeMode === mode
                   ? "bg-primary text-primary-foreground"
                   : "text-text-tertiary hover:text-text-primary",
@@ -90,7 +90,7 @@ export function AtlasThemesSettings() {
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search themes…"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
         />
         {query && (
           <Hint label="Clear search">
@@ -161,14 +161,14 @@ export function AtlasThemesSettings() {
               >
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate text-[12px] font-medium text-text-primary">
+                    <span className="truncate text-sm font-medium text-text-primary">
                       {theme.name}
                     </span>
                     {selected && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
                   </div>
-                  <p className="mt-1 text-[10.5px] text-text-tertiary">{theme.author}</p>
+                  <p className="mt-1 text-xs text-text-tertiary">{theme.author}</p>
                 </div>
-                <div className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-muted">
+                <div className="flex items-center gap-1 text-3xs uppercase tracking-wide text-text-muted">
                   {theme.hasDark && <span>Dark</span>}
                   {theme.hasLight && <span>Light</span>}
                   {!theme.builtIn && <span>Local</span>}
@@ -200,10 +200,10 @@ export function AtlasThemesSettings() {
           })}
         </div>
 
-        {loading && <div className="py-6 text-center text-[11px] text-text-tertiary">Loading…</div>}
-        {error && <div className="py-6 text-center text-[11px] text-error">{error}</div>}
+        {loading && <div className="py-6 text-center text-xs text-text-tertiary">Loading…</div>}
+        {error && <div className="py-6 text-center text-xs text-error">{error}</div>}
         {!loading && !error && filtered.length === 0 && (
-          <div className="py-6 text-center text-[11px] text-text-tertiary">
+          <div className="py-6 text-center text-xs text-text-tertiary">
             No themes match “{query}”.
           </div>
         )}

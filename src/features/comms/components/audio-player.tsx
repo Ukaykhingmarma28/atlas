@@ -206,10 +206,10 @@ export const AudioPlayer = memo(function AudioPlayer({
             })}
           </div>
           <div className="flex items-center justify-between pt-0.5">
-            <span className="text-[9.5px] tabular-nums text-text-ghost">
+            <span className="text-2xs tabular-nums text-text-ghost">
               {formatTime(time)} / {formatTime(duration)}
             </span>
-            {subtitle && <span className="text-[9.5px] text-text-ghost">{subtitle}</span>}
+            {subtitle && <span className="text-2xs text-text-ghost">{subtitle}</span>}
           </div>
         </div>
 

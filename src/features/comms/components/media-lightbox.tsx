@@ -79,7 +79,7 @@ export function MediaLightbox() {
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && close()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-modal)] bg-black/80 animate-fade-in" />
+        <Dialog.Backdrop className="fixed inset-0 z-modal bg-black/80 animate-fade-in" />
         <Dialog.Popup
           aria-describedby={undefined}
           onKeyDown={onKeyDown}
@@ -93,17 +93,17 @@ export function MediaLightbox() {
             // `transform`, so translate-based centring (the other modals')
             // would be overwritten for the length of the animation and the
             // panel would fly in from the viewport's centre-bottom-right.
-            "fixed inset-0 z-[var(--z-modal)] m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
+            "fixed inset-0 z-modal m-auto h-[min(82vh,860px)] w-[min(88vw,1180px)]",
             "flex flex-col overflow-hidden rounded-xl border border-border bg-bg-base",
-            "shadow-[var(--shadow-overlay)] animate-scale-in outline-none",
+            "shadow-lg animate-scale-in outline-none",
           )}
         >
           <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
-            <Dialog.Title className="min-w-0 flex-1 truncate text-[11.5px] text-text-secondary">
+            <Dialog.Title className="min-w-0 flex-1 truncate text-sm text-text-secondary">
               {item?.filename ?? ""}
             </Dialog.Title>
             {count > 1 && (
-              <span className="shrink-0 text-[10.5px] tabular-nums text-text-ghost">
+              <span className="shrink-0 text-xs tabular-nums text-text-ghost">
                 {index + 1} / {count}
               </span>
             )}
@@ -141,7 +141,7 @@ export function MediaLightbox() {
                 <ImageZoomView key={item.id} src={convertFileSrc(path)} alt={item.filename} fill />
               )
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[11px] text-text-ghost">
+              <div className="flex h-full w-full items-center justify-center text-xs text-text-ghost">
                 {failed ? (
                   "Could not load this file."
                 ) : (
