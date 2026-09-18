@@ -478,10 +478,8 @@
       "keys": {
         "border.strong": "#51485f",
         "border.subtle": "#1b1721",
-        "diff.added.background": "#21202e",
         "diff.added.emphasis": "rgba(52,211,153,0.34)",
         "diff.context.background": "#191724",
-        "diff.removed.background": "#21202e",
         "diff.removed.emphasis": "rgba(244,63,63,0.34)",
         "editor.active_line.background": "#21202e",
         "editor.active_line.gutter_foreground": "#c4a7e7",
@@ -574,10 +572,8 @@
       "keys": {
         "border.strong": "#cecacd",
         "border.subtle": "#f4ede8",
-        "diff.added.background": "#f4ede8",
         "diff.added.emphasis": "rgba(52,211,153,0.34)",
         "diff.context.background": "#faf4ed",
-        "diff.removed.background": "#f4ede8",
         "diff.removed.emphasis": "rgba(244,63,63,0.34)",
         "editor.active_line.background": "#f4ede8",
         "editor.active_line.gutter_foreground": "#907aa9",
@@ -677,10 +673,8 @@
       "keys": {
         "border.strong": "#56526e",
         "border.subtle": "#2a283e",
-        "diff.added.background": "#2a283e",
         "diff.added.emphasis": "rgba(52,211,153,0.34)",
         "diff.context.background": "#232136",
-        "diff.removed.background": "#2a283e",
         "diff.removed.emphasis": "rgba(244,63,63,0.34)",
         "editor.active_line.background": "#2a283e",
         "editor.active_line.gutter_foreground": "#c4a7e7",
