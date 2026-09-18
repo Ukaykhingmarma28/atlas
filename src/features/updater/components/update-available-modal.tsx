@@ -57,11 +57,11 @@ export function UpdateAvailableModal() {
             <AtlasIcon size={52} className="rounded-2xl" />
           )}
 
-          <Dialog.Title className="mt-3 text-[15px] font-semibold text-foreground">
+          <Dialog.Title className="mt-3 text-lg font-semibold text-foreground">
             {isError ? "Update failed" : "Update Ready"}
           </Dialog.Title>
 
-          <p className="mt-1 text-[12px] text-secondary-foreground leading-relaxed px-1">
+          <p className="mt-1 text-sm text-secondary-foreground leading-relaxed px-1">
             {isError ? (
               (error ?? "Something went wrong while installing the update.")
             ) : (
@@ -72,14 +72,14 @@ export function UpdateAvailableModal() {
           </p>
 
           {applying ? (
-            <div className="mt-4 w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="mt-4 w-full inline-flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 size={12} className="animate-spin" /> Restarting…
             </div>
           ) : isError ? (
             <button
               type="button"
               onClick={dismissModal}
-              className="mt-4 w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+              className="mt-4 w-full h-9 rounded-lg text-sm font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
             >
               Close
             </button>
@@ -89,14 +89,14 @@ export function UpdateAvailableModal() {
                 type="button"
                 autoFocus
                 onClick={restartNow}
-                className="w-full h-9 rounded-lg text-[12px] font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+                className="w-full h-9 rounded-lg text-sm font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
               >
                 Restart now
               </button>
               <button
                 type="button"
                 onClick={dismissModal}
-                className="w-full h-9 rounded-lg text-[12px] font-medium bg-element-active text-foreground border border-border hover:bg-[var(--atlas-element-emphasis)] transition-colors"
+                className="w-full h-9 rounded-lg text-sm font-medium bg-element-active text-foreground border border-border hover:bg-[var(--atlas-element-emphasis)] transition-colors"
               >
                 Later
               </button>
@@ -104,7 +104,7 @@ export function UpdateAvailableModal() {
           )}
 
           {!applying && !isError && (
-            <p className="mt-3 text-[10px] text-muted-foreground leading-relaxed px-1">
+            <p className="mt-3 text-2xs text-muted-foreground leading-relaxed px-1">
               "Later" installs the update automatically the next time you quit Atlas.
             </p>
           )}

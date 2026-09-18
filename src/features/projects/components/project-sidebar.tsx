@@ -962,12 +962,9 @@ export function ProjectSidebar() {
           one object: rows disappear under its rounded top edge rather than
           sliding past a straight seam. */}
       <div
-        className="relative mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] bg-[var(--background)]"
-        style={{
-          // Same reasoning as CommsSurface: on a near-black panel the shadow
-          // has almost nothing to darken, so the ring carries the edge.
-          boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
-        }}
+        // Same reasoning as CommsSurface: on a near-black panel the shadow has
+        // almost nothing to darken, so the ring carries the edge.
+        className="relative mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border"
       >
         {/* ONE scroller for everything below the org row (see `RailScroll`).
             The navigation used to be pinned above it, which cost ~200px of
@@ -983,7 +980,7 @@ export function ProjectSidebar() {
             nothing else. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-panel h-6 rounded-t-[10px]"
+          className="pointer-events-none absolute inset-x-0 top-0 z-panel h-6 rounded-t-lg"
           style={{
             background:
               "linear-gradient(to bottom, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",

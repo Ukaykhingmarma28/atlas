@@ -224,7 +224,7 @@
 /* Selection */
 .atlas-tiptap .ProseMirror::selection,
 .atlas-tiptap .ProseMirror *::selection {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--atlas-selection-background);
   color: var(--foreground);
 }
 
@@ -557,23 +557,26 @@
   color: var(--secondary-foreground);
 }
 
-/* Lowlight syntax token colors — neutral palette matching the design's
-   AgentRL code block (atlas-knowledge.jsx:695–698). */
+/* Lowlight syntax token colours, from the active theme's `syntax.*` keys
+   (decision 13). These were six fixed hexes — a purple, an indigo, a green, an
+   amber, a blue and a rust — so a code block inside a note rendered the same
+   palette whichever theme was chosen, and read as a different language from
+   the editor tab next to it. */
 .atlas-tiptap .hljs-keyword,
 .atlas-tiptap .hljs-built_in,
 .atlas-tiptap .hljs-tag .hljs-name {
-  color: #c084fc;
+  color: var(--atlas-syntax-keyword);
 }
 .atlas-tiptap .hljs-title,
 .atlas-tiptap .hljs-title.function_ {
-  color: #7170ff;
+  color: var(--atlas-syntax-function);
 }
 .atlas-tiptap .hljs-string,
 .atlas-tiptap .hljs-attr {
-  color: #5cc28a;
+  color: var(--atlas-syntax-string);
 }
 .atlas-tiptap .hljs-number {
-  color: #f5b73c;
+  color: var(--atlas-syntax-number);
 }
 .atlas-tiptap .hljs-comment {
   color: var(--muted-foreground);
@@ -581,10 +584,10 @@
 }
 .atlas-tiptap .hljs-type,
 .atlas-tiptap .hljs-class {
-  color: #4c8df6;
+  color: var(--atlas-syntax-type);
 }
 .atlas-tiptap .hljs-meta {
-  color: #d97757;
+  color: var(--atlas-syntax-attribute);
 }
 
 /* ── Inline mention chip ──────────────────────────────────────── */

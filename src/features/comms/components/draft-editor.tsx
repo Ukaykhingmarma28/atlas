@@ -271,6 +271,7 @@ class CaretWidget extends WidgetType {
     return other.name === this.name && other.hue === this.hue;
   }
   toDOM(): HTMLElement {
+    // ratchet-allow: a collaborator's own caret hue, assigned per session.
     const color = `hsl(${this.hue} 55% 55%)`;
     const wrap = document.createElement("span");
     wrap.className = "atlas-remote-caret";
@@ -282,6 +283,7 @@ class CaretWidget extends WidgetType {
     flag.textContent = this.name;
     flag.style.cssText =
       `position:absolute;left:-1px;top:-14px;padding:0 4px;border-radius:3px 3px 3px 0;` +
+      // ratchet-allow: white on that saturated caret hue, which is not a theme surface.
       `background:${color};color:#fff;font-size:9px;line-height:13px;white-space:nowrap;` +
       `pointer-events:none;user-select:none;`;
     wrap.append(bar, flag);

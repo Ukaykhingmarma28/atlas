@@ -89,7 +89,7 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
       </HintGroup>
 
       <div
-        className="mx-1 flex flex-1 items-center justify-center gap-1.5 truncate text-[11px] font-mono text-[var(--muted-foreground)]"
+        className="mx-1 flex flex-1 items-center justify-center gap-1.5 truncate text-xs font-mono text-[var(--muted-foreground)]"
         title={fileName}
       >
         {/* Unsaved-changes dot — Cmd+S bakes annotations into the PDF file. */}
@@ -114,7 +114,7 @@ export function PdfToolbar({ fileName, zoom, dirty, onZoomIn, onZoomOut }: PdfTo
               <ZoomOut size={13} />
             </button>
           </HintItem>
-          <span className="w-9 text-center text-[10px] font-mono text-[var(--muted-foreground)]">
+          <span className="w-9 text-center text-2xs font-mono text-[var(--muted-foreground)]">
             {Math.round(zoom * 100)}%
           </span>
           <HintItem label="Zoom in">

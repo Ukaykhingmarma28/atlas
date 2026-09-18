@@ -8,7 +8,7 @@ Everything here is defined in two files:
 
 | file | holds |
 |---|---|
-| `src/styles/tokens.css` | the raw custom properties on `:root` — control heights, layout constants, radius derivation, elevation, motion durations, z-index layers, and the legacy aliases the sweep still has to remove |
+| `src/styles/tokens.css` | the raw custom properties on `:root` — the shadcn base tokens, control heights, layout constants, radius derivation, elevation, motion durations and z-index layers |
 | `src/styles/globals.css` | the Tailwind namespaces (`@theme`), the named utilities (`@utility`), and the global focus rule |
 
 Primitives live in `src/ui/`. The gallery that renders all of it is the dev-only
@@ -27,9 +27,11 @@ after any change to this page.
 3. **A token is a role, not a value.** There are no 12-step colour ramps and no
    per-component colour tokens. A theme key exists only when a theme author
    needs that surface to differ from the base tokens.
-4. **Legacy names stay until the sweep.** `--bg-*`, `--text-*` (the colour ones),
-   `--shadow-overlay`, `--z-max` and friends are aliases of real tokens. Do not
-   add a new one; do not remove an old one outside the sweep.
+4. **One name per colour.** The legacy aliases are gone: `--bg-*`, the colour
+   `--text-*`, `--cm-*`, `--shadow-overlay`, `--z-max` and the rest were second
+   names for a base token or a theme key, and the sweep spent them. Write the
+   shadcn name (`bg-card`, `text-muted-foreground`) or the theme key
+   (`bg-element-hover`, `text-disabled`). Do not add a synonym for either.
 
 ## Type
 
@@ -357,7 +359,7 @@ lints and renders.
 |---|---|
 | `arbitrary-text-size` | `text-[…px]` and friends |
 | `arbitrary-z-index` | `z-[…]` |
-| `arbitrary-shadow` | `shadow-[…]`, including `shadow-[var(--shadow-overlay)]` |
+| `arbitrary-shadow` | `shadow-[…]` |
 | `arbitrary-radius` | `rounded-[…]`, any corner |
 | `colour-literal` | `#rrggbb`, `rgb(`, `rgba(`, `hsl(`, `hsla(` |
 | `bg-white-black` | `bg-white`, `bg-black`, with or without an opacity modifier |
@@ -366,32 +368,31 @@ lints and renders.
 `src/ui` and `src/styles` are out of scope — they *define* these values.
 `src/dev` is out of scope — it never ships.
 
-**How it behaves.** The current counts are committed in
-`tests/design-system-ratchet.baseline.json`:
+**It is closed.** It ran as a ratchet through the sweep — committed counts in a
+baseline file that could only go down — and the sweep drove **every rule to
+zero**. The baseline file is gone and the assertions are `=== 0`, so a new
+violation fails outright rather than being absorbed.
 
-```json
-{
-  "arbitrary-text-size": 1335,
-  "arbitrary-z-index": 77,
-  "arbitrary-shadow": 106,
-  "arbitrary-radius": 29,
-  "colour-literal": 737,
-  "bg-white-black": 156,
-  "inline-numeric-style": 140
-}
-```
+Which means the exits have to be real ones:
 
-It fails when a count goes **up**, and it also fails when a count goes **down**
-without the baseline being re-committed — that second half is what makes each
-win permanent instead of something the next commit can spend. To re-commit:
+- **`EXEMPT_FILES`** — a whole file, with the argument written next to the path.
+  Two shapes qualify: the file *defines* the scale (`theme-key-registry.ts`,
+  `color.ts`), or the colour is *not Atlas's to choose* — a third party's brand
+  mark (`agent-brand.ts`, `agent-icons.tsx`), a palette the **user** picks a
+  value from (spaces sticky notes, knowledge covers, PDF ink), or something that
+  has to survive being shown over content Atlas did not draw.
+- **`ratchet-allow: <reason>`** — one site inside an otherwise ordinary file.
+  Put it in a comment on the line, or anywhere in the comment block directly
+  above it. The rest of the file keeps being scanned, which a whole-file entry
+  gives up.
 
-```bash
-UPDATE_RATCHET_BASELINE=1 bun run test
-```
+Both demand prose and both are checked: a marker with under 20 characters of
+reason, or an exempt file with under 40, fails the suite on its own. That is the
+point — the record of *why* is the thing being enforced, not the count.
 
-**It ends at zero.** The colour-and-scale sweep (PR 4) drives every count to 0,
-one feature folder at a time, checking each against
-`?scenario=design-system`. When it lands, delete the baseline file and turn the
-`<=` assertions into `=== 0` plus whatever allowlist survives. Until then, do not
-fix a violation you happen to walk past — a scattered half-migration is harder to
-review than the whole sweep.
+What survives today, so the shape is clear: the vendors' agent marks, the
+user-pickable palettes (spaces, knowledge covers, PDF ink), the colour resolver
+and its fixtures, the ANSI `rgb()` string builder in the terminal, the
+post-crash error boundary, per-identity avatar hues, pixi's numeric `fontSize`,
+mermaid's own `themeVariables`, the PDF page and the lightbox matte (decision
+3), Windows' close-button red, and the dev-build badge.

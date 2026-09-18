@@ -6,6 +6,7 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { getNodesBounds, getViewportForBounds, type ReactFlowInstance } from "@xyflow/react";
+import { themeBase } from "@/features/theme/theme-values";
 
 export type ExportFormat = "png" | "jpeg" | "svg" | "pdf";
 export type ExportResult = "ok" | "empty" | "cancelled";
@@ -15,8 +16,7 @@ const MAX_DIM = 4096; // cap the longest side (px) to keep files/memory sane
 
 /** Canvas background (matches the app) — used for formats without alpha. */
 function canvasBg(): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
-  return v || "#0a0a0a";
+  return themeBase("background");
 }
 
 /** Raw base64 payload from a `data:...;base64,<b64>` (or uri-encoded) data URL. */

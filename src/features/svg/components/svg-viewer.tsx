@@ -50,14 +50,14 @@ export function SvgViewer({ filePath }: SvgViewerProps) {
   return (
     <div className="h-full w-full flex flex-col bg-[var(--background)]">
       <div className="flex items-center gap-2 px-3 h-[32px] border-b border-[var(--border)] shrink-0">
-        <span className="flex-1 min-w-0 truncate text-[11px] font-mono text-[var(--muted-foreground)]">
+        <span className="flex-1 min-w-0 truncate text-xs font-mono text-[var(--muted-foreground)]">
           {filePath}
         </span>
         <button
           onClick={copy}
           disabled={!code}
           title="Copy SVG source"
-          className="flex items-center gap-1 px-2 h-6 rounded text-[10px] cursor-pointer outline-none transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-40 disabled:cursor-default"
+          className="flex items-center gap-1 px-2 h-6 rounded text-2xs cursor-pointer outline-none transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-40 disabled:cursor-default"
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
           {copied ? "Copied" : "Copy code"}

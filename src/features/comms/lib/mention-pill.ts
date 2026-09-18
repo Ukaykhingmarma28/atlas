@@ -67,6 +67,7 @@ export function avatarElement(
   fallback.style.width = `${size}px`;
   fallback.style.height = `${size}px`;
   fallback.style.fontSize = `${Math.round(size * 0.4)}px`;
+  // ratchet-allow: an identity hue derived from the member id, not a theme colour.
   fallback.style.backgroundColor = member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)";
   fallback.className =
     "flex shrink-0 items-center justify-center rounded-full font-medium leading-none " +

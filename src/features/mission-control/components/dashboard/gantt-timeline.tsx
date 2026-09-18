@@ -107,7 +107,7 @@ export function GanttTimeline({ data }: { data: MissionControlUsage }) {
                   <div
                     key={i}
                     title={fmtTokens(tokens)}
-                    className="absolute top-1/2 -translate-y-1/2 h-3.5 rounded-[1px]"
+                    className="absolute top-1/2 -translate-y-1/2 h-3.5 rounded-sm"
                     style={{
                       left: `${(i / BUCKETS) * 100}%`,
                       width: `${100 / BUCKETS}%`,

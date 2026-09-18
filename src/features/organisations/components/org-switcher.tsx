@@ -87,20 +87,24 @@ function OrgAvatar({
       // glyphs at a legible size do not fit inside `size` with any breathing
       // room, and the previous fixed square + `tracking-wide` had them touching
       // both edges. A keycap is allowed to be wider than it is tall.
-      className="flex shrink-0 items-center justify-center rounded-md px-[3px] font-sans font-semibold uppercase leading-none"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-md border border-border px-[3px]",
+        "inset-highlight font-sans font-semibold uppercase leading-none shadow-sm",
+        // White reads on a saturated org colour and nowhere else; the untinted
+        // keycap is a surface and takes the surface's own foreground. The
+        // gradient used to be a fixed near-black, which on a light theme put a
+        // black key in a cream sidebar.
+        org.color ? "text-white" : "text-card-foreground",
+      )}
       style={{
         minWidth: size,
         height: size,
         fontSize: Math.max(8, Math.round(size * 0.44)),
-        color: "rgba(255,255,255,0.95)",
         // An org colour, when set, tints the keycap rather than replacing it —
         // the depth survives either way.
         background: org.color
-          ? `linear-gradient(180deg, ${org.color} 0%, rgba(8,8,10,0.55) 165%)`
-          : "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow:
-          "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.6)",
+          ? `linear-gradient(180deg, ${org.color} 0%, var(--atlas-element-active) 165%)`
+          : "linear-gradient(180deg, var(--popover) 0%, var(--card) 100%)",
       }}
     >
       {initials(org.name)}

@@ -332,7 +332,7 @@ export function SpaceActionPill({
                       className={cn(
                         "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
                         riding &&
-                          "z-10 scale-110 shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--primary)]",
+                          "z-10 scale-110 ring-2 ring-primary ring-offset-2 ring-offset-card",
                       )}
                       style={{ ["--tw-ring-color" as string]: a.colour }}
                     >

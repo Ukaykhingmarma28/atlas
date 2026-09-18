@@ -37,8 +37,8 @@ export function WelcomeScreen() {
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--atlas-element-hover)] hover:border-[var(--atlas-border-strong)] transition-colors text-left group"
         >
           <FolderOpen size={14} className="text-[var(--primary)] shrink-0" />
-          <span className="text-[12px] font-medium text-[var(--foreground)]">Open Folder</span>
-          <span className="text-[10px] text-[var(--muted-foreground)] ml-auto font-mono">⌘O</span>
+          <span className="text-sm font-medium text-[var(--foreground)]">Open Folder</span>
+          <span className="text-2xs text-[var(--muted-foreground)] ml-auto font-mono">⌘O</span>
         </button>
 
         {/* Recent projects */}
@@ -46,7 +46,7 @@ export function WelcomeScreen() {
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 px-1">
               <Clock size={11} className="text-[var(--muted-foreground)]" />
-              <span className="text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wide">
+              <span className="text-2xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide">
                 Recent Projects
               </span>
             </div>
@@ -59,10 +59,10 @@ export function WelcomeScreen() {
                 >
                   <Folder size={14} className="text-[var(--primary)] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-medium text-[var(--foreground)] truncate">
+                    <div className="text-sm font-medium text-[var(--foreground)] truncate">
                       {project.name}
                     </div>
-                    <div className="text-[10px] text-[var(--muted-foreground)] truncate font-mono">
+                    <div className="text-2xs text-[var(--muted-foreground)] truncate font-mono">
                       {project.path}
                     </div>
                   </div>
@@ -85,9 +85,9 @@ export function WelcomeScreen() {
 
         {/* Hint */}
         <div className="text-center">
-          <span className="text-[10px] text-[var(--muted-foreground)]">
+          <span className="text-2xs text-[var(--muted-foreground)]">
             Press{" "}
-            <kbd className="px-1 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] text-[9px] font-mono">
+            <kbd className="px-1 py-0.5 rounded bg-[var(--card)] border border-[var(--border)] text-3xs font-mono">
               {paletteHint}
             </kbd>{" "}
             for command palette

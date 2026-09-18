@@ -69,7 +69,7 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
           autoCorrect="off"
           autoComplete="off"
           className={cn(
-            "flex-1 min-w-0 bg-transparent outline-none text-[11px]",
+            "flex-1 min-w-0 bg-transparent outline-none text-xs",
             "text-foreground placeholder:text-muted-foreground font-mono",
           )}
           onChange={(e) => {

@@ -259,7 +259,7 @@ export function HintGroup({
                   ref={(el) => {
                     labels.current.set(id, el);
                   }}
-                  className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-[11px] leading-none"
+                  className="flex h-[22px] shrink-0 items-center whitespace-nowrap px-2.5 text-xs leading-none"
                 >
                   {label}
                 </div>

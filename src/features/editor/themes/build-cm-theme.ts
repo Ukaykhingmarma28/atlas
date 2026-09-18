@@ -5,6 +5,23 @@ import { tags } from "@lezer/highlight";
 import type { EditorThemeColors } from "./types";
 import { getActiveTheme } from "@/features/theme/apply-theme";
 import type { ResolvedTheme } from "@/features/theme/resolve-theme";
+import { THEME_KEY_REGISTRY, type ThemeKey } from "@/features/theme/theme-key-registry";
+import { themeBase } from "@/features/theme/theme-values";
+
+/**
+ * Atlas's per-appearance default for every theme key, read from the registry
+ * rather than restated here.
+ *
+ * This file used to carry thirty-seven hex fallbacks — one per key it reads —
+ * for the window before the first `applyTheme`. They were a second copy of
+ * `keys.toml`, kept in step by hand, and nothing would have failed if one had
+ * drifted: the editor would simply have painted a colour no theme asked for
+ * while it waited. The registry is the one source (decision 42), and
+ * `theme-values.ts` already falls back the same way.
+ */
+const KEY_DEFAULTS = Object.fromEntries(
+  THEME_KEY_REGISTRY.map((definition) => [definition.key, definition.rule.atlasDefault.dark]),
+) as Record<ThemeKey, string>;
 
 /**
  * The editor's type metrics. `13px` is the `--text-base` step of the Atlas
@@ -33,52 +50,53 @@ const FOLD_GUTTER_FONT_SIZE = "var(--text-sm)";
  * surface (see `resolveEditorColors`).
  */
 export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeColors {
-  const key = (name: keyof ResolvedTheme["keys"], fallback: string) =>
-    theme?.keys[name] ?? fallback;
-  const token = (name: string, fallback: string) => theme?.base[name] ?? fallback;
+  const key = (name: ThemeKey) => theme?.keys[name] ?? KEY_DEFAULTS[name];
+  // `tokens.css` defines the whole base-token set on `:root`, so an unresolved
+  // base token has a real value to read rather than a literal to restate.
+  const token = (name: string) => theme?.base[name] ?? themeBase(name);
   return {
-    bg: key("editor.background", "#000000"),
-    fg: key("editor.foreground", "#d4d4d4"),
-    caret: key("editor.caret", "#d4d4d4"),
-    gutterBg: key("editor.gutter.background", "#000000"),
-    gutterFg: key("editor.gutter.foreground", "#666666"),
-    activeLineGutterFg: key("editor.active_line.gutter_foreground", "#d4d4d4"),
-    activeLineBg: key("editor.active_line.background", "#ffffff0a"),
-    selectionBg: key("editor.selection.background", "#303030"),
-    matchBracketBg: key("editor.match_bracket.background", "#2d2d2d"),
-    matchBracketOutline: key("editor.match_bracket.border", "#3d3d3d"),
+    bg: key("editor.background"),
+    fg: key("editor.foreground"),
+    caret: key("editor.caret"),
+    gutterBg: key("editor.gutter.background"),
+    gutterFg: key("editor.gutter.foreground"),
+    activeLineGutterFg: key("editor.active_line.gutter_foreground"),
+    activeLineBg: key("editor.active_line.background"),
+    selectionBg: key("editor.selection.background"),
+    matchBracketBg: key("editor.match_bracket.background"),
+    matchBracketOutline: key("editor.match_bracket.border"),
     // The fold placeholder is a secondary surface with a secondary label; it
     // does not need three theme keys of its own.
-    foldBg: token("secondary", "#0f0f0f"),
-    foldBorder: token("border", "#1e1e1e"),
-    foldFg: token("secondary-foreground", "#aaaaaa"),
-    comment: key("syntax.comment", "#8f8f8f"),
-    keyword: key("syntax.keyword", "#c9a2f5"),
-    string: key("syntax.string", "#9ecf8a"),
-    number: key("syntax.number", "#e0b070"),
-    type: key("syntax.type", "#7fd1e8"),
-    func: key("syntax.function", "#ffff00"),
-    variable: key("syntax.variable", "#eaeaea"),
-    operator: key("syntax.operator", "#9a9a9a"),
-    tagName: key("syntax.tag", "#7fd1e8"),
-    attributeName: key("syntax.attribute", "#d9b47a"),
-    constant: key("syntax.constant", "#e0b070"),
-    regexp: key("syntax.regexp", "#e59a72"),
-    escape: key("syntax.escape", "#e59a72"),
-    definition: key("syntax.definition", "#ffffff"),
-    propertyName: key("syntax.property", "#c8c8c8"),
+    foldBg: token("secondary"),
+    foldBorder: token("border"),
+    foldFg: token("secondary-foreground"),
+    comment: key("syntax.comment"),
+    keyword: key("syntax.keyword"),
+    string: key("syntax.string"),
+    number: key("syntax.number"),
+    type: key("syntax.type"),
+    func: key("syntax.function"),
+    variable: key("syntax.variable"),
+    operator: key("syntax.operator"),
+    tagName: key("syntax.tag"),
+    attributeName: key("syntax.attribute"),
+    constant: key("syntax.constant"),
+    regexp: key("syntax.regexp"),
+    escape: key("syntax.escape"),
+    definition: key("syntax.definition"),
+    propertyName: key("syntax.property"),
     // Booleans and nulls ARE constants; three keys for one role is two too
     // many, and every built-in theme set all three to the same colour.
-    bool: key("syntax.constant", "#e0b070"),
-    null: key("syntax.constant", "#e0b070"),
-    addLineBg: key("diff.added.background", "#0d2211"),
-    removeLineBg: key("diff.removed.background", "#220d0d"),
-    contextBg: key("diff.context.background", "#0a0a0a"),
+    bool: key("syntax.constant"),
+    null: key("syntax.constant"),
+    addLineBg: key("diff.added.background"),
+    removeLineBg: key("diff.removed.background"),
+    contextBg: key("diff.context.background"),
     // Side-by-side reads the same fill as inline: they are the same diff.
-    addSideBg: key("diff.added.background", "#0d2211"),
-    removeSideBg: key("diff.removed.background", "#220d0d"),
-    emphAddBg: key("diff.added.emphasis", "rgba(52,211,153,0.34)"),
-    emphRemoveBg: key("diff.removed.emphasis", "rgba(244,63,63,0.34)"),
+    addSideBg: key("diff.added.background"),
+    removeSideBg: key("diff.removed.background"),
+    emphAddBg: key("diff.added.emphasis"),
+    emphRemoveBg: key("diff.removed.emphasis"),
   };
 }
 
@@ -90,7 +108,8 @@ export function buildEditorChromeTheme(theme: ResolvedTheme | null): Extension {
         backgroundColor: c.bg,
         color: c.fg,
         height: "100%",
-        fontFamily: "JetBrains Mono, SF Mono, Fira Code, monospace",
+        // The theme owns the mono stack; `tokens.css` has the fallback chain.
+        fontFamily: "var(--font-mono)",
         fontSize: EDITOR_FONT_SIZE,
         lineHeight: EDITOR_LINE_HEIGHT,
       },

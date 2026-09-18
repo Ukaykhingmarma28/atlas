@@ -427,6 +427,8 @@ function buildScene(
     if (!s) {
       s = new TextStyle({
         fontFamily: "Inter, -apple-system, system-ui, sans-serif",
+        // pixi rasterises label text into a WebGL atlas.
+        // ratchet-allow: TextStyle takes a number, and no CSS is in this path.
         fontSize: 11,
         fontWeight: "500",
         fill,

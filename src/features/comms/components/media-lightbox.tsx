@@ -138,6 +138,7 @@ export function MediaLightbox() {
                   // The letterbox behind someone else's photo or video. Deliberately
                   // theme-invariant (decision 3): a tinted matte would misreport the
                   // image's own edges.
+                  // ratchet-allow: decision 3 — a matte behind someone else's video.
                   className="h-full w-full bg-black object-contain"
                 />
               ) : (

@@ -140,7 +140,7 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
         </HintGroup>
 
         {/* Body — the editor fills the full width + height with comfortable
-            padding. `!bg-transparent` drops the editor's default #000 so it
+            padding. `!bg-transparent` drops the editor's own opaque default so it
             shows the panel surface (matches the sidebar background). */}
         <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-5">
           <TiptapEditor

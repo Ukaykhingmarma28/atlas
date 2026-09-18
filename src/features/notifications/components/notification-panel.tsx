@@ -75,12 +75,12 @@ export function NotificationPanel() {
         {/* Header — matches the window titlebar height (30px). */}
         <div className="flex items-center gap-2 px-4 h-[30px] shrink-0 border-b border-[var(--border)]">
           <Bell size={13} className="text-secondary-foreground" strokeWidth={1.5} />
-          <span className="text-[12px] font-semibold text-foreground">Notifications</span>
+          <span className="text-sm font-semibold text-foreground">Notifications</span>
           <div className="flex-1" />
           {items.length > 0 && (
             <button
               onClick={clearAll}
-              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              className="text-2xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               Clear all
             </button>
@@ -95,14 +95,14 @@ export function NotificationPanel() {
                 <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-border-subtle bg-element-hover">
                   <Bell size={18} className="text-muted-foreground" strokeWidth={1.5} />
                 </div>
-                <p className="mt-3 text-[12px] text-muted-foreground">No notifications</p>
+                <p className="mt-3 text-sm text-muted-foreground">No notifications</p>
               </div>
             </div>
           ) : (
             <div className="pb-3">
               {groups.map((g) => (
                 <section key={g.label}>
-                  <div className="sticky top-0 z-10 px-4 pt-3 pb-1.5 bg-[var(--card)]/40 backdrop-blur-sm text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <div className="sticky top-0 z-10 px-4 pt-3 pb-1.5 bg-[var(--card)]/40 backdrop-blur-sm text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {g.label}
                   </div>
                   <div className="flex flex-col gap-1.5 px-3">
@@ -147,13 +147,13 @@ function NotificationCard({ n }: { n: AppNotification }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />}
-          <span className="truncate text-[12px] font-medium text-foreground">{n.title}</span>
-          <span className="ml-auto shrink-0 text-[9px] text-muted-foreground tabular-nums">
+          <span className="truncate text-sm font-medium text-foreground">{n.title}</span>
+          <span className="ml-auto shrink-0 text-3xs text-muted-foreground tabular-nums">
             {timeAgo(n.timestamp, { suffix: true })}
           </span>
         </div>
         {n.body && (
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-secondary-foreground">
+          <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-secondary-foreground">
             {n.body}
           </p>
         )}
@@ -203,7 +203,7 @@ function NotificationIcon({ n }: { n: AppNotification }) {
         <ProviderLogo id={n.provider} size={16} />
       </Suspense>
     );
-  if (n.source === "agent") return <AtlasIcon size={16} className="rounded-[5px]" />;
+  if (n.source === "agent") return <AtlasIcon size={16} className="rounded-md" />;
   return <Sparkles size={15} className="text-secondary-foreground" strokeWidth={1.5} />;
 }
 

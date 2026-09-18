@@ -67,6 +67,8 @@ async function getMermaid() {
         tertiaryColor: background,
         lineColor: line,
         textColor,
+        // mermaid parses themeVariables itself and bakes the result into its SVG.
+        // ratchet-allow: a var() reference would never resolve down that path.
         fontSize: "12px",
         fontFamily,
       },

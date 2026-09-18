@@ -690,6 +690,8 @@ function CaptureRadar({ live, health }: { live: boolean; health: CaptureHealth |
               ...(i === blip && live
                 ? {
                     backgroundColor: tone,
+                    // The glow is the live capture tone, computed per render.
+                    // ratchet-allow: a per-render hue has no static value to name.
                     boxShadow: `0 0 10px 3px color-mix(in oklab, ${tone} 45%, transparent)`,
                   }
                 : null),

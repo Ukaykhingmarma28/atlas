@@ -55,6 +55,7 @@ function Initial({ user, size }: { user: AccountUser; size: number }) {
         width: size,
         height: size,
         fontSize: Math.round(size * 0.55),
+        // ratchet-allow: an identity hue derived from the account id, not a theme colour.
         backgroundColor: `hsl(${hueFor(user.id)} 42% 40%)`,
       }}
       className="flex items-center justify-center shrink-0 rounded-full font-medium leading-none text-white/90 select-none"

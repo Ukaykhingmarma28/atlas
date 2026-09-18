@@ -21,7 +21,7 @@ const CONTENT_CLASS =
   "min-w-[200px] max-w-[280px] rounded-md border border-[var(--border)] " +
   "bg-[var(--card)] shadow-md py-1";
 const ITEM_CLASS =
-  "flex items-center gap-2 px-3 h-[26px] text-[11px] cursor-pointer outline-none " +
+  "flex items-center gap-2 px-3 h-[26px] text-xs cursor-pointer outline-none " +
   "text-[var(--secondary-foreground)] data-[highlighted]:bg-[var(--atlas-element-hover)] " +
   "data-[highlighted]:text-[var(--foreground)]";
 
@@ -97,7 +97,7 @@ export function ProfileBar() {
     <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
       {naming ? (
         <div className="flex items-center gap-1.5 px-2">
-          <span className="text-[11px] font-normal text-muted-foreground">Profile</span>
+          <span className="text-xs font-normal text-muted-foreground">Profile</span>
           <input
             ref={inputRef}
             value={draft}
@@ -112,7 +112,7 @@ export function ProfileBar() {
               e.stopPropagation();
             }}
             className={cn(
-              "h-6 w-[200px] rounded-md border border-border-strong bg-card px-2 text-[11px]",
+              "h-6 w-[200px] rounded-md border border-border-strong bg-card px-2 text-xs",
               "text-foreground outline-none placeholder:text-text-muted",
             )}
           />
@@ -124,7 +124,7 @@ export function ProfileBar() {
               <button
                 type="button"
                 className={cn(
-                  "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium",
+                  "flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium",
                   "text-foreground hover:bg-element-hover transition-colors cursor-pointer",
                 )}
               >
@@ -157,7 +157,7 @@ export function ProfileBar() {
                     {p.builtIn ? (
                       <Lock size={10} className="text-muted-foreground" />
                     ) : (
-                      <span className="text-[9.5px] tabular-nums text-text-muted">
+                      <span className="text-2xs tabular-nums text-text-muted">
                         {Object.keys(p.bindings).length || ""}
                       </span>
                     )}
@@ -195,7 +195,7 @@ export function ProfileBar() {
       )}
 
       {!locked && overrideCount > 0 && (
-        <span className="text-[10px] tabular-nums text-muted-foreground">
+        <span className="text-2xs tabular-nums text-muted-foreground">
           {overrideCount} {overrideCount === 1 ? "override" : "overrides"}
         </span>
       )}

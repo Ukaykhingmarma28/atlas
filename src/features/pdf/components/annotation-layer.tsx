@@ -217,7 +217,7 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
           key={n.id}
           type="button"
           onClick={() => (tool === "erase" ? remove(pdfPath, n.id) : select(n.id))}
-          className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/20 text-[10px] font-bold text-black/70 shadow-sm"
+          className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/20 text-2xs font-bold text-black/70 shadow-sm"
           style={{
             left: n.x * pageW,
             top: n.y * pageH,
@@ -245,20 +245,20 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
             value={selectedNote.text}
             onChange={(e) => updateNoteText(pdfPath, selectedNote.id, e.target.value)}
             placeholder="Write a note…"
-            className="h-20 w-full resize-none rounded-sm border border-border bg-background p-1.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="h-20 w-full resize-none rounded-sm border border-border bg-background p-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="mt-1.5 flex items-center justify-between">
             <button
               type="button"
               onClick={() => remove(pdfPath, selectedNote.id)}
-              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-background)]"
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-background)]"
             >
               <Trash2 size={11} /> Delete
             </button>
             <button
               type="button"
               onClick={() => select(null)}
-              className="rounded-sm px-2 py-0.5 text-[11px] text-secondary-foreground hover:bg-element-hover hover:text-foreground"
+              className="rounded-sm px-2 py-0.5 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
             >
               Done
             </button>

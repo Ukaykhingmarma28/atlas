@@ -121,7 +121,7 @@ export const LoadingState = memo(function LoadingState({
             key={i}
             className={cn(
               "size-[2.5px] bg-[var(--foreground)]",
-              round ? "rounded-full" : "rounded-[0.5px]",
+              round ? "rounded-full" : "rounded-none",
               d !== null && "atlas-pixel-cell",
             )}
             style={

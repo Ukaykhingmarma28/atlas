@@ -4,6 +4,14 @@ import { useHintStore } from "../stores/hint-store";
 import { scanTargets, HINT_OVERLAY_ATTR, type HintTarget } from "../lib/scan-targets";
 import { generateLabels } from "../lib/generate-labels";
 import { activate } from "../lib/activate-target";
+
+/**
+ * The frosted-HUD recipe, shared by the keycaps and the dock below them.
+ * `glass-hud` (globals.css) carries the border, raised edge and shadow; the
+ * blur and the translucent fill stay here because the alpha is what lets the
+ * blur through and a smaller chip may want a lighter one.
+ */
+const HUD = "glass-hud backdrop-blur-glass bg-gradient-to-b from-popover/85 to-card/90";
 import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
 
 /**
@@ -175,23 +183,14 @@ export function HintOverlay() {
         return (
           <span
             key={i}
-            className="absolute inline-flex items-center rounded-full px-1.5 font-sans text-[10px] font-semibold uppercase leading-[16px] tracking-wide"
+            // A macOS-native keycap: a fully-rounded frosted pill that has to
+            // read over whatever it lands on — code, an image, the browser.
+            // `glass-hud` is the shared recipe; see globals.css.
+            className={`absolute inline-flex items-center rounded-full px-1.5 font-sans text-2xs font-semibold uppercase leading-[16px] tracking-wide text-foreground ${HUD}`}
             style={{
               left: Math.max(0, t.rect.left),
               top: Math.max(0, t.rect.top),
               transform: "translate(-2px, -2px)",
-              // macOS-native keycap: fully-rounded, dark frosted-glass pill —
-              // a darker translucent gradient over a heavy backdrop blur, a
-              // hairline border so it reads over any surface, a faint top
-              // highlight + bottom shade for the raised feel, and a soft drop
-              // shadow lifting it off the page.
-              color: "rgba(255,255,255,0.95)",
-              background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-              backdropFilter: "blur(14px) saturate(160%)",
-              WebkitBackdropFilter: "blur(14px) saturate(160%)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              boxShadow:
-                "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.6)",
             }}
           >
             {typed && <span style={{ opacity: 0.4 }}>{label.slice(0, typed.length)}</span>}
@@ -203,19 +202,10 @@ export function HintOverlay() {
       {/* Bottom HUD bar — native macOS frosted-glass dock */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
         <div
-          className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5"
-          style={{
-            // Matches the hint keycaps: dark translucent gradient over a heavy
-            // backdrop blur, hairline border, faint top highlight + soft drop
-            // shadow for the floating native-HUD feel.
-            background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-            backdropFilter: "blur(22px) saturate(170%)",
-            WebkitBackdropFilter: "blur(22px) saturate(170%)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 8px 28px rgba(0,0,0,0.55)",
-          }}
+          // Matches the hint keycaps above — the same `glass-hud` recipe.
+          className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 ${HUD}`}
         >
-          <span className="font-mono text-[12px] text-[var(--foreground)]">
+          <span className="font-mono text-sm text-[var(--foreground)]">
             {typed ? (
               <span className="tracking-widest">{typed.toUpperCase()}</span>
             ) : (
@@ -224,7 +214,7 @@ export function HintOverlay() {
               </span>
             )}
           </span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
+          <span className="flex items-center gap-1.5 text-2xs text-[var(--muted-foreground)]">
             <Kbd>⌥</Kbd> focus
             <Kbd>esc</Kbd> close
           </span>

@@ -367,6 +367,24 @@
    (a user's image, a PDF page), for the same reason: nothing about the theme
    tells you what is underneath.
    ────────────────────────────────────────────────────────────────────────── */
+/* The frosted HUD surface — the hint-nav keycaps and their dock, and the
+   sign-in dock. A translucent gradient over a heavy backdrop blur, a hairline
+   border, a raised top edge and a menu-rung shadow, so the thing reads as a
+   physical key floating over whatever the app is showing.
+
+   It was the same recipe written out three times in inline styles, pinned to a
+   near-black gradient and a white hairline: on a light theme that is a black
+   key in a cream room with an invisible edge. Both ends come off the theme's
+   own surfaces now, and the alpha is what keeps the blur visible. Compose the
+   blur and the fill with it —
+   `glass-hud backdrop-blur-glass bg-gradient-to-b from-popover/85 to-card/90`
+   — so a smaller chip can pick a lighter blur, and the alpha stays in the
+   markup where it is visibly the thing that lets the blur through. */
+@utility glass-hud {
+  border: 1px solid var(--border);
+  box-shadow: var(--inset-highlight), var(--elevation-menu);
+}
+
 @utility scrim {
   background-color: rgb(0 0 0 / 0.6);
 }

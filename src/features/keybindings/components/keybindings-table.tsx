@@ -112,7 +112,7 @@ export function KeybindingsTable({
         className={cn(
           GRID,
           "sticky top-0 z-10 h-[26px] border-b border-border bg-background px-2",
-          "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+          "text-2xs font-semibold uppercase tracking-wider text-muted-foreground",
         )}
       >
         <span />
@@ -123,7 +123,7 @@ export function KeybindingsTable({
       </div>
 
       {flat.length === 0 && (
-        <div className="flex h-24 items-center justify-center text-[11px] text-muted-foreground">
+        <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
           {emptyHint ?? "No matching keybindings"}
         </div>
       )}
@@ -131,7 +131,7 @@ export function KeybindingsTable({
       {groups.map((g) => (
         <Fragment key={g.title}>
           {g.title && (
-            <div className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
+            <div className="px-3 pt-2.5 pb-1 text-2xs uppercase tracking-wider text-text-muted">
               {g.title}
             </div>
           )}
@@ -155,20 +155,20 @@ export function KeybindingsTable({
 
       {unknownIds.length > 0 && (
         <>
-          <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
+          <div className="px-3 pt-3 pb-1 text-2xs uppercase tracking-wider text-text-muted">
             Unknown commands
           </div>
           {unknownIds.map((id) => (
-            <div key={id} className={cn(GRID, "h-[28px] px-2 text-[11px] text-muted-foreground")}>
+            <div key={id} className={cn(GRID, "h-[28px] px-2 text-xs text-muted-foreground")}>
               <span />
-              <span className="truncate font-mono text-[10.5px]">{id}</span>
+              <span className="truncate font-mono text-xs">{id}</span>
               <span className="text-text-muted">not in this version of Atlas</span>
               <span />
               <button
                 type="button"
                 onClick={() => removeUnknown(id)}
                 disabled={locked}
-                className="text-[10.5px] text-secondary-foreground hover:text-foreground disabled:opacity-40 cursor-pointer text-left"
+                className="text-xs text-secondary-foreground hover:text-foreground disabled:opacity-40 cursor-pointer text-left"
               >
                 Remove
               </button>
@@ -236,7 +236,7 @@ function Row({
             onDoubleClick={() => onRecord("change")}
             className={cn(
               GRID,
-              "group h-[28px] px-2 text-[11px] border-b border-border-subtle cursor-default select-none",
+              "group h-[28px] px-2 text-xs border-b border-border-subtle cursor-default select-none",
               selected ? "bg-element-selected" : "hover:bg-element-hover",
             )}
           >
@@ -268,7 +268,7 @@ function Row({
               >
                 {row.def.title}
               </span>
-              <span className="hidden truncate font-mono text-[9.5px] text-text-muted @[640px]:inline">
+              <span className="hidden truncate font-mono text-2xs text-text-muted @[640px]:inline">
                 {row.id}
               </span>
             </div>
@@ -326,12 +326,12 @@ function Row({
                 </Tooltip>
               )}
             </div>
-            <span className="truncate font-mono text-[10px] text-muted-foreground">
+            <span className="truncate font-mono text-2xs text-muted-foreground">
               {WHEN_LABELS[row.def.when] || <span className="text-text-muted">—</span>}
             </span>
             <span
               className={cn(
-                "text-[10.5px]",
+                "text-xs",
                 row.overridden ? "text-foreground" : "text-muted-foreground",
               )}
             >

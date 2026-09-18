@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { fmtTokens, fmtCost } from "@/features/monitor/lib/usage-format";
 import { copyText } from "@/lib/clipboard";
+import { themeBase } from "@/features/theme/theme-values";
 import type { MissionControlUsage } from "../types";
 
 // Lazy-load the heavy libs only when an export is actually triggered.
@@ -8,13 +9,13 @@ async function htmlToImage() {
   return import("html-to-image");
 }
 
-/** Capture a DOM node to a PNG/JPEG data URL on the AMOLED background. */
+/** Capture a DOM node to a PNG/JPEG data URL on the theme's own background. */
 async function capture(node: HTMLElement, kind: "png" | "jpeg"): Promise<string> {
   // Fonts must be ready or text renders as fallback in the capture.
   if (document.fonts?.ready) await document.fonts.ready;
   const { toPng, toJpeg } = await htmlToImage();
   const opts = {
-    backgroundColor: "#000000",
+    backgroundColor: themeBase("background"),
     pixelRatio: 2,
     // Skip anything explicitly marked non-exportable (e.g. interactive controls).
     filter: (el: HTMLElement) => !(el.dataset && el.dataset.noexport === "true"),

@@ -14,11 +14,14 @@ interface ImageZoomViewProps {
   checkerboard?: boolean;
 }
 
-// Two mid-grays: black AND white SVG content both read against it.
+// The transparency checkerboard. Two steps of the theme's own neutral ramp
+// rather than two fixed greys: the pattern has to sit between the lightest and
+// darkest thing the image can contain, and on a light theme a mid-grey ground
+// is heavier than the picture on it.
 const CHECKER: React.CSSProperties = {
-  backgroundColor: "#7c7c7c",
+  backgroundColor: "var(--muted)",
   backgroundImage:
-    "linear-gradient(45deg, #6a6a6a 25%, transparent 25%), linear-gradient(-45deg, #6a6a6a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #6a6a6a 75%), linear-gradient(-45deg, transparent 75%, #6a6a6a 75%)",
+    "linear-gradient(45deg, var(--accent) 25%, transparent 25%), linear-gradient(-45deg, var(--accent) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--accent) 75%), linear-gradient(-45deg, transparent 75%, var(--accent) 75%)",
   backgroundSize: "20px 20px",
   backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0",
 };
@@ -140,7 +143,7 @@ export function ImageZoomView({ src, alt, fill, checkerboard }: ImageZoomViewPro
               <ZoomOut size={13} />
             </button>
           </HintItem>
-          <span className="w-9 text-center text-[10px] font-mono text-[var(--muted-foreground)]">
+          <span className="w-9 text-center text-2xs font-mono text-[var(--muted-foreground)]">
             {Math.round(scale * 100)}%
           </span>
           <HintItem label="Zoom in">

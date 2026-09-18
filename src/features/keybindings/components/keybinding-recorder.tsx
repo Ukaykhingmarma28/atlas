@@ -116,11 +116,11 @@ export function KeybindingRecorder({
       >
         {locked ? (
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Lock size={12} className="text-muted-foreground" />
               The Default profile is locked
             </div>
-            <p className="text-[11px] leading-relaxed text-secondary-foreground">
+            <p className="text-xs leading-relaxed text-secondary-foreground">
               Default always keeps Atlas's built-in shortcuts. Duplicate it into a new profile to
               change <span className="text-foreground">{def.title}</span> and anything else.
             </p>
@@ -128,7 +128,7 @@ export function KeybindingRecorder({
               <button
                 type="button"
                 onClick={onClose}
-                className="h-7 rounded-md px-2.5 text-[11px] font-medium text-secondary-foreground hover:text-foreground transition-colors"
+                className="h-7 rounded-md px-2.5 text-xs font-medium text-secondary-foreground hover:text-foreground transition-colors"
               >
                 Cancel
               </button>
@@ -139,7 +139,7 @@ export function KeybindingRecorder({
                   // Stay open: the next render sees an editable profile and
                   // the recorder proper takes over.
                 }}
-                className="h-7 rounded-md px-2.5 text-[11px] font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+                className="h-7 rounded-md px-2.5 text-xs font-medium bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
               >
                 Duplicate &amp; edit
               </button>
@@ -147,17 +147,17 @@ export function KeybindingRecorder({
           </div>
         ) : (
           <div className="space-y-2.5">
-            <div className="text-center text-[11px] text-secondary-foreground">
+            <div className="text-center text-xs text-secondary-foreground">
               Press desired key combination and then press{" "}
               <span className="font-medium text-foreground">ENTER</span>.
-              <div className="mt-0.5 text-[10px] text-muted-foreground">
+              <div className="mt-0.5 text-2xs text-muted-foreground">
                 {mode === "add" ? "Adding a keybinding to" : "Changing the keybinding for"}{" "}
                 <span className="text-secondary-foreground">{def.title}</span>
               </div>
             </div>
             <div
               className={cn(
-                "flex h-8 items-center justify-center rounded-md border bg-card px-2 font-mono text-[12px]",
+                "flex h-8 items-center justify-center rounded-md border bg-card px-2 font-mono text-sm",
                 combo ? "border-border-strong text-foreground" : "border-border text-text-muted",
               )}
             >
@@ -170,7 +170,7 @@ export function KeybindingRecorder({
             <div className="flex h-5 items-center justify-center">
               {combo ? <KbdKeys keys={displayKeys(combo)} /> : null}
             </div>
-            <div className="flex h-4 items-center justify-center text-[10.5px]">
+            <div className="flex h-4 items-center justify-center text-xs">
               {combo && same.length > 0 ? (
                 <button
                   type="button"

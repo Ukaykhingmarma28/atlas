@@ -194,7 +194,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
           />
           <div ref={scrollRef} className="max-h-[420px] overflow-y-auto hide-scrollbar">
             {showEmpty ? (
-              <div className="px-4 py-3 text-[11px] text-[var(--muted-foreground)]">
+              <div className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
                 {!project
                   ? "Open a project to enable Cmd+P."
                   : indexing
@@ -237,14 +237,14 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                       )}
                     >
                       <FileIcon path={m.path} size={12} fallback={kindIcon(classifyFile(m.path))} />
-                      <span className="truncate text-[12px] font-mono">{m.rel}</span>
+                      <span className="truncate text-sm font-mono">{m.rel}</span>
                     </button>
                   );
                 })}
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-[10px] text-[var(--muted-foreground)] font-mono">
+          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-2xs text-[var(--muted-foreground)] font-mono">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleReindex}

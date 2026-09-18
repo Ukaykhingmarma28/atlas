@@ -601,13 +601,12 @@ export function ArtifactsPanel() {
         </div>
 
         <div
-          className="relative flex min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--background)]"
+          // On a near-black panel a shadow has almost nothing to darken, so
+          // the ring carries the edge and the shadow only lifts the card.
+          className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border"
           style={{
             marginInline: CARD_INSET,
             marginBottom: CARD_INSET,
-            // On a near-black panel a shadow has almost nothing to darken, so
-            // the ring carries the edge and the shadow only lifts the card.
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.6)",
           }}
         >
           {/* The nav. Mounted only when shown, and its width is set directly —

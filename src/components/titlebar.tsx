@@ -244,6 +244,7 @@ function WindowControls() {
         <HintItem label="Close">
           <button
             onClick={() => void windowRef.current?.close()}
+            // ratchet-allow: Windows' own close-button red, fixed by the platform.
             className={cn(button, "hover:bg-[#c42b1c] hover:text-white")}
           >
             <X size={15} strokeWidth={1.25} />
@@ -405,6 +406,27 @@ function ProjectLabel({
  * static paint: no transitions, no hover, no transform. It's an indicator, not
  * a control, so it takes no pointer events and never moves.
  */
+/**
+ * The dev-build badge's paint.
+ *
+ * Deliberately outside the theme: this capsule exists to say "you are not
+ * looking at a release build", and a badge that took on the colours of
+ * whatever theme is active would say it more quietly the better the theme
+ * fits. It is also dev-only — `DevModePill` returns null in a release build —
+ * so nothing a user sees depends on any of it.
+ */
+// ratchet-allow: the dev-build badge is meant to look alien to the theme.
+const DEV_PILL_FILL = "linear-gradient(to bottom, #3b82f6, #2563eb)";
+const DEV_PILL_GLOW =
+  // ratchet-allow: the glow belongs to the dev-badge blue above it.
+  "0 1px 5px 0 rgba(37,99,235,0.35), 0 1px 0 0 rgba(255,255,255,0.25) inset, 0 -2px 6px 0 rgba(37,99,235,0.5) inset";
+const DEV_PILL_CROWN =
+  // ratchet-allow: the crown highlight on that same capsule, not app chrome.
+  "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 80%, transparent 100%)";
+const DEV_PILL_RIM =
+  // ratchet-allow: the rim on that same capsule, sized to the blue underneath.
+  "0 0 0 1px rgba(255,255,255,0.10) inset, 0 1px 0 0 rgba(255,255,255,0.18) inset";
+
 function DevModePill() {
   if (!isDev || !isTauri()) return null;
   return (
@@ -414,31 +436,20 @@ function DevModePill() {
     <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
       <div
         className="relative flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-2 text-xs leading-none font-medium text-white"
-        style={{
-          background: "linear-gradient(to bottom, #3b82f6, #2563eb)",
-          boxShadow:
-            "0 1px 5px 0 rgba(37,99,235,0.35), 0 1px 0 0 rgba(255,255,255,0.25) inset, 0 -2px 6px 0 rgba(37,99,235,0.5) inset",
-        }}
+        style={{ background: DEV_PILL_FILL, boxShadow: DEV_PILL_GLOW }}
       >
         {/* Crown highlight — the light source. Blurred so its lower edge melts
           into the body instead of banding across the glyphs. */}
         <span
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-0 z-0 h-2/5 w-4/5 -translate-x-1/2 rounded-t-full"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 80%, transparent 100%)",
-            filter: "blur(1px)",
-          }}
+          style={{ background: DEV_PILL_CROWN, filter: "blur(1px)" }}
         />
         {/* Rim — keeps the capsule's edge legible against the black titlebar. */}
         <span
           aria-hidden
           className="pointer-events-none absolute inset-0 z-0 rounded-full"
-          style={{
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.10) inset, 0 1px 0 0 rgba(255,255,255,0.18) inset",
-          }}
+          style={{ boxShadow: DEV_PILL_RIM }}
         />
         <Hammer size={11} className="relative z-10" />
         <span className="relative z-10">Dev Mode</span>

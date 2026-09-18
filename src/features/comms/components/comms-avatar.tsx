@@ -48,6 +48,7 @@ export const CommsAvatar = memo(function CommsAvatar({
             width: size,
             height: size,
             fontSize: Math.round(size * 0.4),
+            // ratchet-allow: an identity hue derived from the member id, not a theme colour.
             backgroundColor: member ? `hsl(${avatarHue(member.id)} 42% 40%)` : "var(--muted)",
           }}
           className="flex items-center justify-center rounded-full font-medium leading-none text-white/90 select-none tracking-tight"

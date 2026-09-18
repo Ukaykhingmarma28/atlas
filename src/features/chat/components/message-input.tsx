@@ -167,6 +167,7 @@ async function downscaleAttachment(image: ImageAttachment): Promise<ImageAttachm
     // transparent pixels composite to BLACK — a macOS window capture (rounded
     // corners, drop shadow, routinely over budget) came out with black
     // corners and a black halo (#71). Paint the ground white first.
+    // ratchet-allow: the JPEG ground for a window capture (#71), not app chrome.
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(bitmap, 0, 0, width, height);
