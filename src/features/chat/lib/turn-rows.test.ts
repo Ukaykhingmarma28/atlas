@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { projectRows, RowKind, type MarkerGroupRow, type MarkerRow } from "./turn-rows";
+import {
+  projectRows,
+  RowKind,
+  type MarkerGroupRow,
+  type MarkerRow,
+  type ProjectOptions,
+  type WorkHeaderRow,
+} from "./turn-rows";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
+
+/** Every fixture's assistant turn starts at message `m1`, and a settled turn
+ *  folds its work behind its header — opened here so the rows under test are
+ *  projected at all. Folding itself is tested in its own block below. */
+const OPEN_WORK = "wk:t:m1";
 
 const OPTS = {
   expanded: new Set<string>(),
   streaming: false,
-  expandedTurns: new Set<string>(),
+  expandedTurns: new Set<string>([OPEN_WORK]),
 };
 
 function toolCall(tc: Partial<ToolCallDisplay>): ToolCallDisplay {
@@ -357,6 +369,7 @@ describe("tool activity in the transcript", () => {
       OPTS,
     ).rows;
     expect(rows.map((row) => row.kind)).toEqual([
+      RowKind.WorkHeader,
       RowKind.Prose,
       RowKind.MarkerGroup,
       RowKind.Prose,
@@ -383,7 +396,7 @@ describe("tool activity in the transcript", () => {
     );
     const opened = projectRows(messages, {
       ...OPTS,
-      expandedTurns: new Set([collapsed[1].id]),
+      expandedTurns: new Set([OPEN_WORK, collapsed[1].id]),
     }).rows.filter((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
     expect(opened.map((group) => group.open)).toEqual([false, true]);
   });
@@ -432,5 +445,115 @@ describe("tool activity in the transcript", () => {
       null,
       "Edited a file",
     ]);
+  });
+});
+
+describe("the icon a folded block leads with", () => {
+  const message = (id: string, calls: ToolCallDisplay[]): ChatMessage => ({
+    ...turn()[0],
+    id,
+    toolCalls: calls,
+  });
+  const group = (calls: ToolCallDisplay[], streaming = false) =>
+    projectRows([message("m1", calls)], { ...OPTS, streaming }).rows.find(
+      (row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup,
+    );
+
+  it("is the first bucket in the sentence, not the commonest", () => {
+    const g = group([
+      toolCall({ id: "a", kind: "execute", arguments: { command: "cargo test" } }),
+      toolCall({ id: "b", kind: "execute", arguments: { command: "cargo build" } }),
+      toolCall({ id: "c", kind: "read", toolName: "read", arguments: { file_path: "/r/a.ts" } }),
+    ]);
+    expect([g?.summary, g?.tool]).toEqual(["Read a file, ran commands", "read"]);
+  });
+
+  it("is the running call's own icon while the block is live", () => {
+    const g = group(
+      [
+        toolCall({ id: "a", kind: "execute", arguments: { command: "cargo test" } }),
+        toolCall({ id: "b", kind: "execute", status: "running", arguments: { command: "rg foo" } }),
+      ],
+      true,
+    );
+    // The block's own icon is the book — a search counts toward "read files",
+    // which leads "ran commands" — but the live line wears the magnifier.
+    expect([g?.tool, g?.liveTool, g?.liveLabel]).toEqual(["read", "search", "Searching files"]);
+  });
+});
+
+describe("the work header", () => {
+  const user = (id: string, timestamp: string): ChatMessage =>
+    ({ ...turn()[0], id, role: "user", content: "go", timestamp }) as ChatMessage;
+  const said = (id: string, content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
+    ...turn()[0],
+    id,
+    content,
+    ...extra,
+  });
+  const ran = (id: string): ChatMessage => ({
+    ...turn()[0],
+    id,
+    toolCalls: [toolCall({ id: `tc-${id}`, kind: "execute", arguments: { command: "pwd" } })],
+  });
+  const thread = (extra: Partial<ChatMessage> = {}) => [
+    user("u1", "2026-08-23T00:00:00Z"),
+    said("a1", "Looking."),
+    ran("a2"),
+    said("a3", "Done — the build passes.", extra),
+  ];
+  const project = (messages: ChatMessage[], opts: Partial<ProjectOptions> = {}) =>
+    projectRows(messages, { ...OPTS, expandedTurns: new Set<string>(), ...opts }).rows;
+
+  it("folds everything before the final answer once the turn settles", () => {
+    const rows = project(thread({ workedMs: 457_000 }));
+    expect(rows.map((r) => r.kind)).toEqual([RowKind.User, RowKind.WorkHeader, RowKind.Prose]);
+    expect(rows[1]).toMatchObject({ foldable: true, open: false, workedMs: 457_000, live: false });
+    // The folded first prose row carried the model line; the answer inherits it.
+    expect(rows[2]).toMatchObject({ text: "Done — the build passes.", showHeader: true });
+  });
+
+  it("puts the work back in the thread when opened", () => {
+    const rows = project(thread(), { expandedTurns: new Set(["wk:t:a1"]) });
+    expect(rows.map((r) => r.kind)).toEqual([
+      RowKind.User,
+      RowKind.WorkHeader,
+      RowKind.Prose,
+      RowKind.MarkerGroup,
+      RowKind.Prose,
+    ]);
+    expect(rows[1]).toMatchObject({ open: true });
+  });
+
+  it("folds nothing and counts from the user's message while the turn is live", () => {
+    const rows = project(thread(), { streaming: true });
+    const header = rows[1] as WorkHeaderRow;
+    expect(rows).toHaveLength(5);
+    expect([header.live, header.foldable, header.startedAt]).toEqual([
+      true,
+      false,
+      Date.parse("2026-08-23T00:00:00Z"),
+    ]);
+  });
+
+  it("stays open and live while the turn is paused on a permission prompt", () => {
+    // `streaming` is false while the agent waits on the user; the turn is not over.
+    const rows = project(thread(), { streaming: false, turnInProgress: true });
+    expect(rows).toHaveLength(5);
+    expect(rows[1]).toMatchObject({ kind: RowKind.WorkHeader, live: true, foldable: false });
+  });
+
+  it("has no time to show for a turn that was not timed live", () => {
+    expect(project(thread())[1]).toMatchObject({ workedMs: null, foldable: true });
+  });
+
+  it("is a plain caption on a prose-only turn, and absent when that turn was not timed", () => {
+    const timed = project([
+      user("u1", "2026-08-23T00:00:00Z"),
+      said("a1", "Hi.", { workedMs: 3000 }),
+    ]);
+    expect(timed[1]).toMatchObject({ kind: RowKind.WorkHeader, foldable: false });
+    const untimed = project([user("u1", "2026-08-23T00:00:00Z"), said("a1", "Hi.")]);
+    expect(untimed.map((r) => r.kind)).toEqual([RowKind.User, RowKind.Prose]);
   });
 });

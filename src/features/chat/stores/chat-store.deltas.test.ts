@@ -479,6 +479,23 @@ describe("applyAgentDelta: turn terminals", () => {
     expect(session().inflightToolIds).toBeUndefined();
   });
 
+  it("turn_finished stamps the turn's wall time, from the user's message, on its last message", () => {
+    boundTab();
+    const sentAt = Date.parse(messages()[0].timestamp);
+    const now = vi.spyOn(Date, "now").mockReturnValue(sentAt + 457_000);
+    try {
+      apply(
+        d("status", { status: "running", turn_seq: 1 }),
+        d("text_chunk", { message_id: "m", delta: "Done." }),
+        d("turn_finished", { stop_reason: "end_turn", turn_seq: 1 }),
+      );
+    } finally {
+      now.mockRestore();
+    }
+    expect(messages()[0].role).toBe("user");
+    expect(last()).toMatchObject({ role: "assistant", workedMs: 457_000 });
+  });
+
   it("turn_finished(cancelled) marks unfinished tool calls failed", () => {
     boundTab();
     apply(

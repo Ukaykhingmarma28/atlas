@@ -258,8 +258,10 @@ describe("rows are identity-stable between projections", () => {
     const first = projectRows(messages, opts);
     const second = projectRows(nextFrame(messages, 3, { content: "On it now" }), opts, first);
     expect(second.rows.map((r) => r.id)).toEqual(first.rows.map((r) => r.id));
-    expect(same(first, second)).toEqual([true, true, true, true, false]);
-    expect(second.rows[4]).toMatchObject({ kind: RowKind.Prose, text: "On it now" });
+    // The live turn's work header is stable too; only the prose under it moves.
+    expect(same(first, second)).toEqual([true, true, true, true, true, false]);
+    expect(second.rows[4]).toMatchObject({ kind: RowKind.WorkHeader, live: true });
+    expect(second.rows[5]).toMatchObject({ kind: RowKind.Prose, text: "On it now" });
     // The settled turns are the same objects; only the live one moved.
     expect(second.turns.map((t, i) => t === first.turns[i])).toEqual([true, true, true, true]);
   });
