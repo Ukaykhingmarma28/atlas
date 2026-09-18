@@ -34,11 +34,11 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 **Shared memory** is the one record every agent on a project reads and writes, native and ACP alike, so that a second agent inherits what the first learned. It is Atlas-owned; no agent's private store is shared memory. It holds exactly six kinds of entry (decided 2026-09-17):
 
 - **Active plan** — the agent's own structured plan list. One per project; a newer plan replaces the older one, and a plan that is done or abandoned clears it.
-- **Decision** — a choice made and why. Keyed; a newer decision with the same key replaces the older one. Bounded.
-- **File changed** — one entry per path with a summary of what was done. A repeat edit to the same path replaces the earlier entry. Bounded.
-- **Fact** — a durable project fact or convention. Bounded.
-- **Failure** — a dead end or anti-pattern, kept so a second agent does not repeat it. Bounded.
-- **Architecture** — a structural note about how the system fits together. Bounded.
+- **Decision** — a choice made and why. Keyed; a newer decision with the same key replaces the older one. Shown capped; never evicted.
+- **File changed** — one entry per path with a summary of what was done. A repeat edit to the same path replaces the earlier entry. Shown capped; never evicted.
+- **Fact** — a durable project fact or convention. Shown capped; never evicted.
+- **Failure** — a dead end or anti-pattern, kept so a second agent does not repeat it. Shown capped; never evicted.
+- **Architecture** — a structural note about how the system fits together. Shown capped; never evicted.
 
 The six kinds have two lifetimes. **Working memory** is Active plan and File changed: it describes the current stretch of work, replaces by key, is always shown to an agent fresh, and never ages or travels beyond the project. **Durable memory** is Decision, Fact, Failure and Architecture: it accumulates, stays true across sessions, is what agents search, and is what can be promoted beyond one project. Both are shared memory.
 

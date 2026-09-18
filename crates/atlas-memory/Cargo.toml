@@ -24,6 +24,15 @@ usearch = "2.25.3"
 # On-device MiniLM embedder (384-d, CPU). The `MiniLmProvider` wraps this.
 atlas-embed = { path = "../atlas-embed" }
 
+# The shared-memory record store (`record`): one WAL database per scope.
+# Pinned to the one rusqlite the workspace resolves — the canonical statement of
+# the pin and why is in `crates/atlas-thread-metadata/Cargo.toml` (#39).
+rusqlite = { version = "0.39", features = ["bundled"] }
+# Every record-store write is scrubbed through Atlas's one redactor.
+atlas-redact = { path = "../atlas-redact" }
+# Normalised content hash of an entry (its identity when no key is given).
+sha2 = "0.10"
+
 async-trait = "0.1"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

@@ -401,7 +401,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
 
         // Site A — Shared Cross-Agent Memory (v2) capture (write-side parity for
         // all three agents). `classify` is pure/in-memory, but `append_event`
-        // does a small disk append (events.jsonl + an atomic state write), so we
+        // does a small disk write (one SQLite transaction in the record store), so we
         // run the whole `ingest` OFF the `emit` thread on the blocking pool — the
         // streaming-delta hot path must never block on disk. This feeds ONLY the
         // shared event log; the semantic vector index is now (re)built by the
@@ -1362,11 +1362,24 @@ pub async fn agents_send(
     }
 
     // v2 push: per-turn shared-memory block, gated by this session's sync clock
-    // (0 ⇒ first sync = full current state; >0 ⇒ delta since last turn). Cheap
-    // in-memory read, so no timeout needed here.
+    // (0 ⇒ first sync = full current state; >0 ⇒ delta since last turn). The
+    // record store reads SQLite (and the scope's first open migrates legacy
+    // files), so it runs on the blocking pool; a failure means no block this
+    // turn and an unmoved clock.
     let clock = sharing.clock_for(&key);
-    let shared_block = memory_inject::build_shared_block(store.inner(), &cwd, clock);
-    sharing.advance_clock(&key, store.last_seq(&cwd));
+    let (shared_block, synced_to) = {
+        let store = store.inner().clone();
+        let cwd = cwd.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            // One read: the block and the clock it advances to come from the
+            // same state, so an event landing in between is not skipped.
+            let state = store.get_state(&cwd);
+            (memory_inject::compose_shared_block(&state, clock), state.last_seq)
+        })
+        .await
+        .unwrap_or((None, clock))
+    };
+    sharing.advance_clock(&key, synced_to);
 
     // Site C (Step 5: kept, NOT removed) — retrieval-augmented push: RAG the
     // project's memory index by the user's message, keep only docs not already

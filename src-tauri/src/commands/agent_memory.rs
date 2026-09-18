@@ -445,40 +445,29 @@ fn read_cersei_docs(_project_path: &str) -> Vec<MemoryDoc> {
     Vec::new()
 }
 
-/// v3 Write half — surface the project's Shared Cross-Agent Memory (working
-/// memory) into the index corpus, so settled decisions/failures/architecture/
-/// facts become embeddable + retrievable (Tier 2 read path), not just
-/// live-injected. Only durable kinds are promoted; the live plan + churn are
-/// skipped. Reads the folded shared state from `.atlas/shared-memory/`; an
-/// absent/empty store is a no-op. Stable ids (`shared:<kind>:<seq>`) namespace
-/// these apart from the claude/codex docs, so re-runs don't duplicate.
+/// v3 Write half — surface the project's shared memory (durable kinds) into
+/// the index corpus, so settled decisions/failures/architecture/facts become
+/// embeddable + retrievable (Tier 2 read path), not just live-injected. The
+/// live plan + file churn are skipped. Reads the scope's record store; an
+/// absent/empty store is a no-op. Ids are `shared:<kind>:<entry id>`, so the
+/// vector index is keyed by entry id: a replaced entry keeps its doc, and
+/// re-runs don't duplicate.
 fn read_shared_memory_docs(project_path: &str) -> Vec<MemoryDoc> {
-    let state = super::shared_memory::rebuild_state(project_path);
-    let ts = state.updated_at;
-    let mut docs = Vec::new();
-    for d in &state.decisions {
-        docs.extend(shared_doc(d.seq, &d.agent, "decision", &d.text, ts));
-    }
-    for f in &state.failures {
-        docs.extend(shared_doc(f.seq, &f.agent, "failure", &f.text, ts));
-    }
-    for a in &state.architecture {
-        docs.extend(shared_doc(a.seq, &a.agent, "architecture", &a.text, ts));
-    }
-    for f in &state.facts {
-        docs.extend(shared_doc(f.seq, &f.agent, "fact", &f.text, ts));
-    }
-    docs
+    let (ts, entries) = super::shared_memory::durable_entries(project_path);
+    entries
+        .iter()
+        .filter_map(|e| shared_doc(e.id as u64, &e.agent, e.kind.as_str(), &e.content, ts))
+        .collect()
 }
 
 /// Build one promoted shared-memory [`MemoryDoc`]. `None` for empty text.
-fn shared_doc(seq: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<MemoryDoc> {
+fn shared_doc(id: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<MemoryDoc> {
     let t = text.trim();
     if t.is_empty() {
         return None;
     }
     Some(MemoryDoc {
-        id: format!("shared:{kind}:{seq}"),
+        id: format!("shared:{kind}:{id}"),
         title: short_title(t),
         summary: short_title(t),
         kind: kind.to_string(),

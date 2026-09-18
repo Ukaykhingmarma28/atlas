@@ -49,6 +49,10 @@ pub mod consolidate;
 // local memory is sparse. Tauri-free; resolves `$HOME` (or an env override).
 pub mod global;
 
+// Shared memory 03 (#80): the SQLite record store behind the Shared tab — one
+// database per repository scope, with the one-time legacy migration.
+pub mod record;
+
 // ─── Ported-from-Cersei modules ───────────────────────────────────────────────
 //
 // These four were `cersei-embeddings` / `cersei-memory` / `cersei-agent` until

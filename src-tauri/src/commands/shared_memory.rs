@@ -1,75 +1,47 @@
-//! Shared Cross-Agent Memory (v2) — append-only event log + derived state view.
+//! Shared Cross-Agent Memory — the Tauri face of the record store.
 //!
-//! Every agent on a project (Claude, Codex, opencode) is a separate ACP
-//! subprocess with its own isolated context window. This module is the shared
-//! memory **bus** between them: a per-project append-only event log
-//! (`.atlas/shared-memory/events.jsonl`) continuously fed by every agent's
-//! output, folded into a bounded "current truth" view
-//! (`.atlas/shared-memory/state.json`) that agents read.
+//! Every agent on a repository (Claude, Codex, the native agent, …) is a
+//! separate subprocess with its own context window; shared memory is the
+//! record they all read and write through this backend. The record itself —
+//! events, entries, sessions in one SQLite database per scope — is
+//! `atlas_memory::record`. This module:
 //!
-//! Design (see `shared-cross-agent-memory.prd.md`):
+//! - resolves a launch directory to its **scope** (the repository's main
+//!   worktree, or the directory itself outside git) and opens that scope's
+//!   store once per process, migrating every legacy per-directory store of the
+//!   scope into it on first open (`record::legacy`);
+//! - keeps the session → (cwd, agent) routing map the capture hot path uses;
+//! - serves the five Shared-tab commands with the exact request and response
+//!   shapes the JSONL event log had (`shared_memory_contract.rs` pins them).
+//!
+//! Design invariants carried over from the JSONL store:
 //! - **Single backend writer.** One Tauri backend owns every agent subprocess
-//!   and is the sole writer, so an in-process `Mutex` per project is enough —
-//!   no SQLite / cross-process locking needed at this volume.
+//!   and is the sole writer; `record::open_scope` hands out one mutex-guarded
+//!   connection per scope, so concurrency is a lock, not cross-process
+//!   coordination.
 //! - **Typed events, not raw transcript.** Capture (`super::memory_delta`)
 //!   classifies ACP deltas into `EventKind`s; raw turns stay session-local.
-//! - **Supersession + dedup at fold time** keeps the view small and
-//!   non-contradictory (a newer decision on the same `key` replaces the old).
+//! - **Supersession at write time.** A newer decision on the same `key`
+//!   replaces the old one; the per-kind caps are display limits only.
 //!
-//! The store is `Clone` (an `Arc<Inner>`, mirroring `AgentManager`) so the hot
-//! `DeltaSink::emit` path can grab it from Tauri state and route a capture
-//! without holding a `State` borrow.
+//! Every method may touch disk. Commands run it on the blocking pool; the
+//! capture path already runs off the delta thread.
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use atlas_memory::record::{self, Entry, EntryKind, NewEvent, Origin, RecordStore};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::State;
 
-/// Max entries retained per bucket in the derived view (older ones evicted).
-const MAX_DECISIONS: usize = 50;
-const MAX_CHANGES: usize = 50;
-const MAX_FACTS: usize = 50;
-const MAX_FAILURES: usize = 30;
-const MAX_ARCH: usize = 30;
+pub use atlas_memory::record::EventKind;
 
 // ── Event model ──────────────────────────────────────────────────────────────
-
-/// Typed kinds captured into the shared log. Free-form transcript never enters
-/// the store — only these structured signals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EventKind {
-    PlanSet,
-    Decision,
-    FileChanged,
-    Fact,
-    /// Something that was tried and failed / an anti-pattern to avoid — so a
-    /// second agent doesn't repeat a dead end.
-    Failure,
-    /// A durable architecture/structure note about the system.
-    Architecture,
-    SessionStart,
-    SessionEnd,
-    TodoAdded,
-    TodoDone,
-    /// Catches any kind string this build doesn't recognize — e.g. a retired
-    /// kind (like the old `skill_used`) still sitting in an existing
-    /// project's `events.jsonl`. Without this, `serde_json::from_str` fails
-    /// the WHOLE line on an unknown `kind`, `filter_map(..).ok()` drops it
-    /// silently, and if it happened to be the log's last event, the derived
-    /// `last_seq` regresses behind the true file tail — the next appended
-    /// event then reuses a `seq` still on disk. Folding this into no view
-    /// bucket (below) makes it inert either way, but at least `seq` stays
-    /// continuous across the upgrade.
-    #[serde(other)]
-    Unknown,
-}
 
 /// A new event as handed to [`SharedMemoryStore::append_event`]. `seq`/`ts` are
 /// assigned by the store, so the caller only describes the *content*.
@@ -84,7 +56,7 @@ pub struct RawEvent {
     pub payload: serde_json::Value,
 }
 
-/// A persisted event (one JSONL line). Returned by queries.
+/// A persisted event. Returned by the event list and queries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryEvent {
@@ -96,6 +68,20 @@ pub struct MemoryEvent {
     #[serde(default)]
     pub key: String,
     pub payload: serde_json::Value,
+}
+
+impl From<record::EventRow> for MemoryEvent {
+    fn from(e: record::EventRow) -> Self {
+        Self {
+            seq: e.seq,
+            ts: e.ts,
+            agent: e.agent,
+            session_id: e.session_id,
+            kind: EventKind::parse(&e.kind),
+            key: e.key,
+            payload: e.payload,
+        }
+    }
 }
 
 // ── Derived state view ───────────────────────────────────────────────────────
@@ -140,7 +126,8 @@ pub struct FactView {
     pub text: String,
 }
 
-/// The compiled "current truth", rebuilt by folding the event log.
+/// The "current truth" summary: the active plan and the newest entries of each
+/// kind, capped for display (storage keeps everything).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedState {
@@ -163,162 +150,125 @@ pub struct SharedState {
     pub updated_at: i64,
 }
 
-impl SharedState {
-    /// Fold one event into the view, applying supersession/dedup/eviction.
-    fn apply(&mut self, ev: &MemoryEvent) {
-        self.last_seq = self.last_seq.max(ev.seq);
-        self.updated_at = ev.ts;
-        match ev.kind {
-            EventKind::PlanSet => {
-                let text = ev
-                    .payload
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let status = ev
-                    .payload
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("active")
-                    .to_string();
-                if status == "abandoned" || status == "done" {
-                    // Completed/abandoned plan: clear the active pointer.
-                    self.active_plan = None;
-                } else if !text.is_empty() {
-                    self.active_plan = Some(PlanView {
-                        seq: ev.seq,
-                        agent: ev.agent.clone(),
-                        text,
-                        status,
-                    });
-                }
-            }
-            EventKind::Decision => {
-                let text = payload_text(ev);
-                if text.is_empty() {
-                    return;
-                }
-                // Supersede by key (or dedup by text when keyless).
-                self.decisions
-                    .retain(|d| !dedup_match(&d.key, &d.text, &ev.key, &text));
-                self.decisions.push(DecisionView {
-                    seq: ev.seq,
-                    agent: ev.agent.clone(),
-                    key: ev.key.clone(),
-                    text,
-                });
-                trim_front(&mut self.decisions, MAX_DECISIONS);
-            }
-            EventKind::FileChanged => {
-                let path = ev
-                    .payload
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&ev.key)
-                    .to_string();
-                let summary = ev
-                    .payload
-                    .get("summary")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if path.is_empty() {
-                    return;
-                }
-                self.recent_changes.retain(|c| c.path != path);
-                self.recent_changes.push(ChangeView {
-                    seq: ev.seq,
-                    agent: ev.agent.clone(),
-                    path,
-                    summary,
-                });
-                trim_front(&mut self.recent_changes, MAX_CHANGES);
-            }
-            EventKind::Fact => {
-                let text = payload_text(ev);
-                if text.is_empty() {
-                    return;
-                }
-                self.facts
-                    .retain(|f| !dedup_match("", &f.text, "", &text));
-                self.facts.push(FactView {
-                    seq: ev.seq,
-                    agent: ev.agent.clone(),
-                    text,
-                });
-                trim_front(&mut self.facts, MAX_FACTS);
-            }
-            EventKind::Failure => {
-                let text = payload_text(ev);
-                if text.is_empty() {
-                    return;
-                }
-                self.failures
-                    .retain(|f| !dedup_match(&f.text, &f.text, &ev.key, &text));
-                self.failures.push(FactView {
-                    seq: ev.seq,
-                    agent: ev.agent.clone(),
-                    text,
-                });
-                trim_front(&mut self.failures, MAX_FAILURES);
-            }
-            EventKind::Architecture => {
-                let text = payload_text(ev);
-                if text.is_empty() {
-                    return;
-                }
-                self.architecture
-                    .retain(|a| !dedup_match(&a.text, &a.text, &ev.key, &text));
-                self.architecture.push(FactView {
-                    seq: ev.seq,
-                    agent: ev.agent.clone(),
-                    text,
-                });
-                trim_front(&mut self.architecture, MAX_ARCH);
-            }
-            EventKind::SessionStart => {
-                self.session_agents
-                    .insert(ev.session_id.clone(), ev.agent.clone());
-            }
-            EventKind::SessionEnd | EventKind::TodoAdded | EventKind::TodoDone => {
-                // Recorded in the log for audit; no view projection in MVP.
-            }
-            EventKind::Unknown => {
-                // Kept only to advance `last_seq`; no view projection.
-            }
+fn fact_view(e: Entry) -> FactView {
+    FactView {
+        seq: e.seq.unwrap_or(0),
+        agent: e.agent,
+        text: e.content,
+    }
+}
+
+/// Build the summary view from the record. Only entries folded from the event
+/// log are shown here, as before: memdir imports (and, later, direct writes)
+/// live in the same record but reach agents through their own paths.
+fn read_state(store: &RecordStore) -> anyhow::Result<SharedState> {
+    let list = |kind, cap| store.list(kind, cap, Origin::EventLog);
+    let (last_seq, updated_at) = store.last_event()?.unwrap_or((0, 0));
+    Ok(SharedState {
+        last_seq,
+        active_plan: list(EntryKind::Plan, 1)?.pop().map(|e| PlanView {
+            seq: e.seq.unwrap_or(0),
+            agent: e.agent,
+            text: e.content,
+            status: e.status,
+        }),
+        decisions: list(EntryKind::Decision, record::CAP_DECISIONS)?
+            .into_iter()
+            .map(|e| DecisionView {
+                seq: e.seq.unwrap_or(0),
+                agent: e.agent,
+                key: e.key,
+                text: e.content,
+            })
+            .collect(),
+        recent_changes: list(EntryKind::FileChanged, record::CAP_FILES_CHANGED)?
+            .into_iter()
+            .map(|e| ChangeView {
+                seq: e.seq.unwrap_or(0),
+                agent: e.agent,
+                path: e.key,
+                summary: e.content,
+            })
+            .collect(),
+        facts: list(EntryKind::Fact, record::CAP_FACTS)?.into_iter().map(fact_view).collect(),
+        failures: list(EntryKind::Failure, record::CAP_FAILURES)?.into_iter().map(fact_view).collect(),
+        architecture: list(EntryKind::Architecture, record::CAP_ARCHITECTURE)?
+            .into_iter()
+            .map(fact_view)
+            .collect(),
+        session_agents: store
+            .sessions()?
+            .into_iter()
+            .filter(|s| s.started_at.is_some())
+            .map(|s| (s.session_id, s.agent))
+            .collect(),
+        updated_at,
+    })
+}
+
+// ── Scope ────────────────────────────────────────────────────────────────────
+
+/// The record store for a launch directory: resolved to its scope root, opened
+/// once per process, with every legacy store of the scope migrated in on the
+/// first open (the scope root, every worktree git knows of, and the launch
+/// directory itself — a subdirectory launch had its own store too).
+pub fn store_for(project_path: &str) -> Result<Arc<RecordStore>, String> {
+    static OPENED: OnceLock<Mutex<HashMap<String, Arc<RecordStore>>>> = OnceLock::new();
+    let opened = OPENED.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut opened = opened.lock();
+    if let Some(store) = opened.get(project_path) {
+        return Ok(store.clone());
+    }
+    let dir = Path::new(project_path);
+    let root = atlas_checkpoint::git::scope_root(dir);
+    let store = record::open_scope(&root).map_err(|e| format!("{e:#}"))?;
+
+    let mut sources: Vec<PathBuf> = vec![root.clone()];
+    sources.extend(atlas_checkpoint::git::worktree_paths(dir));
+    sources.push(dir.to_path_buf());
+    let mut seen = std::collections::HashSet::new();
+    for source in sources {
+        let key = source.canonicalize().unwrap_or_else(|_| source.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        match store.migrate_legacy(&source) {
+            Ok(record::legacy::MigrationOutcome::Migrated { events, memories }) => tracing::info!(
+                target: "atlas::shared_memory",
+                "migrated {events} events and {memories} memories from {} into {}",
+                source.display(),
+                root.display()
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                target: "atlas::shared_memory",
+                "legacy migration from {} failed: {e:#}",
+                source.display()
+            ),
         }
     }
+    opened.insert(project_path.to_string(), store.clone());
+    Ok(store)
 }
 
-fn payload_text(ev: &MemoryEvent) -> String {
-    ev.payload
-        .get("text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string()
-}
-
-/// True when a stored entry should be replaced by an incoming one: same
-/// non-empty key, or (keyless) identical normalized text. This is both the
-/// supersession rule and the content-hash echo guard.
-fn dedup_match(stored_key: &str, stored_text: &str, new_key: &str, new_text: &str) -> bool {
-    if !new_key.is_empty() && stored_key == new_key {
-        return true;
+/// The durable entries the summary view shows (decisions, failures,
+/// architecture, facts — in that order, each capped as displayed), plus the
+/// record's last-update time. Feeds the retrieval corpus; ids are entry ids.
+pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
+    let Ok(store) = store_for(project_path) else {
+        return (0, Vec::new());
+    };
+    let updated_at = store.last_event().ok().flatten().map_or(0, |(_, ts)| ts);
+    let mut out = Vec::new();
+    for (kind, cap) in [
+        (EntryKind::Decision, record::CAP_DECISIONS),
+        (EntryKind::Failure, record::CAP_FAILURES),
+        (EntryKind::Architecture, record::CAP_ARCHITECTURE),
+        (EntryKind::Fact, record::CAP_FACTS),
+    ] {
+        out.extend(store.list(kind, cap, Origin::EventLog).unwrap_or_default());
     }
-    normalize(stored_text) == normalize(new_text)
-}
-
-fn normalize(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
-}
-
-fn trim_front<T>(v: &mut Vec<T>, max: usize) {
-    if v.len() > max {
-        let drop = v.len() - max;
-        v.drain(0..drop);
-    }
+    (updated_at, out)
 }
 
 // ── Session routing metadata ─────────────────────────────────────────────────
@@ -333,19 +283,20 @@ pub struct SessionMeta {
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
+/// Millisecond wall clock used to stamp events.
+pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
+
 struct Inner {
-    /// Compiled view cache, keyed by absolute project path.
-    states: Mutex<HashMap<String, SharedState>>,
-    /// Per-project append serializer (sole-writer invariant is per-process;
-    /// this guards against two async tasks racing the same project file).
-    file_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// cwd → project id cache.
     id_cache: Mutex<HashMap<String, String>>,
     /// session_id → routing metadata (populated by `agents_send`).
     sessions: Mutex<HashMap<String, SessionMeta>>,
+    /// Wall clock for event timestamps (ms). Injectable so the command
+    /// contract can be pinned byte-for-byte in tests.
+    clock: Clock,
 }
 
-/// Cheaply-cloneable handle to the shared-memory store (Arc inside, like
+/// Cheaply-cloneable handle to shared memory (Arc inside, like
 /// `AgentManager`). Registered once via `.manage()`.
 #[derive(Clone)]
 pub struct SharedMemoryStore {
@@ -360,12 +311,17 @@ impl Default for SharedMemoryStore {
 
 impl SharedMemoryStore {
     pub fn new() -> Self {
+        Self::with_clock(Arc::new(now_ms))
+    }
+
+    /// A store whose event timestamps come from `clock` instead of the system
+    /// time.
+    pub fn with_clock(clock: Clock) -> Self {
         Self {
             inner: Arc::new(Inner {
-                states: Mutex::new(HashMap::new()),
-                file_locks: Mutex::new(HashMap::new()),
                 id_cache: Mutex::new(HashMap::new()),
                 sessions: Mutex::new(HashMap::new()),
+                clock,
             }),
         }
     }
@@ -411,7 +367,7 @@ impl SharedMemoryStore {
 
     /// Write `.atlas/project.json` if absent. Best-effort.
     fn ensure_project_file(&self, project_path: &str) {
-        let path = project_json_path(project_path);
+        let path = Path::new(project_path).join(".atlas").join("project.json");
         if path.exists() {
             return;
         }
@@ -420,151 +376,71 @@ impl SharedMemoryStore {
         let _ = atomic_write(&path, &payload);
     }
 
-    // ── Append + fold ────────────────────────────────────────────────────────
+    // ── Record ───────────────────────────────────────────────────────────────
 
-    fn lock_for(&self, project_path: &str) -> Arc<Mutex<()>> {
-        let mut locks = self.inner.file_locks.lock();
-        locks
-            .entry(project_path.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
-    }
-
-    /// Load the view from cache, else rebuild from `events.jsonl` (and cache it).
-    fn load_state(&self, project_path: &str) -> SharedState {
-        if let Some(s) = self.inner.states.lock().get(project_path) {
-            return s.clone();
-        }
-        let rebuilt = rebuild_state(project_path);
-        self.inner
-            .states
-            .lock()
-            .insert(project_path.to_string(), rebuilt.clone());
-        rebuilt
-    }
-
-    /// Append one typed event, fold it into the view, and atomically persist
-    /// both files. Returns the assigned `seq`. Errors are propagated so the
-    /// caller can decide; capture treats them as best-effort.
+    /// Append one typed event (redacted and folded into the record by the
+    /// store). Returns the assigned `seq`. Errors are propagated so the caller
+    /// can decide; capture treats them as best-effort.
     pub fn append_event(&self, project_path: &str, raw: RawEvent) -> Result<u64, String> {
-        let guard = self.lock_for(project_path);
-        let _held = guard.lock();
-
+        let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
-        let mut state = self.load_state(project_path);
-        let seq = state.last_seq + 1;
-        let event = MemoryEvent {
-            seq,
-            ts: now_ms(),
-            agent: raw.agent,
-            session_id: raw.session_id,
-            kind: raw.kind,
-            key: raw.key,
-            payload: raw.payload,
-        };
-
-        // Append the JSONL line.
-        let line = serde_json::to_string(&event).map_err(|e| e.to_string())?;
-        append_line(&events_path(project_path), &line)?;
-
-        // Fold + persist the derived view.
-        state.apply(&event);
-        atomic_write(
-            &state_path(project_path),
-            &serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?,
-        )?;
-        self.inner
-            .states
-            .lock()
-            .insert(project_path.to_string(), state);
-        Ok(seq)
+        let row = store
+            .append_event(
+                NewEvent {
+                    agent: raw.agent,
+                    session_id: raw.session_id,
+                    kind: raw.kind,
+                    key: raw.key,
+                    payload: raw.payload,
+                },
+                (self.inner.clock)(),
+            )
+            .map_err(|e| format!("{e:#}"))?;
+        Ok(row.seq)
     }
 
-    pub fn last_seq(&self, project_path: &str) -> u64 {
-        self.load_state(project_path).last_seq
-    }
-
+    /// The summary view. Degrades to empty when the record can't be read.
     pub fn get_state(&self, project_path: &str) -> SharedState {
-        self.load_state(project_path)
+        match store_for(project_path).and_then(|s| read_state(&s).map_err(|e| format!("{e:#}"))) {
+            Ok(state) => state,
+            Err(e) => {
+                tracing::warn!(target: "atlas::shared_memory", "read state failed: {e}");
+                SharedState::default()
+            }
+        }
     }
 
     /// Substring/keyword search over the event log (newest-first, capped).
     pub fn query(&self, project_path: &str, query: &str, limit: usize) -> Vec<MemoryEvent> {
-        let q = query.trim().to_lowercase();
-        let mut events = read_events(project_path);
-        if !q.is_empty() {
-            events.retain(|e| {
-                e.payload.to_string().to_lowercase().contains(&q)
-                    || e.key.to_lowercase().contains(&q)
-                    || e.agent.to_lowercase().contains(&q)
-            });
-        }
-        events.reverse(); // newest-first
-        events.truncate(limit.max(1));
-        events
+        store_for(project_path)
+            .and_then(|s| s.search_events(query, limit.max(1)).map_err(|e| format!("{e:#}")))
+            .map(|rows| rows.into_iter().map(MemoryEvent::from).collect())
+            .unwrap_or_default()
     }
 
-    /// Newest events (capped) — backs the Memory panel's events table. The log
-    /// is append-only and written by every agent turn, so returning it whole
-    /// was an unbounded JSON payload across IPC plus an unbounded DOM table on
-    /// long-lived projects (the same failure shape as the old codebase-corpus
-    /// Memory-tab slowdown). 500 mirrors the Timeline's BOARD_LIMIT.
+    /// Newest events (capped) — backs the Memory panel's events table. 500
+    /// mirrors the Timeline's BOARD_LIMIT; the log itself is unbounded.
     pub fn list_events(&self, project_path: &str) -> Vec<MemoryEvent> {
         const EVENTS_LIMIT: usize = 500;
-        let mut events = read_events(project_path);
-        events.reverse(); // newest-first
-        events.truncate(EVENTS_LIMIT);
-        events
+        store_for(project_path)
+            .and_then(|s| s.events_newest(EVENTS_LIMIT).map_err(|e| format!("{e:#}")))
+            .map(|rows| rows.into_iter().map(MemoryEvent::from).collect())
+            .unwrap_or_default()
     }
 
-    /// Wipe a project's shared memory (log, view, cached state).
+    /// Wipe a project's shared memory (events, entries, sessions).
     pub fn clear(&self, project_path: &str) -> Result<(), String> {
-        let guard = self.lock_for(project_path);
-        let _held = guard.lock();
-        let _ = fs::remove_file(events_path(project_path));
-        let _ = fs::remove_file(state_path(project_path));
-        self.inner.states.lock().remove(project_path);
-        Ok(())
+        store_for(project_path)?.clear().map_err(|e| format!("{e:#}"))
     }
 }
 
 // ── Disk helpers ─────────────────────────────────────────────────────────────
-
-fn shared_dir(project_path: &str) -> PathBuf {
-    Path::new(project_path).join(".atlas").join("shared-memory")
-}
-
-fn events_path(project_path: &str) -> PathBuf {
-    shared_dir(project_path).join("events.jsonl")
-}
-
-fn state_path(project_path: &str) -> PathBuf {
-    shared_dir(project_path).join("state.json")
-}
-
-fn project_json_path(project_path: &str) -> PathBuf {
-    Path::new(project_path).join(".atlas").join("project.json")
-}
 
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-/// Append a single newline-terminated line, creating parent dirs as needed.
-fn append_line(path: &Path, line: &str) -> Result<(), String> {
-    use std::io::Write;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let mut f = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| e.to_string())?;
-    writeln!(f, "{line}").map_err(|e| e.to_string())
 }
 
 /// Atomic write: tmp + rename (mirrors `memory_sharing::atomic_write`).
@@ -577,70 +453,61 @@ fn atomic_write(path: &Path, payload: &str) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
-fn read_events(project_path: &str) -> Vec<MemoryEvent> {
-    let Ok(raw) = fs::read_to_string(events_path(project_path)) else {
-        return Vec::new();
-    };
-    raw.lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<MemoryEvent>(l).ok())
-        .collect()
-}
-
-/// Pure fold of the whole log into the current view. Used on cache miss.
-pub fn rebuild_state(project_path: &str) -> SharedState {
-    fold_events(read_events(project_path))
-}
-
-/// Pure: fold a list of events into a [`SharedState`] (unit-testable).
-pub fn fold_events(events: Vec<MemoryEvent>) -> SharedState {
-    let mut state = SharedState::default();
-    for ev in &events {
-        state.apply(ev);
-    }
-    state
-}
-
 // ── Tauri commands ───────────────────────────────────────────────────────────
+//
+// Async so the record's disk I/O runs on the blocking pool, never on the
+// Tauri main thread. Request and response shapes are unchanged.
+
+async fn off_main<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
-pub fn memory_get_state(
+pub async fn memory_get_state(
     project_path: String,
     store: State<'_, SharedMemoryStore>,
 ) -> Result<SharedState, String> {
-    Ok(store.get_state(&project_path))
+    let store = store.inner().clone();
+    off_main(move || Ok(store.get_state(&project_path))).await
 }
 
 #[tauri::command]
-pub fn memory_query(
+pub async fn memory_query(
     project_path: String,
     query: String,
     limit: Option<usize>,
     store: State<'_, SharedMemoryStore>,
 ) -> Result<Vec<MemoryEvent>, String> {
-    Ok(store.query(&project_path, &query, limit.unwrap_or(20)))
+    let store = store.inner().clone();
+    off_main(move || Ok(store.query(&project_path, &query, limit.unwrap_or(20)))).await
 }
 
 #[tauri::command]
-pub fn memory_list_events(
+pub async fn memory_list_events(
     project_path: String,
     store: State<'_, SharedMemoryStore>,
 ) -> Result<Vec<MemoryEvent>, String> {
-    Ok(store.list_events(&project_path))
+    let store = store.inner().clone();
+    off_main(move || Ok(store.list_events(&project_path))).await
 }
 
 #[tauri::command]
-pub fn memory_clear_project(
+pub async fn memory_clear_project(
     project_path: String,
     store: State<'_, SharedMemoryStore>,
 ) -> Result<(), String> {
-    store.clear(&project_path)
+    let store = store.inner().clone();
+    off_main(move || store.clear(&project_path)).await
 }
 
 /// Manual structured write — used by tests, the UI, and (later) an agent
 /// write-tool. `kind` must be a snake_case [`EventKind`].
 #[tauri::command]
-pub fn memory_append_event(
+pub async fn memory_append_event(
     project_path: String,
     agent: String,
     session_id: String,
@@ -649,64 +516,123 @@ pub fn memory_append_event(
     payload: serde_json::Value,
     store: State<'_, SharedMemoryStore>,
 ) -> Result<u64, String> {
-    store.append_event(
-        &project_path,
-        RawEvent {
-            agent,
-            session_id,
-            kind,
-            key: key.unwrap_or_default(),
-            payload,
-        },
-    )
+    let store = store.inner().clone();
+    off_main(move || {
+        store.append_event(
+            &project_path,
+            RawEvent {
+                agent,
+                session_id,
+                kind,
+                key: key.unwrap_or_default(),
+                payload,
+            },
+        )
+    })
+    .await
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[path = "shared_memory_contract.rs"]
+mod contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn ev(seq: u64, kind: EventKind, key: &str, payload: serde_json::Value) -> MemoryEvent {
-        MemoryEvent {
-            seq,
-            ts: seq as i64 * 1000,
-            agent: "claude-code".into(),
-            session_id: "s1".into(),
-            kind,
-            key: key.into(),
-            payload,
-        }
+    fn temp_project(label: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("atlas-shared-{label}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().to_string()
+    }
+
+    fn append(store: &SharedMemoryStore, p: &str, kind: EventKind, key: &str, payload: serde_json::Value) {
+        store
+            .append_event(
+                p,
+                RawEvent {
+                    agent: "claude-code".into(),
+                    session_id: "s1".into(),
+                    kind,
+                    key: key.into(),
+                    payload,
+                },
+            )
+            .unwrap();
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = atlas_process::command("git").arg("-C").arg(dir).args(args).output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// Scope is the repository: a decision recorded from one worktree is in
+    /// the other worktree's shared memory, and the legacy log of the linked
+    /// worktree is migrated into the one store.
+    #[test]
+    fn two_worktrees_share_one_memory() {
+        let main = PathBuf::from(temp_project("wt-main"));
+        git(&main, &["init", "--initial-branch=main"]);
+        git(&main, &["-c", "user.name=t", "-c", "user.email=t@e", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "init"]);
+        let linked = PathBuf::from(temp_project("wt-linked-parent")).join("feature");
+        git(&main, &["worktree", "add", "-b", "feature", linked.to_str().unwrap()]);
+        // The linked worktree had its own JSONL store before the record store.
+        std::fs::create_dir_all(linked.join(".atlas/shared-memory")).unwrap();
+        std::fs::write(
+            linked.join(".atlas/shared-memory/events.jsonl"),
+            r#"{"seq":1,"ts":5,"agent":"codex","sessionId":"old","kind":"fact","key":"","payload":{"text":"legacy fact from the worktree"}}"#,
+        )
+        .unwrap();
+
+        let store = SharedMemoryStore::new();
+        let (m, l) = (main.to_string_lossy().to_string(), linked.to_string_lossy().to_string());
+        append(&store, &l, EventKind::Decision, "db", serde_json::json!({"text": "Postgres"}));
+        assert!(Arc::ptr_eq(&store_for(&m).unwrap(), &store_for(&l).unwrap()));
+        let seen_from_main = store.get_state(&m);
+        assert_eq!(seen_from_main.decisions.len(), 1);
+        assert_eq!(seen_from_main.facts[0].text, "legacy fact from the worktree");
+        // The store lives in the main worktree.
+        assert!(main.join(".atlas/memory").join(record::DB_FILE).exists());
+        assert!(!linked.join(".atlas/memory").join(record::DB_FILE).exists());
+    }
+
+    /// Outside git, the scope is the launch directory.
+    #[test]
+    fn a_non_git_directory_is_its_own_scope() {
+        let p = temp_project("non-git");
+        let store = SharedMemoryStore::new();
+        append(&store, &p, EventKind::Fact, "", serde_json::json!({"text": "here"}));
+        assert!(Path::new(&p).join(".atlas/memory").join(record::DB_FILE).exists());
+        assert_eq!(store_for(&p).unwrap().root(), Path::new(&p).canonicalize().unwrap());
     }
 
     #[test]
     fn plan_set_supersedes() {
-        let events = vec![
-            ev(1, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A"})),
-            ev(2, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan B"})),
-        ];
-        let s = fold_events(events);
+        let (store, p) = (SharedMemoryStore::new(), temp_project("plan"));
+        append(&store, &p, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A"}));
+        append(&store, &p, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan B"}));
+        let s = store.get_state(&p);
         assert_eq!(s.active_plan.unwrap().text, "Plan B");
         assert_eq!(s.last_seq, 2);
     }
 
     #[test]
     fn plan_abandoned_clears() {
-        let events = vec![
-            ev(1, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A"})),
-            ev(2, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A", "status": "done"})),
-        ];
-        assert!(fold_events(events).active_plan.is_none());
+        let (store, p) = (SharedMemoryStore::new(), temp_project("plan-done"));
+        append(&store, &p, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A"}));
+        append(&store, &p, EventKind::PlanSet, "plan", serde_json::json!({"text": "Plan A", "status": "done"}));
+        assert!(store.get_state(&p).active_plan.is_none());
     }
 
     #[test]
     fn decision_supersedes_by_key() {
-        let events = vec![
-            ev(1, EventKind::Decision, "auth.alg", serde_json::json!({"text": "HS256"})),
-            ev(2, EventKind::Decision, "auth.alg", serde_json::json!({"text": "RS256"})),
-            ev(3, EventKind::Decision, "db", serde_json::json!({"text": "Postgres"})),
-        ];
-        let s = fold_events(events);
+        let (store, p) = (SharedMemoryStore::new(), temp_project("decision-key"));
+        append(&store, &p, EventKind::Decision, "auth.alg", serde_json::json!({"text": "HS256"}));
+        append(&store, &p, EventKind::Decision, "auth.alg", serde_json::json!({"text": "RS256"}));
+        append(&store, &p, EventKind::Decision, "db", serde_json::json!({"text": "Postgres"}));
+        let s = store.get_state(&p);
         assert_eq!(s.decisions.len(), 2);
         assert!(s.decisions.iter().any(|d| d.key == "auth.alg" && d.text == "RS256"));
         assert!(!s.decisions.iter().any(|d| d.text == "HS256"));
@@ -714,21 +640,19 @@ mod tests {
 
     #[test]
     fn decision_dedup_by_text_when_keyless() {
-        let events = vec![
-            ev(1, EventKind::Decision, "", serde_json::json!({"text": "Use   RS256"})),
-            ev(2, EventKind::Decision, "", serde_json::json!({"text": "use rs256"})),
-        ];
-        assert_eq!(fold_events(events).decisions.len(), 1);
+        let (store, p) = (SharedMemoryStore::new(), temp_project("decision-text"));
+        append(&store, &p, EventKind::Decision, "", serde_json::json!({"text": "Use   RS256"}));
+        append(&store, &p, EventKind::Decision, "", serde_json::json!({"text": "use rs256"}));
+        assert_eq!(store.get_state(&p).decisions.len(), 1);
     }
 
     #[test]
     fn file_changed_dedups_by_path() {
-        let events = vec![
-            ev(1, EventKind::FileChanged, "", serde_json::json!({"path": "a.ts", "summary": "x"})),
-            ev(2, EventKind::FileChanged, "", serde_json::json!({"path": "a.ts", "summary": "y"})),
-            ev(3, EventKind::FileChanged, "", serde_json::json!({"path": "b.ts", "summary": "z"})),
-        ];
-        let s = fold_events(events);
+        let (store, p) = (SharedMemoryStore::new(), temp_project("files"));
+        append(&store, &p, EventKind::FileChanged, "", serde_json::json!({"path": "a.ts", "summary": "x"}));
+        append(&store, &p, EventKind::FileChanged, "", serde_json::json!({"path": "a.ts", "summary": "y"}));
+        append(&store, &p, EventKind::FileChanged, "", serde_json::json!({"path": "b.ts", "summary": "z"}));
+        let s = store.get_state(&p);
         assert_eq!(s.recent_changes.len(), 2);
         assert_eq!(s.recent_changes.iter().find(|c| c.path == "a.ts").unwrap().summary, "y");
     }
@@ -744,19 +668,32 @@ mod tests {
     }
 
     #[test]
-    fn decision_eviction_caps_length() {
-        let events: Vec<MemoryEvent> = (1..=MAX_DECISIONS as u64 + 10)
-            .map(|i| ev(i, EventKind::Decision, &format!("k{i}"), serde_json::json!({"text": format!("d{i}")})))
-            .collect();
-        assert_eq!(fold_events(events).decisions.len(), MAX_DECISIONS);
+    fn decision_display_caps_length() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("caps"));
+        for i in 1..=record::CAP_DECISIONS + 10 {
+            append(&store, &p, EventKind::Decision, &format!("k{i}"), serde_json::json!({"text": format!("d{i}")}));
+        }
+        assert_eq!(store.get_state(&p).decisions.len(), record::CAP_DECISIONS);
+        // Storage keeps every one of them.
+        assert_eq!(store_for(&p).unwrap().count(EntryKind::Decision).unwrap(), record::CAP_DECISIONS + 10);
     }
 
     #[test]
     fn session_start_tracks_agent() {
-        let mut e = ev(1, EventKind::SessionStart, "", serde_json::json!({}));
-        e.session_id = "abc".into();
-        e.agent = "codex".into();
-        let s = fold_events(vec![e]);
+        let (store, p) = (SharedMemoryStore::new(), temp_project("session"));
+        store
+            .append_event(
+                &p,
+                RawEvent {
+                    agent: "codex".into(),
+                    session_id: "abc".into(),
+                    kind: EventKind::SessionStart,
+                    key: String::new(),
+                    payload: serde_json::json!({}),
+                },
+            )
+            .unwrap();
+        let s = store.get_state(&p);
         assert_eq!(s.session_agents.get("abc").map(std::string::String::as_str), Some("codex"));
     }
 }

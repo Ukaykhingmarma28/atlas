@@ -10,8 +10,9 @@
 //!   structured `PlanUpdated` plan and `ToolCallUpserted` file edits directly,
 //!   plus a *conservative* keyword pass over finished assistant messages for
 //!   explicit decisions/facts. Streaming `TextChunk`/`ThinkingChunk` are ignored.
-//! - **Secret-scan + redact at the write boundary.** Shared memory is a
-//!   cross-agent channel; anything captured is redacted before it lands.
+//! - **Redacted at the write boundary.** Shared memory is a cross-agent
+//!   channel; the record store runs every write through `atlas_redact`
+//!   before it lands, so capture needs no scrubber of its own.
 //! - **Routing without snapshots.** The session's cwd + agent label come from
 //!   `SharedMemoryStore::session_meta` (registered by `agents_send`), keeping
 //!   the hot `emit` path off the manager lock.
@@ -63,7 +64,7 @@ pub fn classify(delta: &SessionDelta, session_id: &str, agent: &str) -> Vec<RawE
                 session_id: session_id.to_string(),
                 kind: EventKind::PlanSet,
                 key: "plan".to_string(),
-                payload: serde_json::json!({ "text": redact(&cap(&body)), "status": "active" }),
+                payload: serde_json::json!({ "text": cap(&body), "status": "active" }),
             }]
         }
 
@@ -103,7 +104,7 @@ pub fn classify(delta: &SessionDelta, session_id: &str, agent: &str) -> Vec<RawE
                 session_id: session_id.to_string(),
                 kind: EventKind::FileChanged,
                 key: path.clone(),
-                payload: serde_json::json!({ "path": path, "summary": redact(&cap(&summary)) }),
+                payload: serde_json::json!({ "path": path, "summary": cap(&summary) }),
             })
             .collect()
         }
@@ -151,13 +152,19 @@ fn scan_assistant_text(content: &str, session_id: &str, agent: &str) -> Vec<RawE
             session_id: session_id.to_string(),
             kind,
             key: String::new(), // keyless → dedup by normalized text
-            payload: serde_json::json!({ "text": redact(&cap(text)) }),
+            payload: serde_json::json!({ "text": cap(text) }),
         });
         if out.len() >= 5 {
             break; // cap per message
         }
     }
     out
+}
+
+/// Scrub secrets from a read-path snippet or a distilled text — the same
+/// `atlas_redact` pass the record store applies to every write.
+pub fn redact(s: &str) -> String {
+    atlas_memory::record::redact(s)
 }
 
 fn cap(s: &str) -> String {
@@ -167,65 +174,6 @@ fn cap(s: &str) -> String {
     let mut out: String = s.chars().take(TEXT_CAP).collect();
     out.push('…');
     out
-}
-
-/// Redact obvious secrets before anything is persisted to the shared log.
-/// Pattern-based (no entropy scan in MVP) — covers the common credential shapes.
-pub fn redact(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for token in s.split_inclusive(char::is_whitespace) {
-        let trimmed = token.trim_end();
-        if looks_secret(trimmed) {
-            let ws = &token[trimmed.len()..];
-            out.push_str("[REDACTED]");
-            out.push_str(ws);
-        } else {
-            out.push_str(token);
-        }
-    }
-    out
-}
-
-fn looks_secret(tok: &str) -> bool {
-    if tok.len() < 12 {
-        return false;
-    }
-    let lower = tok.to_lowercase();
-    if lower.starts_with("sk-")
-        || lower.starts_with("ghp_")
-        || lower.starts_with("gho_")
-        || lower.starts_with("xoxb-")
-        || lower.starts_with("xoxp-")
-        || tok.starts_with("AKIA")
-        || lower.starts_with("aws_")
-        || lower.starts_with("bearer")
-    {
-        return true;
-    }
-    // `KEY=value` / `TOKEN: value` assignment shapes with a long-ish secret.
-    if let Some((k, v)) = tok.split_once(['=', ':']) {
-        let kl = k.to_lowercase();
-        if (kl.contains("secret")
-            || kl.contains("token")
-            || kl.contains("password")
-            || kl.contains("apikey")
-            || kl.contains("api_key"))
-            && v.trim().len() >= 6
-        {
-            return true;
-        }
-    }
-    // Long opaque alphanumeric blob (hex/base64-like, mixed digits+letters).
-    if tok.len() >= 32
-        && tok
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '/' || c == '+')
-        && tok.chars().any(|c| c.is_ascii_digit())
-        && tok.chars().any(|c| c.is_ascii_alphabetic())
-    {
-        return true;
-    }
-    false
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -309,22 +257,27 @@ mod tests {
         assert!(scan_assistant_text("Here is some normal explanation text.", "s1", "x").is_empty());
     }
 
+    /// Capture no longer scrubs with its own heuristic: every write lands
+    /// through the record store, which runs `atlas_redact` on all of them. A
+    /// secret an agent says in passing never reaches shared memory.
     #[test]
-    fn secrets_are_redacted() {
-        let r = redact("the key is sk-ABCDEF0123456789ABCDEF and done");
-        assert!(r.contains("[REDACTED]"));
-        assert!(!r.contains("sk-ABCDEF0123456789"));
-    }
+    fn a_captured_secret_lands_redacted() {
+        let secret = "sk-proj-AbCdEf0123456789GhIjKlMnOpQrStUv";
+        let evs = scan_assistant_text(&format!("Note: the deploy key is {secret}"), "s1", "codex");
+        assert_eq!(evs.len(), 1);
 
-    #[test]
-    fn assignment_secret_redacted() {
-        let r = redact("API_KEY=supersecretvalue123");
-        assert!(r.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn ordinary_words_not_redacted() {
-        let r = redact("the quick brown fox jumps");
-        assert_eq!(r, "the quick brown fox jumps");
+        let dir = std::env::temp_dir().join(format!("atlas-delta-redact-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let project = dir.to_string_lossy().to_string();
+        let store = SharedMemoryStore::new();
+        for ev in evs {
+            store.append_event(&project, ev).unwrap();
+        }
+        let state = serde_json::to_string(&store.get_state(&project)).unwrap();
+        let events = serde_json::to_string(&store.list_events(&project)).unwrap();
+        assert!(!state.contains(secret), "{state}");
+        assert!(!events.contains(secret), "{events}");
+        assert!(state.contains("deploy key"), "{state}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

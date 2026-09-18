@@ -32,6 +32,8 @@ consumer is now `atlas-native-agent`'s `search_memory` dynamic tool.
 | `graph/` | `GraphMemory::open` (Grafeo LPG) | Per-project graph memory: structured facts, topic tags, `link_memories` edges. Falls back to in-memory if the dir can't open (non-fatal — empty until extraction runs). |
 | `extracted/*.md` | `extract.rs` | One markdown file per session of gated native session-extraction output (memdir). Also embedded into HNSW. |
 | `.shared-memory-imported` | `shared_import.rs` | Idempotency marker: the one-time fold of legacy `.atlas/shared-memory/events.jsonl` into the graph is done. |
+| `memory.sqlite` (+ `-wal`, `-shm`) | `record::RecordStore` | The shared-memory **record store** (#80): `events`, `entries`, `sessions`, WAL. Lives only at the **scope root** (the repository's main worktree, else the launch directory). Replaces `.atlas/shared-memory/events.jsonl` + `state.json` as the Shared tab's store. |
+| `.record-store-migrated` | `record::legacy` | Marker: this directory's legacy `shared-memory/events.jsonl` and `extracted/*.md` were folded into its scope's record store. Written in every worktree that had legacy files; the same fact is kept in the store's `legacy_imports` table. The legacy files are kept one release. |
 | `.consolidation_lock`, `.consolidation_state.json` | `dream::AutoDream` | AutoDream consolidation lock (stale after 3600s) + state (gate timestamps/session counts). |
 
 ### Global (cross-project) — `~/.atlas/memory/`

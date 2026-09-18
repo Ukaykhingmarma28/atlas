@@ -12,22 +12,12 @@
 //! This is what makes the feature continuous and bidirectional, replacing v1's
 //! first-send-only one-directional handoff.
 
-use super::shared_memory::{SharedMemoryStore, SharedState};
+use super::shared_memory::SharedState;
 
 /// Char budget for the composed block body (≈ a few hundred tokens).
 const BLOCK_MAX_CHARS: usize = 1600;
 /// Max line items per section.
 const MAX_ITEMS: usize = 8;
-
-/// Read the current view and compose the block for a session at `since_seq`.
-/// Returns `None` when there is nothing new to say.
-pub fn build_shared_block(
-    store: &SharedMemoryStore,
-    project_path: &str,
-    since_seq: u64,
-) -> Option<String> {
-    compose_shared_block(&store.get_state(project_path), since_seq)
-}
 
 /// Pure composer (unit-testable). `since_seq == 0` = first sync (full current
 /// state); otherwise only entries with `seq > since_seq`.
