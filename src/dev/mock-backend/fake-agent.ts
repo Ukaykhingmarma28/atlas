@@ -3,7 +3,7 @@
 // the way a real one does: as `atlas:agents` deltas.
 
 import { emit } from "@tauri-apps/api/event";
-import type { AgentInfo } from "@/types/acp";
+import type { AgentInfo, PermissionDecision, PermissionOptionRef } from "@/types/acp";
 import type {
   AgentDelta,
   SessionInit,
@@ -13,6 +13,17 @@ import type {
   ToolCall,
 } from "@/types/agents";
 import type { MockHandlers } from "./types";
+import { text, tool, tools } from "./fixtures/chat";
+import {
+  askUserQuestionMulti,
+  askUserQuestionSingle,
+  exitPlanOptions,
+  LONG_COMMAND,
+  LONG_COMMAND_RESULT,
+  PLAN_MARKDOWN,
+  permissionToolCall,
+  standardOptions,
+} from "./fixtures/permission";
 
 interface FakeSession {
   key: SessionKey;
@@ -112,6 +123,221 @@ export function setStatus(status: "idle" | "running" | "waiting" | "error"): Pro
   return sendDelta({ kind: "status", ...at(s), status });
 }
 
+// ── Permission requests ──────────────────────────────────────────────────
+//
+// The real backend never raises `permission_request` out of nowhere: the
+// tool call it names already exists in the thread (created "pending", then
+// `WaitingForConfirmation`), and `session/request_permission` refers to it by
+// id (`atlas-agent-delta/src/projector.rs::permission_requested`). So a
+// trigger here first appends that pending tool call to the transcript, same
+// as a real turn would, then emits the `permission_request` delta pointing at
+// it — the same channel and payload shape `atlas-agent-delta::project`
+// builds (see `fixtures/permission.ts`). Resolving it later updates that same
+// tool call and replies in the transcript, so accept/reject are visible
+// there too, not just in the modal closing.
+
+function isAllowKind(kind: string): boolean {
+  return kind === "allow_once" || kind === "allow_always";
+}
+
+interface OpenPermission {
+  agentId: string;
+  sessionId: string;
+  messageId: string;
+  toolCall: ToolCall;
+  options: PermissionOptionRef[];
+  /** What the transcript tool call's `result` becomes once resolved. */
+  result: (allowed: boolean) => string;
+  /** A follow-up assistant line, or `null` to stay silent — used by the
+   *  multi-question variant, whose answer already talks back through the
+   *  ordinary `agents_send` echo once its composed text is sent. */
+  reply: (decision: PermissionDecision, option: PermissionOptionRef | null) => string | null;
+}
+
+const openPermissions = new Map<string, OpenPermission>();
+
+async function raisePermission(opts: {
+  transcriptCall: ToolCall;
+  title: string;
+  kind: string;
+  rawInput: unknown;
+  options: PermissionOptionRef[];
+  result: OpenPermission["result"];
+  reply: OpenPermission["reply"];
+}): Promise<void> {
+  const s = latest();
+  if (!s) {
+    console.warn("[mock-backend] requestPermission: no session bound yet");
+    return;
+  }
+  await setStatus("running");
+  const message = tools([opts.transcriptCall]);
+  await playTranscript([message]);
+  await setStatus("waiting");
+
+  const requestId = `perm-req-${++seq}`;
+  openPermissions.set(requestId, {
+    agentId: s.key.agent_id,
+    sessionId: s.key.session_id,
+    messageId: message.id,
+    toolCall: opts.transcriptCall,
+    options: opts.options,
+    result: opts.result,
+    reply: opts.reply,
+  });
+  await sendDelta({
+    kind: "permission_request",
+    ...at(s),
+    request_id: requestId,
+    tool_call: permissionToolCall({
+      id: opts.transcriptCall.id,
+      title: opts.title,
+      kind: opts.kind,
+      rawInput: opts.rawInput,
+    }),
+    options: opts.options,
+  });
+}
+
+async function resolvePermission(
+  agentId: string,
+  sessionId: string,
+  requestId: string,
+  decision: PermissionDecision,
+): Promise<void> {
+  const open = openPermissions.get(requestId);
+  openPermissions.delete(requestId);
+  // Mirrors the real `permission_resolved` delta (App.tsx's `popPermission`
+  // case) — redundant with the modal's own optimistic pop, but keeps the wire
+  // shape faithful for anything else that might be watching it.
+  await sendDelta({
+    kind: "permission_resolved",
+    agent_id: agentId,
+    session_id: sessionId,
+    request_id: requestId,
+  });
+  if (!open) return;
+
+  const option =
+    decision.kind === "selected"
+      ? (open.options.find((o) => o.optionId === decision.option_id) ?? null)
+      : null;
+  const allowed = !!option && isAllowKind(option.kind);
+
+  await upsertToolCall(open.messageId, {
+    ...open.toolCall,
+    status: allowed ? "completed" : "failed",
+    result: open.result(allowed),
+  });
+
+  const line = open.reply(decision, option);
+  if (line) await playTranscript([text(line, new Date().toISOString())]);
+  await setStatus("idle");
+}
+
+let permSeq = 0;
+const permId = () => `perm-tc-${++permSeq}`;
+
+/** Plain command approval — the standard case (`__atlasMock.actions.requestPermission`). */
+export function requestPermission(): Promise<void> {
+  const id = permId();
+  const command = "rm -rf .turbo dist";
+  return raisePermission({
+    transcriptCall: tool.run(command, { id, status: "pending" }),
+    title: command,
+    kind: "execute",
+    rawInput: { command },
+    options: standardOptions("this command"),
+    result: (allowed) => (allowed ? "removed .turbo and dist\n" : "Rejected by user."),
+    reply: (decision, option) =>
+      decision.kind === "cancelled"
+        ? "Okay — I won't run that."
+        : option && isAllowKind(option.kind)
+          ? "Done — cleaned the build output."
+          : "Understood — I'll leave the build output alone.",
+  });
+}
+
+/** A long, multi-line command — checks the preview wraps instead of
+ *  overflowing (`__atlasMock.actions.requestPermissionLongArgs`). */
+export function requestPermissionLongArgs(): Promise<void> {
+  const id = permId();
+  return raisePermission({
+    transcriptCall: tool.run("run a repo-wide focused-test sweep", { id, status: "pending" }),
+    title: "Run shell pipeline",
+    kind: "execute",
+    rawInput: { command: LONG_COMMAND },
+    options: standardOptions("shell pipelines like this"),
+    result: (allowed) => (allowed ? LONG_COMMAND_RESULT : "Rejected by user."),
+    reply: (decision, option) =>
+      decision.kind === "cancelled"
+        ? "Okay — skipping the sweep."
+        : option && isAllowKind(option.kind)
+          ? "Ran it — see the output above."
+          : "Understood — I'll skip the sweep.",
+  });
+}
+
+/** ExitPlanMode's two-panel review (`__atlasMock.actions.requestPermissionPlan`). */
+export function requestPermissionPlan(): Promise<void> {
+  const id = permId();
+  return raisePermission({
+    transcriptCall: tool.other("ExitPlanMode", { plan: PLAN_MARKDOWN }, { id, status: "pending" }),
+    title: "Exit plan mode",
+    kind: "think",
+    rawInput: { plan: PLAN_MARKDOWN },
+    options: exitPlanOptions(),
+    result: (allowed) => (allowed ? "Plan approved." : "Plan rejected — staying in plan mode."),
+    reply: (decision, option) =>
+      decision.kind === "cancelled"
+        ? "Sticking with plan mode."
+        : option && isAllowKind(option.kind)
+          ? "Thanks — I'll start implementing the plan."
+          : "Okay, I'll keep refining the plan.",
+  });
+}
+
+/** Claude's `AskUserQuestion`, one single-select question — resolves through
+ *  a real ACP option when the answer names a choice unambiguously
+ *  (`__atlasMock.actions.requestPermissionQuestion`). */
+export function requestPermissionQuestion(): Promise<void> {
+  const id = permId();
+  const q = askUserQuestionSingle();
+  return raisePermission({
+    transcriptCall: tool.other("AskUserQuestion", q.rawInput, { id, status: "pending" }),
+    title: "Ask a question",
+    kind: "other",
+    rawInput: q.rawInput,
+    options: q.options,
+    result: (allowed) => (allowed ? "Answered." : "Cancelled."),
+    reply: (decision, option) =>
+      decision.kind === "cancelled"
+        ? "Okay — I'll hold off."
+        : option
+          ? `Using ${option.name}.`
+          : null,
+  });
+}
+
+/** Claude's `AskUserQuestion`, two questions (one multi-select) — no single
+ *  option names the combination, so it always composes a free-text reply
+ *  (`__atlasMock.actions.requestPermissionQuestionMulti`). */
+export function requestPermissionQuestionMulti(): Promise<void> {
+  const id = permId();
+  const q = askUserQuestionMulti();
+  return raisePermission({
+    transcriptCall: tool.other("AskUserQuestion", q.rawInput, { id, status: "pending" }),
+    title: "Ask a question",
+    kind: "other",
+    rawInput: q.rawInput,
+    options: q.options,
+    result: (allowed) => (allowed ? "Answered." : "Cancelled."),
+    // Silent either way: a composed answer is sent as an ordinary message and
+    // gets the usual `agents_send` echo; Escape needs no narration.
+    reply: () => null,
+  });
+}
+
 export const agentHandlers: MockHandlers = {
   agents_spawn: ({ pluginId }): AgentInfo => ({
     agent_id: `agent-${pluginId}`,
@@ -145,6 +371,10 @@ export const agentHandlers: MockHandlers = {
   agents_replay_transcript: () => [],
   agents_drop_session: () => null,
   agents_cancel: () => setStatus("idle"),
+  agents_respond_permission: ({ agentId, sessionId, requestId, decision }) => {
+    void resolvePermission(agentId, sessionId, requestId, decision);
+    return null;
+  },
   // Echo the prompt back so the composer loop is exercisable.
   agents_send: async ({ key, text }) => {
     const s = sessions.get(key.session_id);
