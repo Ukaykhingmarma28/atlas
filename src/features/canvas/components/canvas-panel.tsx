@@ -495,7 +495,7 @@ function CanvasSurface({
           onFit={handleFit}
           onToggleFullscreen={onToggleFullscreen}
         />
-        <CanvasExportToolbar />
+        <CanvasExportToolbar containerRef={wrapperRef} />
         <CanvasToolbar
           activeTool={activeTool}
           onTool={setTool}

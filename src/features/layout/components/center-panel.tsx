@@ -729,6 +729,8 @@ const TabContentContainer = memo(function TabContentContainer({
                 <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
               ) : tab.type === "settings" ? (
                 <SettingsPanel initialSection={tab.data.section as string | undefined} />
+              ) : tab.type === "spaces" ? (
+                <SpacesTab convId={tab.data.convId as string} />
               ) : (
                 <TerminalPanel tabId={tab.id} projectId={projectId} />
               )}

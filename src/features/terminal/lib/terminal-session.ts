@@ -109,6 +109,12 @@ interface Registry {
   sessions: Map<string, TerminalSession>;
   byPty: Map<string, TerminalSession>;
   webglCount: number;
+  /** Addons currently counted in `webglCount`. A Set rather than a bare
+   * counter so a repeat release for the same addon — `disposeXterm`'s own
+   * teardown and its `onContextLoss` callback can both fire for one
+   * instance — cannot skew the count. Same shape as `registerPixiApp` /
+   * `destroyPixiApp` in `src/lib/pixi-app.ts`. */
+  webglLive: Set<WebglAddon>;
   listenersStarted: boolean;
   storeBound: boolean;
   zshDir: string | null | undefined;
@@ -119,11 +125,24 @@ const reg: Registry = (g.__atlasTerminalSessions ??= {
   sessions: new Map(),
   byPty: new Map(),
   webglCount: 0,
+  webglLive: new Set(),
   listenersStarted: false,
   storeBound: false,
   zshDir: undefined,
   cell: null,
 });
+
+/**
+ * Release one WebGL context back to the page-wide budget. Safe to call twice
+ * for the same addon — `disposeXterm`'s own teardown and a late
+ * `onContextLoss` firing for that same instance are both real possibilities
+ * (see `disposeXterm`), and the second call is a no-op rather than an extra
+ * decrement.
+ */
+function releaseWebgl(w: WebglAddon): void {
+  if (!reg.webglLive.delete(w)) return;
+  reg.webglCount = Math.max(0, reg.webglCount - 1);
+}
 
 function startGlobalListeners(): void {
   if (reg.listenersStarted) return;
@@ -547,11 +566,12 @@ export class TerminalSession {
         try {
           const { WebglAddon } = await import("@xterm/addon-webgl");
           const w = new WebglAddon();
+          reg.webglLive.add(w);
           reg.webglCount++;
           w.onContextLoss(() => {
             w.dispose();
             if (this.webgl === w) this.webgl = null;
-            reg.webglCount = Math.max(0, reg.webglCount - 1);
+            releaseWebgl(w);
           });
           term.loadAddon(w);
           this.webgl = w;
@@ -610,13 +630,22 @@ export class TerminalSession {
 
   private disposeXterm(): void {
     if (!this.xterm) return;
-    try {
-      this.webgl?.dispose();
-    } catch {
-      /* already lost */
-    }
-    if (this.webgl) reg.webglCount = Math.max(0, reg.webglCount - 1);
+    // Read and clear the field before disposing: `w.dispose()` can run its
+    // own `onContextLoss` callback (WKWebView is free to fire a real context
+    // loss off the canvas-removal it does internally), and that callback
+    // reads `this.webgl` too. Clearing first means either order sees a
+    // consistent picture; `releaseWebgl` makes the actual count-down
+    // idempotent regardless.
+    const w = this.webgl;
     this.webgl = null;
+    if (w) {
+      try {
+        w.dispose();
+      } catch {
+        /* already lost */
+      }
+      releaseWebgl(w);
+    }
     this.xterm.dispose();
     this.xterm = null;
     this.fit = null;
@@ -775,6 +804,12 @@ export class TerminalSession {
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────
+
+/** Live WebGL-context count against the page-wide `MAX_WEBGL` budget.
+ * Exported for tests. */
+export function liveWebglCount(): number {
+  return reg.webglCount;
+}
 
 export const terminalSessions = {
   /** Idempotent: the same key returns the same live session. */

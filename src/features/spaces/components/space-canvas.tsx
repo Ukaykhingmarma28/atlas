@@ -673,6 +673,7 @@ function SpaceSurface({
           following={following}
           onFollow={follow}
           onBeforeExport={clearSelection}
+          containerRef={wrapperRef}
         />
         <SpaceToolbar
           activeTool={activeTool}
