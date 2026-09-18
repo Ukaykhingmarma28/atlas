@@ -36,7 +36,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
             if (isInline) {
               return (
                 <code
-                  className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12px] font-mono"
+                  className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-sm font-mono"
                   {...rest}
                 >
                   {children}
@@ -52,7 +52,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           pre(props) {
             return (
               <pre
-                className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-[12px] my-2 overflow-hidden"
+                className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-sm my-2 overflow-hidden"
                 style={{
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
@@ -101,7 +101,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           table(props) {
             return (
               <div className="my-3 rounded-md border border-[var(--border)] overflow-hidden">
-                <table className="w-full text-[12px] border-collapse">{props.children}</table>
+                <table className="w-full text-sm border-collapse">{props.children}</table>
               </div>
             );
           },
@@ -110,7 +110,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           },
           th(props) {
             return (
-              <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
                 {props.children}
               </th>
             );
@@ -124,7 +124,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           },
           td(props) {
             return (
-              <td className="px-3 py-2 align-top text-[12px] text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
+              <td className="px-3 py-2 align-top text-sm text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
                 {props.children}
               </td>
             );
