@@ -253,9 +253,15 @@ if [[ "${UNIVERSAL}" == "1" ]]; then
   mkdir -p "${UNI_DMG_DIR}"
   DMG_OUT="${UNI_DMG_DIR}/Atlas_universal.dmg"
   rm -f "${DMG_OUT}"
+
+  UNI_STAGING="$(mktemp -d)"
+  cp -R "${UNI_DIR}/Atlas.app" "${UNI_STAGING}/Atlas.app"
+  ln -s /Applications "${UNI_STAGING}/Applications"
+
   log "Building DMG at ${DMG_OUT}"
-  hdiutil create -volname "Atlas" -srcfolder "${UNI_DIR}/Atlas.app" -ov -format UDZO "${DMG_OUT}" >/dev/null
-  bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/icon.icns "${DMG_OUT}"
+  bash "$(dirname "$0")/layout-dmg.sh" "${UNI_STAGING}" "${DMG_OUT}" "Atlas"
+  rm -rf "${UNI_STAGING}"
+  bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/dmg-icon.icns "${DMG_OUT}"
   codesign --force --sign "${APPLE_SIGNING_IDENTITY}" "${DMG_OUT}"
 
   # Notarize the DMG via xcrun notarytool (Tauri's automated notarization
@@ -320,16 +326,11 @@ else
     ln -s /Applications "${staging}/Applications"
 
     log "Building DMG at ${dmg_path}"
-    hdiutil create \
-      -volname "Atlas" \
-      -srcfolder "${staging}" \
-      -ov \
-      -format UDZO \
-      "${dmg_path}" >/dev/null
+    bash "$(dirname "$0")/layout-dmg.sh" "${staging}" "${dmg_path}" "Atlas"
     rm -rf "${staging}"
 
     log "Setting DMG icon"
-    bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/icon.icns "${dmg_path}"
+    bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/dmg-icon.icns "${dmg_path}"
 
     log "Signing DMG"
     codesign --force --sign "${APPLE_SIGNING_IDENTITY}" "${dmg_path}"

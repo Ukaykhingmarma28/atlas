@@ -66,7 +66,7 @@ if [[ -z "${DMG_PATH}" ]]; then
 fi
 
 # By path, not by "newest anywhere" — see the header.
-bash scripts/set-dmg-icon.sh src-tauri/icons/icon.icns "${DMG_PATH}"
+bash scripts/set-dmg-icon.sh src-tauri/icons/dmg-icon.icns "${DMG_PATH}"
 
 log "Done: ${DMG_PATH}"
 log "Unsigned — for a shippable build use scripts/release-macos.sh"
