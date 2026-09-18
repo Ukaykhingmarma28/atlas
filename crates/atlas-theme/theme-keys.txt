@@ -60,6 +60,8 @@ editor.active_line.gutter_foreground	Active line number. Source: base.foreground
 editor.selection.background	Editor selection. Source: base.primary → Atlas default. Transform: alpha 0.24.
 editor.match_bracket.background	Matching bracket background. Source: base.accent → Atlas default.
 editor.match_bracket.border	Matching bracket outline. Source: base.ring → Atlas default.
+search.match.background	A search match in the document. Source: palette.yellow → Atlas default. Transform: alpha 0.22.
+search.match.active_background	The match the cursor is on. Source: palette.yellow → Atlas default. Transform: alpha 0.5.
 scrollbar.thumb.background	Scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.16.
 scrollbar.thumb.hover	Hovered scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.26.
 panel.background	Panel background. Source: base.sidebar → Atlas default.

@@ -462,6 +462,28 @@ export const THEME_KEY_REGISTRY = [
     description: "Matching bracket outline.",
   }),
 
+  /**
+   * The editor's find panel painted its matches `rgba(249,115,22,…)` with an
+   * `!important`, which is to say one fixed orange regardless of the theme — legible
+   * on nothing in particular and unreadable on a light background. A search hit is
+   * the one highlight a reader has to find instantly, so it earns a key rather than
+   * a reuse of the selection colour, which is already on screen elsewhere.
+   */
+  define("search.match.background", {
+    palette: "yellow",
+    transform: alpha(0.22),
+    dark: "rgba(229,192,123,0.22)",
+    light: "rgba(234,157,52,0.22)",
+    description: "A search match in the document.",
+  }),
+  define("search.match.active_background", {
+    palette: "yellow",
+    transform: alpha(0.5),
+    dark: "rgba(229,192,123,0.5)",
+    light: "rgba(234,157,52,0.5)",
+    description: "The match the cursor is on.",
+  }),
+
   define("scrollbar.thumb.background", {
     base: "foreground",
     transform: alpha(0.16),

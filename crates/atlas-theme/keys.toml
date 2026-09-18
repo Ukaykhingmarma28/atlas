@@ -95,6 +95,10 @@ name = "Editor"
 description = "The code editor's own chrome."
 
 [[group]]
+name = "Search"
+description = "In-document search matches."
+
+[[group]]
 name = "Chrome surfaces"
 description = "Scrollbars and panel surfaces — the app frame."
 
@@ -643,6 +647,36 @@ description = "Matching bracket outline."
 base = "ring"
 dark = "#3d3d3d"
 light = "#907aa9"
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+[[key]]
+name = "search.match.background"
+group = "Search"
+description = "A search match in the document."
+palette = "yellow"
+op = "alpha"
+amount = 0.22
+dark = "rgba(229,192,123,0.22)"
+light = "rgba(234,157,52,0.22)"
+note = """
+The editor's find panel painted its matches `rgba(249,115,22,…)` with an
+`!important`, which is to say one fixed orange regardless of the theme — legible
+on nothing in particular and unreadable on a light background. A search hit is
+the one highlight a reader has to find instantly, so it earns a key rather than
+a reuse of the selection colour, which is already on screen elsewhere.
+"""
+
+[[key]]
+name = "search.match.active_background"
+group = "Search"
+description = "The match the cursor is on."
+palette = "yellow"
+op = "alpha"
+amount = 0.5
+dark = "rgba(229,192,123,0.5)"
+light = "rgba(234,157,52,0.5)"
 
 
 # ── Chrome surfaces ───────────────────────────────────────────────────────────

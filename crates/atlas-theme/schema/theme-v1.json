@@ -286,6 +286,22 @@
               ],
               "description": "Hovered scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.26."
             },
+            "search.match.active_background": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThemeKeyValue"
+                }
+              ],
+              "description": "The match the cursor is on. Source: palette.yellow → Atlas default. Transform: alpha 0.5."
+            },
+            "search.match.background": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThemeKeyValue"
+                }
+              ],
+              "description": "A search match in the document. Source: palette.yellow → Atlas default. Transform: alpha 0.22."
+            },
             "selection.background": {
               "allOf": [
                 {

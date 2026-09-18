@@ -1630,14 +1630,18 @@
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
 }
+/* Search matches follow the theme (`search.match.*`). They were a fixed
+   `rgba(249, 115, 22, …)` orange, which clashed with every theme that is not
+   orange and was unreadable on a light background. The outline is the ACTIVE
+   fill, so an ordinary match is a tint with an edge and the one under the
+   cursor is the same hue filled in. */
 .cm-searchMatch {
-  background: rgba(249, 115, 22, 0.18) !important;
-  outline: 1px solid rgba(249, 115, 22, 0.35) !important;
+  background: var(--atlas-search-match-background) !important;
+  outline: 1px solid var(--atlas-search-match-active-background) !important;
   border-radius: 2px !important;
 }
 .cm-searchMatch-selected {
-  background: rgba(249, 115, 22, 0.45) !important;
-  outline-color: rgba(249, 115, 22, 0.7) !important;
+  background: var(--atlas-search-match-active-background) !important;
 }
 
 /* Chat markdown styling. The old <Markdown> component attached Tailwind

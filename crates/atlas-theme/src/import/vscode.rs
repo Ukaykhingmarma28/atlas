@@ -49,6 +49,8 @@ const COLOR_MAP: &[(&str, &[&str])] = &[
     ("editorLineNumber.activeForeground", &["editor.active_line.gutter_foreground"]),
     ("editor.lineHighlightBackground", &["editor.active_line.background"]),
     ("editor.selectionBackground", &["editor.selection.background", "selection.background"]),
+    ("editor.findMatchHighlightBackground", &["search.match.background"]),
+    ("editor.findMatchBackground", &["search.match.active_background"]),
     ("editorBracketMatch.background", &["editor.match_bracket.background"]),
     ("editorBracketMatch.border", &["editor.match_bracket.border"]),
     ("scrollbarSlider.background", &["scrollbar.thumb.background"]),

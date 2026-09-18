@@ -65,7 +65,7 @@ later. Every non-CSS consumer subscribes to one of the last two.
 
 ## Full key list and derivation sources
 
-All **71** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
+All **73** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
 **Source** is the first thing Atlas tries after an explicit `keys` value:
 `P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the
 active appearance, shown here as dark / light. **Transform** is applied to
@@ -184,6 +184,15 @@ The code editor's own chrome.
 | `editor.selection.background` | B:primary → D | alpha 0.24 | `#303030` / `#dfdad9` | Editor selection. |
 | `editor.match_bracket.background` | B:accent → D | — | `#2d2d2d` / `#dfdad9` | Matching bracket background. |
 | `editor.match_bracket.border` | B:ring → D | — | `#3d3d3d` / `#907aa9` | Matching bracket outline. |
+
+### Search
+
+In-document search matches.
+
+| Key | Source | Transform | D (dark / light) | What it colours |
+|---|---|---|---|---|
+| `search.match.background` | P:yellow → D | alpha 0.22 | `rgba(229,192,123,0.22)` / `rgba(234,157,52,0.22)` | A search match in the document. |
+| `search.match.active_background` | P:yellow → D | alpha 0.5 | `rgba(229,192,123,0.5)` / `rgba(234,157,52,0.5)` | The match the cursor is on. |
 
 ### Chrome surfaces
 
