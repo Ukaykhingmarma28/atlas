@@ -171,7 +171,7 @@ export function useFileTreeDragDrop(opts: {
         "color:var(--text-secondary)",
         "background:var(--bg-elevated)",
         "border:1px solid var(--border)",
-        "box-shadow:0 4px 14px rgba(0,0,0,0.3)",
+        "box-shadow:var(--shadow-sm)",
         "backdrop-filter:blur(12px)",
       ].join(";");
       document.body.appendChild(preview);

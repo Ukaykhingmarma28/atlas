@@ -536,8 +536,8 @@ export function KnowledgePanel() {
           {/* 4px col-resize hit area; invisible until hover. */}
           <div
             onMouseDown={(e) => startResize(e, "sidebar")}
-            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors"
-            style={{ width: 4, marginLeft: -2, marginRight: -2, zIndex: 5 }}
+            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors z-panel"
+            style={{ width: 4, marginLeft: -2, marginRight: -2 }}
           />
         </>
       )}
@@ -673,8 +673,8 @@ export function KnowledgePanel() {
                           }}
                         >
                           <div
+                            className="text-sm"
                             style={{
-                              fontSize: 12,
                               color: "var(--text-primary)",
                               fontWeight: 500,
                               marginBottom: 4,
@@ -686,8 +686,8 @@ export function KnowledgePanel() {
                             {b.fromTitle}
                           </div>
                           <div
+                            className="text-sm"
                             style={{
-                              fontSize: 11.5,
                               color: "var(--text-tertiary)",
                               lineHeight: 1.5,
                               display: "-webkit-box",
@@ -723,8 +723,8 @@ export function KnowledgePanel() {
         <>
           <div
             onMouseDown={(e) => startResize(e, "inspector")}
-            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors"
-            style={{ width: 4, marginLeft: -2, marginRight: -2, zIndex: 5 }}
+            className="shrink-0 cursor-col-resize hover:bg-border-strong/60 transition-colors z-panel"
+            style={{ width: 4, marginLeft: -2, marginRight: -2 }}
           />
           <KnowledgeInspector
             outline={outline.map((h) => ({ id: h.id, label: h.label, level: h.level }))}
@@ -859,11 +859,11 @@ function PageHeaderWithIcon({
       ) : null}
 
       <div
+        className="text-sm"
         style={{
           display: "flex",
           gap: 12,
           color: "var(--text-muted)",
-          fontSize: 11.5,
           opacity: 0.85,
           marginBottom: 4,
         }}
@@ -872,6 +872,7 @@ function PageHeaderWithIcon({
           <button
             type="button"
             onClick={(e) => setCoverAnchor(e.currentTarget.getBoundingClientRect())}
+            className="text-sm"
             style={{
               background: "transparent",
               border: 0,
@@ -881,7 +882,6 @@ function PageHeaderWithIcon({
               display: "inline-flex",
               alignItems: "center",
               gap: 5,
-              fontSize: 11.5,
             }}
           >
             Add cover
@@ -893,13 +893,13 @@ function PageHeaderWithIcon({
         <Hint label="Change icon">
           <button
             onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
+            className="text-2xl"
             style={{
               width: 44,
               height: 44,
               borderRadius: 9,
               background: "var(--bg-elevated-2)",
               border: "1px solid var(--border-subtle)",
-              fontSize: 24,
               lineHeight: 1,
               display: "inline-flex",
               alignItems: "center",
@@ -927,10 +927,10 @@ function PageHeaderWithIcon({
                 (e.currentTarget as HTMLInputElement).blur();
               }
             }}
+            className="text-2xl"
             style={{
               display: "block",
               width: "100%",
-              fontSize: 28,
               lineHeight: 1.15,
               margin: "2px 0 0",
               letterSpacing: "-0.03em",
@@ -998,13 +998,8 @@ function RepoTopbar({
         </Hint>
       )}
       <GitBranch size={12} className="text-text-tertiary shrink-0" />
-      <span
-        className="font-mono text-text-secondary truncate flex-1 min-w-0"
-        style={{ fontSize: 12 }}
-      >
-        {name}
-      </span>
-      <span className="pill pill-bare" style={{ height: 18, fontSize: 9.5, padding: "0 6px" }}>
+      <span className="font-mono text-text-secondary truncate flex-1 min-w-0 text-sm">{name}</span>
+      <span className="pill pill-bare text-2xs" style={{ height: 18, padding: "0 6px" }}>
         REPO
       </span>
       <HintGroup>
@@ -1039,13 +1034,13 @@ function RepoEmpty({ path }: { path: string }) {
   };
   return (
     <div className="h-full flex flex-col items-center justify-center gap-3 text-text-tertiary">
-      <p className="text-[12px]">No README.md found</p>
+      <p className="text-sm">No README.md found</p>
       <div className="flex items-center gap-2">
         <button
           onClick={open}
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded border border-border",
-            "text-[10px] text-text-secondary hover:bg-bg-hover cursor-pointer",
+            "text-2xs text-text-secondary hover:bg-bg-hover cursor-pointer",
           )}
         >
           <ExternalLink size={10} /> Open in new window
@@ -1054,7 +1049,7 @@ function RepoEmpty({ path }: { path: string }) {
           onClick={() => navigator.clipboard.writeText(path)}
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded border border-border",
-            "text-[10px] text-text-secondary hover:bg-bg-hover cursor-pointer",
+            "text-2xs text-text-secondary hover:bg-bg-hover cursor-pointer",
           )}
         >
           <Copy size={10} /> Copy path

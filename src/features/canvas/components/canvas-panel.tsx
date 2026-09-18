@@ -57,14 +57,10 @@ export function CanvasPanel() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && setFullscreen(false)}>
       <Dialog.Portal>
-        <Dialog.Backdrop
-          className="fixed inset-0 bg-black/60"
-          style={{ zIndex: "var(--z-overlay)" as unknown as number }}
-        />
+        <Dialog.Backdrop className="fixed inset-0 z-overlay bg-black/60" />
         <Dialog.Popup
           aria-describedby={undefined}
-          className="fixed top-12 left-6 right-6 bottom-6 rounded-xl border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-[var(--shadow-overlay)] focus:outline-none"
-          style={{ zIndex: "var(--z-modal)" as unknown as number }}
+          className="fixed top-12 left-6 right-6 bottom-6 z-modal rounded-xl border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden flex flex-col shadow-md focus:outline-none"
         >
           <Dialog.Title className="sr-only">Spaces</Dialog.Title>
           {surface}
@@ -408,10 +404,10 @@ function CanvasSurface({
 
   if (!projectPath) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-[12px] text-text-tertiary gap-2 px-6 text-center">
+      <div className="h-full flex flex-col items-center justify-center text-sm text-text-tertiary gap-2 px-6 text-center">
         <StickyNote size={18} className="opacity-60" />
         <div>No project open.</div>
-        <div className="text-[10px]">Spaces are per-project. Open a folder to start a board.</div>
+        <div className="text-2xs">Spaces are per-project. Open a folder to start a board.</div>
       </div>
     );
   }
@@ -421,7 +417,7 @@ function CanvasSurface({
       {pagesOpen && <PagesPanel />}
       <div ref={wrapperRef} className="relative min-h-0 min-w-0 flex-1 bg-bg-base overflow-hidden">
         {!loaded && (
-          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-text-tertiary z-30">
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-text-tertiary z-panel">
             Loading…
           </div>
         )}

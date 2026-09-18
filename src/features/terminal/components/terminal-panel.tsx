@@ -295,10 +295,10 @@ function PaneView({
     <div
       className={cn(
         "h-full flex flex-col",
-        isActivePane && groupFocused && "ring-1 ring-[#ffffff08] ring-inset",
+        isActivePane && groupFocused && "ring-1 ring-[var(--atlas-element-hover)] ring-inset",
       )}
     >
-      <div className="flex items-center h-[32px] shrink-0 border-b border-border bg-bg-primary px-1 gap-0.5">
+      <div className="flex items-center h-control-lg shrink-0 border-b border-border bg-bg-primary px-1 gap-0.5">
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto hide-scrollbar">
           {pane.terminals.map((ptyId) => (
             <div
@@ -308,7 +308,7 @@ function PaneView({
                 setActivePane(tabId, pane.id);
               }}
               className={cn(
-                "group flex items-center gap-1 px-1.5 h-5 rounded text-[10px] font-mono cursor-pointer shrink-0",
+                "group flex items-center gap-1 px-1.5 h-5 rounded text-2xs font-mono cursor-pointer shrink-0",
                 ptyId === activePty
                   ? "text-text-primary bg-bg-selected"
                   : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
@@ -339,7 +339,7 @@ function PaneView({
         <HintGroup>
           <div className="flex items-center gap-0.5 shrink-0">
             {zoomed && (
-              <span className="mr-1 rounded bg-white/[0.06] px-1.5 py-px text-[9px] text-text-tertiary">
+              <span className="mr-1 rounded bg-bg-selected px-1.5 py-px text-3xs text-text-tertiary">
                 zoomed
               </span>
             )}
@@ -387,7 +387,7 @@ function PaneView({
               <HintItem label="Close pane">
                 <button
                   onClick={() => closePane(tabId, pane.id)}
-                  className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-white hover:bg-bg-hover transition-colors cursor-pointer"
+                  className="flex items-center justify-center w-5 h-5 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
                 >
                   <X size={11} />
                 </button>

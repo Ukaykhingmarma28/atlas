@@ -668,7 +668,9 @@ export const SessionSidebar = memo(function SessionSidebar({
           "flex items-center gap-1.5 h-[32px] shrink-0 px-3",
           // The dropdown sits on a blurred, translucent panel — an opaque fill
           // here would punch a solid rectangle through the blur.
-          asDropdown ? "border-b border-white/5" : "border-b border-border bg-bg-primary",
+          asDropdown
+            ? "border-b border-[var(--atlas-element-hover)]"
+            : "border-b border-border bg-bg-primary",
         )}
       >
         <Search size={11} className="text-text-tertiary shrink-0" />
@@ -677,7 +679,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search sessions"
           placeholder="Search…"
-          className="flex-1 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary min-w-0"
+          className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-tertiary min-w-0"
         />
         {/* Everything ever, archived included — and where import lives. */}
         {!asDropdown && (
@@ -705,11 +707,9 @@ export const SessionSidebar = memo(function SessionSidebar({
 
       {/* List */}
       <div className="flex-1 overflow-y-auto hide-scrollbar">
-        {isLoading && (
-          <div className="text-[11px] text-[var(--text-tertiary)] px-3 py-2">Loading…</div>
-        )}
+        {isLoading && <div className="text-xs text-[var(--text-tertiary)] px-3 py-2">Loading…</div>}
         {showEmpty && (
-          <div className="text-[11px] text-[var(--text-tertiary)] px-3 py-3 leading-relaxed">
+          <div className="text-xs text-[var(--text-tertiary)] px-3 py-3 leading-relaxed">
             {/* Names the scope: the list is this project's, so an empty one
                 means "nothing here yet", not "no chats anywhere". Other
                 projects' chats are behind the History button in the header. */}
@@ -726,7 +726,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 // The project a run of rows belongs to. Threads from other
                 // worktrees are listed here too, and resume into their own
                 // worktree — that is what an app-level store is for.
-                <div className="px-3 pt-2.5 pb-1 text-[9px] uppercase tracking-wider text-text-tertiary truncate">
+                <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-text-tertiary truncate">
                   {item.projectHeading}
                 </div>
               )}
@@ -785,15 +785,15 @@ export const SessionSidebar = memo(function SessionSidebar({
                       <MessageSquare size={11} className="text-[var(--primary)]" />
                     )}
                   </span>
-                  <span className="text-[11px] leading-snug line-clamp-2 flex-1">{item.title}</span>
+                  <span className="text-xs leading-snug line-clamp-2 flex-1">{item.title}</span>
                 </div>
                 <div className="pl-[18px] flex items-center gap-1.5">
-                  <span className="text-[9px] text-[var(--text-tertiary)]">
+                  <span className="text-3xs text-[var(--text-tertiary)]">
                     {timeAgo(item.lastUpdated, { suffix: true })}
                   </span>
                   {item.elsewhere && (
                     <span
-                      className="text-[9px] text-[var(--text-tertiary)] truncate"
+                      className="text-3xs text-[var(--text-tertiary)] truncate"
                       title={item.cwd}
                     >
                       · {item.projectName}
@@ -839,7 +839,7 @@ export const SessionSidebar = memo(function SessionSidebar({
             // Same rule as the search row above: an opaque fill would punch a
             // solid strip through the picker's blurred panel.
             asDropdown
-              ? "border-t border-white/5"
+              ? "border-t border-[var(--atlas-element-hover)]"
               : "border-t border-[var(--border)] bg-[var(--bg-sidebar)]",
           )}
         >

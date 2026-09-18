@@ -88,7 +88,7 @@ export function DetailPanel({ tabId, messages }: { tabId: string; messages: Chat
   return (
     <div
       style={{ width: Math.max(DETAIL_MIN_WIDTH, Math.min(DETAIL_MAX_WIDTH, width)) }}
-      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-md animate-slide-in-right"
     >
       <div
         onMouseDown={onResizeStart}
@@ -135,16 +135,16 @@ function PanelBody({
       <div className="flex-1 overflow-auto hide-scrollbar">
         {tc && Object.keys(tc.arguments ?? {}).length > 0 && (
           <div className="border-b border-[var(--border-subtle)] px-3 py-2">
-            <div className="pb-1 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
+            <div className="pb-1 text-3xs uppercase tracking-wider text-[var(--text-tertiary)]">
               Arguments
             </div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-[var(--text-secondary)] select-text">
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-snug text-[var(--text-secondary)] select-text">
               {JSON.stringify(tc.arguments, null, 2)}
             </pre>
           </div>
         )}
         {output ? (
-          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-snug text-[var(--text-secondary)] select-text">
+          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs leading-snug text-[var(--text-secondary)] select-text">
             {output}
           </pre>
         ) : (
@@ -174,11 +174,9 @@ function Header({
     <div className="flex h-[32px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         {icon}
-        <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
-          {title}
-        </span>
+        <span className="truncate text-xs font-medium text-[var(--text-secondary)]">{title}</span>
         {count !== undefined && (
-          <span className="shrink-0 text-[10px] text-[var(--text-tertiary)]">· {count}</span>
+          <span className="shrink-0 text-2xs text-[var(--text-tertiary)]">· {count}</span>
         )}
       </div>
       <HintGroup>
@@ -201,8 +199,6 @@ function Header({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 py-3 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-      {children}
-    </div>
+    <div className="px-3 py-3 text-xs leading-relaxed text-[var(--text-tertiary)]">{children}</div>
   );
 }

@@ -58,8 +58,8 @@ function useMounted(): boolean {
   return mounted;
 }
 
-const CAPTION = "text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
-const VALUE = "text-[11px] tabular-nums text-[var(--text-primary)]";
+const CAPTION = "text-2xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
+const VALUE = "text-xs tabular-nums text-[var(--text-primary)]";
 
 function Card({
   index,
@@ -73,7 +73,7 @@ function Card({
   return (
     <section
       data-section={section}
-      className="atlas-usage-in rounded-lg border border-white/[0.06] bg-[var(--bg-elevated-2)] px-2.5 py-2"
+      className="atlas-usage-in rounded-lg border border-[var(--atlas-element-selected)] bg-[var(--bg-elevated-2)] px-2.5 py-2"
       style={{ "--i": index } as CSSProperties}
     >
       {children}
@@ -87,11 +87,11 @@ function StatusPill({ status }: { status: "ok" | "warn" | "full" }) {
       ? "border-[var(--status-error)]/40 text-[var(--status-error)]"
       : status === "warn"
         ? "border-[var(--status-warning)]/40 text-[var(--status-warning)]"
-        : "border-white/[0.08] text-[var(--text-secondary)]";
+        : "border-[var(--atlas-element-active)] text-[var(--text-secondary)]";
   return (
     <span
       className={cn(
-        "inline-flex h-4 items-center rounded-full border px-1.5 text-[9px] font-medium uppercase tracking-wider",
+        "inline-flex h-4 items-center rounded-full border px-1.5 text-3xs font-medium uppercase tracking-wider",
         tone,
       )}
     >
@@ -112,19 +112,19 @@ function Headline({ view }: { view: SessionUsageView }) {
           Context · {fmtTokens(h.used)} / {fmtTokens(h.size)}
         </div>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
             {value.toFixed(value >= 10 ? 0 : 1)}
-            <span className="ml-0.5 text-[14px] font-medium text-[var(--text-tertiary)]">%</span>
+            <span className="ml-0.5 text-md font-medium text-[var(--text-tertiary)]">%</span>
           </span>
           <StatusPill status={h.status} />
         </div>
         <TickMeter value={h.pct} className="mt-2.5" />
-        <div className={cn("mt-1 flex justify-between text-[9px]", CAPTION)}>
+        <div className={cn("mt-1 flex justify-between text-3xs", CAPTION)}>
           <span>0</span>
           <span>{fmtTokens(h.size)}</span>
         </div>
         {view.compacting ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--primary)]">
+          <div className="mt-1.5 flex items-center gap-1.5 text-2xs text-[var(--primary)]">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
             Compacting the context window…
           </div>
@@ -140,7 +140,7 @@ function Headline({ view }: { view: SessionUsageView }) {
     return (
       <Card index={0} section="tokens-total">
         <div className={CAPTION}>Tokens · this session</div>
-        <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+        <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
           {fmtTokens(Math.round(value))}
         </div>
       </Card>
@@ -149,7 +149,7 @@ function Headline({ view }: { view: SessionUsageView }) {
   return (
     <Card index={0} section="cost-total">
       <div className={CAPTION}>Cost · this session{h.estimated ? " · est." : ""}</div>
-      <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+      <div className="mt-1 text-2xl leading-none font-semibold tabular-nums text-[var(--text-primary)]">
         {fmtCost(value)}
       </div>
     </Card>
@@ -166,7 +166,7 @@ function Bar({
   color?: string;
 }) {
   return (
-    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-white/[0.06]">
+    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-[var(--atlas-element-selected)]">
       <span
         className="block h-full rounded-full"
         style={{
@@ -187,7 +187,7 @@ function TokenRows({ rows, index }: { rows: MetricRow[]; index: number }) {
       <div className="flex flex-col">
         {rows.map((r) => (
           <div key={r.key} className="flex h-6 items-center gap-2.5">
-            <span className="w-[76px] shrink-0 truncate text-[11px] text-[var(--text-secondary)]">
+            <span className="w-[76px] shrink-0 truncate text-xs text-[var(--text-secondary)]">
               {r.label}
             </span>
             <span className="min-w-0 flex-1">
@@ -207,11 +207,11 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
       <div className="flex items-baseline justify-between">
         <span className={CAPTION}>Cost</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          <span className="text-lg leading-none font-semibold tabular-nums text-[var(--text-primary)]">
             {fmtCost(cost.total)}
           </span>
           {cost.estimated ? (
-            <span className="rounded-full border border-white/[0.08] px-1 text-[8px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+            <span className="rounded-full border border-[var(--atlas-element-active)] px-1 text-3xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               est.
             </span>
           ) : null}
@@ -221,8 +221,8 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
         <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5">
           {cost.rows.map((r) => (
             <div key={r.key} className="flex items-baseline justify-between">
-              <span className="text-[10px] text-[var(--text-tertiary)]">{r.label}</span>
-              <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
+              <span className="text-2xs text-[var(--text-tertiary)]">{r.label}</span>
+              <span className="text-2xs tabular-nums text-[var(--text-secondary)]">
                 {fmtCost(r.cost ?? 0)}
               </span>
             </div>
@@ -264,11 +264,11 @@ function QuotaRow({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-[var(--text-secondary)]">{label}</span>
+        <span className="text-xs text-[var(--text-secondary)]">{label}</span>
         <span className={VALUE}>
           {Math.round(pct)}%
           {when ? (
-            <span className="ml-1.5 text-[10px] text-[var(--text-tertiary)]">{when}</span>
+            <span className="ml-1.5 text-2xs text-[var(--text-tertiary)]">{when}</span>
           ) : null}
         </span>
       </div>
@@ -362,7 +362,7 @@ function Session({
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         {cells.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-2">
-            <span className="text-[10px] text-[var(--text-tertiary)]">{label}</span>
+            <span className="text-2xs text-[var(--text-tertiary)]">{label}</span>
             <span className={VALUE}>{value}</span>
           </div>
         ))}
@@ -380,8 +380,8 @@ export function UsagePopup({ view }: { view: SessionUsageView }) {
     <div className="flex flex-col gap-1.5 p-1.5">
       {empty ? (
         <Card index={0} section="empty">
-          <div className="text-[11px] font-medium text-[var(--text-primary)]">Nothing yet</div>
-          <p className="mt-0.5 text-[10px] leading-snug text-[var(--text-tertiary)]">
+          <div className="label">Nothing yet</div>
+          <p className="mt-0.5 text-2xs leading-snug text-[var(--text-tertiary)]">
             Usage shows up after the first turn — what this agent reports, and what Atlas records.
           </p>
         </Card>

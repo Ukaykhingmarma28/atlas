@@ -101,7 +101,7 @@ function highlightMatches(text: string, query: string) {
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <mark key={i} className="bg-[var(--bg-selected)] text-[var(--text-primary)] rounded-[2px]">
+      <mark key={i} className="bg-[var(--bg-selected)] text-[var(--text-primary)] rounded-sm">
         {part}
       </mark>
     ) : (
@@ -207,8 +207,9 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
           "atlas-slash-picker",
           "rounded-lg overflow-hidden",
           "bg-[var(--bg-secondary)] border border-[var(--border)]",
-          "shadow-[0_8px_24px_rgba(0,0,0,0.5)]",
+          "shadow-md",
           "flex flex-col",
+          "z-popover",
         )}
         onMouseDown={(e) => e.preventDefault()}
         style={{
@@ -217,12 +218,11 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
           bottom,
           width: PICKER_WIDTH,
           maxHeight: 360,
-          zIndex: 9999,
         }}
       >
         <div className="flex-1 overflow-y-auto py-1">
           {rows.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[11px] text-[var(--text-tertiary)] leading-snug">
+            <div className="px-3 py-6 text-center text-xs text-[var(--text-tertiary)] leading-snug">
               {loading ? "Loading commands…" : `No commands match "/${query}".`}
             </div>
           ) : (
@@ -238,7 +238,7 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
                     onSelectRef.current(cmd);
                   }}
                   className={cn(
-                    "w-full text-left px-3 h-[26px] flex items-center gap-2 text-[11.5px]",
+                    "w-full text-left px-3 h-[26px] flex items-center gap-2 text-sm",
                     isActive
                       ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
@@ -248,12 +248,12 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
                   <span className="font-mono text-[var(--text-primary)] shrink-0 min-w-[80px]">
                     /{highlightMatches(cmd.name, query)}
                   </span>
-                  <span className="truncate text-[10.5px] text-[var(--text-tertiary)] min-w-0 flex-1">
+                  <span className="truncate text-xs text-[var(--text-tertiary)] min-w-0 flex-1">
                     {highlightMatches(cmd.description, query)}
                   </span>
                   {needsArgs && (
                     <span
-                      className="shrink-0 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)] border border-[var(--border)] rounded-full px-1.5 py-px"
+                      className="shrink-0 text-3xs uppercase tracking-wider text-[var(--text-tertiary)] border border-[var(--border)] rounded-full px-1.5 py-px"
                       title="This command takes arguments — type them after the command, then press Enter."
                     >
                       {argsHint(cmd)}
@@ -269,13 +269,13 @@ export const SlashCommandPicker = forwardRef<SlashCommandPickerHandle, SlashComm
               advertised its commands yet, read as loading rather than as a
               list with just one entry. */}
           {loading && rows.length > 0 && (
-            <div className="px-3 h-[24px] flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)]">
+            <div className="px-3 h-[24px] flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)]">
               <Loader2 size={10} className="animate-spin shrink-0" />
               Loading agent commands…
             </div>
           )}
         </div>
-        <div className="border-t border-[var(--border)] px-3 h-[24px] flex items-center justify-between text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider shrink-0">
+        <div className="border-t border-[var(--border)] px-3 h-[24px] flex items-center justify-between text-3xs text-[var(--text-tertiary)] uppercase tracking-wider shrink-0">
           <span>{footerLabel ?? "Commands"}</span>
           <span>↑↓ · ↵ run · ⎋ close</span>
         </div>

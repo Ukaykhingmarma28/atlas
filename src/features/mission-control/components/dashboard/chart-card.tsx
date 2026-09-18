@@ -28,9 +28,9 @@ export function ChartCard({
     >
       <div className="flex items-center justify-between px-3.5 pt-3 pb-1 shrink-0">
         <div className="min-w-0">
-          <div className="text-[12px] font-medium text-[var(--text-primary)] truncate">{title}</div>
+          <div className="text-sm font-medium text-[var(--text-primary)] truncate">{title}</div>
           {subtitle && (
-            <div className="text-[10px] text-[var(--text-tertiary)] truncate">{subtitle}</div>
+            <div className="text-2xs text-[var(--text-tertiary)] truncate">{subtitle}</div>
           )}
         </div>
         {right}

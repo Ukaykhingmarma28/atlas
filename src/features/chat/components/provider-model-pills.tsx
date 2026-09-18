@@ -61,7 +61,7 @@ function loadModelIds(provider: string): Promise<string[]> {
 }
 
 const PILL_CLASS =
-  "flex min-w-0 items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none cursor-pointer";
+  "flex min-w-0 items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)] text-2xs leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors outline-none cursor-pointer";
 
 export function ProviderModelPills({
   provider,
@@ -201,14 +201,14 @@ export function ProviderModelPills({
       <button
         key={id}
         onClick={() => pickModel(id)}
-        className="flex w-full items-center gap-2 px-2.5 h-[26px] text-left text-[11px] font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none"
+        className="flex w-full items-center gap-2 px-2.5 h-[26px] text-left text-xs font-mono text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer outline-none"
       >
         {starred && (
           <Star size={10} className="shrink-0 fill-[var(--primary)] text-[var(--primary)]" />
         )}
         <span className="min-w-0 flex-1 truncate">{id}</span>
         <span
-          className="shrink-0 text-[10px] tabular-nums text-[var(--text-tertiary)]"
+          className="shrink-0 text-2xs tabular-nums text-[var(--text-tertiary)]"
           title="Price per 1M tokens (input / output) — models.dev"
         >
           {price}
@@ -243,8 +243,8 @@ export function ProviderModelPills({
         }
       />
       <Popover.Portal>
-        <Popover.Positioner className="z-[9999]" align="start" side="top" sideOffset={6}>
-          <Popover.Popup className="w-[360px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]">
+        <Popover.Positioner className="z-popover" align="start" side="top" sideOffset={6}>
+          <Popover.Popup className="w-[360px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md">
             <div className="flex max-h-[420px]">
               {/* Provider rail — ALWAYS shown, lists every chat provider. Ones
                   without a key are dimmed; selecting one shows the setup prompt. */}
@@ -283,7 +283,7 @@ export function ProviderModelPills({
                         onChange={(e) => setQ(e.target.value)}
                         placeholder="Search models…"
                         spellCheck={false}
-                        className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                        className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                       />
                       <Hint label="Refresh model pricing (models.dev)" side="top">
                         <button
@@ -300,14 +300,14 @@ export function ProviderModelPills({
                         popover has no dead "footer" gap below it. */}
                     <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar py-1">
                       {pinned.length === 0 && rest.length === 0 ? (
-                        <div className="px-2.5 py-2 text-[11px] text-[var(--text-tertiary)]">
+                        <div className="px-2.5 py-2 text-xs text-[var(--text-tertiary)]">
                           {loadingModels ? "Loading…" : "No models"}
                         </div>
                       ) : (
                         <>
                           {pinned.length > 0 && (
                             <>
-                              <div className="px-2.5 pt-1 pb-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                              <div className="px-2.5 pt-1 pb-0.5 text-3xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
                                 Recommended for coding
                               </div>
                               {pinned.map((id) => renderModel(id, true))}
@@ -325,7 +325,7 @@ export function ProviderModelPills({
                   /* No key for the browsed provider — prompt to set one up. */
                   <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center">
                     <ProviderLogo id={viewProvider} size={22} />
-                    <div className="text-[12px] text-[var(--text-secondary)]">
+                    <div className="text-sm text-[var(--text-secondary)]">
                       No API key for{" "}
                       <span className="text-[var(--text-primary)]">
                         {providerById(viewProvider)?.name ?? viewProvider}
@@ -333,7 +333,7 @@ export function ProviderModelPills({
                     </div>
                     <button
                       onClick={openApiKeys}
-                      className="rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                      className="rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
                     >
                       Set up key in Settings
                     </button>

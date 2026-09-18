@@ -18,10 +18,10 @@ export function SpacesTab({ convId }: { convId: string }) {
   const conv = useCommsStore((s) => s.conversations.find((c) => c.id === convId));
   if (!conv) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[12px] text-text-tertiary">
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-text-tertiary">
         <Frame size={18} className="opacity-60" />
         <div>This Space is no longer available.</div>
-        <div className="text-[10px]">The conversation was removed, or you left it.</div>
+        <div className="text-2xs">The conversation was removed, or you left it.</div>
       </div>
     );
   }
@@ -40,7 +40,7 @@ function SpaceHost({ convId }: { convId: string }) {
 
   if (meta?.error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[12px] text-text-tertiary">
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-text-tertiary">
         <AlertTriangle size={18} className="opacity-60" />
         <div>{meta.error}</div>
       </div>
@@ -55,28 +55,28 @@ function SpaceHost({ convId }: { convId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base">
       {archived && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-text-tertiary">
           This conversation is archived — the canvas is read-only. Cursors still show who is
           looking.
         </div>
       )}
       {stale && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-text-tertiary">
           This Space was made with a newer version of Atlas — viewing only. Update to edit it.
         </div>
       )}
       {session.readOnly === "actor_ceiling" && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-text-tertiary">
           This page is full — you are viewing. Re-open the page when a seat frees up.
         </div>
       )}
       {connection === "unavailable" && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-[var(--status-error,#f66)]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-error">
           This Space refused the connection — you may no longer be a member.
         </div>
       )}
       {session.banner && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-white/[0.03] px-3 py-1 text-[10px] text-text-tertiary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-[var(--atlas-element-hover)] px-3 py-1 text-2xs text-text-tertiary">
           <AlertTriangle size={11} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{session.banner}</span>
           <Hint label="Dismiss">

@@ -42,10 +42,10 @@ function parseJsonl(raw: string): LogEntry[] {
 const SOURCE_COLOR: Record<string, string> = {
   atlas: "var(--text-primary)",
   agent: "var(--primary)",
-  chat: "#5fb39a",
-  git: "#7aa7e8",
-  knowledge: "#b8a3df",
-  github: "#d68aae",
+  chat: "var(--chart-2)",
+  git: "var(--chart-1)",
+  knowledge: "var(--chart-4)",
+  github: "var(--chart-5)",
 };
 
 /** Full-width, remaining-height activity log table (Atlas logs across all
@@ -124,18 +124,16 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
     <div className="h-full flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-2.5 h-[38px] shrink-0 border-b border-[var(--border)]">
-        <span className="text-[12px] font-medium text-[var(--text-primary)] mr-1">
-          Activity log
-        </span>
-        <span className="text-[10px] text-[var(--text-tertiary)]">{filtered.length}</span>
+        <span className="text-sm font-medium text-[var(--text-primary)] mr-1">Activity log</span>
+        <span className="text-2xs text-[var(--text-tertiary)]">{filtered.length}</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-1.5 h-[26px] rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 w-[180px]">
+        <div className="flex items-center gap-1.5 h-control-md rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 w-[180px]">
           <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search logs…"
-            className="flex-1 bg-transparent outline-none text-[11px] text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)]"
+            className="flex-1 bg-transparent outline-none text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)]"
           />
         </div>
         <Select
@@ -155,7 +153,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
       </div>
 
       {/* Header */}
-      <div className="flex items-center h-[26px] shrink-0 border-b border-[var(--border)] px-3 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+      <div className="flex items-center h-control-md shrink-0 border-b border-[var(--border)] px-3 text-3xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
         <span className="w-[120px] shrink-0">Time</span>
         <span className="w-[80px] shrink-0">Source</span>
         <span className="w-[150px] shrink-0">Project</span>
@@ -166,7 +164,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
       {/* Body */}
       <div ref={parentRef} className="flex-1 min-h-0 overflow-auto">
         {rows.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-[var(--text-tertiary)]">No log entries.</div>
+          <div className="px-3 py-4 text-xs text-[var(--text-tertiary)]">No log entries.</div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualizer.getVirtualItems().map((v) => {
@@ -183,9 +181,9 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
                     height: ROW_H,
                     transform: `translateY(${v.start}px)`,
                   }}
-                  className="flex items-center px-3 text-[11px] border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]"
+                  className="flex items-center px-3 text-xs border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]"
                 >
-                  <span className="w-[120px] shrink-0 font-mono text-[10px] text-[var(--text-tertiary)]">
+                  <span className="w-[120px] shrink-0 font-mono text-2xs text-[var(--text-tertiary)]">
                     {fmtTime(e.timestamp)}
                   </span>
                   <span
@@ -215,7 +213,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
 
       {/* Pagination footer */}
       {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border)] text-[10px] text-[var(--text-tertiary)]">
+        <div className="flex items-center justify-between px-3 h-[30px] shrink-0 border-t border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
           <span className="font-mono tabular-nums">
             {clampedPage * PAGE_SIZE + 1}–{Math.min(filtered.length, (clampedPage + 1) * PAGE_SIZE)}{" "}
             of {filtered.length}
@@ -224,7 +222,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={clampedPage === 0}
-              className="px-2 h-[22px] rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              className="px-2 h-control-sm rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               Prev
             </button>
@@ -234,7 +232,7 @@ export function LogsTable({ projects }: { projects: ProjectMetrics[] }) {
             <button
               onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
               disabled={clampedPage >= pageCount - 1}
-              className="px-2 h-[22px] rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              className="px-2 h-control-sm rounded text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               Next
             </button>
@@ -261,7 +259,7 @@ function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "h-[26px] rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 text-[11px] text-[var(--text-secondary)] outline-none max-w-[150px]",
+        "h-control-md rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 text-xs text-[var(--text-secondary)] outline-none max-w-[150px]",
       )}
     >
       {options.map((o) => (

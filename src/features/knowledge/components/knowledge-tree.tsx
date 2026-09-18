@@ -156,9 +156,7 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
       });
 
     if (entries.length === 0) {
-      return (
-        <div className="px-3 py-4 text-[11px] text-text-tertiary text-center">No notes yet</div>
-      );
+      return <div className="px-3 py-4 text-xs text-text-tertiary text-center">No notes yet</div>;
     }
 
     return (
@@ -181,7 +179,9 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
                 leafIcon={FileText}
                 leafIconNode={
                   node.entry?.icon ? (
-                    <span style={{ fontSize: 12, lineHeight: 1 }}>{node.entry.icon}</span>
+                    <span className="text-sm" style={{ lineHeight: 1 }}>
+                      {node.entry.icon}
+                    </span>
                   ) : undefined
                 }
                 onClick={() => {

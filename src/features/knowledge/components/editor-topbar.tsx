@@ -58,8 +58,8 @@ export function EditorTopbar({
       )}
       {/* Breadcrumbs */}
       <div
-        className="flex items-center min-w-0"
-        style={{ gap: 6, fontSize: 12, color: "var(--text-tertiary)" }}
+        className="flex items-center min-w-0 text-sm"
+        style={{ gap: 6, color: "var(--text-tertiary)" }}
       >
         {breadcrumbs.map((segment, i) => (
           <span key={i} className="flex items-center" style={{ gap: 6 }}>
@@ -74,7 +74,7 @@ export function EditorTopbar({
         </span>
       </div>
 
-      <span className="pill pill-bare" style={{ height: 18, fontSize: 9.5, padding: "0 6px" }}>
+      <span className="pill pill-bare text-2xs" style={{ height: 18, padding: "0 6px" }}>
         {kind}
       </span>
 

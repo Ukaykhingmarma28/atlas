@@ -43,15 +43,15 @@ export function CanvasExportToolbar() {
   };
 
   return (
-    <div className="absolute right-3 top-3 z-40">
+    <div className="absolute right-3 top-3 z-panel">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={!!busy}
         title="Export canvas"
         className={cn(
-          "flex items-center gap-1.5 rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 backdrop-blur-2xl px-2.5 h-8 shadow-[var(--shadow-overlay)]",
-          "text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-60",
+          "flex items-center gap-1.5 rounded-xl border border-border-subtle bg-[var(--bg-secondary)]/70 backdrop-blur-2xl px-2.5 h-8 shadow-md",
+          "text-xs font-medium text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-60",
         )}
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
@@ -60,14 +60,14 @@ export function CanvasExportToolbar() {
 
       {open && !busy && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute right-0 top-full z-50 mt-1 w-[140px] overflow-hidden rounded-lg border border-border bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-overlay)]">
+          <div className="fixed inset-0 z-panel" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute right-0 top-full z-popover mt-1 w-[140px] overflow-hidden rounded-lg border border-border bg-[var(--bg-elevated)] py-1 shadow-md">
             {FORMATS.map((f) => (
               <button
                 key={f.format}
                 type="button"
                 onClick={() => void run(f.format)}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
               >
                 <f.icon size={13} className="shrink-0 text-text-tertiary" />
                 {f.label}

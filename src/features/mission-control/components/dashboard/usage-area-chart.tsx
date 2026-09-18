@@ -91,7 +91,7 @@ export function UsageAreaChart({
 
 function Empty() {
   return (
-    <div className="h-full flex items-center justify-center text-[11px] text-[var(--text-tertiary)]">
+    <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)]">
       No usage in this range.
     </div>
   );

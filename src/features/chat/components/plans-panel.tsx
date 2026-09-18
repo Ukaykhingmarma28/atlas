@@ -96,7 +96,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
       />
       <div
         style={{ width: plansPanel.width }}
-        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--bg-sidebar)] shadow-md animate-slide-in-right"
       >
         {/* Left-edge resize handle */}
         <div
@@ -109,8 +109,8 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
         <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border)] shrink-0">
           <div className="flex items-center gap-1.5">
             <ClipboardList size={11} className="text-[var(--text-tertiary)]" />
-            <span className="text-[11px] font-medium text-[var(--text-secondary)]">Plans</span>
-            <span className="text-[10px] text-[var(--text-tertiary)]">· {plans.length}</span>
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Plans</span>
+            <span className="text-2xs text-[var(--text-tertiary)]">· {plans.length}</span>
           </div>
           <Hint label="Hide plans">
             <button
@@ -125,7 +125,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
         {/* List */}
         <div className="flex-1 overflow-y-auto hide-scrollbar">
           {plans.length === 0 ? (
-            <div className="px-3 py-3 text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+            <div className="px-3 py-3 text-xs text-[var(--text-tertiary)] leading-relaxed">
               No plans yet. When Claude Code proposes a plan, it’s saved here with the message that
               triggered it.
             </div>
@@ -157,7 +157,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
                     )}
                     <span
                       className={cn(
-                        "text-[12px] leading-snug text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors",
+                        "text-sm leading-snug text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors",
                         !isOpen && "line-clamp-2",
                       )}
                     >
@@ -166,7 +166,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
                   </button>
 
                   {/* Meta: human timestamp + relative age + session */}
-                  <div className="flex items-center gap-2 pl-[18px] mt-1 text-[10px] text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-2 pl-[18px] mt-1 text-2xs text-[var(--text-tertiary)]">
                     <span title={p.timestamp}>{formatPlanTimestamp(p.timestamp)}</span>
                     <span>·</span>
                     <span>{planTimeAgo(p.timestamp)}</span>
@@ -181,7 +181,7 @@ export function PlansPanel({ onClose }: PlansPanelProps) {
                   {/* Expanded plan markdown */}
                   {isOpen && (
                     <div className="pl-[18px] mt-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-2 max-h-[420px] overflow-auto">
-                      <Markdown className="text-[12px]">{p.plan}</Markdown>
+                      <Markdown className="text-sm">{p.plan}</Markdown>
                     </div>
                   )}
                 </div>

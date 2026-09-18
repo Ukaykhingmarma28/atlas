@@ -80,17 +80,17 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
     <>
       {/* Scrim */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-overlay bg-black/10 animate-fade-in"
         onClick={close}
         aria-hidden
       />
       {/* Panel */}
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[9999] w-[400px] flex flex-col",
+          "fixed right-0 top-0 bottom-0 z-modal w-[400px] flex flex-col",
           "border-l border-[var(--border)]",
           "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl backdrop-saturate-150",
-          "shadow-[var(--shadow-overlay)] animate-slide-in-right",
+          "shadow-md animate-slide-in-right",
         )}
       >
         {/* Header — matches the tab-bar height (29px) so the two rows align. */}
@@ -100,12 +100,12 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
               <button
                 type="button"
                 onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
-                className="flex h-5 w-5 items-center justify-center rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer shrink-0"
+                className="flex h-5 w-5 items-center justify-center rounded-md bg-bg-hover hover:bg-bg-active transition-colors cursor-pointer shrink-0"
               >
                 {note.icon ? (
-                  <span className="text-[12px] leading-none">{note.icon}</span>
+                  <span className="text-sm leading-none">{note.icon}</span>
                 ) : (
-                  <span className="text-[11px] leading-none text-white/60">＋</span>
+                  <span className="text-xs leading-none text-text-tertiary">＋</span>
                 )}
               </button>
             </HintItem>
@@ -113,7 +113,7 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
               value={note.title}
               onChange={(e) => updateNote(noteId, { title: e.target.value })}
               placeholder="Untitled"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[12px] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
             />
             <HintItem label="Delete note">
               <button
@@ -122,7 +122,7 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
                   deleteNote(noteId);
                   onClose();
                 }}
-                className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer transition-colors"
+                className="p-1 rounded hover:bg-bg-hover text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer transition-colors"
               >
                 <Trash2 size={12} />
               </button>
@@ -131,7 +131,7 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
               <button
                 type="button"
                 onClick={close}
-                className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
+                className="p-1 rounded hover:bg-bg-hover text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
               >
                 <X size={12} />
               </button>

@@ -19,8 +19,8 @@ export function AppContextMenu({ children }: { children: React.ReactElement }) {
         {/* Base UI positions the Popup through a Positioner, and the Popup is
             static inside it — the z-index has to sit on the Positioner or it
             does nothing. */}
-        <ContextMenu.Positioner style={{ zIndex: 99999 }}>
-          <ContextMenu.Popup className="w-[180px] rounded-lg border border-[#1a1a1a] bg-[#0f0f0f] shadow-xl py-1">
+        <ContextMenu.Positioner className="z-popover">
+          <ContextMenu.Popup className="w-[180px] rounded-lg border border-border-subtle bg-popover shadow-xl py-1">
             {currentProject && (
               <>
                 <MenuItem
@@ -58,7 +58,7 @@ export function AppContextMenu({ children }: { children: React.ReactElement }) {
                     })
                   }
                 />
-                <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+                <ContextMenu.Separator className="h-px bg-border-subtle my-1" />
               </>
             )}
             <MenuItem
@@ -67,7 +67,7 @@ export function AppContextMenu({ children }: { children: React.ReactElement }) {
               shortcut="⌘C"
               onClick={() => document.execCommand("copy")}
             />
-            <ContextMenu.Separator className="h-px bg-[#1a1a1a] my-1" />
+            <ContextMenu.Separator className="h-px bg-border-subtle my-1" />
             <MenuItem
               icon={<RefreshCw size={12} />}
               label="Reload Window"
@@ -117,11 +117,11 @@ function MenuItem({
   return (
     <ContextMenu.Item
       onClick={onClick}
-      className="flex items-center gap-2 px-3 h-[28px] text-[11px] text-[#aaa] hover:bg-[#1a1a1a] hover:text-[#fff] cursor-default outline-none"
+      className="flex items-center gap-2 px-3 h-control-md text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
     >
-      <span className="text-[#555]">{icon}</span>
+      <span className="text-text-tertiary">{icon}</span>
       <span className="flex-1">{label}</span>
-      {hint && <span className="text-[9px] text-[#444] font-mono">{hint}</span>}
+      {hint && <span className="text-3xs text-text-tertiary font-mono">{hint}</span>}
     </ContextMenu.Item>
   );
 }

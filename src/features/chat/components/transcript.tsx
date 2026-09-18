@@ -223,7 +223,7 @@ function StallNotice({
   onCopyDiagnostics?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-[11px] leading-[16px] text-[var(--text-tertiary)]">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[17px] text-xs leading-[16px] text-[var(--text-tertiary)]">
       <span className="select-text">Still starting… this can take a few minutes on first run.</span>
       {onRestart && (
         <button
@@ -895,7 +895,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           }}
         >
           {rows.length === 0 && !isStreaming && (
-            <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="flex h-full items-center justify-center text-xs text-[var(--text-tertiary)]">
               No messages yet.
             </div>
           )}
@@ -926,7 +926,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         // Without a tint the header read as a transparent pane over live text;
         // `color-mix` keeps it theme-correct rather than hardcoding black.
         tint="color-mix(in srgb, var(--bg-surface) 90%, transparent)"
-        style={{ zIndex: 3 }}
+        className="z-panel"
       />
 
       {/* Bottom stays a plain colour fade. The blur was tried here and the
@@ -941,7 +941,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           // scroll repaints a 1-2px hairline of text flashed through the seam
           // above the composer. The overshoot is solid bg-surface over the
           // inter-panel gap — invisible, and it absorbs the rounding both ways.
-          "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-[1] h-[44px] transition-opacity duration-200",
+          "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-panel h-[44px] transition-opacity duration-200",
           more ? "opacity-100" : "opacity-0",
         )}
         style={{

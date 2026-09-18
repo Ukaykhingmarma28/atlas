@@ -99,16 +99,16 @@ export function SearchOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60" style={{ zIndex: 99998 }} />
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
         <Dialog.Popup
           className={cn(
             "fixed top-[15%] left-1/2 -translate-x-1/2",
             "w-[600px] max-h-[500px] rounded-xl overflow-hidden",
             "bg-[var(--bg-secondary)] border border-[var(--border)]",
-            "shadow-[var(--shadow-overlay)]",
+            "shadow-md",
             "flex flex-col",
+            "z-modal",
           )}
-          style={{ zIndex: 99999 }}
           // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
           // preventDefault + focus(): hand it the element to land on.
           initialFocus={inputRef}
@@ -124,7 +124,7 @@ export function SearchOverlay({
               className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
             />
             {searching && (
-              <span className="text-[10px] text-[var(--text-tertiary)]">Searching...</span>
+              <span className="text-2xs text-[var(--text-tertiary)]">Searching...</span>
             )}
           </div>
 
@@ -137,7 +137,7 @@ export function SearchOverlay({
             {!query.trim() && !hasSearched && session.searchHistory.length > 0 && (
               <div className="py-1">
                 <div className="flex items-center justify-between px-4 py-1">
-                  <span className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wide font-semibold">
+                  <span className="text-2xs text-[var(--text-tertiary)] uppercase tracking-wide font-semibold">
                     Recent searches
                   </span>
                   <button
@@ -145,7 +145,7 @@ export function SearchOverlay({
                       clearSearchHistory();
                       if (currentProject) saveSession(currentProject.path);
                     }}
-                    className="text-[9px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer"
+                    className="text-3xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer"
                   >
                     Clear all
                   </button>
@@ -163,7 +163,7 @@ export function SearchOverlay({
                       className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     >
                       <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-                      <span className="text-[11px] text-[var(--text-secondary)] font-mono truncate">
+                      <span className="text-xs text-[var(--text-secondary)] font-mono truncate">
                         {q}
                       </span>
                     </button>
@@ -199,14 +199,14 @@ export function SearchOverlay({
               >
                 <div className="flex items-center gap-2">
                   <FileCode size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                  <span className="text-[11px] text-[var(--primary)] font-mono truncate">
+                  <span className="text-xs text-[var(--primary)] font-mono truncate">
                     {result.file_path}
                   </span>
-                  <span className="text-[10px] text-[var(--text-tertiary)] font-mono shrink-0">
+                  <span className="text-2xs text-[var(--text-tertiary)] font-mono shrink-0">
                     :{result.line}
                   </span>
                 </div>
-                <div className="ml-5 text-[11px] font-mono text-[var(--text-secondary)] truncate mt-0.5">
+                <div className="ml-5 text-xs font-mono text-[var(--text-secondary)] truncate mt-0.5">
                   {result.content.trim()}
                 </div>
               </button>

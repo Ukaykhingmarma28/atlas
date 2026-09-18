@@ -74,7 +74,7 @@ export const MediaNode = memo(function MediaNode({ data, selected }: NodeProps) 
             className="block w-full h-auto select-none [-webkit-user-drag:none]"
           />
         ) : (
-          <div className="flex items-center justify-center h-[160px] text-[11px] text-text-tertiary">
+          <div className="flex items-center justify-center h-[160px] text-xs text-text-tertiary">
             Loading image…
           </div>
         )}

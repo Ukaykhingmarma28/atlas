@@ -386,14 +386,14 @@ export function CommandPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
+        <Dialog.Backdrop className="fixed inset-0 bg-black/60 z-overlay" />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
+            "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[520px] max-h-[400px] rounded-xl overflow-hidden",
             "bg-[var(--bg-secondary)] border border-[var(--border)]",
-            "shadow-[var(--shadow-overlay)]",
+            "shadow-md",
             "flex flex-col",
           )}
           // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
@@ -430,7 +430,7 @@ export function CommandPalette({
               return (
                 <Fragment key={cmd.id}>
                   {showHeader && (
-                    <div className="px-4 pt-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)] select-none">
+                    <div className="px-4 pt-2.5 pb-1 text-2xs font-medium uppercase tracking-wider text-[var(--text-tertiary)] select-none">
                       {cmd.category}
                     </div>
                   )}

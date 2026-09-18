@@ -12,12 +12,13 @@
 //            `AgentOAuthModal` uses for a login CLI's OAuth URL.
 //
 // Every visual is lifted from `permission-modal.tsx` (chrome, header band) and
-// the auth modal (rows, buttons, `text-xs`/`text-[11px]` scale). No new visual
+// the auth modal (rows, buttons, `text-xs`/`text-xs` scale). No new visual
 // patterns — the inputs are the same class the composer and settings already
 // use.
 
 import { useMemo, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
+import { DialogOverlay } from "@/ui/dialog";
 import { HelpCircle, ExternalLink } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
@@ -87,12 +88,12 @@ export function ElicitationModal({
   return (
     <Dialog.Root open onOpenChange={(o) => !o && void respond("cancel")}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
+        <DialogOverlay className="backdrop-blur-sm" />
         <Dialog.Popup
           className={cn(
-            "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
+            "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
             "w-[480px] max-w-[92vw] rounded-lg border border-border bg-bg-elevated",
-            "shadow-[var(--shadow-overlay)] text-text-primary",
+            "shadow-md text-text-primary",
           )}
         >
           <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
@@ -109,7 +110,7 @@ export function ElicitationModal({
             {pending.mode === "url" && pending.url && (
               <button
                 onClick={() => void openUrl(pending.url!)}
-                className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                className="flex w-full items-center gap-2 rounded-sm border border-border bg-bg-base px-2.5 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
                 <span className="min-w-0 flex-1 truncate">Open page</span>
@@ -127,18 +128,18 @@ export function ElicitationModal({
 
             {fields.map((f) => (
               <div key={f.name} className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-text-primary">
+                <label className="text-xs font-medium text-text-primary">
                   {f.title}
                   {f.required && <span className="ml-1 text-text-tertiary">*</span>}
                 </label>
                 {f.description && (
-                  <p className="text-[10px] leading-snug text-text-tertiary">{f.description}</p>
+                  <p className="text-2xs leading-snug text-text-tertiary">{f.description}</p>
                 )}
                 {f.kind === "boolean" ? (
                   <button
                     onClick={() => set(f.name, !values[f.name])}
                     className={cn(
-                      "flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-[11px] transition-colors",
+                      "flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs transition-colors",
                       values[f.name]
                         ? "bg-bg-selected text-text-primary"
                         : "text-text-secondary hover:bg-bg-hover",
@@ -172,7 +173,7 @@ export function ElicitationModal({
                             );
                           }}
                           className={cn(
-                            "rounded-sm border border-border px-2 py-1 text-[11px] transition-colors",
+                            "rounded-sm border border-border px-2 py-1 text-xs transition-colors",
                             picked
                               ? "bg-bg-selected text-text-primary"
                               : "text-text-secondary hover:bg-bg-hover",

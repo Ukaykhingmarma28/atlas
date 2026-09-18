@@ -61,6 +61,7 @@ export function PageProperties({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        className="text-sm"
         style={{
           display: "flex",
           alignItems: "center",
@@ -70,7 +71,6 @@ export function PageProperties({
           background: "transparent",
           border: 0,
           color: "var(--text-tertiary)",
-          fontSize: 12,
           textAlign: "left",
           cursor: "pointer",
         }}
@@ -86,15 +86,15 @@ export function PageProperties({
           }}
         />
         <span
-          className="text-[10px] font-semibold uppercase tracking-wider"
+          className="text-2xs font-semibold uppercase tracking-wider"
           style={{ color: "var(--text-tertiary)" }}
         >
           Properties
         </span>
         {!open && (
           <span
+            className="text-sm"
             style={{
-              fontSize: 11.5,
               color: "var(--text-muted)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -138,7 +138,7 @@ export function PageProperties({
             </span>
           </Row>
           <Row icon={LinkIcon} label="References">
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
+            <span className="mono text-sm" style={{ color: "var(--text-secondary)" }}>
               {referencesLabel}
             </span>
           </Row>
@@ -167,23 +167,23 @@ function Row({
       }}
     >
       <span
+        className="text-sm"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 7,
           color: "var(--text-tertiary)",
-          fontSize: 12,
         }}
       >
         <Icon size={12} className="text-text-muted" strokeWidth={1.5} />
         <span>{label}</span>
       </span>
       <span
+        className="text-base"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 6,
-          fontSize: 12.5,
           flexWrap: "wrap",
         }}
       >
@@ -209,10 +209,9 @@ function StatusEditor({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="pill"
+        className="pill text-xs"
         style={{
           height: 22,
-          fontSize: 11,
           color: value ? "var(--text-primary)" : "var(--text-tertiary)",
           background: value ? "var(--bg-elevated-2)" : "transparent",
           borderColor: "var(--border-subtle)",
@@ -231,15 +230,11 @@ function StatusEditor({
       </button>
       {open && (
         <div
+          className="z-popover bg-popover border border-border-strong rounded-lg shadow-md"
           style={{
             position: "absolute",
             top: "calc(100% + 6px)",
             left: 0,
-            zIndex: 30,
-            background: "var(--bg-overlay)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: 8,
-            boxShadow: "var(--shadow-md)",
             padding: 6,
             width: 200,
           }}
@@ -257,14 +252,13 @@ function StatusEditor({
               }
             }}
             placeholder="Status…"
-            className="bg-bg-input text-text-primary"
+            className="bg-bg-input text-text-primary text-sm"
             style={{
               width: "100%",
               height: 26,
               padding: "0 8px",
               border: "1px solid var(--border)",
               borderRadius: 5,
-              fontSize: 12,
               outline: "none",
             }}
           />
@@ -277,10 +271,9 @@ function StatusEditor({
                   onChange(p);
                   setOpen(false);
                 }}
-                className="pill pill-bare"
+                className="pill pill-bare text-xs"
                 style={{
                   height: 20,
-                  fontSize: 10.5,
                   cursor: "pointer",
                   borderColor: "var(--border-subtle)",
                 }}
@@ -295,8 +288,8 @@ function StatusEditor({
                   onChange(null);
                   setOpen(false);
                 }}
+                className="text-xs"
                 style={{
-                  fontSize: 10.5,
                   color: "var(--text-tertiary)",
                   cursor: "pointer",
                   padding: "0 4px",
@@ -343,12 +336,12 @@ function TextEditor({
             setEditing(false);
           }
         }}
+        className="text-base"
         style={{
           background: "transparent",
           border: 0,
           outline: "none",
           color: "var(--text-primary)",
-          fontSize: 12.5,
           padding: 0,
           minWidth: 100,
         }}
@@ -359,12 +352,11 @@ function TextEditor({
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className={cn(value ? "text-text-secondary" : "text-text-tertiary italic")}
+      className={cn("text-base", value ? "text-text-secondary" : "text-text-tertiary italic")}
       style={{
         background: "transparent",
         border: 0,
         padding: 0,
-        fontSize: 12.5,
         cursor: "text",
         textAlign: "left",
       }}
@@ -395,10 +387,9 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
       {tags.map((t) => (
         <span
           key={t}
-          className="pill pill-bare"
+          className="pill pill-bare text-xs"
           style={{
             height: 20,
-            fontSize: 10.5,
             borderColor: "var(--border-subtle)",
             paddingRight: 4,
             display: "inline-flex",
@@ -442,13 +433,13 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
             }
           }}
           placeholder="tag…"
+          className="text-xs"
           style={{
             background: "transparent",
             border: "1px dashed var(--border-subtle)",
             borderRadius: 9999,
             padding: "0 8px",
             height: 20,
-            fontSize: 10.5,
             color: "var(--text-primary)",
             outline: "none",
             width: 80,
@@ -458,9 +449,9 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
         <button
           type="button"
           onClick={() => setAdding(true)}
+          className="text-sm"
           style={{
             color: "var(--text-muted)",
-            fontSize: 12,
             padding: "0 6px",
             background: "transparent",
             border: 0,

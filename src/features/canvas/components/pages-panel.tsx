@@ -35,7 +35,7 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
       <div
         key={entry.id}
         className={cn(
-          "group/row flex h-[26px] items-center gap-1.5 rounded px-1.5 text-[11px] cursor-pointer",
+          "group/row flex h-control-md items-center gap-1.5 rounded px-1.5 text-xs cursor-pointer",
           active ? "bg-bg-selected text-text-primary" : "text-text-secondary hover:bg-bg-hover",
         )}
         onClick={() => setActivePage(entry.id)}
@@ -48,9 +48,9 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
               e.stopPropagation();
               setIconFor({ id: entry.id, rect: e.currentTarget.getBoundingClientRect() });
             }}
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-white/10"
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-bg-hover"
           >
-            <span className="text-[11px] leading-none">{entry.icon || DEFAULT_PAGE_ICON}</span>
+            <span className="text-xs leading-none">{entry.icon || DEFAULT_PAGE_ICON}</span>
           </button>
         </Hint>
 
@@ -69,7 +69,7 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
               if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
               else if (e.key === "Escape") setEditingId(null);
             }}
-            className="min-w-0 flex-1 rounded bg-bg-input px-1 text-[11px] text-text-primary outline-none"
+            className="min-w-0 flex-1 rounded bg-bg-input px-1 text-xs text-text-primary outline-none"
           />
         ) : (
           <span
@@ -106,7 +106,7 @@ export function PagesPanel({ width = 240 }: { width?: number }) {
       style={{ width }}
     >
       <div className="flex h-8 shrink-0 items-center gap-1 px-2 pl-3">
-        <span className="flex-1 text-[10px] font-semibold uppercase leading-none tracking-wider text-text-tertiary">
+        <span className="flex-1 text-2xs font-semibold uppercase leading-none tracking-wider text-text-tertiary">
           Pages
         </span>
         <Hint label="New page">
