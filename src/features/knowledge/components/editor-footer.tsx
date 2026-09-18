@@ -135,14 +135,8 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
 
   return (
     <div
-      className="flex items-center shrink-0 border-t border-border-subtle text-text-tertiary"
-      style={{
-        height: 24,
-        gap: 14,
-        padding: "0 14px",
-        fontSize: 10,
-        background: "var(--bg-canvas)",
-      }}
+      className="flex items-center shrink-0 border-t border-border-subtle text-text-tertiary text-2xs"
+      style={{ height: 24, gap: 14, padding: "0 14px", background: "var(--bg-canvas)" }}
     >
       <span>
         <span className="mono tnum">{wordCount.toLocaleString("en-US")}</span> words
@@ -163,9 +157,9 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
               className={cn(
                 "inline-flex items-center gap-1 h-5 px-2 rounded-full",
                 "border border-border bg-bg-elevated text-[var(--text-primary)]",
-                "text-[10px] font-medium leading-none cursor-pointer",
+                "text-2xs font-medium leading-none cursor-pointer",
                 "hover:bg-bg-hover transition-colors",
-                "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
+                "shadow-sm",
                 isBusy && "opacity-80 cursor-wait",
               )}
               title={busyLabel ?? "Export"}
@@ -186,12 +180,12 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
           }
         />
         <DropdownMenu.Portal>
-          <DropdownMenu.Positioner className="z-[9999]" align="end" sideOffset={6}>
+          <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={6}>
             <DropdownMenu.Popup
               className={cn(
                 "min-w-[200px] rounded-md p-0.5",
-                "bg-black border border-border",
-                "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
+                "bg-popover border border-border",
+                "shadow-md",
                 "text-text-primary",
               )}
             >
@@ -245,7 +239,7 @@ function ExportMenuItem({
       onClick={() => void onSelect()}
       className={cn(
         "flex items-center gap-2 rounded px-2 py-1 outline-none cursor-pointer",
-        "text-[11.5px] text-text-secondary",
+        "text-sm text-text-secondary",
         "focus:bg-bg-hover focus:text-text-primary",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
       )}

@@ -17,23 +17,23 @@ interface Props {
  */
 export const ReadmeView = memo(function ReadmeView({ source }: Props) {
   return (
-    <div className="atlas-readme text-[14px] leading-relaxed text-[var(--text-primary)] break-words select-text">
+    <div className="atlas-readme text-md leading-relaxed text-[var(--text-primary)] break-words select-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={{
           h1: (p) => (
-            <h1 className="text-[26px] font-bold tracking-tight mt-8 mb-3 pb-2 border-b border-[var(--border)]">
+            <h1 className="text-2xl font-bold tracking-tight mt-8 mb-3 pb-2 border-b border-[var(--border)]">
               {p.children}
             </h1>
           ),
           h2: (p) => (
-            <h2 className="text-[20px] font-semibold tracking-tight mt-7 mb-3 pb-1.5 border-b border-[var(--border-subtle)]">
+            <h2 className="text-xl font-semibold tracking-tight mt-7 mb-3 pb-1.5 border-b border-[var(--border-subtle)]">
               {p.children}
             </h2>
           ),
-          h3: (p) => <h3 className="text-[16px] font-semibold mt-6 mb-2">{p.children}</h3>,
-          h4: (p) => <h4 className="text-[14px] font-semibold mt-4 mb-1.5">{p.children}</h4>,
+          h3: (p) => <h3 className="text-lg font-semibold mt-6 mb-2">{p.children}</h3>,
+          h4: (p) => <h4 className="text-md font-semibold mt-4 mb-1.5">{p.children}</h4>,
           p: (p) => <p className="my-3">{p.children}</p>,
           a: (p) => (
             <a
@@ -59,7 +59,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
             if (isInline) {
               return (
                 <code
-                  className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12.5px] font-mono"
+                  className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-base font-mono"
                   {...rest}
                 >
                   {children}
@@ -74,7 +74,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
           },
           pre: (p) => (
             <pre
-              className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-[12.5px] my-4 overflow-x-auto"
+              className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-base my-4 overflow-x-auto"
               style={{ whiteSpace: "pre", wordBreak: "normal" }}
             >
               {p.children}
@@ -88,12 +88,12 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
           hr: () => <hr className="my-6 border-[var(--border-subtle)]" />,
           table: (p) => (
             <div className="my-4 rounded-md border border-[var(--border)] overflow-x-auto">
-              <table className="w-full text-[13px] border-collapse">{p.children}</table>
+              <table className="w-full text-base border-collapse">{p.children}</table>
             </div>
           ),
           thead: (p) => <thead className="bg-[var(--bg-elevated)]">{p.children}</thead>,
           th: (p) => (
-            <th className="px-3 py-2 text-left text-[12px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
+            <th className="px-3 py-2 text-left text-sm font-semibold text-[var(--text-secondary)] border-b border-[var(--border)] border-r last:border-r-0">
               {p.children}
             </th>
           ),
@@ -101,7 +101,7 @@ export const ReadmeView = memo(function ReadmeView({ source }: Props) {
             <tr className="border-b border-[var(--border-subtle)] last:border-b-0">{p.children}</tr>
           ),
           td: (p) => (
-            <td className="px-3 py-2 align-top text-[13px] text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
+            <td className="px-3 py-2 align-top text-base text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
               {p.children}
             </td>
           ),

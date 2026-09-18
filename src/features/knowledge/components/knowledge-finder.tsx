@@ -83,7 +83,7 @@ export function KnowledgeFinder({
 
   return (
     <div className="absolute left-1/2 top-3 z-50 w-[460px] max-w-[90%] -translate-x-1/2">
-      <div className="overflow-hidden rounded-lg border border-border bg-bg-elevated shadow-[var(--shadow-overlay)]">
+      <div className="overflow-hidden rounded-lg border border-border bg-bg-elevated shadow-md">
         <div className="flex items-center gap-2 px-3 h-9 border-b border-border-subtle">
           <Search size={13} className="shrink-0 text-text-tertiary" />
           <input
@@ -93,10 +93,10 @@ export function KnowledgeFinder({
             onKeyDown={onKeyDown}
             placeholder="Find notes by title…"
             spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-text-primary outline-none placeholder:text-text-tertiary"
+            className="min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-tertiary"
           />
           {q && (
-            <span className="shrink-0 text-[10px] tabular-nums text-text-tertiary">
+            <span className="shrink-0 text-2xs tabular-nums text-text-tertiary">
               {results.length}
               {results.length >= MAX_RESULTS ? "+" : ""}
             </span>
@@ -113,7 +113,7 @@ export function KnowledgeFinder({
         {q.trim() && (
           <div className="max-h-[340px] overflow-y-auto hide-scrollbar py-1">
             {results.length === 0 ? (
-              <div className="px-3 py-3 text-[12px] text-text-tertiary">No matches</div>
+              <div className="px-3 py-3 text-sm text-text-tertiary">No matches</div>
             ) : (
               results.map((r, i) => (
                 <button
@@ -125,10 +125,8 @@ export function KnowledgeFinder({
                     i === active ? "bg-bg-hover" : "hover:bg-bg-hover/60",
                   )}
                 >
-                  <span className="shrink-0 text-[13px] leading-none">{r.icon}</span>
-                  <span className="truncate text-[12px] font-medium text-text-primary">
-                    {r.title}
-                  </span>
+                  <span className="shrink-0 text-base leading-none">{r.icon}</span>
+                  <span className="truncate text-sm font-medium text-text-primary">{r.title}</span>
                 </button>
               ))
             )}

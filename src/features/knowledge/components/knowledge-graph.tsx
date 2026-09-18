@@ -877,7 +877,7 @@ function buildScene(
 function LoadingState() {
   return (
     <div className="h-full w-full flex items-center justify-center text-text-tertiary">
-      <span className="text-[11px]">Building graph…</span>
+      <span className="text-xs">Building graph…</span>
     </div>
   );
 }
@@ -885,9 +885,9 @@ function LoadingState() {
 function EmptyState() {
   return (
     <div className="h-full w-full flex flex-col items-center justify-center text-text-tertiary gap-2">
-      <div className="text-[12px]">No notes yet — create some and reference them with</div>
-      <div className="mono text-[11px] text-text-muted">[[note-id]]</div>
-      <div className="text-[12px]">to see them connect here.</div>
+      <div className="text-sm">No notes yet — create some and reference them with</div>
+      <div className="mono text-xs text-text-muted">[[note-id]]</div>
+      <div className="text-sm">to see them connect here.</div>
     </div>
   );
 }
