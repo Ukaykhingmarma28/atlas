@@ -618,7 +618,7 @@ function PrimitiveSection() {
       <Section
         title="Button"
         decision="decision 32 · src/ui/button.tsx"
-        note="Six variants × four sizes, sized on the control heights. Shaped like shadcn's base-style Button so later `shadcn add` output drops in; it has no asChild — the overlay primitives take Base UI's `render` prop, but the button stays a plain element."
+        note="Six variants × four sizes, sized on the control heights. Shaped like shadcn's base-style Button so later `shadcn add` output drops in; no `asChild` — it takes Base UI's own `render` prop instead, forwarding to @base-ui/react/button."
       >
         {BUTTON_SIZES.map((size) => (
           <Row key={size} name={`size="${size}"`}>
@@ -635,6 +635,33 @@ function PrimitiveSection() {
             </div>
           </Row>
         ))}
+        <Row name="render">
+          <div className="flex flex-wrap items-center gap-2">
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button variant="outline" size="sm">
+                    Button as a Popover trigger
+                  </Button>
+                }
+              />
+              <PopoverContent>
+                <PopoverHeader>
+                  <PopoverTitle>render composes, not wraps</PopoverTitle>
+                  <PopoverDescription>
+                    Popover.Trigger clones this Button element and merges its own onClick / aria /
+                    ref onto the one &lt;button&gt; Base UI's Button renders — not a button nested
+                    inside a button.
+                  </PopoverDescription>
+                </PopoverHeader>
+              </PopoverContent>
+            </Popover>
+            <span className="caption">
+              Same pattern used for real in `src/ui/dialog.tsx`'s close button (below) and
+              throughout Popover / DropdownMenu / Dialog in this gallery.
+            </span>
+          </div>
+        </Row>
       </Section>
 
       <Section
@@ -659,6 +686,36 @@ function PrimitiveSection() {
             </div>
           </Row>
         ))}
+        <Row name="focusableWhenDisabled">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Hint label="Delete — enabled, for comparison">
+                <IconButton icon={Trash2} label="Delete" variant="outline" />
+              </Hint>
+              <Hint label="Delete — disabled. Native `disabled`, so Tab skips it (Hint wraps it in a span to keep pointer hover working).">
+                <IconButton icon={Trash2} label="Delete" variant="outline" disabled />
+              </Hint>
+              <Hint
+                label="Delete — disabled, but focusableWhenDisabled: no native `disabled` attribute, so it stays in the tab order and this hint is reachable by keyboard."
+                wrap={false}
+              >
+                <IconButton
+                  icon={Trash2}
+                  label="Delete"
+                  variant="outline"
+                  disabled
+                  focusableWhenDisabled
+                />
+              </Hint>
+            </div>
+            <span className="caption">
+              `focusableWhenDisabled` defaults to false, same as Base UI — most disabled controls in
+              Atlas explain nothing and a dead stop in the tab order is worse than skipping them.
+              Opt in per call site where, like here, a Hint explains why the control is disabled.
+              Tab through the three above: only the third one gets focus.
+            </span>
+          </div>
+        </Row>
       </Section>
 
       <Section title="Input" decision="decision 32 · src/ui/input.tsx">
