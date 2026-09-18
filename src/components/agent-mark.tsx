@@ -5,13 +5,23 @@ import { AtlasIcon } from "@/components/atlas-icon";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 
 /**
+ * The brand icon alone, with no badge around it. Exported for the places that
+ * want the mark beside a name in a table row, where the `.amark` box would be
+ * a second container around a glyph that is already a contained shape.
+ *
  * Small per-agent identity badge. Reuses the `.amark` + `.agent-*` token
  * system (tokens.css) and renders the agent's brand icon (agent-icons.tsx) —
  * this is how parallel Claude / Codex chat sessions are told apart by icon.
  * External (registry-installed) agents render their manifest SVG, falling
  * back to a monogram of their label.
  */
-function AgentGlyph({ agentType, size }: { agentType: AgentType; size: "sm" | "lg" }) {
+export function AgentGlyph({
+  agentType,
+  size = "sm",
+}: {
+  agentType: AgentType;
+  size?: "sm" | "lg";
+}) {
   const cls = size === "lg" ? "size-[18px]" : "size-3.5";
   if (agentType === "claude-acp" || agentType === "claude-code")
     return <AgentIcons.Claude className={cls} />;

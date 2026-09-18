@@ -15,6 +15,8 @@ import { previousRange, resolveRange, type ResolvedRange } from "./date-range";
 import {
   allDaily,
   applyFacets,
+  dailyMetrics,
+  sessionsPerDay,
   distinctSessions,
   efficiency,
   facetsOf,
@@ -22,7 +24,6 @@ import {
   projectLabel,
   agentDisplay,
   modelDisplay,
-  rankBy,
   rowsInRange,
   series,
   sessionsInRange,
@@ -30,7 +31,6 @@ import {
   type Efficiency,
   type FacetOption,
   type Insight,
-  type RankedKey,
   type Series,
 } from "./derive";
 import { OTHER_COLOR, seriesColor } from "./palette";
@@ -64,9 +64,12 @@ export interface UsageView {
   prevSessionCount: number | null;
   facetOptions: { projects: FacetOption[]; agents: FacetOption[]; models: FacetOption[] };
   chart: Series;
-  ranked: RankedKey[];
   eff: Efficiency;
   prevEff: Efficiency | null;
+  /** One entry per day in the range, in order — the headline sparklines. */
+  days: Metrics[];
+  /** Distinct sessions per day, aligned to `days`. */
+  sessionDays: number[];
   insightList: Insight[];
 }
 
@@ -148,12 +151,17 @@ export function useUsageView(): UsageView {
     () => series(rows, groupBy, metric, resolved, data, seriesColor, OTHER_COLOR),
     [rows, groupBy, metric, resolved, data],
   );
-  const ranked = useMemo(() => rankBy(rows, groupBy, metric, data), [rows, groupBy, metric, data]);
 
   const eff = useMemo(() => efficiency(totals, sessionCount), [totals, sessionCount]);
   const prevEff = useMemo(
     () => (prevTotals ? efficiency(prevTotals, prevSessionCount ?? 0) : null),
     [prevTotals, prevSessionCount],
+  );
+
+  const days = useMemo(() => dailyMetrics(rows, resolved), [rows, resolved]);
+  const sessionDays = useMemo(
+    () => sessionsPerDay(facetedSessions, resolved),
+    [facetedSessions, resolved],
   );
 
   const insightList = useMemo(
@@ -186,9 +194,10 @@ export function useUsageView(): UsageView {
     prevSessionCount,
     facetOptions,
     chart,
-    ranked,
     eff,
     prevEff,
+    days,
+    sessionDays,
     insightList,
   };
 }

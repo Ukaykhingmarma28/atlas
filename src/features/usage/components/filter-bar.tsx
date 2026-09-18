@@ -46,6 +46,8 @@ export function FilterBar({
   onGroupBy,
   metric,
   onMetric,
+  className,
+  style,
 }: {
   facets: Facets;
   options: Record<Axis, FacetOption[]>;
@@ -55,10 +57,16 @@ export function FilterBar({
   onGroupBy: (g: GroupBy) => void;
   metric: Metric;
   onMetric: (m: Metric) => void;
+  /** Positioning, supplied by the panel — this row floats over its scroller. */
+  className?: string;
+  style?: React.CSSProperties;
 }) {
   const active = AXES.reduce((n, a) => n + facets[a.axis].length, 0);
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-1.5 border-b border-[var(--border-subtle)] px-3">
+    // No background and no rule of its own. It sits over the body's scroller
+    // with a progressive blur behind it, so what backs it is whatever is
+    // scrolling underneath, softened — see `usage-panel.tsx`.
+    <div className={cn("flex shrink-0 items-center gap-1.5 px-4", className)} style={style}>
       {AXES.map((a) => (
         <FacetPill
           key={a.axis}
@@ -80,13 +88,11 @@ export function FilterBar({
         </button>
       )}
       <div className="flex-1" />
-      <span className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
-        Group
-      </span>
+      {/* No "GROUP" / "METRIC" labels: each track carries its name as its
+          accessible name and its tooltip, and the chart caption below spells
+          out both choices ("Tokens · by day · per project"), so shouting them
+          here said nothing the page did not already say. */}
       <Segmented label="Group by" value={groupBy} options={GROUPS} onChange={onGroupBy} />
-      <span className="ml-1 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
-        Metric
-      </span>
       <Segmented label="Metric" value={metric} options={METRICS} onChange={onMetric} />
     </div>
   );

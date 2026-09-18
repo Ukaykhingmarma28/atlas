@@ -1,9 +1,14 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The house segmented control (the old Console's 7d/30d/90d recipe): a hairline-bordered
- * track with flush segments, the active one on `--bg-active`. Used for the range presets,
- * the group-by axis and the chart metric.
+ * A one-of-N control: a round-ended track with the active option a filled pill
+ * inside it.
+ *
+ * The same shape the Timeline's grain control uses (`artifacts-panel.tsx`'s
+ * `PeriodPill`), and for the same reason: these are STATES, exactly one of
+ * which is true, and the filled pill says which at a glance. The bordered
+ * rectangles this replaced drew a box per control, so a header carrying three
+ * of them read as three separate widgets rather than three settings.
  */
 export function Segmented<T extends string>({
   value,
@@ -11,21 +16,25 @@ export function Segmented<T extends string>({
   onChange,
   label,
   className,
+  children,
 }: {
-  /** `null` = nothing active (a custom range beside the presets). */
+  /** `null` = nothing active, for a track whose state lives elsewhere. */
   value: T | null;
   options: ReadonlyArray<{ value: T; label: string }>;
   onChange: (v: T) => void;
-  /** Accessible name for the group. */
+  /** Accessible name for the group — these tracks carry no visible label. */
   label: string;
   className?: string;
+  /** Extra segments sharing the track, e.g. a popover trigger. */
+  children?: React.ReactNode;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
+      title={label}
       className={cn(
-        "flex h-[26px] items-center overflow-hidden rounded-md border border-[var(--border-default)]",
+        "flex h-7 shrink-0 items-center rounded-full border border-[var(--border-default)] p-0.5",
         className,
       )}
     >
@@ -37,15 +46,22 @@ export function Segmented<T extends string>({
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-full px-2.5 text-[11px] transition-colors",
+            "flex h-full cursor-pointer items-center rounded-full px-2 text-[11px] leading-none outline-none transition-colors",
             o.value === value
-              ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
+              ? "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
           )}
         >
           {o.label}
         </button>
       ))}
+      {children}
     </div>
   );
 }
+
+/** A non-radio segment sharing a `Segmented` track — the custom-range trigger. */
+export const SEGMENT_TRIGGER =
+  "flex h-full cursor-pointer items-center gap-1 rounded-full px-2 text-[11px] leading-none outline-none transition-colors";
+export const SEGMENT_ACTIVE = "bg-[var(--bg-active)] font-medium text-[var(--text-primary)]";
+export const SEGMENT_IDLE = "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]";

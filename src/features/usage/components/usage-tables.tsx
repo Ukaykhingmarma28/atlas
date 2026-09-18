@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDownWideNarrow, Bot, Boxes, Cpu, FolderKanban, Search } from "lucide-react";
+import { ArrowDownWideNarrow, Search } from "lucide-react";
 import { Bar, EstTag, useMounted } from "@/components/usage-primitives";
-import { AgentMark } from "@/components/agent-mark";
+import { AgentGlyph } from "@/components/agent-mark";
 import { fmtCost, fmtNum, fmtPct, fmtTokens } from "@/features/monitor/lib/usage-format";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
@@ -17,21 +17,25 @@ import {
 } from "../types";
 import {
   agentDisplay,
+  colorFor,
   keyOf,
   modelDisplay,
   projectLabel,
   tokensOf,
   type RankedKey,
 } from "../lib/derive";
-import { seriesColor } from "../lib/palette";
+import { agentTint, modelTint, seriesColor } from "../lib/palette";
 
 const ROW_H = 30;
 
-const TABS: ReadonlyArray<{ id: TableTab; label: string; icon: typeof Boxes }> = [
-  { id: "sessions", label: "Sessions", icon: Boxes },
-  { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "models", label: "Models", icon: Cpu },
+// No icons. Four nouns that are already distinct words do not need four
+// glyphs to tell them apart, and the row of them was the busiest thing in a
+// header whose job is to be quiet.
+const TABS: ReadonlyArray<{ id: TableTab; label: string }> = [
+  { id: "sessions", label: "Sessions" },
+  { id: "projects", label: "Projects" },
+  { id: "agents", label: "Agents" },
+  { id: "models", label: "Models" },
 ];
 
 type SortKey = "recent" | "cost" | "tokens" | "messages" | "cache";
@@ -92,14 +96,15 @@ export function UsageTables({
                 : "border-b-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
             )}
           >
-            <t.icon
-              size={12}
-              className={
-                tab === t.id ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"
-              }
-            />
             {t.label}
-            <span className="text-[9px] tabular-nums text-[var(--text-tertiary)]">
+            <span
+              className={cn(
+                "rounded-full px-1.5 py-px text-[9px] tabular-nums transition-colors",
+                tab === t.id
+                  ? "bg-white/[0.08] text-[var(--text-secondary)]"
+                  : "bg-white/[0.04] text-[var(--text-tertiary)]",
+              )}
+            >
               {fmtNum(counts[t.id])}
             </span>
           </button>
@@ -253,14 +258,24 @@ function SessionsTable({
                       )}
                     </span>
                   </span>
-                  <span className={cn(COL.project, "truncate pr-2 text-[var(--text-secondary)]")}>
-                    {projectLabel(s.projectPath, data)}
+                  <span className={cn(COL.project, "flex min-w-0 items-center gap-1.5 pr-2")}>
+                    {/* The same colour the chart's legend gives this project,
+                        so a row and a band two cards above it agree. */}
+                    <span
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{
+                        background: colorFor(s.projectPath, "project", data, 0, seriesColor),
+                      }}
+                    />
+                    <span className="truncate text-[var(--text-secondary)]">
+                      {projectLabel(s.projectPath, data)}
+                    </span>
                   </span>
                   <span className={cn(COL.agent, "pr-2")}>
                     <AgentChip agent={s.agent} />
                   </span>
                   <span className={cn(COL.model, "pr-2")}>
-                    <NeutralChip>{modelDisplay(s.model)}</NeutralChip>
+                    <ModelChip model={s.model} />
                   </span>
                   <span className={cn(COL.tokens, "tabular-nums text-[var(--text-primary)]")}>
                     {fmtTokens(tokensOf(s))}
@@ -401,22 +416,46 @@ function RollupTable({
 
 // ── Chips ──────────────────────────────────────────────────────────────────
 
-/** The agent as its brand mark + name, in the house `.agent-*` chip tokens. */
+/**
+ * The agent: its brand mark, then its name. No chip.
+ *
+ * It used to be a pill wrapping an `.amark` badge wrapping the glyph — three
+ * nested containers for one word, in a table that already has a column headed
+ * AGENT. A row's job is to be scannable, and a box per cell is the opposite.
+ */
 export function AgentChip({ agent }: { agent: string }) {
   if (agent === BYOK_AGENT || agent === UNKNOWN)
-    return <NeutralChip>{agentDisplay(agent)}</NeutralChip>;
+    return <span className="truncate text-[var(--text-tertiary)]">{agentDisplay(agent)}</span>;
   return (
-    <span className="inline-flex h-[20px] max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] pl-0.5 pr-2 text-[10px] text-[var(--text-secondary)]">
-      <AgentMark agentType={agent} />
+    <span
+      className="inline-flex max-w-full items-center gap-1.5"
+      style={{ color: agentTint(agent).fg }}
+    >
+      <AgentGlyph agentType={agent} />
       <span className="truncate">{agentDisplay(agent)}</span>
     </span>
   );
 }
 
-function NeutralChip({ children }: { children: React.ReactNode }) {
+/**
+ * The model, tinted by the vendor it belongs to.
+ *
+ * A grey chip per row told you a model existed and nothing else; with a tint
+ * you can see at a glance that a window was mostly Claude, or that one project
+ * is the only thing still on a local model. Families, not individual models —
+ * a colour per model id would be a new hue every release.
+ */
+function ModelChip({ model }: { model: string }) {
+  const label = modelDisplay(model);
+  if (model === UNKNOWN)
+    return <span className="truncate text-[10px] text-[var(--text-tertiary)]">{label}</span>;
+  const tint = modelTint(model);
   return (
-    <span className="inline-flex h-[20px] max-w-full items-center rounded-full border border-[var(--border-default)] bg-[var(--bg-raised)] px-2 text-[10px] text-[var(--text-tertiary)]">
-      <span className="truncate">{children}</span>
+    <span
+      className="inline-flex h-[18px] max-w-full items-center rounded-full px-2 text-[10px]"
+      style={{ background: tint.bg, color: tint.fg }}
+    >
+      <span className="truncate">{label}</span>
     </span>
   );
 }

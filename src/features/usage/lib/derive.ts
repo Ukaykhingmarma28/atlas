@@ -199,6 +199,29 @@ export function rankBy(
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 
+/**
+ * A key's colour, stable across range and metric changes.
+ *
+ * Projects index off the payload's own project order rather than off their
+ * rank in the current window, because a project that keeps its colour is the
+ * whole value of having one: rank-indexed colours meant toggling Tokens → Cost
+ * repainted the entire chart, and the table dot beside a project name could
+ * disagree with the legend two cards above it. Agents and models have no
+ * comparable stable list on the wire, so they take their rank position.
+ */
+export function colorFor(
+  key: string,
+  g: GroupBy,
+  data: UsageDashboard | null,
+  rankIndex: number,
+  color: (i: number) => string,
+): string {
+  if (g !== "project" || !data) return color(rankIndex);
+  if (key === data.byokProjectPath) return color(data.projects.length);
+  const i = data.projects.findIndex((p) => p.projectPath === key);
+  return color(i >= 0 ? i : rankIndex);
+}
+
 export const MAX_SERIES = 8;
 export const OTHER_KEY = "__other__";
 /** Above this many days the chart buckets by week — 90 daily columns still read, 365 don't. */
@@ -249,7 +272,11 @@ export function series(
   const ranked = rankBy(rows, g, metric, data);
   const top = ranked.slice(0, MAX_SERIES);
   const hasOther = ranked.length > MAX_SERIES;
-  const keys: SeriesKey[] = top.map((r, i) => ({ key: r.key, label: r.label, color: color(i) }));
+  const keys: SeriesKey[] = top.map((r, i) => ({
+    key: r.key,
+    label: r.label,
+    color: colorFor(r.key, g, data, i, color),
+  }));
   if (hasOther) keys.push({ key: OTHER_KEY, label: "Other", color: otherColor });
   const index = new Map(keys.map((k, i) => [k.key, i]));
 
@@ -277,6 +304,66 @@ export function series(
 function addDaysLocal(key: string, n: number): string {
   const [y, m, d] = key.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, (d ?? 1) + n);
+  const pad = (x: number) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+// ── Per-day series, for the headline sparklines ────────────────────────────
+
+/**
+ * One entry per day in the range, in order, including days with nothing.
+ *
+ * The stat band's sparklines need a value per day whether or not anything
+ * happened — a gap in a trend line is information, and a series that silently
+ * skips quiet days draws a busy fortnight and a quiet one identically.
+ */
+export function dailyMetrics(rows: DailyBucket[], range: ResolvedRange): Metrics[] {
+  const from =
+    range.from ??
+    rows.reduce<string | null>((m, r) => (m === null || r.date < m ? r.date : m), null);
+  if (from === null) return [];
+  const byDay = new Map<string, Metrics>();
+  for (let d = from; d <= range.to; d = addDay(d)) byDay.set(d, { ...EMPTY_METRICS });
+  for (const r of rows) {
+    const cell = byDay.get(r.date);
+    if (cell) addMetrics(cell, r);
+  }
+  return [...byDay.values()];
+}
+
+/** Distinct sessions per day, dated the way the sessions table dates them. */
+export function sessionsPerDay(sessions: SessionRow[], range: ResolvedRange): number[] {
+  const from =
+    range.from ??
+    sessions.reduce<string | null>((m, s) => {
+      const d = epochToDay(s.lastActivityMs ?? s.startedMs);
+      return m === null || d < m ? d : m;
+    }, null);
+  if (from === null) return [];
+  const byDay = new Map<string, Set<string>>();
+  for (let d = from; d <= range.to; d = addDay(d)) byDay.set(d, new Set());
+  for (const s of sessions) {
+    byDay.get(epochToDay(s.lastActivityMs ?? s.startedMs))?.add(s.sessionId);
+  }
+  return [...byDay.values()].map((set) => set.size);
+}
+
+/**
+ * Cache hit rate per day, as a percentage.
+ *
+ * A day with no prompt tokens has no rate — not a rate of zero — so it reads
+ * `null`, which the sparkline draws as an empty column rather than a floor.
+ */
+export function cacheRatePerDay(days: Metrics[]): Array<number | null> {
+  return days.map((d) => {
+    const prompt = d.input + d.cacheRead + d.cacheWrite;
+    return prompt > 0 ? (d.cacheRead / prompt) * 100 : null;
+  });
+}
+
+function addDay(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, (d ?? 1) + 1);
   const pad = (x: number) => String(x).padStart(2, "0");
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
