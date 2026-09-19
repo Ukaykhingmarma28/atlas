@@ -214,6 +214,12 @@ dotenvy = "0.15"
 semver = "1"
 posthog-rs = "0.14"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# Read the Windows Installer's uninstall entry for Atlas: the auto-updater
+# relaunches from (and only upgrades) the MSI's `InstallLocation`. See
+# `crate::commands::updater`. Already in the tree transitively.
+winreg = "0.55"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # Native NSWindow access for the titlebar double-click "zoom" (AppKit
 # performZoom:), which Tauri's cross-platform maximize API doesn't cover.
