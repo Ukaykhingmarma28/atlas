@@ -67,9 +67,7 @@ pub mod session;
 pub use consolidate::{consolidate, ConsolidateOutcome};
 pub use global::{global_recall, record_candidates, CandidateEntry};
 pub use docstore::{DocStore, DocText};
-pub use extract::{
-    category_to_memory_type, extract_and_store, should_extract, ExtractState, TranscriptTurn,
-};
+pub use extract::{extract, parse_extracted, should_extract, ExtractState, Extracted, TranscriptTurn, Trigger};
 pub use manifest::{Diff, Entry, Manifest};
 pub use migrate::{migrate, MigrationOutcome};
 pub use provider::{MiniLmProvider, DIM, PROVIDER_NAME};

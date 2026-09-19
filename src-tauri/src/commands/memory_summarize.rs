@@ -65,7 +65,8 @@ async fn run_summary(
 }
 
 /// One-shot BYOK completion: send `prompt_text` to `provider`/`model` and
-/// collect the full text. Shared by [`summarize`] and `super::memory_compile`.
+/// collect the full text. Shared by [`summarize`] and the extractor's BYOK route
+/// (`super::memory_extract`).
 pub(crate) async fn run_completion(
     app: &AppHandle,
     prompt_text: String,

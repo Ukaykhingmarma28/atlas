@@ -524,11 +524,11 @@ impl SharedMemoryStore {
     }
 
     /// Record that `session_id` ended: a `session_end` event and the row's end
-    /// time. Only a session whose start was recorded, and only once.
-    pub fn session_ended(&self, session_id: &str) {
-        let Some(meta) = self.inner.live.lock().remove(session_id) else {
-            return;
-        };
+    /// time. Only a session whose start was recorded, and only once. Returns
+    /// where the ended session lived (its cwd and agent), so the caller can
+    /// run the end-of-session extraction; `None` when there was nothing to end.
+    pub fn session_ended(&self, session_id: &str) -> Option<SessionMeta> {
+        let meta = self.inner.live.lock().remove(session_id)?;
         let written = store_for(&meta.cwd).and_then(|store| {
             store
                 .session_ended(session_id, &meta.agent, (self.inner.clock)())
@@ -539,6 +539,7 @@ impl SharedMemoryStore {
         if let Err(e) = written {
             tracing::warn!(target: "atlas::shared_memory", "session end not recorded: {e}");
         }
+        Some(meta)
     }
 
     /// The summary view. Degrades to empty when the record can't be read.
@@ -591,7 +592,11 @@ impl SharedMemoryStore {
     }
 }
 
-/// Who wrote a tool write: the session a memory-server token belongs to.
+/// The provenance of every entry the extractor writes.
+pub const EXTRACTOR_SOURCE: &str = "extractor";
+
+/// Who a write is attributed to: the agent and session a memory-server token
+/// belongs to, or the session the extractor distilled.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Writer {
     /// The durable agent id (`cersei` for the native agent) — the entry's source.
@@ -624,24 +629,63 @@ impl SharedMemoryStore {
         if content.trim().is_empty() {
             return Err("nothing to remember: content is empty".into());
         }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: key.trim().to_string(),
+                content: content.to_string(),
+                source: writer.agent.clone(),
+                agent: writer.agent.clone(),
+                session_id: writer.session_id.clone(),
+                confidence: 1.0,
+                at: 0,
+            },
+        )
+    }
+
+    /// Record one durable entry the extractor distilled from `writer`'s
+    /// session: source `extractor`, the model's own 0–1 confidence, and the
+    /// same path as a tool write — redacted, key-or-hash identity with
+    /// near-duplicate merge, logged as an event so the Shared tab shows it,
+    /// announced as a memory change.
+    pub fn record_extracted(
+        &self,
+        project_path: &str,
+        writer: &Writer,
+        kind: EntryKind,
+        content: &str,
+        confidence: f64,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() {
+            return Err(format!("the extractor records only durable kinds, not `{}`", kind.as_str()));
+        }
+        if content.trim().is_empty() {
+            return Err("nothing to record: content is empty".into());
+        }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: String::new(),
+                content: content.to_string(),
+                source: EXTRACTOR_SOURCE.to_string(),
+                agent: writer.agent.clone(),
+                session_id: writer.session_id.clone(),
+                confidence: confidence.clamp(0.0, 1.0),
+                at: 0,
+            },
+        )
+    }
+
+    /// Write one durable entry through the record (stamped now) and announce it.
+    fn write_durable(&self, project_path: &str, mut entry: NewEntry) -> Result<Remembered, String> {
         let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
         let now = (self.inner.clock)();
-        let remembered = store
-            .remember(
-                NewEntry {
-                    kind,
-                    key: key.trim().to_string(),
-                    content: content.to_string(),
-                    source: writer.agent.clone(),
-                    agent: writer.agent.clone(),
-                    session_id: writer.session_id.clone(),
-                    confidence: 1.0,
-                    at: now,
-                },
-                now,
-            )
-            .map_err(|e| format!("{e:#}"))?;
+        entry.at = now;
+        let kind = entry.kind;
+        let remembered = store.remember(entry, now).map_err(|e| format!("{e:#}"))?;
         self.announce(&store, &[kind.as_str()]);
         Ok(remembered)
     }
@@ -696,7 +740,7 @@ impl super::agent_host::SessionLifecycle for SharedMemoryStore {
     }
 
     fn session_ended(&self, session_id: &str) {
-        SharedMemoryStore::session_ended(self, session_id);
+        let _ = SharedMemoryStore::session_ended(self, session_id);
     }
 }
 
@@ -977,6 +1021,18 @@ mod tests {
                     .to_vec(),
             ]
         );
+    }
+
+    /// A session's end says where the session lived — what the end-of-session
+    /// extraction needs — and only the first time.
+    #[test]
+    fn a_session_end_names_the_ended_session_once() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("ended"));
+        assert!(store.session_ended("never-started").is_none());
+        store.session_started("s1", "codex", &p);
+        let ended = store.session_ended("s1").expect("a started session ends");
+        assert_eq!((ended.cwd.as_str(), ended.agent.as_str()), (p.as_str(), "codex"));
+        assert!(store.session_ended("s1").is_none());
     }
 
     /// The event name and payload shape the Shared tab listens for.

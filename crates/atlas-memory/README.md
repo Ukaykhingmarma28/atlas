@@ -116,7 +116,8 @@ job carries a `cwd`** so multiple open projects stay isolated.
 |---|---|
 | Project opened (first `engine_for`) | one cold `IndexCorpus{cwd}` + one `Compact{cwd}` |
 | Watched file changes (`*.md`, `CLAUDE.md`, `AGENTS.md`, `codebase-index/docs.json`), debounced ~2s | `IndexCorpus{cwd}` |
-| A chat turn finishes | `IndexCorpus{cwd}` (always) + `ExtractSession{cwd,agent,session}` (only if extraction flag on) |
+| A chat turn finishes | `IndexCorpus{cwd}` (always) + `ExtractSession{cwd,writer,turns}` (the extractor's gated pass) |
+| A session ends | `SessionEnded{cwd,writer}` (the extractor's one end-of-session pass) |
 | `force_reindex(cwd)` | `IndexCorpus{cwd}` |
 
 The worker: gather corpus → `Manifest::diff` (content-hash) → embed only new/changed
@@ -126,23 +127,25 @@ where the vector index was never refreshed mid-session.
 
 ---
 
-## 5. Session extraction (optional, flag-gated)
+## 5. The extractor
 
-When enabled, a finished turn is distilled into durable memories instead of the
-legacy per-turn distiller. Gates (must all hold): **≥20 messages, ≥3 tool calls
-since last extraction, no pending tool_use** — so short chats extract nothing.
+A finished turn and a session's end are distilled into durable shared memory.
+Turn-finished gates (must all hold): **≥20 messages, ≥3 tool calls since the last
+pass (after the first), no pending tool_use**. At session end one more pass runs
+over whatever arrived since the last one, so a short session still contributes.
 
-- Works for **all three agents** via `AgentManager::snapshot` (one normalized
-  transcript shape — no per-agent parsing).
-- The SDK supplies the gates + prompt + parser; **the BYOK LLM call is made by the
-  app layer** (injected, so `atlas-memory` stays provider-free).
-- Output → `extracted/*.md` (Claude-compatible memdir) + the graph, then embedded
-  into HNSW on the same indexer pass.
-- Categories `UserPreference / ProjectFact / CodePattern / Decision / Constraint`
-  map (lossily) to the graph's `MemoryType`, with the precise category kept as a
-  **topic tag**.
-
-**Default OFF.** See §7 for the flag and the A/B plan.
+- Works for **every agent** via the `AgentHost` snapshot (one normalized
+  transcript shape — no per-agent parsing); Atlas's injected blocks are stripped.
+- `extract.rs` owns the gates, the prompt (Decision / Fact / Failure /
+  Architecture, each with a 0–1 confidence) and the parser; **the model call is
+  made by the app layer** (`src-tauri/src/commands/memory_extract.rs`): the Atlas
+  gateway by default when signed in, the BYOK provider when the summariser
+  preference says `provider`, nothing when it says `local` (reserved).
+- Output → the record store (`memory.sqlite`) with source `extractor` and the
+  model's confidence, through redaction and dedup; the Shared tab shows it and
+  the retrieval index is refreshed.
+- `extracted/*.md` is no longer written (existing files were migrated into the
+  record store and are kept one release).
 
 ---
 
@@ -156,7 +159,7 @@ Per project, under `<project>/.atlas/memory/`:
 | `manifest.json` | `{provider_name, dim, next_key, entries:[{id,key,content_hash,corpus,mtime}]}` — id↔u64 key map + incremental ledger |
 | `docstore.json` | `id -> {title, source, text}` for building results (vectors alone have no text) |
 | `graph/` | `graph::GraphMemory` (grafeo) store |
-| `extracted/*.md` | session-extraction output (memdir) |
+| `extracted/*.md` | legacy session-extraction output (memdir; migrated, no longer written) |
 | `.shared-memory-imported` | idempotency marker for the legacy `shared-memory/events.jsonl` import |
 | `.consolidation_state.json` / `.consolidation_lock` | AutoDream consolidation state + lock |
 
@@ -177,7 +180,6 @@ Global, under `~/.atlas/memory/` (override `ATLAS_GLOBAL_MEMORY_DIR`):
 
 | Flag | Default | Effect |
 |---|---|---|
-| `ATLAS_NATIVE_EXTRACTION` | **off** | `1/true/on/yes` → finished turns use the new gated extraction (`extracted/*.md`) and skip the legacy `memory_compile` distiller. The A/B switch — flip on to validate, then it becomes the default and `memory_compile` is removed. |
 | `ATLAS_MINILM_DIR` | unset | Override the MiniLM model directory (otherwise Atlas's standard app-data model path). Used by tests + custom setups. |
 | `ATLAS_GLOBAL_MEMORY_DIR` | `~/.atlas/memory` | Override the global memory dir (tests inject a temp dir so they never touch the real one). |
 | `ENABLE_HYDE_EXPANSION` | off | Enables HyDE/lexical query expansion (the full "Hybrid" mode — higher recall on multi-session questions but much slower; off by default). |
@@ -211,7 +213,7 @@ Tune the consts in `retrieve.rs` / `global.rs`.
 | `migrate.rs` | legacy `memory-index/index.json` → HNSW (no re-embed) |
 | `shared_import.rs` | legacy `shared-memory/events.jsonl` → graph (idempotent) |
 | `retrieve.rs` | fused RRF retrieve + floor + dedup |
-| `extract.rs` | gated session extraction (injected BYOK call) |
+| `extract.rs` | the extractor: gates, four-kind prompt with confidence, parser (model call injected; entries land in the record store via `src-tauri/src/commands/memory_extract.rs`) |
 | `consolidate.rs` | AutoDream-gated prune of the memdir |
 | `global.rs` | cross-project promotion + global store |
 
@@ -226,24 +228,22 @@ App layer: `src-tauri/src/commands/memory_indexer.rs` (registry + indexer + watc
   (store roundtrip, manifest diff, migration, retrieve fusion/floor/dedup, extraction
   gates, consolidation, global promotion). Model-dependent tests skip cleanly unless
   `ATLAS_MINILM_DIR` is set.
-- **Live 3-agent validation** (needs the running app + a BYOK key + the MiniLM model):
-  launch `ATLAS_NATIVE_EXTRACTION=1 bun run dev:app`, drive a tool-heavy session
-  (to clear the extraction gates), then confirm `extracted/*.md` appears and a fresh
-  session recalls the planted facts. Full steps in [`MIGRATION.md`](./MIGRATION.md).
+- **Live 3-agent validation** (needs the running app, a signed-in account or a
+  BYOK summariser, and the MiniLM model): launch `bun run dev:app`, drive a
+  tool-heavy session (to clear the extraction gates) or end a short one, then
+  confirm extractor entries appear on Memory ▸ Shared and a fresh session recalls
+  the planted facts. Full steps in [`MIGRATION.md`](./MIGRATION.md).
 
 ---
 
 ## 11. Rollback / current status
 
-The new engine is the live retrieval path, but two safety nets remain until the
-flag is validated and made default:
-- **`ATLAS_NATIVE_EXTRACTION` default OFF** → the legacy `memory_compile` distiller
-  is still the default capture path.
+The new engine is the live retrieval path. The legacy per-turn distill
+(`memory_compile`) and its A/B flag are gone: the extractor (gateway by default
+when signed in, BYOK when the summariser preference says `provider`) is the only
+LLM writer. One safety net remains:
 - **`retrieve_brute_force`** (the old O(n) cosine path) is retained
   (`#[allow(dead_code)]`) for rollback.
-
-Once live validation passes: flip the flag default-on, delete `retrieve_brute_force`
-and the `memory_compile` distiller (the deferred parts of Steps 8/10 in the plan).
 
 ---
 
@@ -251,7 +251,7 @@ and the `memory_compile` distiller (the deferred parts of Steps 8/10 in the plan
 
 | Symptom | Likely cause / fix |
 |---|---|
-| No `extracted/*.md` after a session | `ATLAS_NATIVE_EXTRACTION` not active (app was already running — relaunch with the flag), or the gates weren't met (need ≥20 msgs + ≥3 tool calls), or no BYOK key for the extraction call. |
+| No extractor entries after a session | Sharing is off for the project, the summariser is `local` (reserved: nothing runs), not signed in with no BYOK provider chosen, or the gates weren't met on turn finish (≥20 msgs, then ≥3 tool calls) and the session has not ended yet. |
 | `search_memory` returns nothing | MiniLM model not present (set `ATLAS_MINILM_DIR` or open the Memory feature to download it), or the index hasn't caught up yet (indexing is debounced/background — wait a couple seconds). |
 | Index seems stale | Trigger `force_reindex(cwd)`, or check the dev-terminal `tracing` logs for `IndexCorpus` jobs. |
 | Want to start a project's memory fresh | Delete `<project>/.atlas/memory/` (and `.atlas/shared-memory/`); it rebuilds on next open. |

@@ -39,6 +39,11 @@ const DEFAULT_ENABLED: bool = true;
 /// `.atlas/memory-summarizer.json`. `mode` is `"raw"` (verbatim tail, the MVP
 /// default), `"provider"` (BYOK one-shot summary), or `"local"` (Phase 5 —
 /// shown in the UI but currently falls back to raw).
+///
+/// The same preference picks the extractor's model
+/// (`super::memory_extract::route_for`): `provider` → this BYOK provider and
+/// model; `local` → no extraction (reserved); anything else (`raw`, the
+/// default, or `gateway`) → the Atlas gateway when signed in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SummarizerPref {

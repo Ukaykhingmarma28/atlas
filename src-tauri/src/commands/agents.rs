@@ -393,7 +393,8 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         // (cheap; no disk I/O). A delta before the session's first `agents_send`
         // has no meta yet → every memory action below is a silent no-op.
         let store = self.app.state::<SharedMemoryStore>();
-        let cwd = store.session_meta(&envelope.session_id).map(|m| m.cwd);
+        let meta = store.session_meta(&envelope.session_id);
+        let cwd = meta.as_ref().map(|m| m.cwd.clone());
 
         let is_turn_finished = matches!(envelope.delta, SessionDelta::TurnFinished { .. });
         let agent_id = envelope.agent_id;
@@ -433,29 +434,34 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
-            // Site B — A/B gate (Step 7). `ATLAS_NATIVE_EXTRACTION` (default OFF)
-            // selects between:
-            //  - ON  → native gated extraction in the background indexer for ALL
-            //          three agents (`Job::ExtractSession`), SKIPPING the legacy
-            //          per-turn BYOK distill. `memory_compile` is only deleted in
-            //          Step 8 once this path is validated.
-            //  - OFF → the current behaviour: spawn `compile_finished_turn` (the
-            //          legacy prose→events distill, itself a no-op unless the
-            //          project's summarizer is a BYOK provider).
-            if native_extraction_enabled() {
-                if let Some(cwd) = cwd.clone() {
-                    let registry = self.app.state::<Arc<MemoryRegistry>>();
-                    let _ = registry.enqueue(super::memory_indexer::Job::ExtractSession {
-                        cwd,
-                        agent: agent_id.0.to_string(),
-                        session: session_id,
-                    });
-                }
-            } else {
+            // Site B — the extractor's turn-finished pass, for every agent
+            // (`super::memory_extract`). The conversation is read now, off the
+            // emit thread — by the time the queue reaches the job the session
+            // may be gone, and its end pass needs these turns — then queued:
+            // the extractor applies the gates (about twenty turns and three
+            // tool calls since the last pass) and asks the gateway or the
+            // user's BYOK provider.
+            if let Some(meta) = meta {
                 let app = self.app.clone();
-                // TODO(step8): remove after ATLAS_NATIVE_EXTRACTION validated
-                tauri::async_runtime::spawn(async move {
-                    super::memory_compile::compile_finished_turn(&app, agent_id, session_id).await;
+                tauri::async_runtime::spawn_blocking(move || {
+                    let key = SessionKey {
+                        agent_id,
+                        session_id: session_id.clone(),
+                    };
+                    let Ok(snapshot) = app.state::<Arc<AgentHost>>().snapshot(&key) else {
+                        return;
+                    };
+                    let job = super::memory_indexer::Job::ExtractSession {
+                        cwd: meta.cwd,
+                        writer: super::shared_memory::Writer {
+                            agent: meta.agent,
+                            session_id,
+                        },
+                        turns: super::memory_extract::transcript_turns(&snapshot.messages),
+                    };
+                    if let Err(e) = app.state::<Arc<MemoryRegistry>>().enqueue(job) {
+                        tracing::debug!(target: "atlas::shared_memory", "turn extraction not queued: {e}");
+                    }
                 });
             }
 
@@ -463,32 +469,14 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             // not session transcripts, so a finished turn needs an explicit nudge to
             // make chat-derived corpus searchable. Fire-and-forget — `enqueue_index`
             // `try_send`s and drops on a full queue, so `emit` never blocks here.
-            // (Fires in BOTH modes; the native path additionally enqueues its own
-            // reindex after writing `extracted/*.md`.)
+            // (The extractor additionally enqueues its own reindex after it
+            // records entries.)
             if let Some(cwd) = cwd {
                 let registry = self.app.state::<Arc<MemoryRegistry>>();
                 registry.enqueue_index(&cwd);
             }
         }
     }
-}
-
-/// A/B flag for Step 7's native session extraction. **Default OFF** so the
-/// legacy `memory_compile` distill keeps running until the new path is validated
-/// on real sessions (Step 8 then removes `memory_compile`).
-///
-/// Set `ATLAS_NATIVE_EXTRACTION` to `1`/`true`/`on`/`yes` (case-insensitive) to
-/// route `TurnFinished` through the background `Job::ExtractSession` path for all
-/// three agents instead.
-fn native_extraction_enabled() -> bool {
-    matches!(
-        std::env::var("ATLAS_NATIVE_EXTRACTION")
-            .ok()
-            .as_deref()
-            .map(|s| s.trim().to_ascii_lowercase())
-            .as_deref(),
-        Some("1" | "true" | "on" | "yes")
-    )
 }
 
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
@@ -560,7 +548,24 @@ impl SharingGatedLifecycle {
                                 memory.session_started(&session_id, &agent, &cwd);
                             }
                         }
-                        LifecycleWrite::Ended { session_id } => memory.session_ended(&session_id),
+                        LifecycleWrite::Ended { session_id } => {
+                            // The end-of-session extraction, queued behind the
+                            // session's last turn-finished pass.
+                            if let Some(ended) = memory.session_ended(&session_id) {
+                                if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
+                                    let job = super::memory_indexer::Job::SessionEnded {
+                                        cwd: ended.cwd,
+                                        writer: super::shared_memory::Writer {
+                                            agent: ended.agent,
+                                            session_id,
+                                        },
+                                    };
+                                    if let Err(e) = registry.enqueue(job) {
+                                        tracing::warn!(target: "atlas::shared_memory", "end-of-session extraction not queued: {e}");
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             })
@@ -653,6 +658,12 @@ pub fn install_manager(app: &AppHandle) {
             let _ = emitter.emit(super::shared_memory::MEMORY_CHANGED_EVENT, change);
         }));
         super::shared_memory::install_embedder(Arc::new(super::memory_indexer::ModelEmbedder::new(app.clone())));
+        // The extractor: durable entries distilled from sessions, through the
+        // gateway or the user's BYOK provider.
+        app.manage(Arc::new(super::memory_extract::Extractor::new(
+            memory.inner().clone(),
+            Arc::new(super::memory_extract::AppExtractionModel::new(app.clone())),
+        )));
         let server = Arc::new(super::memory_server::MemoryServerHost::new());
         app.manage(server.clone());
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone(), server.tokens().clone())));

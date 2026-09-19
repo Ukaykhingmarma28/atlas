@@ -125,8 +125,8 @@ fn save_ledger(dir: &Path, ledger: &Ledger) -> Result<()> {
     write_atomic(&ledger_path(dir), &json)
 }
 
-/// Map a qualifying label onto the graph's coarse [`MemoryType`] (mirrors
-/// `extract::category_to_memory_type`: preference→User, constraint→Project).
+/// Map a qualifying label onto the graph's coarse [`MemoryType`]
+/// (preference→User, constraint→Project).
 fn label_to_memory_type(label: &str) -> MemoryType {
     match label {
         "preference" => MemoryType::User,
