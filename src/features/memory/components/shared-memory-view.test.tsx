@@ -46,6 +46,16 @@ function entry(id: number, content: string, over: Record<string, unknown> = {}) 
 
 let entries: ReturnType<typeof entry>[] = [];
 
+function importLine(id: string, kind: string, content: string, isNew = true) {
+  return { id, kind, content, file: `${id}.md`, claudeType: "project", isNew };
+}
+
+let preview = {
+  sources: ["/home/.claude/projects/-repo/memory"],
+  alreadyImported: false,
+  lines: [] as ReturnType<typeof importLine>[],
+};
+
 beforeEach(() => {
   entries = [
     entry(1, "Mocking the DB hid a migration bug"),
@@ -56,6 +66,15 @@ beforeEach(() => {
       confidence: 0.7,
     }),
   ];
+  preview = {
+    sources: ["/home/.claude/projects/-repo/memory"],
+    alreadyImported: false,
+    lines: [
+      importLine("d1", "decision", "JWT signing uses RS256 instead of HS256"),
+      importLine("f1", "fact", "Merge freeze begins 2026-03-05"),
+      importLine("f2", "fact", "Prefers small PRs", false),
+    ],
+  };
   invoke.mockReset();
   invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
     if (cmd === "memory_get_state") return EMPTY_STATE;
@@ -69,6 +88,22 @@ beforeEach(() => {
       });
       entries = entries.map((e) => (e.id === args.id ? edited : e));
       return edited;
+    }
+    if (cmd === "memory_claude_import_preview") return preview;
+    if (cmd === "memory_claude_import_confirm") {
+      const ids = args.ids as string[];
+      for (const line of preview.lines.filter((l) => ids.includes(l.id))) {
+        entries = [
+          entry(100 + entries.length, line.content, {
+            kind: line.kind,
+            source: "import:claude",
+            agent: "",
+            confidence: 0.7,
+          }),
+          ...entries,
+        ];
+      }
+      return ids.length;
     }
     if (cmd === "memory_forget_entry") {
       entries = entries.filter((e) => e.id !== args.id);
@@ -129,5 +164,67 @@ describe("the Shared tab's Memories table", () => {
 
     expect(invoke).toHaveBeenCalledWith("memory_forget_entry", { projectPath: "/repo", id: 2 });
     await waitFor(() => expect(screen.queryByText("Prefers small PRs")).toBeNull());
+  });
+});
+
+describe("importing Claude's auto-memory", () => {
+  async function openImport() {
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Import Claude memory" }));
+    return { user, dialog: await screen.findByRole("dialog") };
+  }
+
+  it("previews every mapped line with its kind before anything is written", async () => {
+    const { dialog } = await openImport();
+    const decision = (
+      await within(dialog).findByText("JWT signing uses RS256 instead of HS256")
+    ).closest("button")!;
+    expect(within(decision).getByText("decision")).toBeTruthy();
+    const fact = within(dialog).getByText("Merge freeze begins 2026-03-05").closest("button")!;
+    expect(within(fact).getByText("fact")).toBeTruthy();
+    // A line the record already holds is listed but cannot be picked.
+    const held = within(dialog).getByText("Prefers small PRs").closest("button")!;
+    expect((held as HTMLButtonElement).disabled).toBe(true);
+    expect(within(held).getByText("already in memory")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledWith("memory_claude_import_preview", { projectPath: "/repo" });
+    expect(invoke).not.toHaveBeenCalledWith("memory_claude_import_confirm", expect.anything());
+  });
+
+  it("writes the kept lines on confirm and shows them among the memories", async () => {
+    const { user, dialog } = await openImport();
+    // Untick the freeze line.
+    await user.click(await within(dialog).findByText("Merge freeze begins 2026-03-05"));
+    await user.click(within(dialog).getByRole("button", { name: /^Import/ }));
+
+    expect(invoke).toHaveBeenCalledWith("memory_claude_import_confirm", {
+      projectPath: "/repo",
+      ids: ["d1"],
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const row = (await screen.findByText("JWT signing uses RS256 instead of HS256")).closest(
+      "button",
+    )!;
+    expect(within(row).getByText("import · claude")).toBeTruthy();
+  });
+
+  it("writes nothing when cancelled", async () => {
+    const { user, dialog } = await openImport();
+    await within(dialog).findByText("Merge freeze begins 2026-03-05");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(invoke).not.toHaveBeenCalledWith("memory_claude_import_confirm", expect.anything());
+  });
+
+  it("offers nothing when the source was already imported", async () => {
+    preview = {
+      ...preview,
+      alreadyImported: true,
+      lines: preview.lines.map((l) => ({ ...l, isNew: false })),
+    };
+    const { dialog } = await openImport();
+    expect(await within(dialog).findByText(/Already imported/)).toBeTruthy();
+    const confirm = within(dialog).getByRole("button", { name: /^Import/ }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
   });
 });

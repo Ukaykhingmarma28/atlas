@@ -14,12 +14,16 @@
 // Memories: every record entry with its provenance (source, agent) and
 // confidence. The user can edit one (written as source `user`, confidence 1)
 // or forget it; both go through the backend, which announces the change.
+//
+// Import: the user can pull the project's Claude auto-memory in. The preview
+// writes nothing; only confirming (with the lines the user kept) writes.
 
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { createSelectors } from "@/lib/create-selectors";
 import {
   sharedMemory,
+  type ClaudeImportPreview,
   type MemoryEntry,
   type MemoryEvent,
   type SharedState,
@@ -63,6 +67,11 @@ interface SharedMemoryStore {
     editEntry: (id: number, content: string) => Promise<void>;
     /** Forget (delete) an entry. Throws on failure. */
     forgetEntry: (id: number) => Promise<void>;
+    /** What importing Claude's auto-memory would write. Reads only. */
+    previewClaudeImport: () => Promise<ClaudeImportPreview | null>;
+    /** Import the previewed lines in `ids`; returns how many were written.
+     *  Throws on failure. */
+    importClaude: (ids: string[]) => Promise<number>;
   };
 }
 
@@ -181,6 +190,18 @@ export const useSharedMemoryStore = createSelectors(
         if (get().projectPath !== projectPath) return;
         set({ entries: get().entries.filter((e) => e.id !== id) });
         await get().actions.refresh();
+      },
+      previewClaudeImport: async () => {
+        const { projectPath } = get();
+        if (!projectPath) return null;
+        return sharedMemory.previewClaudeImport(projectPath);
+      },
+      importClaude: async (ids) => {
+        const { projectPath } = get();
+        if (!projectPath) return 0;
+        const written = await sharedMemory.confirmClaudeImport(projectPath, ids);
+        await get().actions.refresh();
+        return written;
       },
     },
   })),

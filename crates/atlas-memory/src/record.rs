@@ -617,6 +617,12 @@ impl RecordStore {
         Ok(self.write_entry(e, None)?.entry)
     }
 
+    /// [`upsert`](Self::upsert), saying what the write did (inserted,
+    /// replaced, or merged into an entry already stored).
+    pub fn upsert_outcome(&self, e: NewEntry) -> Result<Remembered> {
+        self.write_entry(e, None)
+    }
+
     /// Write one entry as an agent's deliberate memory (a tool write): the
     /// [`upsert`](Self::upsert) rules — key replaces, same hash or a
     /// near-duplicate merges — plus, when something new was stored (not a
@@ -805,6 +811,32 @@ impl RecordStore {
             }
         }
         Ok(entry)
+    }
+
+    /// Whether an entry of `kind` already holds `content` (by the redacted,
+    /// normalised content hash — the identity a keyless write would merge on).
+    pub fn holds_content(&self, kind: EntryKind, content: &str) -> Result<bool> {
+        let hash = content_hash(&redact_text(content.trim()));
+        let conn = self.conn();
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM entries WHERE kind = ?1 AND content_hash = ?2)",
+            params![kind.as_str(), hash],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Whether the one-time import from `source` has run (the `legacy_imports`
+    /// gate the legacy migration uses; any source name works).
+    pub fn import_recorded(&self, source: &str) -> Result<bool> {
+        let conn = self.conn();
+        Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM legacy_imports WHERE source = ?1)", [source], |r| r.get(0))?)
+    }
+
+    /// Record that the one-time import from `source` ran at `at`. Idempotent.
+    pub fn mark_imported(&self, source: &str, at: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("INSERT OR IGNORE INTO legacy_imports (source, at) VALUES (?1, ?2)", params![source, at])?;
+        Ok(())
     }
 
     /// Entries relevant to `query`, best first, at most `limit`, optionally

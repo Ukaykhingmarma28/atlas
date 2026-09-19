@@ -621,7 +621,7 @@ pub(crate) fn claude_memory_dir(project_path: &str) -> std::path::PathBuf {
 /// themselves belong to another program and are left exactly as they are.
 ///
 /// `None` for a file that does not exist, same as the plain read it replaces.
-fn read_without_injected_context(path: &Path) -> Option<String> {
+pub(crate) fn read_without_injected_context(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     Some(atlas_agent_transcript::strip_injected_context(&raw))
 }
@@ -684,17 +684,17 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
 }
 
 #[derive(Default)]
-struct Frontmatter {
-    name: Option<String>,
-    description: Option<String>,
-    kind: Option<String>,
+pub(crate) struct Frontmatter {
+    pub(crate) name: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) kind: Option<String>,
 }
 
 /// Minimal YAML-frontmatter reader. We only need three scalar fields
 /// (`name`, `description`, `metadata.type`), so a line scan beats pulling in
 /// a YAML crate. Returns the parsed fields and the body with the frontmatter
 /// block removed.
-fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
+pub(crate) fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
     let mut fm = Frontmatter::default();
     let trimmed = raw.strip_prefix('\u{feff}').unwrap_or(raw);
     let lines: Vec<&str> = trimmed.lines().collect();
@@ -711,9 +711,12 @@ fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
     for line in &lines[1..close] {
         let indented = line.starts_with(' ') || line.starts_with('\t');
         let kv = line.trim();
-        if kv == "metadata:" {
-            in_metadata = true;
-            continue;
+        if !indented {
+            // A top-level key closes the `metadata:` block.
+            in_metadata = kv == "metadata:";
+            if in_metadata {
+                continue;
+            }
         }
         if let Some((k, v)) = kv.split_once(':') {
             let key = k.trim();
@@ -722,6 +725,11 @@ fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
                 "name" if !indented => fm.name = Some(val),
                 "description" if !indented => fm.description = Some(val),
                 "type" if in_metadata && indented => fm.kind = Some(val),
+                // Claude's documented form: `type:` at the top level. The
+                // nested `metadata.type` wins when a file has both.
+                "type" if !indented => {
+                    fm.kind.get_or_insert(val);
+                }
                 _ => {}
             }
         }

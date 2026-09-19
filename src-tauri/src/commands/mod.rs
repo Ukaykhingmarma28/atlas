@@ -2,6 +2,7 @@ pub mod agent_entitlement;
 pub mod agent_host;
 pub mod agent_analytics;
 pub mod agent_memory;
+pub mod claude_memory_import;
 pub mod auth;
 pub mod save_guard;
 pub mod agent_transcript;

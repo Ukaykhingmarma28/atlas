@@ -447,7 +447,8 @@ impl SharedMemoryStore {
         *self.inner.on_change.lock() = Some(listener);
     }
 
-    fn announce(&self, store: &RecordStore, kinds: &[&str]) {
+    /// Tell the change listener that a write to `store` touched `kinds`.
+    pub(crate) fn announce(&self, store: &RecordStore, kinds: &[&str]) {
         let listener = self.inner.on_change.lock().clone();
         if let Some(listener) = listener {
             listener(&MemoryChanged {
@@ -455,6 +456,11 @@ impl SharedMemoryStore {
                 kinds: kinds.iter().map(|k| (*k).to_string()).collect(),
             });
         }
+    }
+
+    /// The store's clock, in ms.
+    pub(crate) fn now(&self) -> i64 {
+        (self.inner.clock)()
     }
 
     // ── Session routing ──────────────────────────────────────────────────────

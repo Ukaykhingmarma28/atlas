@@ -88,6 +88,29 @@ export interface MemoryEntry {
   uses: number;
 }
 
+/** One line an import of Claude's auto-memory would write (the preview). */
+export interface ClaudeImportLine {
+  /** Stable id of the line; what confirm takes. */
+  id: string;
+  /** `fact`, or `decision` for a project memory that states a choice. */
+  kind: EntryKind;
+  content: string;
+  /** The Claude memory file it came from. */
+  file: string;
+  /** Claude's own frontmatter `type` (`user`, `feedback`, `project`, `reference`). */
+  claudeType: string;
+  /** `false` when already imported or already in memory: confirm skips it. */
+  isNew: boolean;
+}
+
+export interface ClaudeImportPreview {
+  /** The Claude memory directories read for this repository. */
+  sources: string[];
+  /** Every source was imported before (once per source). */
+  alreadyImported: boolean;
+  lines: ClaudeImportLine[];
+}
+
 export const sharedMemory = {
   getState: (projectPath: string) => invoke<SharedState>("memory_get_state", { projectPath }),
   query: (projectPath: string, query: string, limit = 20) =>
@@ -102,6 +125,13 @@ export const sharedMemory = {
   /** Forget (delete) an entry. `false` when it was already gone. */
   forgetEntry: (projectPath: string, id: number) =>
     invoke<boolean>("memory_forget_entry", { projectPath, id }),
+  /** What importing the project's Claude auto-memory would write. Writes nothing. */
+  previewClaudeImport: (projectPath: string) =>
+    invoke<ClaudeImportPreview>("memory_claude_import_preview", { projectPath }),
+  /** Import the previewed lines in `ids` (source `import:claude`, confidence 0.7).
+   *  Returns how many were written. */
+  confirmClaudeImport: (projectPath: string, ids: string[]) =>
+    invoke<number>("memory_claude_import_confirm", { projectPath, ids }),
   appendEvent: (
     projectPath: string,
     agent: string,

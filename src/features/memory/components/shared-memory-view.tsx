@@ -12,6 +12,10 @@
 // its confidence. An expanded row edits the entry in place (the Policy view's
 // draft/save/revert pattern) or forgets it behind the file tree's confirm
 // dialog; both write through the backend, which announces the change.
+//
+// The toolbar's import action pulls the project's Claude auto-memory in: a
+// dialog (the Import sessions modal's shell) previews every mapped line with
+// its kind, and only its Import button writes — Cancel writes nothing.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,7 +33,9 @@ import {
   Pencil,
   X,
   Loader2,
+  Download,
 } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
@@ -38,7 +44,12 @@ import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
-import type { MemoryEntry, MemoryEvent } from "../lib/shared-memory-api";
+import type {
+  ClaudeImportLine,
+  ClaudeImportPreview,
+  MemoryEntry,
+  MemoryEvent,
+} from "../lib/shared-memory-api";
 
 interface Props {
   projectPath: string;
@@ -135,6 +146,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
   const [tab, setTab] = useState<Tab>("events");
   const [query, setQuery] = useState("");
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (projectPath) void load(projectPath);
@@ -259,10 +271,18 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         <IconButton label="Refresh" onClick={() => void refresh()}>
           <RefreshCw size={12} />
         </IconButton>
+        <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
+          <Download size={12} />
+        </IconButton>
         <IconButton label="Clear shared memory" onClick={() => void clear()}>
           <Trash2 size={12} />
         </IconButton>
       </div>
+      <ImportClaudeMemoryModal
+        open={importing}
+        onOpenChange={setImporting}
+        onImported={() => setTab("memories")}
+      />
 
       {/* Body */}
       {!loaded ? (
@@ -710,6 +730,186 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
         onOpenChange={setConfirmForget}
       />
     </div>
+  );
+}
+
+/* ── Import of Claude's auto-memory ──────────────────────────────────────────── */
+
+const NO_PREVIEW: ClaudeImportPreview = { sources: [], alreadyImported: false, lines: [] };
+
+/** Preview, then consent: every line Claude's auto-memory maps to, with its
+ *  kind; the new ones start ticked. Only Import writes. Composed from the
+ *  Import sessions modal's Dialog shell, tokens and type scale. */
+function ImportClaudeMemoryModal({
+  open,
+  onOpenChange,
+  onImported,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const { previewClaudeImport, importClaude } = useSharedMemoryStore.use.actions();
+  const [preview, setPreview] = useState<ClaudeImportPreview | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setPreview(null);
+      setSelected(new Set());
+      return;
+    }
+    let cancelled = false;
+    void previewClaudeImport()
+      .then((found) => {
+        if (cancelled) return;
+        const p = found ?? NO_PREVIEW;
+        setPreview(p);
+        setSelected(new Set(p.lines.filter((l) => l.isNew).map((l) => l.id)));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setPreview(NO_PREVIEW);
+        toast.error(`Couldn't read Claude's memory: ${String(err)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, previewClaudeImport]);
+
+  const toggle = (id: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  const runImport = async () => {
+    setImporting(true);
+    try {
+      const count = await importClaude([...selected]);
+      toast.success(
+        count === 0
+          ? "Nothing new to import"
+          : `Imported ${count} ${count === 1 ? "memory" : "memories"} from Claude`,
+      );
+      onOpenChange(false);
+      onImported();
+    } catch (err) {
+      toast.error(`Import failed: ${String(err)}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const fresh = preview?.lines.filter((l) => l.isNew).length ?? 0;
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className={cn(
+            "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
+            "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
+            "border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
+          )}
+        >
+          <div className="flex items-center gap-3 border-b border-border-default px-4 py-2.5">
+            <Dialog.Title className="text-[13px] font-semibold text-text-primary">
+              Import Claude memory
+            </Dialog.Title>
+            <Dialog.Close
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </Dialog.Close>
+          </div>
+
+          <p className="px-4 pt-3 text-[11px] leading-relaxed text-text-tertiary">
+            {preview?.alreadyImported
+              ? "Already imported: Claude's memory for this project was brought in before, so there is nothing new to import."
+              : "Bring the memories Claude Code kept for this project into shared memory, so every agent sees them. Imported lines are marked as from Claude, at 70% confidence."}
+          </p>
+
+          <div className="flex-1 overflow-auto hide-scrollbar px-2 py-2">
+            {preview === null ? (
+              <div className="px-2 py-6 text-center text-[11px] text-text-tertiary">
+                Reading Claude's memory…
+              </div>
+            ) : preview.lines.length === 0 ? (
+              <div className="px-2 py-6 text-center text-[11px] text-text-tertiary">
+                Claude has no memory for this project.
+              </div>
+            ) : (
+              preview.lines.map((line) => (
+                <ImportLineRow
+                  key={line.id}
+                  line={line}
+                  checked={selected.has(line.id)}
+                  onToggle={() => toggle(line.id)}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-[11px] text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer">
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={importing || fresh === 0 || selected.size === 0}
+              onClick={() => void runImport()}
+              className={cn(
+                "rounded px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer",
+                "bg-accent text-text-inverse hover:bg-accent-hover",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              {importing ? "Importing…" : selected.size > 0 ? `Import ${selected.size}` : "Import"}
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function ImportLineRow({
+  line,
+  checked,
+  onToggle,
+}: {
+  line: ClaudeImportLine;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      disabled={!line.isNew}
+      onClick={onToggle}
+      title={line.file}
+      className={cn(
+        "flex items-center gap-1.5 w-full rounded px-2 py-1.5 text-left transition-colors",
+        !line.isNew && "cursor-not-allowed opacity-60",
+        line.isNew && (checked ? "bg-bg-selected" : "cursor-pointer hover:bg-bg-hover"),
+      )}
+    >
+      <span className="w-[64px] shrink-0">
+        <KindChip kind={line.kind} />
+      </span>
+      <span className="flex-1 min-w-0 truncate text-[11px] text-text-primary">{line.content}</span>
+      {!line.isNew && (
+        <span className="shrink-0 text-[10px] text-text-tertiary">already in memory</span>
+      )}
+      {checked && <Check size={12} className="text-text-secondary shrink-0" />}
+    </button>
   );
 }
 
