@@ -96,7 +96,7 @@ decisions and ticket order.
 | 5 | **Sharing settings** | `memory_sharing.rs` | `<project>/.atlas/memory-sharing.json`, `memory-summarizer.json` (`memory_sharing.rs:73-78`) | JSON; sharing defaults **on** (`:34`) | `agents_send` | Memory ▸ Sharing controls |
 | 6 | **Global memory** | `atlas-memory/src/global.rs` | `~/.atlas/memory/` → `global-graph/`, `MEMORY.md` (<200 lines), `global-candidates.json` (`global.rs:17-25`) | graph + markdown + JSON ledger | `retrieve.rs:283` blend when local memory is sparse | `consolidate.rs:141` promotion (preference/constraint, confidence ≥0.8, seen in ≥2 projects; `global.rs:9-14`) |
 | 7 | **Session capture** | `atlas-checkpoint` via `capture.rs` | per-Workspace store (`capture.rs:1-6`) | app-owned transcripts for **every** agent (`agents.rs:283-292`) | `read_capture_docs` (`agent_memory.rs:312`), past-session `@`-mentions, handoff | `OutboundPipeline` stage on every delta |
-| 8 | *(legacy)* flat vector index | `memory_graph.rs` | `<project>/.atlas/memory-index/index.json` (`memory_graph.rs:109-113`) | JSON blob | migrated once by `migrate.rs` | nothing new; path still referenced |
+| 8 | *(legacy, removed in #90)* flat vector index | `memory_graph.rs` | `<project>/.atlas/memory-index/index.json` | JSON blob | was still read by Graph query + Policy until #90, which moved both onto store 1 | was still rewritten by every Graph build until #90; now nothing |
 | F1 | *(foreign, read-only)* Claude Code memory | Claude Code | `~/.claude/projects/<encoded-cwd>/memory/*.md` + `MEMORY.md`, `./CLAUDE.md`, `~/.claude/CLAUDE.md` (`agent_memory.rs:4-7`, `collect_corpus`) | markdown with YAML frontmatter | corpus, Memory ▸ Policy (`memory_policy.rs:1-8`) | Claude Code itself |
 | F2 | *(foreign, read-only)* Codex CLI | Codex CLI | `~/.codex/state_*.sqlite` threads by cwd, `./AGENTS.md` (`agent_memory.rs:7-10`) | SQLite + markdown | corpus, Memory panel thread list (flagged in `CONTEXT.md:22`) | Codex CLI itself |
 | F3 | *(engine, dormant)* Codex-fork memories | `vendor/codex/memories/{read,write}` | `<engine home>/memories` (`vendor/codex/memories/read/src/lib.rs:13-15`) | startup extraction pipeline from rollouts, phase 1/2 prompts (`memories/write/src/lib.rs:1-5`) | the fork, if enabled | the fork, if enabled. Feature key `memories` is `Stable` but `default_enabled: false` (`vendor/codex/features/src/lib.rs:951-955`); `use_memories` defaults true (`vendor/codex/config/src/types.rs:344`) but is ANDed with the feature (`core/src/config/mod.rs:3929`). Atlas's overrides never touch it (`crates/atlas-native-agent/src/engine/config.rs:307-328`) → **off** |
@@ -205,8 +205,8 @@ Registered memory-family commands in `src-tauri/src/lib.rs`: 57. Frontend
 
 | Command | Status |
 |---------|--------|
-| `import_into_knowledge` | dead |
-| `knowledge_export_server` | dead |
+| `import_into_knowledge` | ~~dead~~ **live** — corrected in #90: invoked across lines from `knowledge-panel.tsx` (Import files / folder); kept |
+| `knowledge_export_server` | ~~dead~~ **live** — corrected in #90: invoked across lines from `editor-footer.tsx` (Export server); kept |
 
 Everything else is wired. `memory_compile` carries `TODO(step8): remove`
 (`agents.rs:456`).

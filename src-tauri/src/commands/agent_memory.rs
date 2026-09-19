@@ -13,19 +13,8 @@
 //! to empty sections rather than erroring the whole command.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
-
-/// App config dir holding `cersei-sessions/` — set once at startup
-/// (`install_manager`) so the corpus reader can find native-agent transcripts
-/// without threading an `AppHandle` through `collect_corpus`'s many callers.
-static CERSEI_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
-
-/// Record where the native agent persists its sessions (called from startup).
-pub fn set_cersei_config_dir(dir: PathBuf) {
-    let _ = CERSEI_CONFIG_DIR.set(dir);
-}
 
 #[derive(Debug, Serialize)]
 pub struct MemoryFile {
@@ -277,7 +266,6 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
     // in the separate `codebase_index_build` command.
     docs.extend(read_codebase_docs(&project_path));
     docs.extend(read_shared_memory_docs(&project_path));
-    docs.extend(read_cersei_docs(&project_path));
     // Fold the knowledge base in (source "note") so KB notes are retrievable by
     // every agent through the same embedding + the `memory_search` tool — they
     // were previously reachable ONLY via manual `~`/`@note` mentions.
@@ -295,18 +283,19 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
 }
 
 /// Agents whose sessions are already indexed by a dedicated, richer reader —
-/// the capture fallback must skip them or every Claude/Codex/cersei session
-/// would enter the corpus twice under two different sources.
+/// the capture fallback must skip them or every Claude/Codex session would
+/// enter the corpus twice under two different sources. The native agent has no
+/// dedicated reader, so its sessions come from capture like any plugin's.
 fn capture_covered_agent(agent: &str) -> bool {
-    agent.starts_with("claude") || agent == "codex" || agent == "cersei"
+    agent.starts_with("claude") || agent == "codex"
 }
 
 /// Generic corpus reader over Atlas's OWN capture store (`.atlas/sessions.db`,
 /// atlas-checkpoint). The capture middleware records EVERY agent's sessions +
 /// redacted message bodies with the plugin id in the `agent` column, so this
-/// one reader gives opencode / cursor / kilo — and any future ACP plugin —
-/// memory-corpus coverage with zero per-agent code. `source` is the plugin id
-/// verbatim (it becomes the Graph corpus + the Memory tab's agent grouping).
+/// one reader gives the native agent, opencode / cursor / kilo — and any future
+/// ACP plugin — memory-corpus coverage with zero per-agent code. `source` is
+/// the plugin id verbatim (it becomes the Graph corpus + the Memory tab's agent grouping).
 /// No-op when capture is disabled for the project — those agents then
 /// contribute only via the promoted shared-memory events, same as before.
 fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
@@ -335,8 +324,8 @@ fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
         }
         let messages = store.messages_for_session(&s.id).unwrap_or_default();
         // Transcript text from the always-inline 2 KB previews (bounded, role
-        // tagged, injection-stripped) — parity between Codex's title-only docs
-        // and cersei's full transcripts without pulling spilled blobs.
+        // tagged, injection-stripped) — bounded transcripts without pulling
+        // spilled blobs.
         let mut text = String::new();
         let mut first_user = String::new();
         for m in &messages {
@@ -425,24 +414,6 @@ fn read_knowledge_docs(project_path: &str) -> Vec<MemoryDoc> {
             }
         })
         .collect()
-}
-
-/// Native session transcripts, for the memory corpus.
-///
-/// Empty since #54. It read the Cersei runtime's own session JSON, which no
-/// longer exists — the ported engine keeps its working storage in a different
-/// shape, and pointing this at it would recreate the scrape-reader pattern
-/// ADR-0001 removed.
-///
-/// The narrowing is D8's and accepted: the agent's own conversations drop out
-/// of Memory ▸ Chat / Graph until the corpus is re-sourced from engine
-/// rollouts, which is spec open question 8 — a decision, not an omission. Every
-/// other corpus source (Claude, Codex, shared memory, files) is untouched.
-///
-/// Kept as a named function rather than deleted at the call site so the gap has
-/// somewhere to be documented, and somewhere obvious to be filled.
-fn read_cersei_docs(_project_path: &str) -> Vec<MemoryDoc> {
-    Vec::new()
 }
 
 /// v3 Write half — surface the project's shared memory (durable kinds) into
@@ -921,8 +892,8 @@ mod tests {
                     },
                     &wire,
                     1,
-                    // Not claude/codex/cersei: those have richer readers of their
-                    // own and `read_capture_docs` skips them.
+                    // Not claude/codex: those have richer readers of their own
+                    // and `read_capture_docs` skips them.
                     Some("opencode"),
                     None,
                     Some(&project),
@@ -938,6 +909,45 @@ mod tests {
                 assert!(!field.contains(leaked), "{leaked:?} survived into the corpus");
             }
         }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The native agent has no dedicated corpus reader (its old Cersei session
+    /// reader is gone), so its conversations reach the corpus the same way every
+    /// other capture-only agent's do: through Atlas's own capture store.
+    #[test]
+    fn a_native_agent_session_reaches_the_corpus_through_capture() {
+        use atlas_checkpoint::{model::WorkspaceMode, Capture, SessionKey, Source, Store};
+
+        let dir = scratch();
+        let project = dir.to_string_lossy().to_string();
+        {
+            let mut store = Store::open(dir.join(".atlas")).expect("store opens");
+            let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+            capture
+                .record_prompt(
+                    &SessionKey {
+                        workspace_id: project.clone(),
+                        source: Source::Acp,
+                        native_session_id: "native-1".into(),
+                    },
+                    "refactor the retry loop in the gateway client",
+                    1,
+                    Some(atlas_native_agent::CERSEI_AGENT_ID),
+                    None,
+                    Some(&project),
+                )
+                .expect("prompt recorded");
+        }
+
+        let docs = read_capture_docs(&project);
+        let doc = docs
+            .iter()
+            .find(|d| d.id == "cersei:native-1")
+            .expect("the native session is in the corpus");
+        assert_eq!(doc.source, "cersei");
+        assert!(doc.text.contains("refactor the retry loop in the gateway client"));
 
         std::fs::remove_dir_all(&dir).ok();
     }

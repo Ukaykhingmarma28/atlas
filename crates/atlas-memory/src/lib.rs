@@ -22,9 +22,6 @@ pub mod manifest;
 pub mod provider;
 pub mod store;
 
-// Step 3 (implemented): migrate (legacy index.json import, zero re-embedding).
-pub mod migrate;
-
 // Step 6 (implemented): docstore (id→display-text side-map) + retrieve (HNSW,
 // with the global blend). `retrieve` only adds an `impl MemoryEngine`, so it is a
 // plain child module (private) — it reaches the engine's private fields as a
@@ -59,7 +56,6 @@ pub use global::{global_recall, promote_facts, CandidateEntry};
 pub use docstore::{DocStore, DocText};
 pub use extract::{extract, parse_extracted, should_extract, ExtractState, Extracted, TranscriptTurn, Trigger};
 pub use manifest::{Diff, Entry, Manifest};
-pub use migrate::{migrate, MigrationOutcome};
 pub use provider::{MiniLmProvider, DIM, PROVIDER_NAME};
 pub use store::HnswStore;
 
@@ -77,7 +73,7 @@ use embedding::EmbeddingProvider;
 ///
 /// `content_hash` is the caller's stable hash of the embeddable `text` — the
 /// manifest diffs on it, so an unchanged doc is never re-embedded. `corpus` is a
-/// free-form origin tag (`"claude"`, `"codebase"`, `"legacy"`, …) recorded on the
+/// free-form origin tag (`"claude"`, `"codebase"`, `"note"`, …) recorded on the
 /// manifest entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorpusDoc {
@@ -133,7 +129,6 @@ impl MemoryEngine {
     /// Open-or-create the engine for a project. Loads the persisted HNSW +
     /// manifest if present under `<project_root>/.atlas/memory/`, otherwise
     /// starts empty (the dir is created lazily on first [`persist`](Self::persist)).
-    /// Runs the legacy flat-index migration (Step 3).
     pub fn open(project_root: PathBuf) -> Self {
         let memory_dir = project_root.join(".atlas").join("memory");
         let manifest_path = memory_dir.join("manifest.json");
@@ -146,7 +141,7 @@ impl MemoryEngine {
             DocStore::load(&memory_dir.join("docstore.json")).unwrap_or_else(|_| DocStore::new());
 
         // Open the store at the dim the manifest recorded — a project rebuilt with
-        // a 768-d model reopens at 768, a legacy/fresh project at the 384 default.
+        // a 768-d model reopens at 768, a fresh project at the 384 default.
         // A model switch is reconciled later by `index_params_match` + `reset_index`.
         let store_dim = manifest.dim;
         let store = if hnsw_path.exists() {
@@ -158,28 +153,13 @@ impl MemoryEngine {
             HnswStore::open(store_dim).expect("usearch index create")
         };
 
-        let mut engine = Self {
+        Self {
             project_root,
             memory_dir,
             store,
             manifest,
             docstore,
-        };
-
-        // Step 3: import a legacy `.atlas/memory-index/index.json` (if present)
-        // into the HNSW store + manifest with zero re-embedding. Idempotent — a
-        // successful import archives the legacy file to `.bak`, so this is a
-        // no-op on every subsequent open. A model/dim mismatch leaves the legacy
-        // file in place for a future rebuild.
-        match migrate::migrate(&mut engine) {
-            Ok(migrate::MigrationOutcome::Imported { count }) => {
-                tracing::info!(count, "migrated legacy memory index into HNSW store");
-            }
-            Ok(_) => {}
-            Err(e) => tracing::warn!("legacy memory migration failed: {e}"),
         }
-
-        engine
     }
 
     /// On-disk memory dir for this project (`<root>/.atlas/memory/`).
@@ -337,6 +317,87 @@ impl MemoryEngine {
         })
     }
 
+    /// The stored vector for `id` while its indexed content still hashes to
+    /// `content_hash`; `None` when the doc is unindexed or its content changed.
+    /// Lets Memory ▸ Graph and the Policy view reuse the index instead of
+    /// re-embedding.
+    pub fn cached_vector(&self, id: &str, content_hash: &str) -> Option<Vec<f32>> {
+        let entry = self.manifest.entries.iter().find(|e| e.id == id)?;
+        if entry.content_hash != content_hash {
+            return None;
+        }
+        self.store.get(entry.key)
+    }
+
+    /// Add docs the caller has already embedded (Memory ▸ Graph embeds what the
+    /// indexer has not reached yet), replacing any prior vector for the same
+    /// id, and persist. Unlike [`index_corpus`](Self::index_corpus) this never
+    /// deletes docs missing from `docs`.
+    pub fn add_embedded(&mut self, docs: &[(CorpusDoc, Vec<f32>)]) -> anyhow::Result<()> {
+        for (doc, vector) in docs {
+            if vector.len() != self.manifest.dim {
+                anyhow::bail!(
+                    "embedding dim {} != index dim {}",
+                    vector.len(),
+                    self.manifest.dim
+                );
+            }
+            let key = self.manifest.assign_key(&doc.id);
+            let _ = self.store.remove(key);
+            self.store.add(key, vector)?;
+            self.manifest.upsert(&doc.id, &doc.content_hash, &doc.corpus, 0);
+            let (title, body) = docstore::split_embedded(&doc.text);
+            self.docstore.upsert(
+                &doc.id,
+                DocText {
+                    title,
+                    source: doc.corpus.clone(),
+                    text: body,
+                },
+            );
+        }
+        self.persist()
+    }
+
+    /// Top-`k` `(doc id, similarity)` for an already-embedded query, best first,
+    /// skipping docs whose corpus is in `exclude_corpora`. Memory ▸ Graph's
+    /// natural-language query.
+    pub fn search_ids(
+        &self,
+        query: &[f32],
+        k: usize,
+        exclude_corpora: &[&str],
+    ) -> anyhow::Result<Vec<(String, f32)>> {
+        let corpus_of: std::collections::HashMap<u64, (&str, &str)> = self
+            .manifest
+            .entries
+            .iter()
+            .map(|e| (e.key, (e.id.as_str(), e.corpus.as_str())))
+            .collect();
+        let total = self.store.len();
+        // Excluded corpora (the codebase) can dominate the index, so widen the
+        // search until `k` eligible hits survive the filter or the whole index
+        // has been ranked — rather than always scanning everything.
+        let mut fetch = (k * 4).max(32);
+        loop {
+            let fetch_now = fetch.min(total);
+            let hits: Vec<(String, f32)> = self
+                .store
+                .search(query, fetch_now)?
+                .into_iter()
+                .filter_map(|(key, score)| {
+                    let (id, corpus) = corpus_of.get(&key)?;
+                    (!exclude_corpora.contains(corpus)).then(|| (id.to_string(), score))
+                })
+                .take(k)
+                .collect();
+            if hits.len() >= k || fetch_now >= total {
+                return Ok(hits);
+            }
+            fetch = fetch.saturating_mul(4);
+        }
+    }
+
     // `retrieve` (Step 6) is implemented in `retrieve.rs` as an `impl MemoryEngine`.
 }
 
@@ -434,6 +495,90 @@ mod index_corpus_tests {
         }
         assert_eq!(engine.store.len(), 2);
         assert!(engine.manifest.key_for("a").is_none());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn axis(seed: usize) -> Vec<f32> {
+        let mut x = vec![0.0f32; DIM];
+        x[seed % DIM] = 1.0;
+        x
+    }
+
+    /// The Memory ▸ Graph view embeds docs the indexer hasn't reached yet and
+    /// hands those vectors back, so neither it nor the indexer embeds them again.
+    #[test]
+    fn embedded_docs_are_reused_only_while_their_content_is_unchanged() {
+        let root = tmp_root("reuse");
+        let mut engine = MemoryEngine::open(root.clone());
+        engine
+            .add_embedded(&[(doc("note:a", "Title\n\nbody a", "h_a"), axis(3))])
+            .unwrap();
+
+        assert_eq!(engine.cached_vector("note:a", "h_a"), Some(axis(3)));
+        assert_eq!(engine.cached_vector("note:a", "h_changed"), None, "stale content");
+        assert_eq!(engine.cached_vector("note:missing", "h_a"), None);
+
+        // Persisted: a reopened engine still has it, and the indexer sees the
+        // doc as unchanged (no re-embed).
+        drop(engine);
+        let reopened = MemoryEngine::open(root.clone());
+        assert_eq!(reopened.cached_vector("note:a", "h_a"), Some(axis(3)));
+        let diff = reopened
+            .manifest
+            .diff(&[("note:a".to_string(), "h_a".to_string())]);
+        assert!(diff.add.is_empty() && diff.update.is_empty());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Adding the Graph's vectors never drops docs the indexer already holds
+    /// (unlike `index_corpus`, which deletes whatever the given corpus lacks).
+    #[test]
+    fn adding_embedded_docs_keeps_everything_else() {
+        let root = tmp_root("keep");
+        let mut engine = MemoryEngine::open(root.clone());
+        engine
+            .add_embedded(&[(doc("codebase:src/a.rs", "a", "h1"), axis(1))])
+            .unwrap();
+        engine
+            .add_embedded(&[(doc("note:b", "b", "h2"), axis(2))])
+            .unwrap();
+        assert_eq!(engine.cached_vector("codebase:src/a.rs", "h1"), Some(axis(1)));
+        assert_eq!(engine.cached_vector("note:b", "h2"), Some(axis(2)));
+
+        // Re-adding with new content replaces the vector in place.
+        engine
+            .add_embedded(&[(doc("note:b", "b2", "h3"), axis(9))])
+            .unwrap();
+        assert_eq!(engine.cached_vector("note:b", "h3"), Some(axis(9)));
+        assert_eq!(engine.store.len(), 2);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Natural-language query over the indexed memory: best first, by doc id,
+    /// skipping the corpora the caller excludes (the Graph omits the codebase).
+    #[test]
+    fn search_ids_ranks_docs_and_skips_excluded_corpora() {
+        let root = tmp_root("search");
+        let mut engine = MemoryEngine::open(root.clone());
+        let mut near_code = doc("codebase:src/x.rs", "x", "hx");
+        near_code.corpus = "codebase".into();
+        let mut note = doc("note:y", "y", "hy");
+        note.corpus = "note".into();
+        let mut claude = doc("claude:z", "z", "hz");
+        claude.corpus = "claude".into();
+        let mut v_note = axis(5);
+        v_note[6] = 0.4;
+        engine
+            .add_embedded(&[(near_code, axis(5)), (note, v_note), (claude, axis(40))])
+            .unwrap();
+
+        let hits = engine.search_ids(&axis(5), 2, &["codebase"]).unwrap();
+        let ids: Vec<&str> = hits.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, vec!["note:y", "claude:z"]);
+        assert!(hits[0].1 > hits[1].1);
 
         std::fs::remove_dir_all(&root).unwrap();
     }

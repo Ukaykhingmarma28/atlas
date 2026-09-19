@@ -617,8 +617,6 @@ pub fn install_manager(app: &AppHandle) {
         config_dir.clone(),
     )));
     let sink: Arc<dyn DeltaSink> = Arc::new(TauriDeltaSink::new(app.clone()));
-    // Let the memory corpus reader find native-agent transcripts (Chat/Graph).
-    super::agent_memory::set_cersei_config_dir(config_dir.clone());
     let data_dir = app
         .path()
         .app_data_dir()

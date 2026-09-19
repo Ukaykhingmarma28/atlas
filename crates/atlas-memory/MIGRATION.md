@@ -60,21 +60,15 @@ The global dir resolves to `~/.atlas/memory/` by default, or the
 
 ---
 
-## 2. Legacy `index.json` → HNSW migration
+## 2. Legacy `index.json` (removed in #90)
 
-On the **first** `MemoryEngine::open` of a project that has a legacy
-`<project>/.atlas/memory-index/index.json` (a flat `{ model, dim, docs:[{id,hash,vector}] }`):
-
-1. If `model == all-MiniLM-L6-v2 && dim == 384` (the same on-device model),
-   the stored vectors are imported **directly into HNSW with zero re-embedding** —
-   `u64` keys are assigned via the manifest bimap and `manifest.json` is written.
-2. The original file is **archived to `index.json.bak`** (archive, never `rm`).
-3. A model/dim mismatch leaves the legacy file in place and schedules a full
-   rebuild instead (it cannot mix 384-d and other-dim vectors).
-
-Migration is **idempotent**: once archived, every later open is a no-op, and the
-first background `IndexCorpus` pass diffs against the migrated manifest so only
-genuinely new docs are embedded.
+The flat `<project>/.atlas/memory-index/index.json` is no longer read or
+written. Memory ▸ Graph, its natural-language query and the Policy view take
+their vectors from this crate's HNSW engine (`MemoryEngine::cached_vector`,
+`add_embedded`, `search_ids`), and the one-shot import that used to lift
+`index.json` into HNSW on open is gone with it: a project that still has the
+file is simply re-embedded by the indexer's first pass. The file (and any
+`index.json.bak`) is left on disk untouched.
 
 The legacy `.atlas/shared-memory/events.jsonl` is folded into the record store
 by `record::legacy` (guarded by `.record-store-migrated`), not by the engine.
@@ -123,10 +117,8 @@ validation:
   `src-tauri/src/commands/memory_retrieve.rs`, `#[allow(dead_code)]`) — the
   pre-HNSW O(n) cosine path over `atlas_embed::BruteForce`. To roll back, point
   `memory_retrieve::retrieve` at `retrieve_brute_force` instead of the engine path.
-- **`memory_compile`** — the legacy write-side distill, still live whenever
-  `ATLAS_NATIVE_EXTRACTION` is OFF (the default).
-- **Archived legacy data** — `index.json.bak` and the original
-  `shared-memory/events.jsonl` remain on disk; restore by un-archiving.
+- **Archived legacy data** — the original `shared-memory/events.jsonl` (and any
+  old `memory-index/index.json[.bak]`) remain on disk, unread.
 
 A Step-10 micro-benchmark (`atlas-memory`'s `bench_hnsw_vs_brute_force`) measured
 HNSW at roughly **two orders of magnitude** faster per query than the brute-force

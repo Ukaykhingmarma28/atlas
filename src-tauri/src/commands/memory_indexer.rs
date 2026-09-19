@@ -6,9 +6,9 @@
 //! - [`MemoryRegistry`] — a `cwd → Arc<RwLock<MemoryEngine>>` map stored as a
 //!   Tauri managed `State`. It is the **single owner** of each project's engine:
 //!   the retrieve closure (Step 6, read lock) and the indexer (write lock) both
-//!   reach the right engine through it. Opening a project for the first time runs
-//!   the Step-3 legacy migration (inside `MemoryEngine::open`), starts an FS
-//!   watcher, and enqueues an initial cold [`Job::IndexCorpus`].
+//!   reach the right engine through it. Opening a project for the first time
+//!   loads its persisted index, starts an FS watcher, and enqueues an initial
+//!   cold [`Job::IndexCorpus`].
 //! - [`MemoryIndexer`] — one owned Tokio task draining a **bounded** `mpsc` queue.
 //!   Every [`Job`] carries a `cwd` so projects stay isolated: corpus indexing,
 //!   the extractor's passes (turn finished and session end, see
@@ -134,8 +134,7 @@ impl MemoryRegistry {
         r
     }
 
-    /// Open-or-return the engine for `cwd`. On the **first** open it runs the
-    /// Step-3 legacy migration (inside `MemoryEngine::open`), starts the FS
+    /// Open-or-return the engine for `cwd`. On the **first** open it starts the FS
     /// watcher, and enqueues an initial cold `IndexCorpus{cwd}` — so a freshly
     /// opened project is indexed even before the watcher fires. Subsequent calls
     /// just clone the existing handle (no re-enqueue, no second watcher).
@@ -144,8 +143,8 @@ impl MemoryRegistry {
             return existing.value().clone();
         }
 
-        // Build outside the map so the shard lock isn't held across the (one-time)
-        // migration I/O. A lost race is harmless: `or_insert_with` keeps whoever
+        // Build outside the map so the shard lock isn't held across the index
+        // load I/O. A lost race is harmless: `or_insert_with` keeps whoever
         // won and `ptr_eq` tells us if *we* were the inserter.
         let fresh = Arc::new(RwLock::new(MemoryEngine::open(PathBuf::from(cwd))));
         let inserted = self
@@ -525,8 +524,8 @@ fn reindex_after(registry: &MemoryRegistry, cwd: &str, stored: usize) {
 }
 
 /// Text actually embedded for a doc — title prepended for short-doc signal.
-/// Matches `memory_graph::embed_text` so a doc's `content_hash` is stable across
-/// the legacy migration and this indexer (post-migration re-index is a near no-op).
+/// Memory ▸ Graph embeds through [`to_corpus_doc`] too, so the vectors it hands
+/// to the index hash identically and the next index pass skips them.
 fn embed_text(doc: &MemoryDoc) -> String {
     if doc.text.trim().is_empty() {
         doc.title.clone()
@@ -535,7 +534,7 @@ fn embed_text(doc: &MemoryDoc) -> String {
     }
 }
 
-/// SHA-256 hex of `s` — identical hashing to `memory_graph::hash_text`.
+/// SHA-256 hex of `s`.
 fn hash_text(s: &str) -> String {
     let mut h = Sha256::new();
     h.update(s.as_bytes());
@@ -543,7 +542,7 @@ fn hash_text(s: &str) -> String {
 }
 
 /// Map an `agent_memory::MemoryDoc` onto the neutral `atlas_memory::CorpusDoc`.
-fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
+pub(crate) fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
     let text = embed_text(doc);
     let content_hash = hash_text(&text);
     CorpusDoc {
@@ -552,6 +551,29 @@ fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
         content_hash,
         corpus: doc.source.clone(),
     }
+}
+
+/// The vectors `cwd`'s retrieval index already holds for `docs`, by doc id —
+/// only for docs whose content is unchanged since they were indexed, and none
+/// when the index was built with a different embedding model. Memory ▸ Graph
+/// and the Policy view reuse these instead of re-embedding.
+pub(crate) async fn indexed_vectors(
+    registry: &MemoryRegistry,
+    provider: &MiniLmProvider,
+    cwd: &str,
+    docs: &[MemoryDoc],
+) -> std::collections::HashMap<String, Vec<f32>> {
+    let engine = registry.engine_for(cwd);
+    let guard = engine.read().await;
+    if !guard.index_params_match(provider) {
+        return std::collections::HashMap::new();
+    }
+    docs.iter()
+        .filter_map(|d| {
+            let c = to_corpus_doc(d);
+            guard.cached_vector(&c.id, &c.content_hash).map(|v| (c.id, v))
+        })
+        .collect()
 }
 
 /// The shared-memory record's embedder (near-duplicate merge, search): the

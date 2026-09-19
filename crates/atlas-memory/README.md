@@ -212,12 +212,11 @@ Tune the consts in `retrieve.rs` / `global.rs`.
 
 | Module (`src/`) | Responsibility |
 |---|---|
-| `lib.rs` | `MemoryEngine` (open/retrieve/index_corpus/persist), `RetrievedDoc`, `CorpusDoc` |
+| `lib.rs` | `MemoryEngine` (open/retrieve/index_corpus/persist, plus `cached_vector`/`add_embedded`/`search_ids` for Memory ▸ Graph and Policy), `RetrievedDoc`, `CorpusDoc` |
 | `provider.rs` | `MiniLmProvider` impl `embedding::EmbeddingProvider` (on-device, `spawn_blocking`) |
-| `store.rs` | `HnswStore` over `usearch` (save/load/add/remove/search) |
+| `store.rs` | `HnswStore` over `usearch` (save/load/add/get/remove/search) |
 | `manifest.rs` | `Manifest` — id↔key bimap, content-hash `diff` |
 | `docstore.rs` | `id -> {title,source,text}` side store |
-| `migrate.rs` | legacy `memory-index/index.json` → HNSW (no re-embed) |
 | `retrieve.rs` | HNSW retrieve + floor + dedup + global blend |
 | `extract.rs` | the extractor: gates, four-kind prompt with confidence, parser (model call injected; entries land in the record store via `src-tauri/src/commands/memory_extract.rs`) |
 | `record.rs` | the shared-memory record store (+ `record/legacy.rs`, the one-time import of the legacy event log and memdir) |
