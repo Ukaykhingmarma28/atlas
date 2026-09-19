@@ -8,15 +8,13 @@ share it without special-casing.
 
 > New to the codebase? Read this top-to-bottom. Upgrading an existing install or
 > debugging on-disk state? See [`MIGRATION.md`](./MIGRATION.md). Want the design
-> **2026-08-22 — this crate no longer depends on the Cersei SDK.** The graph
-> store, the memory-type taxonomy, session-memory extraction/persistence, the
-> consolidation gates, and the embedding-provider trait were ported in as
-> `src/graph.rs`, `src/session.rs`, `src/dream.rs` and `src/embedding.rs`.
-> `tests/cersei_parity.rs` was written against the SDK versions and passes
-> unchanged against the ported ones — run it before touching any of those four.
-> It also pins several inherited quirks on purpose (quote-wrapped query results,
-> duplicate `:Topic` nodes, an inert `recall_top_k` ranking); fixing one means
-> editing that file in the same commit.
+> **2026-08-22 — this crate no longer depends on the Cersei SDK.** Session-memory
+> extraction/persistence and the embedding-provider trait were ported in as
+> `src/session.rs` and `src/embedding.rs`. `tests/cersei_parity.rs` was written
+> against the SDK versions and passes unchanged against the ported ones — run it
+> before touching either. The ported grafeo graph store, its consolidation pass
+> and the dream gates were removed in #89 (retrieval is HNSW-only; global
+> promotion runs over the record table).
 
 > rationale + the build plan? The originating plan and the frozen-seam spec
 > lived in `plans/atlas-cersei-rag-replan.md` and
@@ -31,14 +29,15 @@ share it without special-casing.
 
 On-device **MiniLM** (384-d) embeds your corpus into a persistent **usearch HNSW**
 index; a background **indexer** keeps that index fresh *off the chat hot path*; a
-fused **retrieve** (HNSW + graph memory) answers `search_memory` queries behind the
-frozen `MemorySearchFn` seam. Optional **session extraction** distills finished
-chats into durable memories, and a **global** store promotes cross-project facts.
+**retrieve** (HNSW, plus promoted global memory when local is sparse) answers
+`search_memory` queries behind the frozen `MemorySearchFn` seam. The **extractor**
+distills finished chats into the shared-memory record store, and a **global**
+store promotes Facts seen in two or more repositories.
 
 ```
    files / chat / decisions ──▶  MiniLM embed ──▶  usearch HNSW  ──┐
-                                       +  grafeo graph memory      ├─▶ fused retrieve ─▶ MemDoc
-                                       +  ~/.atlas global memory  ──┘        ▲
+                                                                   ├─▶ retrieve ─▶ MemDoc
+                                          ~/.atlas global memory  ──┘        ▲
    (indexing runs in the BACKGROUND, never on the chat turn)                │
                                                           search_memory tool / pushed context
 ```
@@ -48,8 +47,8 @@ chats into durable memories, and a **global** store promotes cross-project facts
 ## 2. Why it's split this way
 
 - **`atlas-memory` is a LOW crate**: no Tauri dependency, and it never depends on
-  `atlas-cersei`. It owns the engine (embed, index, retrieve, graph, extraction,
-  global). This keeps it unit-testable and reusable.
+  `atlas-cersei`. It owns the engine (embed, index, retrieve, extraction, the
+  record store, global). This keeps it unit-testable and reusable.
 - **The Tauri app layer** (`src-tauri/src/commands/memory_indexer.rs` +
   `memory_retrieve.rs`) owns orchestration: the per-project engine registry, the
   background indexer task, the file watcher, and the BYOK call for extraction.
@@ -85,7 +84,7 @@ This enqueues a background `IndexCorpus` job for that project.
 ```rust
 use atlas_memory::MemoryEngine;
 
-let mut engine = MemoryEngine::open(project_root.into()); // runs migration + opens HNSW/graph
+let mut engine = MemoryEngine::open(project_root.into()); // runs migration + opens HNSW
 let hits = engine.retrieve("how do we store sessions?", 6).await; // Vec<RetrievedDoc>
 for h in hits { println!("{} — {}", h.title, h.source); }
 ```
@@ -99,11 +98,11 @@ Corpus gathering lives in the **app layer**, not this crate: extend
 `atlas_memory::CorpusDoc` and embeds it on the next index pass. Nothing else to
 change — retrieval picks it up automatically.
 
-### 3e. "I want richer/structured memory" (graph)
-`MemoryEngine` holds a `GraphMemory` (grafeo, `src/graph.rs` — Atlas-owned since 2026-08-22). Extraction (§5) writes
-typed memories into it. Graph hits are a **down-weighted** contributor to
-retrieval (it's substring/word-overlap, not semantic) — the embedding path is
-always authoritative.
+### 3e. "I want structured memory"
+Structured memory is the shared-memory record store (`src/record.rs`): typed
+entries (Decision, Fact, Failure, Architecture, …) with confidence and
+provenance, one SQLite database per repository. Its entries join the HNSW corpus
+through `collect_corpus`, so retrieval finds them semantically.
 
 ---
 
@@ -114,10 +113,11 @@ job carries a `cwd`** so multiple open projects stay isolated.
 
 | Trigger | Job |
 |---|---|
-| Project opened (first `engine_for`) | one cold `IndexCorpus{cwd}` + one `Compact{cwd}` |
+| Project opened (first `engine_for`) | one cold `IndexCorpus{cwd}` + one `Compact{cwd}` (global promotion) |
 | Watched file changes (`*.md`, `CLAUDE.md`, `AGENTS.md`, `codebase-index/docs.json`), debounced ~2s | `IndexCorpus{cwd}` |
 | A chat turn finishes | `IndexCorpus{cwd}` (always) + `ExtractSession{cwd,writer,turns}` (the extractor's gated pass) |
 | A session ends | `SessionEnded{cwd,writer}` (the extractor's one end-of-session pass) |
+| An extractor pass stored entries | `IndexCorpus{cwd}` + `Compact{cwd}` |
 | `force_reindex(cwd)` | `IndexCorpus{cwd}` |
 
 The worker: gather corpus → `Manifest::diff` (content-hash) → embed only new/changed
@@ -158,21 +158,28 @@ Per project, under `<project>/.atlas/memory/`:
 | `hnsw.usearch` | the persistent usearch HNSW index (vectors) |
 | `manifest.json` | `{provider_name, dim, next_key, entries:[{id,key,content_hash,corpus,mtime}]}` — id↔u64 key map + incremental ledger |
 | `docstore.json` | `id -> {title, source, text}` for building results (vectors alone have no text) |
-| `graph/` | `graph::GraphMemory` (grafeo) store |
+| `memory.sqlite` | the shared-memory record store (see `src/record.rs`) |
 | `extracted/*.md` | legacy session-extraction output (memdir; migrated, no longer written) |
-| `.shared-memory-imported` | idempotency marker for the legacy `shared-memory/events.jsonl` import |
-| `.consolidation_state.json` / `.consolidation_lock` | AutoDream consolidation state + lock |
+
+Left behind by older versions and no longer read (safe to delete): `graph/`
+(the grafeo store), `.shared-memory-imported`, `.consolidation_state.json`,
+`.consolidation_lock`.
 
 Global, under `~/.atlas/memory/` (override `ATLAS_GLOBAL_MEMORY_DIR`):
 
 | File | What |
 |---|---|
-| `global-graph/` | cross-project promoted memories |
-| `MEMORY.md` | human-readable promoted list (kept < 200 lines) |
+| `MEMORY.md` | human-readable promoted list (kept < 200 lines, newest first) |
+| `global-promoted.jsonl` | every promoted memory, never trimmed — what global recall searches (with `MEMORY.md` for older promotions) |
 | `global-candidates.json` | promotion ledger: `content_hash -> {category, max_confidence, project_roots, promoted}` |
 
-**Promotion rule:** a `UserPreference`/`Constraint` with confidence ≥ 0.8 seen in
-≥ 2 distinct projects is promoted to global. Everything else stays project-local.
+`global-graph/`, written by older versions, is no longer read.
+
+**Promotion rule:** a record-store Fact with confidence ≥ 0.8 whose content hash
+is seen (at that confidence) in ≥ 2 repositories is promoted to global, once.
+Each repository records its own Facts in the ledger when it opens (and after an
+extractor pass stores entries); the ledger is what remembers the other
+repositories. Everything else stays repository-local.
 
 ---
 
@@ -191,12 +198,12 @@ Global, under `~/.atlas/memory/` (override `ATLAS_GLOBAL_MEMORY_DIR`):
 `MemoryEngine::retrieve(query, limit)`:
 1. Embed the query (MiniLM) → `HnswStore::search` → cosine hits; **apply the 0.30
    similarity floor here, on the raw cosine** (not on the fused score).
-2. `GraphMemory::recall_top_k` → graph hits, **down-weighted**.
-3. If local hits are sparse (< 3), blend `~/.atlas` global hits at a tiny weight.
-4. **RRF fuse** (`Σ w/(60+rank+1)`, weights `EMBED=1.0`, `GRAPH=0.1`, `GLOBAL=0.05`)
-   → **Jaccard dedup** (≥0.8) → top `limit` → `RetrievedDoc`.
+2. **Jaccard dedup** (≥0.8) → top `limit`.
+3. If local hits are sparse (< 3), blend global hits (promoted memories whose
+   text contains the query) by **RRF** (`Σ w/(60+rank+1)`, weights `EMBED=1.0`,
+   `GLOBAL=0.05`) → Jaccard dedup → top `limit` → `RetrievedDoc`.
 
-The weights guarantee a graph/global hit can never outrank a strong embedding hit.
+The weights guarantee a global hit can never outrank a strong embedding hit.
 Tune the consts in `retrieve.rs` / `global.rs`.
 
 ---
@@ -211,11 +218,10 @@ Tune the consts in `retrieve.rs` / `global.rs`.
 | `manifest.rs` | `Manifest` — id↔key bimap, content-hash `diff` |
 | `docstore.rs` | `id -> {title,source,text}` side store |
 | `migrate.rs` | legacy `memory-index/index.json` → HNSW (no re-embed) |
-| `shared_import.rs` | legacy `shared-memory/events.jsonl` → graph (idempotent) |
-| `retrieve.rs` | fused RRF retrieve + floor + dedup |
+| `retrieve.rs` | HNSW retrieve + floor + dedup + global blend |
 | `extract.rs` | the extractor: gates, four-kind prompt with confidence, parser (model call injected; entries land in the record store via `src-tauri/src/commands/memory_extract.rs`) |
-| `consolidate.rs` | AutoDream-gated prune of the memdir |
-| `global.rs` | cross-project promotion + global store |
+| `record.rs` | the shared-memory record store (+ `record/legacy.rs`, the one-time import of the legacy event log and memdir) |
+| `global.rs` | Fact promotion over the record table + global recall |
 
 App layer: `src-tauri/src/commands/memory_indexer.rs` (registry + indexer + watcher
 + `force_reindex`), `memory_retrieve.rs` (the seam wiring).
@@ -226,7 +232,7 @@ App layer: `src-tauri/src/commands/memory_indexer.rs` (registry + indexer + watc
 
 - **Unit tests** (offline, no network/model): `cd crates/atlas-memory && cargo test`
   (store roundtrip, manifest diff, migration, retrieve fusion/floor/dedup, extraction
-  gates, consolidation, global promotion). Model-dependent tests skip cleanly unless
+  gates, global promotion, the fixture-corpus retrieval goldens). Model-dependent tests skip cleanly unless
   `ATLAS_MINILM_DIR` is set.
 - **Live 3-agent validation** (needs the running app, a signed-in account or a
   BYOK summariser, and the MiniLM model): launch `bun run dev:app`, drive a

@@ -17,9 +17,8 @@
 //!   every other category to Fact; the confidence is kept; the source is
 //!   `import:memdir`.
 //!
-//! A marker file (`<dir>/.atlas/memory/.record-store-migrated`, the
-//! `shared_import.rs` pattern) gates re-runs, backed by a `legacy_imports` row
-//! written in the import's own transaction. The old files are left in place
+//! A marker file (`<dir>/.atlas/memory/.record-store-migrated`) gates re-runs,
+//! backed by a `legacy_imports` row written in the import's own transaction. The old files are left in place
 //! for one release; readers that still use them keep working.
 
 use std::path::{Path, PathBuf};

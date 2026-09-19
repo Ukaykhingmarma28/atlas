@@ -2,21 +2,14 @@
 name = "atlas-memory"
 version = "0.1.0"
 edition = "2021"
-description = "Atlas's on-device RAG/memory engine: MiniLM → usearch HNSW + grafeo graph memory, behind the MemorySearchFn seam."
+description = "Atlas's on-device RAG/memory engine: MiniLM → usearch HNSW behind the MemorySearchFn seam, plus the shared-memory record store."
 
 [lib]
 name = "atlas_memory"
 
 [dependencies]
-# Embedded graph database behind `graph::GraphMemory` (relationships, topic
-# tags). The `lpg` feature is what provides the actual graph store — without it
-# `GrafeoDB::open` panics with "no graph store available". `lpg` already implies
-# gql + storage (wal/grafeo-file).
-grafeo = { version = "0.5", default-features = false, features = ["lpg", "gql", "grafeo-file", "wal"] }
-# Timestamps on graph nodes + the memdir date headers.
+# The memdir date headers (session rendering, legacy memdir import).
 chrono = { version = "0.4", features = ["serde"] }
-# Memory-node ids.
-uuid = { version = "1", features = ["v4"] }
 # `embedding::EmbeddingError`.
 thiserror = "2"
 # The persistent HNSW vector index — has native save/load/remove (hard deletes).
@@ -39,6 +32,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
 tracing = "0.1"
+
+[dev-dependencies]
+# Unique temp dirs in the record-store tests.
+uuid = { version = "1", features = ["v4"] }
+# `#[tokio::test]` and `Runtime::new` in the tests (grafeo used to pull these
+# features in).
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 # The workspace lint table is only real for members that opt in —
 # without this stanza it is dead configuration (#60).

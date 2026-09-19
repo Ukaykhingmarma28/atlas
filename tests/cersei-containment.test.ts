@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 /**
  * Guards the cersei purge (2026-08-22): the Cersei SDK may be a dependency of
  * the native-agent stack ONLY. Everything else — most pointedly the crates
- * whose cersei internals were ported into Atlas (`atlas-memory`'s graph/
- * session/dream/embedding, `atlas-codeindex`'s tree-sitter code_intel) — must
+ * whose cersei internals were ported into Atlas (`atlas-memory`'s session/
+ * embedding, `atlas-codeindex`'s tree-sitter code_intel) — must
  * never quietly regain a `cersei-*` dependency.
  *
  * Cargo can't express this ("crate X must not depend on Y" isn't a manifest

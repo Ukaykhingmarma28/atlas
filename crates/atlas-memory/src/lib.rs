@@ -2,10 +2,11 @@
 //!
 //! Per-project engine that owns a persistent **usearch HNSW** index fed by an
 //! on-device MiniLM [`provider::MiniLmProvider`] (Cersei's `EmbeddingProvider`
-//! trait), plus Cersei **graph memory** for structured facts. Retrieval fuses
-//! the two and returns [`RetrievedDoc`]s; the Tauri layer maps those onto
+//! trait). Retrieval returns [`RetrievedDoc`]s, blending in promoted global
+//! memory when local memory is sparse; the Tauri layer maps those onto
 //! `atlas_cersei::MemDoc` so the frozen `MemorySearchFn` seam — and all three
-//! agents — are unchanged.
+//! agents — are unchanged. The shared-memory record store (`record`) and the
+//! global promotion over it (`global`) live here too.
 //!
 //! This is a LOW crate: it has **no Tauri dependency** and never depends on
 //! `atlas-cersei` (the dependency only ever points the other way, app-side).
@@ -24,29 +25,21 @@ pub mod store;
 // Step 3 (implemented): migrate (legacy index.json import, zero re-embedding).
 pub mod migrate;
 
-// Step 6 (implemented): docstore (id→display-text side-map) + retrieve (RRF fuse
-// of HNSW + graph). `retrieve` only adds an `impl MemoryEngine`, so it is a plain
-// child module (private) — it reaches the engine's private fields as a descendant.
+// Step 6 (implemented): docstore (id→display-text side-map) + retrieve (HNSW,
+// with the global blend). `retrieve` only adds an `impl MemoryEngine`, so it is a
+// plain child module (private) — it reaches the engine's private fields as a
+// descendant.
 pub mod docstore;
 mod retrieve;
 
-// Step 7 (implemented): extract (gated session extraction → memdir + graph).
-// BYOK-free: the LLM call is injected by the Tauri layer via a closure.
+// The extractor's gates, prompt and parser (it writes record entries). The LLM
+// call is injected by the Tauri layer via a closure.
 pub mod extract;
 
-// Step 8 (implemented): shared_import (one-time, idempotent fold of the legacy
-// `.atlas/shared-memory/events.jsonl` log into graph memory).
-pub mod shared_import;
-
-// Step 9a (implemented): consolidate (AutoDream-gated idle consolidation + our
-// own memdir prune; the graph has no delete API, so the prune targets the
-// extracted/*.md memdir we own — see the module docs).
-pub mod consolidate;
-
-// Step 9b (implemented): global cross-project memory under `~/.atlas/memory/`.
-// Deterministic, conservative promotion (preference/constraint, conf ≥ 0.8, seen
-// in ≥2 distinct projects) fed from `consolidate`, blended into `retrieve` when
-// local memory is sparse. Tauri-free; resolves `$HOME` (or an env override).
+// Global cross-repository memory under `~/.atlas/memory/`. Deterministic,
+// conservative promotion over the record table (Fact, conf ≥ 0.8, seen in ≥2
+// repositories), blended into `retrieve` when local memory is sparse.
+// Tauri-free; resolves `$HOME` (or an env override).
 pub mod global;
 
 // Shared memory 03 (#80): the SQLite record store behind the Shared tab — one
@@ -55,23 +48,19 @@ pub mod record;
 
 // ─── Ported-from-Cersei modules ───────────────────────────────────────────────
 //
-// These four were `cersei-embeddings` / `cersei-memory` / `cersei-agent` until
-// 2026-08-22; they are now Atlas's own. `tests/cersei_parity.rs` was written
-// against the SDK versions and passes unchanged against these, which is the
-// evidence that the swap did not move observable behaviour.
-pub mod dream;
+// These were `cersei-embeddings` / `cersei-memory` until 2026-08-22; they are
+// now Atlas's own. `tests/cersei_parity.rs` was written against the SDK
+// versions and passes unchanged against these, which is the evidence that the
+// swap did not move observable behaviour.
 pub mod embedding;
-pub mod graph;
 pub mod session;
 
-pub use consolidate::{consolidate, ConsolidateOutcome};
-pub use global::{global_recall, record_candidates, CandidateEntry};
+pub use global::{global_recall, promote_facts, CandidateEntry};
 pub use docstore::{DocStore, DocText};
 pub use extract::{extract, parse_extracted, should_extract, ExtractState, Extracted, TranscriptTurn, Trigger};
 pub use manifest::{Diff, Entry, Manifest};
 pub use migrate::{migrate, MigrationOutcome};
 pub use provider::{MiniLmProvider, DIM, PROVIDER_NAME};
-pub use shared_import::{import_shared_memory, ImportOutcome};
 pub use store::HnswStore;
 
 // Step 10: offline 3-agent retrieval-parity tests + an HNSW-vs-brute-force
@@ -81,7 +70,6 @@ pub use store::HnswStore;
 mod parity_bench;
 
 use embedding::EmbeddingProvider;
-use graph::GraphMemory;
 
 /// One corpus document handed to [`MemoryEngine::index_corpus`]. The Tauri layer
 /// builds these by flattening `agent_memory::collect_corpus` (Claude/Codex/Cersei
@@ -117,8 +105,8 @@ pub struct IndexStats {
 /// `MemDoc` at the `MemorySearchFn` boundary.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RetrievedDoc {
-    /// Stable doc id (the corpus id for embedding hits, a synthetic `graph::…`
-    /// hash for graph-only hits). Carried so the Tauri layer can dedup site-C
+    /// Stable doc id (the corpus id for embedding hits, a synthetic `global::…`
+    /// hash for global hits). Carried so the Tauri layer can dedup site-C
     /// pushes per session; the `MemDoc` seam drops it.
     pub id: String,
     pub title: String,
@@ -128,7 +116,7 @@ pub struct RetrievedDoc {
 
 /// Per-project memory engine. One instance per project root, shared behind an
 /// `Arc<RwLock<_>>` by the retrieve closure (read) and the indexer (write).
-/// Holds the HNSW store + manifest (graph memory added in later steps).
+/// Holds the HNSW store + manifest + docstore.
 pub struct MemoryEngine {
     #[allow(dead_code)]
     project_root: PathBuf,
@@ -139,16 +127,13 @@ pub struct MemoryEngine {
     /// id → display text ({title, source, text}), persisted beside the manifest so
     /// retrieval can build [`RetrievedDoc`]s without re-gathering the corpus.
     docstore: DocStore,
-    /// Cersei graph memory (relationships / topic tags). **Empty until Steps 7/9a**
-    /// populate it; [`retrieve`](Self::retrieve) handles an empty graph as a no-op.
-    graph: GraphMemory,
 }
 
 impl MemoryEngine {
     /// Open-or-create the engine for a project. Loads the persisted HNSW +
     /// manifest if present under `<project_root>/.atlas/memory/`, otherwise
     /// starts empty (the dir is created lazily on first [`persist`](Self::persist)).
-    /// Later steps run legacy migration (Step 3) and load the graph here.
+    /// Runs the legacy flat-index migration (Step 3).
     pub fn open(project_root: PathBuf) -> Self {
         let memory_dir = project_root.join(".atlas").join("memory");
         let manifest_path = memory_dir.join("manifest.json");
@@ -159,12 +144,6 @@ impl MemoryEngine {
 
         let docstore =
             DocStore::load(&memory_dir.join("docstore.json")).unwrap_or_else(|_| DocStore::new());
-
-        // Graph memory persists at `<memory_dir>/graph`. Open-or-create the dir
-        // first; if Grafeo can't open the path (e.g. a stale/corrupt file), fall
-        // back to an in-memory graph so retrieval still works — it's empty until
-        // Steps 7/9a populate it, so losing persistence here is non-fatal.
-        let graph = open_graph(&memory_dir);
 
         // Open the store at the dim the manifest recorded — a project rebuilt with
         // a 768-d model reopens at 768, a legacy/fresh project at the 384 default.
@@ -185,7 +164,6 @@ impl MemoryEngine {
             store,
             manifest,
             docstore,
-            graph,
         };
 
         // Step 3: import a legacy `.atlas/memory-index/index.json` (if present)
@@ -201,19 +179,6 @@ impl MemoryEngine {
             Err(e) => tracing::warn!("legacy memory migration failed: {e}"),
         }
 
-        // Step 8: one-time, idempotent fold of the legacy shared cross-agent memory
-        // log (`.atlas/shared-memory/events.jsonl`) into graph memory, AFTER the
-        // Step-3 index migration so the graph already exists. A marker file makes
-        // this a cheap no-op on every subsequent open; the original log is kept in
-        // place (readable for one release) for rollback.
-        match shared_import::import_shared_memory(&mut engine) {
-            Ok(shared_import::ImportOutcome::Imported { count, skipped }) => {
-                tracing::info!(count, skipped, "imported legacy shared-memory log into graph");
-            }
-            Ok(_) => {}
-            Err(e) => tracing::warn!("legacy shared-memory import failed: {e}"),
-        }
-
         engine
     }
 
@@ -225,14 +190,6 @@ impl MemoryEngine {
     /// Read access to the HNSW store (retrieve path).
     pub fn store(&self) -> &HnswStore {
         &self.store
-    }
-
-    /// Read access to the project's graph memory (Step 7 session extraction
-    /// writes through this under the engine read lock — `GraphMemory`'s writes
-    /// are `&self`, so the indexer never needs the write lock just to store an
-    /// extracted memory).
-    pub fn graph(&self) -> &GraphMemory {
-        &self.graph
     }
 
     /// Mutable access to the manifest (indexer path).
@@ -251,8 +208,7 @@ impl MemoryEngine {
     /// Wipe the embedding index (HNSW + manifest + docstore) and reopen it empty at
     /// `dim`, tagged with `provider_name`. Used when the selected embedding model
     /// changes: a different model produces vectors in a different space (and often a
-    /// different dimension), so old vectors are invalid and must be re-embedded. The
-    /// graph memory (model-independent text facts) is intentionally left untouched.
+    /// different dimension), so old vectors are invalid and must be re-embedded.
     /// The caller re-indexes afterward to repopulate.
     pub fn reset_index(&mut self, provider_name: &str, dim: usize) -> anyhow::Result<()> {
         self.store = HnswStore::open(dim)?;
@@ -382,25 +338,6 @@ impl MemoryEngine {
     }
 
     // `retrieve` (Step 6) is implemented in `retrieve.rs` as an `impl MemoryEngine`.
-}
-
-/// Open the per-project graph at `<memory_dir>/graph`, creating the dir first.
-/// Falls back to an in-memory graph (with a warning) if the on-disk open fails —
-/// the graph is empty until Steps 7/9a populate it, so persistence here is not yet
-/// load-bearing and must never block engine construction.
-fn open_graph(memory_dir: &std::path::Path) -> GraphMemory {
-    let graph_path = memory_dir.join("graph");
-    if let Err(e) = std::fs::create_dir_all(memory_dir) {
-        tracing::warn!("could not create memory dir for graph ({e}); using in-memory graph");
-        return GraphMemory::open_in_memory().expect("in-memory graph");
-    }
-    match GraphMemory::open(&graph_path) {
-        Ok(g) => g,
-        Err(e) => {
-            tracing::warn!("graph open at {graph_path:?} failed ({e}); using in-memory graph");
-            GraphMemory::open_in_memory().expect("in-memory graph")
-        }
-    }
 }
 
 // Compile-time guarantee the engine can sit behind `Arc<RwLock<_>>` shared
