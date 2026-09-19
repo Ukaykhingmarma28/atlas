@@ -3,6 +3,10 @@
 //! shape `atlas-agent-servers/tests/connect.rs` uses. Shared by the test
 //! binaries that need the spawn-and-handshake path rather than a fake
 //! connection.
+//!
+//! Every `session/new`, `session/load` and `session/resume` the agent receives
+//! is appended, as its JSON params on one line, to [`requests_file`] — how a
+//! test sees exactly what went over the wire.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,14 +16,14 @@ use agent_client_protocol::schema::v1 as acp;
 use anyhow::Result;
 use atlas_acp_thread::AgentId;
 use atlas_agent_manager::AgentManager;
-use atlas_agent_servers::{AgentServerCommand, ExternalAgentServer};
+use atlas_agent_servers::{AgentServerCommand, ConnectOptions, ExternalAgentServer, SessionMcpServers};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use tokio::sync::watch;
 
 use super::{connect_options, wait_for};
 
-/// Answers `initialize` and `session/new`, then sits there. Writes its pid
+/// Answers `initialize` and the session requests, then sits there. Writes its pid
 /// first, so the test can ask the operating system whether it is still alive.
 const FAKE_AGENT: &str = r#"
 import sys, json, os, time
@@ -41,8 +45,15 @@ for line in sys.stdin:
             "authMethods": [],
             "agentInfo": {"name": "fake-agent", "version": "9.9.9"},
         }
-    elif method == "session/new":
-        result = {"sessionId": "session-1"}
+    elif method in ("session/new", "session/load", "session/resume"):
+        with open(PID_FILE + ".requests", "a") as log:
+            log.write(json.dumps({"method": method, "params": msg.get("params")}) + "\n")
+        params = msg.get("params") or {}
+        if params.get("sessionId") == "missing":
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32002, "message": "no such session"}}) + "\n")
+            sys.stdout.flush()
+            continue
+        result = {"sessionId": "session-1"} if method == "session/new" else {}
     else:
         continue
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n")
@@ -146,6 +157,26 @@ impl atlas_agent_manager::AgentCatalog for SpawningCatalog {
     }
 }
 
+/// The session requests the agent writing `pid_file` has received, in order:
+/// `(method, params)`.
+pub fn session_requests(pid_file: &Path) -> Vec<(String, serde_json::Value)> {
+    std::fs::read_to_string(requests_file(pid_file))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .map(|entry| {
+            (
+                entry["method"].as_str().unwrap_or_default().to_string(),
+                entry["params"].clone(),
+            )
+        })
+        .collect()
+}
+
+fn requests_file(pid_file: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.requests", pid_file.display()))
+}
+
 /// Builds a manager whose one installed agent is a real process, and returns
 /// the file that process writes its pid into.
 pub fn spawning_manager(tag: &str) -> Option<(Arc<AgentManager>, PathBuf)> {
@@ -158,20 +189,32 @@ pub fn manager_advertising_capabilities(
     tag: &str,
     agent_capabilities: serde_json::Value,
 ) -> Option<(Arc<AgentManager>, PathBuf)> {
-    spawning_manager_inner(tag, false, agent_capabilities)
+    spawning_manager_inner(tag, false, agent_capabilities, None)
+        .map(|(manager, pid_file, _)| (manager, pid_file))
+}
+
+/// The same, with the host handing sessions the MCP servers `session_mcp`
+/// offers.
+pub fn manager_offering_mcp(
+    tag: &str,
+    agent_capabilities: serde_json::Value,
+    session_mcp: Arc<dyn SessionMcpServers>,
+) -> Option<(Arc<AgentManager>, PathBuf)> {
+    spawning_manager_inner(tag, false, agent_capabilities, Some(session_mcp))
         .map(|(manager, pid_file, _)| (manager, pid_file))
 }
 
 /// The same, with an agent that parks after spawning until the returned
 /// `go_file` is created.
 pub fn parked_manager(tag: &str) -> Option<(Arc<AgentManager>, PathBuf, PathBuf)> {
-    spawning_manager_inner(tag, true, serde_json::json!({}))
+    spawning_manager_inner(tag, true, serde_json::json!({}), None)
 }
 
 fn spawning_manager_inner(
     tag: &str,
     park: bool,
     agent_capabilities: serde_json::Value,
+    session_mcp: Option<Arc<dyn SessionMcpServers>>,
 ) -> Option<(Arc<AgentManager>, PathBuf, PathBuf)> {
     let python = python()?;
     let pid_file = std::env::temp_dir().join(format!(
@@ -184,6 +227,7 @@ fn spawning_manager_inner(
     ));
     let _ = std::fs::remove_file(&pid_file);
     let _ = std::fs::remove_file(&go_file);
+    let _ = std::fs::remove_file(requests_file(&pid_file));
 
     let catalog = Arc::new(SpawningCatalog {
         id: AgentId::new("fake-agent"),
@@ -196,7 +240,14 @@ fn spawning_manager_inner(
     // installed agent.
     let native: Arc<dyn atlas_agent_servers::AgentServer> = super::TestServer::new("unused");
     Some((
-        AgentManager::new(catalog, native, connect_options()),
+        AgentManager::new(
+            catalog,
+            native,
+            ConnectOptions {
+                session_mcp,
+                ..connect_options()
+            },
+        ),
         pid_file,
         go_file,
     ))

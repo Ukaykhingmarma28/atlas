@@ -279,7 +279,7 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
     docs.extend(read_shared_memory_docs(&project_path));
     docs.extend(read_cersei_docs(&project_path));
     // Fold the knowledge base in (source "note") so KB notes are retrievable by
-    // every agent through the same embedding + the `search_memory` tool — they
+    // every agent through the same embedding + the `memory_search` tool — they
     // were previously reachable ONLY via manual `~`/`@note` mentions.
     docs.extend(read_knowledge_docs(&project_path));
     // Capture-backed sessions for every agent WITHOUT a dedicated reader above

@@ -657,10 +657,32 @@ pub fn install_manager(app: &AppHandle) {
         app.manage(server.clone());
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone(), server.tokens().clone())));
         let gate_app = app.clone();
-        server.start(
-            memory.inner().clone(),
-            Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd)),
-        );
+        let gate: super::memory_server::SharingGate =
+            Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
+        // Every agent that can take the server is handed it on each session
+        // request, with a token of its own; the rest stay push-only.
+        host.set_session_mcp(Arc::new(super::memory_server::MemorySessionOffers::new(
+            server.clone(),
+            gate.clone(),
+        )));
+        // `memory_search` also answers from the project's indexed documents —
+        // what the native agent's old `search_memory` tool searched.
+        let index_app = app.clone();
+        let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {
+            let app = index_app.clone();
+            Box::pin(async move {
+                crate::commands::memory_retrieve::retrieve(&app, &cwd, &query, limit)
+                    .await
+                    .into_iter()
+                    .map(|d| super::memory_server::IndexDoc {
+                        title: d.title,
+                        source: d.source,
+                        text: d.text,
+                    })
+                    .collect()
+            })
+        });
+        server.start(memory.inner().clone(), gate, Some(index));
     }
 
     // Connect-phase events the webview needs but no delta carries: the install
@@ -840,16 +862,12 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
-    // Wire the native agent's `search_memory` tool to Atlas's on-device memory
-    // retrieval, mapping the retrieved docs into the agent's shape.
-    // The ported engine's `search_memory`, wired to the same retrieval (#48,
-    // acceptance bar item 11). Registered rather than passed in because these
-    // types are behind a cargo feature, and a constructor parameter would
-    // `cfg`-gate `AgentHost::new`'s signature and every caller of it.
     // The D10 token provider (#51): the native agent authenticates with the
     // user's Atlas account, minting a short-TTL access JWT per request.
     //
-    // Registered for the same reason `search_memory` is, and read at *connect*
+    // Registered rather than passed in — these types are behind a cargo
+    // feature, and a constructor parameter would `cfg`-gate `AgentHost::new`'s
+    // signature and every caller of it — and read at *connect*
     // time rather than construction — `AgentHost` is built before the auth
     // state exists, so a source resolved in its constructor would always be
     // absent and every turn would go out with no credential.
@@ -891,25 +909,6 @@ pub fn install_manager(app: &AppHandle) {
             }
         }));
     }
-
-    {
-        let app_for_engine = app.clone();
-        atlas_native_agent::engine::memory::register_search(Arc::new(move |cwd, query, k| {
-            let app = app_for_engine.clone();
-            Box::pin(async move {
-                crate::commands::memory_retrieve::retrieve(&app, &cwd, &query, k)
-                    .await
-                    .into_iter()
-                    .map(|d| atlas_native_agent::engine::memory::MemDoc {
-                        title: d.title,
-                        source: d.source,
-                        text: d.text,
-                    })
-                    .collect()
-            })
-        }));
-    }
-
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -1472,9 +1471,9 @@ pub async fn agents_send(
     // Site C (Step 5: kept, NOT removed) — retrieval-augmented push: RAG the
     // project's memory index by the user's message, keep only docs not already
     // injected this session, and compose a budgeted `--- RELEVANT PROJECT MEMORY
-    // ---` block. This is a read-only PUSH that grounds Claude Code / Codex,
-    // which have no `search_memory` pull tool — removing it would regress their
-    // RAG. It performs NO indexing (read-only). Step 6 rewires the underlying
+    // ---` block. This is a read-only PUSH that grounds every agent — the only
+    // grounding an agent without HTTP MCP (so without the `memory_search` pull
+    // tool) gets, so removing it would regress their RAG. It performs NO indexing (read-only). Step 6 rewires the underlying
     // `memory_retrieve::retrieve` onto the fresh `MemoryEngine`; the call here is
     // unchanged. `retrieve` is best-effort + time-bounded; a missing embedding
     // model / unbuilt index yields nothing, so this is a no-op until the index

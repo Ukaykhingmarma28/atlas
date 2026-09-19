@@ -42,8 +42,8 @@ pub struct RetrievedDoc {
 /// Retrieve up to `top_k` index docs relevant to `query`, via the fused
 /// `MemoryEngine` (Step 6): HNSW (embedding, primary) + graph (down-weighted),
 /// RRF-fused and Jaccard-deduped behind the engine. Both seam consumers reach this
-/// — the Cersei `search_memory` pull tool (`agents.rs` closure) and the
-/// Claude/Codex push (site C) — so it improves all three agents at once.
+/// — the memory tool server's `memory_search` (pull, every agent that takes
+/// the server) and the per-turn push (site C) — so it improves every agent.
 ///
 /// Empty on any failure (no model, no engine, timeout) — callers treat empty as
 /// "skip". Still time-bounded so it can never stall a turn.

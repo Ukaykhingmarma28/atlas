@@ -25,15 +25,24 @@
 //!   empty result; a write that fails returns a tool error the agent can read.
 //!   Store work runs on the blocking pool, off the async runtime.
 //!
-//! Handing the server to an agent's session (the MCP server entry carrying the
-//! URL and the token) is the caller's business: [`MemoryServer::url`] and
-//! [`MemoryTokens::token_for`] are what it needs.
+//! - **Handed to every agent that can take it** ([`MemorySessionOffers`]): an
+//!   ACP session request carries the server in `mcpServers` when the agent
+//!   advertised `mcpCapabilities.http`; the native agent gets it as a
+//!   StreamableHttp entry in its thread's engine config. The token is minted
+//!   for the *request*, before a new session's id exists, and bound to the id
+//!   once the agent answers; an offer that never binds is revoked. Each
+//!   decision is logged, one line per session request.
+//! - **`memory_search` also searches the project's indexed documents** when an
+//!   [`IndexSearch`] is installed — the retrieval the native agent's old
+//!   `search_memory` tool answered from, so replacing that tool loses nothing.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use agent_client_protocol::schema::v1 as acp;
+use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
 use atlas_memory::record::{Entry, EntryKind};
 use axum::body::Body;
 use axum::extract::State;
@@ -41,6 +50,7 @@ use axum::http::header::AUTHORIZATION;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -64,6 +74,28 @@ pub const MCP_PATH: &str = "/mcp";
 /// `memory_search`'s default and largest result count.
 const SEARCH_DEFAULT_LIMIT: usize = 10;
 const SEARCH_MAX_LIMIT: usize = 50;
+
+/// How many indexed documents `memory_search` adds, by default and at most —
+/// the old `search_memory` tool's bounds: documents are long, and an unbounded
+/// number of them crowds out the conversation they were meant to inform.
+const INDEX_DEFAULT_LIMIT: usize = 6;
+const INDEX_MAX_LIMIT: usize = 20;
+
+/// The name the server goes by in every agent's MCP configuration.
+pub const MEMORY_SERVER_NAME: &str = "atlas_memory";
+
+/// One indexed project document (a doc, a knowledge note, a codebase summary),
+/// as `memory_search` returns it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexDoc {
+    pub title: String,
+    pub source: String,
+    pub text: String,
+}
+
+/// `(cwd, query, limit) -> ranked documents` over the project's on-device
+/// index. Empty on any failure.
+pub type IndexSearch = Arc<dyn Fn(String, String, usize) -> BoxFuture<'static, Vec<IndexDoc>> + Send + Sync>;
 
 // ── Tokens ───────────────────────────────────────────────────────────────────
 
@@ -116,9 +148,50 @@ impl MemoryTokens {
         token
     }
 
+    /// Mint a token for a session request whose session id is not known yet
+    /// (a new session's arrives with the agent's answer). Live at once, so an
+    /// agent that connects while opening the session is admitted; it names no
+    /// session until [`bind`](Self::bind).
+    pub fn mint_unbound(&self, agent: &str, cwd: &str) -> String {
+        let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+        self.table.lock().by_token.insert(
+            token.clone(),
+            Grant {
+                session_id: String::new(),
+                agent: agent.to_string(),
+                cwd: cwd.to_string(),
+            },
+        );
+        token
+    }
+
+    /// Make `token` the token of `session_id`, revoking any other it had.
+    /// Does nothing for a token that is no longer live.
+    pub fn bind(&self, token: &str, session_id: &str) {
+        let mut table = self.table.lock();
+        let Some(grant) = table.by_token.get_mut(token) else {
+            return;
+        };
+        grant.session_id = session_id.to_string();
+        if let Some(old) = table.by_session.insert(session_id.to_string(), token.to_string()) {
+            if old != token {
+                table.by_token.remove(&old);
+            }
+        }
+    }
+
+    /// Revoke one token, whichever session (if any) it belongs to. Idempotent.
+    pub fn revoke_token(&self, token: &str) {
+        let mut table = self.table.lock();
+        if let Some(grant) = table.by_token.remove(token) {
+            if table.by_session.get(&grant.session_id).is_some_and(|t| t == token) {
+                table.by_session.remove(&grant.session_id);
+            }
+        }
+    }
+
     /// The live token of `session_id`, if it has one — what the session's MCP
     /// server entry carries.
-    // Read by the step that hands the server to sessions (#83).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn token_for(&self, session_id: &str) -> Option<String> {
         self.table.lock().by_session.get(session_id).cloned()
@@ -144,13 +217,16 @@ impl SessionLifecycle for MemoryTokens {
         if cwd.is_empty() {
             return;
         }
-        // A rebind of a live session in the same place keeps its token.
+        // A rebind of a live session in the same place keeps its token — and
+        // so does the start reported right after an offer was bound to it:
+        // that token is the one the agent holds. Compared as paths, so a
+        // trailing separator is not a move.
         let mut table = self.table.lock();
         let same = table
             .by_session
             .get(session_id)
             .and_then(|t| table.by_token.get(t))
-            .is_some_and(|g| g.cwd == cwd && g.agent == agent);
+            .is_some_and(|g| std::path::Path::new(&g.cwd) == std::path::Path::new(cwd) && g.agent == agent);
         if !same {
             Self::mint_locked(&mut table, session_id, agent, cwd);
         }
@@ -178,14 +254,26 @@ impl MemoryServer {
     /// Bind `127.0.0.1:0` and serve the four tools over `memory`, admitting
     /// only requests bearing a live token from `tokens`. Returns once bound;
     /// serving continues on the runtime.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn start(
         memory: SharedMemoryStore,
         tokens: Arc<MemoryTokens>,
         gate: SharingGate,
     ) -> std::io::Result<Self> {
+        Self::start_with_index(memory, tokens, gate, None).await
+    }
+
+    /// [`start`](Self::start), with `memory_search` also searching the
+    /// project's indexed documents through `index`.
+    pub async fn start_with_index(
+        memory: SharedMemoryStore,
+        tokens: Arc<MemoryTokens>,
+        gate: SharingGate,
+        index: Option<IndexSearch>,
+    ) -> std::io::Result<Self> {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
-        let tools = MemoryTools { memory, gate };
+        let tools = MemoryTools { memory, gate, index };
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
             Arc::new(LocalSessionManager::default()),
@@ -248,24 +336,103 @@ impl MemoryServerHost {
 
     /// The MCP endpoint, once the server has bound; `None` before that or if
     /// binding failed (sessions then run without memory tools).
-    // Read by the step that hands the server to sessions (#83).
-    #[expect(dead_code, reason = "read by the step that hands the server to sessions (#83)")]
     pub fn url(&self) -> Option<String> {
         self.server.get().map(MemoryServer::url)
     }
 
     /// Start the server on the async runtime; returns at once. A failure to
     /// bind is logged and leaves [`url`](Self::url) `None`.
-    pub fn start(self: &Arc<Self>, memory: SharedMemoryStore, gate: SharingGate) {
+    pub fn start(self: &Arc<Self>, memory: SharedMemoryStore, gate: SharingGate, index: Option<IndexSearch>) {
         let host = self.clone();
         tauri::async_runtime::spawn(async move {
-            match MemoryServer::start(memory, host.tokens.clone(), gate).await {
+            match MemoryServer::start_with_index(memory, host.tokens.clone(), gate, index).await {
                 Ok(server) => {
                     let _ = host.server.set(server);
                 }
                 Err(e) => tracing::warn!(target: "atlas::memory_server", "memory tool server did not start: {e}"),
             }
         });
+    }
+}
+
+// ── Handing the server to sessions ───────────────────────────────────────────
+
+/// Whether one session request is handed the memory tool server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferDecision {
+    Included,
+    /// Left out, and why.
+    Omitted(&'static str),
+}
+
+impl OfferDecision {
+    /// The one log line per session request: the agent, whether it advertised
+    /// HTTP MCP, and whether the server was included (and if not, why).
+    pub fn log_line(self, agent: &str, http_mcp: bool) -> String {
+        match self {
+            Self::Included => format!("memory tool server offer: agent={agent} http_mcp={http_mcp} memory_server=included"),
+            Self::Omitted(reason) => format!(
+                "memory tool server offer: agent={agent} http_mcp={http_mcp} memory_server=omitted reason=\"{reason}\""
+            ),
+        }
+    }
+
+    /// Included only for an agent that advertised HTTP MCP, in a project with
+    /// shared memory on (the tools would hold nothing otherwise), once the
+    /// server is running. Never decided by which agent it is.
+    pub fn decide(http_mcp: bool, sharing_on: bool, server_running: bool) -> Self {
+        if !http_mcp {
+            Self::Omitted("agent did not advertise mcpCapabilities.http")
+        } else if !sharing_on {
+            Self::Omitted("shared memory is off for this project")
+        } else if !server_running {
+            Self::Omitted("memory tool server is not running")
+        } else {
+            Self::Included
+        }
+    }
+}
+
+/// Offers each session the memory tool server with a token of its own
+/// ([`SessionMcpServers`], installed on every agent connection).
+pub struct MemorySessionOffers {
+    host: Arc<MemoryServerHost>,
+    gate: SharingGate,
+}
+
+impl MemorySessionOffers {
+    pub fn new(host: Arc<MemoryServerHost>, gate: SharingGate) -> Self {
+        Self { host, gate }
+    }
+}
+
+impl SessionMcpServers for MemorySessionOffers {
+    fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
+        let cwd = request.cwd.to_string_lossy().into_owned();
+        let agent = request.agent_id.as_str().to_string();
+        // The gate reads the sharing file; only asked when it can matter.
+        let sharing_on = request.http_mcp && (self.gate)(&cwd);
+        let url = self.host.url();
+        let decision = OfferDecision::decide(request.http_mcp, sharing_on, url.is_some());
+        tracing::info!(
+            target: "atlas::memory_server",
+            session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
+            "{}",
+            decision.log_line(&agent, request.http_mcp),
+        );
+        let (OfferDecision::Included, Some(url)) = (decision, url) else {
+            return SessionMcpOffer::none();
+        };
+        let tokens = self.host.tokens().clone();
+        let token = tokens.mint_unbound(&agent, &cwd);
+        let server = acp::McpServer::Http(
+            acp::McpServerHttp::new(MEMORY_SERVER_NAME, url)
+                .headers(vec![acp::HttpHeader::new("Authorization", format!("Bearer {token}"))]),
+        );
+        SessionMcpOffer::new(vec![server], move |session| match session {
+            Some(id) => tokens.bind(&token, &id.to_string()),
+            None => tokens.revoke_token(&token),
+        })
     }
 }
 
@@ -297,7 +464,12 @@ async fn require_token(
 struct MemoryTools {
     memory: SharedMemoryStore,
     gate: SharingGate,
+    /// The project's indexed documents, searched alongside the record.
+    index: Option<IndexSearch>,
 }
+
+/// An index search a `memory_search` call asks for: `(query, limit)`.
+type IndexQuery = Option<(String, usize)>;
 
 /// The spellings of every kind, or of the durable ones.
 fn kind_names(durable_only: bool) -> Vec<&'static str> {
@@ -325,8 +497,11 @@ fn tools() -> Vec<Tool> {
             Cow::Borrowed("memory_search"),
             Cow::Borrowed(
                 "Search this repository's shared memory — the decisions, facts, failures and architecture notes \
-                 recorded by every agent. Returns the best matches first. Pass kinds [\"plan\", \"file_changed\"] \
-                 to search working memory (the active plan, recent file changes) instead.",
+                 recorded by every agent — and its indexed project memory (docs, conventions, feature notes, \
+                 codebase summaries). Returns the best matches first: `entries` from shared memory, `documents` \
+                 from the index. Use it BEFORE asking the user about project history or established patterns. \
+                 Pass kinds [\"plan\", \"file_changed\"] to search working memory (the active plan, recent file \
+                 changes) instead.",
             ),
             schema(json!({
                 "type": "object",
@@ -429,37 +604,71 @@ fn tool_error(message: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![Content::text(message.into())])
 }
 
+/// `result`'s JSON object with the index's `documents` added.
+fn with_documents(result: CallToolResult, docs: &[IndexDoc]) -> CallToolResult {
+    let parsed = result
+        .content
+        .iter()
+        .find_map(|c| c.as_text().map(|t| t.text.clone()))
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let Some(Value::Object(mut object)) = parsed else {
+        return result;
+    };
+    let documents: Vec<Value> = docs
+        .iter()
+        .map(|d| json!({ "title": d.title, "source": d.source, "text": d.text.trim() }))
+        .collect();
+    object.insert("documents".to_string(), Value::Array(documents));
+    ok_json(Value::Object(object))
+}
+
 fn args<T: for<'de> Deserialize<'de>>(request: &CallToolRequestParams) -> Result<T, CallToolResult> {
     let object = request.arguments.clone().unwrap_or_default();
     serde_json::from_value(Value::Object(object)).map_err(|e| tool_error(format!("invalid arguments: {e}")))
 }
 
 impl MemoryTools {
-    /// Run one tool for `grant`. Blocking: touches the record.
-    fn call(&self, grant: &Grant, request: &CallToolRequestParams) -> CallToolResult {
+    /// Run one tool for `grant`. Blocking: touches the record. A search also
+    /// says which index search to add (run by the caller: it is async).
+    fn call(&self, grant: &Grant, request: &CallToolRequestParams) -> (CallToolResult, IndexQuery) {
         let empty = |key: &str| ok_json(json!({ key: [] }));
         if !(self.gate)(&grant.cwd) {
             return match request.name.as_ref() {
-                "memory_search" | "memory_list" => empty("entries"),
-                _ => tool_error("shared memory is switched off for this project"),
+                "memory_search" | "memory_list" => (empty("entries"), None),
+                _ => (tool_error("shared memory is switched off for this project"), None),
             };
         }
+        if request.name.as_ref() == "memory_search" {
+            return self.search(grant, request);
+        }
+        (self.call_record(grant, request), None)
+    }
+
+    /// `memory_search` over the record, plus the index search to add when no
+    /// kinds narrow it to working memory.
+    fn search(&self, grant: &Grant, request: &CallToolRequestParams) -> (CallToolResult, IndexQuery) {
+        let args: SearchArgs = match args(request) {
+            Ok(a) => a,
+            Err(refused) => return (refused, None),
+        };
+        let kinds = match args.kinds.iter().map(|k| parse_kind(k)).collect::<Result<Vec<_>, _>>() {
+            Ok(k) if k.is_empty() => durable_kinds(),
+            Ok(k) => k,
+            Err(e) => return (tool_error(e), None),
+        };
+        let limit = args.limit.unwrap_or(SEARCH_DEFAULT_LIMIT).clamp(1, SEARCH_MAX_LIMIT);
+        let hits = self.memory.search_entries(&grant.cwd, &args.query, &kinds, limit);
+        let index = (self.index.is_some() && args.kinds.is_empty()).then(|| {
+            let limit = args.limit.unwrap_or(INDEX_DEFAULT_LIMIT).clamp(1, INDEX_MAX_LIMIT);
+            (args.query.clone(), limit)
+        });
+        (ok_json(json!({ "entries": hits.iter().map(entry_json).collect::<Vec<_>>() })), index)
+    }
+
+    /// The record-only tools.
+    fn call_record(&self, grant: &Grant, request: &CallToolRequestParams) -> CallToolResult {
         let memory = &self.memory;
         match request.name.as_ref() {
-            "memory_search" => {
-                let args: SearchArgs = match args(request) {
-                    Ok(a) => a,
-                    Err(refused) => return refused,
-                };
-                let kinds = match args.kinds.iter().map(|k| parse_kind(k)).collect::<Result<Vec<_>, _>>() {
-                    Ok(k) if k.is_empty() => durable_kinds(),
-                    Ok(k) => k,
-                    Err(e) => return tool_error(e),
-                };
-                let limit = args.limit.unwrap_or(SEARCH_DEFAULT_LIMIT).clamp(1, SEARCH_MAX_LIMIT);
-                let hits = memory.search_entries(&grant.cwd, &args.query, &kinds, limit);
-                ok_json(json!({ "entries": hits.iter().map(entry_json).collect::<Vec<_>>() }))
-            }
             "memory_remember" => {
                 let args: RememberArgs = match args(request) {
                     Ok(a) => a,
@@ -534,9 +743,14 @@ impl ServerHandler for MemoryTools {
             .cloned()
             .ok_or_else(|| McpError::invalid_request("no session token", None))?;
         let tools = self.clone();
-        let result = tokio::task::spawn_blocking(move || tools.call(&grant, &request))
+        let cwd = grant.cwd.clone();
+        let (result, index_query) = tokio::task::spawn_blocking(move || tools.call(&grant, &request))
             .await
-            .unwrap_or_else(|e| tool_error(format!("memory unavailable: {e}")));
+            .unwrap_or_else(|e| (tool_error(format!("memory unavailable: {e}")), None));
+        let result = match (index_query, self.index.as_ref()) {
+            (Some((query, limit)), Some(index)) => with_documents(result, &index(cwd, query, limit).await),
+            _ => result,
+        };
         Ok(result.into())
     }
 }
@@ -763,6 +977,167 @@ mod tests {
         assert!(!err);
         assert_eq!(found["entries"], json!([]));
         assert!(memory.list_events(&project).is_empty());
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    // ── Handing the server to sessions (#83) ─────────────────────────────────
+
+    async fn running_host(gate: SharingGate) -> Arc<MemoryServerHost> {
+        let host = Arc::new(MemoryServerHost::new());
+        let server = MemoryServer::start(ticking_memory(), host.tokens().clone(), gate.clone()).await.unwrap();
+        let _ = host.server.set(server);
+        host
+    }
+
+    fn request(http_mcp: bool, cwd: &str, session: Option<&str>) -> SessionMcpRequest {
+        SessionMcpRequest {
+            agent_id: atlas_acp_thread::AgentId::new("claude-code"),
+            http_mcp,
+            cwd: std::path::PathBuf::from(cwd),
+            session_id: session.map(acp::SessionId::new),
+        }
+    }
+
+    /// The one server an offer carries, as `(name, url, bearer token)`.
+    fn offered(offer: &SessionMcpOffer) -> Option<(String, String, String)> {
+        match offer.servers() {
+            [acp::McpServer::Http(http)] => {
+                let token = http
+                    .headers
+                    .iter()
+                    .find(|h| h.name == "Authorization")
+                    .and_then(|h| h.value.strip_prefix("Bearer "))
+                    .expect("the entry carries a bearer token")
+                    .to_string();
+                Some((http.name.clone(), http.url.clone(), token))
+            }
+            [] => None,
+            other => panic!("one server at most: {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_http_agent_is_offered_the_server_with_a_token_that_binds_to_its_session() {
+        let project = temp_project("offer");
+        let host = running_host(always_on()).await;
+        let offers = MemorySessionOffers::new(host.clone(), always_on());
+
+        let offer = offers.offer(&request(true, &project, None));
+        let (name, url, token) = offered(&offer).expect("an HTTP agent with sharing on gets the server");
+        assert_eq!(name, MEMORY_SERVER_NAME);
+        assert_eq!(Some(url.clone()), host.url());
+        let client = connect(&url, &token).await.expect("the offered token is live before the id exists");
+        client.cancel().await.ok();
+
+        offer.bind(&acp::SessionId::new("s1"));
+        assert_eq!(host.tokens().token_for("s1").as_deref(), Some(token.as_str()));
+        let grant = host.tokens().grant(&token).unwrap();
+        assert_eq!((grant.session_id.as_str(), grant.agent.as_str(), grant.cwd.as_str()), ("s1", "claude-code", project.as_str()));
+
+        // The session start the host reports next keeps the token the agent
+        // holds, however the directory is spelled.
+        host.tokens().session_started("s1", "claude-code", &format!("{project}/"));
+        assert_eq!(host.tokens().token_for("s1").as_deref(), Some(token.as_str()));
+
+        // And the session's end revokes it.
+        host.tokens().session_ended("s1");
+        assert!(connect(&url, &token).await.is_err(), "a revoked token is refused");
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_agent_without_http_mcp_is_offered_nothing() {
+        let host = running_host(always_on()).await;
+        let offers = MemorySessionOffers::new(host, always_on());
+        assert_eq!(offered(&offers.offer(&request(false, "/p", None))), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn with_sharing_off_nothing_is_offered() {
+        let host = running_host(always_on()).await;
+        let offers = MemorySessionOffers::new(host, Arc::new(|_| false));
+        assert_eq!(offered(&offers.offer(&request(true, "/p", None))), None);
+    }
+
+    #[test]
+    fn before_the_server_binds_nothing_is_offered() {
+        let offers = MemorySessionOffers::new(Arc::new(MemoryServerHost::new()), always_on());
+        assert_eq!(offered(&offers.offer(&request(true, "/p", None))), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_offer_that_never_binds_leaves_no_live_token() {
+        let host = running_host(always_on()).await;
+        let offers = MemorySessionOffers::new(host.clone(), always_on());
+        let offer = offers.offer(&request(true, "/p", Some("stored-1")));
+        let (_, _, token) = offered(&offer).unwrap();
+        drop(offer);
+        assert_eq!(host.tokens().grant(&token), None);
+        assert_eq!(host.tokens().token_for("stored-1"), None);
+    }
+
+    #[test]
+    fn the_decision_says_whether_the_server_is_included_and_why_not() {
+        assert_eq!(OfferDecision::decide(true, true, true), OfferDecision::Included);
+        assert_eq!(OfferDecision::decide(false, true, true), OfferDecision::Omitted("agent did not advertise mcpCapabilities.http"));
+        assert_eq!(OfferDecision::decide(true, false, true), OfferDecision::Omitted("shared memory is off for this project"));
+        assert_eq!(OfferDecision::decide(true, true, false), OfferDecision::Omitted("memory tool server is not running"));
+    }
+
+    #[test]
+    fn each_decision_is_one_log_line_naming_the_agent_its_capability_and_the_outcome() {
+        assert_eq!(
+            OfferDecision::Included.log_line("claude-code", true),
+            "memory tool server offer: agent=claude-code http_mcp=true memory_server=included",
+        );
+        assert_eq!(
+            OfferDecision::decide(false, false, true).log_line("gemini", false),
+            "memory tool server offer: agent=gemini http_mcp=false memory_server=omitted \
+             reason=\"agent did not advertise mcpCapabilities.http\"",
+        );
+        assert_eq!(
+            OfferDecision::decide(true, false, true).log_line("cersei", true),
+            "memory tool server offer: agent=cersei http_mcp=true memory_server=omitted \
+             reason=\"shared memory is off for this project\"",
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn memory_search_also_returns_indexed_project_documents() {
+        // What the native agent's `search_memory` answered from, so its
+        // replacement loses nothing: the project's indexed documents.
+        let project = temp_project("index");
+        let tokens = Arc::new(MemoryTokens::default());
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let seen = asked.clone();
+        let index: IndexSearch = Arc::new(move |cwd: String, query: String, limit: usize| {
+            seen.lock().push((cwd, query.clone(), limit));
+            Box::pin(async move {
+                vec![IndexDoc {
+                    title: "ADR-0003".to_string(),
+                    source: "docs/adr/0003.md".to_string(),
+                    text: format!("about {query}"),
+                }]
+            })
+        });
+        let server = MemoryServer::start_with_index(ticking_memory(), tokens.clone(), always_on(), Some(index))
+            .await
+            .unwrap();
+        let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
+
+        let (err, found) = call(&client, "memory_search", json!({ "query": "the engine fork" })).await;
+        assert!(!err, "{found}");
+        assert_eq!(found["entries"], json!([]));
+        assert_eq!(
+            found["documents"],
+            json!([{ "title": "ADR-0003", "source": "docs/adr/0003.md", "text": "about the engine fork" }]),
+        );
+        assert_eq!(*asked.lock(), vec![(project.clone(), "the engine fork".to_string(), 6)]);
+
+        // A working-memory search is a search of the record alone.
+        let (_, found) = call(&client, "memory_search", json!({ "query": "x", "kinds": ["plan"] })).await;
+        assert_eq!(found.get("documents"), None, "{found}");
+        client.cancel().await.ok();
         let _ = std::fs::remove_dir_all(&project);
     }
 

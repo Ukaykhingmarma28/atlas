@@ -869,7 +869,7 @@ export function App() {
 
     // After a native-agent turn that may have changed files, refresh the
     // project's codebase index (incremental + structural — cheap, no LLM) so
-    // `search_memory` and the Memory tab stay current. Debounced per project so
+    // `memory_search` and the Memory tab stay current. Debounced per project so
     // a burst of turns triggers one rebuild.
     const indexTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const autoIndexAfterTurn = (acpSessionId: string) => {

@@ -64,10 +64,9 @@ pub trait AtlasTokenSource: Send + Sync {
 
 /// The token source the host installed, for connections not handed one.
 ///
-/// Registered rather than passed in, for the same reason `search_memory` is
-/// (#48): minting needs the Tauri app's auth state, and these types live behind
-/// a cargo feature — so a constructor parameter would `cfg`-gate
-/// `AgentHost::new`'s signature and every caller of it.
+/// Registered rather than passed in: minting needs the Tauri app's auth state,
+/// and these types live behind a cargo feature — so a constructor parameter
+/// would `cfg`-gate `AgentHost::new`'s signature and every caller of it.
 ///
 /// It is read at **connect** time, not at construction. That ordering is
 /// load-bearing: `AgentHost` is built during startup, before the auth state

@@ -45,9 +45,8 @@ pub struct EngineSession {
     streamed: std::collections::HashSet<String>,
     /// The session's working directory.
     ///
-    /// Kept because `search_memory` retrieves per project and the engine's
-    /// tool-call request does not carry a cwd — it has no reason to, since the
-    /// tool is Atlas's.
+    /// Kept because the engine's requests do not carry one back — a fork of
+    /// the thread, for one, is started in it.
     cwd: String,
     /// The skills the engine discovered for this session's cwd, in the shape
     /// the command parser consumes. Per session because skills are cwd-scoped.

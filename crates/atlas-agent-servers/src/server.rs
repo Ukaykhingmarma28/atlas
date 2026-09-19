@@ -103,6 +103,9 @@ pub struct ConnectOptions {
     /// connection will ever have, and without a sink they are raised into
     /// silence and the agent waits for an answer nobody was shown.
     pub request_elicitation_events: RequestElicitationSink,
+    /// Decides the MCP servers each session is handed (the memory tool
+    /// server, today). `None` hands every session an empty list.
+    pub session_mcp: Option<Arc<dyn crate::session_mcp::SessionMcpServers>>,
     pub client_name: &'static str,
     pub client_version: String,
 }
@@ -179,7 +182,8 @@ impl AgentServer for CustomAgentServer {
                 options.client_name,
                 options.client_version,
             )
-            .await?;
+            .await?
+            .with_session_mcp(options.session_mcp);
 
             Ok(Arc::new(connection) as Arc<dyn AgentConnection>)
         })

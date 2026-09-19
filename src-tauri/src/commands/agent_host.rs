@@ -39,7 +39,9 @@ use atlas_acp_thread::{
 };
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
 use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
-use atlas_agent_servers::{AcpConnectionDefaults, AgentServer, ConnectOptions};
+use atlas_agent_servers::{
+    AcpConnectionDefaults, AgentServer, ConnectOptions, SessionMcpOffer, SessionMcpRequest, SessionMcpServers,
+};
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
 use atlas_agent_wire::{
@@ -273,6 +275,18 @@ pub trait SessionLifecycle: Send + Sync {
     fn session_ended(&self, session_id: &str);
 }
 
+/// The MCP servers every agent connection offers its sessions, installed after
+/// the host exists (the memory tool server starts later in setup). Empty until
+/// then: a session opened before it is installed is offered nothing.
+#[derive(Default)]
+struct SessionMcpSlot(Mutex<Option<Arc<dyn SessionMcpServers>>>);
+
+impl SessionMcpServers for SessionMcpSlot {
+    fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
+        atlas_agent_servers::session_mcp::offer_for(lock(&self.0).as_ref(), request)
+    }
+}
+
 pub struct AgentHost {
     manager: Arc<AgentManager>,
     projector: Arc<DeltaProjector>,
@@ -314,6 +328,8 @@ pub struct AgentHost {
     /// Where session start and end are recorded. Installed at startup; `None`
     /// until then (and in tests that do not care).
     lifecycle: Mutex<Option<Arc<dyn SessionLifecycle>>>,
+    /// What each session is offered in its MCP server list.
+    session_mcp: Arc<SessionMcpSlot>,
 }
 
 /// The plumbing for elicitations that belong to a connection, not a session.
@@ -386,7 +402,9 @@ impl AgentHost {
             }
         };
         let (elicitation_tx, elicitation_rx) = mpsc::unbounded_channel();
+        let session_mcp = Arc::new(SessionMcpSlot::default());
         let options = ConnectOptions {
+            session_mcp: Some(session_mcp.clone() as Arc<dyn SessionMcpServers>),
             root_dir: None,
             defaults: AcpConnectionDefaults::default(),
             thread_events: projector.thread_events(),
@@ -429,6 +447,7 @@ impl AgentHost {
                 answered_by: Mutex::new(HashMap::new()),
             },
             lifecycle: Mutex::new(None),
+            session_mcp,
         });
         // Weak, and installed after the host exists: the observer needs the
         // host to name the agent a session belongs to, and a strong reference
@@ -441,6 +460,12 @@ impl AgentHost {
     /// Install where session start and end are recorded.
     pub fn set_session_lifecycle(&self, lifecycle: Arc<dyn SessionLifecycle>) {
         *lock(&self.lifecycle) = Some(lifecycle);
+    }
+
+    /// Install what every agent's sessions are offered in `mcpServers` (the
+    /// memory tool server).
+    pub fn set_session_mcp(&self, servers: Arc<dyn SessionMcpServers>) {
+        *lock(&self.session_mcp.0) = Some(servers);
     }
 
     fn lifecycle(&self) -> Option<Arc<dyn SessionLifecycle>> {

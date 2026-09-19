@@ -1130,8 +1130,9 @@ fn cancel_connect(entry: &Entry) {
 /// an HTTP MCP server" from the log of any real run.
 ///
 /// `agent` is the stable id Atlas knows the agent by; `agent_name` is what the
-/// agent called itself at `initialize`. The native agent takes no `mcpServers`
-/// over ACP, so it always reports `http_mcp=false`.
+/// agent called itself at `initialize`. The native agent reports
+/// `http_mcp=true`: its engine takes StreamableHttp MCP servers through each
+/// thread's config.
 fn log_session_start(connection: &Arc<dyn AgentConnection>, session_id: &acp::SessionId) {
     tracing::info!(
         agent = %connection.agent_id(),
