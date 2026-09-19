@@ -4,9 +4,11 @@
 //!   1. **Curated pack** — high-signal facts from Atlas's per-project memory
 //!      (`collect_corpus`), filtered to the curated kinds, recency-ranked, and
 //!      budget-bounded. Built by [`build_memory_pack`] / [`curate_pack`].
-//!   2. **Recent-session handoff** — the tail of the most recent *other* Claude
-//!      session for this project, so a freshly-switched agent resumes context.
-//!      Built by [`build_session_handoff`] / [`parse_handoff_turns`].
+//!   2. **Recent-session handoff** — the tail of the most recent *other*
+//!      session for this scope, whichever agent ran it, read from what Atlas
+//!      recorded (capture, then its own transcripts) — never from an agent's
+//!      private files. Built by [`build_session_handoff`]; the optional
+//!      summariser is applied by [`handoff_block`].
 //!
 //! [`compose_injection`] stitches every present block in front of the user's
 //! text, inside one `<atlas-memory>` envelope that tells the agent the content
@@ -15,11 +17,14 @@
 //! — see the empty-pack hardening rule.
 //!
 //! Disk-touching entry points are kept thin around pure functions
-//! (`curate_pack`, `parse_handoff_turns`, `pick_newest_session`) so the ranking,
-//! filtering, and parsing logic is unit-testable without a filesystem.
+//! (`curate_pack`, `handoff_turns`) so the ranking, filtering, and budgeting
+//! logic is unit-testable without a filesystem.
 
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use atlas_checkpoint::{Mode, Role, Store};
+use chrono::{DateTime, Utc};
 
 use super::agent_memory::{collect_corpus, MemoryDoc};
 
@@ -102,108 +107,238 @@ pub fn curate_pack(mut docs: Vec<MemoryDoc>, max_chars: usize) -> Option<String>
 
 // ── Recent-session handoff ───────────────────────────────────────────────────
 
-/// Locate the newest *other* Claude session JSONL for `cwd` and return its last
-/// `HANDOFF_MAX_TURNS` turns as `(raw_body, turn_count)`. Sync — call via
-/// `spawn_blocking`. Returns `None` when there is no prior session.
-pub fn build_session_handoff(cwd: &str, current_session_id: &str) -> Option<(String, usize)> {
-    let home = dirs::home_dir()?;
-    let dir = home
-        .join(".claude")
-        .join("projects")
-        .join(atlas_agent_transcript::encode_cwd(cwd));
+/// The tail of the most recent *other* session in this scope, whichever agent
+/// ran it, as `(raw_body, turn_count)` — at most [`HANDOFF_MAX_TURNS`] turns,
+/// each capped at [`TURN_MAX_CHARS`]. Sync — call via `spawn_blocking`.
+/// Returns `None` when no other session has anything to hand off.
+///
+/// Reads only what Atlas recorded itself, never an agent's private files:
+///   1. the **capture store** (`atlas-checkpoint`) of every worktree of the
+///      repository — which also holds transcripts its importer brought in;
+///   2. Atlas's own **session transcripts** (`transcripts_dir`, the
+///      [`agent_transcript`] store), which record every agent whether or not
+///      capture was ever enabled. A session present in both is read from
+///      capture (its bodies are redacted).
+///
+/// "Most recent" is the session's last activity; the current session is
+/// skipped, and so is a session with nothing to hand off (a newer, empty one
+/// does not hide an older real one).
+///
+/// [`agent_transcript`]: super::agent_transcript
+pub fn build_session_handoff(
+    cwd: &str,
+    current_session_id: &str,
+    transcripts_dir: &Path,
+) -> Option<(String, usize)> {
+    let roots = scope_roots(cwd, transcripts_dir);
+    // A root whose capture was never enabled has no store and is skipped.
+    let stores: Vec<(&PathBuf, Store)> = roots
+        .iter()
+        .filter_map(|root| {
+            let store = crate::commands::capture::open_reader(&root.to_string_lossy()).ok().flatten()?;
+            Some((root, store))
+        })
+        .collect();
 
-    // Tolerate a missing dir (user never ran Claude here) → no handoff, no error.
-    let rd = std::fs::read_dir(&dir).ok()?;
-    let mut candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
-        }
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        // Skip the current session (no self-handoff) and Claude's internal
-        // sub-agent sidechain files (`agent-*.jsonl`).
-        if stem == current_session_id || stem.starts_with("agent-") {
-            continue;
-        }
-        let Ok(meta) = entry.metadata() else { continue };
-        let Ok(mtime) = meta.modified() else { continue };
-        candidates.push((path, mtime));
+    let mut heads: Vec<SessionHead> = Vec::new();
+    for (store_idx, (root, store)) in stores.iter().enumerate() {
+        heads.extend(capture_heads(root, store, store_idx));
     }
-    let newest = pick_newest_session(candidates)?;
-    let content = std::fs::read_to_string(&newest).ok()?;
-    let turns = parse_handoff_turns(&content, HANDOFF_MAX_TURNS);
-    if turns.is_empty() {
-        return None;
-    }
-    let n = turns.len();
-    Some((format_turns(&turns), n))
+    let captured: Vec<String> = heads.iter().map(|h| h.native_id.clone()).collect();
+    heads.extend(
+        transcript_heads(transcripts_dir, &roots)
+            .into_iter()
+            .filter(|h| !captured.iter().any(|id| same_session(&h.native_id, id))),
+    );
+    // Newest first; `sort_by` is stable, so capture wins a tie.
+    heads.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+
+    heads
+        .iter()
+        .filter(|h| !same_session(&h.native_id, current_session_id))
+        .find_map(|h| {
+            let entries = match &h.origin {
+                Origin::Capture { store_idx, session_id } => capture_entries(&stores[*store_idx].1, session_id),
+                Origin::Transcript { path } => transcript_entries(path),
+            };
+            let turns = handoff_turns(entries, HANDOFF_MAX_TURNS);
+            (!turns.is_empty()).then(|| (format_turns(&turns), turns.len()))
+        })
 }
 
-/// Pure: pick the most-recently-modified path from `(path, mtime)` candidates.
-pub fn pick_newest_session(candidates: Vec<(PathBuf, SystemTime)>) -> Option<PathBuf> {
-    candidates.into_iter().max_by_key(|(_, t)| *t).map(|(p, _)| p)
+/// One recorded session, before its messages are read.
+struct SessionHead {
+    native_id: String,
+    last_activity: DateTime<Utc>,
+    origin: Origin,
 }
 
-/// Pure: parse a Claude Code JSONL transcript into `(role, text)` turns, taking
-/// the last `max_turns`. Mirrors `atlas_agent_transcript::replay_claude_jsonl`:
-/// skips sidechain lines, tool-result user messages, and injected system text.
-pub fn parse_handoff_turns(jsonl: &str, max_turns: usize) -> Vec<(String, String)> {
-    let mut turns: Vec<(String, String)> = Vec::new();
-    for line in jsonl.lines() {
-        let v: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if v.get("isSidechain").and_then(serde_json::Value::as_bool) == Some(true) {
-            continue;
-        }
-        match v.get("type").and_then(|t| t.as_str()).unwrap_or("") {
-            "user" => {
-                if let Some(t) = user_message_text(&v) {
-                    turns.push(("User".into(), t));
-                }
-            }
-            "assistant" => {
-                if let Some(t) = assistant_message_text(&v) {
-                    turns.push(("Assistant".into(), t));
-                }
-            }
-            _ => {}
+enum Origin {
+    Capture { store_idx: usize, session_id: String },
+    Transcript { path: PathBuf },
+}
+
+/// Every launch directory whose recordings belong to this scope. Outside git
+/// that is `cwd` alone. In a repository it is every worktree (worktrees share
+/// a scope) and every subdirectory of one that Atlas has recorded a session in
+/// (subdirectory launches share it too) — found through the transcripts Atlas
+/// keeps for every session, since each launch directory keeps its own capture
+/// store.
+fn scope_roots(cwd: &str, transcripts_dir: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![PathBuf::from(cwd)];
+    let mut seen: HashSet<PathBuf> = HashSet::from([canonical(Path::new(cwd))]);
+    let worktrees: Vec<PathBuf> = atlas_checkpoint::git::worktree_paths(Path::new(cwd))
+        .iter()
+        .map(|w| canonical(w))
+        .collect();
+    if worktrees.is_empty() {
+        return roots;
+    }
+    for wt in &worktrees {
+        if seen.insert(wt.clone()) {
+            roots.push(wt.clone());
         }
     }
+    let scope = canonical(&atlas_checkpoint::git::scope_root(Path::new(cwd)));
+    for (launched, _) in super::agent_transcript::recorded_projects(transcripts_dir) {
+        let dir = canonical(Path::new(&launched));
+        // The prefix test is cheap and rules out almost everything; the scope
+        // check keeps out a nested repository (a submodule) under a worktree.
+        if !seen.contains(&dir)
+            && worktrees.iter().any(|wt| dir.starts_with(wt))
+            && canonical(&atlas_checkpoint::git::scope_root(&dir)) == scope
+        {
+            seen.insert(dir);
+            roots.push(PathBuf::from(launched));
+        }
+    }
+    roots
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Is a recorded session id this session? A transcript file is named by the
+/// id with unsafe characters replaced, so it matches either spelling.
+fn same_session(recorded: &str, id: &str) -> bool {
+    recorded == id || recorded == super::agent_transcript::sanitize_id(id)
+}
+
+fn capture_heads(root: &Path, store: &Store, store_idx: usize) -> Vec<SessionHead> {
+    // Live capture keys a Workspace by its canonical path; the importer by the
+    // path as given. Read both, once each.
+    let mut ids = vec![crate::commands::capture::workspace_id_for(root)];
+    let lexical = root.to_string_lossy().to_string();
+    if !ids.contains(&lexical) {
+        ids.push(lexical);
+    }
+    let mut seen = HashSet::new();
+    ids.iter()
+        .flat_map(|id| store.sessions_for_workspace(id).unwrap_or_default())
+        .filter(|s| seen.insert(s.id.clone()))
+        .map(|s| SessionHead {
+            native_id: s.native_session_id,
+            last_activity: s.last_activity_at.unwrap_or(s.updated_at),
+            origin: Origin::Capture { store_idx, session_id: s.id },
+        })
+        .collect()
+}
+
+/// The session's conversation in order: user prompts and assistant replies
+/// only — tool calls, thinking and system rows are not a handoff.
+fn capture_entries(store: &Store, session_id: &str) -> Vec<(Speaker, String)> {
+    store
+        .messages_for_session(session_id)
+        .unwrap_or_default()
+        .iter()
+        .filter(|m| m.mode == Mode::Text)
+        .filter_map(|m| {
+            let speaker = match m.role {
+                Role::User => Speaker::User,
+                Role::Assistant => Speaker::Assistant,
+                Role::System => return None,
+            };
+            let body = store.message_body(m).unwrap_or_else(|e| {
+                // A spilled body whose blob is gone: the always-inline
+                // preview is the most that is left of the turn.
+                tracing::warn!(target: "atlas::memory_sharing", "handoff read a turn's preview, its body is unreadable: {e}");
+                m.preview.clone()
+            });
+            Some((speaker, body))
+        })
+        .collect()
+}
+
+fn transcript_heads(transcripts_dir: &Path, roots: &[PathBuf]) -> Vec<SessionHead> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        for cwd in [root.to_string_lossy().to_string(), canonical(root).to_string_lossy().to_string()] {
+            let dir = super::agent_transcript::dir_for(transcripts_dir, &cwd);
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+    dirs.iter()
+        .flat_map(|dir| super::agent_transcript::session_files(dir))
+        .map(|f| SessionHead {
+            native_id: f.file_id,
+            last_activity: DateTime::<Utc>::from(f.modified),
+            origin: Origin::Transcript { path: f.path },
+        })
+        .collect()
+}
+
+fn transcript_entries(path: &Path) -> Vec<(Speaker, String)> {
+    let Some(t) = super::agent_transcript::read_file(path) else {
+        return Vec::new();
+    };
+    t.messages
+        .into_iter()
+        .filter_map(|m| match m.role.as_str() {
+            "user" => Some((Speaker::User, m.content)),
+            "assistant" => Some((Speaker::Assistant, m.content)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Who said a recorded line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Speaker {
+    User,
+    Assistant,
+}
+
+impl Speaker {
+    /// The line prefix the handoff has always used.
+    fn label(self) -> &'static str {
+        match self {
+            Self::User => "User",
+            Self::Assistant => "Assistant",
+        }
+    }
+}
+
+/// Pure: the last `max_turns` handoff-worthy turns of a recorded conversation.
+/// A user turn keeps only what the user said ([`prose_only`]); an assistant
+/// turn is its trimmed text. Empty turns drop.
+fn handoff_turns(entries: Vec<(Speaker, String)>, max_turns: usize) -> Vec<(Speaker, String)> {
+    let mut turns: Vec<(Speaker, String)> = entries
+        .into_iter()
+        .filter_map(|(speaker, text)| {
+            let text = match speaker {
+                Speaker::User => prose_only(&text)?,
+                Speaker::Assistant => text.trim().to_string(),
+            };
+            (!text.is_empty()).then_some((speaker, text))
+        })
+        .collect();
     if turns.len() > max_turns {
         turns = turns.split_off(turns.len() - max_turns);
     }
     turns
-}
-
-fn user_message_text(v: &serde_json::Value) -> Option<String> {
-    let content = v.get("message")?.get("content")?;
-    if let Some(s) = content.as_str() {
-        return prose_only(s);
-    }
-    if let Some(arr) = content.as_array() {
-        let has_tool_result = arr
-            .iter()
-            .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"));
-        if has_tool_result {
-            return None;
-        }
-        let text: String = arr
-            .iter()
-            .filter_map(|b| {
-                if b.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    b.get("text").and_then(|t| t.as_str()).map(str::to_string)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        return prose_only(&text);
-    }
-    None
 }
 
 /// What the user actually said in a recorded user turn, or `None` if they said
@@ -224,33 +359,40 @@ fn prose_only(raw: &str) -> Option<String> {
     Some(text.trim().to_string())
 }
 
-fn assistant_message_text(v: &serde_json::Value) -> Option<String> {
-    let arr = v.get("message")?.get("content")?.as_array()?;
-    let text: String = arr
-        .iter()
-        .filter_map(|b| {
-            if b.get("type").and_then(|t| t.as_str()) == Some("text") {
-                b.get("text").and_then(|t| t.as_str()).map(str::to_string)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn format_turns(turns: &[(String, String)]) -> String {
+fn format_turns(turns: &[(Speaker, String)]) -> String {
     turns
         .iter()
-        .map(|(role, text)| format!("{}: {}", role, truncate_chars(text, TURN_MAX_CHARS)))
+        .map(|(speaker, text)| format!("{}: {}", speaker.label(), truncate_chars(text, TURN_MAX_CHARS)))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The handoff block for a first send, from [`build_session_handoff`]'s raw
+/// tail: summarised when the preference asks for the BYOK provider and names
+/// one, verbatim otherwise. A summariser that hands back the raw text (its
+/// failure fallback) is attributed as raw, not as a summary.
+pub async fn handoff_block<S, SF>(
+    raw: Option<(String, usize)>,
+    pref: &super::memory_sharing::SummarizerPref,
+    summarize: S,
+) -> Option<String>
+where
+    S: FnOnce(String, String, String) -> SF,
+    SF: std::future::Future<Output = String>,
+{
+    let (raw_body, turns) = raw?;
+    let (body, attribution) =
+        if pref.mode == "provider" && !pref.provider.is_empty() && !pref.model.is_empty() {
+            let summary = summarize(raw_body.clone(), pref.provider.clone(), pref.model.clone()).await;
+            if summary == raw_body {
+                (raw_body, "raw".to_string())
+            } else {
+                (summary, format!("summarized by {}/{}", pref.provider, pref.model))
+            }
+        } else {
+            (raw_body, "raw".to_string())
+        };
+    Some(wrap_handoff(&body, turns, &attribution))
 }
 
 /// Wrap a raw handoff body in the labelled block with an attribution footer.
@@ -330,9 +472,139 @@ fn truncate_chars(s: &str, max: usize) -> String {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+/// Fixture capture sessions, recorded through the real capture recorder into a
+/// scratch Workspace — what the handoff reads in production.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use atlas_checkpoint::{model::WorkspaceMode, Capture, Mode, Role, SessionKey, Source, Store, TurnContent};
+
+    /// A fresh scratch directory standing in for a project.
+    pub(crate) fn scratch_project(label: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("atlas-handoff-{label}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().to_string()
+    }
+
+    /// Record one session for `agent` into the capture store at `project`:
+    /// every `User` entry opens a turn (as a send does), everything else is
+    /// recorded inside the turn it follows.
+    pub(crate) fn record_session(project: &str, native_id: &str, agent: &str, entries: &[(Role, Mode, &str)]) {
+        let mut store = Store::open(atlas_checkpoint::atlas_dir(project)).expect("capture store opens");
+        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let key = SessionKey {
+            workspace_id: crate::commands::capture::workspace_id_for(std::path::Path::new(project)),
+            // As live capture files it: the native agent under its own source.
+            source: if agent == atlas_native_agent::CERSEI_AGENT_ID { Source::Cersei } else { Source::Acp },
+            native_session_id: native_id.into(),
+        };
+        let (mut turn, mut row) = (0i64, String::new());
+        for (i, (role, mode, body)) in entries.iter().enumerate() {
+            if *role == Role::User && *mode == Mode::Text {
+                turn += 1;
+                row = capture
+                    .record_prompt(&key, body, turn, Some(agent), None, Some(project))
+                    .expect("prompt recorded");
+            } else {
+                capture
+                    .record_turn(
+                        &row,
+                        TurnContent {
+                            turn_seq: turn,
+                            native_message_id: Some(format!("{native_id}-{i}")),
+                            role: *role,
+                            mode: *mode,
+                            body: body.to_string(),
+                            created_at: None,
+                        },
+                    )
+                    .expect("turn recorded");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::{record_session, scratch_project};
     use super::*;
+    use atlas_checkpoint::{Mode, Role};
+
+    const U: (Role, Mode) = (Role::User, Mode::Text);
+    const A: (Role, Mode) = (Role::Assistant, Mode::Text);
+
+    /// Where Atlas's own transcripts would live — empty unless a test writes one.
+    fn no_transcripts() -> PathBuf {
+        PathBuf::from(scratch_project("transcripts"))
+    }
+
+    /// Record `messages` as Atlas's own transcript of a session run in `cwd`.
+    fn save_transcript(transcripts: &Path, cwd: &str, id: &str, agent: &str, messages: &[(&str, &str)]) {
+        use super::super::agent_transcript::{save, StoredMessage, StoredTranscript};
+        let at = "2026-09-19T10:00:00Z".to_string();
+        save(
+            transcripts,
+            &StoredTranscript {
+                id: id.into(),
+                plugin_id: agent.into(),
+                cwd: cwd.into(),
+                created_at: at.clone(),
+                updated_at: at.clone(),
+                messages: messages
+                    .iter()
+                    .map(|(role, content)| StoredMessage {
+                        role: (*role).into(),
+                        content: (*content).into(),
+                        timestamp: at.clone(),
+                        model: None,
+                        live_id: None,
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// Run git in `dir`, with an identity so commits work anywhere.
+    fn git(dir: &str, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// A fresh repository with one commit; returns its main worktree.
+    fn scratch_repo(label: &str) -> String {
+        let main = scratch_project(label);
+        git(&main, &["init", "-q"]);
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        main
+    }
+
+    /// A Codex session followed by a Claude session: Claude's first send
+    /// carries Codex's tail, read from capture rather than any agent's files.
+    #[test]
+    fn a_codex_session_hands_off_to_claude() {
+        let p = scratch_project("codex-claude");
+        record_session(
+            &p,
+            "codex-1",
+            "codex",
+            &[(U.0, U.1, "add rate limiting to login"), (A.0, A.1, "Added a token bucket in src/limit.rs")],
+        );
+        record_session(&p, "claude-now", "claude-code", &[(U.0, U.1, "carry on")]);
+
+        assert_eq!(
+            build_session_handoff(&p, "claude-now", &no_transcripts()),
+            Some((
+                "User: add rate limiting to login\nAssistant: Added a token bucket in src/limit.rs".to_string(),
+                2
+            ))
+        );
+    }
 
     fn doc(kind: &str, title: &str, text: &str, ts: i64) -> MemoryDoc {
         MemoryDoc {
@@ -347,6 +619,191 @@ mod tests {
             aliases: Vec::new(),
             links: Vec::new(),
         }
+    }
+
+    /// A Claude session followed by Atlas Agent (stored agent id `cersei`):
+    /// the same handoff, with no agent-identity special-casing either way.
+    #[test]
+    fn a_claude_session_hands_off_to_atlas_agent() {
+        let p = scratch_project("claude-cersei");
+        record_session(
+            &p,
+            "claude-1",
+            "claude-code",
+            &[(U.0, U.1, "why does the build fail on CI?"), (A.0, A.1, "The lockfile was stale; regenerated it.")],
+        );
+        record_session(&p, "cersei-now", "cersei", &[(U.0, U.1, "what next")]);
+
+        assert_eq!(
+            build_session_handoff(&p, "cersei-now", &no_transcripts()),
+            Some((
+                "User: why does the build fail on CI?\nAssistant: The lockfile was stale; regenerated it.".to_string(),
+                2
+            ))
+        );
+    }
+
+    /// Today's budgets, unchanged: the last 8 conversational turns, each cut to
+    /// 800 characters with `…`; tool calls and thinking are not turns.
+    #[test]
+    fn the_handoff_keeps_todays_turn_and_character_budgets() {
+        let p = scratch_project("budgets");
+        let long: Vec<String> = (0..20).map(|i| format!("m{i:02} {}", "x".repeat(900))).collect();
+        let mut entries: Vec<(Role, Mode, &str)> = Vec::new();
+        for m in &long {
+            entries.push((Role::User, Mode::Text, m));
+            entries.push((Role::Assistant, Mode::Tool, "ran cargo test"));
+            entries.push((Role::Assistant, Mode::Thinking, "pondering"));
+        }
+        record_session(&p, "codex-long", "codex", &entries);
+
+        let (body, turns) = build_session_handoff(&p, "someone-else", &no_transcripts()).expect("handoff");
+        assert_eq!(turns, 8);
+        let expected: Vec<String> = (12..20)
+            .map(|i| format!("User: m{i} {}…", "x".repeat(800 - 4)))
+            .collect();
+        assert_eq!(body, expected.join("\n"));
+        assert!(body.chars().count() <= HANDOFF_MAX_CHARS);
+    }
+
+    /// Capture holds the prompt as typed, but an imported transcript holds the
+    /// *wire* prompt: a turn that carried context hands off the user's words
+    /// and none of the scaffolding; a turn that was only context is dropped.
+    #[test]
+    fn a_recorded_turn_drops_the_envelope_and_keeps_the_question() {
+        let p = scratch_project("envelope");
+        let wire = compose_injection(
+            &["--- PROJECT MEMORY ---\nuse RS256\n--- END PROJECT MEMORY ---"],
+            "why is auth failing?",
+        );
+        let only_context = compose_injection(&["--- PROJECT MEMORY ---\nx\n--- END PROJECT MEMORY ---"], "");
+        record_session(
+            &p,
+            "imported-1",
+            "claude-code",
+            &[
+                (U.0, U.1, &wire),
+                (A.0, A.1, "Clock skew on the verifier."),
+                (U.0, U.1, &only_context),
+                (U.0, U.1, "<system-reminder>injected</system-reminder>"),
+            ],
+        );
+        assert_eq!(
+            build_session_handoff(&p, "now", &no_transcripts()),
+            Some(("User: why is auth failing?\nAssistant: Clock skew on the verifier.".to_string(), 2))
+        );
+    }
+
+    /// The most recent *other* session wins, whichever agent ran it; the
+    /// current session is never handed to itself, and a newer session with
+    /// nothing to say does not hide an older one that has.
+    #[test]
+    fn the_most_recent_other_session_wins() {
+        let p = scratch_project("newest");
+        record_session(&p, "old", "claude-code", &[(U.0, U.1, "old question")]);
+        record_session(&p, "mid", "gemini", &[(U.0, U.1, "gemini question")]);
+        record_session(&p, "empty", "codex", &[(U.0, U.1, "<system-reminder>x</system-reminder>")]);
+        record_session(&p, "now", "codex", &[(U.0, U.1, "current question")]);
+
+        assert_eq!(
+            build_session_handoff(&p, "now", &no_transcripts()),
+            Some(("User: gemini question".to_string(), 1))
+        );
+        assert_eq!(build_session_handoff(&scratch_project("nothing"), "now", &no_transcripts()), None);
+    }
+
+    /// Capture is opt-in. Where it was never enabled, the handoff still works
+    /// for any agent from the transcripts Atlas records for every session.
+    #[test]
+    fn without_capture_the_handoff_reads_atlas_transcripts() {
+        let p = scratch_project("no-capture");
+        let transcripts = no_transcripts();
+        save_transcript(
+            &transcripts,
+            &p,
+            "codex-1",
+            "codex",
+            &[("user", "rename the crate"), ("assistant", "Renamed to atlas-core.")],
+        );
+
+        assert_eq!(
+            build_session_handoff(&p, "claude-now", &transcripts),
+            Some(("User: rename the crate\nAssistant: Renamed to atlas-core.".to_string(), 2))
+        );
+        assert_eq!(build_session_handoff(&p, "codex-1", &transcripts), None, "never a self-handoff");
+    }
+
+    /// Worktrees of one repository share a scope: a session run in a linked
+    /// worktree hands off to the next session in the main checkout.
+    #[test]
+    fn worktrees_of_one_repository_share_the_handoff() {
+        let main = scratch_repo("repo");
+        let linked = format!("{main}-wt");
+        git(&main, &["worktree", "add", "-q", &linked]);
+
+        record_session(&linked, "codex-wt", "codex", &[(U.0, U.1, "fix the flaky test")]);
+        assert_eq!(
+            build_session_handoff(&main, "claude-main", &no_transcripts()),
+            Some(("User: fix the flaky test".to_string(), 1))
+        );
+    }
+
+    /// A subdirectory launch shares the repository's scope too: the previous
+    /// session ran from `crates/core`, the next one opens at the root, and the
+    /// handoff finds it — from that launch's capture store, which wins over
+    /// the transcript copy of the same session.
+    #[test]
+    fn a_subdirectory_launch_shares_the_handoff() {
+        let main = scratch_repo("subdir");
+        let sub = format!("{main}/crates/core");
+        std::fs::create_dir_all(&sub).unwrap();
+        let transcripts = no_transcripts();
+
+        record_session(&sub, "gemini-sub", "gemini", &[(U.0, U.1, "token sk-live-secret leaked?")]);
+        save_transcript(&transcripts, &sub, "gemini-sub", "gemini", &[("user", "transcript copy")]);
+
+        let (body, turns) = build_session_handoff(&main, "claude-root", &transcripts).expect("handoff");
+        assert_eq!(turns, 1);
+        assert!(body.starts_with("User: token "), "{body}");
+        assert!(!body.contains("transcript copy"), "capture wins over the transcript copy: {body}");
+
+        // Outside git the scope is the launch directory alone.
+        let plain = scratch_project("plain");
+        let plain_sub = format!("{plain}/sub");
+        std::fs::create_dir_all(&plain_sub).unwrap();
+        save_transcript(&transcripts, &plain_sub, "codex-sub", "codex", &[("user", "elsewhere")]);
+        assert_eq!(build_session_handoff(&plain, "now", &transcripts), None);
+    }
+
+    /// Summariser behaviour, as today: raw by default; the BYOK provider when
+    /// the preference names one; raw again when the summariser falls back.
+    #[tokio::test]
+    async fn the_optional_summariser_is_applied_as_today() {
+        use super::super::memory_sharing::SummarizerPref;
+        let raw = || Some(("User: hi\nAssistant: yo".to_string(), 2));
+        let provider = SummarizerPref { mode: "provider".into(), provider: "anthropic".into(), model: "m1".into() };
+
+        let never = |_: String, _: String, _: String| async { unreachable!("raw mode never summarises") };
+        assert_eq!(
+            handoff_block(raw(), &SummarizerPref::default(), never).await.as_deref(),
+            Some("--- RECENT SESSION ---\nUser: hi\nAssistant: yo\n(last 2 turns · raw)\n--- END RECENT SESSION ---")
+        );
+        let incomplete = SummarizerPref { model: String::new(), ..provider.clone() };
+        assert!(handoff_block(raw(), &incomplete, never).await.unwrap().contains("(last 2 turns · raw)"));
+
+        let summarised = handoff_block(raw(), &provider, |text: String, p: String, m: String| async move {
+            assert_eq!((text.as_str(), p.as_str(), m.as_str()), ("User: hi\nAssistant: yo", "anthropic", "m1"));
+            "- greeted".to_string()
+        })
+        .await;
+        assert_eq!(
+            summarised.as_deref(),
+            Some("--- RECENT SESSION ---\n- greeted\n(last 2 turns · summarized by anthropic/m1)\n--- END RECENT SESSION ---")
+        );
+
+        let fell_back = handoff_block(raw(), &provider, |text: String, _: String, _: String| async move { text }).await;
+        assert!(fell_back.unwrap().contains("User: hi\nAssistant: yo\n(last 2 turns · raw)"));
+        assert_eq!(handoff_block(None, &provider, never).await, None);
     }
 
     #[test]
@@ -395,78 +852,6 @@ mod tests {
         // Newest (highest ts = D39) must be present; an old one (D0) dropped.
         assert!(pack.contains("[project] D39"));
         assert!(!pack.contains("[project] D0\n"));
-    }
-
-    #[test]
-    fn test_transcript_parse_filters() {
-        let jsonl = r#"
-{"type":"user","message":{"content":"hello there"}}
-{"type":"assistant","message":{"content":[{"type":"text","text":"hi back"}]}}
-{"type":"user","isSidechain":true,"message":{"content":"sidechain noise"}}
-{"type":"user","message":{"content":[{"type":"tool_result","content":"output"}]}}
-{"type":"user","message":{"content":"<system-reminder>injected</system-reminder>"}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"x","input":{}}]}}
-"#;
-        let turns = parse_handoff_turns(jsonl, 8);
-        assert_eq!(turns.len(), 2, "only 2 real turns: {turns:?}");
-        assert_eq!(turns[0], ("User".into(), "hello there".into()));
-        assert_eq!(turns[1], ("Assistant".into(), "hi back".into()));
-    }
-
-    #[test]
-    fn test_transcript_parse_takes_last_n() {
-        let mut lines = String::new();
-        for i in 0..20 {
-            lines.push_str(&format!(
-                "{{\"type\":\"user\",\"message\":{{\"content\":\"m{i}\"}}}}\n"
-            ));
-        }
-        let turns = parse_handoff_turns(&lines, 8);
-        assert_eq!(turns.len(), 8);
-        assert_eq!(turns[0].1, "m12");
-        assert_eq!(turns[7].1, "m19");
-    }
-
-    /// The handoff reads the *wire* prompt the previous session recorded, so a
-    /// turn that carried context must hand off the user's words and none of the
-    /// scaffolding wrapped around them.
-    #[test]
-    fn test_transcript_turn_drops_the_envelope_and_keeps_the_question() {
-        let wire = compose_injection(
-            &["--- PROJECT MEMORY ---\nuse RS256\n--- END PROJECT MEMORY ---"],
-            "why is auth failing?",
-        );
-        let line = serde_json::json!({
-            "type": "user",
-            "message": { "content": wire },
-        })
-        .to_string();
-        let turns = parse_handoff_turns(&line, 8);
-        assert_eq!(turns, vec![("User".to_string(), "why is auth failing?".to_string())]);
-    }
-
-    /// A turn that was *only* context is not a turn the user took.
-    #[test]
-    fn test_transcript_turn_that_is_only_context_is_dropped() {
-        let wire = compose_injection(&["--- PROJECT MEMORY ---\nx\n--- END PROJECT MEMORY ---"], "");
-        let line = serde_json::json!({ "type": "user", "message": { "content": wire } }).to_string();
-        assert!(parse_handoff_turns(&line, 8).is_empty());
-    }
-
-    #[test]
-    fn test_pick_newest_session() {
-        let t0 = SystemTime::UNIX_EPOCH;
-        let t1 = t0 + std::time::Duration::from_secs(100);
-        let t2 = t0 + std::time::Duration::from_secs(200);
-        let cands = vec![
-            (PathBuf::from("/a/old.jsonl"), t0),
-            (PathBuf::from("/a/newest.jsonl"), t2),
-            (PathBuf::from("/a/mid.jsonl"), t1),
-        ];
-        assert_eq!(
-            pick_newest_session(cands),
-            Some(PathBuf::from("/a/newest.jsonl"))
-        );
     }
 
     #[test]

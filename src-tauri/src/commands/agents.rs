@@ -1331,8 +1331,9 @@ const INJECT_BUDGET_SECS: u64 = 8;
 /// Send a user message to an agent session.
 ///
 /// On the **first send** of a session — when Shared Cross-Agent Memory is
-/// enabled for the project — Atlas prepends a curated memory pack + recent
-/// Claude-session handoff so a freshly-switched agent inherits prior context.
+/// enabled for the project — Atlas prepends a curated memory pack + the
+/// recent-session handoff (whichever agent ran the previous session) so a
+/// freshly-switched agent inherits prior context.
 /// The injection is best-effort and time-bounded ([`INJECT_BUDGET_SECS`]); on
 /// any timeout/error the original `text` is sent unchanged. Turns 2..N skip the
 /// build entirely (see [`MemorySharingState::already_sent`]).
@@ -1541,35 +1542,27 @@ async fn build_bootstrap_blocks(
         // Curated pack (collect_corpus is async + does its own spawn_blocking).
         let pack = memory_pack::build_memory_pack(&cwd, pack_budget).await;
 
-        // Recent-session handoff: pure disk I/O on a blocking thread.
+        // Recent-session handoff, from what Atlas recorded for any agent:
+        // pure disk I/O on a blocking thread.
         let handoff_raw = {
             let cwd = cwd.clone();
             let sid = session_id.clone();
-            tokio::task::spawn_blocking(move || memory_pack::build_session_handoff(&cwd, &sid))
-                .await
-                .ok()
-                .flatten()
+            let transcripts = app
+                .state::<Arc<super::agent_transcript::TranscriptState>>()
+                .config_dir()
+                .to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                memory_pack::build_session_handoff(&cwd, &sid, &transcripts)
+            })
+            .await
+            .ok()
+            .flatten()
         };
 
-        let handoff_block = if let Some((raw_body, turns)) = handoff_raw {
-            let (body, attribution) = if pref.mode == "provider"
-                && !pref.provider.is_empty()
-                && !pref.model.is_empty()
-            {
-                let summary =
-                    memory_summarize::summarize(app, &raw_body, &pref.provider, &pref.model).await;
-                if summary == raw_body {
-                    (raw_body, "raw".to_string())
-                } else {
-                    (summary, format!("summarized by {}/{}", pref.provider, pref.model))
-                }
-            } else {
-                (raw_body, "raw".to_string())
-            };
-            Some(memory_pack::wrap_handoff(&body, turns, &attribution))
-        } else {
-            None
-        };
+        let handoff_block = memory_pack::handoff_block(handoff_raw, pref, |raw, provider, model| async move {
+            memory_summarize::summarize(app, &raw, &provider, &model).await
+        })
+        .await;
 
         [pack, handoff_block].into_iter().flatten().collect::<Vec<String>>()
     })

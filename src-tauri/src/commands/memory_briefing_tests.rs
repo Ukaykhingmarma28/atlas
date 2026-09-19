@@ -403,3 +403,52 @@ async fn the_first_send_stays_within_todays_budget() {
     let index = out.split("--- SHARED MEMORY — INDEX ---").nth(1).unwrap().split("--- END SHARED MEMORY ---").next().unwrap();
     assert!(index.lines().count() <= INDEX_MAX_LINES);
 }
+
+/// The first send after switching agents, end to end through the real handoff
+/// builder: Codex ran the previous session (recorded by capture), Claude opens
+/// the next one, and Claude's first send carries Codex's tail inside the
+/// envelope — the same text whichever agent came before. A second send does
+/// not repeat it.
+#[tokio::test]
+async fn the_first_send_after_an_agent_switch_carries_the_previous_agents_tail() {
+    use crate::commands::memory_pack::test_support::{record_session, scratch_project};
+    use atlas_checkpoint::{Mode, Role};
+
+    let (store, sharing, key, p) = (store(), MemorySharingState::new(), key(), scratch_project("switch"));
+    record_session(
+        &p,
+        "codex-1",
+        "codex",
+        &[
+            (Role::User, Mode::Text, "add rate limiting to login"),
+            (Role::Assistant, Mode::Tool, "edit src/limit.rs"),
+            (Role::Assistant, Mode::Text, "Added a token bucket in src/limit.rs"),
+        ],
+    );
+    let transcripts = std::path::PathBuf::from(scratch_project("transcripts"));
+    let send = |text: &'static str| {
+        let (store, sharing, key, p, transcripts) = (&store, &sharing, &key, &p, &transcripts);
+        async move {
+            compose_turn(store, sharing, key, p, text, NOW, |_q| async { Vec::new() }, |_budget| async move {
+                let raw = memory_pack::build_session_handoff(p, &key.session_id, transcripts);
+                let never = |_: String, _: String, _: String| async { unreachable!("raw preference") };
+                memory_pack::handoff_block(raw, &crate::commands::memory_sharing::SummarizerPref::default(), never).await.into_iter().collect()
+            })
+            .await
+        }
+    };
+
+    assert_eq!(
+        send("does the limiter cover signup too?").await,
+        format!(
+            "<atlas-memory>\n{NOTE}\n\
+             --- RECENT SESSION ---\n\
+             User: add rate limiting to login\n\
+             Assistant: Added a token bucket in src/limit.rs\n\
+             (last 2 turns · raw)\n\
+             --- END RECENT SESSION ---\n\
+             </atlas-memory>\n\ndoes the limiter cover signup too?"
+        )
+    );
+    assert_eq!(send("and the reset endpoint?").await, "and the reset endpoint?");
+}

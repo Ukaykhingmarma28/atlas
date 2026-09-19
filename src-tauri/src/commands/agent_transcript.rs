@@ -103,6 +103,12 @@ impl TranscriptState {
         }
     }
 
+    /// Where this state's transcripts are persisted — what [`list`] and
+    /// [`read`] take as `config_dir`.
+    pub fn config_dir(&self) -> &Path {
+        &self.config_dir
+    }
+
     /// Record the user's prompt, creating the session's buffer on first use.
     /// `cwd`/`plugin_id` are only consulted when creating.
     ///
@@ -298,7 +304,7 @@ pub fn save(config_dir: &Path, t: &StoredTranscript) -> std::io::Result<()> {
 
 /// Session ids come from the agent, so they are not guaranteed to be safe as a
 /// filename — `..` or a separator would escape the directory.
-fn sanitize_id(id: &str) -> String {
+pub(crate) fn sanitize_id(id: &str) -> String {
     id.chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect()
@@ -337,9 +343,59 @@ pub fn list(config_dir: &Path, cwd: &str) -> Vec<AgentSessionMeta> {
 
 /// Read one transcript back for replay.
 pub fn read(config_dir: &Path, cwd: &str, session_id: &str) -> Option<StoredTranscript> {
-    let path = dir_for(config_dir, cwd).join(format!("{}.json", sanitize_id(session_id)));
+    read_file(&dir_for(config_dir, cwd).join(format!("{}.json", sanitize_id(session_id))))
+}
+
+/// Read one transcript file.
+pub fn read_file(path: &Path) -> Option<StoredTranscript> {
     let bytes = std::fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+/// A recorded session's file, before it is read.
+pub struct TranscriptFile {
+    /// The session id in its file-safe spelling ([`sanitize_id`]) — what the
+    /// file is named, so a caller can match ids without reading the file.
+    pub file_id: String,
+    pub modified: std::time::SystemTime,
+    pub path: PathBuf,
+}
+
+/// Every session file in one project directory (see [`dir_for`]), unread.
+pub fn session_files(dir: &Path) -> Vec<TranscriptFile> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(std::result::Result::ok)
+        .filter_map(|e| {
+            let path = e.path();
+            if path.extension().is_none_or(|x| x != "json") {
+                return None;
+            }
+            let file_id = path.file_stem()?.to_str()?.to_string();
+            let modified = e.metadata().and_then(|m| m.modified()).ok()?;
+            Some(TranscriptFile { file_id, modified, path })
+        })
+        .collect()
+}
+
+/// Every project directory holding transcripts, with the `cwd` its sessions
+/// ran in. The directory name is a hash, so the `cwd` is read from the first
+/// readable transcript inside — one file per project, not every session.
+pub fn recorded_projects(config_dir: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(config_dir.join("agent-transcripts")) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .filter(|dir| dir.is_dir())
+        .filter_map(|dir| {
+            let cwd = session_files(&dir).iter().find_map(|f| read_file(&f.path))?.cwd;
+            Some((cwd, dir))
+        })
+        .collect()
 }
 
 #[cfg(test)]
