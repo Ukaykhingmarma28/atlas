@@ -750,6 +750,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "winreg 0.55.0",
 ]
 
 [[package]]

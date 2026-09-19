@@ -1,16 +1,16 @@
-//! No-op auto-updater stand-in for non-macOS targets.
+//! No-op auto-updater stand-in for targets with no installer flow (Linux).
 //!
-//! The real implementation (`updater_macos.rs`) mounts, verifies and swaps a
-//! signed `.app` bundle — none of that has a Windows/Linux equivalent yet.
-//! This stub keeps `lib.rs` and the frontend's `invoke()` surface
-//! platform-agnostic: every verb still exists and reports "no update", so the
-//! UI hydrates normally instead of showing a failed call.
+//! The real implementations (`updater_macos.rs`, `updater_windows.rs`) stage a
+//! downloaded DMG/MSI and install it on restart — nothing equivalent exists
+//! for the Linux builds yet. This stub keeps `lib.rs` and the frontend's
+//! `invoke()` surface platform-agnostic: every verb still exists and reports
+//! "no update", so the UI hydrates normally instead of showing a failed call.
 //!
-//! Signatures here mirror `updater_macos.rs` exactly — including the injected
+//! Signatures here mirror the real modules exactly — including the injected
 //! `AppHandle`/`State` arguments and each function's asyncness — because
-//! `updater.rs` calls both through one shared `#[tauri::command]` wrapper. A
-//! change on one side that isn't mirrored here fails to compile on that
-//! platform rather than drifting silently.
+//! `updater.rs` calls all of them through one shared `#[tauri::command]`
+//! wrapper. A change on one side that isn't mirrored here fails to compile on
+//! that platform rather than drifting silently.
 
 use tauri::{AppHandle, State};
 

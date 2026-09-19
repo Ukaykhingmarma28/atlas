@@ -37,7 +37,7 @@
 pub mod device;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::RwLock;
@@ -163,24 +163,35 @@ impl OrgIdentity {
 pub struct RemoteUpdateConfig {
     /// Latest version, raw string (e.g. `"0.1.21"`).
     pub version: String,
-    /// Direct download URL of the release DMG **for this machine's
-    /// architecture** — see [`update_uri_flag`].
+    /// Direct download URL of the release installer (DMG or MSI) **for this
+    /// machine's platform and architecture** — see [`update_uri_flag`].
     pub uri: String,
 }
 
-/// Which remote-config key holds the DMG this machine should download.
+/// Which remote-config key holds the installer this machine should download.
 ///
-/// Atlas builds one DMG per architecture (`scripts/build-dmg.sh arm|intel`),
-/// so PostHog carries one URI for each: `uri_mac_arm` and `uri_mac_intel`.
-/// There is deliberately no plain `uri` fallback — a single URL cannot be right
-/// for both, and silently serving an x86 DMG to an Apple Silicon Mac (or the
-/// reverse) produces an app that either runs translated or does not run at all.
-/// A missing key means no update is offered, which is the safe answer.
+/// Atlas builds one installer per platform and architecture — DMGs from
+/// `scripts/build-dmg.sh arm|intel`, the x64 MSI from `bun run build:app:win`
+/// — so PostHog carries one URI for each: `uri_mac_arm`, `uri_mac_intel` and
+/// `uri_win_intel`. There is deliberately no plain `uri` fallback — a single
+/// URL cannot be right for all of them, and silently serving an x86 DMG to an
+/// Apple Silicon Mac (or the reverse) produces an app that either runs
+/// translated or does not run at all. A missing key means no update is
+/// offered, which is the safe answer.
 ///
-/// Compile-time architecture is *almost* the whole story, since each build is
-/// single-arch. The exception is an Intel build running under **Rosetta** on
-/// Apple Silicon: that machine can run the native ARM app, and keying off the
-/// binary alone would pin it to the translated build forever.
+/// On Windows the x64 MSI is the only build: Windows on ARM runs it under its
+/// x64 emulation, so there is no second key to choose between.
+#[cfg(target_os = "windows")]
+fn update_uri_flag() -> &'static str {
+    "uri_win_intel"
+}
+
+/// macOS (and, until it has an updater, Linux): the architecture picks the
+/// DMG. Compile-time architecture is *almost* the whole story, since each
+/// build is single-arch. The exception is an Intel build running under
+/// **Rosetta** on Apple Silicon: that machine can run the native ARM app, and
+/// keying off the binary alone would pin it to the translated build forever.
+#[cfg(not(target_os = "windows"))]
 fn update_uri_flag() -> &'static str {
     // Short-circuit: an ARM build is only ever on ARM hardware, so the sysctl
     // below never runs there.
@@ -199,6 +210,7 @@ fn update_uri_flag() -> &'static str {
 /// change while the process is alive.
 #[cfg(target_os = "macos")]
 fn running_under_rosetta() -> bool {
+    use std::sync::OnceLock;
     static TRANSLATED: OnceLock<bool> = OnceLock::new();
     *TRANSLATED.get_or_init(|| {
         std::process::Command::new("/usr/sbin/sysctl")
@@ -210,7 +222,8 @@ fn running_under_rosetta() -> bool {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Not macOS (and not Windows, which never asks): nothing is ever translated.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn running_under_rosetta() -> bool {
     false
 }
@@ -417,8 +430,9 @@ impl TelemetryClient {
         }
     }
 
-    /// Fetch the two auto-update remote-config values — `version`, and the
-    /// architecture's own URI key (`uri_mac_arm` / `uri_mac_intel`) — from
+    /// Fetch the two auto-update remote-config values — `version`, and this
+    /// platform's own URI key (`uri_mac_arm` / `uri_mac_intel` /
+    /// `uri_win_intel`) — from
     /// PostHog using the official `posthog-rs` SDK's feature-flag evaluation
     /// (`evaluate_flags` → `/flags/?v=2`), keyed on the project token + anon
     /// distinct id. Both values are stored as PostHog **remote-config flag
@@ -441,8 +455,8 @@ impl TelemetryClient {
             .await
             .ok()?;
         let version = flags.get_flag_payload("version").as_ref().and_then(payload_string)?;
-        // Architecture-specific: `uri_mac_arm` or `uri_mac_intel`, never a
-        // shared `uri` — see `update_uri_flag`.
+        // Platform-specific: `uri_mac_arm`, `uri_mac_intel` or `uri_win_intel`,
+        // never a shared `uri` — see `update_uri_flag`.
         let uri_flag = update_uri_flag();
         let uri = flags.get_flag_payload(uri_flag).as_ref().and_then(payload_string)?;
         if version.trim().is_empty() || uri.trim().is_empty() {
@@ -861,6 +875,15 @@ async fn send_batch(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn the_update_uri_key_is_the_x64_msi_on_windows() {
+        // Never the old shared key, and never a DMG key: the one Windows
+        // build is the x64 MSI, whatever the hardware.
+        assert_eq!(update_uri_flag(), "uri_win_intel");
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn the_update_uri_key_matches_the_architecture_that_can_run_the_dmg() {
         let flag = update_uri_flag();
@@ -880,6 +903,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn rosetta_detection_is_stable_and_false_on_native_hardware() {
         // Cached behind a `OnceLock`, so it must not change between calls.
