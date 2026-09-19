@@ -460,6 +460,11 @@ fn read_shared_memory_docs(project_path: &str) -> Vec<MemoryDoc> {
         .collect()
 }
 
+/// The corpus id of a record entry's document: `shared:<kind>:<entry id>`.
+pub fn shared_doc_id(kind: &str, id: i64) -> String {
+    format!("shared:{kind}:{id}")
+}
+
 /// Build one promoted shared-memory [`MemoryDoc`]. `None` for empty text.
 fn shared_doc(id: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<MemoryDoc> {
     let t = text.trim();
@@ -467,7 +472,7 @@ fn shared_doc(id: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<M
         return None;
     }
     Some(MemoryDoc {
-        id: format!("shared:{kind}:{id}"),
+        id: shared_doc_id(kind, id as i64),
         title: short_title(t),
         summary: short_title(t),
         kind: kind.to_string(),

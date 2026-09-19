@@ -53,7 +53,7 @@ use super::agent_host::{
 use super::agent_analytics::AnalyticsState;
 use super::catalog::emit_catalog_changed;
 use super::memory_indexer::MemoryRegistry;
-use super::memory_inject;
+use super::memory_briefing;
 use super::memory_pack;
 use super::memory_retrieve;
 use super::memory_sharing::{MemorySharingState, SummarizerPref};
@@ -1448,75 +1448,60 @@ pub async fn agents_send(
             .map_err(|e| e.to_string());
     }
 
-    // v2 push: per-turn shared-memory block, gated by this session's sync clock
-    // (0 ⇒ first sync = full current state; >0 ⇒ delta since last turn). The
-    // record store reads SQLite (and the scope's first open migrates legacy
-    // files), so it runs on the blocking pool; a failure means no block this
-    // turn and an unmoved clock.
-    let clock = sharing.clock_for(&key);
-    let (shared_block, synced_to) = {
-        let store = store.inner().clone();
-        let cwd = cwd.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            // One read: the block and the clock it advances to come from the
-            // same state, so an event landing in between is not skipped.
-            let state = store.get_state(&cwd);
-            (memory_inject::compose_shared_block(&state, clock), state.last_seq)
-        })
-        .await
-        .unwrap_or((None, clock))
-    };
-    sharing.advance_clock(&key, synced_to);
-
-    // Site C (Step 5: kept, NOT removed) — retrieval-augmented push: RAG the
-    // project's memory index by the user's message, keep only docs not already
-    // injected this session, and compose a budgeted `--- RELEVANT PROJECT MEMORY
-    // ---` block. This is a read-only PUSH that grounds every agent — the only
-    // grounding an agent without HTTP MCP (so without the `memory_search` pull
-    // tool) gets, so removing it would regress their RAG. It performs NO indexing (read-only). Step 6 rewires the underlying
-    // `memory_retrieve::retrieve` onto the fresh `MemoryEngine`; the call here is
-    // unchanged. `retrieve` is best-effort + time-bounded; a missing embedding
-    // model / unbuilt index yields nothing, so this is a no-op until the index
-    // exists.
+    // Compose this turn's memory (`memory_briefing::compose_turn`): on the
+    // session's first send, the briefing — working memory, the ranked durable
+    // index, then the curated pack and recent-session handoff; on later turns,
+    // the shared-memory delta by the session's sync clock. On every turn, the
+    // relevant-memory block (skipped on short or continuation prompts). All of
+    // it inside one `<atlas-memory>` envelope, the user's words after it.
+    //
+    // Relevant memory is the retrieval-augmented push: RAG the project's
+    // memory index by the user's message — the only grounding an agent without
+    // HTTP MCP (so without the `memory_search` pull tool) gets. Read-only and
+    // best-effort + time-bounded; a missing model or unbuilt index yields
+    // nothing.
     const INDEX_TOP_K: usize = 3;
-    let t_retrieve = std::time::Instant::now();
-    let mut index_docs = memory_retrieve::retrieve(&app, &cwd, &text, INDEX_TOP_K).await;
-    // Every millisecond here is silent "agent is thinking" to the user — a
-    // slow stage must name itself, or the next latency report is undiagnosable
-    // (this one presented as "the ACP port made Claude slower").
-    if t_retrieve.elapsed() > Duration::from_secs(1) {
-        tracing::warn!(
-            target: "atlas::agents::send_latency",
-            "pre-send memory retrieval took {:?}",
-            t_retrieve.elapsed()
-        );
-    }
-    index_docs.retain(|d| sharing.note_index_doc(&key, &d.id));
-    let index_block = memory_retrieve::compose_index_block(&index_docs);
-
-    // v1 bootstrap: on the very first send only, also prepend the curated pack +
-    // recent-session handoff (retained as the clock-0 onboarding layer, bounded
-    // by INJECT_BUDGET_SECS inside `build_bootstrap_blocks`).
-    let bootstrap = if !sharing.already_sent(&key) {
-        let pref = sharing.summarizer_pref(&cwd);
-        let built = build_bootstrap_blocks(&app, &cwd, &key.session_id, &pref).await;
-        sharing.mark_sent(&key);
-        built
-    } else {
-        Vec::new()
+    let now = chrono::Utc::now().timestamp_millis();
+    let retrieve = |query: String| {
+        let (app, cwd) = (&app, &cwd);
+        async move {
+            let started = std::time::Instant::now();
+            let docs = memory_retrieve::retrieve(app, cwd, &query, INDEX_TOP_K).await;
+            // Every millisecond here is silent "agent is thinking" to the user —
+            // a slow stage must name itself, or the next latency report is
+            // undiagnosable (this one presented as "the ACP port made Claude
+            // slower").
+            if started.elapsed() > Duration::from_secs(1) {
+                tracing::warn!(
+                    target: "atlas::agents::send_latency",
+                    "pre-send memory retrieval took {:?}",
+                    started.elapsed()
+                );
+            }
+            docs
+        }
     };
-
-    // Compose: one `<atlas-memory>` envelope holding [working memory] +
-    // [relevant index] + (bootstrap), then the user's text after it. The blocks
-    // go inside the tag and the user's words stay outside it, so the agent can
-    // tell background from request — and so every Atlas reader can take the
-    // background back off again.
-    let blocks: Vec<&str> = [shared_block.as_deref(), index_block.as_deref()]
-        .into_iter()
-        .flatten()
-        .chain(bootstrap.iter().map(String::as_str))
-        .collect();
-    let prefixed = memory_pack::compose_injection(&blocks, &text);
+    // First send only: the curated pack (within what the briefing left of its
+    // budget) + recent-session handoff, bounded by INJECT_BUDGET_SECS inside
+    // `build_bootstrap_blocks`.
+    let bootstrap = |pack_budget: usize| {
+        let (app, cwd, sharing, session_id) = (&app, &cwd, &sharing, &key.session_id);
+        async move {
+            let pref = sharing.summarizer_pref(cwd);
+            build_bootstrap_blocks(app, cwd, session_id, &pref, pack_budget).await
+        }
+    };
+    let prefixed = memory_briefing::compose_turn(
+        store.inner(),
+        sharing.inner(),
+        &key,
+        &cwd,
+        &text,
+        now,
+        retrieve,
+        bootstrap,
+    )
+    .await;
     host.send(
         &key,
         prompt::with_resource_links(prompt::compose(prefixed, images), links),
@@ -1536,13 +1521,14 @@ async fn build_bootstrap_blocks(
     cwd: &str,
     session_id: &str,
     pref: &SummarizerPref,
+    pack_budget: usize,
 ) -> Vec<String> {
     let cwd = cwd.to_string();
     let session_id = session_id.to_string();
 
     let built = tokio::time::timeout(Duration::from_secs(INJECT_BUDGET_SECS), async {
         // Curated pack (collect_corpus is async + does its own spawn_blocking).
-        let pack = memory_pack::build_memory_pack(&cwd).await;
+        let pack = memory_pack::build_memory_pack(&cwd, pack_budget).await;
 
         // Recent-session handoff: pure disk I/O on a blocking thread.
         let handoff_raw = {

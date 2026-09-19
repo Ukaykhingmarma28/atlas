@@ -28,7 +28,7 @@ const RETRIEVE_TIMEOUT_SECS: u64 = 6;
 /// Per-doc snippet cap in the injected block.
 const PER_DOC_CHARS: usize = 320;
 /// Total char budget for the composed block body.
-const BLOCK_MAX_CHARS: usize = 1400;
+pub(crate) const BLOCK_MAX_CHARS: usize = 1400;
 
 #[derive(Debug, Clone)]
 pub struct RetrievedDoc {

@@ -15,7 +15,7 @@
 use super::shared_memory::SharedState;
 
 /// Char budget for the composed block body (≈ a few hundred tokens).
-const BLOCK_MAX_CHARS: usize = 1600;
+pub(crate) const BLOCK_MAX_CHARS: usize = 1600;
 /// Max line items per section.
 const MAX_ITEMS: usize = 8;
 

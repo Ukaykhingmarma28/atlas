@@ -41,6 +41,19 @@ describe("the injected-context envelope", () => {
     ]);
   });
 
+  it("drops the session-start briefing's working-memory and index blocks too", () => {
+    const text = wire(
+      [
+        "--- SHARED MEMORY — WORKING MEMORY ---\n[ACTIVE PLAN] (by codex)\nMigrate auth\n--- END SHARED MEMORY ---",
+        "--- SHARED MEMORY — INDEX ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
+      ],
+      "why is the token rejected?",
+    );
+    const { prose, blocks } = extractInjectedContext(text);
+    expect(prose).toBe("why is the token rejected?");
+    expect(blocks.map((b) => b.label)).toEqual(["SHARED MEMORY", "SHARED MEMORY"]);
+  });
+
   it("still strips the bare blocks written before the envelope existed", () => {
     const legacy = "--- SHARED MEMORY ---\nfacts\n--- END SHARED MEMORY ---\n\nwhat changed?";
     expect(stripInjectedContext(legacy)).toBe("what changed?");

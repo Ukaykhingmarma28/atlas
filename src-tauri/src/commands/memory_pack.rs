@@ -29,7 +29,7 @@ use super::agent_memory::{collect_corpus, MemoryDoc};
 const PACK_KINDS: [&str; 4] = ["feedback", "user", "project", "reference"];
 
 /// Total character budget for the curated pack body.
-const PACK_MAX_CHARS: usize = 8_000;
+pub(crate) const PACK_MAX_CHARS: usize = 8_000;
 
 /// Per-entry body cap so one long fact can't dominate the pack.
 const ENTRY_MAX_CHARS: usize = 400;
@@ -40,20 +40,27 @@ const HANDOFF_MAX_TURNS: usize = 8;
 /// Per-turn cap for the raw handoff so a giant message can't blow the budget.
 const TURN_MAX_CHARS: usize = 800;
 
+/// The raw handoff body's ceiling: every carried turn at its cap, with its
+/// role prefix, truncation mark and line break.
+#[cfg(test)]
+pub(crate) const HANDOFF_MAX_CHARS: usize = HANDOFF_MAX_TURNS * (TURN_MAX_CHARS + 16);
+
 // ── Curated pack ─────────────────────────────────────────────────────────────
 
-/// Build the curated pack for a project. Async because `collect_corpus` is
-/// async (it does its own `spawn_blocking` internally). Returns `None` when no
-/// curated facts exist — caller treats that as "inject nothing".
-pub async fn build_memory_pack(project_path: &str) -> Option<String> {
+/// Build the curated pack for a project within `max_chars` of body (at most
+/// [`PACK_MAX_CHARS`]; the session-start briefing hands the pack what it left
+/// of that budget). Async because `collect_corpus` is async (it does its own
+/// `spawn_blocking` internally). Returns `None` when no curated facts exist —
+/// caller treats that as "inject nothing".
+pub async fn build_memory_pack(project_path: &str, max_chars: usize) -> Option<String> {
     let docs = collect_corpus(project_path).await;
-    curate_pack(docs)
+    curate_pack(docs, max_chars)
 }
 
 /// Pure core of the pack builder: filter to curated kinds, rank newest-first,
-/// and accumulate entries until the char budget is hit. Returns the full block
-/// (delimiters + footer) or `None` if nothing qualifies.
-pub fn curate_pack(mut docs: Vec<MemoryDoc>) -> Option<String> {
+/// and accumulate entries until the `max_chars` body budget is hit. Returns the
+/// full block (delimiters + footer) or `None` if nothing qualifies or fits.
+pub fn curate_pack(mut docs: Vec<MemoryDoc>, max_chars: usize) -> Option<String> {
     docs.retain(|d| PACK_KINDS.contains(&d.kind.as_str()));
     if docs.is_empty() {
         return None;
@@ -76,7 +83,9 @@ pub fn curate_pack(mut docs: Vec<MemoryDoc>) -> Option<String> {
             truncate_chars(raw.trim(), ENTRY_MAX_CHARS)
         );
         // Always include at least one entry; stop before exceeding the budget.
-        if count > 0 && body.len() + entry.len() > PACK_MAX_CHARS {
+        // (The briefing never leaves less than the old shared block's budget,
+        // well above one capped entry.)
+        if count > 0 && body.len() + entry.len() > max_chars {
             break;
         }
         body.push_str(&entry);
@@ -351,7 +360,7 @@ mod tests {
             doc("thread", "Th", "t", 6),
             doc("index", "Ix", "i", 7),
         ];
-        let pack = curate_pack(docs).expect("pack");
+        let pack = curate_pack(docs, PACK_MAX_CHARS).expect("pack");
         assert!(pack.contains("[feedback] Fb"));
         assert!(pack.contains("[user] Us"));
         assert!(pack.contains("[project] Pr"));
@@ -365,7 +374,7 @@ mod tests {
     #[test]
     fn test_no_curated_docs_is_none() {
         let docs = vec![doc("file", "a", "x", 1), doc("index", "b", "y", 2)];
-        assert!(curate_pack(docs).is_none());
+        assert!(curate_pack(docs, PACK_MAX_CHARS).is_none());
     }
 
     #[test]
@@ -377,7 +386,7 @@ mod tests {
         for i in 0..40 {
             docs.push(doc("project", &format!("D{i}"), &big, i as i64));
         }
-        let pack = curate_pack(docs).expect("pack");
+        let pack = curate_pack(docs, PACK_MAX_CHARS).expect("pack");
         assert!(
             pack.len() <= PACK_MAX_CHARS + 200,
             "pack within budget: {}",

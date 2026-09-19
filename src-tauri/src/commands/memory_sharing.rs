@@ -126,6 +126,9 @@ pub struct MemorySharingState {
     /// v3 Tier 2: index doc ids already injected into a session, so the same
     /// retrieved doc isn't re-pushed turn after turn.
     injected_docs: Mutex<HashMap<SessionKey, HashSet<String>>>,
+    /// Normalised texts of the entries a session's briefing indexed, so
+    /// retrieval does not push the same memory again under another id.
+    briefed: Mutex<HashMap<SessionKey, Vec<String>>>,
 }
 
 impl MemorySharingState {
@@ -184,6 +187,16 @@ impl MemorySharingState {
             .entry(key.clone())
             .or_default()
             .insert(doc_id.to_string())
+    }
+
+    /// Record the normalised texts a session's briefing indexed.
+    pub fn note_briefed(&self, key: &SessionKey, texts: impl IntoIterator<Item = String>) {
+        self.briefed.lock().entry(key.clone()).or_default().extend(texts);
+    }
+
+    /// The normalised texts a session's briefing indexed (empty before one).
+    pub fn briefed(&self, key: &SessionKey) -> Vec<String> {
+        self.briefed.lock().get(key).cloned().unwrap_or_default()
     }
 
     /// Update the toggle cache after a settings write so the next send sees it.

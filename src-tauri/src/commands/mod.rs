@@ -43,6 +43,7 @@ pub mod log;
 pub mod models_pricing;
 pub mod usage;
 pub mod memory_graph;
+pub mod memory_briefing;
 pub mod memory_pack;
 pub mod memory_policy;
 pub mod memory_sharing;
