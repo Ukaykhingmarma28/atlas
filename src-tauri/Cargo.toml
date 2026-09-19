@@ -211,6 +211,19 @@ dotenvy = "0.15"
 # `crate::commands::updater`.
 semver = "1"
 posthog-rs = "0.14"
+# The memory tool server (`commands::memory_server`): MCP over streamable HTTP
+# on loopback. Both crates are already linked into this binary through the
+# vendored Codex engine (`codex-rmcp-client` enables exactly these rmcp
+# features; `codex-app-server` these axum ones), so this adds no resolution.
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
+axum = { workspace = true, features = ["http1", "tokio"] }
+
+[dev-dependencies]
+# An in-process MCP client for the memory tool server's loopback tests.
+# `transport-streamable-http-client-reqwest` is only the union of two features
+# `codex-rmcp-client` already turns on (`transport-streamable-http-client`, and
+# `__reqwest` through `auth`), so it compiles nothing new.
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Native NSWindow access for the titlebar double-click "zoom" (AppKit

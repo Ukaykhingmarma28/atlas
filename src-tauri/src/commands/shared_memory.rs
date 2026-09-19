@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use atlas_memory::record::{self, Entry, EntryKind, NewEvent, Origin, RecordStore};
+use atlas_memory::record::{self, Embedder, Entry, EntryKind, NewEntry, NewEvent, Origin, RecordStore, Remembered};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -213,15 +213,16 @@ fn read_state(store: &RecordStore) -> anyhow::Result<SharedState> {
 /// first open (the scope root, every worktree git knows of, and the launch
 /// directory itself — a subdirectory launch had its own store too).
 pub fn store_for(project_path: &str) -> Result<Arc<RecordStore>, String> {
-    static OPENED: OnceLock<Mutex<HashMap<String, Arc<RecordStore>>>> = OnceLock::new();
-    let opened = OPENED.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut opened = opened.lock();
+    let mut opened = opened().lock();
     if let Some(store) = opened.get(project_path) {
         return Ok(store.clone());
     }
     let dir = Path::new(project_path);
     let root = atlas_checkpoint::git::scope_root(dir);
     let store = record::open_scope(&root).map_err(|e| format!("{e:#}"))?;
+    if let Some(embedder) = EMBEDDER.get() {
+        store.set_embedder(Some(embedder.clone()));
+    }
 
     let mut sources: Vec<PathBuf> = vec![root.clone()];
     sources.extend(atlas_checkpoint::git::worktree_paths(dir));
@@ -249,6 +250,29 @@ pub fn store_for(project_path: &str) -> Result<Arc<RecordStore>, String> {
     }
     opened.insert(project_path.to_string(), store.clone());
     Ok(store)
+}
+
+/// The embedder every scope's record store uses for near-duplicate merging
+/// and search, installed once at startup ([`install_embedder`]).
+static EMBEDDER: OnceLock<Arc<dyn Embedder>> = OnceLock::new();
+
+/// Give every record store — already open and opened later — `embedder`.
+/// The first install wins; the app installs one adapter over the on-device
+/// model, which itself degrades to "no vector" until the model is loaded.
+pub fn install_embedder(embedder: Arc<dyn Embedder>) {
+    if EMBEDDER.set(embedder.clone()).is_err() {
+        return;
+    }
+    // Stores opened before the install (a project opened at launch).
+    for store in opened().lock().values() {
+        store.set_embedder(Some(embedder.clone()));
+    }
+}
+
+/// Launch directory → its scope's store, for every store opened so far.
+fn opened() -> &'static Mutex<HashMap<String, Arc<RecordStore>>> {
+    static OPENED: OnceLock<Mutex<HashMap<String, Arc<RecordStore>>>> = OnceLock::new();
+    OPENED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// The durable entries the summary view shows (decisions, failures,
@@ -564,6 +588,105 @@ impl SharedMemoryStore {
         kinds.push("session");
         self.announce(&store, &kinds);
         Ok(())
+    }
+}
+
+/// Who wrote a tool write: the session a memory-server token belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Writer {
+    /// The durable agent id (`cersei` for the native agent) — the entry's source.
+    pub agent: String,
+    pub session_id: String,
+}
+
+impl SharedMemoryStore {
+    // ── Tool path (the memory tool server) ───────────────────────────────────
+
+    /// Record a durable memory on behalf of an agent (`memory_remember`):
+    /// confidence 1.0, source = the agent, redacted, key-or-hash identity with
+    /// near-duplicate merge, logged as an event so the Shared tab shows it.
+    /// Working-memory kinds are refused — they are delta-captured only.
+    pub fn remember(
+        &self,
+        project_path: &str,
+        writer: &Writer,
+        kind: EntryKind,
+        content: &str,
+        key: &str,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() {
+            return Err(format!(
+                "`{}` is working memory, captured from the session automatically; \
+                 remember records only decision, fact, failure or architecture",
+                kind.as_str()
+            ));
+        }
+        if content.trim().is_empty() {
+            return Err("nothing to remember: content is empty".into());
+        }
+        let store = store_for(project_path)?;
+        self.ensure_project_file(project_path);
+        let now = (self.inner.clock)();
+        let remembered = store
+            .remember(
+                NewEntry {
+                    kind,
+                    key: key.trim().to_string(),
+                    content: content.to_string(),
+                    source: writer.agent.clone(),
+                    agent: writer.agent.clone(),
+                    session_id: writer.session_id.clone(),
+                    confidence: 1.0,
+                    at: now,
+                },
+                now,
+            )
+            .map_err(|e| format!("{e:#}"))?;
+        self.announce(&store, &[kind.as_str()]);
+        Ok(remembered)
+    }
+
+    /// Delete one entry by id (`memory_forget`). `Ok(None)` when there is no
+    /// such entry.
+    pub fn forget(&self, project_path: &str, id: i64) -> Result<Option<Entry>, String> {
+        let store = store_for(project_path)?;
+        let gone = store.forget(id).map_err(|e| format!("{e:#}"))?;
+        if let Some(entry) = &gone {
+            self.announce(&store, &[entry.kind.as_str()]);
+        }
+        Ok(gone)
+    }
+
+    /// Entries relevant to `query` (`memory_search`), best first. Degrades to
+    /// empty when the record can't be read.
+    pub fn search_entries(&self, project_path: &str, query: &str, kinds: &[EntryKind], limit: usize) -> Vec<Entry> {
+        store_for(project_path)
+            .and_then(|s| s.search(query, kinds, limit.max(1), (self.inner.clock)()).map_err(|e| format!("{e:#}")))
+            .unwrap_or_else(|e| {
+                tracing::warn!(target: "atlas::shared_memory", "search failed: {e}");
+                Vec::new()
+            })
+    }
+
+    /// The newest entries of `kind`, or of every kind, each kind capped at its
+    /// display limit (`memory_list`); newest first within a kind. Degrades to
+    /// empty when the record can't be read.
+    pub fn list_entries(&self, project_path: &str, kind: Option<EntryKind>) -> Vec<Entry> {
+        let Ok(store) = store_for(project_path) else {
+            return Vec::new();
+        };
+        let kinds: Vec<EntryKind> = kind.map_or_else(|| EntryKind::ALL.to_vec(), |k| vec![k]);
+        let mut out = Vec::new();
+        for kind in kinds {
+            match store.list(kind, kind.cap(), Origin::Any) {
+                Ok(mut entries) => {
+                    entries.reverse();
+                    out.extend(entries);
+                }
+                Err(e) => tracing::warn!(target: "atlas::shared_memory", "list failed: {e:#}"),
+            }
+        }
+        out
     }
 }
 

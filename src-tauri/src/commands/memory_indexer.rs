@@ -109,6 +109,11 @@ impl MemoryRegistry {
         Some(loaded)
     }
 
+    /// The provider if it is already loaded, without waiting or loading.
+    pub fn loaded_provider(&self) -> Option<Arc<MiniLmProvider>> {
+        self.provider.try_lock().ok().and_then(|p| p.clone())
+    }
+
     /// Drop the cached embedding provider so the next [`provider`](Self::provider)
     /// call reloads from disk. Called when the user selects a different embedding
     /// model (its dir / dim / vector space changed).
@@ -622,6 +627,51 @@ fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
         text,
         content_hash,
         corpus: doc.source.clone(),
+    }
+}
+
+/// The shared-memory record's embedder (near-duplicate merge, search): the
+/// on-device model when it is loaded, else no vector — the record then
+/// dedups by key and content hash only. Never loads the model inline (a
+/// record write must not wait on it); a miss asks for a background load so a
+/// later write has it.
+pub struct ModelEmbedder {
+    app: AppHandle,
+    /// A background load is in flight; cleared when it finishes, loaded or
+    /// not (the model may not be downloaded yet), so a later miss asks again.
+    loading: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ModelEmbedder {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            app,
+            loading: Arc::default(),
+        }
+    }
+}
+
+impl atlas_memory::record::Embedder for ModelEmbedder {
+    fn embed(&self, text: &str) -> Option<atlas_memory::record::Embedding> {
+        use std::sync::atomic::Ordering;
+        let registry = self.app.try_state::<Arc<MemoryRegistry>>()?;
+        let Some(provider) = registry.loaded_provider() else {
+            if !self.loading.swap(true, Ordering::SeqCst) {
+                let app = self.app.clone();
+                let loading = self.loading.clone();
+                tauri::async_runtime::spawn(async move {
+                    let registry = app.state::<Arc<MemoryRegistry>>();
+                    let _ = registry.provider(&app).await;
+                    loading.store(false, Ordering::SeqCst);
+                });
+            }
+            return None;
+        };
+        let vector = provider.embedder().embed_one(text).ok()?;
+        Some(atlas_memory::record::Embedding {
+            model: provider.provider_name().to_string(),
+            vector,
+        })
     }
 }
 

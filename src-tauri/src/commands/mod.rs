@@ -50,6 +50,7 @@ pub mod memory_summarize;
 pub mod models;
 pub mod memory_timeline;
 pub mod shared_memory;
+pub mod memory_server;
 pub mod memory_delta;
 pub mod memory_inject;
 pub mod memory_compile;

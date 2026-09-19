@@ -536,6 +536,9 @@ struct RequestElicitation {
 /// its start would be dropped. The quit path's grace covers the last writes.
 struct SharingGatedLifecycle {
     writes: std::sync::mpsc::Sender<LifecycleWrite>,
+    /// The memory tool server's tokens: minted and revoked right here, in
+    /// memory, so a session's token exists as soon as its start is reported.
+    tokens: Arc<super::memory_server::MemoryTokens>,
 }
 
 enum LifecycleWrite {
@@ -544,7 +547,7 @@ enum LifecycleWrite {
 }
 
 impl SharingGatedLifecycle {
-    fn new(app: AppHandle) -> Self {
+    fn new(app: AppHandle, tokens: Arc<super::memory_server::MemoryTokens>) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<LifecycleWrite>();
         std::thread::Builder::new()
             .name("atlas-session-lifecycle".into())
@@ -562,7 +565,7 @@ impl SharingGatedLifecycle {
                 }
             })
             .expect("the session lifecycle thread starts");
-        Self { writes: tx }
+        Self { writes: tx, tokens }
     }
 
     fn queue(&self, write: LifecycleWrite) {
@@ -572,6 +575,7 @@ impl SharingGatedLifecycle {
 
 impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        super::agent_host::SessionLifecycle::session_started(&*self.tokens, session_id, agent, cwd);
         self.queue(LifecycleWrite::Started {
             session_id: session_id.to_string(),
             agent: agent.to_string(),
@@ -580,6 +584,7 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     }
 
     fn session_ended(&self, session_id: &str) {
+        super::agent_host::SessionLifecycle::session_ended(&*self.tokens, session_id);
         self.queue(LifecycleWrite::Ended {
             session_id: session_id.to_string(),
         });
@@ -638,15 +643,24 @@ pub fn install_manager(app: &AppHandle) {
     app.manage(host.clone());
 
     // Shared memory: every write is announced to the webview (the Shared tab
-    // re-pulls on it), and session start/end are recorded in the scope's
-    // sessions table.
+    // re-pulls on it), session start/end are recorded in the scope's sessions
+    // table and mint/revoke the session's memory-server token, and the memory
+    // tool server starts on the runtime (never blocking setup).
     {
         let memory = app.state::<SharedMemoryStore>();
         let emitter = app.clone();
         memory.on_change(Arc::new(move |change: &super::shared_memory::MemoryChanged| {
             let _ = emitter.emit(super::shared_memory::MEMORY_CHANGED_EVENT, change);
         }));
-        host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone())));
+        super::shared_memory::install_embedder(Arc::new(super::memory_indexer::ModelEmbedder::new(app.clone())));
+        let server = Arc::new(super::memory_server::MemoryServerHost::new());
+        app.manage(server.clone());
+        host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone(), server.tokens().clone())));
+        let gate_app = app.clone();
+        server.start(
+            memory.inner().clone(),
+            Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd)),
+        );
     }
 
     // Connect-phase events the webview needs but no delta carries: the install
