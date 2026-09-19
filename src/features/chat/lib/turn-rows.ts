@@ -15,6 +15,7 @@
 
 import type { ChatMessage, ToolCallDisplay, TurnFile } from "@/types/agent";
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
+import { parseShellCommand } from "./parse-shell-command";
 import {
   getFilePathFromInput,
   classifyToolFileKind,
@@ -23,7 +24,7 @@ import {
   isFileCreated,
 } from "./tool-files";
 import { splitAtlasContext } from "./atlas-context";
-import { stripNextSteps } from "./next-steps";
+import { stripNextSteps, stripNextStepsDirective } from "./next-steps";
 
 // ── Row kinds ──────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export const RowKind = {
   MarkerGroup: 4,
   Separator: 5,
   TurnFooter: 6,
+  WorkHeader: 7,
 } as const;
 
 /** Marker execution state — drives the leading glyph, nothing else. */
@@ -89,10 +91,35 @@ export interface ThinkingRow extends RowBase {
   expanded: boolean;
 }
 
+/**
+ * Which glyph a marker row leads with — a closed set, mapped to an icon by the
+ * renderer.
+ *
+ * A key rather than a component: rows are plain data compared shallowly by
+ * `memo`, and a freshly-minted component reference per projection would miss
+ * on every row, every frame. It is also the reason this lives here and not in
+ * the render layer — classification already happens once, in `markerFor`, from
+ * the same signals that pick the verb.
+ */
+export type MarkerTool =
+  | "run"
+  | "read"
+  | "edit"
+  | "search"
+  | "list"
+  | "fetch"
+  | "think"
+  | "delete"
+  | "move"
+  | "file"
+  | "tool";
+
 export interface MarkerRow extends RowBase {
   kind: typeof RowKind.Marker;
   /** Verb shown in muted weight: "Ran", "Read", "Edited", "Searched". */
   verb: string;
+  /** Icon key for the leading slot, paired with `verb`. */
+  tool: MarkerTool;
   /** Monospace remainder — the command, path or pattern. Truncated in CSS. */
   detail: string;
   state: MarkerState;
@@ -101,6 +128,11 @@ export interface MarkerRow extends RowBase {
   /** Full path for edit markers — `detail` is shortened for display, and the
    *  diff viewer needs the real one. */
   path?: string;
+  /** The untouched shell command, on bash rows whose verb came from parsing it.
+   *  `detail` shows the file those rows read, not the command that read it, so
+   *  this is what the hover title falls back to — the information the
+   *  reclassification hid has to stay reachable without opening the panel. */
+  cmd?: string;
   /** Only set for edit markers, so the row can show `+n −m` inline. */
   added: number;
   removed: number;
@@ -108,17 +140,48 @@ export interface MarkerRow extends RowBase {
 
 export interface MarkerGroupRow extends RowBase {
   kind: typeof RowKind.MarkerGroup;
-  /** How many tool calls the block stands for. */
+  /** The whole folded block as one sentence: "Read files, ran commands". This
+   *  is what tells one block from the next in a column of them, which is why
+   *  it is the line and not a fixed label. */
+  summary: string;
+  /** How many tool calls the block stands for. Not rendered — the summary is
+   *  the whole line — but it is what `summary` was counted from, and the thing
+   *  to assert on when testing that projection. */
   count: number;
-  /** Distinct files edited by those calls. */
-  modified: number;
-  /** Lines added across them. */
-  added: number;
-  /** Wall time of the turn, pre-formatted; null when too short to be worth it. */
-  duration: string | null;
+  /** The glyph for the whole block: the icon of the FIRST bucket in `summary`,
+   *  so the wrench leads "Loaded a tool, read files…" and the book leads "Read
+   *  files, ran commands" — note 3 under "Folded-block summary". */
+  tool: MarkerTool;
+  /** Calls in this consecutive sequence, shown inside the disclosure. */
+  markers: MarkerRow[];
   open: boolean;
-  /** The turn is still running, so the markers below are live progress. */
+  /** At least one call in the sequence is still active. */
   running: boolean;
+  liveLabel: string | null;
+  /** The active call's own glyph while `running` — the live line names that
+   *  call, so it wears that call's icon rather than the block's. */
+  liveTool: MarkerTool | null;
+}
+
+/**
+ * "Working for 46s" / "Worked for 7m 37s ›" — the head of an assistant turn.
+ *
+ * Once the turn settles, everything before its final answer (earlier prose,
+ * thinking, tool blocks) is folded behind this row and simply not projected, so
+ * a finished turn costs a header, its answer and its footer however much work
+ * it did. Opening it puts those rows back in the thread, in flow.
+ */
+export interface WorkHeaderRow extends RowBase {
+  kind: typeof RowKind.WorkHeader;
+  /** The turn is still running: the row ticks and nothing is folded. */
+  live: boolean;
+  /** Epoch ms the live clock counts from — the user's message. */
+  startedAt: number | null;
+  /** Settled wall time, when the turn was timed live (`ChatMessage.workedMs`). */
+  workedMs: number | null;
+  /** There are rows behind the header to fold; without them it is a caption. */
+  foldable: boolean;
+  open: boolean;
 }
 
 export interface SeparatorRow extends RowBase {
@@ -148,7 +211,8 @@ export type Row =
   | MarkerRow
   | MarkerGroupRow
   | SeparatorRow
-  | TurnFooterRow;
+  | TurnFooterRow
+  | WorkHeaderRow;
 
 // ── Turns ──────────────────────────────────────────────────────────────────
 
@@ -268,6 +332,148 @@ function shortPath(p: string): string {
   return parts.slice(-2).join("/");
 }
 
+/** ACP's semantic class, which every agent that sets `kind` at all gets right. */
+const TOOL_ICON_BY_KIND: Record<string, MarkerTool> = {
+  execute: "run",
+  read: "read",
+  edit: "edit",
+  delete: "delete",
+  move: "move",
+  search: "search",
+  fetch: "fetch",
+  think: "think",
+};
+
+/**
+ * The icon key for a call the verb branches did not already classify.
+ *
+ * `kind` first — it is the protocol's own answer. The name sniff below only
+ * catches MCP servers, which are free to send no kind at all; it is
+ * deliberately narrow, because a wrong icon is worse than the generic wrench.
+ * Substrings that appear inside unrelated words ("rm" in "confirm", "web" in
+ * "webhook") are not in it for that reason.
+ */
+function toolIconFor(kind: string | null | undefined, toolName: string): MarkerTool {
+  const byKind = TOOL_ICON_BY_KIND[kind ?? ""];
+  if (byKind) return byKind;
+  const name = toolName.toLowerCase();
+  if (name.includes("search") || name.includes("grep") || name.includes("glob")) return "search";
+  if (name.includes("fetch") || name.includes("http") || name.includes("url")) return "fetch";
+  if (name.includes("delete") || name.includes("remove")) return "delete";
+  if (name.includes("rename") || name.includes("move")) return "move";
+  return "tool";
+}
+
+// ── Folded-block summary ───────────────────────────────────────────────────
+//
+// "Loaded a tool, read files, ran commands" — the whole of a folded turn as one
+// sentence, the way the Codex desktop app writes it.
+//
+// That app is not open source and its UI was not part of the engine port, so
+// unlike `parse-shell-command.ts` this is RECONSTRUCTED from screenshots rather
+// than ported. Three things the screenshots actually prove, and which the code
+// below is shaped by — change them only against new evidence:
+//
+//  1. The buckets are coarser than the row glyphs. A turn whose rows were
+//     `run ×6, tool ×1, read ×1, search ×1` summarised as exactly three
+//     fragments with no "searched" among them — so a search counts toward
+//     "read files". The plural confirms it: that turn read ONE file by glyph
+//     yet said "read files", which only adds up if the search counted too.
+//  2. The order is fixed, not by frequency and not by when things happened.
+//     That same turn led with "Loaded a tool" off a single call while its six
+//     commands came last, and its first row chronologically was a command.
+//  3. The glyph is the first bucket in the sentence, again not the commonest —
+//     the wrench above six terminal rows, and a book on "Read files, ran
+//     commands".
+//
+// Where the fragment for a bucket is unobserved (`edit`), or where a glyph has
+// no obviously right bucket (`fetch`, `think`), the choice below is ours.
+
+type SummaryBucket = "tool" | "read" | "edit" | "run";
+
+/** Which sentence fragment each row glyph counts toward. */
+const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
+  run: "run",
+  // Searching and listing are reading — see note 1 above.
+  read: "read",
+  search: "read",
+  list: "read",
+  file: "read",
+  edit: "edit",
+  delete: "edit",
+  move: "edit",
+  // Unobserved: a fetch or a think has no fragment of its own, and "loaded a
+  // tool" is the least wrong of the four.
+  tool: "tool",
+  fetch: "tool",
+  think: "tool",
+};
+
+/** Fixed order — note 2 above. `edit`'s slot is the one we chose. */
+const SUMMARY_ORDER: readonly SummaryBucket[] = ["tool", "read", "edit", "run"];
+
+/** [one, several]. The singular is load-bearing: "Loaded a tool" is what a
+ *  single call reads as, and it is how note 1's plural was diagnosed.
+ *
+ *  A counted form ("3 files read") was tried on a two-line header and reverted:
+ *  every block then opened with the same bold "Tool calls" label, so a column
+ *  of them stopped differentiating at a glance. The sentence IS the
+ *  differentiator — "Read files, ran commands" and "Edited files" are
+ *  recognisably different lines. */
+const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
+  tool: ["loaded a tool", "loaded tools"],
+  read: ["read a file", "read files"],
+  edit: ["edited a file", "edited files"],
+  run: ["ran a command", "ran commands"],
+};
+
+/** One folded block → the sentence on its header, and the glyph that leads it
+ *  (note 3: the first bucket's, not the commonest). */
+function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: MarkerTool } {
+  const counts = new Map<SummaryBucket, number>();
+  for (const m of markers) {
+    const bucket = SUMMARY_BUCKET[m.tool];
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+  }
+  const present = SUMMARY_ORDER.filter((b) => counts.has(b));
+  if (present.length === 0) return { summary: "Used tools", tool: "tool" };
+
+  const fragments = present.map((b) => SUMMARY_PHRASE[b][counts.get(b) === 1 ? 0 : 1]);
+  const sentence = fragments.join(", ");
+  // Only the first fragment is capitalised; the rest stay mid-sentence.
+  return {
+    summary: sentence.charAt(0).toUpperCase() + sentence.slice(1),
+    // Each bucket is named after the glyph that stands for it.
+    tool: present[0],
+  };
+}
+
+/** A live disclosure names the current action, then returns to its aggregate
+ * sentence when that action finishes. Keep the phrase short enough to occupy
+ * the same quiet, single-line slot as the collapsed summary. */
+function liveMarkerLabel(marker: MarkerRow): string {
+  switch (marker.tool) {
+    case "read":
+      return marker.detail ? `Reading ${marker.detail.split("/").pop()}` : "Reading files";
+    case "edit":
+    case "delete":
+    case "move":
+      return "Editing files";
+    case "search":
+      return "Searching files";
+    case "list":
+      return "Listing files";
+    case "run":
+      return "Running command";
+    case "fetch":
+      return "Fetching content";
+    case "think":
+      return "Thinking…";
+    default:
+      return "Using a tool";
+  }
+}
+
 /**
  * One tool call → one marker. Codex shows a single line with the command
  * truncated and no separate result row; state lives in the glyph and the full
@@ -289,7 +495,9 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
   const ranTerminal = (tc.contentBlocks ?? []).some((b) => b.type === "terminal");
 
   let verb = tc.toolName;
+  let tool: MarkerTool = toolIconFor(tc.kind, tc.toolName);
   let detail = "";
+  let cmd: string | undefined;
   let opens: MarkerDetail = tc.result || ranTerminal ? "output" : "none";
   let added = 0;
   let removed = 0;
@@ -313,25 +521,60 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
   const path = argsPath ?? edit?.path ?? null;
 
   if (isBashToolCall(tc)) {
-    verb = "Ran";
-    detail = bashCommandOf(args);
+    // Every one of these is the same tool. What separates `cat file` from
+    // `cargo test` is the command itself, so that is what gets read — see
+    // `parse-shell-command.ts` for why this is a port and not a wire field.
+    // A command it cannot reduce to one action stays "Ran", verbatim.
+    const command = bashCommandOf(args) || (tc.kind === "execute" ? tc.toolName : "");
     opens = "output";
+    cmd = command;
+    const parsed = parseShellCommand(command);
+    if (parsed.kind === "read") {
+      verb = "Read";
+      tool = "read";
+      detail = shortPath(parsed.path);
+    } else if (parsed.kind === "list") {
+      verb = "Listed";
+      tool = "list";
+      detail = parsed.path ? shortPath(parsed.path) : "";
+    } else if (parsed.kind === "search") {
+      verb = "Searched";
+      tool = "search";
+      // "pattern in dir" — the pattern verbatim, since a regex may contain
+      // slashes that `shortPath` would happily eat; only the path is shortened.
+      detail = parsed.path
+        ? `${parsed.query ?? ""} in ${shortPath(parsed.path)}`.trim()
+        : (parsed.query ?? "");
+    } else {
+      verb = "Ran";
+      tool = "run";
+      detail = command;
+      // The verb already says "Ran" and `detail` already IS the command, so a
+      // title repeating it would be noise.
+      cmd = undefined;
+    }
   } else if (edit) {
     verb = edit.created ? "Created" : "Edited";
+    tool = "edit";
     detail = shortPath(edit.path);
     added = edit.added;
     removed = edit.removed;
     opens = "diff";
   } else if (fileKind === "read" && path) {
     verb = "Read";
+    tool = "read";
     detail = shortPath(path);
     opens = tc.result || ranTerminal ? "output" : "none";
   } else if (typeof args.pattern === "string") {
     verb = "Searched";
+    tool = "search";
     detail = args.pattern;
     opens = "output";
   } else if (path) {
     verb = tc.toolName;
+    // It named a file but neither `kind` nor its arguments say what it did to
+    // it. A neutral page beats guessing between the book and the pencil.
+    if (tool === "tool") tool = "file";
     detail = shortPath(path);
   } else {
     verb = tc.toolName;
@@ -344,10 +587,12 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     turnId,
     firstInTurn: first,
     verb,
+    tool,
     detail: detail.replace(/\s+/g, " ").trim(),
     state,
     toolCallId: tc.id,
     opens,
+    cmd,
     path: path ?? undefined,
     added,
     removed,
@@ -365,14 +610,6 @@ function formatGap(ms: number): string {
   const h = Math.round(m / 60);
   if (h < 24) return `${h}h`;
   return `${Math.round(h / 24)}d`;
-}
-
-function fmtDuration(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return rem === 0 ? `${m}m` : `${m}m ${rem}s`;
 }
 
 /**
@@ -421,7 +658,7 @@ function derivedUser(m: ChatMessage): UserDerived {
           blockCount: m.atlasContextBlockCount ?? 0,
         }
       : splitAtlasContext(m.content);
-  const text = stripNextSteps(split.prose).trim();
+  const text = stripNextStepsDirective(split.prose).trim();
   const v: UserDerived = {
     text,
     contextBlocks: split.context ? split.blockCount : 0,
@@ -453,6 +690,10 @@ export interface ProjectOptions {
   streaming: boolean;
   /** Turns whose tool-call block the reader has opened. */
   expandedTurns: ReadonlySet<string>;
+  /** The trailing assistant turn has not finished, even if it is not streaming
+   *  right now — it may be paused on a permission prompt. Drives the work
+   *  header only; defaults to `streaming`. */
+  turnInProgress?: boolean;
 }
 
 /**
@@ -535,9 +776,26 @@ export function projectRows(
     maybeGapSeparator(rows, messages, i, turnId);
     const rowStart = rows.length;
 
-    const markers: MarkerRow[] = [];
-    /** Row index the folded markers are spliced back into when expanded. */
-    let markerAnchor = rows.length;
+    let markers: MarkerRow[] = [];
+    const flushMarkers = () => {
+      if (markers.length === 0) return;
+      const id = `mg:${turnId}:${markers[0].toolCallId}`;
+      rows.push({
+        kind: RowKind.MarkerGroup,
+        id,
+        turnId,
+        firstInTurn: rows.length === rowStart,
+        ...summarizeMarkers(markers),
+        count: markers.length,
+        markers,
+        open: opts.expandedTurns.has(id),
+        running: false,
+        liveLabel: null,
+        liveTool: null,
+      });
+      markers = [];
+    };
+    let workedMs: number | null = null;
     let toolCount = 0;
     let footerMsg: ChatMessage | null = null;
     let headerShown = false;
@@ -551,9 +809,8 @@ export function projectRows(
         continue;
       }
 
-      // First content row of the turn marks where markers belong.
-      if (markers.length === 0) markerAnchor = rows.length;
       if (msg.thinking && msg.thinking.trim()) {
+        flushMarkers();
         rows.push({
           kind: RowKind.Thinking,
           id: `th:${msg.id}`,
@@ -574,6 +831,7 @@ export function projectRows(
 
       const prose = derivedProse(msg);
       if (prose) {
+        flushMarkers();
         rows.push({
           kind: RowKind.Prose,
           id: `p:${msg.id}`,
@@ -590,45 +848,35 @@ export function projectRows(
 
       // The footer data is frozen onto the trailing message at turn_finished.
       if (msg.turnSummary || msg.suggestions || msg.contextUsage) footerMsg = msg;
+      if (msg.workedMs !== undefined) workedMs = msg.workedMs;
       i += 1;
     }
+    flushMarkers();
 
-    // ── Tool calls: one folded block, not N loose rows ───────────────────
-    //
-    // A tool-heavy turn produces dozens of markers between two paragraphs of
-    // prose. Left inline they dominate the thread, and — because each was
-    // individually expandable — they made scrolling pay for content nobody had
-    // asked to see. So they collapse into a single labelled block, exactly like
-    // the Session timeline's "Show tool calls". Nothing here expands in place:
-    // detail is the side panel's job.
-    //
-    // While the turn is LIVE the markers stay visible; that is the progress
-    // report. They fold the moment it settles and becomes history.
     const turnIsLive = opts.streaming && i > lastIdx;
-    const groupOpen = turnIsLive || opts.expandedTurns.has(turnId);
+    if (turnIsLive) {
+      for (let rowIndex = rowStart; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        if (row.kind !== RowKind.MarkerGroup) continue;
+        const active = [...row.markers]
+          .reverse()
+          .find((marker) => marker.state === "running" || marker.state === "pending");
+        if (!active) continue;
+        row.running = true;
+        row.liveLabel = liveMarkerLabel(active);
+        row.liveTool = active.tool;
+      }
+    }
 
-    const startTs = new Date(messages[turnFirstIdx].timestamp).getTime();
-    const endTs = new Date(messages[Math.max(turnFirstIdx, i - 1)].timestamp).getTime();
-    const span = endTs - startTs;
-
-    if (markers.length > 0) {
-      const modified = new Set(markers.filter((m) => m.opens === "diff").map((m) => m.detail)).size;
-      const addedTotal = markers.reduce((n, m) => n + m.added, 0);
-      const group: MarkerGroupRow = {
-        kind: RowKind.MarkerGroup,
-        id: `mg:${turnId}`,
+    const turnInProgress = (opts.turnInProgress ?? opts.streaming) && i > lastIdx;
+    if (rows.length > rowStart) {
+      foldWork(rows, rowStart, {
         turnId,
-        firstInTurn: false,
-        count: markers.length,
-        modified,
-        added: addedTotal,
-        duration: span > 1000 ? fmtDuration(span) : null,
-        open: groupOpen,
-        running: turnIsLive,
-      };
-      // The block sits where the tools ran; its members follow it when open, so
-      // expanding reveals them in the order they happened.
-      rows.splice(markerAnchor, 0, group, ...(groupOpen ? markers : []));
+        live: turnInProgress,
+        startedAt: turnInProgress ? turnStartMs(messages, turnFirstIdx) : null,
+        workedMs,
+        expandedTurns: opts.expandedTurns,
+      });
     }
 
     if (footerMsg?.turnSummary) {
@@ -656,7 +904,7 @@ export function projectRows(
         rowStart,
         rowEnd: rows.length,
         messageIndex: turnFirstIdx,
-        status: opts.streaming && i > lastIdx ? "streaming" : sawError ? "error" : "settled",
+        status: turnIsLive ? "streaming" : sawError ? "error" : "settled",
         preview: "",
         timestamp: firstMsg.timestamp,
         toolCount,
@@ -677,8 +925,16 @@ export function projectRows(
     const prevRows = new Map<string, Row>();
     for (const r of prev.rows) prevRows.set(r.id, r);
     for (let i = 0; i < rows.length; i++) {
-      const old = prevRows.get(rows[i].id);
-      if (old && sameShallow(old, rows[i])) rows[i] = old;
+      const row = rows[i];
+      const old = prevRows.get(row.id);
+      if (old?.kind === RowKind.MarkerGroup && row.kind === RowKind.MarkerGroup) {
+        const oldMarkers = new Map(old.markers.map((marker) => [marker.id, marker]));
+        row.markers = row.markers.map((marker) => {
+          const previous = oldMarkers.get(marker.id);
+          return previous && sameShallow(previous, marker) ? previous : marker;
+        });
+      }
+      if (old && sameShallow(old, row)) rows[i] = old;
     }
     const prevTurns = new Map<string, Turn>();
     for (const t of prev.turns) prevTurns.set(t.id, t);
@@ -717,6 +973,68 @@ function sameShallow(a: object, b: object): boolean {
     return false;
   }
   return true;
+}
+
+/** When the live clock of the assistant turn at `firstIdx` starts: the user
+ *  message it answers. Null when there is none to count from. */
+function turnStartMs(messages: ChatMessage[], firstIdx: number): number | null {
+  const prev = messages[firstIdx - 1];
+  if (!prev || prev.role !== "user") return null;
+  const t = Date.parse(prev.timestamp);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Put the work header at the head of the assistant turn starting at
+ * `rowStart`, and — once the turn has settled and the reader has not opened it
+ * — drop everything before the final answer.
+ *
+ * "The final answer" is the trailing run of prose rows: whatever the agent said
+ * after it last used a tool or thought. A turn that ENDS on a tool block has no
+ * answer, and folds whole.
+ */
+function foldWork(
+  rows: Row[],
+  rowStart: number,
+  o: {
+    turnId: string;
+    live: boolean;
+    startedAt: number | null;
+    workedMs: number | null;
+    expandedTurns: ReadonlySet<string>;
+  },
+): void {
+  let answerStart = rows.length;
+  while (answerStart > rowStart && rows[answerStart - 1].kind === RowKind.Prose) answerStart -= 1;
+  const foldable = !o.live && answerStart > rowStart;
+  // A settled prose-only turn with no timing has nothing to say.
+  if (!o.live && !foldable && o.workedMs === null) return;
+
+  const id = `wk:${o.turnId}`;
+  const open = foldable && o.expandedTurns.has(id);
+  if (foldable && !open) {
+    const folded = rows.splice(rowStart, answerStart - rowStart);
+    // The model · time line rode on the turn's first prose row, which may have
+    // just been folded. Hand it to the first row still showing.
+    const answer = rows[rowStart];
+    if (
+      answer?.kind === RowKind.Prose &&
+      folded.some((r) => r.kind === RowKind.Prose && r.showHeader)
+    ) {
+      answer.showHeader = true;
+    }
+  }
+  rows.splice(rowStart, 0, {
+    kind: RowKind.WorkHeader,
+    id,
+    turnId: o.turnId,
+    firstInTurn: true,
+    live: o.live,
+    startedAt: o.startedAt,
+    workedMs: o.workedMs,
+    foldable,
+    open,
+  });
 }
 
 /** Faint "N ago" divider marking a real pause between turns. */

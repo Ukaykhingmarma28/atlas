@@ -25,7 +25,7 @@
 //! honestly support that. Do not "fix" this later by copying Entire.
 //!
 //! **Cross-source dedupe is explicit work here, not a schema guarantee.** The
-//! UNIQUE constraint covers `(workspace, source, native_id)` and therefore
+//! UNIQUE constraint covers `(project, source, native_id)` and therefore
 //! dedupes *re-imports*. It does **not** dedupe across sources — Atlas's
 //! ACP-hosted Claude Code writes JSONL to the very same directory, so
 //! `('acp', id)` and `('external_jsonl', id)` are both permitted rows. Skipping
@@ -54,7 +54,7 @@ use serde::{Deserialize, Serialize};
 use crate::blobs;
 use crate::capture::{Capture, SessionKey, ToolCallContent, TurnContent};
 use crate::error::{Error, Result};
-use crate::model::{Mode, Role, Source, TokenTotals, ToolStatus, WorkspaceMode};
+use crate::model::{Mode, Role, Source, TokenTotals, ToolStatus, ProjectMode};
 use crate::store::Store;
 use crate::tools::{canonical_name, ToolName};
 
@@ -86,9 +86,9 @@ pub struct ImportOutcome {
 
 /// What a bulk import is about to disclose.
 ///
-/// Importing into a **Cloud** Workspace makes months of terminal conversations
+/// Importing into a **Cloud** Project makes months of terminal conversations
 /// org-visible in one action, which is a bulk disclosure and gets the same
-/// real-numbers confirmation as Local→Cloud promotion. A Local Workspace needs
+/// real-numbers confirmation as Local→Cloud promotion. A Local Project needs
 /// no ceremony, because nothing leaves the machine.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,7 +144,7 @@ impl TranscriptSource {
 /// Prefer [`preview_with_store`] when a store is at hand — it also reports how
 /// many of the files a real import would take, which is what the disclosure
 /// dialog should headline. Without a store every file counts as new.
-pub fn preview(source: &TranscriptSource, mode: WorkspaceMode) -> ImportPreview {
+pub fn preview(source: &TranscriptSource, mode: ProjectMode) -> ImportPreview {
     preview_inner(source, mode, None)
 }
 
@@ -154,14 +154,14 @@ pub fn preview_with_store(
     store: &Store,
     workspace_id: &str,
     source: &TranscriptSource,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> ImportPreview {
     preview_inner(source, mode, Some((store, workspace_id)))
 }
 
 fn preview_inner(
     source: &TranscriptSource,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
     store: Option<(&Store, &str)>,
 ) -> ImportPreview {
     let files = source.files();
@@ -191,7 +191,7 @@ fn preview_inner(
         earliest: timestamps.first().cloned(),
         latest: timestamps.last().cloned(),
         total_bytes,
-        is_bulk_disclosure: mode == WorkspaceMode::Cloud,
+        is_bulk_disclosure: mode == ProjectMode::Cloud,
     }
 }
 
@@ -250,7 +250,7 @@ pub fn import_all(
     store: &mut Store,
     workspace_id: &str,
     source: &TranscriptSource,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<ImportOutcome> {
     let mut outcome = ImportOutcome::default();
     for path in source.files() {
@@ -336,7 +336,7 @@ fn import_file(
     store: &mut Store,
     workspace_id: &str,
     path: &Path,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
     outcome: &mut ImportOutcome,
 ) -> Result<()> {
     let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);

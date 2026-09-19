@@ -12,7 +12,7 @@
 //!
 //! Both filenames below live in the user's memory dir and are already on disk in
 //! shipped installs, so they are a compatibility contract, pinned in
-//! `tests/cersei_parity.rs`.
+//! `tests/behaviour.rs`.
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};

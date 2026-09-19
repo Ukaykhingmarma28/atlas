@@ -76,7 +76,7 @@ export interface PageTreeEntry {
 }
 
 /** Persisted file schema. v4 = multiple pages + a folder tree (Figma-style). */
-interface CanvasFile {
+export interface CanvasFile {
   version: 4;
   pages: CanvasPage[];
   tree: PageTreeEntry[];

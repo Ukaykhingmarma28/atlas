@@ -37,10 +37,10 @@ export function TickMeter({
           const lit = at <= pct;
           const color =
             at >= 100
-              ? "var(--status-error)"
+              ? "var(--atlas-status-error-foreground)"
               : at >= warnAt
-                ? "var(--status-warning)"
-                : "var(--capture-live)";
+                ? "var(--atlas-status-warning-foreground)"
+                : "var(--atlas-status-success-foreground)";
           return (
             <span
               key={i}
@@ -52,7 +52,7 @@ export function TickMeter({
       </div>
       {/* The marker: a hairline at the value, moving with it. */}
       <span
-        className="pointer-events-none absolute -top-0.5 h-4 w-px bg-[var(--text-primary)]"
+        className="pointer-events-none absolute -top-0.5 h-4 w-px bg-[var(--foreground)]"
         style={{ left: `${pct}%`, transition: "left 220ms cubic-bezier(0.32,0.72,0,1)" }}
         aria-hidden
       />

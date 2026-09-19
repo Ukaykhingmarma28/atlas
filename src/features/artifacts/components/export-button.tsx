@@ -12,8 +12,10 @@
  */
 
 import { useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Download, Loader2 } from "lucide-react";
+
+import { HintItem } from "@/ui/hint-group";
 
 import type { SessionDetail as Detail } from "../types";
 import { exportSession, type ExportFormat } from "../lib/export";
@@ -35,30 +37,26 @@ export function ExportButton({ detail }: { detail: Detail }) {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Export session"
-          aria-label="Export session"
-          disabled={busy !== null}
-          className={DOCK_TRIGGER}
-        >
-          {busy ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Download size={12} strokeWidth={1.7} />
-          )}
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Export session">
+        <Popover.Trigger
+          render={
+            <button type="button" disabled={busy !== null} className={DOCK_TRIGGER}>
+              {busy ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Download size={12} strokeWidth={1.7} />
+              )}
+            </button>
+          }
+        />
+      </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          className="z-[var(--z-max)] w-[184px] origin-[var(--radix-popover-content-transform-origin)] overflow-hidden rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)]/90 p-1 shadow-[var(--shadow-overlay)] backdrop-blur-2xl data-[state=closed]:animate-scale-out data-[state=open]:animate-scale-in"
-        >
-          <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
-          <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
-        </Popover.Content>
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="w-[184px] origin-[var(--transform-origin)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]/90 p-1 shadow-md backdrop-blur-2xl data-closed:animate-scale-out data-open:animate-scale-in">
+            <ExportItem onClick={() => void run("md")} label="Markdown" hint=".md" />
+            <ExportItem onClick={() => void run("json")} label="JSON" hint=".json" />
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -77,11 +75,11 @@ function ExportItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
     >
       {label}
       <span className="flex-1" />
-      <span className="font-mono text-[10px] text-[var(--text-ghost)]">{hint}</span>
+      <span className="font-mono text-2xs text-[var(--atlas-text-disabled)]">{hint}</span>
     </button>
   );
 }

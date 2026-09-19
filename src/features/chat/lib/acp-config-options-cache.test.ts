@@ -52,7 +52,7 @@ describe("an empty list is a verdict, not a miss", () => {
 
   // Not clobbering a live list with an empty one is the STORE's guard
   // (`setAcpConfigOptions` caches what landed, not what was passed), so this
-  // layer writes exactly what it is told — see chat-store.config-options.test.
+  // layer writes exactly what it is told — see chat-store.model-pill.test.ts.
   it("writes what it is given, in order", () => {
     saveCachedAcpConfigOptions("claude-acp", [effort]);
     saveCachedAcpConfigOptions("claude-acp", []);
@@ -62,7 +62,7 @@ describe("an empty list is a verdict, not a miss", () => {
 
 describe("the v1 → v2 upgrade hop", () => {
   it("reads a v1 payload when there is no v2 one yet", () => {
-    // #162 shipped v1 a day before v2; a user upgrading mid-week must not get a
+    // issue 162 shipped v1 a day before v2; a user upgrading mid-week must not get a
     // spinner back for every agent they have already used.
     localStorage.setItem("atlas:acp-config-options:v1:claude-acp", JSON.stringify([effort]));
     expect(loadCachedAcpConfigOptions("claude-acp")).toEqual([effort]);
@@ -76,13 +76,43 @@ describe("the v1 → v2 upgrade hop", () => {
 });
 
 describe("corrupt storage", () => {
-  it("is a cache miss, not a throw", () => {
-    localStorage.setItem("atlas:acp-config-options:claude-acp", "{not json");
+  // Written under the keys the loader actually reads. The unversioned key
+  // these used to write is never read, so they passed whatever the loader did.
+  const V2 = "atlas:acp-config-options:v2:claude-acp";
+  const V1 = "atlas:acp-config-options:v1:claude-acp";
+
+  it("uses the real keys (a well-formed payload under each is read)", () => {
+    localStorage.setItem(V2, JSON.stringify({ options: [effort] }));
+    expect(loadCachedAcpConfigOptions("claude-acp")).toEqual([effort]);
+    localStorage.clear();
+    localStorage.setItem(V1, JSON.stringify([effort]));
+    expect(loadCachedAcpConfigOptions("claude-acp")).toEqual([effort]);
+  });
+
+  it("unparseable v2 is a cache miss, not a throw", () => {
+    localStorage.setItem(V2, "{not json");
     expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
   });
 
-  it("a non-array payload is a miss too", () => {
-    localStorage.setItem("atlas:acp-config-options:claude-acp", JSON.stringify({ nope: 1 }));
+  it("unparseable v1 is a cache miss, not a throw", () => {
+    localStorage.setItem(V1, "{not json");
+    expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
+  });
+
+  it("a v2 envelope whose options are not an array is a miss", () => {
+    localStorage.setItem(V2, JSON.stringify({ options: { nope: 1 } }));
+    expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
+  });
+
+  it("a v2 payload that is not an envelope is a miss", () => {
+    localStorage.setItem(V2, JSON.stringify([effort]));
+    expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
+    localStorage.setItem(V2, "null");
+    expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
+  });
+
+  it("a v1 payload that is not an array is a miss", () => {
+    localStorage.setItem(V1, JSON.stringify({ nope: 1 }));
     expect(loadCachedAcpConfigOptions("claude-acp")).toBeNull();
   });
 });

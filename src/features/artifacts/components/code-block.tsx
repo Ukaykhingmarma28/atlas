@@ -5,13 +5,12 @@
  * `highlight.js` directly, and that is the whole design:
  *
  * * **It follows the Atlas theme.** `diff-syntax.css` keys every token off the
- *   active editor theme's `--cm-*` variables, so a payload here matches the
- *   diff view, the editor, and whatever theme is selected. A direct
- *   `highlight.js` stylesheet is one fixed palette that ignores all of it.
- * * **It never applies the bare `.hljs` class.** `github-dark.css` is loaded
- *   globally by the markdown pipeline and its root rule carries a background
- *   *and* `padding: 1em` — which, applied per line, boxes every row and blows
- *   the line height apart.
+ *   resolved theme's `--cm-*` variables, so a payload here matches the diff
+ *   view, the editor, and whatever theme is selected.
+ * * **It never applies the bare `.hljs` class.** `styles/hljs.css` is loaded by
+ *   the markdown pipeline and its root rule carries a background *and*
+ *   `padding: 1em` — which, applied per line, boxes every row and blows the
+ *   line height apart.
  * * **It is already cached and bounded.** The tokenizer memoises per
  *   (grammar, line), so a payload that repeats a line pays for it once.
  *
@@ -29,6 +28,7 @@ import { getLanguage } from "@/features/git/lib/diff";
 import { highlightDiffLine } from "@/features/git/lib/diff-highlight";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 
 /**
  * Lines past which the block renders plain.
@@ -138,22 +138,22 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-raised)]",
+        "overflow-hidden rounded-lg border border-[var(--atlas-border-subtle)] bg-[var(--card)]",
         className,
       )}
     >
-      <div className="group/head flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
-        <FileCode2 size={12} className="shrink-0 text-[var(--text-tertiary)]" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-secondary)]">
+      <div className="group/head flex items-center gap-2 border-b border-[var(--atlas-border-subtle)] bg-[var(--card)] px-3 py-1.5">
+        <FileCode2 size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--secondary-foreground)]">
           {path ?? label ?? "Payload"}
         </span>
         {added > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-added)]">
+          <span className="shrink-0 font-mono text-xs text-[var(--atlas-diff-added-text)]">
             +{added}
           </span>
         )}
         {removed > 0 && (
-          <span className="shrink-0 font-mono text-[10.5px] text-[var(--stat-removed)]">
+          <span className="shrink-0 font-mono text-xs text-[var(--atlas-diff-removed-text)]">
             −{removed}
           </span>
         )}
@@ -169,9 +169,9 @@ export function CodeBlock({
           <div
             key={i}
             className={cn(
-              "relative flex min-w-max font-mono text-[11.5px] leading-[1.6]",
-              line.sign === "add" && "bg-[var(--stat-added)]/[0.07]",
-              line.sign === "del" && "bg-[var(--stat-removed)]/[0.07]",
+              "relative flex min-w-max font-mono text-sm leading-[1.6]",
+              line.sign === "add" && "bg-[var(--atlas-diff-added-text)]/[0.07]",
+              line.sign === "del" && "bg-[var(--atlas-diff-removed-text)]/[0.07]",
             )}
           >
             {/* The 2px marker: at a 7% tint the row colour alone is not reliable
@@ -182,14 +182,16 @@ export function CodeBlock({
                 aria-hidden
                 className={cn(
                   "absolute inset-y-0 left-0 w-[2px]",
-                  line.sign === "add" ? "bg-[var(--stat-added)]" : "bg-[var(--stat-removed)]",
+                  line.sign === "add"
+                    ? "bg-[var(--atlas-diff-added-text)]"
+                    : "bg-[var(--atlas-diff-removed-text)]",
                 )}
               />
             )}
             {gutter && (
               <span
                 aria-hidden
-                className="sticky left-0 z-10 w-[52px] shrink-0 select-none bg-[var(--bg-raised)] pr-3 text-right text-[var(--text-ghost)]"
+                className="sticky left-0 z-10 w-[52px] shrink-0 select-none bg-[var(--card)] pr-3 text-right text-[var(--atlas-text-disabled)]"
               >
                 {line.number ?? (line.sign === "add" ? "+" : line.sign === "del" ? "−" : "")}
               </span>
@@ -201,7 +203,7 @@ export function CodeBlock({
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-8 w-full cursor-pointer items-center justify-center font-mono text-xs text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
           >
             Show remaining {capped.toLocaleString()} lines
           </button>
@@ -233,22 +235,22 @@ export function CopyButton({ text, className }: { text: string; className?: stri
   }, [done]);
 
   return (
-    <button
-      type="button"
-      title="Copy"
-      aria-label="Copy"
-      onClick={() => void copyText(text).then((ok) => setDone(ok))}
-      className={cn(
-        "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-ghost)] opacity-0 transition-all duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:opacity-100",
-        className ?? "group-hover/head:opacity-100",
-      )}
-    >
-      {done ? (
-        <Check size={11} className="text-[var(--capture-live)]" />
-      ) : (
-        <Copy size={11} strokeWidth={1.7} />
-      )}
-    </button>
+    <Hint label="Copy">
+      <button
+        type="button"
+        onClick={() => void copyText(text).then((ok) => setDone(ok))}
+        className={cn(
+          "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--atlas-text-disabled)] opacity-0 transition-all duration-150 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:opacity-100",
+          className ?? "group-hover/head:opacity-100",
+        )}
+      >
+        {done ? (
+          <Check size={11} className="text-[var(--atlas-status-success-foreground)]" />
+        ) : (
+          <Copy size={11} strokeWidth={1.7} />
+        )}
+      </button>
+    </Hint>
   );
 }
 
@@ -268,7 +270,7 @@ function Code({
   colour: boolean;
 }) {
   const tokens = colour ? highlightDiffLine(language, content) : null;
-  const base = "min-w-0 flex-1 whitespace-pre px-3 text-[var(--text-secondary)]";
+  const base = "min-w-0 flex-1 whitespace-pre px-3 text-[var(--secondary-foreground)]";
   if (!tokens) return <span className={base}>{content}</span>;
   return (
     <span className={cn("diff-syntax", base)}>

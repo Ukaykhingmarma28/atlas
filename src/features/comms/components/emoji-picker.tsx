@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Search, Smile } from "lucide-react";
+import { HintItem } from "@/ui/hint-group";
 import { EMOJI_CATEGORIES, searchEmoji } from "../lib/emoji-data";
 
 /**
@@ -33,63 +34,64 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title="Emoji"
-          // Keeps the textarea selection alive so the emoji lands where the
-          // caret was, not at the end.
-          onMouseDown={(e) => e.preventDefault()}
-          className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Smile size={14} />
-        </button>
-      </Popover.Trigger>
+      <HintItem label="Emoji">
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              // Keeps the textarea selection alive so the emoji lands where the
+              // caret was, not at the end.
+              onMouseDown={(e) => e.preventDefault()}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+            >
+              <Smile size={14} />
+            </button>
+          }
+        />
+      </HintItem>
       <Popover.Portal>
-        <Popover.Content
-          side="top"
-          align="start"
-          sideOffset={8}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            searchRef.current?.focus();
-          }}
-          className="z-[var(--z-modal)] w-[292px] rounded-lg border border-border-default bg-bg-overlay shadow-[var(--shadow-overlay)] animate-scale-in"
-        >
-          <div className="border-b border-border-default p-1.5">
-            <div className="flex items-center gap-1.5 rounded-md border border-border-default bg-bg-input px-2 py-1 focus-within:border-border-focus">
-              <Search size={11} className="shrink-0 text-text-ghost" />
-              <input
-                ref={searchRef}
-                value={query}
-                onChange={(ev) => setQuery(ev.target.value)}
-                placeholder="Search emoji…"
-                className="min-w-0 flex-1 bg-transparent text-[11.5px] text-text-primary outline-none placeholder:text-text-ghost"
-              />
+        <Popover.Positioner className="z-modal" side="top" align="start" sideOffset={8}>
+          <Popover.Popup
+            // Radix's onOpenAutoFocus + preventDefault + focus() is one
+            // Base UI prop: hand initialFocus the element to land on.
+            initialFocus={searchRef}
+            className="w-[292px] rounded-lg border border-border bg-popover shadow-md origin-[var(--transform-origin)] animate-scale-in"
+          >
+            <div className="border-b border-border p-1.5">
+              <div className="flex items-center gap-1.5 rounded-md border border-border bg-panel-input px-2 py-1 focus-within:border-border-strong">
+                <Search size={11} className="shrink-0 text-disabled" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(ev) => setQuery(ev.target.value)}
+                  placeholder="Search emoji…"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-disabled"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="max-h-[240px] overflow-y-auto hide-scrollbar p-1.5">
-            {searching ? (
-              results.length ? (
-                <Grid entries={results.map((r) => r.char)} onPick={pick} />
-              ) : (
-                <div className="px-1 py-6 text-center text-[11px] text-text-tertiary">
-                  No emoji matches “{query.trim()}”.
-                </div>
-              )
-            ) : (
-              EMOJI_CATEGORIES.map((cat) => (
-                <div key={cat.name} className="mb-1.5 last:mb-0">
-                  <div className="px-1 pb-1 pt-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
-                    {cat.name}
+            <div className="max-h-[240px] overflow-y-auto hide-scrollbar p-1.5">
+              {searching ? (
+                results.length ? (
+                  <Grid entries={results.map((r) => r.char)} onPick={pick} />
+                ) : (
+                  <div className="px-1 py-6 text-center text-xs text-muted-foreground">
+                    No emoji matches “{query.trim()}”.
                   </div>
-                  <Grid entries={cat.emoji.map((x) => x.char)} onPick={pick} />
-                </div>
-              ))
-            )}
-          </div>
-        </Popover.Content>
+                )
+              ) : (
+                EMOJI_CATEGORIES.map((cat) => (
+                  <div key={cat.name} className="mb-1.5 last:mb-0">
+                    <div className="px-1 pb-1 pt-0.5 text-2xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      {cat.name}
+                    </div>
+                    <Grid entries={cat.emoji.map((x) => x.char)} onPick={pick} />
+                  </div>
+                ))
+              )}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );
@@ -104,7 +106,7 @@ function Grid({ entries, onPick }: { entries: string[]; onPick: (c: string) => v
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onPick(char)}
-          className="flex h-[30px] items-center justify-center rounded text-[16px] leading-none transition-colors hover:bg-bg-hover cursor-pointer"
+          className="flex h-control-lg items-center justify-center rounded text-lg leading-none transition-colors hover:bg-element-hover cursor-pointer"
         >
           {char}
         </button>

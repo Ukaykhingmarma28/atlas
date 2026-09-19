@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 interface ImageZoomViewProps {
   src: string;
@@ -13,11 +14,14 @@ interface ImageZoomViewProps {
   checkerboard?: boolean;
 }
 
-// Two mid-grays: black AND white SVG content both read against it.
+// The transparency checkerboard. Two steps of the theme's own neutral ramp
+// rather than two fixed greys: the pattern has to sit between the lightest and
+// darkest thing the image can contain, and on a light theme a mid-grey ground
+// is heavier than the picture on it.
 const CHECKER: React.CSSProperties = {
-  backgroundColor: "#7c7c7c",
+  backgroundColor: "var(--muted)",
   backgroundImage:
-    "linear-gradient(45deg, #6a6a6a 25%, transparent 25%), linear-gradient(-45deg, #6a6a6a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #6a6a6a 75%), linear-gradient(-45deg, transparent 75%, #6a6a6a 75%)",
+    "linear-gradient(45deg, var(--accent) 25%, transparent 25%), linear-gradient(-45deg, var(--accent) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--accent) 75%), linear-gradient(-45deg, transparent 75%, var(--accent) 75%)",
   backgroundSize: "20px 20px",
   backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0",
 };
@@ -127,36 +131,41 @@ export function ImageZoomView({ src, alt, fill, checkerboard }: ImageZoomViewPro
         }}
       />
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-1 py-0.5 shadow-[var(--shadow-overlay)]">
-        <button
-          type="button"
-          onClick={zoomButton(1 / 1.3)}
-          title="Zoom out"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomOut size={13} />
-        </button>
-        <span className="w-9 text-center text-[10px] font-mono text-[var(--text-tertiary)]">
-          {Math.round(scale * 100)}%
-        </span>
-        <button
-          type="button"
-          onClick={zoomButton(1.3)}
-          title="Zoom in"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <ZoomIn size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={reset}
-          title="Reset zoom"
-          className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-        >
-          <Maximize size={12} />
-        </button>
-      </div>
+      {/* Zoom controls — at the bottom of the view, so tooltips open upward. */}
+      <HintGroup side="top">
+        <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-1 py-0.5 shadow-md">
+          <HintItem label="Zoom out">
+            <button
+              type="button"
+              onClick={zoomButton(1 / 1.3)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+            >
+              <ZoomOut size={13} />
+            </button>
+          </HintItem>
+          <span className="w-9 text-center text-2xs font-mono text-[var(--muted-foreground)]">
+            {Math.round(scale * 100)}%
+          </span>
+          <HintItem label="Zoom in">
+            <button
+              type="button"
+              onClick={zoomButton(1.3)}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+            >
+              <ZoomIn size={13} />
+            </button>
+          </HintItem>
+          <HintItem label="Reset zoom">
+            <button
+              type="button"
+              onClick={reset}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+            >
+              <Maximize size={12} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }

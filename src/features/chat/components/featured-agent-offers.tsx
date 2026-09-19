@@ -57,8 +57,8 @@ export function FeaturedAgentOffers({
 
   return (
     <>
-      <div className="h-px bg-[var(--border-default)]" />
-      <div className="px-3 pb-0.5 pt-1.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+      <div className="h-px bg-[var(--border)]" />
+      <div className="px-3 pb-0.5 pt-1.5 text-3xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
         Available to install
       </div>
       <div className="p-1 pt-0.5">
@@ -79,26 +79,29 @@ export function FeaturedAgentOffers({
                 "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                 disabled
                   ? "cursor-default opacity-40"
-                  : "cursor-pointer hover:bg-[var(--bg-hover)]",
+                  : "cursor-pointer hover:bg-[var(--atlas-element-hover)]",
               )}
             >
               {/* Same tile as the marketplace's, and the same reason for the
                   explicit text color: registry icons are monochrome
                   `currentColor` art, so the container decides legibility. */}
-              <span className="flex size-4 shrink-0 items-center justify-center rounded border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-secondary)]">
+              <span className="flex size-4 shrink-0 items-center justify-center rounded border border-[var(--border)] bg-[var(--card,var(--background))] text-[var(--secondary-foreground)]">
                 {offer.iconDataUrl ? (
                   <ExternalAgentIcon dataUrl={offer.iconDataUrl} size={10} />
                 ) : (
                   <AgentMonogram label={offer.label} size={10} />
                 )}
               </span>
-              <span className="flex-1 truncate text-[11px] font-medium text-[var(--text-secondary)]">
+              <span className="flex-1 truncate text-xs font-medium text-[var(--secondary-foreground)]">
                 {offer.label}
               </span>
               {busy ? (
-                <Loader2 size={11} className="shrink-0 animate-spin text-[var(--text-tertiary)]" />
+                <Loader2
+                  size={11}
+                  className="shrink-0 animate-spin text-[var(--muted-foreground)]"
+                />
               ) : (
-                <Download size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+                <Download size={11} className="shrink-0 text-[var(--muted-foreground)]" />
               )}
             </button>
           );

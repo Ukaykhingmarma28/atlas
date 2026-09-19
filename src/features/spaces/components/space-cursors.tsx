@@ -130,13 +130,19 @@ export function SpaceCursors({ actors }: { actors: ReadonlyMap<string, SpaceActo
               if (el) paint(g);
             }
           }}
+          // ratchet-allow: local stacking inside xyflow's ViewportPortal, which
+          // opens its own context — this only has to outrank nodes and edges,
+          // so no app-wide layer applies. `z-popover` here would be a lie.
           className="pointer-events-none absolute z-50"
         >
           <MousePointer2 size={14} style={{ color: a.colour }} fill={a.colour} />
           <span
             className={cn(
               "ml-3 -mt-0.5 block max-w-[140px] truncate rounded-full px-1.5 py-0.5",
-              "text-[9px] font-medium leading-none text-white",
+              // ratchet-allow: the name rides on the collaborator's OWN cursor
+              // colour, which is theirs and saturated; white is the only label
+              // that reads on every value in that palette.
+              "text-3xs font-medium leading-none text-white",
             )}
             style={{ backgroundColor: a.colour }}
           >

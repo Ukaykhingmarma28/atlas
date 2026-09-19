@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { tags } from "@lezer/highlight";
 import type { Tag } from "@lezer/highlight";
 import { buildHighlightStyle } from "./build-cm-theme";
-import { DEFAULT_EDITOR_THEME_ID, EDITOR_THEMES, getEditorTheme } from "./themes";
 
 /**
  * A `HighlightStyle` colors only the tags it names; a grammar tag with no rule
@@ -70,8 +69,8 @@ const PROSE_TAGS: Array<[string, Tag]> = [
 ];
 
 describe("buildHighlightStyle", () => {
-  describe.each(EDITOR_THEMES.map((t) => [t.id, t] as const))("%s", (_id, theme) => {
-    const style = buildHighlightStyle(theme);
+  describe("resolved theme", () => {
+    const style = buildHighlightStyle(null);
 
     it.each(CODE_TAGS)("styles the %s tag", (_label, tag) => {
       expect(style.style([tag])).toBeTruthy();
@@ -86,13 +85,13 @@ describe("buildHighlightStyle", () => {
     // The counter-check: if `style()` answered for any tag at all, the
     // assertions above would prove nothing. `inserted` belongs to the diff
     // grammar, which the editor never loads.
-    const style = buildHighlightStyle(getEditorTheme(DEFAULT_EDITOR_THEME_ID));
+    const style = buildHighlightStyle(null);
     expect(style.style([tags.inserted])).toBeNull();
   });
 
   it("gives headings and comments different styles in the default theme", () => {
     // Both used to land on the same flat foreground in Markdown.
-    const style = buildHighlightStyle(getEditorTheme(DEFAULT_EDITOR_THEME_ID));
+    const style = buildHighlightStyle(null);
     expect(style.style([tags.heading])).not.toBe(style.style([tags.comment]));
   });
 });

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, FilePlus2, FolderPlus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { CommsAvatar } from "@/features/comms/components/comms-avatar";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { SPACE_PAGE_NAME_MAX } from "../lib/space-wire";
@@ -168,26 +169,28 @@ export function SpacePages({
 
   return (
     <div
-      className="flex h-full shrink-0 flex-col border-r border-border-default bg-[#090909]"
+      className="flex h-full shrink-0 flex-col border-r border-border bg-[var(--card)]"
       style={{ width: 260 }}
     >
       {/* Quiet header — no divider, the local panel's recipe. */}
       <div className="flex h-8 shrink-0 items-center gap-1 px-2 pl-3">
-        <span className="flex-1 text-[10px] font-semibold uppercase leading-none tracking-wider text-text-tertiary">
+        <span className="flex-1 text-2xs font-semibold uppercase leading-none tracking-wider text-muted-foreground">
           Pages
         </span>
-        <RoundButton
-          label="New page"
-          disabled={!editable}
-          onClick={() => create({})}
-          icon={<FilePlus2 size={10} />}
-        />
-        <RoundButton
-          label="New folder"
-          disabled={!editable}
-          onClick={() => create({ kind: "folder" })}
-          icon={<FolderPlus size={10} />}
-        />
+        <HintGroup>
+          <RoundButton
+            label="New page"
+            disabled={!editable}
+            onClick={() => create({})}
+            icon={<FilePlus2 size={10} />}
+          />
+          <RoundButton
+            label="New folder"
+            disabled={!editable}
+            onClick={() => create({ kind: "folder" })}
+            icon={<FolderPlus size={10} />}
+          />
+        </HintGroup>
       </div>
 
       <div
@@ -209,18 +212,18 @@ export function SpacePages({
               {dropHere && drop.where !== "into" && (
                 <div
                   className={cn(
-                    "pointer-events-none absolute left-1 right-1 z-10 h-[2px] rounded bg-[var(--accent-primary)]",
+                    "pointer-events-none absolute left-1 right-1 z-10 h-[2px] rounded bg-[var(--primary)]",
                     drop.where === "before" ? "top-0" : "bottom-0",
                   )}
                 />
               )}
               <div
                 className={cn(
-                  "group/row flex cursor-pointer items-center gap-2 rounded py-2 pr-2 text-[11px]",
+                  "group/row flex cursor-pointer items-center gap-2 rounded py-2 pr-2 text-xs",
                   active
-                    ? "bg-bg-selected text-text-primary"
-                    : "text-text-secondary hover:bg-bg-hover",
-                  dropHere && drop.where === "into" && "bg-bg-selected/60",
+                    ? "bg-element-selected text-foreground"
+                    : "text-secondary-foreground hover:bg-element-hover",
+                  dropHere && drop.where === "into" && "bg-element-selected/60",
                   dragId === page.id && "opacity-50",
                 )}
                 style={{ paddingLeft: 6 + depth * 12 }}
@@ -245,7 +248,7 @@ export function SpacePages({
                   <ChevronRight
                     size={10}
                     className={cn(
-                      "shrink-0 text-text-tertiary transition-transform",
+                      "shrink-0 text-muted-foreground transition-transform",
                       !collapsed.has(page.id) && "rotate-90",
                     )}
                   />
@@ -268,12 +271,12 @@ export function SpacePages({
                         if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                         else if (e.key === "Escape") setRenamingId(null);
                       }}
-                      className="w-full min-w-0 rounded bg-bg-input px-1 text-[11px] text-text-primary outline-none"
+                      className="w-full min-w-0 rounded bg-panel-input px-1 text-xs text-foreground outline-none"
                     />
                   ) : (
                     <>
                       <span
-                        className="block truncate text-[11.5px] font-medium leading-[1.35]"
+                        className="block truncate text-sm font-medium leading-[1.35]"
                         onDoubleClick={(e) => {
                           if (!editable) return;
                           e.stopPropagation();
@@ -282,7 +285,7 @@ export function SpacePages({
                       >
                         {page.name || "Untitled"}
                       </span>
-                      <span className="block truncate text-[10px] leading-[1.35] text-text-tertiary">
+                      <span className="block truncate text-2xs leading-[1.35] text-muted-foreground">
                         Updated {timeAgo(new Date(page.updated_at).toISOString(), { suffix: true })}
                       </span>
                     </>
@@ -292,14 +295,16 @@ export function SpacePages({
                 {/* The author, where this client can actually know it. */}
                 {author && renamingId !== page.id && (
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="flex min-w-0 shrink-0 items-center gap-1">
-                        <CommsAvatar member={author} size={16} />
-                        <span className="max-w-[64px] truncate text-[9.5px] text-text-tertiary">
-                          {firstName(author.name)}
+                    <TooltipTrigger
+                      render={
+                        <span className="flex min-w-0 shrink-0 items-center gap-1">
+                          <CommsAvatar member={author} size={16} />
+                          <span className="max-w-[64px] truncate text-2xs text-muted-foreground">
+                            {firstName(author.name)}
+                          </span>
                         </span>
-                      </span>
-                    </TooltipTrigger>
+                      }
+                    />
                     <TooltipContent side="top" sideOffset={4}>
                       Created by {author.name}
                     </TooltipContent>
@@ -309,39 +314,43 @@ export function SpacePages({
                 {editable && (
                   <span className="flex shrink-0 items-center gap-1">
                     {isFolder && (
-                      <button
-                        type="button"
-                        title="New page inside"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          create({ parent_id: page.id });
-                        }}
-                        className="hidden h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary group-hover/row:flex"
-                      >
-                        <FilePlus2 size={10} />
-                      </button>
+                      <Hint label="New page inside">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            create({ parent_id: page.id });
+                          }}
+                          className="hidden size-control-sm cursor-pointer items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground group-hover/row:flex"
+                        >
+                          <FilePlus2 size={10} />
+                        </button>
+                      </Hint>
                     )}
                     {/* Always drawn, never hover-revealed: a delete that
                         appears under the cursor is a delete you click by
                         accident. */}
-                    <button
-                      type="button"
-                      title={
+                    <Hint
+                      label={
                         lastPage
                           ? "The last page of a Space cannot be deleted."
                           : isFolder
                             ? `Delete folder “${page.name}” and everything in it`
                             : `Delete “${page.name}”`
                       }
-                      disabled={lastPage}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        session.deletePage(page.id);
-                      }}
-                      className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-[var(--status-error)] disabled:cursor-not-allowed disabled:opacity-30"
                     >
-                      <Trash2 size={10} />
-                    </button>
+                      <button
+                        type="button"
+                        disabled={lastPage}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          session.deletePage(page.id);
+                        }}
+                        className="flex size-control-sm cursor-pointer items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-element-hover hover:text-[var(--atlas-status-error-foreground)] disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </Hint>
                   </span>
                 )}
               </div>
@@ -349,7 +358,7 @@ export function SpacePages({
           );
         })}
         {rows.length === 0 && (
-          <div className="px-2 py-3 text-[10px] text-text-tertiary">No pages yet.</div>
+          <div className="px-2 py-3 text-2xs text-muted-foreground">No pages yet.</div>
         )}
       </div>
     </div>
@@ -368,15 +377,16 @@ function RoundButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border-default text-text-secondary outline-none transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {icon}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-border text-secondary-foreground outline-none transition-colors hover:bg-element-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {icon}
+      </button>
+    </HintItem>
   );
 }
 

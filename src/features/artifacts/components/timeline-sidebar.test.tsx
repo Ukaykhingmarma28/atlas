@@ -43,10 +43,12 @@ beforeAll(() => {
   HTMLElement.prototype.scrollTo ??= () => {};
 });
 
-const DAY = 86_400_000;
-
 function session(over: Partial<BoardSession> & { id: string }): BoardSession {
-  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  // Keep the fixture in today's local calendar bucket. An "hour ago" crosses
+  // midnight for the first hour of the day and made this test date-dependent.
+  const todayAtNoon = new Date();
+  todayAtNoon.setHours(12, 0, 0, 0);
+  const hourAgo = todayAtNoon.toISOString();
   return {
     title: `Session ${over.id}`,
     agent: "claude",
@@ -79,7 +81,10 @@ function session(over: Partial<BoardSession> & { id: string }): BoardSession {
 
 describe("TimelineSidebar", () => {
   it("draws one day row per bucket and a title-only row per session", () => {
-    const yesterday = new Date(Date.now() - DAY).toISOString();
+    const yesterdayDate = new Date();
+    yesterdayDate.setHours(12, 0, 0, 0);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = yesterdayDate.toISOString();
     render(
       <TimelineSidebar
         sessions={[

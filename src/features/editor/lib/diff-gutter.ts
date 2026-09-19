@@ -68,16 +68,18 @@ const diffGutterTheme = EditorView.baseTheme({
     boxSizing: "border-box",
   },
   ".cm-changebar-added": {
-    background: "var(--status-success, #22c55e)",
+    background: "var(--atlas-diff-added-text)",
   },
+  // There's no dedicated "changed" role in the diff theme keys (only
+  // added/removed/context) — this is a status colour by design.
   ".cm-changebar-changed": {
-    background: "var(--status-info, #3b82f6)",
+    background: "var(--atlas-status-info-foreground)",
   },
   // A deletion has no line of its own in the new file — mark the following
   // line's bar with a downward red wedge.
   ".cm-changebar-deleted": {
     background: "transparent",
-    borderTop: "2px solid var(--status-error, #ef4444)",
+    borderTop: "2px solid var(--atlas-diff-removed-text)",
   },
 });
 

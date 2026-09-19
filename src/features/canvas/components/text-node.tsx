@@ -41,7 +41,7 @@ export const TextNode = memo(function TextNode({ id, data, selected }: NodeProps
     <div
       className={cn(
         "group relative rounded",
-        selected && "outline outline-1 outline-[var(--accent-primary)]/50",
+        selected && "outline outline-1 outline-[var(--primary)]/50",
       )}
       onDoubleClick={() => setEditing(true)}
     >
@@ -50,7 +50,7 @@ export const TextNode = memo(function TextNode({ id, data, selected }: NodeProps
         ref={ref}
         className={cn(
           "whitespace-pre-wrap break-words min-w-[40px] min-h-[1.25em] px-1 py-0.5 outline-none",
-          "text-[15px] leading-snug text-[var(--text-primary)] caret-[var(--accent-primary)]",
+          "text-lg leading-snug text-[var(--foreground)] caret-[var(--primary)]",
           editing ? "nodrag cursor-text select-text" : "cursor-default select-none",
         )}
         contentEditable={editing}

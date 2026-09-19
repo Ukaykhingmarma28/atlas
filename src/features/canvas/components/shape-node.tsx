@@ -14,7 +14,7 @@ export interface ShapeNodeData extends Record<string, unknown> {
  *  keeps the border an even width regardless of the box's aspect ratio. */
 function ShapeSvg({ type, stroke }: { type: ShapeType; stroke: string }) {
   const common = {
-    fill: "var(--bg-secondary)",
+    fill: "var(--card)",
     fillOpacity: 0.7,
     stroke,
     strokeWidth: 1.5,
@@ -66,7 +66,7 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected }: NodePro
     updateNote(id, { text: ref.current?.innerText ?? "" });
   }, [id, updateNote]);
 
-  const stroke = selected ? "var(--accent-primary)" : "rgba(255,255,255,0.25)";
+  const stroke = selected ? "var(--primary)" : "var(--atlas-border-strong)";
 
   return (
     // React Flow owns the box size (so NodeResizer can drive it); the shape fills
@@ -76,8 +76,8 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected }: NodePro
         isVisible={selected}
         minWidth={40}
         minHeight={40}
-        lineClassName="!border-[var(--accent-primary)]/70"
-        handleClassName="!bg-[var(--accent-primary)] !border-white/60 !w-2 !h-2 !rounded-sm"
+        lineClassName="!border-[var(--primary)]/70"
+        handleClassName="!bg-[var(--primary)] !border-border-strong !w-2 !h-2 !rounded-sm"
         onResizeStart={() => beginInteraction()}
         onResize={(_, p) => {
           moveNote(id, p.x, p.y);
@@ -92,7 +92,7 @@ export const ShapeNode = memo(function ShapeNode({ id, data, selected }: NodePro
           ref={ref}
           className={cn(
             "max-w-full whitespace-pre-wrap break-words text-center outline-none",
-            "text-[12px] leading-snug text-[var(--text-primary)] caret-[var(--accent-primary)]",
+            "text-sm leading-snug text-[var(--foreground)] caret-[var(--primary)]",
             // An empty contentEditable has no line box, so the caret can't render;
             // a min line-height gives it one when the shape has no text yet.
             "min-h-[1.25em] min-w-[2px]",

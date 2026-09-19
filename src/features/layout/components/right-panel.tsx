@@ -56,17 +56,17 @@ export function RightPanel() {
   }
 
   return (
-    <div className="atlas-vibrant-panel h-full flex flex-col bg-[var(--panel-bg-2)]">
-      <div className="flex items-center border-b border-border-default px-1 h-[29px] shrink-0 gap-0.5 overflow-x-auto hide-scrollbar">
+    <div className="atlas-vibrant-panel h-full flex flex-col bg-[var(--card)]">
+      <div className="flex items-center border-b border-border px-1 h-[29px] shrink-0 gap-0.5 overflow-x-auto hide-scrollbar">
         {sections.map((s) => (
           <button
             key={s.id}
             onClick={() => setRightSection(s.id)}
             className={cn(
-              "flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap",
+              "flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap",
               activeSection === s.id
-                ? "text-text-primary bg-bg-selected"
-                : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover",
+                ? "text-foreground bg-element-selected"
+                : "text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover",
             )}
           >
             <s.icon size={12} />

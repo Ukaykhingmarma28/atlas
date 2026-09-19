@@ -31,12 +31,12 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
 
   const tint =
     pill.tint === "error"
-      ? "text-[var(--status-error)]"
+      ? "text-[var(--atlas-status-error-foreground)]"
       : pill.tint === "warn"
-        ? "text-[var(--status-warning)]"
+        ? "text-[var(--atlas-status-warning-foreground)]"
         : pill.state === "compacting"
-          ? "text-[var(--accent-primary)]"
-          : "text-[var(--text-tertiary)]";
+          ? "text-[var(--primary)]"
+          : "text-[var(--muted-foreground)]";
 
   return (
     <div ref={ref} className="relative">
@@ -52,7 +52,7 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
         title="Session usage — context, tokens, cost and what Atlas recorded"
         data-usage-state={pill.state}
       >
-        <span key={`${pill.state}:${pill.label}`} className="atlas-pill-swap flex items-center">
+        <span key={pill.state} className="atlas-pill-swap flex items-center">
           <span className={cn("flex shrink-0 items-center", tint)}>
             {pill.state === "compacting" ? (
               <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
@@ -71,7 +71,7 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
           >
             {pill.label}
           </span>
-          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--text-tertiary)]" />
+          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--muted-foreground)]" />
         </span>
       </button>
     </div>

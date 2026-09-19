@@ -18,7 +18,7 @@ export function PanelSkeleton({ rows = 6, label, className }: PanelSkeletonProps
   return (
     <div className={cn("h-full flex flex-col gap-2 p-3", className)}>
       {label && (
-        <div className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)] px-0.5">
+        <div className="text-2xs uppercase tracking-wider text-[var(--muted-foreground)] px-0.5">
           {label}
         </div>
       )}
@@ -26,7 +26,7 @@ export function PanelSkeleton({ rows = 6, label, className }: PanelSkeletonProps
         {Array.from({ length: rows }).map((_, i) => (
           <div
             key={i}
-            className="h-6 rounded-md bg-[var(--bg-elevated)] opacity-50"
+            className="h-6 rounded-md bg-[var(--card)] opacity-50"
             style={{
               // Slight width variation makes the placeholder feel like a list
               // rather than a grid of identical bars.

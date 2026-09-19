@@ -1,11 +1,11 @@
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRemoveAgentConfirmStore } from "../lib/remove-agent-confirm";
 
 /** The app's pill-button language (matches the stop-agents dialog). */
 const pillButton =
-  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 py-1.5 text-[11px] font-medium leading-none cursor-pointer transition-colors";
+  "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium leading-none cursor-pointer transition-colors";
 
 /**
  * "Remove this agent?" confirmation for Settings → Agents, driven by
@@ -20,22 +20,22 @@ export function RemoveAgentDialog() {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && settle(false)}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-max)] bg-black/45 backdrop-blur-xl" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-xl" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-[var(--z-max)] -translate-x-1/2 -translate-y-1/2",
-            "w-[380px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border-default)]",
-            "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
-            "shadow-[var(--shadow-overlay)] animate-scale-in",
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
+            "w-[380px] max-w-[92vw] overflow-hidden rounded-xl border border-[var(--border)]",
+            "bg-[var(--card)]/60 backdrop-blur-2xl",
+            "shadow-md animate-scale-in",
           )}
         >
           <div className="px-4 pt-3.5 pb-4">
-            <Dialog.Title className="flex items-center gap-2 text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
+            <Dialog.Title className="flex items-center gap-2 text-base font-semibold tracking-[-0.01em] text-[var(--foreground)]">
               <Trash2 size={13} className="text-error" />
               Remove {pending.name}?
             </Dialog.Title>
-            <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            <p className="mt-2 text-sm leading-relaxed text-[var(--secondary-foreground)]">
               Chats with this agent stay in history. Any chat currently using it will be asked to
               switch agents. You can install it again at any time.
             </p>
@@ -45,7 +45,7 @@ export function RemoveAgentDialog() {
                 onClick={() => settle(false)}
                 className={cn(
                   pillButton,
-                  "bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+                  "bg-[var(--card)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
                 )}
               >
                 Keep
@@ -54,7 +54,7 @@ export function RemoveAgentDialog() {
                 onClick={() => settle(true)}
                 className={cn(
                   pillButton,
-                  "border-error/40 bg-[var(--bg-elevated)] text-error hover:bg-error/10",
+                  "border-error/40 bg-[var(--card)] text-error hover:bg-error/10",
                 )}
               >
                 <Trash2 size={12} />
@@ -62,7 +62,7 @@ export function RemoveAgentDialog() {
               </button>
             </div>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

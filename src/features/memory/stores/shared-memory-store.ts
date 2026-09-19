@@ -1,7 +1,7 @@
 // Shared Cross-Agent Memory (v2) — UI state for the Memory panel's "Shared"
 // view. Loads the per-project derived state (active plan, decisions, recent
 // changes, facts) and supports an on-demand query + clear. Scoped to one
-// project at a time (the active workspace), reloaded via `load(projectPath)`.
+// project at a time (the active project), reloaded via `load(projectPath)`.
 // Mirrors `memory-sharing-store.ts`.
 
 import { create } from "zustand";

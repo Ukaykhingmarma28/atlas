@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileText, Image as ImageIcon, Music, RefreshCw } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 import { AudioPlayer } from "./audio-player";
 import { CommsAvatar } from "./comms-avatar";
 import { formatBytes, saveAttachment } from "./message-group";
@@ -58,9 +59,7 @@ export function FilesTab({ convId }: { convId: string }) {
   return (
     <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3 pt-2">
       {entries.length === 0 && (
-        <p className="px-1 pt-4 text-center text-[11px] text-text-ghost">
-          No files in loaded history.
-        </p>
+        <p className="px-1 pt-4 text-center text-xs text-disabled">No files in loaded history.</p>
       )}
 
       {media.length > 0 && (
@@ -138,19 +137,21 @@ function SectionHead({
 }) {
   return (
     <div className="flex items-center gap-1.5 px-1 pb-1 pt-2">
-      <Icon size={11} className="shrink-0 text-text-secondary" />
-      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+      <Icon size={11} className="shrink-0 text-secondary-foreground" />
+      <span className="text-2xs font-semibold uppercase tracking-[0.06em] text-secondary-foreground">
         {label}
       </span>
-      <button
-        type="button"
-        title="Load older messages"
-        disabled={refreshing}
-        onClick={onRefresh}
-        className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-default text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 cursor-pointer"
-      >
-        <RefreshCw size={9} className={refreshing ? "animate-spin" : ""} />
-      </button>
+      {/* Unwrapped: a wrapper span would swallow the button's `ml-auto`. */}
+      <Hint label="Load older messages" wrap={false}>
+        <button
+          type="button"
+          disabled={refreshing}
+          onClick={onRefresh}
+          className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw size={9} className={refreshing ? "animate-spin" : ""} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -188,7 +189,7 @@ function MediaThumb({
         type="button"
         title={`${attachment.filename} · ${timeAgo(new Date(message.created_at).toISOString(), { suffix: true })}`}
         onClick={() => path && openMediaList(gallery, attachment.id)}
-        className="relative aspect-square overflow-hidden rounded-md border border-border-subtle bg-bg-elevated cursor-zoom-in"
+        className="relative aspect-square overflow-hidden rounded-md border border-border-subtle bg-card cursor-zoom-in"
       >
         {path ? (
           isVideo ? (
@@ -201,10 +202,7 @@ function MediaThumb({
             />
           )
         ) : (
-          <span
-            className="absolute inset-0 bg-[var(--bg-elevated)]"
-            style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-          />
+          <span className="absolute inset-0 bg-[var(--card)] atlas-marker-running" />
         )}
       </button>
     </>
@@ -261,13 +259,13 @@ function FileRow({
       onClick={() => void saveAttachment(attachment)}
       // A surface of its own: on the panel's pure-black card these rows had
       // nothing to sit on and read as floating text.
-      className="flex w-full items-center gap-2 rounded-lg bg-[#0D0E0D] px-2.5 py-2 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 rounded-lg bg-card px-2.5 py-2 text-left transition-colors hover:bg-element-hover cursor-pointer"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] text-text-secondary">
+        <span className="block truncate text-sm text-secondary-foreground">
           {attachment.filename}
         </span>
-        <span className="mt-0.5 flex items-center gap-1 text-[9.5px] text-text-ghost">
+        <span className="mt-0.5 flex items-center gap-1 text-2xs text-disabled">
           <CommsAvatar member={author} size={12} />
           <span className="truncate">{author?.name ?? "Unknown"}</span>·
           <span className="shrink-0">

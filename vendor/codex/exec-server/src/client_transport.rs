@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;

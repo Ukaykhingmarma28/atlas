@@ -12,6 +12,7 @@ import { create } from "zustand";
 export type SettingsSection =
   | "general"
   | "appearance"
+  | "icons"
   | "layouts"
   | "providers"
   | "skills"

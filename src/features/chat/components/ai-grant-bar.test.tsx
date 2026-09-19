@@ -67,26 +67,29 @@ function seed(entitlement: Entitlement | null) {
   });
 }
 
+// One full reset for both describes: the module variables the store mocks read
+// and every mock's recorded calls, so no case inherits another's org or answer.
+beforeEach(() => {
+  invoke.mockReset();
+  toastError.mockReset();
+  openUrl.mockReset();
+  openUrl.mockResolvedValue(undefined);
+  enableSync.mockClear();
+  signedIn = true;
+  orgs = [{ id: "org_1", name: "Acme" }];
+  activeOrgId = "org_1";
+  desktopOrgs = [{ id: "local_1", name: "Acme", syncEnabled: true, remoteId: "org_1" }];
+  activeDesktopOrgId = "local_1";
+  seed(null);
+  useAiGrantStore.setState({ probedOrgId: null });
+});
+
+// There is no global setup file, so nothing unmounts the previous render —
+// without this, a bar from an earlier case is still in the document and
+// every "renders nothing" assertion passes or fails for the wrong reason.
+afterEach(cleanup);
+
 describe("the no-grant setup state (bar 14)", () => {
-  beforeEach(() => {
-    invoke.mockReset();
-    toastError.mockReset();
-    openUrl.mockReset();
-    openUrl.mockResolvedValue(undefined);
-    signedIn = true;
-    orgs = [{ id: "org_1", name: "Acme" }];
-    activeOrgId = "org_1";
-    desktopOrgs = [{ id: "local_1", name: "Acme", syncEnabled: true, remoteId: "org_1" }];
-    activeDesktopOrgId = "local_1";
-    seed(null);
-    useAiGrantStore.setState({ probedOrgId: null });
-  });
-
-  // There is no global setup file, so nothing unmounts the previous render —
-  // without this, a bar from an earlier case is still in the document and
-  // every "renders nothing" assertion passes or fails for the wrong reason.
-  afterEach(cleanup);
-
   it("names the organisation the user knows, not the id the gateway sent", async () => {
     // The whole reason this stopped being the gateway's raw sentence: that
     // string names the org by a 26-character opaque id the user has never seen.
@@ -173,21 +176,13 @@ describe("the no-grant setup state (bar 14)", () => {
     // what keeps the composer locked — see `message-input.tsx`.
     seed(NO_GRANT);
     render(<AiGrantBar />);
-    await userEvent.click(screen.getByTitle("Dismiss"));
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByTestId("ai-grant-bar")).toBeNull();
     expect(useAiGrantStore.getState().entitlement).toEqual(NO_GRANT);
   });
 });
 
 describe("the grant store's composer lock", () => {
-  // The cases below that render (the composer stand-in, the bar) need the
-  // same unmount discipline as the first describe.
-  afterEach(cleanup);
-  beforeEach(() => {
-    invoke.mockReset();
-    seed(null);
-  });
-
   it("locks only on a definite no", async () => {
     const { probe } = useAiGrantStore.getState().actions;
 
@@ -208,10 +203,9 @@ describe("the grant store's composer lock", () => {
   });
 
   it("asks the gateway once however many composers are mounted", async () => {
-    // Split view and background workspaces each mount their own composer. One
+    // Split view and background projects each mount their own composer. One
     // probe per org, not one per tab — and no tab's reset may wipe the answer
     // another just fetched.
-    useAiGrantStore.setState({ probedOrgId: null });
     invoke.mockResolvedValue(NO_GRANT);
     const { ensureProbed } = useAiGrantStore.getState().actions;
     ensureProbed("org_1");
@@ -222,7 +216,6 @@ describe("the grant store's composer lock", () => {
   });
 
   it("re-asks when the org actually changes", async () => {
-    useAiGrantStore.setState({ probedOrgId: null });
     invoke.mockResolvedValue(NO_GRANT);
     const { ensureProbed } = useAiGrantStore.getState().actions;
     ensureProbed("org_1");
@@ -234,7 +227,6 @@ describe("the grant store's composer lock", () => {
   it("never lands the outgoing org's refusal on the incoming one", async () => {
     // The switch can happen mid-flight. org1's "no grant" arriving after the
     // user moved to org2 would lock org2's composer over a grant it may have.
-    useAiGrantStore.setState({ probedOrgId: null });
     // One promise PER probe — a shared `mockReturnValue` promise would also
     // resolve org_2's own probe, which is entitled to record the answer.
     const settlers: ((v: Entitlement) => void)[] = [];
@@ -323,7 +315,6 @@ describe("the grant store's composer lock", () => {
     // the same `enableSync` the org switcher's item calls, for the same org.
     desktopOrgs = [{ id: "local_2", name: "Local", syncEnabled: false }];
     activeDesktopOrgId = "local_2";
-    enableSync.mockClear();
     render(
       <>
         <Composer />

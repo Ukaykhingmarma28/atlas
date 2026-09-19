@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 //! Terminal detection utilities.
 //!
 //! This module feeds terminal metadata into OpenTelemetry user-agent logging and into

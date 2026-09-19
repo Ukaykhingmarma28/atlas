@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use crate::plugin_bundle_archive::unpack_plugin_bundle_tar_gz;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;

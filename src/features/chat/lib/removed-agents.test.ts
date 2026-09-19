@@ -2,8 +2,18 @@
 //
 // `removed-agents` pulls in the chat store, which touches `window` at import.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentCatalogEntry } from "@/types/agent-catalog";
+
+// This pure helper currently shares a module with the catalog watcher, which
+// imports the chat/project stores. Their module setup subscribes to config
+// events, so provide the real Tauri boundary shape rather than letting the
+// browser shim reject asynchronously after otherwise-passing assertions.
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+  emit: vi.fn(async () => {}),
+}));
+
 import { uninstalledBetween } from "./removed-agents";
 
 function entry(id: string, installed: boolean, kind = "external"): AgentCatalogEntry {

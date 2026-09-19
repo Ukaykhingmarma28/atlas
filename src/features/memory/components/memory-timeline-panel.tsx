@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { timeAgo } from "@/lib/time-ago";
 import { AgentMark } from "@/components/agent-mark";
 import { pluginIdForSource } from "../lib/memory-agent";
@@ -35,60 +36,58 @@ export function MemoryTimelinePanel({
   return (
     <>
       <div
-        className="absolute inset-0 z-20 bg-black/10 animate-fade-in"
+        className="absolute inset-0 z-20 scrim-soft animate-fade-in"
         onClick={onClose}
         aria-hidden
       />
       <aside
         className={cn(
           "absolute right-0 top-0 bottom-0 z-30 w-[330px] flex flex-col",
-          "border-l border-[var(--border-default)] bg-[var(--bg-elevated)]/75 backdrop-blur-2xl",
-          "shadow-[var(--shadow-overlay)] animate-slide-in-right",
+          "border-l border-[var(--border)] bg-[var(--card)]/75 backdrop-blur-2xl",
+          "shadow-md animate-slide-in-right",
         )}
       >
-        <div className="flex items-start gap-2 px-3 h-[40px] shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex items-start gap-2 px-3 h-[40px] shrink-0 border-b border-[var(--border)]">
           <div className="flex-1 min-w-0 pt-1">
-            <div className="text-[11px] font-medium text-[var(--text-primary)] truncate">
-              {title}
-            </div>
-            <div className="text-[9px] text-[var(--text-tertiary)] truncate">{subtitle}</div>
+            <div className="text-xs font-medium text-[var(--foreground)] truncate">{title}</div>
+            <div className="text-3xs text-[var(--muted-foreground)] truncate">{subtitle}</div>
           </div>
-          <button
-            onClick={onClose}
-            className="mt-1 flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title="Close"
-            aria-label="Close"
-          >
-            <X size={13} />
-          </button>
+          <Hint label="Close">
+            <button
+              onClick={onClose}
+              className="mt-1 flex items-center justify-center w-5 h-5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)]"
+            >
+              <X size={13} />
+            </button>
+          </Hint>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">
           {items.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[11px] text-[var(--text-tertiary)]">
+            <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
               No memory linked to this yet.
             </div>
           ) : (
             items.map((it) => (
               <div
                 key={it.id + it.note}
-                className="w-full text-left px-3 py-2.5 border-b border-[var(--border-subtle)] flex flex-col gap-0.5"
+                className="w-full text-left px-3 py-2.5 border-b border-[var(--atlas-border-subtle)] flex flex-col gap-0.5"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <AgentMark
                     agentType={pluginIdForSource(it.source)}
                     className="shrink-0 opacity-70"
                   />
-                  <span className="text-[11px] text-[var(--text-primary)] truncate flex-1">
+                  <span className="text-xs text-[var(--foreground)] truncate flex-1">
                     {it.title}
                   </span>
                   {it.score !== undefined && (
-                    <span className="text-[9px] text-[var(--text-tertiary)] tabular-nums">
+                    <span className="text-3xs text-[var(--muted-foreground)] tabular-nums">
                       {Math.round(it.score * 100)}%
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 text-[9px] text-[var(--text-tertiary)]">
+                <div className="flex items-center gap-1.5 text-3xs text-[var(--muted-foreground)]">
                   <span className="truncate flex-1">{it.note}</span>
                   {it.ts_ms > 0 && (
                     <span className="shrink-0">

@@ -20,6 +20,7 @@ import { Callout } from "../extensions/callout";
 import { Toggle } from "../extensions/toggle";
 import { buildAtlasCodeBlock } from "../extensions/code-block";
 import { AtlasMention } from "../extensions/mention";
+import { WikilinkText } from "../extensions/wikilink-text";
 
 const lowlight = createLowlight(common);
 
@@ -48,7 +49,10 @@ export function buildExtensions(opts: BuildExtensionsOpts = {}) {
       // for the left panel toggle and users were accidentally bolding
       // KB notes while toggling the sidebar.
       bold: false,
+      // Replaced by WikilinkText, which keeps `[[page-id]]` unescaped on save.
+      text: false,
     }),
+    WikilinkText,
     // Re-add Bold so the mark + toolbar button still work; just no
     // keyboard shortcut. Users can still bold via the toolbar or by
     // typing the markdown `**...**` shortcut (handled by inputRules).

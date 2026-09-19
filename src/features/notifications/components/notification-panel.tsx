@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from "react";
 import { Bell, Shield, AlertTriangle, X, Sparkles, BellRing, SquareTerminal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { timeAgo } from "@/lib/time-ago";
 import { AtlasIcon } from "@/components/atlas-icon";
 // `@lobehub/icons` (~34 KB runtime + 21 glyphs) only matters once a chat-done
@@ -9,7 +10,7 @@ import { AtlasIcon } from "@/components/atlas-icon";
 const ProviderLogo = lazy(() =>
   import("@/components/provider-logo").then((m) => ({ default: m.ProviderLogo })),
 );
-import { jumpToSession } from "@/features/chat/lib/tab-workspace";
+import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { jumpToTerminal } from "@/features/terminal/lib/jump-to-terminal";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import {
@@ -57,29 +58,29 @@ export function NotificationPanel() {
     <>
       {/* Scrim — subtle; the blurred panel carries the depth. */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-drawer scrim-soft animate-fade-in"
         onClick={close}
         aria-hidden
       />
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[9999] w-[360px] flex flex-col",
-          "border-l border-[var(--border-default)]",
-          "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl",
-          "shadow-[var(--shadow-overlay)] animate-slide-in-right",
+          "fixed right-0 top-0 bottom-0 z-drawer w-[360px] flex flex-col",
+          "border-l border-[var(--border)]",
+          "bg-[var(--card)]/60 backdrop-blur-2xl",
+          "shadow-md animate-slide-in-right",
         )}
         role="dialog"
         aria-label="Notifications"
       >
         {/* Header — matches the window titlebar height (30px). */}
-        <div className="flex items-center gap-2 px-4 h-[30px] shrink-0 border-b border-[var(--border-default)]">
-          <Bell size={13} className="text-text-secondary" strokeWidth={1.5} />
-          <span className="text-[12px] font-semibold text-text-primary">Notifications</span>
+        <div className="flex items-center gap-2 px-4 h-[30px] shrink-0 border-b border-[var(--border)]">
+          <Bell size={13} className="text-secondary-foreground" strokeWidth={1.5} />
+          <span className="text-sm font-semibold text-foreground">Notifications</span>
           <div className="flex-1" />
           {items.length > 0 && (
             <button
               onClick={clearAll}
-              className="text-[10px] text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+              className="text-2xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
               Clear all
             </button>
@@ -91,17 +92,17 @@ export function NotificationPanel() {
           {items.length === 0 ? (
             <div className="grid h-full place-items-center px-6">
               <div className="text-center">
-                <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-border-subtle bg-white/[0.03]">
-                  <Bell size={18} className="text-text-tertiary" strokeWidth={1.5} />
+                <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-border-subtle bg-element-hover">
+                  <Bell size={18} className="text-muted-foreground" strokeWidth={1.5} />
                 </div>
-                <p className="mt-3 text-[12px] text-text-tertiary">No notifications</p>
+                <p className="mt-3 text-sm text-muted-foreground">No notifications</p>
               </div>
             </div>
           ) : (
             <div className="pb-3">
               {groups.map((g) => (
                 <section key={g.label}>
-                  <div className="sticky top-0 z-10 px-4 pt-3 pb-1.5 bg-[var(--bg-elevated)]/40 backdrop-blur-sm text-[9px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  <div className="sticky top-0 z-10 px-4 pt-3 pb-1.5 bg-[var(--card)]/40 backdrop-blur-sm text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {g.label}
                   </div>
                   <div className="flex flex-col gap-1.5 px-3">
@@ -137,7 +138,7 @@ function NotificationCard({ n }: { n: AppNotification }) {
       }}
       className={cn(
         "group relative flex items-start gap-2.5 rounded-xl border border-border-subtle px-3 py-2.5",
-        "bg-white/[0.03] hover:bg-white/[0.06] transition-colors cursor-pointer select-none",
+        "bg-element-hover hover:bg-element-selected transition-colors cursor-pointer select-none",
       )}
     >
       <span className="mt-0.5 shrink-0">
@@ -145,45 +146,56 @@ function NotificationCard({ n }: { n: AppNotification }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {!n.read && (
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-primary)]" />
-          )}
-          <span className="truncate text-[12px] font-medium text-text-primary">{n.title}</span>
-          <span className="ml-auto shrink-0 text-[9px] text-text-tertiary tabular-nums">
+          {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />}
+          <span className="truncate text-sm font-medium text-foreground">{n.title}</span>
+          <span className="ml-auto shrink-0 text-3xs text-muted-foreground tabular-nums">
             {timeAgo(n.timestamp, { suffix: true })}
           </span>
         </div>
         {n.body && (
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-text-secondary">
+          <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-secondary-foreground">
             {n.body}
           </p>
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          dismiss(n.id);
-        }}
-        className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 grid h-5 w-5 place-items-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.08] transition-opacity"
-        title="Dismiss"
-      >
-        <X size={11} />
-      </button>
+      <Hint label="Dismiss">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            dismiss(n.id);
+          }}
+          className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 grid h-5 w-5 place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-element-active transition-opacity"
+        >
+          <X size={11} />
+        </button>
+      </Hint>
     </div>
   );
 }
 
 function NotificationIcon({ n }: { n: AppNotification }) {
   if (n.kind === "permission")
-    return <Shield size={15} className="text-accent" strokeWidth={1.5} />;
+    return <Shield size={15} className="text-primary" strokeWidth={1.5} />;
   if (n.kind === "agent-failed" || n.kind === "chat-error" || n.kind === "terminal-failed")
-    return <AlertTriangle size={15} className="text-[var(--status-error)]" strokeWidth={1.5} />;
+    return (
+      <AlertTriangle
+        size={15}
+        className="text-[var(--atlas-status-error-foreground)]"
+        strokeWidth={1.5}
+      />
+    );
   if (n.kind === "terminal-attention")
-    return <BellRing size={15} className="text-[var(--status-warning)]" strokeWidth={1.5} />;
+    return (
+      <BellRing
+        size={15}
+        className="text-[var(--atlas-status-warning-foreground)]"
+        strokeWidth={1.5}
+      />
+    );
   if (n.kind === "terminal-done")
-    return <SquareTerminal size={15} className="text-text-secondary" strokeWidth={1.5} />;
+    return <SquareTerminal size={15} className="text-secondary-foreground" strokeWidth={1.5} />;
   if (n.kind === "chat-done" && n.provider)
     return (
       // 22 = size + 6, the box ProviderLogo renders, so the row never shifts.
@@ -191,20 +203,20 @@ function NotificationIcon({ n }: { n: AppNotification }) {
         <ProviderLogo id={n.provider} size={16} />
       </Suspense>
     );
-  if (n.source === "agent") return <AtlasIcon size={16} className="rounded-[5px]" />;
-  return <Sparkles size={15} className="text-text-secondary" strokeWidth={1.5} />;
+  if (n.source === "agent") return <AtlasIcon size={16} className="rounded-md" />;
+  return <Sparkles size={15} className="text-secondary-foreground" strokeWidth={1.5} />;
 }
 
 /** Best-effort: bring the originating chat or terminal into view. */
 function focusNotification(n: AppNotification) {
   if (n.source === "terminal" && n.tabId) {
-    void jumpToTerminal({ tabId: n.tabId, terminalId: n.terminalId, workspaceId: n.workspaceId });
+    void jumpToTerminal({ tabId: n.tabId, terminalId: n.terminalId, projectId: n.projectId });
     return;
   }
   if (n.source === "agent" && n.tabId) {
-    // Workspace-aware: a bare setActiveTab on a tab from ANOTHER workspace
+    // Project-aware: a bare setActiveTab on a tab from ANOTHER project
     // falls back to tabs[0] of the current one — jumpToSession switches to the
-    // owning workspace first.
+    // owning project first.
     void jumpToSession(n.tabId);
     return;
   }

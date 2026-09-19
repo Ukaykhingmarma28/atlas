@@ -23,7 +23,6 @@ type CatalogStub = Partial<{
   installed: boolean;
   source: import("@/types/agent-catalog").AgentSource;
   login: { program: string; args: string[] } | null;
-  authKinds: ("agent" | "env_var" | "terminal")[];
 }>;
 let catalog: Record<string, CatalogStub> = {};
 vi.mock("@/features/log/lib/log", () => ({ logEvent: () => {} }));
@@ -222,45 +221,5 @@ describe("bindFailureAction", () => {
     expect(bindFailureAction({ agentType: undefined, err: authErr, alreadyAttempted: false })).toBe(
       "report",
     );
-  });
-});
-
-describe("canSignIn is catalog-first (R6)", () => {
-  it("trusts what the agent actually advertised over the static login field", () => {
-    // Claude has no login argv Atlas knows of, so the old rule said "cannot
-    // sign in" — yet it advertises two terminal methods. Gating on advertised
-    // data is what removed the per-agent special cases in TS.
-    catalog["claude-code"] = {
-      kind: "external",
-      login: null,
-      installed: true,
-      authKinds: ["terminal"],
-    };
-    expect(canSignIn("claude-code")).toBe(true);
-  });
-
-  it("treats an agent-kind method as signable too", () => {
-    // Codex advertises only `agent` methods (no `type` on the wire).
-    catalog["codex"] = { kind: "external", login: null, installed: true, authKinds: ["agent"] };
-    expect(canSignIn("codex")).toBe(true);
-  });
-
-  it("still offers sign-in before the agent has ever been spawned", () => {
-    // `authKinds` is empty until `initialize` has run. Empty must mean
-    // "unknown", NOT "cannot sign in" — otherwise `/login` disappears for an
-    // agent the user has simply never started, which is exactly when they
-    // need it.
-    catalog["cursor"] = { kind: "external", login: null, installed: true, authKinds: [] };
-    expect(canSignIn("cursor")).toBe(true);
-  });
-
-  it("never offers sign-in for the native agent, whatever it reports", () => {
-    catalog["cersei"] = { kind: "native", login: null, authKinds: ["agent"] };
-    expect(canSignIn("cersei")).toBe(false);
-  });
-
-  it("still offers sign-in for externals with nothing advertised", () => {
-    catalog["some-external"] = { kind: "external", login: null, installed: true, authKinds: [] };
-    expect(canSignIn("some-external")).toBe(true);
   });
 });

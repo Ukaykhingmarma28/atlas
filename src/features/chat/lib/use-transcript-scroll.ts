@@ -183,7 +183,7 @@ export function useTranscriptScroll({
     if (dirty.current) measure();
 
     // A HIDDEN scroller knows nothing. A chat tab stays mounted while another
-    // tab shows, and a `display:none` scroller (background workspace) reports
+    // tab shows, and a `display:none` scroller (background project) reports
     // 0×0 with `scrollTop` 0 — which reads as "at the very end AND at the very
     // top". Believing it latched `atEnd` (a reader scrolled up in a background
     // streaming tab was snapped to the bottom on return) and fired a grow into

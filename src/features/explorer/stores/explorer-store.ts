@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import { invoke } from "@tauri-apps/api/core";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 export interface FileEntry {
   name: string;
@@ -25,7 +25,7 @@ export interface TreeNode {
  *  entry; visibility is purely a frontend concern. Read live so the next
  *  directory fetch after a toggle reflects the new preference. */
 function applyHiddenFilter(entries: FileEntry[]): FileEntry[] {
-  const showHidden = useProjectStore.getState().settings.showHiddenFiles;
+  const showHidden = useSettingsStore.getState().settings.showHiddenFiles;
   return showHidden ? entries : entries.filter((e) => !e.name.startsWith("."));
 }
 

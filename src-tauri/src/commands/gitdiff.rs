@@ -150,7 +150,7 @@ pub async fn git_diff_structured(
 /// edited in turn 2 and deleted in turn 3 has one git answer and three different
 /// correct diffs, and only the tool arguments know which is which.
 ///
-/// Rather than reimplement line diffing (no diff crate in the workspace, and the
+/// Rather than reimplement line diffing (no diff crate in the project, and the
 /// vendored delta code does WORD-level spans within an already-diffed line), the
 /// two texts go to git itself via `--no-index` over temp files. That yields a
 /// real unified diff — hunks, line numbers, context — which `build_file_diff`

@@ -1,4 +1,4 @@
-//! One visible signal per Workspace, replacing nine invisible failures.
+//! One visible signal per Project, replacing nine invisible failures.
 //!
 //! Every failure path in this feature shares a design instinct — never block the
 //! developer's work — which is correct. But "never block" plus "never tell"
@@ -16,7 +16,7 @@
 //! * a history rewrite orphaned Checkpoints in bulk.
 //!
 //! The fix is not error handling scattered across all of them. It is **one
-//! state, per Workspace, with a reason** — computed here from what the store
+//! state, per Project, with a reason** — computed here from what the store
 //! already records, so the individual paths keep failing quietly and this is the
 //! single place that says so.
 //!
@@ -26,10 +26,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{DrainGate, SyncState, WorkspaceMode};
+use crate::model::{DrainGate, SyncState, ProjectMode};
 use crate::store::Store;
 
-/// How capture is doing for one Workspace.
+/// How capture is doing for one Project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthState {
@@ -68,7 +68,7 @@ pub struct HealthIssue {
     pub next_step: String,
 }
 
-/// The whole picture for one Workspace.
+/// The whole picture for one Project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureHealth {
@@ -97,13 +97,13 @@ pub struct CaptureHealth {
 /// indistinguishable from the event stream.
 #[derive(Debug, Clone, Copy)]
 pub struct HostSignals {
-    /// Whether a git watcher is currently attached for this Workspace, as
+    /// Whether a git watcher is currently attached for this Project, as
     /// reported by the watcher registry itself.
     pub watcher_attached: bool,
-    /// Whether this Workspace *needs* a watcher — a non-git Workspace never has
+    /// Whether this Project *needs* a watcher — a non-git Project never has
     /// one and is perfectly healthy without it.
     pub expects_watcher: bool,
-    /// This process's claim on the Workspace's writer lock, tri-state:
+    /// This process's claim on the Project's writer lock, tri-state:
     ///
     /// * `None` — this process never opened the store. **Not** evidence of a
     ///   second window; a health poll before the first capture event lands here,
@@ -136,17 +136,17 @@ impl Default for HostSignals {
     }
 }
 
-/// Compute the current health of a Workspace.
+/// Compute the current health of a Project.
 ///
-/// Cheap: a handful of indexed counts. Intended to be called on Workspace open,
+/// Cheap: a handful of indexed counts. Intended to be called on Project open,
 /// on turn completion, on watcher events and when the drain hits a terminal
 /// error — not on a timer.
 pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<CaptureHealth> {
-    // A Workspace nobody enabled — or one the developer deliberately paused — is
+    // A Project nobody enabled — or one the developer deliberately paused — is
     // *off*, not broken. Every check below assumes capture is meant to be
     // running, so falling through would report a missing watcher and an unheld
     // writer lock for something nobody asked to record: three alarms for a
-    // Workspace whose only real state is "not set up yet". That turns the first
+    // Project whose only real state is "not set up yet". That turns the first
     // thing a new user sees into an incident.
     let binding = match store.binding()? {
         None => return off(store, workspace_id, "Session capture is off"),
@@ -176,7 +176,7 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
     if host.holds_writer == Some(false) {
         issues.push(HealthIssue {
             state: HealthState::Stopped,
-            reason: "Another Atlas window is recording this Workspace.".into(),
+            reason: "Another Atlas window is recording this Project.".into(),
             next_step: "Sessions are being captured by the other window. Close it to record here."
                 .into(),
         });
@@ -198,7 +198,7 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
             // single truncating line, and this one has to survive a 352px
             // popover intact.
             reason: "Git watcher stopped — commits aren't being linked.".into(),
-            // No longer "reopen the Workspace": the host retries the watcher on
+            // No longer "reopen the Project": the host retries the watcher on
             // every health poll and again when the banner is clicked, so by the
             // time anyone reads this the easy fix has already been attempted.
             // Commits made meanwhile are not lost — the open-time walk picks
@@ -213,13 +213,13 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
     // recording locally and nothing is lost — only the drain is gated, so
     // "capture stopped" would be a lie that teaches users to ignore the red
     // state. The reason still says plainly that nothing is reaching the team.
-    if binding.mode == WorkspaceMode::Cloud && binding.drain_state == DrainGate::NotAuthorized {
+    if binding.mode == ProjectMode::Cloud && binding.drain_state == DrainGate::NotAuthorized {
         issues.push(HealthIssue {
             state: HealthState::Degraded,
             reason: "No longer authorized to sync with your Organisation — new work stays on \
                      this machine."
                 .into(),
-            next_step: "Reconnect or re-register this Workspace to resume syncing. Capture \
+            next_step: "Reconnect or re-register this Project to resume syncing. Capture \
                         itself continues."
                 .into(),
         });
@@ -255,7 +255,7 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
     if store.cursor_recovered(workspace_id)? {
         issues.push(HealthIssue {
             state: HealthState::Degraded,
-            reason: "The commit history moved in a way that lost this Workspace's place, so \
+            reason: "The commit history moved in a way that lost this Project's place, so \
                      recent commits were re-scanned."
                 .into(),
             next_step: "No action needed. Some older commits may not have been linked.".into(),
@@ -330,7 +330,7 @@ fn reconcile_issue(store: &Store, workspace_id: &str) -> Result<Option<HealthIss
     Ok(None)
 }
 
-/// Health for a Workspace that is not recording on purpose.
+/// Health for a Project that is not recording on purpose.
 ///
 /// The counts are still reported: pausing does not discard what was already
 /// captured, and a developer who paused with work still unsent should be able to
@@ -384,17 +384,17 @@ mod tests {
         assert!(HealthState::Degraded > HealthState::Ok);
         // Off must never win the worst-first sort — being switched off is not a
         // fault, and ranking it above Ok would light the alarm on every
-        // Workspace nobody has enabled yet.
+        // Project nobody has enabled yet.
         assert!(HealthState::Off < HealthState::Ok);
     }
 
     #[test]
-    fn a_healthy_workspace_with_nothing_pending_reads_as_synced() {
+    fn a_healthy_project_with_nothing_pending_reads_as_synced() {
         assert_eq!(summarize(HealthState::Ok, &[], 0), "Synced");
     }
 
     #[test]
-    fn a_healthy_workspace_still_reports_its_pending_count() {
+    fn a_healthy_project_still_reports_its_pending_count() {
         assert_eq!(summarize(HealthState::Ok, &[], 47), "47 pending");
     }
 

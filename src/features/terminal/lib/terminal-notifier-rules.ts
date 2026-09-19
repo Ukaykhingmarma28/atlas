@@ -13,19 +13,19 @@ import { formatDuration } from "./format-duration";
 export interface TerminalCtx {
   terminalId: string;
   tabId: string;
-  workspaceId?: string;
-  workspaceName?: string;
+  projectId?: string;
+  projectName?: string;
   orgId?: string;
 }
 
 export interface NotifierEnv {
-  /** The terminal's pane is on screen in the active workspace. */
+  /** The terminal's pane is on screen in the active project. */
   terminalVisible: boolean;
   windowFocused: boolean;
   /** ms since the last discrete input. */
   interactedWithinMs: number;
-  /** The owning workspace is the active one. */
-  workspaceActive: boolean;
+  /** The owning project is the active one. */
+  projectActive: boolean;
 }
 
 export type TerminalNotificationKind = Extract<
@@ -55,9 +55,9 @@ function basename(p: string): string {
 
 function where(ctx: TerminalCtx, cwd: string, env: NotifierEnv): string {
   const dir = basename(cwd);
-  // Name the workspace only when it is not the one on screen — mirrors the
+  // Name the project only when it is not the one on screen — mirrors the
   // chat's background toast.
-  return !env.workspaceActive && ctx.workspaceName ? `${dir} — ${ctx.workspaceName}` : dir;
+  return !env.projectActive && ctx.projectName ? `${dir} — ${ctx.projectName}` : dir;
 }
 
 export function decideTerminalNotification(

@@ -23,7 +23,7 @@
 // lazy chunk means a code fence never paints unstyled for a frame.
 
 import { lazy, memo, Suspense, useMemo } from "react";
-import "highlight.js/styles/github-dark.css";
+import "@/styles/hljs.css";
 import { cn } from "@/lib/utils";
 import { MentionContext } from "./message-body-context";
 import type { OrgMemberProfile } from "../types";
@@ -52,7 +52,7 @@ export const MessageBody = memo(function MessageBody({
   const directory = useMemo(() => ({ members, me }), [members, me]);
 
   return (
-    <div className={cn("text-[12.5px] leading-[1.5] break-words", className)}>
+    <div className={cn("text-base leading-[1.5] break-words", className)}>
       <MentionContext.Provider value={directory}>
         <Suspense
           fallback={

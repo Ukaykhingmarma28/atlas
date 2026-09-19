@@ -5,6 +5,7 @@ mod logging;
 mod menu;
 mod state;
 mod telemetry;
+mod window_background;
 
 use std::sync::Arc;
 
@@ -116,22 +117,6 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                // Opaque dark window background. Fills the brief gap between
-                // window-shown and first React paint with the app's base
-                // black instead of the WebKit default white.
-                //
-                // This was previously a transparent NSWindow + HudWindow
-                // NSVisualEffectView blur (window_vibrancy). Removed: the live
-                // backdrop blur forced the macOS WindowServer to recomposite
-                // the whole window against everything behind it every frame,
-                // which made Mission Control / Spaces transitions lag
-                // system-wide whenever Atlas was the focused window. An opaque
-                // window can be snapshotted as a flat texture, so the OS
-                // animation stays smooth.
-                let _ = window
-                    .set_background_color(Some(tauri::window::Color(0, 0, 0, 255)));
-            }
             // Pre-load the Rust-owned `AppState` (currentProject + recents)
             // before the webview starts loading — paid in parallel with the
             // WebView framework init, ~1ms on warm cache. `legacy_settings_raw`
@@ -173,9 +158,39 @@ pub fn run() {
             commands::atlas_config::apply_curated_plugin_sync_gate(
                 migration.manager.effective().curated_plugin_sync,
             );
+            // Opaque window background, in the theme the user actually chose.
+            // Fills the brief gap between window-shown and first React paint
+            // with the theme's own background instead of the WebKit default
+            // white — and, since PR 2, instead of a black frame that a
+            // non-black theme then jumped away from. `index.html` replays the
+            // same colour from localStorage for the gap after that.
+            //
+            // Deliberately AFTER `bootstrap`: the colour is a config read, and
+            // config.toml is parsed a few microseconds into a setup that runs
+            // in parallel with the WebView framework init. The window is still
+            // not on screen.
+            //
+            // The window is opaque rather than a transparent NSWindow + HudWindow
+            // NSVisualEffectView blur (window_vibrancy). Removed: the live
+            // backdrop blur forced the macOS WindowServer to recomposite the
+            // whole window against everything behind it every frame, which made
+            // Mission Control / Spaces transitions lag system-wide whenever
+            // Atlas was the focused window. An opaque window can be snapshotted
+            // as a flat texture, so the OS animation stays smooth.
+            if let Some(window) = app.get_webview_window("main") {
+                let settings = migration.manager.effective();
+                let system_is_light = matches!(window.theme(), Ok(tauri::Theme::Light));
+                let color = window_background::window_background(
+                    &settings.theme,
+                    settings.theme_mode,
+                    system_is_light,
+                );
+                let _ = window.set_background_color(Some(color));
+            }
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             commands::atlas_config::start_watcher(app.handle(), atlas_config);
+            commands::themes::start_watcher(app.handle());
 
             // Mirror the (possibly updated) telemetry id + migration marker
             // back into `state.json` so both agree and a downgrade still
@@ -335,7 +350,7 @@ pub fn run() {
         .manage(CliLaunchState::new(initial_project))
         .manage(commands::memory_sharing::MemorySharingState::new())
         .manage(commands::shared_memory::SharedMemoryStore::new())
-        // Owns the per-Workspace session stores and the capture worker
+        // Owns the per-Project session stores and the capture worker
         // thread. Managed before `install_manager` runs its pipeline so a
         // delta arriving early finds it.
         .manage(commands::capture::CaptureState::new())
@@ -464,10 +479,10 @@ pub fn run() {
             commands::git::git_log,
             commands::git::git_diff_all,
             commands::git::git_workspace_summary,
-            commands::mission_control::mission_control_usage,
+            commands::usage_dashboard::usage_dashboard,
             commands::capture::capture_session_summary,
-            commands::mission_control::mission_control_export_markdown,
-            commands::mission_control::mission_control_write_file,
+            commands::usage_dashboard::usage_export_markdown,
+            commands::usage_dashboard::usage_write_file,
             commands::git::git_diff_file,
             commands::git::git_stage,
             commands::git::git_unstage,
@@ -608,6 +623,18 @@ pub fn run() {
             commands::atlas_config::update_atlas_settings,
             commands::atlas_config::reset_atlas_config,
             commands::atlas_config::open_atlas_config,
+            commands::themes::list_themes,
+            commands::themes::get_theme,
+            commands::theme_import::preview_theme_import,
+            commands::theme_import::commit_theme_import,
+            commands::theme_import::export_theme_shadcn,
+            commands::icon_themes::list_icon_themes,
+            commands::icon_themes::resolve_icons,
+            commands::icon_themes::get_icon_theme_assets,
+            commands::icon_themes::get_icon_theme_fonts,
+            commands::icon_themes::search_icon_themes,
+            commands::icon_themes::install_icon_theme,
+            commands::icon_themes::remove_icon_theme,
             commands::telemetry::telemetry_config,
             commands::telemetry::telemetry_set_org,
             commands::feedback::feedback_submit,

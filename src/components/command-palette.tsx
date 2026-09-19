@@ -1,10 +1,10 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, Fragment } from "react";
 import { ActionKbd } from "@/features/keybindings/components/action-kbd";
 import type { ActionId } from "@/features/keybindings/lib/actions";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { AtlasIcon } from "@/components/atlas-icon";
 import {
   Globe,
@@ -22,6 +22,7 @@ import {
   Network,
   BrainCircuit,
   ScrollText,
+  Gauge,
   Code,
   GitBranch,
   ArrowLeftToLine,
@@ -67,7 +68,7 @@ export function CommandPalette({
     focusAdjacentGroup,
     closeGroup,
   } = useLayoutStore.use.actions();
-  const { openProject } = useProjectStore.use.actions();
+  const { openProject } = useAppStore.use.actions();
 
   const handleOpenFolder = async () => {
     try {
@@ -88,6 +89,7 @@ export function CommandPalette({
     "knowledge-graph",
     "memory",
     "log",
+    "usage",
     "settings",
   ]);
   const openTab = (type: TabType, title: string) =>
@@ -194,6 +196,14 @@ export function CommandPalette({
         icon: ScrollText,
         category: "Open",
         action: () => openTab("log", "Log"),
+      },
+      {
+        id: "new-usage",
+        label: "Usage",
+        actionId: "usage.open",
+        icon: Gauge,
+        category: "Open",
+        action: () => openTab("usage", "Usage"),
       },
 
       // ── Layout toggles ──
@@ -386,40 +396,39 @@ export function CommandPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
+            "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[520px] max-h-[400px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
-            "shadow-[var(--shadow-overlay)]",
+            "bg-[var(--card)] border border-[var(--border)]",
+            "shadow-md",
             "flex flex-col",
           )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Run a command</Dialog.Title>
           {/* `shrink-0`: without it the flex column compresses this fixed-height
               search bar when the list overflows `max-h` (the command list is
               long), making it render at half height. */}
-          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border)]">
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a command..."
-              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
           </div>
 
           <div ref={listRef} className="overflow-y-auto flex-1 py-1">
             {filtered.length === 0 && (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 No commands found
               </div>
             )}
@@ -431,7 +440,7 @@ export function CommandPalette({
               return (
                 <Fragment key={cmd.id}>
                   {showHeader && (
-                    <div className="px-4 pt-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)] select-none">
+                    <div className="px-4 pt-2.5 pb-1 text-2xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] select-none">
                       {cmd.category}
                     </div>
                   )}
@@ -442,11 +451,11 @@ export function CommandPalette({
                     className={cn(
                       "w-full flex items-center gap-3 px-4 h-[36px] text-left text-sm transition-colors",
                       i === selectedIndex
-                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                        : "text-[var(--text-secondary)]",
+                        ? "bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+                        : "text-[var(--secondary-foreground)]",
                     )}
                   >
-                    <Icon size={14} className="shrink-0 text-[var(--text-tertiary)]" />
+                    <Icon size={14} className="shrink-0 text-[var(--muted-foreground)]" />
                     <span className="flex-1 truncate">{cmd.label}</span>
                     {cmd.actionId && <ActionKbd id={cmd.actionId} />}
                   </button>
@@ -454,7 +463,7 @@ export function CommandPalette({
               );
             })}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

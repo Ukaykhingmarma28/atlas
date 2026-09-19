@@ -1,33 +1,43 @@
 //! In-app auto-updater — the IPC surface, plus platform dispatch.
 //!
-//! Atlas ships as an Apple-signed + notarized + stapled `.dmg` (no Tauri-updater
-//! `.app.tar.gz`/minisign artifact), so we don't use the Tauri updater plugin.
-//! That flow only makes sense on macOS — mounting a DMG, `codesign`/`spctl`
-//! verification, and swapping an `.app` bundle have no Windows/Linux
-//! equivalent — so the real implementation (`updater_macos.rs`) is compiled in
-//! only there. Every other platform gets `updater_stub.rs`, a no-op carrying
-//! the same signatures.
+//! Atlas ships as an Apple-signed + notarized + stapled `.dmg` on macOS and a
+//! WiX `.msi` on Windows (no Tauri-updater `.app.tar.gz`/minisign artifact),
+//! so we don't use the Tauri updater plugin. Each platform has its own
+//! implementation of the same staged design — `updater_macos.rs` mounts,
+//! verifies and swaps an `.app` bundle; `updater_windows.rs` hands the MSI to
+//! Windows Installer after the app quits — over one shared background
+//! download engine (`updater_download.rs`). Every other platform gets
+//! `updater_stub.rs`, a no-op carrying the same signatures.
 //!
 //! The four `#[tauri::command]` verbs and the DTOs they return are declared
 //! **here, once**, per the "IPC verbs grouped into a single
 //! `commands/<domain>.rs`" convention in CONTRIBUTING.md. The platform modules
-//! expose plain `pub(super)` functions with identical signatures, so the two
-//! sides cannot drift: a change to one that isn't mirrored in the other stops
+//! expose plain `pub(super)` functions with identical signatures, so the
+//! sides cannot drift: a change to one that isn't mirrored in the others stops
 //! compiling on that platform instead of failing at runtime. Declaring the
 //! commands once also keeps `tests/ipc-contract.test.ts` — which reads source
-//! text and cannot evaluate `#[cfg]` — from seeing four duplicate handlers.
+//! text and cannot evaluate `#[cfg]` — from seeing duplicate handlers.
 //!
 //! See `updater_macos.rs` for the staged-update design, the `atlas:update-*`
-//! event contract, and the Team-ID signature anchor.
+//! event contract, and the Team-ID signature anchor; `updater_windows.rs` for
+//! the MSI hand-off and what (little) anchors an unsigned MSI.
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[path = "updater_download.rs"]
+mod download;
 
 #[cfg(target_os = "macos")]
 #[path = "updater_macos.rs"]
 mod imp;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+#[path = "updater_windows.rs"]
+mod imp;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[path = "updater_stub.rs"]
 mod imp;
 

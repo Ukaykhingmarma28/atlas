@@ -303,12 +303,15 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn tmp_dir(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("atlas-memory-global-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_dir(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     fn item(content: &str, label: &str, conf: f32) -> (String, String, f32) {
@@ -319,7 +322,7 @@ mod tests {
     /// project promotes — graph has it, MEMORY.md bullet added, ledger promoted.
     #[test]
     fn second_distinct_project_promotes() {
-        let dir = tmp_dir("promote");
+        let (_tmp, dir) = tmp_dir("promote");
 
         let n0 = record_candidates_in(&dir, "/proj/a", &[item("Always use tabs", "preference", 0.9)])
             .unwrap();
@@ -354,15 +357,13 @@ mod tests {
         let md = std::fs::read_to_string(memory_md_path(&dir)).unwrap();
         assert!(md.contains("Always use tabs"));
         assert!(md.contains("[preference]"));
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Non-qualifying category or confidence < 0.8 never promotes, even across
     /// multiple projects.
     #[test]
     fn non_qualifying_never_promotes() {
-        let dir = tmp_dir("nonqual");
+        let (_tmp, dir) = tmp_dir("nonqual");
 
         // Wrong category (project fact) in two projects.
         assert_eq!(
@@ -389,14 +390,12 @@ mod tests {
         assert!(!memory_md_path(&dir).exists());
         let l = load_ledger(&dir);
         assert!(l.candidates.is_empty(), "non-qualifying items never enter the ledger");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// MEMORY.md stays < 200 lines after many promotions (oldest trimmed).
     #[test]
     fn memory_md_stays_bounded() {
-        let dir = tmp_dir("bounded");
+        let (_tmp, dir) = tmp_dir("bounded");
 
         for i in 0..300 {
             let content = format!("Constraint number {i} must always hold");
@@ -412,15 +411,13 @@ mod tests {
         // Newest content is retained; oldest fell off.
         assert!(md.contains("Constraint number 299"));
         assert!(!md.contains("Constraint number 0 must"));
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Re-running with identical inputs does not double-promote (ledger dedup +
     /// promoted flag), and MEMORY.md is unchanged.
     #[test]
     fn idempotent_no_double_promote() {
-        let dir = tmp_dir("idempotent");
+        let (_tmp, dir) = tmp_dir("idempotent");
 
         record_candidates_in(&dir, "/a", &[item("No secrets in logs", "constraint", 0.85)]).unwrap();
         let first = record_candidates_in(&dir, "/b", &[item("No secrets in logs", "constraint", 0.85)])
@@ -447,7 +444,5 @@ mod tests {
         assert_eq!(md_now, md_after_first, "no duplicate promotion bullets");
         let bullet_count = md_now.lines().filter(|l| l.starts_with("- ")).count();
         assert_eq!(bullet_count, 1, "exactly one promoted bullet");
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

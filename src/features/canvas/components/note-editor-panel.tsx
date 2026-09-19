@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useCanvasStore } from "../stores/canvas-store";
 import {
   TiptapEditor,
@@ -79,62 +80,67 @@ export function NoteEditorPanel({ noteId, projectPath, onClose }: NoteEditorPane
     <>
       {/* Scrim */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/10 animate-fade-in"
+        className="fixed inset-0 z-overlay scrim-soft animate-fade-in"
         onClick={close}
         aria-hidden
       />
       {/* Panel */}
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[9999] w-[400px] flex flex-col",
-          "border-l border-[var(--border-default)]",
-          "bg-[var(--bg-elevated)]/60 backdrop-blur-2xl backdrop-saturate-150",
-          "shadow-[var(--shadow-overlay)] animate-slide-in-right",
+          "fixed right-0 top-0 bottom-0 z-modal w-[400px] flex flex-col",
+          "border-l border-[var(--border)]",
+          "bg-[var(--card)]/60 backdrop-blur-2xl backdrop-saturate-150",
+          "shadow-md animate-slide-in-right",
         )}
       >
         {/* Header — matches the tab-bar height (29px) so the two rows align. */}
-        <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border-default shrink-0">
-          <button
-            type="button"
-            title="Change icon"
-            onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
-            className="flex h-5 w-5 items-center justify-center rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer shrink-0"
-          >
-            {note.icon ? (
-              <span className="text-[12px] leading-none">{note.icon}</span>
-            ) : (
-              <span className="text-[11px] leading-none text-white/60">＋</span>
-            )}
-          </button>
-          <input
-            value={note.title}
-            onChange={(e) => updateNote(noteId, { title: e.target.value })}
-            placeholder="Untitled"
-            className="flex-1 min-w-0 bg-transparent outline-none text-[12px] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              deleteNote(noteId);
-              onClose();
-            }}
-            title="Delete note"
-            className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={close}
-            title="Close"
-            className="p-1 rounded hover:bg-white/10 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-1.5 px-2 h-[29px] border-b border-border shrink-0">
+            <HintItem label="Change icon">
+              <button
+                type="button"
+                onClick={(e) => setIconAnchor(e.currentTarget.getBoundingClientRect())}
+                className="flex h-5 w-5 items-center justify-center rounded-md bg-element-hover hover:bg-element-active transition-colors cursor-pointer shrink-0"
+              >
+                {note.icon ? (
+                  <span className="text-sm leading-none">{note.icon}</span>
+                ) : (
+                  <span className="text-xs leading-none text-muted-foreground">＋</span>
+                )}
+              </button>
+            </HintItem>
+            <input
+              value={note.title}
+              onChange={(e) => updateNote(noteId, { title: e.target.value })}
+              placeholder="Untitled"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm font-semibold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
+            />
+            <HintItem label="Delete note">
+              <button
+                type="button"
+                onClick={() => {
+                  deleteNote(noteId);
+                  onClose();
+                }}
+                className="p-1 rounded hover:bg-element-hover text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] cursor-pointer transition-colors"
+              >
+                <Trash2 size={12} />
+              </button>
+            </HintItem>
+            <HintItem label="Close">
+              <button
+                type="button"
+                onClick={close}
+                className="p-1 rounded hover:bg-element-hover text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
 
         {/* Body — the editor fills the full width + height with comfortable
-            padding. `!bg-transparent` drops the editor's default #000 so it
+            padding. `!bg-transparent` drops the editor's own opaque default so it
             shows the panel surface (matches the sidebar background). */}
         <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-5">
           <TiptapEditor

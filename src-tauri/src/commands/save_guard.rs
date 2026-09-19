@@ -1,7 +1,8 @@
 //! Guard for renderer-directed save destinations.
 //!
 //! A handful of commands (`comms_save_recording`, `comms_save_attachment`,
-//! `mission_control_write_file`) take an absolute `dest` from the renderer
+//! `usage_write_file`, `usage_export_markdown`) take an absolute `dest` from
+//! the renderer
 //! and write bytes there. The path comes from a native save dialog in the
 //! honest case — but the command cannot see the dialog, only the string, so
 //! a compromised renderer could name `~/.ssh/authorized_keys` or a shell

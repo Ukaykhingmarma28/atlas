@@ -106,7 +106,7 @@ function rawKeyBytes(
   return e.altKey ? [0x1b, ...bytes] : bytes;
 }
 
-interface RawPathCompletion {
+export interface RawPathCompletion {
   name: string;
   is_dir: boolean;
 }
@@ -513,7 +513,7 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(fu
         // `min-w-0` lets the textarea actually shrink inside the flex row on
         // narrow panes; the nowrap placeholder clips instead of wrapping onto
         // multiple lines (textarea placeholders wrap by default).
-        className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 text-[13px] leading-[18px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] placeholder:[white-space:nowrap]"
+        className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 text-base leading-[18px] text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] placeholder:[white-space:nowrap]"
         style={{
           fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
         }}

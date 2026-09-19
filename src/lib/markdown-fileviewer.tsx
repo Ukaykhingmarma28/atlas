@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
-import "highlight.js/styles/github-dark.css";
+import "@/styles/hljs.css";
 
 function handleWheel(e: React.WheelEvent<HTMLElement>) {
   const el = e.currentTarget;
@@ -29,26 +29,26 @@ interface Props {
 }
 export const MarkdownFile = memo(function MarkdownFile({ children, trusted = false }: Props) {
   return (
-    <div className="atlas-markdown text-[14px] leading-relaxed text-[var(--text-primary)] break-words select-text">
+    <div className="atlas-markdown text-md leading-relaxed text-[var(--foreground)] break-words select-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[...(trusted ? [rehypeRaw] : []), rehypeHighlight]}
         components={{
           h1: (p) => (
-            <h1 className="mt-8 mb-3 border-b border-[var(--border-default)] pb-2 text-[26px] font-bold tracking-tight">
+            <h1 className="mt-8 mb-3 border-b border-[var(--border)] pb-2 text-2xl font-bold tracking-tight">
               {p.children}
             </h1>
           ),
 
           h2: (p) => (
-            <h2 className="mt-7 mb-3 border-b border-[var(--border-subtle)] pb-1.5 text-[20px] font-semibold tracking-tight">
+            <h2 className="mt-7 mb-3 border-b border-[var(--atlas-border-subtle)] pb-1.5 text-xl font-semibold tracking-tight">
               {p.children}
             </h2>
           ),
 
-          h3: (p) => <h3 className="mt-6 mb-2 text-[16px] font-semibold">{p.children}</h3>,
+          h3: (p) => <h3 className="mt-6 mb-2 text-lg font-semibold">{p.children}</h3>,
 
-          h4: (p) => <h4 className="mt-4 mb-1.5 text-[14px] font-semibold">{p.children}</h4>,
+          h4: (p) => <h4 className="mt-4 mb-1.5 text-md font-semibold">{p.children}</h4>,
 
           p: (p) => <p className="my-3">{p.children}</p>,
 
@@ -57,7 +57,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
               {...p}
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--accent-primary)] underline hover:opacity-80"
+              className="text-[var(--primary)] underline hover:opacity-80"
             />
           ),
 
@@ -83,7 +83,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
             if (isInline) {
               return (
                 <code
-                  className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[12.5px] text-[var(--text-primary)]"
+                  className="rounded bg-[var(--card)] px-1.5 py-0.5 font-mono text-base text-[var(--foreground)]"
                   {...rest}
                 >
                   {children}
@@ -100,7 +100,7 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
 
           pre: (p) => (
             <pre
-              className="my-4 overflow-x-auto rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[12.5px]"
+              className="my-4 overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--card)] text-base"
               style={{
                 whiteSpace: "pre",
                 wordBreak: "normal",
@@ -112,49 +112,51 @@ export const MarkdownFile = memo(function MarkdownFile({ children, trusted = fal
           ),
 
           blockquote: (p) => (
-            <blockquote className="my-3 border-l-2 border-[var(--border-default)] pl-4 text-[var(--text-secondary)]">
+            <blockquote className="my-3 border-l-2 border-[var(--border)] pl-4 text-[var(--secondary-foreground)]">
               {p.children}
             </blockquote>
           ),
 
-          hr: () => <hr className="my-6 border-[var(--border-subtle)]" />,
+          hr: () => <hr className="my-6 border-[var(--atlas-border-subtle)]" />,
 
           table: (p) => (
             <div
-              className="my-4 overflow-x-auto rounded-md border border-[var(--border-default)]"
+              className="my-4 overflow-x-auto rounded-md border border-[var(--border)]"
               onWheel={handleWheel}
             >
-              <table className="min-w-max text-[13px] ">{p.children}</table>
+              <table className="min-w-max text-base">{p.children}</table>
             </div>
           ),
 
-          thead: (p) => <thead className="bg-[var(--bg-elevated)]">{p.children}</thead>,
+          thead: (p) => <thead className="bg-[var(--card)]">{p.children}</thead>,
 
           tr: (p) => (
-            <tr className="border-b border-[var(--border-subtle)] last:border-b-0">{p.children}</tr>
+            <tr className="border-b border-[var(--atlas-border-subtle)] last:border-b-0">
+              {p.children}
+            </tr>
           ),
 
           th: (p) => (
-            <th className="border-r border-[var(--border-default)] border-b border-[var(--border-default)] px-3 py-2 text-left text-[12px] font-semibold whitespace-nowrap text-[var(--text-secondary)] last:border-r-0">
+            <th className="border-r border-[var(--border)] border-b border-[var(--border)] px-3 py-2 text-left text-sm font-semibold whitespace-nowrap text-[var(--secondary-foreground)] last:border-r-0">
               {p.children}
             </th>
           ),
 
           td: (p) => (
-            <td className="border-r border-[var(--border-subtle)] px-3 py-2 align-top whitespace-nowrap text-[13px] text-[var(--text-primary)] last:border-r-0">
+            <td className="border-r border-[var(--atlas-border-subtle)] px-3 py-2 align-top whitespace-nowrap text-base text-[var(--foreground)] last:border-r-0">
               {p.children}
             </td>
           ),
 
           ...(trusted && {
             details: (p) => (
-              <details className="my-3 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3 py-2">
+              <details className="my-3 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
                 {p.children}
               </details>
             ),
 
             summary: (p) => (
-              <summary className="cursor-pointer py-1 font-medium text-[var(--text-primary)]">
+              <summary className="cursor-pointer py-1 font-medium text-[var(--foreground)]">
                 {p.children}
               </summary>
             ),

@@ -1,12 +1,28 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Dev-only fake backend (`src/dev/mock-backend/`). Injected as its own module
+// script ahead of `main.tsx`, so it is installed before any app module calls
+// `invoke()`. `apply: "serve"` keeps it out of every build; inside the Tauri
+// window it sees `isTauri` and does nothing.
+const mockBackend: Plugin = {
+  name: "atlas-mock-backend",
+  apply: "serve",
+  transformIndexHtml: () => [
+    {
+      tag: "script",
+      attrs: { type: "module", src: "/src/dev/mock-backend/install.ts" },
+      injectTo: "head",
+    },
+  ],
+};
+
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), mockBackend],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
@@ -18,7 +34,7 @@ export default defineConfig(() => ({
       // threw `ReferenceError: Can't find variable: document`, killed the
       // worker, and forced ALL markdown parsing onto the main thread (the
       // fallback in markdown-cache.tsx). That congested the main thread during
-      // agent streaming + workspace switches. `index.js` is a table-based,
+      // agent streaming + project switches. `index.js` is a table-based,
       // DOM-free build with identical output.
       "decode-named-character-reference": path.resolve(
         import.meta.dirname,
@@ -74,10 +90,11 @@ export default defineConfig(() => ({
       "react-markdown",
       "remark-gfm",
       "rehype-highlight",
-      "@radix-ui/react-dropdown-menu",
-      "@radix-ui/react-popover",
-      "@radix-ui/react-dialog",
-      "@radix-ui/react-context-menu",
+      "@base-ui/react/menu",
+      "@base-ui/react/popover",
+      "@base-ui/react/dialog",
+      "@base-ui/react/context-menu",
+      "@base-ui/react/tooltip",
       // Pre-bundle the Tiptap stack so opening the Knowledge tab for
       // the first time doesn't trigger Vite's "new dependencies
       // optimized → reloading" cycle (which dumps editor state and
@@ -244,9 +261,9 @@ export default defineConfig(() => ({
                   id.includes("highlight.js")),
             },
             {
-              name: "vendor-radix",
+              name: "vendor-base-ui",
               priority: 50,
-              test: (id) => !id.endsWith(".css") && id.includes("@radix-ui"),
+              test: (id) => !id.endsWith(".css") && id.includes("@base-ui"),
             },
             {
               name: "vendor-tanstack",
@@ -309,7 +326,7 @@ export default defineConfig(() => ({
       // Vite's module graph; everything else in the repo is Rust, scripts,
       // docs or build output. Without ignoring them, editing ANY such file
       // while dogfooding Atlas on its own repo (e.g. tweaking `bump.sh` to
-      // watch the workspace git +/- update) makes Vite bounce the whole page.
+      // watch the project git +/- update) makes Vite bounce the whole page.
       ignored: [
         "**/src-tauri/**",
         "**/crates/**",
@@ -338,8 +355,9 @@ export default defineConfig(() => ({
         "./src/features/layout/components/left-panel.tsx",
         "./src/features/layout/components/right-panel.tsx",
         "./src/features/layout/stores/layout-store.ts",
-        "./src/features/project/stores/project-store.ts",
-        "./src/features/project/components/welcome-screen.tsx",
+        "./src/features/app/stores/app-store.ts",
+        "./src/features/app/components/welcome-screen.tsx",
+        "./src/features/projects/stores/project-store.ts",
         "./src/features/chat/components/chat-panel.tsx",
         "./src/features/chat/components/message-input.tsx",
         "./src/features/chat/stores/chat-store.ts",

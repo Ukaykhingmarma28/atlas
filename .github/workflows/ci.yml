@@ -8,8 +8,9 @@ on:
       # lands here via PRs that were already checked — but so the branch owns a
       # warm dependency cache. A pull request can restore caches from its base
       # branch, and with no run ever having happened on a version branch there
-      # was nothing to restore: every contributor's first run rebuilt all 920
-      # crates from scratch, which is ~16 minutes on the app job versus ~2.
+      # was nothing to restore: every contributor's first run rebuilt all
+      # ~1,160 crates in the app's graph from scratch, which is ~16 minutes on
+      # the app job versus ~2.
       - '[0-9]+.[0-9]+.[0-9]+'
   pull_request:
 
@@ -25,11 +26,39 @@ permissions:
 env:
   # Incremental compilation only pays off across repeated local rebuilds; a CI
   # job compiles once and throws the machine away, so it is pure overhead here.
+  # It is also load-bearing for sccache (see `SCCACHE_*` on the Rust jobs):
+  # sccache refuses to cache an incremental compile, so turning this back on
+  # would silently reduce every sccache lookup to a miss.
   CARGO_INCREMENTAL: 0
   # `line-tables-only` rather than the default full debug info: it is most of
   # the build-time and artifact-size saving while still giving panics real file
   # and line numbers, which is the whole point of reading a failed CI log.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # sccache, for the Rust jobs (each sets `RUSTC_WRAPPER: sccache` itself and
+  # installs it with mozilla-actions/sccache-action). It exists for the
+  # workspace MEMBERS, which Swatinem/rust-cache deliberately prunes from the
+  # target dir it saves. 110 of the root workspace's members are the ported
+  # Codex engine, so without this every job that reaches the engine recompiles
+  # it from source: 20m49s of the atlas-native-agent job's ~26 minutes, which
+  # made that job the length of the whole run. rust-cache stays, for the
+  # registry, git deps and the non-member part of target/ — sccache cannot
+  # cache anything that invokes the linker (bin, proc-macro, build scripts),
+  # nor `cargo clippy`/`check` (metadata-only output), so it complements
+  # rust-cache rather than replacing it.
+  #
+  # Cache budget: GitHub gives the repo 10 GB, and it sat at ~9.7 GB before
+  # sccache. Going over is not an error, it is least-recently-used eviction,
+  # i.e. the caches quietly thrash each other. So only pushes to `main` and the
+  # version branches write — the same scope rust-cache's `save-if` uses below.
+  # A pull request reads its base branch's entries and writes none: a PR that
+  # edits the engine recompiles what it touched on each push, which is the
+  # price of not letting every open PR park its own copy of the engine in the
+  # budget. Keys are content hashes of each rustc invocation, so jobs on the
+  # same OS that compile a crate identically share one entry rather than
+  # storing it per job. To purge everything sccache wrote, change
+  # SCCACHE_GHA_VERSION.
+  SCCACHE_GHA_ENABLED: 'true'
+  SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'push' && 'READ_WRITE' || 'READ_ONLY' }}
 
 jobs:
   frontend:
@@ -65,7 +94,7 @@ jobs:
         run: bun run build
 
   app:
-    # The Tauri app itself — the only thing here that compiles the ~350
+    # The Tauri app itself — the only thing here that compiles the ~400
     # `#[tauri::command]` handlers and the `generate_handler!` registration.
     # Without this job every other check can be green while the app does not
     # build at all; `crates` only covers the libraries underneath it.
@@ -77,24 +106,40 @@ jobs:
     # This is the slowest job in the pipeline by a wide margin on a cold cache.
     name: app (src-tauri)
     runs-on: macos-latest
+    env:
+      # Set per job, never workflow-wide: with no sccache on PATH every cargo
+      # invocation fails, so only a job that runs sccache-action may set it.
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # Before rust-cache: once RUSTC_WRAPPER is set, cargo invokes it even to
+      # probe `rustc -vV`, so sccache must be on PATH before anything runs
+      # cargo.
+      - uses: mozilla-actions/sccache-action@v0.0.11
       # One cargo workspace since #38: the lockfile and the target dir both
-      # live at the repo root, so that is what the cache keys off.
+      # live at the repo root, so that is what the cache keys off. Saved from
+      # pushes only, for the cache budget (see SCCACHE_GHA_RW_MODE).
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          save-if: ${{ github.event_name == 'push' }}
       - name: Configure git identity for test repos
         run: |
           git config --global user.name "CI"
           git config --global user.email "ci@example.invalid"
-      # Compiles the app and its command surface, then runs its 194 tests.
+      # Compiles the app and its command surface, then runs its ~450 unit
+      # tests. `--lib` because that is where every one of them lives:
+      # src-tauri has no `tests/` directory, its three fenced doc blocks are
+      # bash/text/json (rustdoc never compiles those), and `main.rs` has no
+      # tests. A bare `cargo test` also built and linked the `atlas` binary's
+      # own test harness and ran the doctest pass — a second full-size app
+      # link to run zero tests. Add `--tests`/`--doc` back if either gains one.
       - name: Test
         working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test --locked --lib
       # Plain clippy, no `-D warnings`: the workspace lint table (`[lints]`
       # in the manifest, #60) already carries its own denies, and this is the
       # crate where the #54 cfg outage happened — the deny has to be able to
@@ -108,19 +153,48 @@ jobs:
     # vendor/codex/codex-api/src/atlas_chat/) is first-party code that happens
     # to live in vendor/ — its request/SSE fixture suites are the primary
     # evidence for the dialect's correctness, and until #64 they ran in no CI
-    # job at all. One package, deliberately not a blanket vendor job: several
-    # upstream suites are permanently red after the phone-home removals (#43),
-    # and re-greening crates Atlas does not ship is not the point.
+    # job at all.
+    #
+    # Alongside it, the eight vendored crates Atlas has edited since the port
+    # — for the dialect wiring (#50, #52), the phone-home removals (#43), the
+    # rename (#55) and Windows process spawning — whose own suites are green:
+    # 915 tests. Changing ported code is ordinary work (ADR-0003), and this is
+    # where a change to it gets checked.
+    #
+    # Deliberately not the whole vendored engine: its other ~100 members are
+    # upstream's code with upstream's suites, unchanged by Atlas, so running
+    # them would buy a much longer job for no new evidence. When Atlas edits
+    # another vendored crate, add its `-p` here.
     name: engine dialect (codex-api)
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache # see the app job
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          save-if: ${{ github.event_name == 'push' }}
+      # Some of the vendored suites build scratch git repositories; same reason
+      # as in `crates`.
+      - name: Configure git identity for test repos
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.invalid"
       - name: Test
-        run: cargo test --locked -p codex-api
+        run: >-
+          cargo test --locked
+          -p codex-api
+          -p codex-model-provider
+          -p codex-models-manager
+          -p codex-protocol
+          -p codex-otel
+          -p codex-feedback
+          -p codex-analytics
+          -p codex-shell-command
+          -p codex-config
 
   crates:
     # Every crate gets its own job so a failure names the crate rather than the
@@ -135,8 +209,13 @@ jobs:
     # `clippy: true` marks the crates that are currently warning-clean under
     # `-D warnings`. The rest are not yet; flip the flag as each is cleaned up
     # rather than weakening the gate for the ones that already pass.
+    #
+    # `release-build: true` additionally builds the crate with its release
+    # profile (see the step).
     name: ${{ matrix.crate }}
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache # see the app job
     strategy:
       # Report every failing crate in one run instead of stopping at the first.
       fail-fast: false
@@ -148,6 +227,7 @@ jobs:
             clippy: true
           - crate: atlas-agent-manager
             clippy: true
+          - crate: atlas-process
           - crate: atlas-agent-servers
             clippy: true
           - crate: atlas-agent-transcript
@@ -164,15 +244,22 @@ jobs:
             clippy: true
           - crate: atlas-embed
           - crate: atlas-git
+            clippy: true
           - crate: atlas-gitdiff
+          - crate: atlas-icon-theme
+            clippy: true
           - crate: atlas-kb-server
+            release-build: true
           - crate: atlas-memory
+            clippy: true
           - crate: atlas-native-agent
             clippy: true
             sandbox: true
           - crate: atlas-redact
             clippy: true
           - crate: atlas-terminal
+          - crate: atlas-theme
+            clippy: true
           - crate: atlas-thread-metadata
             clippy: true
     steps:
@@ -180,12 +267,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: mozilla-actions/sccache-action@v0.0.11
       # Workspace members share the root lockfile and target dir;
       # `atlas-kb-server` is excluded from the workspace (it keeps its own
       # profile and is built on demand at runtime) and so keeps its own cache.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ matrix.crate == 'atlas-kb-server' && 'crates/atlas-kb-server' || '.' }}
+          save-if: ${{ github.event_name == 'push' }}
       # Several suites build real git repositories in a tempdir, and `git
       # commit` refuses to run without an identity. Set for every crate so
       # adding such a test to another crate doesn't fail mysteriously.
@@ -220,13 +309,34 @@ jobs:
       - name: Test
         working-directory: crates/${{ matrix.crate }}
         run: cargo test --locked
-      # Every member crate, no flag: plain clippy enforces the workspace lint
-      # table (`[lints] workspace = true`, #60), whose entries are denies of
-      # their own. The stricter `-D warnings` step below stays opt-in.
-      - name: Clippy (workspace lint table)
+      # atlas-kb-server is never shipped as a binary: `knowledge_export`
+      # compiles it on the user's machine, with `cargo build --release` and the
+      # crate's own release profile (`panic = "abort"`, thin LTO, strip), which
+      # no other step here exercises. Three direct dependencies, so this costs
+      # well under a minute, and it is the build users actually run.
+      - name: Build (release profile, as knowledge_export does)
+        if: matrix.release-build
         working-directory: crates/${{ matrix.crate }}
-        run: cargo clippy --locked --all-targets
-      - name: Clippy
+        run: cargo build --locked --release
+      # Exactly one clippy pass per crate, never two. Every member crate gets
+      # at least the workspace lint table (`[lints] workspace = true`, #60),
+      # whose entries are denies of their own; `clippy: true` crates get
+      # `-D warnings` on top, which is a strict superset. It used to be both
+      # passes for those crates, and the plain one found nothing the strict
+      # one would not — while changing the clippy arguments invalidates every
+      # workspace member cargo lints, so for atlas-native-agent that was the
+      # whole ported engine linted twice. sccache cannot help here (clippy
+      # emits metadata only), so the only saving is not doing it twice.
+      #
+      # Two complementary `if`s rather than one step with an expression in
+      # `run`: tests/ci-coverage.test.ts checks the pair stays complementary,
+      # and a `run` line with no `${{ }}` in it stays runnable as-is by tools
+      # that replay these steps outside Actions.
+      - name: Clippy (-D warnings)
         if: matrix.clippy
         working-directory: crates/${{ matrix.crate }}
         run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Clippy (workspace lint table)
+        if: ${{ !matrix.clippy }}
+        working-directory: crates/${{ matrix.crate }}
+        run: cargo clippy --locked --all-targets

@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { useLayoutStore } from "../stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { WorkspaceSidebar } from "@/features/workspaces/components/workspace-sidebar";
-import { useWorkspaceGitPrefetch } from "@/features/workspaces/lib/use-workspace-prefetch";
+import { useAppStore } from "@/features/app/stores/app-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { ProjectSidebar } from "@/features/projects/components/project-sidebar";
+import { useProjectGitPrefetch } from "@/features/projects/lib/use-project-prefetch";
 import { Titlebar } from "@/components/titlebar";
 import { cn } from "@/lib/utils";
 import { LeftPanel } from "./left-panel";
@@ -21,22 +21,22 @@ const MAIN_LAYOUT_ID = "atlas-main-layout";
 export function AppLayout() {
   const leftPanel = useLayoutStore.use.leftPanel();
   const rightPanel = useLayoutStore.use.rightPanel();
-  const currentProject = useProjectStore.use.currentProject();
-  const sidebarOpen = useWorkspaceStore.use.sidebarOpen();
-  const sidebarPinned = useWorkspaceStore.use.sidebarPinned();
-  const { setSidebarOpen } = useWorkspaceStore.use.actions();
+  const currentProject = useAppStore.use.currentProject();
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
+  const sidebarPinned = useProjectStore.use.sidebarPinned();
+  const { setSidebarOpen } = useProjectStore.use.actions();
   // DOCKED = pinned + open → an in-flow left column that pushes the layout.
   // Otherwise the sidebar is an OVERLAY (rail + scrim), gated by `sidebarOpen`.
   const docked = sidebarPinned && sidebarOpen;
 
-  // Warm the workspace-pane git data at startup so the first slide is smooth.
-  useWorkspaceGitPrefetch();
+  // Warm the project-pane git data at startup so the first slide is smooth.
+  useProjectGitPrefetch();
 
   // v4 replaced `autoSaveId` with this hook: it owns the localStorage read and
   // write, and the Group takes the result as `defaultLayout` + `onLayoutChanged`.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: MAIN_LAYOUT_ID });
 
-  // Esc closes the OVERLAY workspace panel (same animated slide-out as a
+  // Esc closes the OVERLAY project panel (same animated slide-out as a
   // scrim click). Only active while the overlay is open — when docked or
   // closed the listener no-ops, so it never swallows Esc from other surfaces.
   const overlayOpen = sidebarOpen && !sidebarPinned;
@@ -73,26 +73,26 @@ export function AppLayout() {
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 
   return (
-    // `relative` so the workspace rail + scrim can be absolutely-positioned
+    // `relative` so the project rail + scrim can be absolutely-positioned
     // OVERLAYS. The main column below is the only in-flow child, so it always
     // fills the window and NEVER reflows when the rail toggles.
     <div className="relative flex h-screen">
-      {/* DOCKED workspace sidebar — an in-flow left column (solid, not glass)
+      {/* DOCKED project sidebar — an in-flow left column (solid, not glass)
           that pushes the whole shell right. Full-height so it sits beside the
           titlebar; the sidebar's own top bar already dodges the traffic lights.
           Only present when pinned + open; unpinned falls through to the overlay
           below. */}
       {docked && (
-        <div className="atlas-workspace-rail h-screen w-[244px] shrink-0 border-r border-white/[0.06]">
-          <WorkspaceSidebar />
+        <div className="atlas-project-rail h-screen w-[244px] shrink-0 border-r border-border-subtle">
+          <ProjectSidebar />
         </div>
       )}
 
       {/*
-       * NOT keyed by workspace: keying forced a full unmount/remount of the
+       * NOT keyed by project: keying forced a full unmount/remount of the
        * whole shell on every switch (rebuilding CodeMirror/xterm/virtualizer)
        * — the dominant switch cost. Instead, `switchTo` swaps Zustand state in
-       * place from an in-RAM snapshot (see workspace-snapshot.ts), so the shell
+       * place from an in-RAM snapshot (see project-snapshot.ts), so the shell
        * stays mounted and switching is near-instant.
        */}
       {/* `min-w-0` is load-bearing, not decoration. This column is a flex item
@@ -145,7 +145,7 @@ export function AppLayout() {
             </Panel>
             <Separator
               className={cn(
-                "w-px bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize",
+                "w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize",
                 // Kept in the tree (removing it would re-derive the layout, the
                 // very thing we're avoiding) but inert while collapsed.
                 !showLeft && "pointer-events-none invisible",
@@ -158,7 +158,7 @@ export function AppLayout() {
 
             {showRight && (
               <>
-                <Separator className="w-px bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize" />
+                <Separator className="w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
                 <Panel id="atlas-right" defaultSize="18" minSize="12" maxSize="50">
                   <RightPanel />
                 </Panel>
@@ -181,7 +181,7 @@ export function AppLayout() {
               // while the switcher is open and during its enter/exit — the animation
               // reads as a clean focus transition rather than exposing a mid-load
               // centre. Both are compositor-cheap once established.
-              "absolute inset-0 z-[55] bg-black/28 backdrop-blur-md transition-opacity ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+              "absolute inset-0 z-drawer scrim-soft backdrop-blur-md transition-opacity ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
               // Closing is 50% slower than opening (300 → 450ms).
               sidebarOpen
                 ? "opacity-100 duration-300"
@@ -191,7 +191,7 @@ export function AppLayout() {
             aria-hidden
           />
 
-          {/* Workspace rail — an OVERLAY (Linear-style), toggled by Cmd+⇧. Always
+          {/* Project rail — an OVERLAY (Linear-style), toggled by Cmd+⇧. Always
           mounted; it sits ABOVE the content (never in flow), so toggling it does
           zero layout work on the shell — the content underneath stays perfectly
           still. It SLIDES (GPU `translateX`) AND FADES (`opacity`) together for a
@@ -207,12 +207,12 @@ export function AppLayout() {
           parked off the left edge, transparent. */}
           <div
             className={cn(
-              "absolute left-0 top-0 h-screen w-[244px] z-[60] border-r border-white/[0.07] backdrop-blur-2xl transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none [backface-visibility:hidden]",
+              "absolute left-0 top-0 h-screen w-[244px] z-drawer border-r border-border-subtle backdrop-blur-2xl transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none [backface-visibility:hidden]",
               // Closing (slide-out) is 50% slower than opening (300 → 450ms).
               sidebarOpen ? "duration-300" : "duration-[450ms]",
               // The gradient rail. Linux gets the opaque variant — no
               // compositor blur to sit on there.
-              isLinux ? "atlas-workspace-rail" : "atlas-workspace-rail--glass",
+              isLinux ? "atlas-project-rail" : "atlas-project-rail--glass",
             )}
             style={{
               transform: sidebarOpen ? "translateX(0)" : "translateX(-244px)",
@@ -220,7 +220,7 @@ export function AppLayout() {
             }}
             aria-hidden={!sidebarOpen}
           >
-            <WorkspaceSidebar />
+            <ProjectSidebar />
           </div>
         </>
       )}

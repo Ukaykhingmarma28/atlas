@@ -7,9 +7,9 @@
  * be two bordered segments and a loose button, which drew three boxes in a 32px
  * bar to say one thing — "here are the tab's actions".
  *
- * No shared morphing tooltip here. The dock's tooltip machinery exists because
- * the titlebar has no room for labels; this bar does, and each control carries
- * its own `title`.
+ * The controls share one sliding tooltip (`HintGroup`), as the titlebar dock's
+ * do: the dock is the group, and each control is a `HintItem` — `DockButton`
+ * wraps itself, and the Radix triggers wrap their `Trigger` in one.
  *
  * Its own module rather than living in the panel, because the checkpoints picker
  * needs the trigger class too — and importing it from the panel, which imports
@@ -18,6 +18,7 @@
  */
 
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 
 /**
  * The pill that gathers the header's icon controls.
@@ -32,28 +33,35 @@ import { cn } from "@/lib/utils";
  */
 export function HeaderDock({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-7 items-center gap-1.5 rounded-full border border-white/[0.07] bg-[#121212] p-1">
-      {children}
-    </div>
+    <HintGroup>
+      <div className="flex h-7 items-center gap-1.5 rounded-full border border-border-subtle bg-card p-1">
+        {children}
+      </div>
+    </HintGroup>
   );
 }
 
 /**
  * The class an icon control wears inside a {@link HeaderDock}.
  *
- * Exported rather than wrapped in a component because Radix owns the popover
- * triggers via `asChild` and hands them the class directly — including the
- * `data-[state=open]` styling that keeps a button lit while its menu is up.
+ * Exported rather than wrapped in a component because the popover triggers own
+ * these buttons through `render` and hand them the class directly — including
+ * the `data-popup-open` styling that keeps a button lit while its menu is up.
+ * (Base UI marks an open trigger `data-popup-open`; Radix used
+ * `data-[state=open]`.)
  */
 export const DOCK_TRIGGER =
   "relative flex size-5 cursor-pointer items-center justify-center rounded-full outline-none " +
-  "text-[var(--text-tertiary)] transition-colors duration-150 hover:bg-white/[0.08] hover:text-[var(--text-primary)] " +
-  "data-[state=open]:bg-white/[0.12] data-[state=open]:text-[var(--text-primary)]";
+  "text-[var(--muted-foreground)] transition-colors duration-150 hover:bg-element-active hover:text-[var(--foreground)] " +
+  "data-popup-open:bg-element-active data-popup-open:text-[var(--foreground)]";
 
 /** Applied on top of {@link DOCK_TRIGGER} when the control's mode is on. */
-export const DOCK_ACTIVE = "bg-white/[0.12] text-[var(--text-primary)]";
+export const DOCK_ACTIVE = "bg-element-active text-[var(--foreground)]";
 
-/** A plain button inside the dock. */
+/**
+ * A plain button inside the dock. Its tooltip comes from the enclosing
+ * `HintGroup`; one used outside a dock needs a group of its own.
+ */
 export function DockButton({
   label,
   onClick,
@@ -66,15 +74,15 @@ export function DockButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={onClick}
-      className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onClick}
+        className={cn(DOCK_TRIGGER, active && DOCK_ACTIVE)}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }

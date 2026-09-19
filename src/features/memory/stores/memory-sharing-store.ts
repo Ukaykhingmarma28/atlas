@@ -1,7 +1,7 @@
 // Shared Cross-Agent Memory — UI state for the Memory panel's Shared toggle +
 // summarizer selector. Caches the per-project toggle and summarizer preference
 // and persists changes through `memory-sharing-api`. Scoped to one project at a
-// time (the active workspace), reloaded via `load(projectPath)`.
+// time (the active project), reloaded via `load(projectPath)`.
 
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";

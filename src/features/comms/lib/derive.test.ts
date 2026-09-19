@@ -195,12 +195,23 @@ describe("isNewDay", () => {
     expect(isNewDay(undefined, msg({ id: "m1" }))).toBe(true);
   });
 
+  // Local wall-clock fixtures, as in the midnight test above: fixed epoch
+  // values fall on different local dates in some time zones.
   it("is false within the same calendar day", () => {
     expect(
       isNewDay(
-        msg({ id: "m1", created_at: 1788138000000 }),
-        msg({ id: "m2", created_at: 1788141600000 }),
+        msg({ id: "m1", created_at: new Date(2026, 7, 31, 9, 0).getTime() }),
+        msg({ id: "m2", created_at: new Date(2026, 7, 31, 10, 0).getTime() }),
       ),
     ).toBe(false);
+  });
+
+  it("is true across local midnight", () => {
+    expect(
+      isNewDay(
+        msg({ id: "m1", created_at: new Date(2026, 7, 31, 23, 59).getTime() }),
+        msg({ id: "m2", created_at: new Date(2026, 8, 1, 0, 1).getTime() }),
+      ),
+    ).toBe(true);
   });
 });

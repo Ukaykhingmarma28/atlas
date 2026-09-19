@@ -27,7 +27,7 @@ use crate::model::*;
 use crate::tools::ToolName;
 use crate::schema;
 
-/// A Workspace's recorded Sessions.
+/// A Project's recorded Sessions.
 pub struct Store {
     conn: Connection,
     blobs: BlobStore,
@@ -38,7 +38,7 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open (creating if needed) the store under a Workspace's `.atlas/`.
+    /// Open (creating if needed) the store under a Project's `.atlas/`.
     ///
     /// Takes the writer lock. If another Atlas window already holds it, this
     /// still succeeds — attached read-only — because a second window must
@@ -53,7 +53,7 @@ impl Store {
     /// The writer lock arbitrates between **processes**. A second `Store` opened
     /// inside the *same* process contends for it exactly as hard as a second
     /// window would, and loses — so a read path that used [`Store::open`] would
-    /// make the host lock itself out of its own Workspace and then report
+    /// make the host lock itself out of its own Project and then report
     /// "another Atlas window is already recording", which is both false and
     /// unactionable.
     ///
@@ -69,7 +69,7 @@ impl Store {
     /// Unlike [`Store::open`] this **creates nothing** and errors if the store
     /// does not exist. Capture is opt-in, and a read — listing Sessions, polling
     /// a status line — must never be what silently plants an `.atlas/` directory
-    /// in a Workspace the developer never enabled.
+    /// in a Project the developer never enabled.
     pub fn open_reader(atlas_dir: impl AsRef<Path>) -> Result<Self> {
         Self::open_inner(atlas_dir.as_ref(), false, false)
     }
@@ -115,7 +115,7 @@ impl Store {
         // A reader opens read-write-without-create rather than read-only: the
         // schema migration below is idempotent and must still be able to run on
         // a database written by an older build, but a *missing* database is an
-        // absent Workspace and must stay absent.
+        // absent Project and must stay absent.
         let mut flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
             | rusqlite::OpenFlags::SQLITE_OPEN_URI
             | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -139,7 +139,7 @@ impl Store {
         Ok(conn)
     }
 
-    /// Does this process own the Workspace's writer lock?
+    /// Does this process own the Project's writer lock?
     ///
     /// Capture must check this. A second window attaches read-only so the
     /// timeline still browses, but writing from both is what corrupts the
@@ -170,7 +170,7 @@ impl Store {
 
     /// Find or create the Session for an agent conversation.
     ///
-    /// Keyed on (workspace, source, native id), so a second sighting of the same
+    /// Keyed on (project, source, native id), so a second sighting of the same
     /// conversation updates rather than duplicating — which is what makes both
     /// re-processing and re-import no-ops.
     #[allow(clippy::too_many_arguments)]
@@ -183,7 +183,7 @@ impl Store {
         model: Option<&str>,
         branch: Option<&str>,
         cwd: Option<&str>,
-        mode: WorkspaceMode,
+        mode: ProjectMode,
     ) -> Result<String> {
         // `branch` is the branch at the moment of this prompt. It is COALESCEd
         // onto the EXISTING value below, so the first one seen sticks: a
@@ -279,7 +279,7 @@ impl Store {
             .optional()?)
     }
 
-    pub fn sessions_for_workspace(&self, workspace_id: &str) -> Result<Vec<Session>> {
+    pub fn sessions_for_project(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {SESSION_COLUMNS} FROM agent_session
               WHERE workspace_id = ?1 ORDER BY started_at"
@@ -339,6 +339,9 @@ impl Store {
         if totals.cache_read_tokens > 0 {
             merged.cache_read_tokens = totals.cache_read_tokens;
         }
+        if totals.reasoning_tokens > 0 {
+            merged.reasoning_tokens = totals.reasoning_tokens;
+        }
         if totals.context_used.is_some() {
             merged.context_used = totals.context_used;
         }
@@ -355,6 +358,205 @@ impl Store {
             rusqlite::params![session_id, json, Utc::now().to_rfc3339()],
         )?;
         Ok(())
+    }
+
+    /// Record a cumulative usage report against the turn it arrived in, and
+    /// grow the Session's totals by what it added.
+    ///
+    /// The live path. Agents report usage as a running total, several times
+    /// per turn, so the store keeps a per-Session cursor (`usage_cursor`) of
+    /// the last figure seen and writes only the difference to the ledger
+    /// (`usage_delta`, one row per turn, summed in place). The Session's
+    /// `token_totals` then grows by the same difference — never replaced by
+    /// the report — so a counter that restarts lower (a resumed conversation,
+    /// a provider that reports per-request) reads as new work rather than as
+    /// a shrinking total.
+    ///
+    /// The context gauge keeps exactly the semantics of [`Self::set_token_totals`]:
+    /// a `Some` replaces, a `None` leaves the stored gauge alone, and a
+    /// gauge-only report writes no ledger row.
+    ///
+    /// One transaction: the ledger row, the cursor and the Session total move
+    /// together or not at all. Returns the delta that was recorded.
+    pub fn record_usage_delta(
+        &mut self,
+        session_id: &str,
+        turn_seq: i64,
+        model: Option<&str>,
+        reported: &TokenTotals,
+    ) -> Result<TokenTotals> {
+        self.require_writer()?;
+        let tx = self.conn.transaction()?;
+
+        let cursor: [u64; 5] = tx
+            .query_row(
+                "SELECT input_tokens, output_tokens, cache_creation_tokens,
+                        cache_read_tokens, reasoning_tokens
+                   FROM usage_cursor WHERE session_id = ?1",
+                [session_id],
+                |row| {
+                    Ok([
+                        row.get::<_, i64>(0)?.max(0) as u64,
+                        row.get::<_, i64>(1)?.max(0) as u64,
+                        row.get::<_, i64>(2)?.max(0) as u64,
+                        row.get::<_, i64>(3)?.max(0) as u64,
+                        row.get::<_, i64>(4)?.max(0) as u64,
+                    ])
+                },
+            )
+            .optional()?
+            .unwrap_or([0; 5]);
+        let (delta, next_cursor) = usage_delta(cursor, reported.split());
+        let now = Utc::now().to_rfc3339();
+
+        if delta.iter().any(|n| *n > 0) {
+            tx.execute(
+                "INSERT INTO usage_delta
+                    (session_id, turn_seq, model, recorded_at, input_tokens, output_tokens,
+                     cache_creation_tokens, cache_read_tokens, reasoning_tokens)
+                 VALUES (?1, ?2,
+                         COALESCE(?3, (SELECT model FROM agent_session WHERE id = ?1)),
+                         ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT (session_id, turn_seq) DO UPDATE SET
+                    input_tokens = input_tokens + excluded.input_tokens,
+                    output_tokens = output_tokens + excluded.output_tokens,
+                    cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
+                    cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+                    reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
+                    model = COALESCE(excluded.model, model)",
+                rusqlite::params![
+                    session_id,
+                    turn_seq,
+                    model,
+                    now,
+                    delta[0] as i64,
+                    delta[1] as i64,
+                    delta[2] as i64,
+                    delta[3] as i64,
+                    delta[4] as i64,
+                ],
+            )?;
+            tx.execute(
+                "INSERT INTO usage_cursor
+                    (session_id, input_tokens, output_tokens, cache_creation_tokens,
+                     cache_read_tokens, reasoning_tokens)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT (session_id) DO UPDATE SET
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    cache_creation_tokens = excluded.cache_creation_tokens,
+                    cache_read_tokens = excluded.cache_read_tokens,
+                    reasoning_tokens = excluded.reasoning_tokens",
+                rusqlite::params![
+                    session_id,
+                    next_cursor[0] as i64,
+                    next_cursor[1] as i64,
+                    next_cursor[2] as i64,
+                    next_cursor[3] as i64,
+                    next_cursor[4] as i64,
+                ],
+            )?;
+        }
+
+        let existing: Option<String> = tx
+            .query_row(
+                "SELECT token_totals FROM agent_session WHERE id = ?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let stored: TokenTotals = existing
+            .as_deref()
+            .and_then(|raw| serde_json::from_str(raw).ok())
+            .unwrap_or_default();
+        let mut grown = stored.split();
+        for (field, added) in grown.iter_mut().zip(delta) {
+            *field = field.saturating_add(added);
+        }
+        let merged = TokenTotals::from_split(
+            grown,
+            reported.context_used.or(stored.context_used),
+            reported.context_size.or(stored.context_size),
+        );
+        let json = serde_json::to_string(&merged).unwrap_or_else(|_| "{}".into());
+        tx.execute(
+            &format!(
+                "UPDATE agent_session SET token_totals = ?2, updated_at = ?3{RESYNC_SESSION}
+                  WHERE id = ?1"
+            ),
+            rusqlite::params![session_id, json, now],
+        )?;
+
+        tx.commit()?;
+        Ok(TokenTotals::from_split(delta, None, None))
+    }
+
+    /// Every ledger row in a Project, ordered by Session then turn.
+    ///
+    /// The parameter keeps the `workspace_id` spelling because that is the
+    /// `agent_session` column it matches — a storage key, not the concept.
+    pub fn usage_deltas_for_project(&self, workspace_id: &str) -> Result<Vec<UsageDeltaRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT d.session_id, d.turn_seq, d.model, d.recorded_at, d.input_tokens,
+                    d.output_tokens, d.cache_creation_tokens, d.cache_read_tokens,
+                    d.reasoning_tokens
+               FROM usage_delta d
+               JOIN agent_session s ON s.id = d.session_id
+              WHERE s.workspace_id = ?1
+              ORDER BY d.session_id, d.turn_seq",
+        )?;
+        let rows = stmt.query_map([workspace_id], |row| {
+            Ok(UsageDeltaRow {
+                session_id: row.get(0)?,
+                turn_seq: row.get(1)?,
+                model: row.get(2)?,
+                recorded_at: parse_time(row.get::<_, String>(3)?),
+                totals: TokenTotals::from_split(
+                    [
+                        row.get::<_, i64>(4)?.max(0) as u64,
+                        row.get::<_, i64>(5)?.max(0) as u64,
+                        row.get::<_, i64>(6)?.max(0) as u64,
+                        row.get::<_, i64>(7)?.max(0) as u64,
+                        row.get::<_, i64>(8)?.max(0) as u64,
+                    ],
+                    None,
+                    None,
+                ),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Message counts per (Session, turn) across a Project, with the stamp
+    /// of each turn's earliest Message — what dates a turn's messages.
+    pub fn turn_message_counts(&self, workspace_id: &str) -> Result<Vec<TurnMessages>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.session_id, m.turn_seq, COUNT(*), MIN(m.created_at)
+               FROM agent_message m
+               JOIN agent_session s ON s.id = m.session_id
+              WHERE s.workspace_id = ?1
+              GROUP BY m.session_id, m.turn_seq",
+        )?;
+        let rows = stmt.query_map([workspace_id], |row| {
+            Ok(TurnMessages {
+                session_id: row.get(0)?,
+                turn_seq: row.get(1)?,
+                messages: row.get::<_, i64>(2)?.max(0) as u64,
+                first_at: parse_time(row.get::<_, String>(3)?),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// When the ledger began — the earliest ledger row in this store, or
+    /// `None` before any turn has been ledgered.
+    pub fn ledger_since(&self) -> Result<Option<DateTime<Utc>>> {
+        Ok(self
+            .conn
+            .query_row("SELECT MIN(recorded_at) FROM usage_delta", [], |row| {
+                row.get::<_, Option<String>>(0)
+            })?
+            .map(parse_time))
     }
 
     /// Replace a Session's usage split with a freshly recomputed one.
@@ -642,17 +844,17 @@ impl Store {
         )?)
     }
 
-    /// Message totals for every Session in a Workspace, as `session_id -> n`.
+    /// Message totals for every Session in a Project, as `session_id -> n`.
     ///
     /// The list view needs one of these per row. Asking per Session made the
-    /// read cost `3n + 1` queries, which is invisible at one Workspace and the
+    /// read cost `3n + 1` queries, which is invisible at one Project and the
     /// dominant cost once the board spans every project in an Organisation.
     /// One `GROUP BY` over the same covering index answers all of them.
     pub fn message_counts(&self, workspace_id: &str) -> Result<HashMap<String, i64>> {
         self.counts_by_session("agent_message", workspace_id)
     }
 
-    /// Tool-call totals for every Session in a Workspace. See [`Self::message_counts`].
+    /// Tool-call totals for every Session in a Project. See [`Self::message_counts`].
     pub fn tool_call_counts_by_session(
         &self,
         workspace_id: &str,
@@ -767,7 +969,7 @@ impl Store {
         )?)
     }
 
-    /// `session_id -> COUNT(*)` for one child table, scoped to a Workspace.
+    /// `session_id -> COUNT(*)` for one child table, scoped to a Project.
     ///
     /// `table` is a hardcoded literal at both call sites, never user input.
     fn counts_by_session(&self, table: &str, workspace_id: &str) -> Result<HashMap<String, i64>> {
@@ -1077,7 +1279,7 @@ impl Store {
 
     // ── Binding ─────────────────────────────────────────────────────────────
 
-    /// How this Workspace is bound, or `None` if capture was never enabled.
+    /// How this Project is bound, or `None` if capture was never enabled.
     pub fn binding(&self) -> Result<Option<Binding>> {
         Ok(self
             .conn
@@ -1093,7 +1295,7 @@ impl Store {
                     Ok(Binding {
                         workspace_id: row.get(0)?,
                         root: row.get(1)?,
-                        mode: WorkspaceMode::parse(&mode).unwrap_or(WorkspaceMode::Local),
+                        mode: ProjectMode::parse(&mode).unwrap_or(ProjectMode::Local),
                         slug: row.get(3)?,
                         org_id: row.get(4)?,
                         root_commit_sha: row.get(5)?,
@@ -1113,14 +1315,14 @@ impl Store {
     /// Bind, or refresh an existing binding's detected signals.
     ///
     /// Idempotent by construction — the singleton row is upserted rather than
-    /// inserted, so re-opening the popover for an already-bound Workspace shows
+    /// inserted, so re-opening the popover for an already-bound Project shows
     /// its state instead of offering to create a second one. `created_at` is
     /// preserved so "capturing since" stays true.
     pub fn upsert_binding(
         &self,
         workspace_id: &str,
         root: &str,
-        mode: WorkspaceMode,
+        mode: ProjectMode,
         root_commit_sha: Option<&str>,
         fingerprint_is_shallow: bool,
         git_url: Option<&str>,
@@ -1154,7 +1356,7 @@ impl Store {
         Ok(())
     }
 
-    /// Record the Organisation this Workspace was registered to.
+    /// Record the Organisation this Project was registered to.
     ///
     /// Separate from [`Store::upsert_binding`] because it is a different event:
     /// binding is local and immediate, registration is a server round-trip that
@@ -1182,7 +1384,7 @@ impl Store {
     }
 
     /// Promote to Cloud atomically: the binding flip and the row flip commit
-    /// together, so a crash can never leave a Cloud Workspace whose history is
+    /// together, so a crash can never leave a Cloud Project whose history is
     /// stranded as `local` — invisible to the drain forever, after the user was
     /// told it would be shared.
     pub fn promote_to_cloud(
@@ -1208,7 +1410,7 @@ impl Store {
         Ok(moved)
     }
 
-    /// Was promotion interrupted? A Cloud Workspace should have no `local` rows;
+    /// Was promotion interrupted? A Cloud Project should have no `local` rows;
     /// any that exist were stranded by a crash between registration and the row
     /// flip on an older build, and flipping them is always correct.
     pub fn heal_stranded_local_rows(&self, workspace_id: &str) -> Result<i64> {
@@ -1530,13 +1732,13 @@ impl Store {
 
     /// Re-key every row after the project folder moved.
     ///
-    /// The Workspace's identity must survive renaming the repo folder: `.atlas/`
+    /// The Project's identity must survive renaming the repo folder: `.atlas/`
     /// travels with the directory, but rows written under the old absolute path
     /// would be invisible to every query keyed on the new one — the timeline,
     /// the health counts and the promotion preview would all silently read as
     /// empty. One transaction, so a crash re-keys nothing rather than half.
-    pub fn rekey_workspace(&self, old_workspace_id: &str, new_workspace_id: &str, new_root: &str) -> Result<()> {
-        if old_workspace_id == new_workspace_id {
+    pub fn rekey_project(&self, old_project_id: &str, new_project_id: &str, new_root: &str) -> Result<()> {
+        if old_project_id == new_project_id {
             return Ok(());
         }
         self.require_writer()?;
@@ -1544,15 +1746,15 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             "UPDATE agent_session SET workspace_id = ?2 WHERE workspace_id = ?1",
-            rusqlite::params![old_workspace_id, new_workspace_id],
+            rusqlite::params![old_project_id, new_project_id],
         )?;
         tx.execute(
             "UPDATE workspace_cursor SET workspace_id = ?2 WHERE workspace_id = ?1",
-            rusqlite::params![old_workspace_id, new_workspace_id],
+            rusqlite::params![old_project_id, new_project_id],
         )?;
         tx.execute(
             "UPDATE binding SET workspace_id = ?1, root = ?2, updated_at = ?3 WHERE id = 1",
-            rusqlite::params![new_workspace_id, new_root, now],
+            rusqlite::params![new_project_id, new_root, now],
         )?;
         tx.commit()?;
         Ok(())
@@ -1719,8 +1921,8 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Every Checkpoint belonging to a Workspace's Sessions.
-    pub fn checkpoints_for_workspace(&self, workspace_id: &str) -> Result<Vec<Checkpoint>> {
+    /// Every Checkpoint belonging to a Project's Sessions.
+    pub fn checkpoints_for_project(&self, workspace_id: &str) -> Result<Vec<Checkpoint>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint
               WHERE session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)
@@ -1730,7 +1932,7 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// The newest Checkpoints in this Workspace, with the title of the Session
+    /// The newest Checkpoints in this Project, with the title of the Session
     /// that produced each.
     ///
     /// The title is joined here rather than looked up per row: the picker this
@@ -1863,7 +2065,7 @@ impl Store {
         Ok(())
     }
 
-    /// How far the commit walk has got for this Workspace.
+    /// How far the commit walk has got for this Project.
     pub fn commit_cursor(&self, workspace_id: &str) -> Result<Option<String>> {
         Ok(self
             .conn
@@ -1946,7 +2148,7 @@ impl Store {
             != 0)
     }
 
-    /// Live Sessions in a Workspace, with the *unconsumed* files each left
+    /// Live Sessions in a Project, with the *unconsumed* files each left
     /// behind.
     ///
     /// Only live Sessions: an imported one has no write-time `existed_before`,
@@ -2185,7 +2387,7 @@ pub struct FileTouchInput<'a> {
     pub tool_call_id: &'a str,
     pub session_id: &'a str,
     pub turn_seq: i64,
-    /// NFC-normalised, workspace-relative.
+    /// NFC-normalised, project-relative.
     pub path: &'a str,
     pub sha256_after: Option<&'a str>,
     /// Bounded fingerprint of the written content (see `crate::sketch`), for the
@@ -2254,7 +2456,7 @@ fn row_to_file_touch(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileTouch> {
     })
 }
 
-/// Flip every `local` row of a Workspace to `pending`, on any connection-like
+/// Flip every `local` row of a Project to `pending`, on any connection-like
 /// handle — the shared body of [`Store::promote_to_cloud`],
 /// [`Store::promote_local_rows`] and [`Store::heal_stranded_local_rows`].
 fn promote_local_rows_in(conn: &Connection, workspace_id: &str) -> Result<i64> {
@@ -2434,4 +2636,71 @@ fn parse_time(raw: String) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(&raw)
         .map(|t| t.with_timezone(&Utc))
         .unwrap_or_else(|_| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch is valid"))
+}
+
+/// What a cumulative usage report added, against the last figure seen.
+///
+/// Per field, in the [`TokenTotals::split`] order:
+/// * reported `0` — the agent did not report this counter (a gauge-only or
+///   partial report), so nothing was added and the cursor stays put;
+/// * reported `>=` cursor — the ordinary case, the difference is the delta and
+///   the cursor moves up to the report;
+/// * reported `<` cursor — the counter restarted (a resumed conversation, a
+///   per-request reporter), so the whole report is new work and becomes the
+///   new baseline.
+///
+/// Returns `(delta, next_cursor)`.
+pub(crate) fn usage_delta(cursor: [u64; 5], reported: [u64; 5]) -> ([u64; 5], [u64; 5]) {
+    let mut delta = [0u64; 5];
+    let mut next = cursor;
+    for i in 0..5 {
+        let (seen, now) = (cursor[i], reported[i]);
+        if now == 0 {
+            continue;
+        }
+        delta[i] = if now >= seen { now - seen } else { now };
+        next[i] = now;
+    }
+    (delta, next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::usage_delta;
+
+    #[test]
+    fn the_first_report_is_entirely_new_work() {
+        let (delta, cursor) = usage_delta([0; 5], [100, 10, 5, 50, 3]);
+        assert_eq!(delta, [100, 10, 5, 50, 3]);
+        assert_eq!(cursor, [100, 10, 5, 50, 3]);
+    }
+
+    #[test]
+    fn repeating_the_same_cumulative_figure_nets_to_zero() {
+        let (delta, cursor) = usage_delta([100, 10, 5, 50, 3], [100, 10, 5, 50, 3]);
+        assert_eq!(delta, [0; 5]);
+        assert_eq!(cursor, [100, 10, 5, 50, 3]);
+    }
+
+    #[test]
+    fn a_zero_means_not_reported_and_leaves_the_cursor_alone() {
+        let (delta, cursor) = usage_delta([100, 10, 5, 50, 3], [0, 0, 0, 0, 0]);
+        assert_eq!(delta, [0; 5]);
+        assert_eq!(cursor, [100, 10, 5, 50, 3], "a gauge-only report moves nothing");
+    }
+
+    #[test]
+    fn a_report_below_the_cursor_is_a_restarted_counter() {
+        let (delta, cursor) = usage_delta([400, 50, 0, 0, 0], [120, 5, 0, 0, 0]);
+        assert_eq!(delta, [120, 5, 0, 0, 0], "the whole report is new work");
+        assert_eq!(cursor, [120, 5, 0, 0, 0], "and becomes the new baseline");
+    }
+
+    #[test]
+    fn fields_reset_independently() {
+        // Input keeps climbing, output restarted, cache not reported.
+        let (delta, cursor) = usage_delta([400, 50, 7, 9, 0], [450, 5, 0, 0, 2]);
+        assert_eq!(delta, [50, 5, 0, 0, 2]);
+        assert_eq!(cursor, [450, 5, 7, 9, 2]);
+    }
 }

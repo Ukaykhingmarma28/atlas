@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { TerminalSquare, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import type { ChatMessage } from "@/types/agent";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { isBashToolCall, bashCommandOf } from "../lib/tool-calls";
@@ -98,41 +99,44 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
       {/* Scrim — click outside the panel to dismiss. Subtle so the chat stays
           readable underneath the overlay. */}
       <div
-        className="absolute inset-0 z-20 bg-black/20 animate-fade-in"
+        className="absolute inset-0 z-20 scrim-soft animate-fade-in"
         onClick={onClose}
         aria-hidden
       />
       <div
         style={{ width: bashPanel.width }}
-        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+        className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--sidebar)] shadow-md animate-slide-in-right"
       >
         {/* Left-edge resize handle */}
         <div
           onMouseDown={onResizeStart}
-          className="absolute top-0 -left-px w-px h-full bg-border-default hover:bg-accent transition-colors cursor-col-resize z-10"
+          className="absolute top-0 -left-px w-px h-full bg-border hover:bg-primary transition-colors cursor-col-resize z-10"
           title="Drag to resize"
         />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border-default)] shrink-0">
+        <div className="flex items-center justify-between px-3 h-[32px] border-b border-[var(--border)] shrink-0">
           <div className="flex items-center gap-1.5">
-            <TerminalSquare size={11} className="text-[var(--text-tertiary)]" />
-            <span className="text-[11px] font-medium text-[var(--text-secondary)]">Bash calls</span>
-            <span className="text-[10px] text-[var(--text-tertiary)]">· {entries.length}</span>
+            <TerminalSquare size={11} className="text-[var(--muted-foreground)]" />
+            <span className="text-xs font-medium text-[var(--secondary-foreground)]">
+              Bash calls
+            </span>
+            <span className="text-2xs text-[var(--muted-foreground)]">· {entries.length}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            title="Hide bash history"
-          >
-            <ChevronRight size={12} />
-          </button>
+          <Hint label="Hide bash history">
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </Hint>
         </div>
 
         {/* Virtualized list */}
         <div ref={parentRef} className="flex-1 overflow-y-auto hide-scrollbar">
           {entries.length === 0 ? (
-            <div className="px-3 py-3 text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+            <div className="px-3 py-3 text-xs text-[var(--muted-foreground)] leading-relaxed">
               No bash commands in this chat yet.
             </div>
           ) : (
@@ -163,23 +167,23 @@ export function BashHistoryPanel({ messages, onJump, onClose }: BashHistoryPanel
                       onClick={() => onJump(e.messageIndex)}
                       className={cn(
                         "group w-full text-left px-3 py-2 transition-colors flex flex-col gap-1 cursor-pointer",
-                        "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] opacity-80 hover:opacity-100",
-                        !isLast && "border-b border-[var(--border-subtle)]",
+                        "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] opacity-80 hover:opacity-100",
+                        !isLast && "border-b border-[var(--atlas-border-subtle)]",
                       )}
                       title={e.command}
                     >
-                      <div className="text-[11px] font-mono break-all line-clamp-2 whitespace-pre-wrap">
+                      <div className="text-xs font-mono break-all line-clamp-2 whitespace-pre-wrap">
                         {e.command}
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         {e.description ? (
-                          <span className="text-[9px] text-[var(--text-tertiary)] truncate flex-1">
+                          <span className="text-3xs text-[var(--muted-foreground)] truncate flex-1">
                             {e.description}
                           </span>
                         ) : (
                           <span className="flex-1" />
                         )}
-                        <span className="text-[9px] text-[var(--text-tertiary)] shrink-0">
+                        <span className="text-3xs text-[var(--muted-foreground)] shrink-0">
                           {timeAgo(e.timestamp)}
                         </span>
                       </div>

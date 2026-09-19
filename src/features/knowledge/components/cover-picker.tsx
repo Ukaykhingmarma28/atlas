@@ -112,20 +112,10 @@ export function CoverPicker({
   return createPortal(
     <div
       ref={popRef}
-      style={{
-        position: "fixed",
-        left,
-        top,
-        width: PICKER_W,
-        background: "var(--bg-overlay)",
-        border: "1px solid var(--border-strong)",
-        borderRadius: 10,
-        boxShadow: "var(--shadow-lg)",
-        zIndex: 1000,
-        padding: 8,
-      }}
+      style={{ position: "fixed", left, top, width: PICKER_W, padding: 8 }}
+      className="bg-popover border border-border-strong rounded-lg shadow-lg z-popover"
     >
-      <div className="eyebrow" style={{ fontSize: 9.5, padding: "4px 4px 6px" }}>
+      <div className="eyebrow" style={{ padding: "4px 4px 6px" }}>
         Gradient
       </div>
       <div
@@ -152,7 +142,9 @@ export function CoverPicker({
               borderRadius: 6,
               background: g.css,
               border:
-                value === g.id ? "2px solid var(--text-primary)" : "1px solid var(--border-subtle)",
+                value === g.id
+                  ? "2px solid var(--foreground)"
+                  : "1px solid var(--atlas-border-subtle)",
               cursor: "pointer",
             }}
           />
@@ -162,14 +154,14 @@ export function CoverPicker({
       <button
         type="button"
         onClick={handleUpload}
+        className="text-sm"
         style={{
           width: "100%",
           height: 28,
-          background: "var(--bg-elevated-2)",
-          border: "1px solid var(--border-subtle)",
+          background: "var(--card)",
+          border: "1px solid var(--atlas-border-subtle)",
           borderRadius: 6,
-          color: "var(--text-secondary)",
-          fontSize: 12,
+          color: "var(--secondary-foreground)",
           cursor: "pointer",
           display: "inline-flex",
           alignItems: "center",
@@ -192,14 +184,14 @@ export function CoverPicker({
             onPick(null);
             onClose();
           }}
+          className="text-xs"
           style={{
             width: "100%",
             marginTop: 6,
             height: 24,
             background: "transparent",
             border: 0,
-            color: "var(--text-tertiary)",
-            fontSize: 11,
+            color: "var(--muted-foreground)",
             cursor: "pointer",
             display: "inline-flex",
             alignItems: "center",

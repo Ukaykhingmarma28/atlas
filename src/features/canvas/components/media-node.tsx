@@ -60,8 +60,8 @@ export const MediaNode = memo(function MediaNode({ data, selected }: NodeProps) 
       <NodeHandles selected={selected} />
       <div
         className={cn(
-          "rounded-xl overflow-hidden border shadow-2xl bg-[var(--bg-secondary)]/40",
-          selected ? "border-[var(--accent-primary)]/60" : "border-white/10 hover:border-white/20",
+          "rounded-xl overflow-hidden border shadow-2xl bg-[var(--card)]/40",
+          selected ? "border-[var(--primary)]/60" : "border-border hover:border-border-strong",
         )}
       >
         {url ? (
@@ -74,7 +74,7 @@ export const MediaNode = memo(function MediaNode({ data, selected }: NodeProps) 
             className="block w-full h-auto select-none [-webkit-user-drag:none]"
           />
         ) : (
-          <div className="flex items-center justify-center h-[160px] text-[11px] text-text-tertiary">
+          <div className="flex items-center justify-center h-[160px] text-xs text-muted-foreground">
             Loading image…
           </div>
         )}

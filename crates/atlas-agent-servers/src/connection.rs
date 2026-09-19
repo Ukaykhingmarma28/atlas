@@ -53,10 +53,12 @@ const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
 /// — won that race forever, and the tab sat on "connecting" with nothing to
 /// report. Generous: a cold `node` start on a slow disk is seconds, not a
 /// minute, so expiry means the agent is not going to answer.
-const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
-/// How long the exit path lets the stderr reader catch up before it builds
-/// the `Exited` error out of what was recorded.
-const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(100);
+pub const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Maximum time the exit path waits for the stderr reader to reach EOF before
+/// it builds the `Exited` error out of what was recorded. The reader normally
+/// completes immediately; the bound covers descendants which retain stderr.
+const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(1);
 
 /// How long a one-shot RPC on the connect/bind path may take: `session/new`,
 /// `session/load`, `session/resume`, `authenticate`, `session/list`.
@@ -81,6 +83,25 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// wait. Losing the race costs the turn's real stop reason and token counts,
 /// which is a fair price for a chat that unfreezes.
 const CANCEL_GRACE: Duration = Duration::from_secs(5);
+
+/// The clock above, held on the connection so a test can shorten it. The
+/// default is the constant; nothing in the app changes it.
+///
+/// [`INITIALIZE_TIMEOUT`] is not in here: it runs out inside
+/// [`AcpConnection::stdio`], before there is a connection to set it on, and a
+/// test reaches it with a paused clock instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionDeadlines {
+    pub cancel_grace: Duration,
+}
+
+impl Default for ConnectionDeadlines {
+    fn default() -> Self {
+        Self {
+            cancel_grace: CANCEL_GRACE,
+        }
+    }
+}
 
 /// What a session's `AcpThread` events are sent to.
 ///
@@ -123,6 +144,7 @@ pub struct AcpConnection {
     command: AgentServerCommand,
     request_elicitations: ElicitationStoreHandle,
     defaults: AcpConnectionDefaults,
+    deadlines: Mutex<ConnectionDeadlines>,
     thread_events: ThreadEventSink,
     debug_log: AcpDebugLog,
     _io_task: tokio::task::JoinHandle<()>,
@@ -210,6 +232,7 @@ impl AcpConnection {
         );
         let transport = Lines::new(outgoing, incoming);
 
+        let (stderr_drained_tx, stderr_drained_rx) = tokio::sync::oneshot::channel();
         let stderr_task = tokio::spawn({
             let debug_log = debug_log.clone();
             async move {
@@ -220,6 +243,7 @@ impl AcpConnection {
                     tracing::warn!("agent stderr: {trimmed}");
                     debug_log.record_line(AcpDebugMessageDirection::Stderr, trimmed);
                 }
+                let _ = stderr_drained_tx.send(());
             }
         });
 
@@ -245,7 +269,11 @@ impl AcpConnection {
         // the select, the select drops `status_fut`, and `status_fut` drops
         // the child, whose `Drop` kills the whole process group. Nothing else
         // needs to reach in.
-        let mut status_fut = Box::pin(wait_for_exit(child, debug_log.clone()));
+        let mut status_fut = Box::pin(wait_for_exit(
+            child,
+            debug_log.clone(),
+            stderr_drained_rx,
+        ));
         let connection_rx = Box::pin(async move {
             connection_rx
                 .await
@@ -358,6 +386,7 @@ impl AcpConnection {
             command,
             request_elicitations,
             defaults,
+            deadlines: Mutex::new(ConnectionDeadlines::default()),
             thread_events,
             debug_log,
             _io_task: io_task,
@@ -377,6 +406,23 @@ impl AcpConnection {
 
     pub fn agent_capabilities(&self) -> &acp::AgentCapabilities {
         &self.agent_capabilities
+    }
+
+    /// Shorten the cancel grace. Test-facing: the default is seconds, and a
+    /// test that waits it out proves nothing a shorter one would not. Applies
+    /// to turns started after the call.
+    pub fn set_deadlines(&self, deadlines: ConnectionDeadlines) {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = deadlines;
+    }
+
+    fn deadlines(&self) -> ConnectionDeadlines {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Runs one RPC on the connect/bind path under [`REQUEST_TIMEOUT`].
@@ -604,19 +650,24 @@ pub(crate) async fn with_request_deadline<T>(
 }
 
 /// Waits for the child and turns its exit into a `LoadError` carrying the
-/// trailing stderr. The child is returned so the caller keeps owning it — and
+/// exit stderr. The child is returned so the caller keeps owning it — and
 /// so that dropping it, whenever that happens, kills whatever it left behind.
-async fn wait_for_exit(mut child: AgentChild, debug_log: AcpDebugLog) -> (LoadError, AgentChild) {
+async fn wait_for_exit(
+    mut child: AgentChild,
+    debug_log: AcpDebugLog,
+    stderr_drained: tokio::sync::oneshot::Receiver<()>,
+) -> (LoadError, AgentChild) {
     let status = child.wait().await;
     // The stderr reader is a separate task; under load it can still be a poll
     // behind the exit status, and the last line it has not recorded yet is
-    // usually the one that says why the agent died. The pipe is closed now,
-    // so this is a bounded wait for the reader to catch up, not for the agent.
-    tokio::time::sleep(STDERR_DRAIN_GRACE).await;
+    // usually the one that says why the agent died. Wait for its EOF signal,
+    // rather than merely sleeping, while bounding the case where a descendant
+    // inherited the pipe and keeps it open.
+    let _ = tokio::time::timeout(STDERR_DRAIN_GRACE, stderr_drained).await;
     let error = LoadError::Exited {
         status: status.ok().and_then(|status| status.code()),
         stderr: debug_log
-            .trailing_stderr()
+            .exit_stderr()
             .map(Arc::from)
             .unwrap_or_else(|| Arc::from("")),
     };
@@ -1094,6 +1145,7 @@ impl AgentConnection for AcpConnection {
         let cancel_waiter =
             sessions.with_session(&session_id, |session| session.cancel_signal.waiter());
         let cancel_probe = cancel_waiter.as_ref().map(CancelWaiter::probe);
+        let cancel_grace = self.deadlines().cancel_grace;
 
         async move {
             let result = match cancel_waiter {
@@ -1102,7 +1154,7 @@ impl AgentConnection for AcpConnection {
                     futures::pin_mut!(request);
                     let deadline = async move {
                         waiter.cancelled().await;
-                        tokio::time::sleep(CANCEL_GRACE).await;
+                        tokio::time::sleep(cancel_grace).await;
                     };
                     futures::pin_mut!(deadline);
 
@@ -1122,7 +1174,7 @@ impl AgentConnection for AcpConnection {
                             // "cancelled" means.
                             tracing::warn!(
                                 session = %session_id,
-                                grace_ms = CANCEL_GRACE.as_millis(),
+                                grace_ms = cancel_grace.as_millis(),
                                 "agent did not acknowledge a cancel; resolving the turn locally"
                             );
                             return Ok(acp::PromptResponse::new(acp::StopReason::Cancelled));

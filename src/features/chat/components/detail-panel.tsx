@@ -18,6 +18,7 @@
 import { useCallback, useMemo, useRef, useEffect } from "react";
 import { ChevronRight, TerminalSquare, Copy } from "lucide-react";
 import { copyText } from "@/lib/clipboard";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 import {
   useDetailPanelStore,
@@ -87,11 +88,11 @@ export function DetailPanel({ tabId, messages }: { tabId: string; messages: Chat
   return (
     <div
       style={{ width: Math.max(DETAIL_MIN_WIDTH, Math.min(DETAIL_MAX_WIDTH, width)) }}
-      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] animate-slide-in-right"
+      className="absolute right-0 top-0 bottom-0 z-30 flex flex-col border-l border-[var(--border)] bg-[var(--sidebar)] shadow-md animate-slide-in-right"
     >
       <div
         onMouseDown={onResizeStart}
-        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border-default transition-colors hover:bg-accent"
+        className="absolute -left-px top-0 z-10 h-full w-px cursor-col-resize bg-border transition-colors hover:bg-primary"
         title="Drag to resize"
       />
       <PanelBody target={target} byId={byId} onClose={onClose} />
@@ -114,35 +115,36 @@ function PanelBody({
   return (
     <>
       <Header
-        icon={<TerminalSquare size={11} className="text-[var(--text-tertiary)]" />}
+        icon={<TerminalSquare size={11} className="text-[var(--muted-foreground)]" />}
         title={tc?.toolName ?? "Output"}
         onClose={onClose}
         action={
           output ? (
-            <button
-              type="button"
-              onClick={() => void copyText(output)}
-              title="Copy output"
-              className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-            >
-              <Copy size={11} />
-            </button>
+            <HintItem label="Copy output">
+              <button
+                type="button"
+                onClick={() => void copyText(output)}
+                className="flex h-5 w-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+              >
+                <Copy size={11} />
+              </button>
+            </HintItem>
           ) : undefined
         }
       />
       <div className="flex-1 overflow-auto hide-scrollbar">
         {tc && Object.keys(tc.arguments ?? {}).length > 0 && (
-          <div className="border-b border-[var(--border-subtle)] px-3 py-2">
-            <div className="pb-1 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
+          <div className="border-b border-[var(--atlas-border-subtle)] px-3 py-2">
+            <div className="pb-1 text-3xs uppercase tracking-wider text-[var(--muted-foreground)]">
               Arguments
             </div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-[var(--text-secondary)] select-text">
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-snug text-[var(--secondary-foreground)] select-text">
               {JSON.stringify(tc.arguments, null, 2)}
             </pre>
           </div>
         )}
         {output ? (
-          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-snug text-[var(--text-secondary)] select-text">
+          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs leading-snug text-[var(--secondary-foreground)] select-text">
             {output}
           </pre>
         ) : (
@@ -169,34 +171,37 @@ function Header({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex h-[32px] shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3">
+    <div className="flex h-[32px] shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         {icon}
-        <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
+        <span className="truncate text-xs font-medium text-[var(--secondary-foreground)]">
           {title}
         </span>
         {count !== undefined && (
-          <span className="shrink-0 text-[10px] text-[var(--text-tertiary)]">· {count}</span>
+          <span className="shrink-0 text-2xs text-[var(--muted-foreground)]">· {count}</span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
-        {action}
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close (Esc)"
-          className="rounded p-1 text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors"
-        >
-          <ChevronRight size={12} />
-        </button>
-      </div>
+      <HintGroup>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {action}
+          <HintItem label="Close (Esc)">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </HintItem>
+        </div>
+      </HintGroup>
     </div>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 py-3 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+    <div className="px-3 py-3 text-xs leading-relaxed text-[var(--muted-foreground)]">
       {children}
     </div>
   );

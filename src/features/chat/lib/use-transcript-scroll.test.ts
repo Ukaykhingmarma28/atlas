@@ -2,7 +2,7 @@
 //
 // The scroll loop must not learn anything from a HIDDEN scroller. A chat tab
 // that stays mounted while another tab is showing can be `display:none` (a
-// background workspace), and a `display:none` scroller reports 0×0 with
+// background project), and a `display:none` scroller reports 0×0 with
 // `scrollTop` 0. Fed to `sample()` that reads as "at the end, and at the very
 // top": the at-end flag latched, so a reader who had scrolled up in a
 // background streaming tab was snapped to the bottom on return, and the grow

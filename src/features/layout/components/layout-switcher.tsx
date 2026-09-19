@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "../stores/layout-store";
 import { LAYOUT_TEMPLATES, type LayoutTemplate } from "../templates";
@@ -53,23 +53,22 @@ export function LayoutSwitcher({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 scrim backdrop-blur-sm z-overlay" />
+        <Dialog.Popup
           ref={contentRef}
           tabIndex={-1}
           onKeyDown={handleKey}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            contentRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={contentRef}
           aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[var(--z-modal)] w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-[var(--shadow-overlay)] p-5 outline-none"
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-modal w-[700px] max-w-[92vw] rounded-2xl border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-xl shadow-md p-5 outline-none"
         >
-          <Dialog.Title className="text-[13px] font-semibold text-[var(--text-primary)] mb-0.5">
+          <Dialog.Title className="text-base font-semibold text-[var(--foreground)] mb-0.5">
             Choose a layout
           </Dialog.Title>
-          <p className="text-[11px] text-[var(--text-tertiary)] mb-4">
-            Rearranges panels and tabs into a ready-made workspace.
+          <p className="text-xs text-[var(--muted-foreground)] mb-4">
+            Rearranges panels and tabs into a ready-made project.
           </p>
 
           <div className="grid grid-cols-3 gap-3">
@@ -81,27 +80,25 @@ export function LayoutSwitcher({
                 className={cn(
                   "text-left rounded-xl border p-2.5 transition-colors outline-none",
                   i === selected
-                    ? "border-[var(--accent-primary)] bg-[var(--bg-active)]"
-                    : "border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
+                    ? "border-[var(--primary)] bg-[var(--atlas-element-active)]"
+                    : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--atlas-border-strong)]",
                 )}
               >
                 <LayoutThumbnail template={t} />
-                <div className="mt-2 text-[12px] font-medium text-[var(--text-primary)]">
-                  {t.name}
-                </div>
-                <div className="text-[10px] text-[var(--text-tertiary)] leading-snug line-clamp-2">
+                <div className="mt-2 text-sm font-medium text-[var(--foreground)]">{t.name}</div>
+                <div className="text-2xs text-[var(--muted-foreground)] leading-snug line-clamp-2">
                   {t.description}
                 </div>
               </button>
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-center gap-3 text-[10px] text-[var(--text-tertiary)]">
+          <div className="mt-4 flex items-center justify-center gap-3 text-2xs text-[var(--muted-foreground)]">
             <Hint k="↑ ↓ ← →" label="navigate" />
             <Hint k="⏎" label="apply" />
             <Hint k="esc" label="close" />
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -110,7 +107,7 @@ export function LayoutSwitcher({
 function Hint({ k, label }: { k: string; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-base)] border border-[var(--border-default)] font-mono text-[9px] text-[var(--text-secondary)]">
+      <kbd className="px-1.5 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] font-mono text-3xs text-[var(--secondary-foreground)]">
         {k}
       </kbd>
       {label}

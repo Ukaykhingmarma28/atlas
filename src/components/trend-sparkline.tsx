@@ -38,7 +38,7 @@ export function TrendSparkline({
       linePath: `M${pts.join(" L")}`,
       areaPath: `M${pts.join(" L")} L${width},${height} L0,${height} Z`,
       baselineY: y(points[0]),
-      color: up ? "var(--status-success)" : "var(--status-error)",
+      color: up ? "var(--atlas-status-success-foreground)" : "var(--atlas-status-error-foreground)",
     };
   }, [points, width, height]);
 

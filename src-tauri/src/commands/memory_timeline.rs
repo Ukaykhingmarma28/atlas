@@ -142,7 +142,7 @@ pub async fn memory_timeline(
             Ok(Some(s)) => s,
             _ => return Vec::new(),
         };
-        store.sessions_for_workspace(&cap_pp).unwrap_or_default()
+        store.sessions_for_project(&cap_pp).unwrap_or_default()
     })
     .await
     .unwrap_or_default();

@@ -1,18 +1,15 @@
 // The home view's shape, before the home view's data: search pill, section
 // labels, seven avatar+text rows at CommsHome's own geometry. Bars follow the
 // house PanelSkeleton (bg-elevated at half opacity, deterministic width
-// jitter). The pulse is OPACITY-ONLY, per the atlas-marker-shimmer precedent —
+// jitter). The pulse is OPACITY-ONLY, per the atlas-marker-running precedent —
 // this renders inside `atlas-vibrant-panel`, where transforms mis-composite.
 
 export function CommsSkeleton() {
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-      style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-    >
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden atlas-marker-running">
       {/* Search pill, at the sticky search box's size. */}
       <div className="px-2.5 pb-1 pt-2.5">
-        <div className="h-[30px] rounded-lg bg-[var(--bg-elevated)] opacity-50" />
+        <div className="h-[30px] rounded-lg bg-[var(--card)] opacity-50" />
       </div>
 
       <SectionBar w={72} />
@@ -31,7 +28,7 @@ export function CommsSkeleton() {
 function SectionBar({ w }: { w: number }) {
   return (
     <div className="px-3 pb-1.5 pt-3.5">
-      <div className="h-[10px] rounded bg-[var(--bg-elevated)] opacity-50" style={{ width: w }} />
+      <div className="h-[10px] rounded bg-[var(--card)] opacity-50" style={{ width: w }} />
     </div>
   );
 }
@@ -45,17 +42,14 @@ function Row({ i, glyph }: { i: number; glyph?: boolean }) {
       <div
         className={
           glyph
-            ? "h-4 w-4 rounded bg-[var(--bg-elevated)] opacity-50"
-            : "h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50"
+            ? "h-4 w-4 rounded bg-[var(--card)] opacity-50"
+            : "h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--card)] opacity-50"
         }
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50" style={{ width: w }} />
+        <div className="h-[9px] rounded bg-[var(--card)] opacity-50" style={{ width: w }} />
         {!glyph && (
-          <div
-            className="h-[7px] rounded bg-[var(--bg-elevated)] opacity-35"
-            style={{ width: w + 34 }}
-          />
+          <div className="h-[7px] rounded bg-[var(--card)] opacity-35" style={{ width: w + 34 }} />
         )}
       </div>
     </div>

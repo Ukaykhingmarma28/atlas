@@ -76,9 +76,13 @@ pub enum MentionSpec {
         abs_path: String,
         has_readme: bool,
     },
-    /// Another workspace/project in the app, referenced with `@workspace:<name>`.
+    /// Another project in the app, referenced with `@workspace:<name>`.
     /// Hands the agent that project's absolute path so it can inspect a sibling
     /// project without the user copy-pasting the path.
+    ///
+    /// The variant name is a WIRE KEY, not a concept: `rename_all` turns it
+    /// into the `"workspace"` tag the frontend sends, and `@workspace:<name>`
+    /// is already sitting in saved prompts. Atlas calls these projects.
     Workspace {
         id: String,
         display_name: String,
@@ -281,7 +285,7 @@ fn render_block(m: &MentionSpec) -> Option<String> {
         // read. The long-standing decision NOT to inline file bodies is
         // unchanged and is exactly what ResourceLink expresses natively:
         // "here is the file, open the part you need". Instruction-bearing
-        // mentions (workspace/repo) keep their block AND get a link.
+        // mentions (project/repo) keep their block AND get a link.
         MentionSpec::File { .. } | MentionSpec::Folder { .. } => None,
         MentionSpec::Workspace {
             abs_path,
@@ -294,7 +298,7 @@ fn render_block(m: &MentionSpec) -> Option<String> {
                 .map(|o| format!(" (in the “{o}” organisation)"))
                 .unwrap_or_default();
             Some(format!(
-                "## {sf}\n\nThe workspace/project **{display_name}**{org} is located at the \
+                "## {sf}\n\nThe project **{display_name}**{org} is located at the \
                  absolute path:\n`{abs_path}`\n\n\
                  Use your filesystem tools to inspect it — list its tree, read the relevant \
                  source, and apply what you find to this request. It is a SEPARATE project from \

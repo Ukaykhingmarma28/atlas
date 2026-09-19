@@ -2,8 +2,26 @@ import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import type { EditorColorTheme } from "./types";
-import { getEditorTheme, resolveEditorColors } from "./themes";
+import type { EditorThemeColors } from "./types";
+import { getActiveTheme } from "@/features/theme/apply-theme";
+import type { ResolvedTheme } from "@/features/theme/resolve-theme";
+import { THEME_KEY_REGISTRY, type ThemeKey } from "@/features/theme/theme-key-registry";
+import { themeBase } from "@/features/theme/theme-values";
+
+/**
+ * Atlas's per-appearance default for every theme key, read from the registry
+ * rather than restated here.
+ *
+ * This file used to carry thirty-seven hex fallbacks — one per key it reads —
+ * for the window before the first `applyTheme`. They were a second copy of
+ * `keys.toml`, kept in step by hand, and nothing would have failed if one had
+ * drifted: the editor would simply have painted a colour no theme asked for
+ * while it waited. The registry is the one source (decision 42), and
+ * `theme-values.ts` already falls back the same way.
+ */
+const KEY_DEFAULTS = Object.fromEntries(
+  THEME_KEY_REGISTRY.map((definition) => [definition.key, definition.rule.atlasDefault.dark]),
+) as Record<ThemeKey, string>;
 
 /**
  * The editor's type metrics. `13px` is the `--text-base` step of the Atlas
@@ -21,6 +39,9 @@ import { getEditorTheme, resolveEditorColors } from "./themes";
  */
 const EDITOR_FONT_SIZE = "13px";
 const EDITOR_LINE_HEIGHT = "20px";
+// The fold-gutter label sits a step down from the editor body — text-sm (12px)
+// is the exact step the previous literal `12px` already rendered at.
+const FOLD_GUTTER_FONT_SIZE = "var(--text-sm)";
 
 /**
  * Build the CodeMirror chrome theme from a color theme. Mirrors the structure of
@@ -28,15 +49,67 @@ const EDITOR_LINE_HEIGHT = "20px";
  * syntax values are theme-driven; the background is always the interface base
  * surface (see `resolveEditorColors`).
  */
-export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
-  const c = resolveEditorColors(theme);
+export function editorColorsFromTheme(theme: ResolvedTheme | null): EditorThemeColors {
+  const key = (name: ThemeKey) => theme?.keys[name] ?? KEY_DEFAULTS[name];
+  // `tokens.css` defines the whole base-token set on `:root`, so an unresolved
+  // base token has a real value to read rather than a literal to restate.
+  const token = (name: string) => theme?.base[name] ?? themeBase(name);
+  return {
+    bg: key("editor.background"),
+    fg: key("editor.foreground"),
+    caret: key("editor.caret"),
+    gutterBg: key("editor.gutter.background"),
+    gutterFg: key("editor.gutter.foreground"),
+    activeLineGutterFg: key("editor.active_line.gutter_foreground"),
+    activeLineBg: key("editor.active_line.background"),
+    selectionBg: key("editor.selection.background"),
+    matchBracketBg: key("editor.match_bracket.background"),
+    matchBracketOutline: key("editor.match_bracket.border"),
+    // The fold placeholder is a secondary surface with a secondary label; it
+    // does not need three theme keys of its own.
+    foldBg: token("secondary"),
+    foldBorder: token("border"),
+    foldFg: token("secondary-foreground"),
+    comment: key("syntax.comment"),
+    keyword: key("syntax.keyword"),
+    string: key("syntax.string"),
+    number: key("syntax.number"),
+    type: key("syntax.type"),
+    func: key("syntax.function"),
+    variable: key("syntax.variable"),
+    operator: key("syntax.operator"),
+    tagName: key("syntax.tag"),
+    attributeName: key("syntax.attribute"),
+    constant: key("syntax.constant"),
+    regexp: key("syntax.regexp"),
+    escape: key("syntax.escape"),
+    definition: key("syntax.definition"),
+    propertyName: key("syntax.property"),
+    // Booleans and nulls ARE constants; three keys for one role is two too
+    // many, and every built-in theme set all three to the same colour.
+    bool: key("syntax.constant"),
+    null: key("syntax.constant"),
+    addLineBg: key("diff.added.background"),
+    removeLineBg: key("diff.removed.background"),
+    contextBg: key("diff.context.background"),
+    // Side-by-side reads the same fill as inline: they are the same diff.
+    addSideBg: key("diff.added.background"),
+    removeSideBg: key("diff.removed.background"),
+    emphAddBg: key("diff.added.emphasis"),
+    emphRemoveBg: key("diff.removed.emphasis"),
+  };
+}
+
+export function buildEditorChromeTheme(theme: ResolvedTheme | null): Extension {
+  const c = editorColorsFromTheme(theme);
   return EditorView.theme(
     {
       "&": {
         backgroundColor: c.bg,
         color: c.fg,
         height: "100%",
-        fontFamily: "JetBrains Mono, SF Mono, Fira Code, monospace",
+        // The theme owns the mono stack; `tokens.css` has the fallback chain.
+        fontFamily: "var(--font-mono)",
         fontSize: EDITOR_FONT_SIZE,
         lineHeight: EDITOR_LINE_HEIGHT,
       },
@@ -73,7 +146,7 @@ export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
       },
       ".cm-foldGutter .cm-gutterElement": {
         color: c.foldFg,
-        fontSize: "12px",
+        fontSize: FOLD_GUTTER_FONT_SIZE,
       },
       ".cm-foldPlaceholder": {
         backgroundColor: c.foldBg,
@@ -92,7 +165,7 @@ export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
         padding: "0 4px",
       },
     },
-    { dark: theme.dark },
+    { dark: theme?.appearance !== "light" },
   );
 }
 
@@ -110,8 +183,8 @@ export function buildEditorChromeTheme(theme: EditorColorTheme): Extension {
  * keyword/operator variants the individual grammars reach for.
  * `build-cm-theme.test.ts` pins the set that must resolve to a style.
  */
-export function buildHighlightStyle(theme: EditorColorTheme): HighlightStyle {
-  const c = theme.colors;
+export function buildHighlightStyle(theme: ResolvedTheme | null): HighlightStyle {
+  const c = editorColorsFromTheme(theme);
   return HighlightStyle.define([
     // — Code —
     { tag: tags.comment, color: c.comment, fontStyle: "italic" },
@@ -138,7 +211,7 @@ export function buildHighlightStyle(theme: EditorColorTheme): HighlightStyle {
     // `atom` is what several grammars use where others use bool/null.
     { tag: tags.atom, color: c.constant },
     // Shebangs, pragmas, front-matter fences. Uses `attributeName` because
-    // that is what `--cm-meta` already resolves to for the diff viewer's
+    // that is what `--atlas-syntax-attribute` already resolves to for the diff viewer's
     // `.hljs-meta` (see apply-editor-theme.ts) — one concept, one color across
     // both code surfaces.
     { tag: tags.meta, color: c.attributeName },
@@ -173,7 +246,6 @@ export function buildHighlightStyle(theme: EditorColorTheme): HighlightStyle {
  * and reconfigure on a theme change without touching the document or its undo
  * history.
  */
-export function editorThemeExtensions(themeId: string | undefined | null): Extension {
-  const theme = getEditorTheme(themeId);
+export function editorThemeExtensions(theme: ResolvedTheme | null = getActiveTheme()): Extension {
   return [buildEditorChromeTheme(theme), syntaxHighlighting(buildHighlightStyle(theme))];
 }

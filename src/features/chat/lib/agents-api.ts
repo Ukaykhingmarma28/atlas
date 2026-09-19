@@ -110,7 +110,7 @@ export const agents = {
   /** Plain-text start diagnostics (install state, npm + Atlas log tails) for a support report. */
   startDiagnostics: (pluginId: string) => invoke<string>("agents_start_diagnostics", { pluginId }),
 
-  /** `additionalDirectories` are extra workspace roots (P3.2). Fixed for the
+  /** `additionalDirectories` are extra project roots (P3.2). Fixed for the
    *  session's life, so they must be passed here rather than inferred later;
    *  only reach agents that advertised the capability. */
   newSession: (agentId: AgentId, cwd: string, additionalDirectories?: string[]) =>

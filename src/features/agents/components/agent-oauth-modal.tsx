@@ -10,7 +10,7 @@
 //
 // Every visual here is lifted from `agent-login-dialog.tsx`, which is the
 // styling reference: same Radix Dialog geometry, same header band, same
-// method-row button, same `text-xs`/`text-[11px]` scale, same tokens. No new
+// method-row button, same type scale, same tokens. No new
 // visual patterns — see the design-language rule in the plan.
 //
 // One method type per branch, mirroring ACP:
@@ -27,7 +27,7 @@
 //                contract), and Atlas holds no agent tokens.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
   Check,
   ChevronRight,
@@ -42,6 +42,8 @@ import {
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { DialogOverlay } from "@/ui/dialog";
 import {
   agents,
   ensureAgent,
@@ -220,7 +222,7 @@ function AgentOAuthModal({
    *  picker, a device code, a y/n — can never be answered and simply hangs
    *  (#24). Atlas used to run it headlessly first and let the user discover the
    *  hang, then offer a terminal; now the terminal IS the flow. Zed does not
-   *  spawn these itself either: it hands them to the workspace terminal.
+   *  spawn these itself either: it hands them to the project terminal.
    *
    *  Keyed on the method's OWN advertised command, never on which agent it is:
    *  whether a login is interactive is not something ACP says, so every agent
@@ -439,32 +441,48 @@ function AgentOAuthModal({
     phase.kind === "terminal" ||
     ((phase.kind === "running" || phase.kind === "done") && phase.docked);
   // Centred on the content, not the window: with source control or the
-  // workspace switcher open, `left-1/2` sat the dock half a panel off-centre.
+  // project switcher open, `left-1/2` sat the dock half a panel off-centre.
   // `left-1/2` stays as the fallback for a window with no centre panel.
   const centerX = useCenterPanelCenterX();
   const centred = centerX != null ? { left: centerX } : undefined;
 
   return (
-    <Dialog.Root open modal={!docked} onOpenChange={(o) => !o && dismiss()}>
+    <Dialog.Root
+      open
+      modal={!docked}
+      // Base UI folds Radix's per-interaction dismiss callbacks into
+      // onOpenChange: the reason says which one fired and `cancel()` is the
+      // old `event.preventDefault()`. Both rules below used to live on the
+      // docked Popup as onInteractOutside / onEscapeKeyDown.
+      onOpenChange={(open, details) => {
+        if (open) return;
+        // A click outside is not a dismissal while docked — the dock has no
+        // overlay, so "outside" is the whole app, and clicking into the very
+        // terminal it is about would silently kill the sign-in.
+        if (docked && (details.reason === "outside-press" || details.reason === "focus-out")) {
+          details.cancel();
+          return;
+        }
+        // Escape closes it, EXCEPT while a login is being driven in the
+        // terminal, where Esc is a key the TUI itself uses; there the ✕ is
+        // the way out.
+        if (details.reason === "escape-key" && phase.kind === "terminal") {
+          details.cancel();
+          return;
+        }
+        dismiss();
+      }}
+    >
       <Dialog.Portal>
-        {!docked && (
-          <Dialog.Overlay className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
-        )}
+        {!docked && <DialogOverlay className="backdrop-blur-sm" />}
         {docked ? (
-          <Dialog.Content
+          <Dialog.Popup
             // Never take the keyboard: the terminal behind this is what the
-            // user is typing into. Nor is a click outside a dismissal — the
-            // dock has no overlay, so "outside" is the whole app, and clicking
-            // into the very terminal it is about would silently kill the
-            // sign-in. Escape closes it, EXCEPT while a login is being driven
-            // in the terminal, where Esc is a key the TUI itself uses; there
-            // the ✕ is the way out.
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onInteractOutside={(e) => e.preventDefault()}
-            onEscapeKeyDown={(e) => {
-              if (phase.kind === "terminal") e.preventDefault();
-            }}
-            className="fixed bottom-12 left-1/2 z-[var(--z-modal)] max-w-[92vw] -translate-x-1/2"
+            // user is typing into. The outside-press and Escape rules that
+            // used to sit here are now reasons handled on the Root's
+            // onOpenChange.
+            initialFocus={false}
+            className="fixed bottom-12 left-1/2 z-modal max-w-[92vw] -translate-x-1/2"
             style={centred}
           >
             <SignInDock label={label}>
@@ -475,36 +493,31 @@ function AgentOAuthModal({
                   onDismiss={dismiss}
                 />
               ) : phase.kind === "done" ? (
-                <span className="text-[12px] text-[var(--status-success)]">
-                  Signed in to {label}.
-                </span>
+                <span className="text-sm text-success">Signed in to {label}.</span>
               ) : (
                 <>
-                  <Loader2
-                    size={13}
-                    className="shrink-0 animate-spin text-[var(--text-tertiary)]"
-                  />
-                  <span className="text-[12px] text-[var(--text-secondary)]">
+                  <Loader2 size={13} className="shrink-0 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-secondary-foreground">
                     {phase.kind === "running" ? phase.label : `Starting ${label}…`}
                   </span>
                 </>
               )}
             </SignInDock>
-          </Dialog.Content>
+          </Dialog.Popup>
         ) : (
-          <Dialog.Content
+          <Dialog.Popup
             className={cn(
-              "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
-              "w-[480px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
-              "shadow-[var(--shadow-overlay)] text-text-primary",
+              "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
+              "w-[480px] max-w-[92vw] rounded-lg border border-border bg-card",
+              "shadow-md text-foreground",
             )}
             style={centred}
           >
-            <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
-              <Info className="mt-0.5 size-4 text-text-tertiary" />
+            <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
+              <Info className="mt-0.5 size-4 text-muted-foreground" />
               <div>
                 <Dialog.Title className="text-sm font-medium">Sign in to {label}</Dialog.Title>
-                <Dialog.Description className="mt-0.5 text-xs text-text-secondary">
+                <Dialog.Description className="mt-0.5 text-xs text-secondary-foreground">
                   {label} needs credentials before it can start a session.
                 </Dialog.Description>
               </div>
@@ -518,19 +531,15 @@ function AgentOAuthModal({
               )}
 
               {phase.kind === "done" && (
-                <div className="px-2 py-6 text-xs text-[var(--status-success)]">
-                  Signed in to {label}.
-                </div>
+                <div className="px-2 py-6 text-xs text-success">Signed in to {label}.</div>
               )}
 
               {phase.kind === "error" && (
                 <div className="space-y-3">
-                  <p className="px-2 text-xs text-[var(--status-error)] break-words">
-                    {phase.message}
-                  </p>
+                  <p className="px-2 text-xs text-error break-words">{phase.message}</p>
                   {phase.manualCommand && (
                     <div className="px-2 space-y-1.5">
-                      <p className="text-[11px] text-text-secondary">
+                      <p className="text-xs text-secondary-foreground">
                         You can also finish this in a terminal:
                       </p>
                       <button
@@ -539,7 +548,7 @@ function AgentOAuthModal({
                           toast.success("Command copied.");
                         }}
                         title="Copy — then run it in a terminal and try again."
-                        className="w-full rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 text-left font-mono text-[11px] text-text-secondary break-all hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                        className="w-full rounded-sm border border-border bg-background px-2.5 py-1.5 text-left font-mono text-xs text-secondary-foreground break-all hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
                       >
                         {phase.manualCommand}
                       </button>
@@ -547,7 +556,7 @@ function AgentOAuthModal({
                   )}
                   <button
                     onClick={() => setNonce((n) => n + 1)}
-                    className="ml-2 rounded-sm border border-border-default px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                    className="ml-2 rounded-sm border border-border px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
                   >
                     Try again
                   </button>
@@ -567,7 +576,7 @@ function AgentOAuthModal({
               {phase.kind === "choose" && (
                 <div className="flex flex-col gap-1.5">
                   {phase.methods.length === 0 && (
-                    <p className="px-2 py-4 text-xs text-text-secondary">
+                    <p className="px-2 py-4 text-xs text-secondary-foreground">
                       {label} asked for credentials but did not say what it needs, and offered no
                       sign-in method Atlas can run. If it reads a provider API key from the
                       environment, export that variable in your shell profile and {label} will pick
@@ -582,19 +591,19 @@ function AgentOAuthModal({
                             ? setPhase({ kind: "env", method: m, methods: phase.methods })
                             : void run(m)
                         }
-                        className="group flex items-center gap-3 rounded-sm border border-border-default bg-bg-base px-3 py-2.5 text-left transition-colors hover:bg-bg-hover"
+                        className="group flex items-center gap-3 rounded-sm border border-border bg-background px-3 py-2.5 text-left transition-colors hover:bg-element-hover"
                       >
                         <span className="flex-1 min-w-0">
-                          <span className="block text-xs font-medium text-text-primary">
+                          <span className="block text-xs font-medium text-foreground">
                             {m.name}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-[11px] text-text-secondary">
+                            <span className="mt-0.5 block text-xs text-secondary-foreground">
                               {m.description}
                             </span>
                           )}
                         </span>
-                        <ChevronRight className="size-3.5 shrink-0 text-text-tertiary group-hover:text-text-primary transition-colors" />
+                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
                       </button>
                       {/* No separate "run this in a terminal" any more: for a
                         method with a CLI, choosing it IS the terminal
@@ -604,7 +613,7 @@ function AgentOAuthModal({
                   {supportsLogout && (
                     <button
                       onClick={() => void signOut()}
-                      className="mt-0.5 flex items-center gap-2 self-start rounded-sm px-2 py-1 text-xs text-text-tertiary transition-colors hover:text-text-primary"
+                      className="mt-0.5 flex items-center gap-2 self-start rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <LogOut className="size-3.5" /> Sign out of {label}
                     </button>
@@ -612,7 +621,7 @@ function AgentOAuthModal({
                 </div>
               )}
             </div>
-          </Dialog.Content>
+          </Dialog.Popup>
         )}
       </Dialog.Portal>
     </Dialog.Root>
@@ -632,22 +641,22 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
 
   return (
     <div className="space-y-2.5 px-2 py-3">
-      <div className="flex items-center gap-2 text-xs text-text-secondary">
+      <div className="flex items-center gap-2 text-xs text-secondary-foreground">
         <Loader2 size={14} className="animate-spin" /> {label}
       </div>
       {url && (
         <button
           onClick={() => void openUrl(url)}
-          className="flex w-full items-center gap-2 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          className="flex w-full items-center gap-2 rounded-sm border border-border bg-background px-2.5 py-1.5 text-left text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
         >
-          <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">Open sign-in page</span>
         </button>
       )}
       {tail.length > 0 && (
-        <div className="max-h-28 overflow-y-auto rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5">
+        <div className="max-h-28 overflow-y-auto rounded-sm border border-border bg-background px-2.5 py-1.5">
           {tail.map((line, i) => (
-            <p key={i} className="font-mono text-[11px] text-text-tertiary break-all">
+            <p key={i} className="font-mono text-xs text-muted-foreground break-all">
               {line}
             </p>
           ))}
@@ -667,16 +676,9 @@ function RunningPhase({ label, tail, url }: { label: string; tail: string[]; url
 function SignInDock({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div
-      className="flex items-center gap-2.5 rounded-full py-2 pl-3.5 pr-3"
       // Same frosted-HUD treatment as the hint-nav dock (`hint-overlay.tsx`) —
-      // one element carries the blur, border and shadow together.
-      style={{
-        background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-        backdropFilter: "blur(22px) saturate(170%)",
-        WebkitBackdropFilter: "blur(22px) saturate(170%)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 8px 28px rgba(0,0,0,0.55)",
-      }}
+      // the `glass-hud` utility carries the border, edge and shadow together.
+      className="flex items-center gap-2.5 rounded-full py-2 pl-3.5 pr-3 glass-hud backdrop-blur-glass bg-gradient-to-b from-popover/85 to-card/90"
     >
       {/* Radix requires both on every Content; the dock states carry their own
           visible copy, so these are for screen readers only. */}
@@ -701,10 +703,8 @@ function TerminalHandoffDockBody({
 }) {
   return (
     <>
-      <TerminalIcon className="size-3.5 shrink-0 text-[var(--text-tertiary)]" />
-      <span className="shrink-0 text-[12px] text-[var(--text-primary)]">
-        Finish signing in in the terminal
-      </span>
+      <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 text-sm text-foreground">Finish signing in in the terminal</span>
 
       <button
         onClick={() => {
@@ -712,7 +712,7 @@ function TerminalHandoffDockBody({
           toast.success("Command copied.");
         }}
         title={`Copy — ${command}`}
-        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 font-mono text-[11px] leading-none text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
+        className="flex h-6.5 min-w-0 items-center gap-1.5 rounded-full border border-border bg-element-hover px-2.5 font-mono text-xs leading-none text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground"
       >
         <span className="min-w-0 max-w-[220px] truncate">{command}</span>
         <Copy className="size-3 shrink-0" />
@@ -722,18 +722,19 @@ function TerminalHandoffDockBody({
           (`chat-panel.tsx`) — same radius and weight, sized to this row. */}
       <button
         onClick={onDone}
-        className="flex h-6.5 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-[11px] font-medium leading-none text-[var(--text-primary)] transition-colors hover:bg-white/[0.14]"
+        className="flex h-6.5 shrink-0 items-center rounded-full border border-border bg-element-selected px-3 text-xs font-medium leading-none text-foreground transition-colors hover:bg-[var(--atlas-element-emphasis)]"
       >
         I've finished signing in
       </button>
 
-      <button
-        onClick={onDismiss}
-        title="Dismiss"
-        className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-white/[0.1] hover:text-[var(--text-primary)]"
-      >
-        <X className="size-3.5" />
-      </button>
+      <Hint label="Dismiss" side="top">
+        <button
+          onClick={onDismiss}
+          className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </Hint>
     </>
   );
 }
@@ -760,27 +761,27 @@ function EnvPhase({
   const blocked = useMemo(() => methodBlockedReason(method, env), [method, env]);
   return (
     <div className="flex flex-col gap-2.5 px-2 py-1">
-      <p className="text-xs text-text-secondary">
+      <p className="text-xs text-secondary-foreground">
         {agentLabel} reads these from your environment. Export them in your shell profile (
-        <code className="text-[11px] text-text-primary">~/.zshrc</code>) and they are picked up on
-        its next start.
+        <code className="text-xs text-foreground">~/.zshrc</code>) and they are picked up on its
+        next start.
       </p>
       <div className="flex flex-col gap-1">
         {env.map((v) => (
           <div
             key={v.name}
-            className="flex items-center gap-2 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5"
+            className="flex items-center gap-2 rounded-sm border border-border bg-background px-2.5 py-1.5"
           >
             <Check
               className={cn(
                 "size-3.5 shrink-0",
-                v.satisfied ? "text-[var(--status-success)]" : "text-text-tertiary opacity-40",
+                v.satisfied ? "text-success" : "text-muted-foreground opacity-40",
               )}
             />
-            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-text-primary">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
               {v.name}
             </code>
-            <span className="shrink-0 text-[11px] text-text-tertiary">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {v.satisfied
                 ? v.source === "shell-env"
                   ? "from shell profile"
@@ -795,7 +796,7 @@ function EnvPhase({
       {method.link && (
         <button
           onClick={() => void openUrl(method.link!)}
-          className="flex items-center gap-2 self-start rounded-sm border border-border-default px-2.5 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          className="flex items-center gap-2 self-start rounded-sm border border-border px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
         >
           <ExternalLink className="size-3.5" /> Get API key
         </button>
@@ -805,13 +806,13 @@ function EnvPhase({
           onClick={onContinue}
           disabled={blocked !== null}
           title={blocked ?? undefined}
-          className="h-7 rounded-sm border border-border-default px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+          className="h-7 rounded-sm border border-border px-2.5 text-xs text-foreground hover:bg-element-hover disabled:opacity-50 disabled:hover:bg-transparent"
         >
           Continue
         </button>
         <button
           onClick={onBack}
-          className="h-7 rounded-sm px-2 text-xs text-text-tertiary hover:text-text-primary"
+          className="h-7 rounded-sm px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           Other sign-in options
         </button>

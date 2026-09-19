@@ -182,7 +182,7 @@ pub async fn knowledge_export_workspace_md(
     .map_err(|e| e.to_string())?
 }
 
-/// Write a multi-file HTML site for the entire knowledge workspace. The
+/// Write a multi-file HTML site for the entire knowledge project. The
 /// target is a directory; an `index.html` and a flat `notes/<slug>.html`
 /// tree are written underneath it.
 #[tauri::command]
@@ -202,7 +202,7 @@ pub async fn knowledge_export_workspace_html(
             fs::write(&out_path, page).map_err(|e| e.to_string())?;
         }
         let index_body = if notes.is_empty() {
-            "<p>No notes in this workspace yet.</p>".to_string()
+            "<p>No notes in this project yet.</p>".to_string()
         } else {
             format!(
                 "<h1>Knowledge</h1><p>{} note{} exported.</p>",

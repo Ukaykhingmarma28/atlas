@@ -5,6 +5,7 @@ import {
   ReactNodeViewRenderer,
   type NodeViewProps,
 } from "@tiptap/react";
+import { Hint } from "@/ui/tooltip";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -99,18 +100,19 @@ function CalloutView({ node, updateAttributes }: NodeViewProps) {
   const emoji = (node.attrs.emoji as string) || "💡";
   return (
     <NodeViewWrapper className="atlas-callout">
-      <button
-        type="button"
-        contentEditable={false}
-        className="atlas-callout-emoji"
-        title="Change emoji (coming soon)"
-        onClick={() => {
-          const next = window.prompt("Emoji", emoji);
-          if (next && next.trim()) updateAttributes({ emoji: next.trim() });
-        }}
-      >
-        {emoji}
-      </button>
+      <Hint label="Change emoji">
+        <button
+          type="button"
+          contentEditable={false}
+          className="atlas-callout-emoji"
+          onClick={() => {
+            const next = window.prompt("Emoji", emoji);
+            if (next && next.trim()) updateAttributes({ emoji: next.trim() });
+          }}
+        >
+          {emoji}
+        </button>
+      </Hint>
       <NodeViewContent className="atlas-callout-body" />
     </NodeViewWrapper>
   );

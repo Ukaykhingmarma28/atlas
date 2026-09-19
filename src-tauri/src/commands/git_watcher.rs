@@ -43,8 +43,8 @@ struct ActiveWatcher {
 
 #[derive(Default)]
 pub struct GitWatcherState {
-    /// One resident watcher per open workspace (keyed by workspace id) so a
-    /// backgrounded workspace's git +/- badge keeps updating live.
+    /// One resident watcher per open project (keyed by project id) so a
+    /// backgrounded project's git +/- badge keeps updating live.
     watchers: RwLock<HashMap<String, ActiveWatcher>>,
     /// Cached `GitRefs` for the active project. Populated lazily by
     /// `get_or_compute_refs` and invalidated by the watcher callback
@@ -91,7 +91,7 @@ impl GitWatcherState {
         *self.refs_cache.write() = None;
     }
 
-    /// Is a watcher currently attached for this workspace?
+    /// Is a watcher currently attached for this project?
     ///
     /// The capture-health signal asks the registry directly rather than
     /// inferring liveness from event silence — a quiet repository and a dead
@@ -103,7 +103,7 @@ impl GitWatcherState {
 
     /// Is any watcher attached for this repository root?
     ///
-    /// The registry is keyed by the workspace UUID the frontend supplies, but
+    /// The registry is keyed by the project UUID the frontend supplies, but
     /// health callers only reliably know the project path — and looking a path
     /// up in a UUID-keyed map answered `false` forever, turning an omitted
     /// optional parameter into a permanent false "capture stopped". Each
@@ -143,7 +143,7 @@ pub async fn git_watch_start(
     // `.git` may be a directory (an ordinary repository) or a file carrying a
     // `gitdir:` pointer (a linked worktree). Both are valid repositories, and
     // refusing the file form left every worktree permanently unwatched — with
-    // the health signal telling the user to "reopen the Workspace", which
+    // the health signal telling the user to "reopen the Project", which
     // could never fix it.
     let Some(git_dirs) = resolve_git_dirs(&root) else {
         // Not a git project — leave any existing watcher alone (caller
@@ -151,7 +151,7 @@ pub async fn git_watch_start(
         return Ok(());
     };
 
-    // Idempotent: if this workspace already watches the same root (e.g. on a
+    // Idempotent: if this project already watches the same root (e.g. on a
     // switch back), don't drop + recreate the watcher.
     if let Some(existing) = state.watchers.read().get(&key) {
         if existing.root == root {
@@ -253,8 +253,8 @@ pub async fn git_watch_start(
     // Open-time backfill. This is what catches every commit made while Atlas
     // was closed — the decisive advantage over git hooks, which can only ever
     // see commits made after they were installed. It is also the *only*
-    // mechanism for a Workspace that is never activated again, since a watcher
-    // exists only for workspaces activated at least once this app session.
+    // mechanism for a Project that is never activated again, since a watcher
+    // exists only for projects activated at least once this app session.
     app.state::<super::capture::CaptureState>()
         .note_git_change(&root);
 
@@ -268,12 +268,12 @@ pub async fn git_watch_start(
     Ok(())
 }
 
-/// Stop watching one workspace.
+/// Stop watching one project.
 ///
-/// The workspace id is **required**. It used to be optional, with a missing id
+/// The project id is **required**. It used to be optional, with a missing id
 /// meaning "drop every watcher" — and the frontend called it that way whenever
 /// the current project became null, killing commit detection for every open
-/// workspace at once. Nothing observed that, because a dead watcher and a quiet
+/// project at once. Nothing observed that, because a dead watcher and a quiet
 /// repository look identical from the outside. Making the id mandatory puts that
 /// failure out of reach rather than relying on call sites to remember; genuine
 /// teardown uses [`git_watch_stop_all`], which says what it does.

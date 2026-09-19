@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ElementType } from "react";
 import { ActionKbd } from "@/features/keybindings/components/action-kbd";
 import type { ActionId } from "@/features/keybindings/lib/actions";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
   Map,
   Terminal,
@@ -10,6 +10,7 @@ import {
   Network,
   BrainCircuit,
   ScrollText,
+  Gauge,
   Code,
   Settings,
   Search,
@@ -65,6 +66,7 @@ const MODULES: ModuleEntry[] = [
     actionId: "tabs.newUntitled",
   },
   { id: "log", type: "log", label: "Log", icon: ScrollText },
+  { id: "usage", type: "usage", label: "Usage", icon: Gauge, actionId: "usage.open" },
   { id: "settings", type: "settings", label: "Settings", icon: Settings, actionId: "app.settings" },
 ];
 
@@ -171,37 +173,36 @@ export function NewTabPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 scrim z-overlay" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
+            "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[520px] max-h-[400px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
-            "shadow-[var(--shadow-overlay)]",
+            "bg-[var(--card)] border border-[var(--border)]",
+            "shadow-md",
             "flex flex-col",
           )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Open module</Dialog.Title>
-          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border-default)]">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+          <div className="flex items-center gap-2 px-4 h-[44px] shrink-0 border-b border-[var(--border)]">
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Open a module..."
-              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
           </div>
 
           <div ref={listRef} className="overflow-y-auto flex-1 py-1">
             {items.length === 0 && (
-              <div className="px-4 py-6 text-center text-xs text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 No modules match "{query}"
               </div>
             )}
@@ -217,18 +218,18 @@ export function NewTabPalette({
                   className={cn(
                     "w-full flex items-center gap-3 px-4 h-[36px] text-left text-sm transition-colors",
                     active
-                      ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-                      : "text-[var(--text-secondary)]",
+                      ? "bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+                      : "text-[var(--secondary-foreground)]",
                   )}
                 >
-                  <Icon size={14} className="shrink-0 text-[var(--text-tertiary)]" />
+                  <Icon size={14} className="shrink-0 text-[var(--muted-foreground)]" />
                   <span className="flex-1 truncate">{item.label}</span>
                   {item.actionId && <ActionKbd id={item.actionId} />}
                 </button>
               );
             })}
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

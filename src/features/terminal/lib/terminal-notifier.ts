@@ -19,17 +19,16 @@
  * focused and the user has interacted within the last 30 s — they are looking
  * at it. Failures and attention still land in the center as a record.
  *
- * Organisation-wide: every item carries the owning workspace and organisation,
+ * Organisation-wide: every item carries the owning project and organisation,
  * so the center and the bell filter by the active org and a click can route to
- * the exact pane across workspaces (`jumpToTerminal`).
+ * the exact pane across projects (`jumpToTerminal`).
  */
 import { toast } from "sonner";
 import { create } from "zustand";
 import { useNotificationsStore } from "@/features/notifications/stores/notifications-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
-import { workspaceIdForTab } from "@/features/chat/lib/tab-workspace";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { projectIdForTab } from "@/features/chat/lib/tab-project";
 import { terminalNotificationPrefs } from "@/features/settings/lib/app-settings";
 import { isWindowFocused, lastInteraction } from "@/lib/window-focus";
 import { sendNativeNotification } from "@/lib/native-notify";
@@ -52,6 +51,7 @@ import {
   type NotifierEnv,
   type TerminalCtx,
 } from "./terminal-notifier-rules";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 
 // ── Live attention state (drives the bell's pulsing dot) ───────────────────
 
@@ -78,21 +78,17 @@ export const useTerminalAttention = create<AttentionState>((set) => ({
   },
 }));
 
-/** Any terminal, any workspace, waiting on the user. */
+/** Any terminal, any project, waiting on the user. */
 export const anyTerminalNeedsAttention = (s: AttentionState) => Object.keys(s.attention).length > 0;
 
 // ── Environment ────────────────────────────────────────────────────────────
 
-/** On screen = owning workspace is active AND the tab is the active tab of its
+/** On screen = owning project is active AND the tab is the active tab of its
  *  column AND the terminal is the active one in its pane. Every pane of a
  *  split counts as visible. */
-export function isTerminalVisible(
-  tabId: string,
-  terminalId: string,
-  workspaceId?: string,
-): boolean {
-  const ws = useWorkspaceStore.getState();
-  if (workspaceId && workspaceId !== ws.activeWorkspaceId) return false;
+export function isTerminalVisible(tabId: string, terminalId: string, projectId?: string): boolean {
+  const ws = useProjectStore.getState();
+  if (projectId && projectId !== ws.activeProjectId) return false;
   const layout = useLayoutStore.getState();
   const tab = layout.tabs.find((t) => t.id === tabId);
   if (!tab) return false;
@@ -116,9 +112,9 @@ const lastBell = new Map<string, number>();
 const BELL_INTERVAL_MS = 2_000;
 
 /**
- * Build the parser's event sink for one terminal. Resolves the workspace and
+ * Build the parser's event sink for one terminal. Resolves the project and
  * organisation at EVENT time — the tab may not have been committed to a
- * workspace view when the parser was constructed.
+ * project view when the parser was constructed.
  */
 export function createTerminalEventSink(base: {
   terminalId: string;
@@ -147,23 +143,23 @@ function handleEvent(e: TerminalEvent, base: { terminalId: string; tabId: string
     useTerminalAttention.getState().actions.set(base.terminalId, e.kind);
   }
 
-  const prefs = terminalNotificationPrefs(useProjectStore.getState().settings);
+  const prefs = terminalNotificationPrefs(useSettingsStore.getState().settings);
   if (!prefs.enabled) return;
 
-  const ws = useWorkspaceStore.getState();
-  const workspaceId = workspaceIdForTab(base.tabId) ?? undefined;
-  const workspace = workspaceId ? ws.workspaces.find((w) => w.id === workspaceId) : undefined;
+  const ws = useProjectStore.getState();
+  const projectId = projectIdForTab(base.tabId) ?? undefined;
+  const project = projectId ? ws.projects.find((w) => w.id === projectId) : undefined;
   const ctx: TerminalCtx = {
     ...base,
-    workspaceId,
-    workspaceName: workspace?.name,
-    orgId: workspace?.orgId,
+    projectId,
+    projectName: project?.name,
+    orgId: project?.orgId,
   };
   const env: NotifierEnv = {
-    terminalVisible: isTerminalVisible(base.tabId, base.terminalId, workspaceId),
+    terminalVisible: isTerminalVisible(base.tabId, base.terminalId, projectId),
     windowFocused: isWindowFocused(),
     interactedWithinMs: Date.now() - lastInteraction(),
-    workspaceActive: !workspaceId || workspaceId === ws.activeWorkspaceId,
+    projectActive: !projectId || projectId === ws.activeProjectId,
   };
   const decision = decideTerminalNotification(e, ctx, env, prefs);
   if (!decision) return;
@@ -185,7 +181,7 @@ function deliver(d: Decision, ctx: TerminalCtx): void {
       body: d.body,
       tabId: ctx.tabId,
       terminalId: ctx.terminalId,
-      workspaceId: ctx.workspaceId,
+      projectId: ctx.projectId,
       orgId: ctx.orgId,
     });
     if (!isWindowFocused()) {
@@ -198,7 +194,7 @@ function deliver(d: Decision, ctx: TerminalCtx): void {
       void jumpToTerminal({
         tabId: ctx.tabId,
         terminalId: ctx.terminalId,
-        workspaceId: ctx.workspaceId,
+        projectId: ctx.projectId,
       });
     const opts = {
       id: `bg-terminal-${d.dedupeKey}`,
@@ -212,7 +208,7 @@ function deliver(d: Decision, ctx: TerminalCtx): void {
   }
   if (d.channels.native) {
     void sendNativeNotification({
-      title: `Atlas: ${ctx.workspaceName ?? "Terminal"}`,
+      title: `Atlas: ${ctx.projectName ?? "Terminal"}`,
       body: `${d.title} — ${d.body}`,
       sound: d.channels.sound ? "Ping" : undefined,
     });

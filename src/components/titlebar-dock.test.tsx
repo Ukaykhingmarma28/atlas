@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
+import { resetTooltipTiming, TOOLTIP_OPEN_DELAY, TOOLTIP_WARM_WINDOW } from "@/ui/tooltip-timing";
 import { TitlebarDock, type DockItem } from "./titlebar-dock";
 
 /**
@@ -50,7 +51,20 @@ const insets = (el: HTMLElement) => {
   return { right: Number(m[1]), left: Number(m[2]) };
 };
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+  resetTooltipTiming();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+/** Hover and wait out the shared open delay. */
+function hover(el: Element) {
+  fireEvent.mouseEnter(el);
+  act(() => vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY));
+}
 
 describe("TitlebarDock", () => {
   it("renders one button per item, named for the tooltip", () => {
@@ -75,7 +89,7 @@ describe("TitlebarDock", () => {
     const { container } = render(<TitlebarDock items={items} />);
     const { strip, buttons } = layout(container);
 
-    fireEvent.mouseEnter(buttons[1]);
+    hover(buttons[1]);
     // 40 of 180 to the left, 80 of 180 to the right.
     expect(insets(strip)).toEqual({ left: (40 / 180) * 100, right: (80 / 180) * 100 });
     expect(strip.style.opacity).toBe("1");
@@ -84,7 +98,7 @@ describe("TitlebarDock", () => {
   it("shows the first label with nothing clipped on its left", () => {
     const { container } = render(<TitlebarDock items={items} />);
     const { strip, buttons } = layout(container);
-    fireEvent.mouseEnter(buttons[0]);
+    hover(buttons[0]);
     expect(insets(strip)).toEqual({ left: 0, right: ((60 + 80) / 180) * 100 });
   });
 
@@ -92,7 +106,7 @@ describe("TitlebarDock", () => {
     const { container } = render(<TitlebarDock items={items} />);
     const { strip, buttons } = layout(container);
 
-    fireEvent.mouseEnter(buttons[1]);
+    hover(buttons[1]);
     // strip left 100 + 40 before + half of 60 = 170; icon centre 200.
     expect(translateX(strip)).toBe(30);
   });
@@ -102,7 +116,7 @@ describe("TitlebarDock", () => {
     // Last icon near the edge: its 80px label would otherwise overhang.
     const { strip, buttons } = layout(container, [120, 200, window.innerWidth - 10]);
 
-    fireEvent.mouseEnter(buttons[2]);
+    hover(buttons[2]);
     const centre = window.innerWidth - 10;
     const unclamped = centre - (100 + 40 + 60 + 40);
     const overflow = centre + 40 - (window.innerWidth - 8);
@@ -115,12 +129,12 @@ describe("TitlebarDock", () => {
     const { container } = render(<TitlebarDock items={items} />);
     const { strip, buttons } = layout(container);
 
-    fireEvent.mouseEnter(buttons[0]);
+    hover(buttons[0]);
     // Nothing to travel from yet — a transform transition here would fly the
     // tooltip in from the origin.
     expect(strip.style.transition).not.toContain("transform");
 
-    fireEvent.mouseEnter(buttons[1]);
+    hover(buttons[1]);
     expect(strip.style.transition).toContain("transform");
     expect(strip.style.transition).toContain("clip-path");
   });
@@ -128,7 +142,7 @@ describe("TitlebarDock", () => {
   it("fades out without moving, so the next hover travels from here", () => {
     const { container } = render(<TitlebarDock items={items} />);
     const { strip, buttons } = layout(container);
-    fireEvent.mouseEnter(buttons[1]);
+    hover(buttons[1]);
     const held = strip.style.transform;
 
     fireEvent.mouseLeave(container.firstElementChild as HTMLElement);
@@ -141,7 +155,7 @@ describe("TitlebarDock", () => {
     // to show no tooltip than one stacked at the origin.
     const { container } = render(<TitlebarDock items={items} />);
     const strip = container.querySelector("[style*='clip-path']") as HTMLElement;
-    fireEvent.mouseEnter(screen.getAllByRole("button")[1]);
+    hover(screen.getAllByRole("button")[1]);
     expect(strip.style.opacity).toBe("0");
   });
 
@@ -163,7 +177,7 @@ describe("TitlebarDock", () => {
     // whoever rendered it (Radix attaches its trigger to the real element).
     const wrapper = screen.getByLabelText("Account").parentElement as HTMLElement;
     measure(wrapper, { left: 300, width: 20 });
-    fireEvent.mouseEnter(wrapper);
+    hover(wrapper);
 
     expect(insets(strip)).toEqual({ left: ((40 + 60 + 80) / 230) * 100, right: 0 });
     expect(strip.style.opacity).toBe("1");
@@ -176,5 +190,86 @@ describe("TitlebarDock", () => {
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("waits for the open delay before the first label", () => {
+    const { container } = render(<TitlebarDock items={items} />);
+    const { strip, buttons } = layout(container);
+    fireEvent.mouseEnter(buttons[0]);
+    expect(strip.style.opacity).toBe("0");
+    act(() => vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY - 1));
+    expect(strip.style.opacity).toBe("0");
+    act(() => vi.advanceTimersByTime(1));
+    expect(strip.style.opacity).toBe("1");
+  });
+
+  it("does not open if the pointer leaves during the delay", () => {
+    const { container } = render(<TitlebarDock items={items} />);
+    const { strip, buttons } = layout(container);
+    fireEvent.mouseEnter(buttons[0]);
+    fireEvent.mouseLeave(container.firstElementChild as HTMLElement);
+    act(() => vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY * 2));
+    expect(strip.style.opacity).toBe("0");
+  });
+
+  it("opens instantly right after a tooltip closed, then waits again once cold", () => {
+    const { container } = render(<TitlebarDock items={items} />);
+    const { strip, buttons } = layout(container);
+    const dock = container.firstElementChild as HTMLElement;
+    hover(buttons[0]);
+    fireEvent.mouseLeave(dock);
+
+    fireEvent.mouseEnter(buttons[1]);
+    expect(strip.style.opacity).toBe("1");
+    fireEvent.mouseLeave(dock);
+
+    act(() => vi.advanceTimersByTime(TOOLTIP_WARM_WINDOW + 1));
+    fireEvent.mouseEnter(buttons[2]);
+    expect(strip.style.opacity).toBe("0");
+  });
+
+  it("slides without overshoot", () => {
+    const { container } = render(<TitlebarDock items={items} />);
+    const { strip, buttons } = layout(container);
+    hover(buttons[0]);
+    fireEvent.mouseEnter(buttons[1]);
+    expect(strip.style.transition).toContain("cubic-bezier(0.23, 1, 0.32, 1)");
+    expect(strip.style.transition).not.toMatch(/1\.2, 0\.36/);
+  });
+});
+
+describe("the dock's sliding label strip", () => {
+  /**
+   * The regression this guards is a whole-app one, and it has no other symptom
+   * a test can see.
+   *
+   * The strip is one `w-max` row holding every label, mounted all the time and
+   * clipped to the active label by `clip-path` — a paint effect that leaves the
+   * layout box at its full width. Anchored `absolute` to a pill at the right end
+   * of the title bar, that box ran a few hundred px past the window, and because
+   * `#root` is `overflow: hidden` the browser counted it as scrollable overflow.
+   * One `focus()` or `scrollIntoView()` then slid the entire app shell left —
+   * Settings' nav clipped, its first column of theme cards off-screen — with no
+   * scrollbar to put it back.
+   *
+   * `fixed` is the fix: a fixed box is laid out against the viewport and never
+   * joins an ancestor's scrollable overflow.
+   */
+  it("is fixed to the viewport, so it never becomes scrollable overflow", () => {
+    const { container } = render(
+      <TitlebarDock
+        items={items}
+        trailing={{ label: "Account and settings", node: <button>a</button> }}
+      />,
+    );
+    const anchor = container.querySelector(".pointer-events-none") as HTMLElement;
+
+    expect(anchor).not.toBeNull();
+    expect(anchor.className).toContain("fixed");
+    expect(anchor.className).not.toContain("absolute");
+    // `top: 100%` cannot reach the pill from a viewport-anchored box; the
+    // measured value takes its place.
+    expect(anchor.className).not.toContain("top-full");
+    expect(anchor.style.top).toBe("0px");
   });
 });

@@ -12,7 +12,7 @@ export interface GitFileStatus {
   staged: boolean;
 }
 
-interface GitLogEntry {
+export interface GitLogEntry {
   hash: string;
   short_hash: string;
   message: string;
@@ -20,7 +20,7 @@ interface GitLogEntry {
   date: string;
 }
 
-interface GitBranch {
+export interface GitBranch {
   name: string;
   is_current: boolean;
 }
@@ -79,7 +79,7 @@ export interface InProgress {
 /** Wire shape of the Rust `git_snapshot` command — everything the panel
  *  headers need in one IPC call (~4 concurrent spawns Rust-side, coalesced
  *  across concurrent callers). */
-interface GitSnapshotWire {
+export interface GitSnapshotWire {
   isRepo: boolean;
   branch: string;
   detached: boolean;
@@ -110,7 +110,7 @@ export interface ActiveGitOp {
   error: GitErrorPayload | null;
 }
 
-type GitOpEvent = {
+export type GitOpEvent = {
   opId: string;
   repo: string;
   kind: string;
@@ -248,16 +248,16 @@ function ensureGitStatusFreshListener(): void {
     });
   });
 
-  // Workspace edits Atlas didn't originate (terminal git, external editor).
+  // Project edits Atlas didn't originate (terminal git, external editor).
   // Editor saves inside Atlas refresh directly (see editor-panel) and don't
   // depend on this. Short debounce just coalesces fs-event bursts.
-  let workspaceDebounce: ReturnType<typeof setTimeout> | null = null;
+  let projectDebounce: ReturnType<typeof setTimeout> | null = null;
   void listen("atlas:explorer:changed", () => {
     const current = useGitStore.getState().repoPath;
     if (!current) return;
-    if (workspaceDebounce) clearTimeout(workspaceDebounce);
-    workspaceDebounce = setTimeout(() => {
-      workspaceDebounce = null;
+    if (projectDebounce) clearTimeout(projectDebounce);
+    projectDebounce = setTimeout(() => {
+      projectDebounce = null;
       const repoPath = useGitStore.getState().repoPath;
       if (!repoPath) return;
       const actions = useGitStore.getState().actions;

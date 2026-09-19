@@ -147,24 +147,12 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
   return createPortal(
     <div
       ref={popRef}
-      style={{
-        position: "fixed",
-        left,
-        top,
-        width: PICKER_W,
-        maxHeight: 360,
-        overflowY: "auto",
-        background: "var(--bg-overlay)",
-        border: "1px solid var(--border-strong)",
-        borderRadius: 10,
-        boxShadow: "var(--shadow-lg)",
-        zIndex: 1000,
-        padding: 8,
-      }}
+      style={{ position: "fixed", left, top, width: PICKER_W, maxHeight: 360, padding: 8 }}
+      className="overflow-y-auto bg-popover border border-border-strong rounded-lg shadow-lg z-popover"
     >
       {GROUPS.map((g) => (
         <div key={g.label} style={{ marginBottom: 6 }}>
-          <div className="eyebrow" style={{ fontSize: 9.5, padding: "4px 4px 2px" }}>
+          <div className="eyebrow" style={{ padding: "4px 4px 2px" }}>
             {g.label}
           </div>
           <div
@@ -183,13 +171,13 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
                   onClose();
                 }}
                 title={e}
+                className="text-xl"
                 style={{
                   width: 30,
                   height: 30,
                   borderRadius: 5,
-                  background: value === e ? "var(--bg-active)" : "transparent",
+                  background: value === e ? "var(--atlas-element-active)" : "transparent",
                   border: 0,
-                  fontSize: 18,
                   lineHeight: 1,
                   cursor: "pointer",
                   display: "inline-flex",
@@ -197,7 +185,7 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
                   justifyContent: "center",
                 }}
                 onMouseEnter={(ev) => {
-                  if (value !== e) ev.currentTarget.style.background = "var(--bg-hover)";
+                  if (value !== e) ev.currentTarget.style.background = "var(--atlas-element-hover)";
                 }}
                 onMouseLeave={(ev) => {
                   if (value !== e) ev.currentTarget.style.background = "transparent";
@@ -214,7 +202,7 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
         style={{
           marginTop: 6,
           paddingTop: 8,
-          borderTop: "1px solid var(--border-subtle)",
+          borderTop: "1px solid var(--atlas-border-subtle)",
           display: "flex",
           gap: 6,
           alignItems: "center",
@@ -232,15 +220,15 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
             }
           }}
           placeholder="Custom emoji or text…"
+          className="text-sm"
           style={{
             flex: 1,
             height: 26,
             padding: "0 8px",
-            background: "var(--bg-input)",
-            border: "1px solid var(--border-default)",
+            background: "var(--atlas-panel-input-background)",
+            border: "1px solid var(--border)",
             borderRadius: 5,
-            fontSize: 12,
-            color: "var(--text-primary)",
+            color: "var(--foreground)",
             outline: "none",
           }}
         />
@@ -251,9 +239,9 @@ export function IconPicker({ value, anchorRect, onPick, onClose }: IconPickerPro
               onPick(null);
               onClose();
             }}
+            className="text-xs"
             style={{
-              fontSize: 11,
-              color: "var(--text-tertiary)",
+              color: "var(--muted-foreground)",
               background: "transparent",
               border: 0,
               cursor: "pointer",

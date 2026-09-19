@@ -109,14 +109,14 @@ export function CommsHome() {
     <div className="flex min-w-0 flex-1 flex-col animate-fade-in">
       <div className="shrink-0 px-2 pt-2 pb-1">
         {/* Radius matches the surface card it sits in (CommsSurface's
-            `rounded-[10px]`) — a tighter corner read as a different family. */}
-        <div className="flex items-center gap-1.5 rounded-[10px] border border-border-default bg-bg-input px-2.5 py-[5px] focus-within:border-border-focus">
-          <Search size={12} className="shrink-0 text-text-ghost" />
+            `rounded-xl`) — a tighter corner read as a different family. */}
+        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-panel-input px-2.5 py-[5px] focus-within:border-border-strong">
+          <Search size={12} className="shrink-0 text-disabled" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Jump to a channel or person…"
-            className="min-w-0 flex-1 bg-transparent text-[11.5px] text-text-primary outline-none placeholder:text-text-ghost"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-disabled"
           />
         </div>
       </div>
@@ -139,17 +139,11 @@ export function CommsHome() {
         {rosterPending &&
           [0, 1, 2].map((i) => (
             <div key={`sk${i}`} className="flex items-center gap-2.5 py-[5px] pl-3.5 pr-2.5">
-              <div
-                className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50"
-                style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-              />
+              <div className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--card)] opacity-50 atlas-marker-running" />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div
-                  className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50"
-                  style={{
-                    width: 88 + ((i * 37) % 60),
-                    animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-                  }}
+                  className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
+                  style={{ width: 88 + ((i * 37) % 60) }}
                 />
               </div>
             </div>
@@ -200,7 +194,7 @@ export function CommsHome() {
             <button
               type="button"
               onClick={() => setShowDiscover((v) => !v)}
-              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary transition-colors hover:text-text-primary cursor-pointer"
+              className="mt-2 flex w-full items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-secondary-foreground transition-colors hover:text-foreground cursor-pointer"
             >
               <ChevronRight
                 size={10}
@@ -213,18 +207,18 @@ export function CommsHome() {
               discover.map((c) => (
                 <div
                   key={c.id}
-                  className="group/disc flex items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-text-tertiary"
+                  className="group/disc flex items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-muted-foreground"
                 >
                   <RowIcon>
                     <Hash size={13} className="opacity-60" />
                   </RowIcon>
-                  <span className="min-w-0 flex-1 truncate text-[12px]">{c.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
                   {/* Only public channels are self-serve joinable; a private one
                       answers 404, so no button is offered for it at all. */}
                   <button
                     type="button"
                     onClick={() => actions.joinChannel(c.id)}
-                    className="shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium text-text-secondary opacity-0 transition-opacity hover:bg-bg-hover hover:text-text-primary group-hover/disc:opacity-100 cursor-pointer"
+                    className="shrink-0 rounded px-1.5 py-px text-xs font-medium text-secondary-foreground opacity-0 transition-opacity hover:bg-element-hover hover:text-foreground group-hover/disc:opacity-100 cursor-pointer"
                   >
                     Join
                   </button>
@@ -255,7 +249,7 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+    <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3.5 text-2xs font-semibold uppercase tracking-[0.06em] text-secondary-foreground">
       <Icon size={12} className="shrink-0" />
       {label}
       {action && <span className="ml-auto flex items-center">{action}</span>}
@@ -284,7 +278,7 @@ function RowDivider() {
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <div className="py-1 pl-[50px] pr-2.5 text-[11px] text-text-tertiary">{text}</div>;
+  return <div className="py-1 pl-[50px] pr-2.5 text-xs text-muted-foreground">{text}</div>;
 }
 
 function ChannelRow({
@@ -302,19 +296,19 @@ function ChannelRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover cursor-pointer"
     >
       <RowIcon>
         {conv.visibility === "private" ? (
-          <Lock size={12} className="text-text-ghost" />
+          <Lock size={12} className="text-disabled" />
         ) : (
-          <Hash size={13} className="text-text-ghost" />
+          <Hash size={13} className="text-disabled" />
         )}
       </RowIcon>
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-[12px]",
-          unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
+          "min-w-0 flex-1 truncate text-sm",
+          unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
         )}
       >
         {conv.name}
@@ -355,11 +349,11 @@ function DirectRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover cursor-pointer"
     >
       <RowIcon>
         {isGroup ? (
-          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-bg-elevated text-text-tertiary">
+          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-card text-muted-foreground">
             <Users size={13} />
           </span>
         ) : (
@@ -373,13 +367,13 @@ function DirectRow({
       <span className="min-w-0 flex-1">
         <span
           className={cn(
-            "block truncate text-[12px] leading-[1.35]",
-            unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
+            "block truncate text-sm leading-[1.35]",
+            unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
           )}
         >
           {title}
         </span>
-        <span className="block truncate text-[10.5px] leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
           {isGroup ? `${others.length + 1} members` : (counterpart?.email ?? "")}
         </span>
       </span>
@@ -405,20 +399,20 @@ function ContactRow({
       type="button"
       disabled={starting}
       onClick={onStart}
-      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-bg-hover disabled:opacity-60 cursor-pointer"
+      className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover disabled:opacity-60 cursor-pointer"
     >
       <RowIcon>
         <CommsAvatar member={member} size={26} online={online} />
       </RowIcon>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] leading-[1.35] text-text-secondary">
+        <span className="block truncate text-sm leading-[1.35] text-secondary-foreground">
           {member.name}
         </span>
-        <span className="block truncate text-[10.5px] leading-[1.35] text-text-tertiary">
+        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
           {member.email}
         </span>
       </span>
-      {starting && <Loader2 size={12} className="shrink-0 animate-spin text-text-tertiary" />}
+      {starting && <Loader2 size={12} className="shrink-0 animate-spin text-muted-foreground" />}
     </button>
   );
 }
@@ -438,38 +432,36 @@ function ContactRow({
  */
 function Badges({ unread, mentions }: { unread: number; mentions: number }) {
   if (mentions > 0) {
-    return (
-      <KeycapBadge ink="var(--comms-mention-text)" label={mentions > 9 ? "9+" : String(mentions)} />
-    );
+    return <KeycapBadge ink="var(--foreground)" label={mentions > 9 ? "9+" : String(mentions)} />;
   }
   if (unread > 0) {
-    return (
-      <KeycapBadge ink="rgba(255,255,255,0.95)" label={unread > 99 ? "99+" : String(unread)} />
-    );
+    return <KeycapBadge ink="var(--foreground)" label={unread > 99 ? "99+" : String(unread)} />;
   }
   return null;
 }
 
 /**
- * The hint-overlay keycap, verbatim apart from its metrics.
+ * The keycap, on the same tokens as the `Kbd` primitive.
  *
- * `backdrop-filter` is deliberately NOT carried over: the hint badges float
- * above arbitrary app content and need to sample it, whereas these sit on an
- * opaque panel row where a blur has nothing to gather — it would add a
+ * It used to be the hint-overlay keycap verbatim: a hand-mixed dark gradient,
+ * a white hairline and a three-layer inset shadow. `src/ui/kbd.tsx` has since
+ * moved that look onto `border-border` + `bg-card` + the elevation
+ * scale, so copying the old recipe no longer matched the thing it was copying.
+ * It also could not survive a light theme: the cap was hardcoded dark while
+ * the ink follows `--foreground`, which is dark ON a light theme — dark on
+ * dark. Both sides are theme-derived now, so the pair stays legible either way.
+ *
+ * `backdrop-filter` is deliberately still NOT carried over: the hint badges
+ * float above arbitrary app content and need to sample it, whereas these sit
+ * on an opaque panel row where a blur has nothing to gather — it would add a
  * compositing layer per badge inside a `mix-blend-mode` panel that has already
  * proven touchy about exactly that.
  */
 function KeycapBadge({ ink, label }: { ink: string; label: string }) {
   return (
     <span
-      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 font-sans text-[10px] font-semibold leading-[16px] tabular-nums tracking-wide"
-      style={{
-        color: ink,
-        background: "linear-gradient(180deg, rgba(18,18,21,0.86) 0%, rgba(8,8,10,0.9) 100%)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow:
-          "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.6)",
-      }}
+      className="inline-flex min-w-[18px] shrink-0 items-center justify-center rounded-full border border-border bg-card px-1.5 font-sans text-2xs font-semibold leading-[16px] tabular-nums tracking-wide shadow-sm"
+      style={{ color: ink }}
     >
       {label}
     </span>

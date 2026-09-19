@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Image as ImageIcon, Film, Music, FileCode, FileX, RotateCw } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import {
   fileIndex,
   ensureFileIndex,
@@ -15,6 +15,7 @@ import {
 } from "../lib/file-picker-api";
 import { openFile } from "@/lib/open-file";
 import { classifyFile, type FileKind } from "@/lib/file-types";
+import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 
 const DEBOUNCE_MS = 30;
 const RESULT_LIMIT = 200;
@@ -33,7 +34,7 @@ interface FilePickerProps {
  * palette stays snappy on huge repos.
  */
 export function FilePicker({ open, onOpenChange }: FilePickerProps) {
-  const project = useProjectStore.use.currentProject();
+  const project = useAppStore.use.currentProject();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileMatch[]>([]);
   const [selected, setSelected] = useState(0);
@@ -174,11 +175,11 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-sm" />
+        <Dialog.Popup
           className={cn(
-            "fixed left-1/2 top-[18%] z-50 -translate-x-1/2",
-            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-2xl",
+            "fixed left-1/2 top-[18%] z-modal -translate-x-1/2",
+            "w-[640px] max-w-[92vw] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-2xl",
             "flex flex-col overflow-hidden",
           )}
         >
@@ -189,11 +190,11 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={project ? "Search files by name or path…" : "Open a project first"}
             disabled={!project}
-            className="px-4 h-11 bg-transparent border-b border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+            className="px-4 h-11 bg-transparent border-b border-[var(--border)] text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
           />
           <div ref={scrollRef} className="max-h-[420px] overflow-y-auto hide-scrollbar">
             {showEmpty ? (
-              <div className="px-4 py-3 text-[11px] text-[var(--text-tertiary)]">
+              <div className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
                 {!project
                   ? "Open a project to enable Cmd+P."
                   : indexing
@@ -231,19 +232,19 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                       className={cn(
                         "flex items-center gap-2 px-3 text-left cursor-pointer transition-colors",
                         active
-                          ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                          ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                          : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
                       )}
                     >
-                      <KindIcon kind={classifyFile(m.path)} />
-                      <span className="truncate text-[12px] font-mono">{m.rel}</span>
+                      <FileIcon path={m.path} size={12} fallback={kindIcon(classifyFile(m.path))} />
+                      <span className="truncate text-sm font-mono">{m.rel}</span>
                     </button>
                   );
                 })}
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] font-mono">
+          <div className="flex items-center justify-between px-3 h-7 border-t border-[var(--border)] text-2xs text-[var(--muted-foreground)] font-mono">
             <div className="flex items-center gap-2">
               <button
                 onClick={handleReindex}
@@ -251,7 +252,7 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
                 title="Rebuild the file index"
                 className={cn(
                   "flex items-center gap-1 rounded px-1 -ml-1 transition-colors",
-                  "hover:text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-default cursor-pointer outline-none",
+                  "hover:text-[var(--secondary-foreground)] disabled:opacity-40 disabled:cursor-default cursor-pointer outline-none",
                 )}
               >
                 <RotateCw size={10} className={cn(reindexing && "animate-spin")} />
@@ -263,17 +264,18 @@ export function FilePicker({ open, onOpenChange }: FilePickerProps) {
             </div>
             <span>↑↓ navigate · ↵ open · esc close</span>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
 }
 
-function KindIcon({ kind }: { kind: FileKind }) {
-  const cls = "size-3 shrink-0 text-[var(--text-tertiary)]";
-  if (kind === "image" || kind === "svg") return <ImageIcon className={cls} />;
-  if (kind === "video") return <Film className={cls} />;
-  if (kind === "audio") return <Music className={cls} />;
-  if (kind === "text") return <FileCode className={cls} />;
-  return <FileX className={cls} />;
+/** The lucide icon this row drew before icon themes existed, and still draws
+ *  under "Minimal" or while a resolve is in flight. */
+function kindIcon(kind: FileKind): FallbackIcon {
+  if (kind === "image" || kind === "svg") return ImageIcon;
+  if (kind === "video") return Film;
+  if (kind === "audio") return Music;
+  if (kind === "text") return FileCode;
+  return FileX;
 }

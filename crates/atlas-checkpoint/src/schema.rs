@@ -16,26 +16,19 @@ use rusqlite::Connection;
 use crate::error::{Error, Result};
 
 /// Bump when adding a migration, and add the matching arm in [`migrate`].
-// NOTE: the next migration must use version 10 — 9 existed briefly in
-// unreleased 0.3.0-x dev builds (one additive nullable column) and was
-// withdrawn; `migrate` folds such stores back to 8. Reusing 9 would make a
-// real migration indistinguishable from the withdrawn one.
-pub const SCHEMA_VERSION: i64 = 9;
+///
+/// A note on 9: it existed twice. Unreleased 0.3.0-x dev builds stamped 9 for
+/// one additive nullable column (`import_progress.resume_state`, an
+/// import-resume cache that moved to a sidecar file), and that number was
+/// withdrawn; the real V9 (`file_touch.sketch_after`) then reused it. A store
+/// stamped 9 may therefore be either shape, which is why `migrate` re-runs V9
+/// tolerantly on a 9 rather than trusting the stamp — see the comment there.
+pub const SCHEMA_VERSION: i64 = 10;
 
 pub fn migrate(conn: &Connection) -> Result<()> {
     // Fast path, outside any transaction: the overwhelmingly common case is a
     // database already at the current version.
     let found: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    // Withdrawn dev-only schema 9 (unreleased 0.3.0-x: an additive nullable
-    // `import_progress.resume_state` column for an import-resume CACHE). It
-    // locked every older build out of the store — which read as total data
-    // loss in the Timeline — for something that never deserved a schema gate;
-    // the cache moved to a sidecar file. Fold such stores back to 8; the
-    // orphan column is harmless and stays.
-    if found == 9 {
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        return Ok(());
-    }
     if found > SCHEMA_VERSION {
         return Err(Error::SchemaTooNew {
             found,
@@ -89,9 +82,19 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             // repair statements that are all safe to re-run.
             apply_tolerant(conn, V8)?;
         }
-        if found < 9 {
-            // One ALTER TABLE; tolerant for the same reason as V7/V8.
+        if found <= 9 {
+            // One ALTER TABLE; tolerant for the same reason as V7/V8 — and
+            // `<=` rather than `<` on purpose. A store stamped 9 may be the
+            // withdrawn dev-only 9 (an orphan `import_progress.resume_state`
+            // column and NO `file_touch.sketch_after`), which an earlier build
+            // re-stamped as the real 9 without ever running this migration.
+            // Re-running it is what repairs those stores: the tolerant apply
+            // skips the column where it already exists and adds it where it
+            // does not. The orphan column is harmless and stays.
             apply_tolerant(conn, V9)?;
+        }
+        if found < 10 {
+            conn.execute_batch(V10)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(())
@@ -216,6 +219,52 @@ const V9: &str = r#"
 ALTER TABLE file_touch ADD COLUMN sketch_after TEXT;
 "#;
 
+const V10: &str = r#"
+-- The per-turn usage ledger.
+--
+-- `agent_session.token_totals` is ONE cumulative figure per Session, so a
+-- Session that ran for a week could only ever be dated to the day it was last
+-- active. This table records what each turn ADDED: the difference between two
+-- consecutive cumulative reports, attributed to the turn that was open when
+-- the report arrived. One row per (Session, turn), summed in place, because a
+-- cumulative report lands several times within one turn (after every model
+-- call) and each of those is a further increment to the same turn.
+--
+-- `usage_cursor` is the last cumulative figure the ledger has seen, per
+-- Session. It is kept apart from `token_totals` on purpose: the importer
+-- overwrites `token_totals` wholesale (`replace_usage_totals`) with what it
+-- parsed out of the transcript, and a live delta computed against THAT figure
+-- would be garbage. The cursor only ever moves when a live report arrives.
+--
+-- Reasoning tokens are carried but never priced or added to a total -- every
+-- provider that reports them already counts them inside output_tokens.
+CREATE TABLE IF NOT EXISTS usage_delta (
+    session_id            TEXT NOT NULL REFERENCES agent_session(id) ON DELETE CASCADE,
+    turn_seq              INTEGER NOT NULL,
+    model                 TEXT,
+    recorded_at           TEXT NOT NULL,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, turn_seq)
+);
+
+CREATE TABLE IF NOT EXISTS usage_cursor (
+    session_id            TEXT PRIMARY KEY REFERENCES agent_session(id) ON DELETE CASCADE,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens      INTEGER NOT NULL DEFAULT 0
+);
+
+-- The dashboard's "ledger since" figure, and any date-ranged read.
+CREATE INDEX IF NOT EXISTS idx_usage_delta_recorded
+    ON usage_delta (recorded_at);
+"#;
+
 const V1: &str = r#"
 -- One row per Session. Named `agent_session`, never `session`: the server's
 -- `session` table belongs to Better Auth, and the local schema mirrors the
@@ -292,7 +341,7 @@ CREATE TABLE IF NOT EXISTS counter (
 );
 INSERT OR IGNORE INTO counter (name, value) VALUES ('seq', 0);
 
--- The outbox drain: pending rows in sequence order, per workspace.
+-- The outbox drain: pending rows in sequence order, per project.
 CREATE INDEX IF NOT EXISTS idx_session_outbox
     ON agent_session (workspace_id, sync_state);
 CREATE INDEX IF NOT EXISTS idx_message_outbox
@@ -313,7 +362,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_message_native_id
     ON agent_message (session_id, native_message_id)
     WHERE native_message_id IS NOT NULL;
 
--- Timeline ordering across a Workspace.
+-- Timeline ordering across a Project.
 CREATE INDEX IF NOT EXISTS idx_session_started
     ON agent_session (workspace_id, started_at);
 "#;
@@ -375,13 +424,13 @@ CREATE TABLE IF NOT EXISTS file_touch (
     session_id     TEXT NOT NULL REFERENCES agent_session(id) ON DELETE CASCADE,
     turn_seq       INTEGER NOT NULL,
     seq            INTEGER NOT NULL,
-    -- NFC-normalised, workspace-relative. macOS hands back NFD while git stores
+    -- NFC-normalised, project-relative. macOS hands back NFD while git stores
     -- NFC, and a byte comparison of the two fails silently.
     path           TEXT NOT NULL,
     sha256_after   TEXT,
     existed_before INTEGER NOT NULL,
     deleted        INTEGER NOT NULL DEFAULT 0,
-    -- Written outside the Workspace root. Can never match a commit, and is
+    -- Written outside the Project root. Can never match a commit, and is
     -- flagged so it is not counted as pending agent work forever.
     out_of_repo    INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL
@@ -416,7 +465,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_call_native_id
 CREATE INDEX IF NOT EXISTS idx_file_touch_path
     ON file_touch (session_id, path);
 -- …and the reverse, which is what turns an observed commit into candidate
--- Sessions without scanning every Session in the Workspace.
+-- Sessions without scanning every Session in the Project.
 CREATE INDEX IF NOT EXISTS idx_file_touch_by_path
     ON file_touch (path);
 CREATE INDEX IF NOT EXISTS idx_agent_edit_session
@@ -470,14 +519,14 @@ CREATE TABLE IF NOT EXISTS checkpoint (
     UNIQUE (session_id, commit_sha)
 );
 
--- How far the commit walk has got, per Workspace. Advanced only after the
+-- How far the commit walk has got, per Project. Advanced only after the
 -- Checkpoints for a range are durably written, so a crash mid-walk re-processes
 -- rather than skips.
 CREATE TABLE IF NOT EXISTS workspace_cursor (
     workspace_id     TEXT PRIMARY KEY,
     last_seen_commit TEXT,
     -- Set when the cursor could not be resolved and a bounded re-scan was used
-    -- instead. Surfaces through the capture-health signal, because a Workspace
+    -- instead. Surfaces through the capture-health signal, because a Project
     -- that silently stopped detecting commits is the failure this whole design
     -- exists to avoid.
     recovered        INTEGER NOT NULL DEFAULT 0,
@@ -495,9 +544,9 @@ CREATE INDEX IF NOT EXISTS idx_checkpoint_outbox
 "#;
 
 const V4: &str = r#"
--- How this Workspace is bound, and whether it is capturing at all.
+-- How this Project is bound, and whether it is capturing at all.
 --
--- One row: a store belongs to exactly one Workspace, so `id = 1` is a
+-- One row: a store belongs to exactly one Project, so `id = 1` is a
 -- singleton, enforced by the CHECK rather than by convention.
 --
 -- The identity signals are evidence, never gates. A repository with no remote,
@@ -510,10 +559,10 @@ CREATE TABLE IF NOT EXISTS binding (
     workspace_id    TEXT NOT NULL,
     root            TEXT NOT NULL,
     mode            TEXT NOT NULL DEFAULT 'local',
-    -- Set once the Workspace is registered to an Organisation.
+    -- Set once the Project is registered to an Organisation.
     slug            TEXT,
     org_id          TEXT,
-    -- Advisory. Null for a non-git Workspace, or one with no commits yet.
+    -- Advisory. Null for a non-git Project, or one with no commits yet.
     root_commit_sha TEXT,
     -- The grafted boundary of a shallow clone is not the true root, so the
     -- fingerprint it yields is stored but flagged as not authoritative.
@@ -545,7 +594,7 @@ CREATE TABLE IF NOT EXISTS import_progress (
 
 const V6: &str = r#"
 -- The Cloud bulk-import disclosure is a real gate, not ceremony: the background
--- transcript scan must refuse to import for a Cloud Workspace until the user has
+-- transcript scan must refuse to import for a Cloud Project until the user has
 -- explicitly confirmed the disclosure. Local needs no approval and the flag is
 -- set at enable time.
 ALTER TABLE binding ADD COLUMN import_approved INTEGER NOT NULL DEFAULT 0;
@@ -555,7 +604,7 @@ ALTER TABLE binding ADD COLUMN import_approved INTEGER NOT NULL DEFAULT 0;
 -- retry loop — and the capture-health signal needs to render it.
 ALTER TABLE binding ADD COLUMN drain_state TEXT NOT NULL DEFAULT 'ok';
 
--- The server-assigned Workspace id from registration. The wire identity of every
+-- The server-assigned Project id from registration. The wire identity of every
 -- artifact: without it two teammates' pushes can never converge on one timeline,
 -- and the local filesystem path would leak to the whole Organisation.
 ALTER TABLE binding ADD COLUMN remote_workspace_id TEXT;
@@ -600,32 +649,505 @@ pub const REQUIRED_INDEXES: &[&str] = &[
     "idx_file_touch_unconsumed",
     "idx_session_activity",
     "idx_message_activity",
+    "idx_usage_delta_recorded",
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The withdrawn dev-only schema 9 (see the note on `SCHEMA_VERSION`) must
-    /// fold back to 8 instead of tripping the too-new gate — it briefly locked
-    /// every older build out of the store, which read as total capture loss.
+    fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let names: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        names.iter().any(|n| n == column)
+    }
+
+    fn has_table(conn: &Connection, table: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+            > 0
+    }
+
+    /// A store stamped with the withdrawn dev-only 9 (see the note on
+    /// `SCHEMA_VERSION`) has the orphan `import_progress.resume_state` column
+    /// and never ran the real V9. It must reach the current version with BOTH
+    /// the real V9 column and the V10 tables, and must not trip the too-new
+    /// gate — that gate once locked every older build out of the store, which
+    /// read as total capture loss.
     #[test]
-    fn a_store_stamped_with_the_withdrawn_schema_9_folds_back_to_8() {
+    fn a_store_stamped_with_the_withdrawn_schema_9_is_repaired_to_the_current_version() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap(); // fresh store at the current version
-        conn.execute_batch("ALTER TABLE import_progress ADD COLUMN resume_state TEXT")
-            .unwrap();
+        if !has_column(&conn, "import_progress", "resume_state") {
+            conn.execute_batch("ALTER TABLE import_progress ADD COLUMN resume_state TEXT")
+                .unwrap();
+        }
+        // Simulate the withdrawn shape as closely as an in-memory store can:
+        // drop the real V9 column and the V10 tables, then stamp 9.
+        conn.execute_batch("ALTER TABLE file_touch DROP COLUMN sketch_after").unwrap();
+        conn.execute_batch("DROP TABLE usage_delta; DROP TABLE usage_cursor;").unwrap();
         conn.pragma_update(None, "user_version", 9).unwrap();
+        assert!(!has_column(&conn, "file_touch", "sketch_after"));
 
         migrate(&conn).expect("the withdrawn version must not read as too-new");
         let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+        assert!(has_column(&conn, "file_touch", "sketch_after"), "the real V9 ran");
+        assert!(has_table(&conn, "usage_delta"), "V10 ran");
+        assert!(has_table(&conn, "usage_cursor"), "V10 ran");
+
+        // Running again on a genuine current-version store is a no-op.
+        migrate(&conn).unwrap();
 
         // A genuinely newer store still refuses.
-        conn.pragma_update(None, "user_version", 10).unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
         assert!(matches!(
             migrate(&conn),
-            Err(Error::SchemaTooNew { found: 10, .. })
+            Err(Error::SchemaTooNew { found, .. }) if found == SCHEMA_VERSION + 1
         ));
+    }
+
+    #[test]
+    fn a_fresh_store_has_the_ledger_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        assert!(has_table(&conn, "usage_delta"));
+        assert!(has_table(&conn, "usage_cursor"));
+        for column in [
+            "session_id",
+            "turn_seq",
+            "model",
+            "recorded_at",
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_tokens",
+            "cache_read_tokens",
+            "reasoning_tokens",
+        ] {
+            assert!(has_column(&conn, "usage_delta", column), "{column}");
+        }
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_usage_delta_recorded'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
+    }
+
+    // ── Upgrades from every older version ──────────────────────────────────
+
+    /// Every migration, in order, as the arm in `migrate` applies it on a
+    /// fresh database. Index `n - 1` is the SQL that takes a store to `n`.
+    const STEPS: [&str; 10] = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
+
+    /// A connection holding exactly the schema an older build left behind:
+    /// V1..=`version` applied and `version` stamped.
+    fn seeded_at(conn: &Connection, version: i64) {
+        for sql in &STEPS[..version as usize] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version).unwrap();
+    }
+
+    const T0: &str = "2026-06-01T10:00:00+00:00";
+    const T1: &str = "2026-06-01T10:05:00+00:00";
+
+    /// Representative rows for every table that exists at `version`, filling
+    /// the columns a later migration added only when they already exist.
+    fn seed_rows(conn: &Connection, version: i64) {
+        conn.execute_batch(&format!(
+            "INSERT INTO agent_session (id, workspace_id, source, native_session_id, title, \
+                 started_at, updated_at, token_totals) \
+             VALUES ('s1', 'ws', 'acp', 'native-1', 'Old title', '{T0}', '2026-07-01T00:00:00+00:00', \
+                 '{{\"input_tokens\":7}}'); \
+             INSERT INTO agent_message (id, session_id, seq, turn_seq, native_message_id, role, \
+                 mode, preview, body, content_hash, created_at) \
+             VALUES ('m1', 's1', 1, 1, 'n1', 'user', 'text', 'hello', 'hello', 'h1', '{T0}'), \
+                    ('m2', 's1', 2, 1, 'n2', 'assistant', 'text', 'hi', 'hi', 'h2', '{T1}'); \
+             INSERT INTO turn (session_id, turn_seq, state, started_at, ended_at) \
+             VALUES ('s1', 1, 'completed', '{T0}', '{T1}'); \
+             UPDATE counter SET value = 2 WHERE name = 'seq';"
+        ))
+        .unwrap();
+        if version >= 2 {
+            conn.execute_batch(&format!(
+                "INSERT INTO tool_call (id, session_id, seq, turn_seq, native_call_id, tool_name, \
+                     status, created_at) \
+                 VALUES ('tc1', 's1', 3, 1, 'call-1', 'write', 'completed', '{T1}'); \
+                 INSERT INTO file_touch (id, tool_call_id, session_id, turn_seq, seq, path, \
+                     sha256_after, existed_before, created_at) \
+                 VALUES ('ft1', 'tc1', 's1', 1, 4, 'src/lib.rs', 'abc', 0, '{T1}'); \
+                 INSERT INTO agent_edit (id, tool_call_id, session_id, turn_seq, path, patch, created_at) \
+                 VALUES ('ae1', 'tc1', 's1', 1, 'src/lib.rs', '+fn x() {{}}', '{T1}');"
+            ))
+            .unwrap();
+        }
+        if version >= 3 {
+            conn.execute_batch(&format!(
+                "INSERT INTO checkpoint (id, session_id, commit_sha, patch_id, branch, created_at) \
+                 VALUES ('cp1', 's1', 'deadbeef', 'p1', 'main', '{T1}'); \
+                 INSERT INTO workspace_cursor (workspace_id, last_seen_commit, updated_at) \
+                 VALUES ('ws', 'deadbeef', '{T1}');"
+            ))
+            .unwrap();
+        }
+        if version >= 4 {
+            conn.execute_batch(&format!(
+                "INSERT INTO binding (id, workspace_id, root, mode, created_at, updated_at) \
+                 VALUES (1, 'ws', '/tmp/project', 'local', '{T0}', '{T0}');"
+            ))
+            .unwrap();
+        }
+        if version >= 5 {
+            conn.execute_batch(&format!(
+                "INSERT INTO import_progress (path, imported_size, updated_at) \
+                 VALUES ('/tmp/t.jsonl', 42, '{T0}');"
+            ))
+            .unwrap();
+        }
+        if version >= 6 {
+            conn.execute_batch(
+                "UPDATE binding SET import_approved = 1, remote_workspace_id = 'remote-ws'; \
+                 UPDATE file_touch SET consumed_by_commit = 'deadbeef';",
+            )
+            .unwrap();
+        }
+        if version >= 7 {
+            conn.execute_batch("UPDATE agent_session SET branch = 'feature';")
+                .unwrap();
+        }
+        if version >= 9 {
+            conn.execute_batch("UPDATE file_touch SET sketch_after = 'sketch';")
+                .unwrap();
+        }
+    }
+
+    fn count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// `(type, name)` for every table and index, plus each table's columns —
+    /// the whole shape of a store, comparable between two databases.
+    fn shape(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT type, name FROM sqlite_master \
+                 WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+            )
+            .unwrap();
+        let objects: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let mut out = Vec::new();
+        for (kind, name) in objects {
+            out.push(format!("{kind} {name}"));
+            if kind == "table" {
+                let mut cols = conn.prepare(&format!("PRAGMA table_info({name})")).unwrap();
+                let cols: Vec<String> = cols
+                    .query_map([], |r| {
+                        Ok(format!(
+                            "  {name}.{} {} notnull={} default={:?} pk={}",
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, i64>(3)?,
+                            r.get::<_, Option<String>>(4)?,
+                            r.get::<_, i64>(5)?,
+                        ))
+                    })
+                    .unwrap()
+                    .collect::<rusqlite::Result<_>>()
+                    .unwrap();
+                out.extend(cols);
+            }
+        }
+        out
+    }
+
+    fn version_of(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// A store written by every older build upgrades to exactly the shape a
+    /// fresh store has, and keeps its rows. The shape comparison is what
+    /// catches a migration that was edited after it shipped: a fresh store and
+    /// an upgraded one would then disagree.
+    #[test]
+    fn a_store_seeded_at_every_older_version_upgrades_to_the_current_shape_with_its_rows() {
+        let fresh = Connection::open_in_memory().unwrap();
+        migrate(&fresh).unwrap();
+        let fresh_shape = shape(&fresh);
+
+        for version in 1..SCHEMA_VERSION {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+            seeded_at(&conn, version);
+            seed_rows(&conn, version);
+
+            migrate(&conn).unwrap_or_else(|e| panic!("upgrade from V{version}: {e}"));
+            assert_eq!(version_of(&conn), SCHEMA_VERSION, "from V{version}");
+            assert_eq!(shape(&conn), fresh_shape, "from V{version}");
+            for index in REQUIRED_INDEXES {
+                let n: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                        [index],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(n, 1, "{index} missing after upgrade from V{version}");
+            }
+
+            // V1 rows, byte for byte.
+            let (title, totals): (String, String) = conn
+                .query_row(
+                    "SELECT title, token_totals FROM agent_session WHERE id = 's1'",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(title, "Old title", "from V{version}");
+            assert_eq!(totals, r#"{"input_tokens":7}"#, "from V{version}");
+            assert_eq!(count(&conn, "agent_message"), 2, "from V{version}");
+            assert_eq!(count(&conn, "turn"), 1, "from V{version}");
+            let seq: i64 = conn
+                .query_row("SELECT value FROM counter WHERE name = 'seq'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                seq, 2,
+                "the sequence source must not reset (from V{version})"
+            );
+
+            if version >= 2 {
+                assert_eq!(count(&conn, "tool_call"), 1, "from V{version}");
+                assert_eq!(count(&conn, "file_touch"), 1, "from V{version}");
+                assert_eq!(count(&conn, "agent_edit"), 1, "from V{version}");
+            }
+            if version >= 3 {
+                assert_eq!(count(&conn, "checkpoint"), 1, "from V{version}");
+                assert_eq!(count(&conn, "workspace_cursor"), 1, "from V{version}");
+            }
+            if version >= 4 {
+                let (root, approved, drain): (String, i64, String) = conn
+                    .query_row(
+                        "SELECT root, import_approved, drain_state FROM binding",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .unwrap();
+                assert_eq!(root, "/tmp/project");
+                // V6's defaults for a binding that predates it; the seeded
+                // value for one that does not.
+                assert_eq!(approved, i64::from(version >= 6), "from V{version}");
+                assert_eq!(drain, "ok");
+            }
+
+            // V8 deliberately clears import progress once, to force the token
+            // backfill; a store already past V8 keeps it.
+            if version >= 5 {
+                let expected = if version < 8 { 0 } else { 1 };
+                assert_eq!(count(&conn, "import_progress"), expected, "from V{version}");
+            }
+
+            // V8's backfill: the latest message or turn-end stamp, never the
+            // row's wall-clock `updated_at`.
+            if version < 8 {
+                let activity: String = conn
+                    .query_row(
+                        "SELECT last_activity_at FROM agent_session WHERE id = 's1'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(activity, T1, "from V{version}");
+            }
+
+            // Columns added after the seed version read as their defaults,
+            // columns that existed keep their values.
+            let branch: Option<String> = conn
+                .query_row(
+                    "SELECT branch FROM agent_session WHERE id = 's1'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                branch.as_deref(),
+                (version >= 7).then_some("feature"),
+                "from V{version}"
+            );
+            if version >= 2 {
+                let (consumed, sketch): (Option<String>, Option<String>) = conn
+                    .query_row(
+                        "SELECT consumed_by_commit, sketch_after FROM file_touch",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!(consumed.as_deref(), (version >= 6).then_some("deadbeef"));
+                assert_eq!(sketch.as_deref(), (version >= 9).then_some("sketch"));
+            }
+
+            let fk_violations: i64 = conn
+                .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(fk_violations, 0, "from V{version}");
+
+            // Idempotent once current.
+            migrate(&conn).unwrap();
+            assert_eq!(version_of(&conn), SCHEMA_VERSION);
+        }
+    }
+
+    /// An upgraded store is readable through the real `Store`, not only through
+    /// raw SQL: the model decoders accept the old rows with the new columns
+    /// defaulted.
+    #[test]
+    fn a_store_upgraded_from_v1_opens_and_reads_through_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let atlas = dir.path().join(".atlas");
+        std::fs::create_dir_all(&atlas).unwrap();
+        {
+            let conn = Connection::open(atlas.join("sessions.db")).unwrap();
+            seeded_at(&conn, 1);
+            seed_rows(&conn, 1);
+        }
+
+        let store = crate::Store::open(&atlas).expect("an old store opens");
+        let sessions = store.sessions_for_project("ws").unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].title.as_deref(), Some("Old title"));
+        assert_eq!(sessions[0].branch, None);
+        let bodies: Vec<String> = store
+            .messages_for_session("s1")
+            .unwrap()
+            .iter()
+            .map(|m| store.message_body(m).unwrap())
+            .collect();
+        assert_eq!(bodies, ["hello", "hi"]);
+        assert_eq!(
+            store.turn_state("s1", 1).unwrap(),
+            Some(crate::TurnState::Completed)
+        );
+    }
+
+    // ── Half-applied migrations ────────────────────────────────────────────
+
+    /// The case the tolerant apply exists for: an earlier build ran some of a
+    /// migration's ALTERs outside a transaction and died before stamping the
+    /// version, so the store has the new columns at the old number. Every
+    /// re-run used to fail with "duplicate column name".
+    #[test]
+    fn a_half_applied_alter_migration_is_completed_rather_than_wedged() {
+        // (stamped version, the statements that had already run)
+        let tears: &[(i64, &str)] = &[
+            (
+                5,
+                "ALTER TABLE binding ADD COLUMN import_approved INTEGER NOT NULL DEFAULT 0; \
+                 ALTER TABLE binding ADD COLUMN drain_state TEXT NOT NULL DEFAULT 'ok';",
+            ),
+            (6, "ALTER TABLE agent_session ADD COLUMN branch TEXT;"),
+            (
+                7,
+                "ALTER TABLE agent_session ADD COLUMN last_activity_at TEXT;",
+            ),
+            (8, "ALTER TABLE file_touch ADD COLUMN sketch_after TEXT;"),
+        ];
+        let fresh = Connection::open_in_memory().unwrap();
+        migrate(&fresh).unwrap();
+
+        for (stamped, already_ran) in tears {
+            let conn = Connection::open_in_memory().unwrap();
+            seeded_at(&conn, *stamped);
+            seed_rows(&conn, *stamped);
+            conn.execute_batch(already_ran).unwrap();
+
+            migrate(&conn).unwrap_or_else(|e| panic!("torn V{}: {e}", stamped + 1));
+            assert_eq!(version_of(&conn), SCHEMA_VERSION);
+            assert_eq!(shape(&conn), shape(&fresh), "torn V{}", stamped + 1);
+            assert_eq!(count(&conn, "agent_message"), 2);
+        }
+    }
+
+    /// Tolerance is for exactly one error. Anything else still fails the
+    /// migration, and the transaction rolls it back whole — no column added
+    /// with the version still behind, which is the wedge the transaction
+    /// exists to prevent.
+    #[test]
+    fn a_real_failure_mid_migration_rolls_back_every_step() {
+        let conn = Connection::open_in_memory().unwrap();
+        seeded_at(&conn, 6);
+        seed_rows(&conn, 6);
+        // A view squatting on a V10 table name: V10's `CREATE TABLE IF NOT
+        // EXISTS` is a no-op against it, and its index then cannot be built.
+        conn.execute_batch("CREATE VIEW usage_delta AS SELECT 1 AS recorded_at;")
+            .unwrap();
+
+        let err = migrate(&conn).expect_err("a genuine failure must surface");
+        assert!(matches!(err, Error::Storage(_)), "{err:?}");
+        assert_eq!(version_of(&conn), 6);
+        assert!(
+            !has_column(&conn, "agent_session", "branch"),
+            "V7 rolled back"
+        );
+        assert!(
+            !has_column(&conn, "agent_session", "last_activity_at"),
+            "V8 rolled back"
+        );
+        assert!(
+            !has_column(&conn, "file_touch", "sketch_after"),
+            "V9 rolled back"
+        );
+        assert_eq!(
+            count(&conn, "import_progress"),
+            1,
+            "V8's DELETE rolled back"
+        );
+    }
+
+    #[test]
+    fn the_tolerant_apply_skips_duplicate_columns_and_nothing_else() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (a TEXT);").unwrap();
+        apply_tolerant(
+            &conn,
+            "ALTER TABLE t ADD COLUMN a TEXT; ALTER TABLE t ADD COLUMN b TEXT;",
+        )
+        .unwrap();
+        assert!(has_column(&conn, "t", "b"));
+        assert!(apply_tolerant(&conn, "ALTER TABLE missing ADD COLUMN c TEXT;").is_err());
+    }
+
+    /// `apply_tolerant` splits on a bare `;`, so a semicolon inside a comment
+    /// of any tolerant migration would feed half a comment to SQLite. Checked
+    /// here rather than trusted to review.
+    #[test]
+    fn no_tolerant_migration_has_a_semicolon_in_a_comment() {
+        for (name, sql) in [("V6", V6), ("V7", V7), ("V8", V8), ("V9", V9)] {
+            for line in sql.lines() {
+                if let Some(comment) = line.trim_start().strip_prefix("--") {
+                    assert!(!comment.contains(';'), "{name}: {line}");
+                }
+            }
+        }
     }
 }
