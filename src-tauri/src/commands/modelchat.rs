@@ -31,7 +31,7 @@ use super::byok;
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ApiKind {
     OpenAi,
     Anthropic,
@@ -58,6 +58,7 @@ pub(super) fn provider_endpoint(provider: &str) -> Option<(ApiKind, &'static str
         "perplexity" => (ApiKind::OpenAi, "https://api.perplexity.ai"),
         "openrouter" => (ApiKind::OpenAi, "https://openrouter.ai/api/v1"),
         "empero" => (ApiKind::OpenAi, "https://free.empero.org/v1"),
+        "orcarouter" => (ApiKind::OpenAi, "https://api.orcarouter.ai/v1"),
         _ => return None,
     })
 }
@@ -362,6 +363,7 @@ fn fallback_models(provider: &str) -> Vec<&'static str> {
         "google" => vec!["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"],
         "cohere" => vec!["command-a-03-2025", "command-r-plus", "command-r"],
         "empero" => vec!["glm-5.3-flash"],
+        "orcarouter" => vec!["orcarouter/auto"],
         _ => vec![],
     }
 }
@@ -440,4 +442,22 @@ async fn fetch_anthropic_models(base: &str, key: &str) -> Result<Vec<String>, St
         .as_array()
         .map(|arr| arr.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
         .unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_orcarouter_endpoint() {
+        let (kind, url) = provider_endpoint("orcarouter").expect("orcarouter endpoint must exist");
+        assert_eq!(kind, ApiKind::OpenAi);
+        assert_eq!(url, "https://api.orcarouter.ai/v1");
+    }
+
+    #[test]
+    fn test_orcarouter_fallback_models() {
+        let models = fallback_models("orcarouter");
+        assert_eq!(models, vec!["orcarouter/auto"]);
+    }
 }

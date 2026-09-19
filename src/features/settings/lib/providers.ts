@@ -177,6 +177,15 @@ export const PROVIDERS: ProviderDef[] = [
     chat: true,
   },
   {
+    id: "orcarouter",
+    name: "OrcaRouter",
+    env: "ORCAROUTER_API_KEY",
+    category: "Gateway",
+    docsUrl: "https://www.orcarouter.ai",
+    placeholder: "sk-orca-...",
+    chat: true,
+  },
+  {
     id: "litellm",
     name: "LiteLLM Proxy",
     env: "LITELLM_API_KEY",

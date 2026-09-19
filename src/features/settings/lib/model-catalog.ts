@@ -32,6 +32,7 @@ const PREFERRED: Record<string, string[]> = {
   perplexity: ["sonar-reasoning-pro", "sonar-pro"],
   cohere: ["command-a-03-2025"],
   empero: ["glm-5.3-flash"],
+  orcarouter: ["orcarouter/auto"],
 };
 
 const MAX_MODELS = 18;
