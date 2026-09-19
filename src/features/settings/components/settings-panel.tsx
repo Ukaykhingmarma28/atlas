@@ -38,6 +38,7 @@ import { setEnabled as setTelemetryEnabled } from "@/features/telemetry/posthog-
 import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { updater } from "@/features/updater/lib/updater-api";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
+import { isWindows } from "@/lib/platform";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -670,7 +671,11 @@ function UpdatesSettings() {
       <SectionTitle title="Updates" subtitle="How Atlas keeps itself up to date" />
       <SettingRow
         label="Automatic updates"
-        description="Check for a newer version in the background and download it automatically. Updates are Apple-signed and notarized; Atlas verifies the signature before installing. Turn off to never check or download."
+        description={
+          isWindows
+            ? "Check for a newer version in the background and download the installer automatically. Windows asks for permission before it is installed. Turn off to never check or download."
+            : "Check for a newer version in the background and download it automatically. Updates are Apple-signed and notarized; Atlas verifies the signature before installing. Turn off to never check or download."
+        }
       >
         <Toggle
           checked={settings.autoUpdate}

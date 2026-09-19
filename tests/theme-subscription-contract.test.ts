@@ -128,7 +128,8 @@ const readers: Reader[] = walk(SRC).flatMap((file) => {
   const marker = ALLOW_MARKER.exec(raw);
   return [
     {
-      where: path.relative(REPO_ROOT, file),
+      // Forward slashes whatever the OS: `EXEMPT` and the lists below are keyed on them.
+      where: path.relative(REPO_ROOT, file).split(path.sep).join("/"),
       subscribes: SUBSCRIBER.test(code),
       allowReason: marker ? marker[1].trim() : null,
     },

@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isWindows } from "@/lib/platform";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useUpdaterStore } from "../stores/updater-store";
 import { updater } from "../lib/updater-api";
@@ -106,6 +107,7 @@ export function UpdateAvailableModal() {
           {!applying && !isError && (
             <p className="mt-3 text-2xs text-muted-foreground leading-relaxed px-1">
               "Later" installs the update automatically the next time you quit Atlas.
+              {isWindows && " Windows will ask for permission to install it."}
             </p>
           )}
         </Dialog.Popup>
