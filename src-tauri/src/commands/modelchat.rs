@@ -31,7 +31,7 @@ use super::byok;
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ApiKind {
     OpenAi,
     Anthropic,
