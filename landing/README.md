@@ -11,7 +11,8 @@ landing/
 ├── index.html            # the page
 ├── atlas.css             # design-system tokens + atlas-* primitives
 ├── antarys-logo.png      # footer + favicon
-├── og-image.png          # Open Graph / Twitter card image
+├── og-image.webp         # Open Graph / Twitter card image
+│                         # (rendered by ../scripts/og/render.sh)
 ├── vercel.json           # caching headers + security headers
 └── README.md             # this file
 ```
