@@ -264,7 +264,8 @@ function scan(): ScanResult {
   }
 
   for (const file of files) {
-    const where = path.relative(REPO_ROOT, file);
+    // Forward slashes whatever the OS: the exemption tables are keyed on them.
+    const where = path.relative(REPO_ROOT, file).split(path.sep).join("/");
     if (where in EXEMPT_FILES) continue;
     if (Object.keys(EXEMPT_DIRS).some((dir) => where.startsWith(`${dir}/`))) continue;
     const lines = readFileSync(file, "utf8").split("\n");

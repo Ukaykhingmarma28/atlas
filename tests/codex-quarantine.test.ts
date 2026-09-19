@@ -141,7 +141,8 @@ describe("nothing that ships depends on the vendored engine", () => {
   it("no Atlas crate declares a codex dependency", () => {
     const offenders = atlasManifests()
       .filter((m) => CODEX_DEP.test(uncommented(read(m))))
-      .map((m) => path.relative(REPO_ROOT, m))
+      // Forward slashes whatever the OS, so the allowlist matches on Windows.
+      .map((m) => path.relative(REPO_ROOT, m).split(path.sep).join("/"))
       .filter((rel) => !ALLOWED_CODEX_CONSUMERS.has(rel));
     expect(
       offenders,

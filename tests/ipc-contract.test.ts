@@ -41,6 +41,10 @@ const MIN_DECLARED = 250;
 const MIN_REGISTERED = 250;
 const MIN_INVOKED = 200;
 
+/** Repo-relative with forward slashes whatever the OS, so paths compare
+ *  against the hand-written tables below on Windows too. */
+const posixRelative = (file: string) => path.relative(REPO_ROOT, file).split(path.sep).join("/");
+
 function walk(dir: string, extensions: string[]): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -77,7 +81,7 @@ function declaredCommands(): Map<string, string[]> {
       const match = src.slice(attr.index + attr[0].length).match(/\bfn\s+([a-z_][a-z0-9_]*)/i);
       if (!match) continue;
       const name = match[1];
-      const where = path.relative(REPO_ROOT, file);
+      const where = posixRelative(file);
       found.set(name, [...(found.get(name) ?? []), where]);
     }
   }
@@ -168,7 +172,7 @@ const DYNAMIC_INVOKE_SITES: Record<string, string[]> = {
 
 function frontendFiles(): Array<{ where: string; src: string }> {
   return walk(TS_SRC, [".ts", ".tsx"]).map((file) => ({
-    where: path.relative(REPO_ROOT, file),
+    where: posixRelative(file),
     src: stripTsComments(readFileSync(file, "utf8")),
   }));
 }
@@ -190,7 +194,7 @@ function invokedCommands(): Map<string, string[]> {
 function dynamicInvokeFiles(): Map<string, string[]> {
   const found = new Map<string, string[]>();
   for (const { where, src } of frontendFiles()) {
-    if (where.startsWith(`src${path.sep}dev${path.sep}`) || /\.test\.tsx?$/.test(where)) continue;
+    if (where.startsWith("src/dev/") || /\.test\.tsx?$/.test(where)) continue;
     const idents = [...src.matchAll(INVOKE_DYNAMIC)].map((m) => m[1]);
     if (idents.length) found.set(where, idents);
   }
