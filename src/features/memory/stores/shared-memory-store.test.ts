@@ -80,3 +80,77 @@ describe("the Shared memory store", () => {
     expect(pulled).toEqual([["memory_get_state", { projectPath: "/repo-b" }]]);
   });
 });
+
+describe("the Shared tab's memories", () => {
+  const entry = (id: number, content: string, over: Record<string, unknown> = {}) => ({
+    id,
+    kind: "decision",
+    key: "auth.alg",
+    content,
+    status: "",
+    source: "extractor",
+    agent: "codex",
+    sessionId: "s1",
+    confidence: 0.6,
+    createdAt: 1,
+    updatedAt: 2,
+    lastUsedAt: null,
+    uses: 0,
+    ...over,
+  });
+  let entries: ReturnType<typeof entry>[] = [];
+
+  beforeEach(() => {
+    entries = [entry(7, "Use HS256")];
+    invoke.mockReset();
+    invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "memory_get_state") return stateWithPlan(null);
+      if (cmd === "memory_list_events") return [];
+      if (cmd === "memory_list_entries") return entries;
+      if (cmd === "memory_edit_entry") {
+        const edited = entry(args.id as number, args.content as string, {
+          source: "user",
+          agent: "user",
+          confidence: 1,
+        });
+        entries = entries.map((e) => (e.id === args.id ? edited : e));
+        return edited;
+      }
+      if (cmd === "memory_forget_entry") {
+        entries = entries.filter((e) => e.id !== args.id);
+        return true;
+      }
+      return null;
+    });
+    useSharedMemoryStore.setState({ projectPath: null, loaded: false, entries: [] });
+  });
+
+  it("loads every entry with its provenance and confidence", async () => {
+    await useSharedMemoryStore.getState().actions.load("/repo");
+    const [e] = useSharedMemoryStore.getState().entries;
+    expect([e.source, e.agent, e.confidence]).toEqual(["extractor", "codex", 0.6]);
+  });
+
+  it("edits an entry through the store as the user", async () => {
+    await useSharedMemoryStore.getState().actions.load("/repo");
+    await useSharedMemoryStore.getState().actions.editEntry(7, "Use RS256");
+
+    expect(invoke).toHaveBeenCalledWith("memory_edit_entry", {
+      projectPath: "/repo",
+      id: 7,
+      content: "Use RS256",
+    });
+    const [e] = useSharedMemoryStore.getState().entries;
+    expect([e.content, e.source, e.confidence]).toEqual(["Use RS256", "user", 1]);
+  });
+
+  it("forgets an entry and re-pulls the state view", async () => {
+    await useSharedMemoryStore.getState().actions.load("/repo");
+    invoke.mockClear();
+    await useSharedMemoryStore.getState().actions.forgetEntry(7);
+
+    expect(invoke).toHaveBeenCalledWith("memory_forget_entry", { projectPath: "/repo", id: 7 });
+    expect(invoke.mock.calls.some(([cmd]) => cmd === "memory_get_state")).toBe(true);
+    expect(useSharedMemoryStore.getState().entries).toEqual([]);
+  });
+});

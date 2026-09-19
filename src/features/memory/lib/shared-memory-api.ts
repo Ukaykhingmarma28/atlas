@@ -65,12 +65,43 @@ export interface SharedState {
   updatedAt: number;
 }
 
+/** Which of the six kinds a record entry is. */
+export type EntryKind = "plan" | "decision" | "file_changed" | "fact" | "failure" | "architecture";
+
+/** One record entry with its provenance and confidence (the Memories view). */
+export interface MemoryEntry {
+  id: number;
+  kind: EntryKind;
+  key: string;
+  content: string;
+  status: string;
+  /** An agent id, `extractor`, `user`, or `import:<origin>`. */
+  source: string;
+  /** The agent the memory came from; empty for an import. */
+  agent: string;
+  sessionId: string;
+  /** 0–1: the extractor's model confidence; 1 for tool and user writes. */
+  confidence: number;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt: number | null;
+  uses: number;
+}
+
 export const sharedMemory = {
   getState: (projectPath: string) => invoke<SharedState>("memory_get_state", { projectPath }),
   query: (projectPath: string, query: string, limit = 20) =>
     invoke<MemoryEvent[]>("memory_query", { projectPath, query, limit }),
   listEvents: (projectPath: string) => invoke<MemoryEvent[]>("memory_list_events", { projectPath }),
   clear: (projectPath: string) => invoke<void>("memory_clear_project", { projectPath }),
+  listEntries: (projectPath: string) =>
+    invoke<MemoryEntry[]>("memory_list_entries", { projectPath }),
+  /** Rewrite an entry's content as the user (source `user`, confidence 1). */
+  editEntry: (projectPath: string, id: number, content: string) =>
+    invoke<MemoryEntry>("memory_edit_entry", { projectPath, id, content }),
+  /** Forget (delete) an entry. `false` when it was already gone. */
+  forgetEntry: (projectPath: string, id: number) =>
+    invoke<boolean>("memory_forget_entry", { projectPath, id }),
   appendEvent: (
     projectPath: string,
     agent: string,

@@ -9,12 +9,21 @@
 // bound project on each one; the manual Refresh button stays. The payload's
 // root is the repository's main worktree, which the frontend cannot derive
 // from the launch directory (a linked worktree lives elsewhere), so every
-// change re-pulls — it is two cheap reads, and they are coalesced.
+// change re-pulls — it is three cheap reads, and they are coalesced.
+//
+// Memories: every record entry with its provenance (source, agent) and
+// confidence. The user can edit one (written as source `user`, confidence 1)
+// or forget it; both go through the backend, which announces the change.
 
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { createSelectors } from "@/lib/create-selectors";
-import { sharedMemory, type MemoryEvent, type SharedState } from "../lib/shared-memory-api";
+import {
+  sharedMemory,
+  type MemoryEntry,
+  type MemoryEvent,
+  type SharedState,
+} from "../lib/shared-memory-api";
 
 const EMPTY_STATE: SharedState = {
   lastSeq: 0,
@@ -40,6 +49,8 @@ interface SharedMemoryStore {
   projectPath: string | null;
   state: SharedState;
   events: MemoryEvent[];
+  /** Every record entry, newest write first, with provenance + confidence. */
+  entries: MemoryEntry[];
   loaded: boolean;
   queryText: string;
   queryResults: MemoryEvent[];
@@ -48,7 +59,22 @@ interface SharedMemoryStore {
     refresh: () => Promise<void>;
     runQuery: (query: string) => Promise<void>;
     clear: () => Promise<void>;
+    /** Rewrite an entry's content as the user. Throws on failure. */
+    editEntry: (id: number, content: string) => Promise<void>;
+    /** Forget (delete) an entry. Throws on failure. */
+    forgetEntry: (id: number) => Promise<void>;
   };
+}
+
+/** State, events and entries for one project. Entries degrade to none on
+ *  their own, so an older backend without them still shows the rest. */
+async function pull(projectPath: string) {
+  const [state, events, entries] = await Promise.all([
+    sharedMemory.getState(projectPath),
+    sharedMemory.listEvents(projectPath),
+    sharedMemory.listEntries(projectPath).catch(() => [] as MemoryEntry[]),
+  ]);
+  return { state, events, entries: entries ?? [] };
 }
 
 let refreshing: Promise<void> | null = null;
@@ -71,6 +97,7 @@ export const useSharedMemoryStore = createSelectors(
     projectPath: null,
     state: EMPTY_STATE,
     events: [],
+    entries: [],
     loaded: false,
     queryText: "",
     queryResults: [],
@@ -79,17 +106,15 @@ export const useSharedMemoryStore = createSelectors(
         set({ projectPath, loaded: false });
         subscribe(() => void get().actions.refresh());
         try {
-          // Derived view + the raw event log (newest-first) in parallel.
-          const [state, events] = await Promise.all([
-            sharedMemory.getState(projectPath),
-            sharedMemory.listEvents(projectPath),
-          ]);
+          // Derived view, the raw event log (newest-first) and the entries
+          // in parallel.
+          const pulled = await pull(projectPath);
           // Ignore a stale response if the project changed mid-flight.
           if (get().projectPath !== projectPath) return;
-          set({ state, events, loaded: true });
+          set({ ...pulled, loaded: true });
         } catch {
           if (get().projectPath !== projectPath) return;
-          set({ state: EMPTY_STATE, events: [], loaded: true });
+          set({ state: EMPTY_STATE, events: [], entries: [], loaded: true });
         }
       },
       refresh: async () => {
@@ -105,12 +130,9 @@ export const useSharedMemoryStore = createSelectors(
             const { projectPath } = get();
             if (!projectPath) return;
             try {
-              const [state, events] = await Promise.all([
-                sharedMemory.getState(projectPath),
-                sharedMemory.listEvents(projectPath),
-              ]);
+              const pulled = await pull(projectPath);
               if (get().projectPath !== projectPath) continue;
-              set({ state, events });
+              set(pulled);
             } catch {
               /* keep last good state */
             }
@@ -140,7 +162,25 @@ export const useSharedMemoryStore = createSelectors(
         if (!projectPath) return;
         await sharedMemory.clear(projectPath);
         if (get().projectPath !== projectPath) return;
-        set({ state: EMPTY_STATE, events: [], queryResults: [], queryText: "" });
+        set({ state: EMPTY_STATE, events: [], entries: [], queryResults: [], queryText: "" });
+      },
+      editEntry: async (id, content) => {
+        const { projectPath } = get();
+        if (!projectPath) return;
+        const edited = await sharedMemory.editEntry(projectPath, id, content);
+        if (get().projectPath !== projectPath) return;
+        set({ entries: get().entries.map((e) => (e.id === id ? edited : e)) });
+        // The state view and event log changed too; memory-changed also
+        // re-pulls, this covers a runtime that does not deliver it.
+        await get().actions.refresh();
+      },
+      forgetEntry: async (id) => {
+        const { projectPath } = get();
+        if (!projectPath) return;
+        await sharedMemory.forgetEntry(projectPath, id);
+        if (get().projectPath !== projectPath) return;
+        set({ entries: get().entries.filter((e) => e.id !== id) });
+        await get().actions.refresh();
       },
     },
   })),

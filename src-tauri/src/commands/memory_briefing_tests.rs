@@ -185,6 +185,50 @@ async fn later_turns_carry_only_the_delta_and_relevant_memory() {
     assert_eq!(third, "and the refresh tokens then?");
 }
 
+/// A user's edit from the Memory panel reaches the agent on its very next
+/// turn: a running session gets it as a delta, attributed to the user, and a
+/// new session's briefing indexes the corrected wording, never the old one.
+#[tokio::test]
+async fn a_user_edit_reaches_the_next_turn() {
+    let (store, sharing, key, p) = (store(), MemorySharingState::new(), key(), temp_project("edit"));
+    seed_project(&store, &p);
+    turn(&store, &sharing, &key, &p, "start on the auth migration", Vec::new()).await;
+
+    let id = store.entries(&p).into_iter().find(|e| e.key == "auth.alg").unwrap().id;
+    store.edit_entry(&p, id, "Use EdDSA for JWT signing").unwrap();
+
+    let next = turn(&store, &sharing, &key, &p, "and the refresh tokens then?", Vec::new()).await;
+    assert_eq!(
+        next,
+        format!(
+            "<atlas-memory>\n{NOTE}\n\
+             --- SHARED MEMORY — UPDATES SINCE LAST TURN ---\n\
+             [DECISIONS]\n\
+             - Use EdDSA for JWT signing (by user)\n\
+             --- END SHARED MEMORY ---\n\
+             </atlas-memory>\n\nand the refresh tokens then?"
+        )
+    );
+
+    let fresh = SessionKey { agent_id: AgentId::new(), session_id: "s-after-edit".into() };
+    let briefing = turn(&store, &sharing, &fresh, &p, "ok", Vec::new()).await;
+    assert!(briefing.contains("- Use EdDSA for JWT signing (by user)"), "{briefing}");
+    assert!(!briefing.contains("RS256 for JWT"), "{briefing}");
+}
+
+/// A memory forgotten from the Memory panel is gone from the next briefing.
+#[tokio::test]
+async fn a_forgotten_memory_is_not_briefed() {
+    let (store, sharing, key, p) = (store(), MemorySharingState::new(), key(), temp_project("forgotten"));
+    seed_project(&store, &p);
+    let id = store.entries(&p).into_iter().find(|e| e.key == "auth.alg").unwrap().id;
+    assert!(store.forget_entry(&p, id).unwrap());
+
+    let briefing = turn(&store, &sharing, &key, &p, "ok", Vec::new()).await;
+    assert!(!briefing.contains("RS256 for JWT"), "{briefing}");
+    assert!(briefing.contains("The staging database resets nightly"), "{briefing}");
+}
+
 /// "continue" and "ok" inject no relevant-memory block — retrieval is not even
 /// asked — while a real question does get one.
 #[tokio::test]

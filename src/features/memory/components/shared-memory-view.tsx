@@ -6,6 +6,12 @@
 // fixed-column-track style as the Settings ▸ API keys panel and the Atlas logs
 // table (`CodexView` in memory-panel.tsx). Read-only mirror of the Rust event
 // log; refresh re-reads it, clear wipes it.
+//
+// A third table, MEMORIES, lists every record entry with its provenance (the
+// source: an agent, the extractor, the user or an import; and the agent) and
+// its confidence. An expanded row edits the entry in place (the Policy view's
+// draft/save/revert pattern) or forgets it behind the file tree's confirm
+// dialog; both write through the backend, which announces the change.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -19,21 +25,27 @@ import {
   ScrollText,
   ListFilter,
   Check,
+  Brain,
+  Pencil,
+  X,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { PanelSkeleton } from "@/components/panel-skeleton";
+import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
 import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
-import type { MemoryEvent } from "../lib/shared-memory-api";
+import type { MemoryEntry, MemoryEvent } from "../lib/shared-memory-api";
 
 interface Props {
   projectPath: string;
   className?: string;
 }
 
-type Tab = "events" | "plans";
+type Tab = "events" | "plans" | "memories";
 
 /* ── Column tracks (sticky header + rows line up; min-width → horizontal scroll) ── */
 const EVENT_COL = {
@@ -56,6 +68,17 @@ const PLAN_COL = {
 } as const;
 const PLAN_MIN_W = 56 + 92 + 128 + 110 + 280 + 30;
 
+const ENTRY_COL = {
+  time: "w-[92px] shrink-0",
+  kind: "w-[110px] shrink-0",
+  source: "w-[120px] shrink-0",
+  agent: "w-[128px] shrink-0",
+  confidence: "w-[64px] shrink-0 text-right pr-4",
+  content: "flex-1 min-w-[240px]",
+  chevron: "w-[30px] shrink-0",
+} as const;
+const ENTRY_MIN_W = 92 + 110 + 120 + 128 + 64 + 240 + 30;
+
 /* Agent identity resolves through the registry chokepoint (`agentMeta`), so an
  * agent installed from the ACP registry gets its real name and manifest icon
  * instead of a truncated id. The local resolver this replaced knew only Claude
@@ -67,6 +90,26 @@ const str = (v: unknown): string => (v == null ? "" : String(v));
 function eventDetail(e: MemoryEvent): string {
   const p = e.payload ?? {};
   return str(p.text) || str(p.summary) || str(p.path) || str(e.key) || str(p.status) || "";
+}
+
+/** Where an entry came from: the extractor, the user, an import (with its
+ *  origin), or the agent that wrote it. */
+export function sourceLabel(source: string): string {
+  if (!source) return "—";
+  if (source === "extractor" || source === "user") return source;
+  if (source.startsWith("import:")) return `import · ${source.slice("import:".length)}`;
+  return agentMetaForSource(source).label;
+}
+
+/** The entry's agent as a name: an import has none, and a user edit is the
+ *  user's, not an agent's. `null` = not an agent. */
+function entryAgent(agent: string): string | null {
+  return agent && agent !== "user" ? agent : null;
+}
+
+/** A 0–1 confidence as a whole percentage. */
+export function confidenceLabel(confidence: number): string {
+  return `${Math.round(confidence * 100)}%`;
 }
 
 function eventTime(ts: number): string {
@@ -86,6 +129,7 @@ function fmtDateTime(ts: number): string {
 
 export function SharedMemoryView({ projectPath, className }: Props) {
   const events = useSharedMemoryStore.use.events();
+  const entries = useSharedMemoryStore.use.entries();
   const loaded = useSharedMemoryStore.use.loaded();
   const { load, refresh, clear } = useSharedMemoryStore.use.actions();
 
@@ -102,8 +146,25 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const plans = useMemo(() => events.filter((e) => e.kind === "plan_set"), [events]);
 
   // Filter options derived from the data actually present.
-  const agentOptions = useMemo(() => [...new Set(events.map((e) => e.agent))].sort(), [events]);
-  const kindOptions = useMemo(() => [...new Set(events.map((e) => e.kind))].sort(), [events]);
+  const agentOptions = useMemo(
+    () =>
+      tab === "memories"
+        ? [...new Set(entries.map((e) => e.agent).filter(Boolean))].sort()
+        : [...new Set(events.map((e) => e.agent))].sort(),
+    [events, entries, tab],
+  );
+  const kindOptions = useMemo(
+    () =>
+      tab === "memories"
+        ? [...new Set(entries.map((e) => e.kind))].sort()
+        : [...new Set(events.map((e) => e.kind))].sort(),
+    [events, entries, tab],
+  );
+  // A filter value from the other table matches nothing here: start clean.
+  useEffect(() => {
+    setAgentFilter("");
+    setKindFilter("");
+  }, [tab]);
 
   const q = query.trim().toLowerCase();
   const baseMatch = (e: MemoryEvent) =>
@@ -119,6 +180,21 @@ export function SharedMemoryView({ projectPath, className }: Props) {
     [events, q, agentFilter, kindFilter],
   );
   const planRows = useMemo(() => plans.filter(baseMatch), [plans, q, agentFilter]);
+  const entryRows = useMemo(
+    () =>
+      entries.filter(
+        (e) =>
+          (!agentFilter || e.agent === agentFilter) &&
+          (!kindFilter || e.kind === kindFilter) &&
+          (!q ||
+            e.content.toLowerCase().includes(q) ||
+            e.key.toLowerCase().includes(q) ||
+            e.kind.toLowerCase().includes(q) ||
+            sourceLabel(e.source).toLowerCase().includes(q) ||
+            e.agent.toLowerCase().includes(q)),
+      ),
+    [entries, q, agentFilter, kindFilter],
+  );
 
   return (
     <div className={cn("h-full flex flex-col bg-[var(--bg-base)]", className)}>
@@ -140,6 +216,13 @@ export function SharedMemoryView({ projectPath, className }: Props) {
             label="Plans"
             count={plans.length}
           />
+          <SegBtn
+            active={tab === "memories"}
+            onClick={() => setTab("memories")}
+            icon={<Brain size={11} />}
+            label="Memories"
+            count={entries.length}
+          />
         </div>
 
         {/* Column filters */}
@@ -148,9 +231,9 @@ export function SharedMemoryView({ projectPath, className }: Props) {
           value={agentFilter}
           options={agentOptions}
           onChange={setAgentFilter}
-          format={(a) => agentMetaForSource(a).label}
+          format={(a) => (tab === "memories" && !entryAgent(a) ? a : agentMetaForSource(a).label)}
         />
-        {tab === "events" && (
+        {tab !== "plans" && (
           <FilterMenu
             label="Kind"
             value={kindFilter}
@@ -186,12 +269,14 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         <div className="p-3">
           <PanelSkeleton rows={8} />
         </div>
-      ) : events.length === 0 ? (
+      ) : (tab === "memories" ? entries.length === 0 : events.length === 0) ? (
         <EmptyState />
       ) : tab === "events" ? (
         <EventsTable rows={eventRows} />
-      ) : (
+      ) : tab === "plans" ? (
         <PlansTable rows={planRows} />
+      ) : (
+        <MemoriesTable rows={entryRows} />
       )}
     </div>
   );
@@ -409,6 +494,225 @@ function PlanRow({
   );
 }
 
+/* ── Memories table ──────────────────────────────────────────────────────────── */
+
+function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  return (
+    <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+      <div style={{ minWidth: ENTRY_MIN_W }}>
+        <HeaderRow>
+          <span className={ENTRY_COL.time}>Updated</span>
+          <span className={ENTRY_COL.kind}>Kind</span>
+          <span className={ENTRY_COL.source}>Source</span>
+          <span className={ENTRY_COL.agent}>Agent</span>
+          <span className={ENTRY_COL.confidence}>Conf.</span>
+          <span className={ENTRY_COL.content}>Memory</span>
+          <span className={ENTRY_COL.chevron} />
+        </HeaderRow>
+        {rows.length === 0 ? (
+          <EmptyRows label="No memories match." />
+        ) : (
+          rows.map((e) => (
+            <EntryRow
+              key={e.id}
+              entry={e}
+              expanded={expanded === e.id}
+              onToggle={() => setExpanded((c) => (c === e.id ? null : e.id))}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EntryRow({
+  entry: e,
+  expanded,
+  onToggle,
+}: {
+  entry: MemoryEntry;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="border-b border-[var(--border-subtle)]">
+      <button
+        onClick={onToggle}
+        className={cn(
+          "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
+          expanded ? "bg-[var(--bg-elevated)]/50" : "hover:bg-[var(--bg-hover)]",
+        )}
+      >
+        <span className={cn(ENTRY_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+          {eventTime(e.updatedAt)}
+        </span>
+        <span className={ENTRY_COL.kind}>
+          <KindChip kind={e.kind} />
+        </span>
+        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2")}>
+          <SourceChip source={e.source} />
+        </span>
+        <span className={cn(ENTRY_COL.agent, "min-w-0")}>
+          {entryAgent(e.agent) ? (
+            <AgentTag agent={e.agent} />
+          ) : (
+            <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+              {e.agent || "—"}
+            </span>
+          )}
+        </span>
+        <span
+          className={cn(
+            ENTRY_COL.confidence,
+            "tabular-nums text-[10px] text-[var(--text-tertiary)]",
+          )}
+        >
+          {confidenceLabel(e.confidence)}
+        </span>
+        <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
+          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
+            {e.content || <span className="text-[var(--text-ghost)]">—</span>}
+          </span>
+        </span>
+        <span
+          className={cn(
+            ENTRY_COL.chevron,
+            "flex items-center justify-end text-[var(--text-tertiary)]",
+          )}
+        >
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+      </button>
+      {expanded && <EntryDetail entry={e} />}
+    </div>
+  );
+}
+
+/** An expanded entry: its full provenance, its content, and the edit and
+ *  forget actions. Editing follows the Policy view: a draft, save, revert. */
+function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
+  const { editEntry, forgetEntry } = useSharedMemoryStore.use.actions();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(e.content);
+  const [saving, setSaving] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
+  const dirty = draft.trim() !== e.content.trim() && draft.trim().length > 0;
+
+  useEffect(() => {
+    if (!editing) setDraft(e.content);
+  }, [e.content, editing]);
+
+  const cancel = () => {
+    setDraft(e.content);
+    setEditing(false);
+  };
+
+  const save = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      await editEntry(e.id, draft);
+      setEditing(false);
+      toast.success("Memory updated");
+    } catch (err) {
+      toast.error(`Couldn't update: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const forget = async () => {
+    setConfirmForget(false);
+    try {
+      await forgetEntry(e.id);
+      toast.success("Memory forgotten");
+    } catch (err) {
+      toast.error(`Couldn't forget: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return (
+    <div className="bg-[var(--bg-elevated)]/40 border-t border-[var(--border-subtle)] px-4 py-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <MetaChip label="Kind" value={KIND_LABEL[e.kind] ?? e.kind.replace(/_/g, " ")} />
+        <MetaChip label="Source" value={sourceLabel(e.source)} />
+        <MetaChip
+          label="Agent"
+          value={entryAgent(e.agent) ? agentMetaForSource(e.agent).label : e.agent || "—"}
+        />
+        <MetaChip label="Confidence" value={confidenceLabel(e.confidence)} />
+        {e.key && <MetaChip label="Key" value={e.key} mono />}
+        <MetaChip label="Created" value={fmtDateTime(e.createdAt)} />
+        <MetaChip label="Updated" value={fmtDateTime(e.updatedAt)} />
+        {e.uses > 0 && <MetaChip label="Uses" value={String(e.uses)} />}
+        {e.sessionId && <MetaChip label="Session" value={e.sessionId.slice(0, 8)} mono />}
+        <div className="flex-1" />
+        <div className="flex items-center gap-1">
+          {editing ? (
+            <>
+              <IconButton label="Save (⌘Enter)" onClick={() => void save()}>
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              </IconButton>
+              <IconButton label="Cancel (Esc)" onClick={cancel}>
+                <X size={12} />
+              </IconButton>
+            </>
+          ) : (
+            <>
+              <IconButton label="Edit memory" onClick={() => setEditing(true)}>
+                <Pencil size={12} />
+              </IconButton>
+              <IconButton label="Forget memory" onClick={() => setConfirmForget(true)}>
+                <Trash2 size={12} />
+              </IconButton>
+            </>
+          )}
+        </div>
+      </div>
+      {editing ? (
+        <textarea
+          value={draft}
+          autoFocus
+          onChange={(ev) => setDraft(ev.target.value)}
+          onKeyDown={(ev) => {
+            if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+              ev.preventDefault();
+              void save();
+            } else if (ev.key === "Escape") {
+              cancel();
+            }
+          }}
+          spellCheck={false}
+          rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+          aria-label="Memory content"
+          className={cn(
+            "block w-full resize-y rounded-lg border bg-[var(--bg-base)] px-3 py-2 font-sans text-[12px] leading-[1.55] text-[var(--text-primary)] outline-none transition-colors",
+            dirty ? "border-[var(--border-strong)]" : "border-[var(--border-default)]",
+          )}
+        />
+      ) : (
+        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
+          <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+            {e.content || "—"}
+          </pre>
+        </div>
+      )}
+      <FileTreeConfirmDelete
+        open={confirmForget}
+        name={e.content}
+        isDir={false}
+        title="Forget this memory?"
+        body="Every agent on this project stops seeing it, and it no longer shows in search. This can't be undone."
+        confirmLabel="Forget"
+        onConfirm={() => void forget()}
+        onOpenChange={setConfirmForget}
+      />
+    </div>
+  );
+}
+
 /* ── Primitives ──────────────────────────────────────────────────────────────── */
 
 function HeaderRow({ children }: { children: React.ReactNode }) {
@@ -581,6 +885,7 @@ function AgentTag({ agent }: { agent: string }) {
 
 const KIND_LABEL: Record<string, string> = {
   plan_set: "plan",
+  plan: "plan",
   decision: "decision",
   file_changed: "file",
   fact: "fact",
@@ -590,12 +895,22 @@ const KIND_LABEL: Record<string, string> = {
   todo_done: "todo ✓",
 };
 
-function KindChip({ kind }: { kind: string }) {
+/** The table's small label chip (kind, source). */
+function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-tertiary)]">
-      {KIND_LABEL[kind] ?? kind.replace(/_/g, " ")}
+    <span className="inline-flex max-w-full items-center rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-tertiary)]">
+      <span className="truncate">{children}</span>
     </span>
   );
+}
+
+function KindChip({ kind }: { kind: string }) {
+  return <Chip>{KIND_LABEL[kind] ?? kind.replace(/_/g, " ")}</Chip>;
+}
+
+/** An entry's source, in the same chip as its kind. */
+function SourceChip({ source }: { source: string }) {
+  return <Chip>{sourceLabel(source)}</Chip>;
 }
 
 function StatusChip({ status }: { status: string }) {

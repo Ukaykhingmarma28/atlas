@@ -522,7 +522,7 @@ impl RecordStore {
     pub fn events_newest(&self, limit: usize) -> Result<Vec<EventRow>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT seq, ts, agent, session, kind, key, payload FROM events ORDER BY seq DESC LIMIT ?1",
+            &format!("SELECT seq, ts, agent, session, kind, key, payload FROM events {LIVE_EVENTS} ORDER BY seq DESC LIMIT ?1"),
         )?;
         let rows = stmt.query_map([limit as i64], event_from_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -535,7 +535,7 @@ impl RecordStore {
         let q = query.trim().to_lowercase();
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT seq, ts, agent, session, kind, key, payload FROM events ORDER BY seq DESC",
+            &format!("SELECT seq, ts, agent, session, kind, key, payload FROM events {LIVE_EVENTS} ORDER BY seq DESC"),
         )?;
         let mut out = Vec::new();
         for row in stmt.query_map([], event_from_row)? {
@@ -713,15 +713,90 @@ impl RecordStore {
         Ok(best.map(|(id, _)| id))
     }
 
+    /// Rewrite entry `id`'s content as `source` (the user's edit from the
+    /// Memory panel): redacted, confidence 1.0, attributed to `source` as both
+    /// source and agent, stamped `ts`, and logged as an event of the entry's
+    /// kind so the Shared tab's event list and every session's delta carry
+    /// the new wording; the events carrying the wording it corrects are
+    /// retracted, as on forget. Key and kind stay; the id stays. `None` when no entry
+    /// has that id; an error for empty content (forget removes an entry).
+    pub fn edit(&self, id: i64, content: &str, source: &str, ts: i64) -> Result<Option<Entry>> {
+        let content = redact_text(content.trim());
+        if content.is_empty() {
+            anyhow::bail!("an edit needs content; forget the entry to remove it");
+        }
+        let kind = {
+            let conn = self.conn();
+            conn.query_row("SELECT kind FROM entries WHERE id = ?1", [id], |r| r.get::<_, String>(0))
+                .optional()?
+        };
+        let Some(kind) = kind.and_then(|k| EntryKind::parse(&k)) else {
+            return Ok(None);
+        };
+        // Embedding is the slow part; done before the connection is locked.
+        let vector = if kind.is_durable() { self.embed(&content) } else { None };
+
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let Some(old) = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row).optional()? else {
+            return Ok(None);
+        };
+        // A correction: the wording it replaces no longer surfaces from the
+        // log (retracted before the edit's own event is written).
+        retract_events_of(&tx, &old)?;
+        let seq = last_seq_tx(&tx)? + 1;
+        let payload = edit_payload(&old, &content);
+        insert_event(
+            &tx,
+            &EventRow {
+                seq,
+                ts,
+                agent: source.to_string(),
+                session_id: String::new(),
+                kind: old.kind.event_kind().as_str().to_string(),
+                key: old.key.clone(),
+                payload,
+            },
+        )?;
+        tx.execute(
+            "UPDATE entries SET content = ?2, content_hash = ?3, source = ?4, agent = ?4, session = '', \
+             confidence = 1.0, updated_at = ?5, seq = ?6 WHERE id = ?1",
+            params![id, content, content_hash(&content), source, ts, seq as i64],
+        )?;
+        match &vector {
+            Some((model, v)) => put_vector(&tx, id, model, v)?,
+            None => {
+                tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [id])?;
+            }
+        }
+        let entry = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)?;
+        tx.commit()?;
+        match &vector {
+            Some((model, v)) => self.index_put(id, model, v),
+            None => {
+                if let Some(index) = self.vectors().as_ref() {
+                    let _ = index.hnsw.remove(id as u64);
+                }
+            }
+        }
+        Ok(Some(entry))
+    }
+
     /// Remove one entry (and its vector). Returns it, or `None` when no entry
     /// has that id.
+    ///
+    /// The log keeps its sequence, but the events that carried the entry (its
+    /// identity's events, see `retract_events_of`) are **retracted**: the
+    /// log's list and search no longer show them, so a forgotten memory
+    /// surfaces nowhere. Nothing new is logged.
     pub fn forget(&self, id: i64) -> Result<Option<Entry>> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let entry = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row).optional()?;
-        if entry.is_some() {
+        if let Some(e) = &entry {
             tx.execute("DELETE FROM entries WHERE id = ?1", [id])?;
             tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [id])?;
+            retract_events_of(&tx, e)?;
         }
         tx.commit()?;
         if entry.is_some() {
@@ -857,7 +932,8 @@ impl RecordStore {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute_batch(
-            "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; DELETE FROM entry_vectors;",
+            "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; DELETE FROM entry_vectors; \
+             DELETE FROM retracted_events;",
         )?;
         tx.commit()?;
         *self.vectors() = None;
@@ -867,7 +943,10 @@ impl RecordStore {
 
 // ── Schema ───────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
+
+/// The log as the Shared tab lists and searches it: every event not retracted.
+const LIVE_EVENTS: &str = "WHERE seq NOT IN (SELECT seq FROM retracted_events)";
 
 fn migrate_schema(conn: &Connection) -> Result<()> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -877,17 +956,79 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
     if version < 1 {
         migrate_v1(conn)?;
     }
-    // v2: one embedding per entry (by entry id), tagged with its model.
+    if version < 2 {
+        // v2: one embedding per entry (by entry id), tagged with its model.
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS entry_vectors (
+                 id     INTEGER PRIMARY KEY,
+                 model  TEXT NOT NULL,
+                 vec    BLOB NOT NULL
+             );
+             PRAGMA user_version = 2;
+             COMMIT;",
+        )?;
+    }
+    // v3: events whose content was forgotten, hidden from the log's list and
+    // search (the rows stay, so the sequence never goes back).
     conn.execute_batch(
         "BEGIN;
-         CREATE TABLE IF NOT EXISTS entry_vectors (
-             id     INTEGER PRIMARY KEY,
-             model  TEXT NOT NULL,
-             vec    BLOB NOT NULL
+         CREATE TABLE IF NOT EXISTS retracted_events (
+             seq  INTEGER PRIMARY KEY
          );
-         PRAGMA user_version = 2;
+         PRAGMA user_version = 3;
          COMMIT;",
     )?;
+    Ok(())
+}
+
+/// The payload field an event of `kind` carries an entry's content in: a file
+/// change's summary, every other kind's text.
+fn content_field(kind: EntryKind) -> &'static str {
+    if kind == EntryKind::FileChanged { "summary" } else { "text" }
+}
+
+/// The log event a user's edit of `e` to `content` is recorded as: the
+/// entry's own kind and key, in the payload shape its fold reads.
+fn edit_payload(e: &Entry, content: &str) -> serde_json::Value {
+    match e.kind {
+        EntryKind::Plan => serde_json::json!({ "text": content, "status": e.status }),
+        EntryKind::FileChanged => serde_json::json!({ "path": e.key, "summary": content }),
+        _ => serde_json::json!({ content_field(e.kind): content }),
+    }
+}
+
+/// Retract the events that carried `e` — the ones its identity folded from:
+/// its last write; for a file change, every event on its path; for a keyed
+/// decision, every event under its key; and every event of its kind whose
+/// wording is the same memory (by normalised hash) and names no other key.
+/// Another entry's events are never touched.
+fn retract_events_of(tx: &Transaction<'_>, e: &Entry) -> Result<()> {
+    let mut seqs: Vec<i64> = e.seq.map(|s| s as i64).into_iter().collect();
+    {
+        let mut stmt = tx.prepare("SELECT seq, key, payload FROM events WHERE kind = ?1")?;
+        let rows = stmt.query_map([e.kind.event_kind().as_str()], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })?;
+        for row in rows {
+            let (seq, key, payload) = row?;
+            let payload: serde_json::Value = serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+            let text = payload.get(content_field(e.kind)).and_then(|v| v.as_str()).unwrap_or("").trim();
+            let same_wording = !text.is_empty() && content_hash(text) == e.content_hash;
+            let ours = match e.kind {
+                EntryKind::FileChanged => payload.get("path").and_then(|v| v.as_str()).unwrap_or(&key) == e.key,
+                EntryKind::Decision if !e.key.is_empty() => key == e.key || (same_wording && key.is_empty()),
+                EntryKind::Decision => same_wording && key.is_empty(),
+                _ => same_wording,
+            };
+            if ours {
+                seqs.push(seq);
+            }
+        }
+    }
+    for seq in seqs {
+        tx.execute("INSERT OR IGNORE INTO retracted_events (seq) VALUES (?1)", [seq])?;
+    }
     Ok(())
 }
 
@@ -1634,6 +1775,103 @@ pub(crate) mod tests {
         // Nothing left to merge into.
         let near = store.remember(tool_write(EntryKind::Fact, "", "JWT signing uses RS256", 2), 2).unwrap();
         assert_eq!(near.outcome, WriteOutcome::Inserted);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A user's edit rewrites the entry in place, attributed to the user at
+    /// full confidence, and is logged so every session's delta carries it.
+    #[test]
+    fn an_edit_rewrites_the_entry_as_the_user() {
+        let root = temp_root("edit");
+        let store = open_scope(&root).unwrap();
+        store.append_event(ev(EventKind::Decision, "alg", serde_json::json!({"text": "HS256"})), 1).unwrap();
+        let id = store.list(EntryKind::Decision, 10, Origin::Any).unwrap()[0].id;
+
+        let edited = store.edit(id, "  RS256, rotated monthly ", "user", 5).unwrap().expect("the entry exists");
+        assert_eq!(edited.id, id);
+        assert_eq!((edited.content.as_str(), edited.key.as_str()), ("RS256, rotated monthly", "alg"));
+        assert_eq!((edited.source.as_str(), edited.agent.as_str()), ("user", "user"));
+        assert_eq!((edited.confidence, edited.updated_at), (1.0, 5));
+        assert_eq!(edited.seq, Some(2));
+
+        let logged = &store.events_newest(1).unwrap()[0];
+        assert_eq!((logged.seq, logged.kind.as_str(), logged.key.as_str()), (2, "decision", "alg"));
+        assert_eq!(logged.agent, "user");
+        assert_eq!(logged.payload, serde_json::json!({"text": "RS256, rotated monthly"}));
+
+        assert_eq!(store.edit(9_999, "anything", "user", 6).unwrap(), None);
+        assert!(store.edit(id, "   ", "user", 6).is_err(), "an edit never empties an entry");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A file-changed entry's content is its summary: the logged edit keeps
+    /// the event shape the fold and the Shared tab read.
+    #[test]
+    fn an_edited_file_change_logs_path_and_summary() {
+        let root = temp_root("edit-file");
+        let store = open_scope(&root).unwrap();
+        store
+            .append_event(ev(EventKind::FileChanged, "", serde_json::json!({"path": "a.ts", "summary": "x"})), 1)
+            .unwrap();
+        let id = store.list(EntryKind::FileChanged, 10, Origin::Any).unwrap()[0].id;
+        store.edit(id, "renamed the export", "user", 2).unwrap();
+        assert_eq!(
+            store.events_newest(1).unwrap()[0].payload,
+            serde_json::json!({"path": "a.ts", "summary": "renamed the export"})
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Forgetting an entry takes its words out of the log's search and list
+    /// too — the entry is gone, so is what carried it — while the sequence
+    /// never goes back.
+    #[test]
+    fn a_forgotten_entry_no_longer_surfaces_from_the_log() {
+        let root = temp_root("forget-log");
+        let store = open_scope(&root).unwrap();
+        store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "The staging DB is on port 6543"})), 1).unwrap();
+        store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "the staging db is on port 6543"})), 2).unwrap();
+        store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "Deploys go through Fly"})), 3).unwrap();
+        let entry = store.query("6543", &[], 10).unwrap().remove(0);
+
+        store.forget(entry.id).unwrap().expect("forgotten");
+        assert!(store.search_events("6543", 10).unwrap().is_empty());
+        let listed: Vec<u64> = store.events_newest(10).unwrap().iter().map(|e| e.seq).collect();
+        assert_eq!(listed, vec![3]);
+        assert_eq!(store.search_events("fly", 10).unwrap().len(), 1);
+        assert_eq!(store.last_event().unwrap().map(|(seq, _)| seq), Some(3));
+
+        // A fresh write of the same words is a new memory, and shows.
+        store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "The staging DB is on port 6543"})), 4).unwrap();
+        assert_eq!(store.search_events("6543", 10).unwrap().iter().map(|e| e.seq).collect::<Vec<_>>(), vec![4]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Retraction follows the entry's identity: forgetting one path's entry
+    /// leaves another path with the same summary alone, and a correction
+    /// (edit) takes the wording it replaced out of the log's search.
+    #[test]
+    fn retraction_follows_the_entry_identity() {
+        let root = temp_root("retract-identity");
+        let store = open_scope(&root).unwrap();
+        for (i, path) in ["a.ts", "b.ts"].into_iter().enumerate() {
+            store
+                .append_event(ev(EventKind::FileChanged, "", serde_json::json!({"path": path, "summary": "formatted"})), i as i64)
+                .unwrap();
+        }
+        let a = store.list(EntryKind::FileChanged, 10, Origin::Any).unwrap().into_iter().find(|e| e.key == "a.ts").unwrap();
+        store.forget(a.id).unwrap();
+        let left: Vec<String> = store.search_events("formatted", 10).unwrap().into_iter().map(|e| e.key).collect();
+        assert_eq!(left.len(), 1);
+        assert!(store.events_newest(10).unwrap()[0].payload.to_string().contains("b.ts"));
+
+        store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "Staging is on port 6543"})), 5).unwrap();
+        let fact = store.query("6543", &[], 1).unwrap().remove(0);
+        store.edit(fact.id, "Staging is on port 5432", "user", 6).unwrap();
+        assert!(store.search_events("6543", 10).unwrap().is_empty(), "the corrected wording is gone");
+        assert_eq!(store.search_events("5432", 10).unwrap().len(), 1);
+        store.forget(fact.id).unwrap();
+        assert!(store.search_events("staging", 10).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -150,6 +150,52 @@ pub struct SharedState {
     pub updated_at: i64,
 }
 
+/// One record entry with its provenance and confidence — a row of the Shared
+/// tab's Memories view (`memory_list_entries`, `memory_edit_entry`). New with
+/// the panel's edit and forget; the five frozen shapes above are untouched.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryEntry {
+    pub id: i64,
+    /// `plan`, `decision`, `file_changed`, `fact`, `failure`, `architecture`.
+    pub kind: String,
+    pub key: String,
+    pub content: String,
+    /// Active plan only; else empty.
+    pub status: String,
+    /// An agent id, `extractor`, `user`, or `import:<origin>`.
+    pub source: String,
+    /// The agent the memory came from; empty for an import.
+    pub agent: String,
+    pub session_id: String,
+    /// 0–1: the extractor's model confidence; 1.0 for tool and user writes.
+    pub confidence: f64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub last_used_at: Option<i64>,
+    pub uses: u32,
+}
+
+impl From<Entry> for MemoryEntry {
+    fn from(e: Entry) -> Self {
+        Self {
+            id: e.id,
+            kind: e.kind.as_str().to_string(),
+            key: e.key,
+            content: e.content,
+            status: e.status,
+            source: e.source,
+            agent: e.agent,
+            session_id: e.session_id,
+            confidence: e.confidence,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+            last_used_at: e.last_used_at,
+            uses: e.uses,
+        }
+    }
+}
+
 fn fact_view(e: Entry) -> FactView {
     FactView {
         seq: e.seq.unwrap_or(0),
@@ -595,6 +641,9 @@ impl SharedMemoryStore {
 /// The provenance of every entry the extractor writes.
 pub const EXTRACTOR_SOURCE: &str = "extractor";
 
+/// The provenance of every edit made from the Memory panel.
+pub const USER_SOURCE: &str = "user";
+
 /// Who a write is attributed to: the agent and session a memory-server token
 /// belongs to, or the session the extractor distilled.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -732,6 +781,35 @@ impl SharedMemoryStore {
         }
         out
     }
+
+    // ── Panel path (the Shared tab's Memories view) ──────────────────────────
+
+    /// Every entry with its provenance and confidence, each kind capped at its
+    /// display limit, newest write first.
+    pub fn entries(&self, project_path: &str) -> Vec<MemoryEntry> {
+        let mut out: Vec<MemoryEntry> = self.list_entries(project_path, None).into_iter().map(MemoryEntry::from).collect();
+        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
+        out
+    }
+
+    /// The user's edit of entry `id` from the Memory panel: new content,
+    /// source `user`, confidence 1.0, logged and announced (see
+    /// [`RecordStore::edit`]). An error when there is no such entry.
+    pub fn edit_entry(&self, project_path: &str, id: i64, content: &str) -> Result<MemoryEntry, String> {
+        let store = store_for(project_path)?;
+        let edited = store
+            .edit(id, content, USER_SOURCE, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?
+            .ok_or_else(|| format!("no memory entry {id}"))?;
+        self.announce(&store, &[edited.kind.as_str()]);
+        Ok(edited.into())
+    }
+
+    /// The user's forget of entry `id` from the Memory panel. `false` when
+    /// there was no such entry.
+    pub fn forget_entry(&self, project_path: &str, id: i64) -> Result<bool, String> {
+        Ok(self.forget(project_path, id)?.is_some())
+    }
 }
 
 impl super::agent_host::SessionLifecycle for SharedMemoryStore {
@@ -840,6 +918,50 @@ pub async fn memory_append_event(
         )
     })
     .await
+}
+
+/// Every entry with its provenance and confidence — the Shared tab's
+/// Memories view.
+#[tauri::command]
+pub async fn memory_list_entries(
+    project_path: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let store = store.inner().clone();
+    off_main(move || Ok(store.entries(&project_path))).await
+}
+
+/// Edit one entry's content as the user. The retrieval index is nudged so
+/// relevant memory stops matching the old wording.
+#[tauri::command]
+pub async fn memory_edit_entry(
+    project_path: String,
+    id: i64,
+    content: String,
+    store: State<'_, SharedMemoryStore>,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<MemoryEntry, String> {
+    let store = store.inner().clone();
+    let cwd = project_path.clone();
+    let edited = off_main(move || store.edit_entry(&project_path, id, &content)).await?;
+    registry.enqueue_index(&cwd);
+    Ok(edited)
+}
+
+/// Forget (delete) one entry. `false` when it was already gone. The
+/// retrieval index is nudged so relevant memory stops finding it.
+#[tauri::command]
+pub async fn memory_forget_entry(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    let cwd = project_path.clone();
+    let gone = off_main(move || store.forget_entry(&project_path, id)).await?;
+    registry.enqueue_index(&cwd);
+    Ok(gone)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1047,6 +1169,100 @@ mod tests {
             serde_json::to_value(&change).unwrap(),
             serde_json::json!({"root": "/repo", "kinds": ["plan"]})
         );
+    }
+
+    fn writer(agent: &str) -> Writer {
+        Writer { agent: agent.into(), session_id: format!("{agent}-s") }
+    }
+
+    /// Every entry on the Shared tab says who wrote it and how sure it is:
+    /// an agent's capture, the extractor's model confidence, an import.
+    #[test]
+    fn entries_carry_provenance_and_confidence() {
+        let (store, p) = (SharedMemoryStore::with_clock(Arc::new(|| 7_000)), temp_project("provenance"));
+        append(&store, &p, EventKind::Decision, "db", serde_json::json!({"text": "Postgres"}));
+        store
+            .record_extracted(&p, &writer("codex"), EntryKind::Failure, "Mocking the DB hid a migration bug", 0.6)
+            .unwrap();
+        store_for(&p)
+            .unwrap()
+            .upsert(NewEntry {
+                kind: EntryKind::Fact,
+                key: String::new(),
+                content: "Prefers small PRs".into(),
+                source: "import:claude".into(),
+                agent: String::new(),
+                session_id: String::new(),
+                confidence: 0.7,
+                at: 6_000,
+            })
+            .unwrap();
+
+        let entries = store.entries(&p);
+        let by = |content: &str| entries.iter().find(|e| e.content == content).unwrap().clone();
+        let decision = by("Postgres");
+        assert_eq!(
+            (decision.source.as_str(), decision.agent.as_str(), decision.confidence),
+            ("claude-code", "claude-code", 1.0)
+        );
+        let failure = by("Mocking the DB hid a migration bug");
+        assert_eq!((failure.source.as_str(), failure.agent.as_str(), failure.confidence), ("extractor", "codex", 0.6));
+        let fact = by("Prefers small PRs");
+        assert_eq!((fact.source.as_str(), fact.agent.as_str(), fact.confidence), ("import:claude", "", 0.7));
+        // Newest write first.
+        assert_eq!(entries[0].content, "Mocking the DB hid a migration bug");
+
+        let json = serde_json::to_value(&failure).unwrap();
+        for field in ["id", "kind", "key", "content", "source", "agent", "sessionId", "confidence", "createdAt", "updatedAt", "uses"] {
+            assert!(json.get(field).is_some(), "missing {field}: {json}");
+        }
+        assert_eq!(json["kind"], "failure");
+        assert_eq!(json["sessionId"], "codex-s");
+    }
+
+    /// An edit from the panel rewrites the entry as the user, at full
+    /// confidence, shows in the state view, and is announced.
+    #[test]
+    fn a_user_edit_updates_the_entry_and_is_announced() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("user-edit"));
+        let heard = Arc::new(Mutex::new(Vec::<MemoryChanged>::new()));
+        store.on_change({
+            let heard = heard.clone();
+            Arc::new(move |change: &MemoryChanged| heard.lock().push(change.clone()))
+        });
+        append(&store, &p, EventKind::Decision, "auth.alg", serde_json::json!({"text": "HS256"}));
+        let id = store.entries(&p)[0].id;
+
+        let edited = store.edit_entry(&p, id, "RS256").unwrap();
+        assert_eq!((edited.content.as_str(), edited.source.as_str(), edited.confidence), ("RS256", "user", 1.0));
+        let state = store.get_state(&p);
+        assert_eq!(state.decisions.len(), 1);
+        assert_eq!((state.decisions[0].text.as_str(), state.decisions[0].agent.as_str()), ("RS256", "user"));
+        assert_eq!(heard.lock().last().unwrap().kinds, vec!["decision".to_string()]);
+
+        assert!(store.edit_entry(&p, 9_999, "x").is_err(), "no such entry");
+    }
+
+    /// Forgetting from the panel removes the entry from the state view, from
+    /// entry search (memory_search, retrieval) and from the log's query.
+    #[test]
+    fn forgetting_an_entry_removes_it_from_state_and_search() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("user-forget"));
+        append(&store, &p, EventKind::Fact, "", serde_json::json!({"text": "The staging DB is on port 6543"}));
+        append(&store, &p, EventKind::Fact, "", serde_json::json!({"text": "Deploys go through Fly"}));
+        let id = store.entries(&p).iter().find(|e| e.content.contains("6543")).unwrap().id;
+
+        assert!(store.forget_entry(&p, id).unwrap());
+        assert!(!store.forget_entry(&p, id).unwrap(), "already gone");
+
+        let state = store.get_state(&p);
+        assert_eq!(state.facts.iter().map(|f| f.text.as_str()).collect::<Vec<_>>(), vec!["Deploys go through Fly"]);
+        assert!(store.query(&p, "6543", 20).is_empty());
+        assert!(store.search_entries(&p, "staging port 6543", &[], 10).is_empty());
+        assert!(durable_entries(&p).1.iter().all(|e| !e.content.contains("6543")));
+        assert!(store.entries(&p).iter().all(|e| e.id != id));
+        // The rest of the tab is untouched.
+        assert_eq!(store.query(&p, "fly", 20).len(), 1);
     }
 
     #[test]
