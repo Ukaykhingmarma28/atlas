@@ -135,9 +135,9 @@ pub fn notify_settings_changed(app: &AppHandle, settings: &AppSettings, generati
     //    to be current before that — this covers every commit path, and
     //    `lib.rs` applies it once at boot.
     apply_curated_plugin_sync_gate(settings.curated_plugin_sync);
-    // 5. re-apply the Dock icon, so an external edit of `appIcon` takes
-    //    effect live like the Settings toggle does.
-    crate::app_icon::apply(app, settings.app_icon);
+    // 5. re-apply the app icon, so an external edit of `appIcon` takes
+    //    effect live like the Settings picker does. A no-op unless it changed.
+    crate::app_icon::apply(app, &settings.app_icon);
 }
 
 /// The gate for the vendored engine's curated-plugin sync

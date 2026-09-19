@@ -16,6 +16,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
+    // For `src-tauri/icons/app-icons/app-icons.json`, the icon manifest the
+    // settings picker shares with Rust and scripts/app-icons.mjs.
+    "resolveJsonModule": true,
     "paths": {
       "@/*": ["./src/*"]
     },

@@ -23,6 +23,7 @@ import {
   DownloadCloud,
 } from "lucide-react";
 import { clampScale, SCALE_STEP, MIN_SCALE, MAX_SCALE, DEFAULT_SCALE } from "../lib/ui-scale";
+import { APP_ICONS } from "../lib/app-icons";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { ProvidersSettings } from "./providers-settings";
 import { LayoutsSettings } from "./layouts-settings";
@@ -333,15 +334,18 @@ function GeneralSettings() {
       {isMac && (
         <SettingRow
           label="App icon"
-          description="Dark or light Liquid Glass icon. Changes the Dock icon while Atlas is running; Finder keeps the dark one."
+          description="Changes the icon in the Dock, Finder and Launchpad. Only the default is live Liquid Glass; the others are fixed renders of theirs."
         >
           <select
             value={settings.appIcon}
-            onChange={(e) => updateSettings({ appIcon: e.target.value as "dark" | "light" })}
+            onChange={(e) => updateSettings({ appIcon: e.target.value })}
             className="h-7 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-xs text-[var(--foreground)] outline-none"
           >
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
+            {APP_ICONS.map((icon) => (
+              <option key={icon.id} value={icon.id}>
+                {icon.label}
+              </option>
+            ))}
           </select>
         </SettingRow>
       )}

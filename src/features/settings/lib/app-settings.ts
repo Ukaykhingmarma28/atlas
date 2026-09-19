@@ -9,6 +9,7 @@
  */
 
 import { DEFAULT_SCALE } from "./ui-scale";
+import { DEFAULT_APP_ICON } from "./app-icons";
 import type { ThemeMode } from "@/features/theme/lib/theme-api";
 import type { ThemeOverride } from "@/features/theme/resolve-theme";
 
@@ -50,10 +51,11 @@ export interface AppSettings {
    *  (decision 4). `"minimal"` keeps Atlas's own lucide icons; anything else
    *  names a VS Code icon theme — bundled, or installed from Open VSX. */
   iconTheme: string;
-  /** macOS app icon style. "dark" is the icon the bundle ships with; "light"
-   *  replaces the Dock icon while Atlas runs. Applied on the Rust side
-   *  (`src-tauri/src/app_icon.rs`); ignored on other platforms. */
-  appIcon: "dark" | "light";
+  /** macOS app icon, by id from `APP_ICONS` (`./app-icons`). The default is
+   *  the icon the bundle ships with; any other replaces the Dock and Finder
+   *  icon. Applied on the Rust side (`src-tauri/src/app_icon.rs`); ignored on
+   *  other platforms. */
+  appIcon: string;
   /** Adaptive next-step suggestion chips in the agent chat's per-turn card.
    *  "agent" (default) asks the coding agent to end each reply with a hidden
    *  `<next_steps>` block (uses the live session context, no BYOK); "off"
@@ -128,7 +130,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   themeMode: "system",
   themeOverrides: {},
   iconTheme: "material-icon-theme",
-  appIcon: "dark",
+  appIcon: DEFAULT_APP_ICON,
   adaptiveSuggestions: "agent",
   gitBlameInline: true,
   autoUpdate: true,

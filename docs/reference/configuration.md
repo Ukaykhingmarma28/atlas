@@ -159,7 +159,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
 | `themeOverrides` | table | absent | optional `base`, `palette`, and `keys` patch applied after the active theme variant |
 | `iconTheme` | string | `"material-icon-theme"` | a plain id (letters, digits, `.`, `-`, `_`) — it names a directory under `~/.config/atlas/icon-themes/`. `"minimal"` keeps Atlas's lucide icons. See `docs/reference/icon-themes.md` |
-| `appIcon` | `"dark"` \| `"light"` | `"dark"` | exactly one of these two strings. macOS only: light replaces the Dock icon while Atlas runs; Finder keeps the bundle's dark icon |
+| `appIcon` | string | `"dark"` | a plain id (letters, digits, `-`, `_`) from `src-tauri/icons/app-icons/app-icons.json` — today `"dark"` or `"light"`. An id this Atlas does not ship shows the default without rewriting the file. macOS only: `"dark"` is the bundle's own Liquid Glass icon; any other replaces the Dock icon and the bundle's Finder/Launchpad icon, re-applied at every launch |
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `gitBlameInline` | boolean | `true` | — |
 | `autoUpdate` | boolean | `true` | — |

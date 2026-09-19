@@ -1,0 +1,7 @@
+{
+  "default": "dark",
+  "icons": [
+    { "id": "dark", "label": "Dark" },
+    { "id": "light", "label": "Light" }
+  ]
+}

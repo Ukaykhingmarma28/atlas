@@ -23,6 +23,8 @@
     "test:contracts": "vitest run tests/",
     "theme:keys": "node scripts/generate-theme-keys.mjs",
     "theme:keys:check": "node scripts/generate-theme-keys.mjs --check",
+    "icons:render": "node scripts/app-icons.mjs",
+    "icons:check": "node scripts/app-icons.mjs --check",
     "test:rust": "bash scripts/test-rust.sh",
     "test:watch": "vitest",
     "typecheck": "bun run --parallel typecheck:app typecheck:test",

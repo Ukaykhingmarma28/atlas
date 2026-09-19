@@ -94,21 +94,6 @@ impl Default for ThemeMode {
     }
 }
 
-/// The macOS app icon style. `Dark` is the one the bundle ships with; `Light`
-/// is applied at runtime as the Dock icon. See `crate::app_icon`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AppIcon {
-    Dark,
-    Light,
-}
-
-impl Default for AppIcon {
-    fn default() -> Self {
-        Self::Dark
-    }
-}
-
 /// Deserialized by hand (below), not derived: `config.toml` is a file people
 /// edit, and one bad override entry must not fail the whole file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -293,11 +278,12 @@ pub struct AppSettings {
     /// is a VS Code icon theme — bundled or installed from Open VSX.
     #[serde(default = "default_icon_theme")]
     pub icon_theme: String,
-    /// macOS app icon style — the Liquid Glass icon's dark or light variant.
-    /// Dark is the bundle's own icon; Light replaces the Dock icon while Atlas
-    /// runs. Ignored on other platforms. See `crate::app_icon`.
-    #[serde(default)]
-    pub app_icon: AppIcon,
+    /// macOS app icon: an id from `icons/app-icons/app-icons.json`. The
+    /// manifest's default is the bundle's own icon; any other is applied to
+    /// the Dock and the bundle's Finder icon at runtime. Ignored on other
+    /// platforms. See `crate::app_icon`.
+    #[serde(default = "default_app_icon")]
+    pub app_icon: String,
     /// Pre-theme-core config fields. Read once, never serialized again.
     #[serde(default, rename = "codeEditorTheme", skip_serializing)]
     legacy_code_editor_theme: Option<String>,
@@ -362,6 +348,10 @@ pub fn default_theme() -> String {
     atlas_theme::DEFAULT_THEME_ID.to_string()
 }
 
+pub fn default_app_icon() -> String {
+    crate::app_icon::default_id().to_string()
+}
+
 pub fn default_icon_theme() -> String {
     atlas_icon_theme::DEFAULT_ICON_THEME_ID.to_string()
 }
@@ -392,7 +382,7 @@ impl Default for AppSettings {
             theme_mode: ThemeMode::default(),
             theme_overrides: ThemeOverride::default(),
             icon_theme: default_icon_theme(),
-            app_icon: AppIcon::default(),
+            app_icon: default_app_icon(),
             legacy_code_editor_theme: None,
             legacy_atlas_theme: None,
             adaptive_suggestions: AdaptiveSuggestions::default(),
@@ -510,9 +500,9 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "appIcon",
-        "# macOS app icon: exactly \"dark\" or \"light\". Dark is the icon Atlas\n\
-         # ships with; light replaces the Dock icon while Atlas is running.\n\
-         # (default: \"dark\")",
+        "# macOS app icon, by id: \"dark\" (the icon Atlas ships with) or\n\
+         # \"light\". Any other than dark replaces the Dock and Finder icon.\n\
+         # An id this Atlas does not know shows the default. (default: \"dark\")",
     ),
     (
         "adaptiveSuggestions",
@@ -637,6 +627,13 @@ pub fn validate(settings: &AppSettings) -> Result<(), ValidationIssue> {
         return Err(ValidationIssue {
             key: "iconTheme",
             message: "must be a plain id: letters, digits, dot, dash or underscore".to_string(),
+        });
+    }
+    // Names a file (`icons/app-icons/<id>.icns`); same reasoning as `iconTheme`.
+    if !crate::app_icon::is_valid_id(&settings.app_icon) {
+        return Err(ValidationIssue {
+            key: "appIcon",
+            message: "must be a plain id: letters, digits, dash or underscore".to_string(),
         });
     }
     Ok(())
@@ -835,7 +832,7 @@ pub struct SettingsPatch {
     pub theme_mode: Option<ThemeMode>,
     pub theme_overrides: Option<ThemeOverride>,
     pub icon_theme: Option<String>,
-    pub app_icon: Option<AppIcon>,
+    pub app_icon: Option<String>,
     pub adaptive_suggestions: Option<AdaptiveSuggestions>,
     pub git_blame_inline: Option<bool>,
     pub auto_update: Option<bool>,
@@ -886,8 +883,8 @@ impl SettingsPatch {
         if let Some(v) = &self.icon_theme {
             settings.icon_theme = v.clone();
         }
-        if let Some(v) = self.app_icon {
-            settings.app_icon = v;
+        if let Some(v) = &self.app_icon {
+            settings.app_icon = v.clone();
         }
         if let Some(v) = self.adaptive_suggestions {
             settings.adaptive_suggestions = v;
@@ -983,11 +980,8 @@ impl SettingsPatch {
         if let Some(v) = &self.icon_theme {
             table["iconTheme"] = toml_edit::value(v.as_str());
         }
-        if let Some(v) = self.app_icon {
-            table["appIcon"] = toml_edit::value(match v {
-                AppIcon::Dark => "dark",
-                AppIcon::Light => "light",
-            });
+        if let Some(v) = &self.app_icon {
+            table["appIcon"] = toml_edit::value(v.as_str());
         }
         if let Some(v) = self.adaptive_suggestions {
             let s = match v {
@@ -2195,7 +2189,7 @@ someFutureKey = \"left alone\"
                 )]),
             }),
             icon_theme: Some(atlas_icon_theme::MINIMAL_ICON_THEME_ID.to_string()),
-            app_icon: Some(AppIcon::Light),
+            app_icon: Some("light".to_string()),
             adaptive_suggestions: Some(AdaptiveSuggestions::Off),
             git_blame_inline: Some(!defaults.git_blame_inline),
             auto_update: Some(!defaults.auto_update),

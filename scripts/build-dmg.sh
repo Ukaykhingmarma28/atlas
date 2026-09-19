@@ -48,10 +48,11 @@ if ! rustup target list --installed | grep -qx "${TARGET}"; then
   rustup target add "${TARGET}"
 fi
 
-# Before SDKROOT: it may switch DEVELOPER_DIR, which changes what xcrun finds.
-source scripts/select-xcode.sh
-if [[ "${ATLAS_ACTOOL_OK}" != "1" ]]; then
-  log "WARNING: no Xcode 26+ actool — this build gets the flat Icon.icns, not the Liquid Glass icon"
+# The Liquid Glass icon ships precompiled (scripts/app-icons.mjs has why), so
+# the build never needs Xcode — but an edited .icon that was never re-rendered
+# ships the old icon. A dev build only warns; release-macos.sh refuses.
+if ! node scripts/app-icons.mjs --check; then
+  log "WARNING: app icons are stale — this build ships the last rendered ones"
 fi
 
 # The C-building dependencies need an SDK path. The macOS SDK is universal, so

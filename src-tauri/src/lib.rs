@@ -188,9 +188,9 @@ pub fn run() {
                 );
                 let _ = window.set_background_color(Some(color));
             }
-            // The Dock icon, before the window shows. Later changes arrive
+            // The app icon, before the window shows. Later changes arrive
             // through `notify_settings_changed`.
-            app_icon::apply(app.handle(), migration.manager.effective().app_icon);
+            app_icon::apply(app.handle(), &migration.manager.effective().app_icon);
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             commands::atlas_config::start_watcher(app.handle(), atlas_config);
