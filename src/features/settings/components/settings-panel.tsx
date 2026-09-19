@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { ScrollArea } from "@/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { isMac } from "@/lib/platform";
 import { Hint } from "@/ui/tooltip";
 import {
   Settings,
@@ -329,6 +330,21 @@ function GeneralSettings() {
       >
         <ZoomControl />
       </SettingRow>
+      {isMac && (
+        <SettingRow
+          label="App icon"
+          description="Dark or light Liquid Glass icon. Changes the Dock icon while Atlas is running; Finder keeps the dark one."
+        >
+          <select
+            value={settings.appIcon}
+            onChange={(e) => updateSettings({ appIcon: e.target.value as "dark" | "light" })}
+            className="h-7 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-xs text-[var(--foreground)] outline-none"
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </SettingRow>
+      )}
       <SettingRow
         label="Enter to send"
         description="Enter sends your message; Shift+Enter inserts a newline — the Slack/Discord/ChatGPT convention. Turn off to restore the old behavior, where only ⌘/Ctrl+Enter sends and Enter always inserts a newline. ⌘/Ctrl+Enter always sends either way."

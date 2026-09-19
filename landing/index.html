@@ -12,11 +12,28 @@
 <meta property="og:site_name" content="Atlas" />
 <meta property="og:title" content="Atlas — Every coding agent, one workspace, your whole team" />
 <meta property="og:description" content="Install any coding agent, run them across projects, capture every session on a team timeline, and chat with your team — in one native macOS window." />
-<meta property="og:image" content="/og-image.png" />
+<!-- Two encodes of the same card (scripts/og/og.html). The JPEG is first
+     because a crawler takes the first og:image it understands, and LinkedIn
+     and Facebook are unreliable with WebP — they can render no image at all.
+     Everything that does handle WebP is served it via twitter:image, which
+     X, Slack and Discord all read. Do not reorder these without checking
+     both. -->
+<meta property="og:image" content="https://www.tryatlas.cc/og-image.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="2400" />
+<meta property="og:image:height" content="1260" />
+<meta property="og:image:alt" content="Atlas — source control for agents" />
+<meta property="og:image" content="https://www.tryatlas.cc/og-image.webp" />
+<meta property="og:image:type" content="image/webp" />
+<meta property="og:image:width" content="2400" />
+<meta property="og:image:height" content="1260" />
+<meta property="og:image:alt" content="Atlas — source control for agents" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Atlas — Every coding agent, one workspace, your whole team" />
 <meta name="twitter:description" content="Install any coding agent, run them across projects, capture every session, chat with your team. Native macOS." />
-<meta name="twitter:image" content="/og-image.png" />
+<meta name="twitter:image" content="https://www.tryatlas.cc/og-image.webp" />
+<meta name="twitter:image:alt" content="Atlas — source control for agents" />
+<meta name="twitter:image:type" content="image/webp" />
 <meta name="twitter:site" content="@tryatlas_cc" />
 
 <link rel="icon" type="image/svg+xml" href="/icon-sm.svg" />

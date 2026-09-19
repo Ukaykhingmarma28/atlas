@@ -15,14 +15,16 @@
 # Usage:
 #   scripts/set-dmg-icon.sh [path/to/icon.icns] [path/to/target.dmg]
 #
-# With no args: uses src-tauri/icons/icon.icns and the most recently built
-# .dmg under target/**/release/bundle/dmg/ (the workspace target dir).
+# With no args: uses src-tauri/icons/Icon.icns (the app icon) and the most
+# recently built .dmg under target/**/release/bundle/dmg/ (the workspace
+# target dir). The mounted volume gets the drive icon (dmg-icon.icns) from
+# scripts/layout-dmg.sh instead — this one only covers the file on disk.
 # ============================================================================
 
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-icon="${1:-${root}/src-tauri/icons/icon.icns}"
+icon="${1:-${root}/src-tauri/icons/Icon.icns}"
 
 if [[ -n "${2:-}" ]]; then
   dmg="$2"

@@ -94,6 +94,21 @@ impl Default for ThemeMode {
     }
 }
 
+/// The macOS app icon style. `Dark` is the one the bundle ships with; `Light`
+/// is applied at runtime as the Dock icon. See `crate::app_icon`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppIcon {
+    Dark,
+    Light,
+}
+
+impl Default for AppIcon {
+    fn default() -> Self {
+        Self::Dark
+    }
+}
+
 /// Deserialized by hand (below), not derived: `config.toml` is a file people
 /// edit, and one bad override entry must not fail the whole file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -278,6 +293,11 @@ pub struct AppSettings {
     /// is a VS Code icon theme — bundled or installed from Open VSX.
     #[serde(default = "default_icon_theme")]
     pub icon_theme: String,
+    /// macOS app icon style — the Liquid Glass icon's dark or light variant.
+    /// Dark is the bundle's own icon; Light replaces the Dock icon while Atlas
+    /// runs. Ignored on other platforms. See `crate::app_icon`.
+    #[serde(default)]
+    pub app_icon: AppIcon,
     /// Pre-theme-core config fields. Read once, never serialized again.
     #[serde(default, rename = "codeEditorTheme", skip_serializing)]
     legacy_code_editor_theme: Option<String>,
@@ -372,6 +392,7 @@ impl Default for AppSettings {
             theme_mode: ThemeMode::default(),
             theme_overrides: ThemeOverride::default(),
             icon_theme: default_icon_theme(),
+            app_icon: AppIcon::default(),
             legacy_code_editor_theme: None,
             legacy_atlas_theme: None,
             adaptive_suggestions: AdaptiveSuggestions::default(),
@@ -486,6 +507,12 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # \"minimal\" keeps Atlas's own lucide icons; anything else names a VS\n\
          # Code icon theme, bundled or installed from Open VSX.\n\
          # (default: \"material-icon-theme\")",
+    ),
+    (
+        "appIcon",
+        "# macOS app icon: exactly \"dark\" or \"light\". Dark is the icon Atlas\n\
+         # ships with; light replaces the Dock icon while Atlas is running.\n\
+         # (default: \"dark\")",
     ),
     (
         "adaptiveSuggestions",
@@ -808,6 +835,7 @@ pub struct SettingsPatch {
     pub theme_mode: Option<ThemeMode>,
     pub theme_overrides: Option<ThemeOverride>,
     pub icon_theme: Option<String>,
+    pub app_icon: Option<AppIcon>,
     pub adaptive_suggestions: Option<AdaptiveSuggestions>,
     pub git_blame_inline: Option<bool>,
     pub auto_update: Option<bool>,
@@ -857,6 +885,9 @@ impl SettingsPatch {
         }
         if let Some(v) = &self.icon_theme {
             settings.icon_theme = v.clone();
+        }
+        if let Some(v) = self.app_icon {
+            settings.app_icon = v;
         }
         if let Some(v) = self.adaptive_suggestions {
             settings.adaptive_suggestions = v;
@@ -951,6 +982,12 @@ impl SettingsPatch {
         }
         if let Some(v) = &self.icon_theme {
             table["iconTheme"] = toml_edit::value(v.as_str());
+        }
+        if let Some(v) = self.app_icon {
+            table["appIcon"] = toml_edit::value(match v {
+                AppIcon::Dark => "dark",
+                AppIcon::Light => "light",
+            });
         }
         if let Some(v) = self.adaptive_suggestions {
             let s = match v {
@@ -2158,6 +2195,7 @@ someFutureKey = \"left alone\"
                 )]),
             }),
             icon_theme: Some(atlas_icon_theme::MINIMAL_ICON_THEME_ID.to_string()),
+            app_icon: Some(AppIcon::Light),
             adaptive_suggestions: Some(AdaptiveSuggestions::Off),
             git_blame_inline: Some(!defaults.git_blame_inline),
             auto_update: Some(!defaults.auto_update),
