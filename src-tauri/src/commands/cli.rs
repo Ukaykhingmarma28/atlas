@@ -114,10 +114,15 @@ fn helper_path() -> Option<PathBuf> {
 fn system_bin_path() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
+        use std::os::unix::fs::PermissionsExt;
         for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas", "/opt/atlas/bin/atlas"] {
             let p = PathBuf::from(candidate);
-            if p.exists() {
-                return Some(p);
+            if p.is_file() {
+                if let Ok(meta) = p.metadata() {
+                    if meta.permissions().mode() & 0o111 != 0 {
+                        return Some(p);
+                    }
+                }
             }
         }
     }

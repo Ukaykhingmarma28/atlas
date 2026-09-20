@@ -8,4 +8,4 @@ Terminal=false
 StartupNotify=true
 StartupWMClass=Atlas
 Categories=Development;IDE;
-MimeType=x-scheme-handler/atlas;text/plain;
+MimeType=x-scheme-handler/atlas;
