@@ -163,12 +163,18 @@ export function App() {
   // app still works without the helper, the user just can't type
   // `atlas ./` in their terminal until they hit the install button
   // in Settings → General. Not on Windows: the helper is a bash script
-  // (see `commands::cli::cli_install_helper`).
+  // (see `commands::cli::cli_install_helper`). On Linux, skip if a
+  // system-wide /usr/bin/atlas exists so ~/.local/bin/atlas does not shadow it.
   useEffect(() => {
     if (isWindows) return;
-    void invoke("cli_install_helper").catch((e) => {
-      console.warn("atlas CLI helper refresh failed:", e);
-    });
+    void invoke<{ installed: boolean; path: string | null }>("cli_status")
+      .then((status) => {
+        if (status?.installed && status.path?.startsWith("/usr/")) return;
+        return invoke("cli_install_helper");
+      })
+      .catch((e) => {
+        console.warn("atlas CLI helper refresh failed:", e);
+      });
   }, []);
 
   // Warm-launch CLI: when `atlas <path>` runs while Atlas is already open, the

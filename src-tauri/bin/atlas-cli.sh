@@ -66,14 +66,19 @@ if [ -z "$app" ] && command -v mdfind >/dev/null 2>&1; then
   # Identifier must match `identifier` in src-tauri/tauri.conf.json.
   app="$(mdfind "kMDItemCFBundleIdentifier == 'dev.atlas.ide'" 2>/dev/null | head -n 1)"
 fi
-if [ -z "$app" ]; then
+if [ -z "$app" ] && [ -x "/usr/bin/atlas" ]; then
+  app="/usr/bin/atlas"
+fi
+if [ -z "$app" ] && [ "$(uname -s)" = "Darwin" ]; then
   app="Atlas.app"  # let `open` resolve via LaunchServices as a fallback
 fi
 
-# `-n` forces a fresh process so argv is actually delivered — without it
-# macOS just activates a running Atlas and drops the path. When Atlas is
-# already open, that fresh process is intercepted by the single-instance
-# plugin, which forwards the path to the existing window and exits (so no
-# duplicate window appears); on a cold start it simply becomes the primary
-# instance. `-a` selects the app explicitly; `--args` passes the rest to argv.
-exec open -na "$app" --args "$abs"
+# On macOS, `-n` forces a fresh process so argv is actually delivered;
+# single-instance intercepts it if Atlas is already running.
+# On Linux, exec the binary directly.
+if [ "$(uname -s)" = "Darwin" ]; then
+  exec open -na "$app" --args "$abs"
+else
+  exec "${app:-atlas}" "$abs"
+fi
+

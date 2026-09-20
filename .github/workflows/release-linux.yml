@@ -1,0 +1,143 @@
+name: Release Linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (leave empty to read from package.json)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  build-linux:
+    name: Build Linux Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Extract release version
+        id: meta
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building Atlas ${VERSION} (tag: ${TAG})"
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libglib2.0-dev \
+            bubblewrap \
+            rpm \
+            squashfs-tools
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend & Tauri Linux packages (deb, rpm, AppImage)
+        run: |
+          bun run tauri build --config src-tauri/tauri.linux.conf.json --bundles deb,rpm,appimage
+
+      - name: Find and verify built binary
+        id: find_bin
+        run: |
+          BIN_PATH=$(find target src-tauri/target -type f -path "*/release/atlas" ! -path "*/incremental/*" | head -n 1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "Error: compiled atlas binary not found" >&2
+            exit 1
+          fi
+          echo "Found atlas binary at: ${BIN_PATH}"
+          echo "bin_path=${BIN_PATH}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate standalone tarball, licenses, icons & AUR PKGBUILD
+        env:
+          ATLAS_BIN: ${{ steps.find_bin.outputs.bin_path }}
+        run: |
+          ./scripts/package-linux.sh x86_64
+
+      - name: Build Arch Linux package (.pkg.tar.zst) via Docker
+        run: |
+          docker run --rm -v "${PWD}:/workspace" -w /workspace archlinux:latest bash -c '
+            set -euo pipefail
+            pacman -Syu --noconfirm base-devel pacman-contrib zstd
+            useradd -m builder
+            chown -R builder:builder /workspace/dist/release-linux
+            su builder -c "cd /workspace/dist/release-linux/aur-atlas-bin && makepkg -f --nodeps"
+            cp /workspace/dist/release-linux/aur-atlas-bin/*.pkg.tar.zst /workspace/dist/release-linux/
+          '
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p dist/artifacts
+          # Copy Tauri bundles (deb, rpm, AppImage)
+          find target src-tauri/target -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec cp -t dist/artifacts/ {} +
+          # Copy standalone tarball
+          cp dist/release-linux/*.tar.gz dist/artifacts/
+          # Copy Arch Linux package
+          cp dist/release-linux/*.pkg.tar.zst dist/artifacts/
+          # Copy AUR PKGBUILD for convenience
+          cp dist/release-linux/aur-atlas-bin/PKGBUILD dist/artifacts/PKGBUILD-atlas-bin
+
+          cd dist/artifacts
+          sha256sum * > SHA256SUMS.txt
+          echo "=== Release Artifacts ==="
+          ls -lh
+          echo "=== Checksums ==="
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Atlas ${{ steps.meta.outputs.version }}
+          files: |
+            dist/artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

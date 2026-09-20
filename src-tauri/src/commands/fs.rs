@@ -481,9 +481,8 @@ pub async fn fs_duplicate(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Open a folder in the system terminal. macOS only for now —
-/// returns `Err("unsupported")` on other platforms so the frontend
-/// can show a sensible toast.
+/// Open a folder in the system terminal.
+/// Supported on macOS and Linux.
 #[tauri::command]
 pub async fn fs_open_in_terminal(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -496,7 +495,38 @@ pub async fn fs_open_in_terminal(path: String) -> Result<(), String> {
                 .map(|_| ())
                 .map_err(|e| format!("Failed to open Terminal: {e}"))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        {
+            use std::process::Command;
+            // Modern desktop spec, common desktop terminals, and popular standalone emulators.
+            let terminals: &[(&str, &[&str])] = &[
+                ("xdg-terminal-exec", &[]),
+                ("x-terminal-emulator", &[]),
+                ("ptyxis", &["--working-directory", &path]),
+                ("gnome-terminal", &["--working-directory", &path]),
+                ("kitty", &["--directory", &path]),
+                ("foot", &["--working-directory", &path]),
+                ("alacritty", &["--working-directory", &path]),
+                ("ghostty", &["--working-directory", &path]),
+                ("wezterm", &["start", "--cwd", &path]),
+                ("konsole", &["--workdir", &path]),
+                ("xfce4-terminal", &["--working-directory", &path]),
+                ("xterm", &[]),
+            ];
+
+            for (term, args) in terminals {
+                if Command::new(term)
+                    .args(*args)
+                    .current_dir(&path)
+                    .spawn()
+                    .is_ok()
+                {
+                    return Ok(());
+                }
+            }
+            Err("No supported terminal emulator found".to_string())
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
             let _ = path;
             Err::<(), String>("unsupported".to_string())

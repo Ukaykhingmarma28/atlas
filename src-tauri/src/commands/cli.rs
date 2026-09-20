@@ -111,6 +111,16 @@ fn helper_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas"))
 }
 
+fn system_bin_path() -> Option<PathBuf> {
+    for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas"] {
+        let p = PathBuf::from(candidate);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
 fn read_installed_version(path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     raw.lines()
@@ -119,8 +129,16 @@ fn read_installed_version(path: &std::path::Path) -> Option<String> {
 
 #[tauri::command]
 pub fn cli_status() -> CliStatus {
-    let path = helper_path();
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    if let Some(sys) = system_bin_path() {
+        return CliStatus {
+            installed: true,
+            path: Some(sys.to_string_lossy().into_owned()),
+            installed_version: Some(current_version.clone()),
+            current_version,
+        };
+    }
+    let path = helper_path();
     let (installed, installed_version) = match path.as_deref() {
         Some(p) if p.exists() => (true, read_installed_version(p)),
         _ => (false, None),
@@ -148,6 +166,27 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
         return Err("the atlas CLI helper is not available on Windows yet".to_string());
     }
     let version = env!("CARGO_PKG_VERSION").to_string();
+
+    // If Atlas is already installed system-wide (e.g. /usr/bin/atlas on Linux),
+    // prevent ~/.local/bin/atlas from shadowing it, and clean up any old helper.
+    if let Some(sys) = system_bin_path() {
+        if let Some(helper) = helper_path() {
+            if helper.exists() {
+                if let Ok(content) = std::fs::read_to_string(&helper) {
+                    if content.contains("atlas-cli-version") || content.contains("open -na") {
+                        let _ = std::fs::remove_file(&helper);
+                    }
+                }
+            }
+        }
+        return Ok(CliStatus {
+            installed: true,
+            path: Some(sys.to_string_lossy().into_owned()),
+            installed_version: Some(version.clone()),
+            current_version: version,
+        });
+    }
+
     let path = helper_path().ok_or_else(|| "could not resolve $HOME".to_string())?;
 
     tokio::task::spawn_blocking({

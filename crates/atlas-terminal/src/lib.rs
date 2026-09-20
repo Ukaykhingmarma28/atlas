@@ -358,7 +358,15 @@ fn detect_shell() -> String {
     if cfg!(windows) {
         return "powershell.exe".to_string();
     }
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+    std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(target_os = "macos") {
+            "/bin/zsh".to_string()
+        } else if std::path::Path::new("/bin/bash").exists() {
+            "/bin/bash".to_string()
+        } else {
+            "/bin/sh".to_string()
+        }
+    })
 }
 
 // ── zsh shell integration ──────────────────────────────────────────────────
@@ -424,6 +432,9 @@ ZDOTDIR="$ATLAS_USER_ZDOTDIR"
 /// interactive root shell (`sudo -s` / `-i` / `su`) WITH Atlas's shell
 /// integration so command blocks / prompt markers keep working as root.
 pub fn zsh_integration_dir() -> Option<std::path::PathBuf> {
+    if !detect_shell().ends_with("zsh") {
+        return None;
+    }
     ensure_zsh_integration_dir()
 }
 

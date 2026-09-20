@@ -16,6 +16,7 @@
     "build:app:dmg:arm": "bash scripts/build-dmg.sh arm",
     "build:app:dmg:intel": "bash scripts/build-dmg.sh intel",
     "build:app:win": "node scripts/with-posthog-env.mjs tauri build --target x86_64-pc-windows-msvc --bundles msi",
+    "build:app:linux": "node scripts/with-posthog-env.mjs tauri build --config src-tauri/tauri.linux.conf.json",
     "lint": "oxlint src/",
     "format": "oxfmt --write src/",
     "format:check": "oxfmt --check src/",
