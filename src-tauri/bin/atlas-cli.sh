@@ -66,8 +66,13 @@ if [ -z "$app" ] && command -v mdfind >/dev/null 2>&1; then
   # Identifier must match `identifier` in src-tauri/tauri.conf.json.
   app="$(mdfind "kMDItemCFBundleIdentifier == 'dev.atlas.ide'" 2>/dev/null | head -n 1)"
 fi
-if [ -z "$app" ] && [ -x "/usr/bin/atlas" ]; then
-  app="/usr/bin/atlas"
+if [ -z "$app" ]; then
+  for dir in "/usr/bin" "/usr/local/bin" "/opt/atlas/bin"; do
+    if [ -x "$dir/atlas" ]; then
+      app="$dir/atlas"
+      break
+    fi
+  done
 fi
 if [ -z "$app" ] && [ "$(uname -s)" = "Darwin" ]; then
   app="Atlas.app"  # let `open` resolve via LaunchServices as a fallback
@@ -79,6 +84,23 @@ fi
 if [ "$(uname -s)" = "Darwin" ]; then
   exec open -na "$app" --args "$abs"
 else
-  exec "${app:-atlas}" "$abs"
+  # Ensure we never recursively invoke this script itself if installed as ~/.local/bin/atlas
+  if [ -z "$app" ]; then
+    this_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    while IFS= read -r candidate; do
+      [ -z "$candidate" ] && continue
+      cand_real="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd)/$(basename "$candidate")"
+      if [ "$cand_real" != "$this_script" ] && [ -x "$candidate" ]; then
+        app="$candidate"
+        break
+      fi
+    done < <(type -ap atlas 2>/dev/null || true)
+  fi
+
+  if [ -z "$app" ]; then
+    echo "atlas: could not find Atlas installation (searched /usr/bin, /usr/local/bin, /opt/atlas/bin, and PATH)" >&2
+    exit 1
+  fi
+  exec "$app" "$abs"
 fi
 

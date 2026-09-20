@@ -112,13 +112,30 @@ fn helper_path() -> Option<PathBuf> {
 }
 
 fn system_bin_path() -> Option<PathBuf> {
-    for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas"] {
+    for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas", "/opt/atlas/bin/atlas"] {
         let p = PathBuf::from(candidate);
         if p.exists() {
             return Some(p);
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn is_elf_binary(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut magic = [0u8; 4];
+        if f.read_exact(&mut magic).is_ok() {
+            return magic == [0x7f, b'E', b'L', b'F'];
+        }
+    }
+    false
+}
+
+#[cfg(not(unix))]
+fn is_elf_binary(_path: &std::path::Path) -> bool {
+    false
 }
 
 fn read_installed_version(path: &std::path::Path) -> Option<String> {
@@ -139,6 +156,17 @@ pub fn cli_status() -> CliStatus {
         };
     }
     let path = helper_path();
+    // If ~/.local/bin/atlas is a real compiled ELF binary, report it as installed
+    if let Some(p) = path.as_deref() {
+        if p.exists() && is_elf_binary(p) {
+            return CliStatus {
+                installed: true,
+                path: Some(p.to_string_lossy().into_owned()),
+                installed_version: Some(current_version.clone()),
+                current_version,
+            };
+        }
+    }
     let (installed, installed_version) = match path.as_deref() {
         Some(p) if p.exists() => (true, read_installed_version(p)),
         _ => (false, None),
@@ -185,6 +213,19 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
             installed_version: Some(version.clone()),
             current_version: version,
         });
+    }
+
+    // If ~/.local/bin/atlas is an ELF binary (e.g. tarball installed to ~/.local),
+    // never overwrite the real binary with a shell script helper!
+    if let Some(helper) = helper_path() {
+        if helper.exists() && is_elf_binary(&helper) {
+            return Ok(CliStatus {
+                installed: true,
+                path: Some(helper.to_string_lossy().into_owned()),
+                installed_version: Some(version.clone()),
+                current_version: version,
+            });
+        }
     }
 
     let path = helper_path().ok_or_else(|| "could not resolve $HOME".to_string())?;

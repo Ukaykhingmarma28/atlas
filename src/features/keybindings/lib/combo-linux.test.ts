@@ -31,5 +31,21 @@ describe("display on Linux", () => {
     // Plain shift+tab
     expect(displayKeys(parseCombo("shift+tab")!)).toEqual(["Shift", "⇥"]);
     expect(displayLabel(parseCombo("shift+tab")!)).toBe("Shift+⇥");
+
+    // Parses 'super' and 'win' as meta
+    expect(parseCombo("super+k")).toEqual({
+      code: "KeyK",
+      meta: true,
+      ctrl: false,
+      shift: false,
+      alt: false,
+    });
+    expect(parseCombo("win+shift+b")).toEqual({
+      code: "KeyB",
+      meta: true,
+      ctrl: false,
+      shift: true,
+      alt: false,
+    });
   });
 });

@@ -55,7 +55,7 @@ import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
-import { isWindows } from "@/lib/platform";
+import { isLinux, isWindows } from "@/lib/platform";
 import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
@@ -169,6 +169,7 @@ export function App() {
     if (isWindows) return;
     void invoke<{ installed: boolean; path: string | null }>("cli_status")
       .then((status) => {
+        if (isLinux && status?.installed) return;
         if (status?.installed && status.path?.startsWith("/usr/")) return;
         return invoke("cli_install_helper");
       })

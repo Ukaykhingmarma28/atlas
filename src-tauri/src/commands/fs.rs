@@ -498,26 +498,36 @@ pub async fn fs_open_in_terminal(path: String) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+            let target_path = std::path::Path::new(&path);
+            let target_dir = if target_path.is_dir() {
+                target_path
+            } else if let Some(parent) = target_path.parent() {
+                parent
+            } else {
+                target_path
+            };
+            let dir_str = target_dir.to_string_lossy();
+
             // Modern desktop spec, common desktop terminals, and popular standalone emulators.
             let terminals: &[(&str, &[&str])] = &[
                 ("xdg-terminal-exec", &[]),
                 ("x-terminal-emulator", &[]),
-                ("ptyxis", &["--working-directory", &path]),
-                ("gnome-terminal", &["--working-directory", &path]),
-                ("kitty", &["--directory", &path]),
-                ("foot", &["--working-directory", &path]),
-                ("alacritty", &["--working-directory", &path]),
-                ("ghostty", &["--working-directory", &path]),
-                ("wezterm", &["start", "--cwd", &path]),
-                ("konsole", &["--workdir", &path]),
-                ("xfce4-terminal", &["--working-directory", &path]),
+                ("ptyxis", &["--working-directory", &dir_str]),
+                ("gnome-terminal", &["--working-directory", &dir_str]),
+                ("kitty", &["--directory", &dir_str]),
+                ("foot", &["--working-directory", &dir_str]),
+                ("alacritty", &["--working-directory", &dir_str]),
+                ("ghostty", &["--working-directory", &dir_str]),
+                ("wezterm", &["start", "--cwd", &dir_str]),
+                ("konsole", &["--workdir", &dir_str]),
+                ("xfce4-terminal", &["--working-directory", &dir_str]),
                 ("xterm", &[]),
             ];
 
             for (term, args) in terminals {
                 if Command::new(term)
                     .args(*args)
-                    .current_dir(&path)
+                    .current_dir(target_dir)
                     .spawn()
                     .is_ok()
                 {

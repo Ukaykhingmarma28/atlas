@@ -115,6 +115,8 @@ const MODIFIER_FLAG: Record<string, keyof Omit<Combo, "code">> = {
   cmd: "meta",
   meta: "meta",
   command: "meta",
+  super: "meta",
+  win: "meta",
   ctrl: "ctrl",
   control: "ctrl",
   alt: "alt",

@@ -34,6 +34,7 @@ esac
 
 # Extract version from package.json
 VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')"
+VERSION="${VERSION#v}"
 echo "Packaging Atlas v${VERSION} for Linux (${ARCH})..."
 
 # Locate binary
@@ -116,6 +117,7 @@ echo "Installing Atlas to ${PREFIX}..."
 install -d "${PREFIX}/bin" "${PREFIX}/share/applications" "${PREFIX}/share/licenses/atlas"
 install -m 755 bin/atlas "${PREFIX}/bin/atlas"
 install -m 644 share/applications/dev.atlas.ide.desktop "${PREFIX}/share/applications/dev.atlas.ide.desktop"
+ln -sf dev.atlas.ide.desktop "${PREFIX}/share/applications/atlas.desktop" || cp share/applications/dev.atlas.ide.desktop "${PREFIX}/share/applications/atlas.desktop"
 cp -r share/icons "${PREFIX}/share/"
 cp -r share/licenses/atlas/* "${PREFIX}/share/licenses/atlas/"
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -138,12 +140,16 @@ fi
 echo "Uninstalling Atlas from ${PREFIX}..."
 rm -f "${PREFIX}/bin/atlas"
 rm -f "${PREFIX}/share/applications/dev.atlas.ide.desktop"
+rm -f "${PREFIX}/share/applications/atlas.desktop"
 for size in 32 64 128 256 512; do
   rm -f "${PREFIX}/share/icons/hicolor/${size}x${size}/apps/atlas.png"
 done
 rm -rf "${PREFIX}/share/licenses/atlas"
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "${PREFIX}/share/applications" 2>/dev/null || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t "${PREFIX}/share/icons/hicolor" 2>/dev/null || true
 fi
 echo "Atlas uninstalled."
 EOF
@@ -183,7 +189,7 @@ depends=(
 optdepends=(
     'xdg-terminal-exec: Open folders in default terminal'
 )
-provides=('atlas')
+provides=("atlas=\${pkgver}")
 conflicts=('atlas')
 source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/ik0zy/atlas/releases/download/v\${pkgver}/atlas-\${pkgver}-linux-x86_64.tar.gz")
 sha256sums_x86_64=('${TARBALL_SHA256}')
@@ -192,13 +198,15 @@ package() {
     cd "\${srcdir}/atlas-\${pkgver}"
     install -Dm755 bin/atlas "\${pkgdir}/usr/bin/atlas"
     install -Dm644 share/applications/dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/dev.atlas.ide.desktop"
+    ln -sf dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/atlas.desktop"
     for size in 32 64 128 256 512; do
         if [ -f "share/icons/hicolor/\${size}x\${size}/apps/atlas.png" ]; then
             install -Dm644 "share/icons/hicolor/\${size}x\${size}/apps/atlas.png" \\
                 "\${pkgdir}/usr/share/icons/hicolor/\${size}x\${size}/apps/atlas.png"
         fi
     done
-    install -Dm644 share/licenses/atlas/* -t "\${pkgdir}/usr/share/licenses/\${pkgname}/"
+    install -d "\${pkgdir}/usr/share/licenses/\${pkgname}"
+    install -m644 share/licenses/atlas/* "\${pkgdir}/usr/share/licenses/\${pkgname}/"
 }
 EOF
 
