@@ -112,10 +112,13 @@ fn helper_path() -> Option<PathBuf> {
 }
 
 fn system_bin_path() -> Option<PathBuf> {
-    for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas", "/opt/atlas/bin/atlas"] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
+    #[cfg(target_os = "linux")]
+    {
+        for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas", "/opt/atlas/bin/atlas"] {
+            let p = PathBuf::from(candidate);
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
     None

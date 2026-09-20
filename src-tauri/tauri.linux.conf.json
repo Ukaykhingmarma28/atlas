@@ -47,7 +47,7 @@
         "depends": [
           "webkit2gtk4.1",
           "gtk3",
-          "libayatana-appindicator3-1",
+          "libayatana-appindicator-gtk3",
           "bubblewrap",
           "glib2"
         ]

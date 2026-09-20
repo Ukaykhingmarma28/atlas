@@ -439,7 +439,7 @@ pub fn zsh_integration_dir() -> Option<std::path::PathBuf> {
     let is_zsh = std::path::Path::new(&shell)
         .file_name()
         .and_then(|f| f.to_str())
-        .map_or(false, |name| name == "zsh" || name.starts_with("zsh"));
+        .is_some_and(|name| name == "zsh" || name.starts_with("zsh"));
     if !is_zsh {
         return None;
     }
