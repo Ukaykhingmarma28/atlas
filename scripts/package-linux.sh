@@ -168,9 +168,10 @@ echo "Tarball SHA256: ${TARBALL_SHA256}"
 # 7. Generate AUR PKGBUILD
 AUR_DIR="${OUTPUT_DIR}/aur-atlas-bin"
 mkdir -p "${AUR_DIR}"
+REPO="${GITHUB_REPOSITORY:-pacifio/atlas}"
 
 cat <<EOF > "${AUR_DIR}/PKGBUILD"
-# Maintainer: ik0zy <ik0zy@users.noreply.github.com>
+# Maintainer: Atlas Team <contact@tryatlas.cc>
 pkgname=atlas-bin
 _pkgname=atlas
 pkgver=${VERSION}
@@ -191,7 +192,7 @@ optdepends=(
 )
 provides=("atlas=\${pkgver}")
 conflicts=('atlas')
-source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/ik0zy/atlas/releases/download/v\${pkgver}/atlas-\${pkgver}-linux-x86_64.tar.gz")
+source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/${REPO}/releases/download/v\${pkgver}/atlas-\${pkgver}-linux-x86_64.tar.gz")
 sha256sums_x86_64=('${TARBALL_SHA256}')
 
 package() {
