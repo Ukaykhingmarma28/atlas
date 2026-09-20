@@ -3,11 +3,17 @@ name: Release Linux
 on:
   push:
     tags:
+      - 'alpha-*'
       - 'v*'
+      - 'exp-*'
   workflow_dispatch:
     inputs:
       version:
         description: 'Release version (leave empty to read from package.json)'
+        required: false
+        default: ''
+      tag:
+        description: 'Release tag name (leave empty to match git tag or alpha-<version>)'
         required: false
         default: ''
 
@@ -38,14 +44,27 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             RAW_VER="${{ github.event.inputs.version }}"
+          elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            RAW_VER="${GITHUB_REF_NAME}"
           else
             RAW_VER=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
           fi
-          VERSION="${RAW_VER#v}"
-          TAG="v${VERSION}"
+          # Strip tag prefixes to get pure semver
+          VERSION="${RAW_VER#alpha-}"
+          VERSION="${VERSION#exp-}"
+          VERSION="${VERSION#v}"
+
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="alpha-${VERSION}"
+          fi
+
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Building Atlas ${VERSION} (tag: ${TAG})"
+          echo "Building Atlas ${VERSION} for tag ${TAG}"
 
       - name: Install system build dependencies
         run: |
@@ -101,6 +120,7 @@ jobs:
       - name: Generate standalone tarball, licenses, icons & AUR PKGBUILD
         env:
           ATLAS_BIN: ${{ steps.find_bin.outputs.bin_path }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         run: |
           ./scripts/package-linux.sh x86_64
 

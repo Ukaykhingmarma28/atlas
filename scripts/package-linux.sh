@@ -34,8 +34,11 @@ esac
 
 # Extract version from package.json
 VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')"
+VERSION="${VERSION#alpha-}"
+VERSION="${VERSION#exp-}"
 VERSION="${VERSION#v}"
-echo "Packaging Atlas v${VERSION} for Linux (${ARCH})..."
+RELEASE_TAG="${RELEASE_TAG:-alpha-${VERSION}}"
+echo "Packaging Atlas v${VERSION} for Linux (${ARCH}) [tag: ${RELEASE_TAG}]..."
 
 # Locate binary
 ATLAS_BIN="${ATLAS_BIN:-}"
@@ -192,7 +195,7 @@ optdepends=(
 )
 provides=("atlas=\${pkgver}")
 conflicts=('atlas')
-source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/${REPO}/releases/download/v\${pkgver}/atlas-\${pkgver}-linux-x86_64.tar.gz")
+source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/${REPO}/releases/download/${RELEASE_TAG}/atlas-\${pkgver}-linux-x86_64.tar.gz")
 sha256sums_x86_64=('${TARBALL_SHA256}')
 
 package() {
