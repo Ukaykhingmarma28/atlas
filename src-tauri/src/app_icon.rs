@@ -20,7 +20,7 @@
 //! the default for this session; `config.toml` keeps what the user chose.
 
 use serde::Deserialize;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use tauri::AppHandle;
 
 #[derive(Deserialize)]
@@ -74,7 +74,7 @@ pub fn apply(app: &AppHandle, id: &str) {
         None
     };
     {
-        let mut applied = APPLIED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut applied = APPLIED.lock().unwrap_or_else(PoisonError::into_inner);
         if applied.as_ref() == Some(&custom) {
             return;
         }
