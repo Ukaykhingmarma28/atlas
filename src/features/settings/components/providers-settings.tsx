@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Search,
   Check,
@@ -17,6 +17,7 @@ import {
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { SecretInput } from "@/ui/secret-input";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { tildePath } from "@/lib/paths";
 import { AtlasLoader } from "@/components/atlas-loader";
@@ -126,29 +127,29 @@ export function ProvidersSettings() {
   );
 
   return (
-    <div className="h-full flex flex-col bg-bg-base">
+    <div className="h-full flex flex-col bg-background">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border-default">
+      <div className="flex items-center gap-1 px-2 h-[40px] shrink-0 border-b border-border">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setCategory(t.id)}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 h-[40px] text-[11px] font-medium transition-colors border-b-2 -mb-px",
+              "flex items-center gap-1.5 px-2.5 h-[40px] text-xs font-medium transition-colors border-b-2 -mb-px",
               category === t.id
-                ? "text-text-primary border-b-[var(--accent-primary)]"
-                : "text-text-secondary hover:text-text-primary border-b-transparent",
+                ? "text-foreground border-b-[var(--primary)]"
+                : "text-secondary-foreground hover:text-foreground border-b-transparent",
             )}
           >
             {t.label}
-            <span className="text-[9px] text-text-tertiary tabular-nums">{t.count}</span>
+            <span className="text-3xs text-muted-foreground tabular-nums">{t.count}</span>
           </button>
         ))}
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border-default bg-bg-elevated px-2 min-w-[200px] focus-within:border-[var(--border-focus)]">
-          <Search size={11} className="text-text-tertiary shrink-0" />
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-border bg-card px-2 min-w-[200px] focus-within:border-[var(--atlas-border-strong)]">
+          <Search size={11} className="text-muted-foreground shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -160,61 +161,66 @@ export function ProvidersSettings() {
             }}
             placeholder="Search providers…"
             spellCheck={false}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[11px] text-text-primary placeholder:text-text-tertiary"
+            className="flex-1 min-w-0 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground"
           />
         </div>
 
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button
-              className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer outline-none transition-colors"
-              title="Filters & sort"
-              aria-label="Filters & sort"
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          </DropdownMenu.Trigger>
+          <Hint label="Filters & sort">
+            <DropdownMenu.Trigger
+              render={
+                <button className="flex items-center justify-center w-6 h-6 shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover cursor-pointer outline-none transition-colors">
+                  <MoreHorizontal size={14} />
+                </button>
+              }
+            />
+          </Hint>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              sideOffset={4}
-              className="rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)] py-1 min-w-[180px]"
-              style={{ zIndex: 9999 }}
-            >
-              <DropdownMenu.CheckboxItem
-                checked={configuredOnly}
-                onCheckedChange={(c) => setConfiguredOnly(!!c)}
-                className="flex items-center gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-              >
-                <span className="inline-flex w-3.5 justify-center">
-                  {configuredOnly && <Check size={11} className="text-text-primary" />}
-                </span>
-                Set only
-              </DropdownMenu.CheckboxItem>
-
-              <DropdownMenu.Separator className="my-1 h-px bg-[var(--border-subtle)]" />
-
-              <DropdownMenu.Label className="px-3 pb-1 pt-1 text-[9px] uppercase tracking-wider text-text-tertiary">
-                Sort by
-              </DropdownMenu.Label>
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
-                <DropdownMenu.Item
-                  key={k}
-                  onSelect={() => setSortKey(k)}
-                  className="flex items-center justify-between gap-2 px-3 h-[26px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
+            <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
+              <DropdownMenu.Popup className="rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md py-1 min-w-[180px]">
+                {/* Base UI keeps the menu open on a checkbox item by default;
+                    Radix closed it, and this toggle is a one-shot filter. */}
+                <DropdownMenu.CheckboxItem
+                  checked={configuredOnly}
+                  closeOnClick
+                  onCheckedChange={(c) => setConfiguredOnly(!!c)}
+                  className="flex items-center gap-2 px-3 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
                 >
-                  {SORT_LABELS[k]}
-                  {sortKey === k && <Check size={11} className="text-text-primary" />}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
+                  <span className="inline-flex w-3.5 justify-center">
+                    {configuredOnly && <Check size={11} className="text-foreground" />}
+                  </span>
+                  Set only
+                </DropdownMenu.CheckboxItem>
+
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--atlas-border-subtle)]" />
+
+                {/* The `Group` is what the label labels. Base UI's GroupLabel
+                    reads it from context and throws without one, where Radix's
+                    `Label` stood alone. */}
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel className="px-3 pb-1 pt-1 text-3xs uppercase tracking-wider text-muted-foreground">
+                    Sort by
+                  </DropdownMenu.GroupLabel>
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                    <DropdownMenu.Item
+                      key={k}
+                      onClick={() => setSortKey(k)}
+                      className="flex items-center justify-between gap-2 px-3 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
+                    >
+                      {SORT_LABELS[k]}
+                      {sortKey === k && <Check size={11} className="text-foreground" />}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Group>
+              </DropdownMenu.Popup>
+            </DropdownMenu.Positioner>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground">
             <span className={COL.provider}>Provider</span>
             <span className={COL.env}>Env Var</span>
             <span className={COL.category}>Category</span>
@@ -224,7 +230,7 @@ export function ProvidersSettings() {
           </div>
 
           {rows.length === 0 ? (
-            <div className="grid place-items-center h-[160px] text-[11px] text-text-tertiary">
+            <div className="grid place-items-center h-[160px] text-xs text-muted-foreground">
               No providers match.
             </div>
           ) : (
@@ -264,36 +270,36 @@ function ProviderTableRow({
         onClick={onToggle}
         className={cn(
           "w-full flex items-center h-[40px] px-3 text-left transition-colors",
-          expanded ? "bg-[var(--bg-elevated)]/40" : "hover:bg-bg-hover",
+          expanded ? "bg-[var(--card)]/40" : "hover:bg-element-hover",
         )}
       >
         <span className={cn(COL.provider, "flex items-center gap-2 min-w-0")}>
           <ProviderLogo id={provider.id} size={18} />
-          <span className="truncate text-[12px] text-text-primary">{provider.name}</span>
+          <span className="truncate text-sm text-foreground">{provider.name}</span>
         </span>
         {/* The var it was actually found as — which may be an alias spelling. */}
-        <span className={cn(COL.env, "truncate font-mono text-[10px] text-text-tertiary")}>
+        <span className={cn(COL.env, "truncate font-mono text-2xs text-muted-foreground")}>
           {entry?.envVar ?? provider.env}
         </span>
-        <span className={cn(COL.category, "truncate text-[11px] text-text-secondary")}>
+        <span className={cn(COL.category, "truncate text-xs text-secondary-foreground")}>
           {provider.category}
         </span>
-        <span className={cn(COL.key, "font-mono text-[11px]")}>
+        <span className={cn(COL.key, "font-mono text-xs")}>
           {entry ? (
-            <span className="text-text-secondary">••••{entry.last4}</span>
+            <span className="text-secondary-foreground">••••{entry.last4}</span>
           ) : (
-            <span className="text-text-muted">—</span>
+            <span className="text-muted-foreground">—</span>
           )}
         </span>
         <span className={cn(COL.source, "flex items-center gap-1.5 min-w-0")}>
           {!entry ? (
             <>
-              <Minus size={12} className="text-text-tertiary shrink-0" />
-              <span className="text-[11px] text-text-tertiary">Not set</span>
+              <Minus size={12} className="text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground">Not set</span>
             </>
           ) : entry.editable ? (
             <span
-              className="truncate font-mono text-[10px] text-text-secondary"
+              className="truncate font-mono text-2xs text-secondary-foreground"
               title={`${entry.file}${entry.line ? `:${entry.line}` : ""}`}
             >
               {tildePath(entry.file!)}
@@ -301,7 +307,7 @@ function ProviderTableRow({
             </span>
           ) : (
             <span
-              className="flex items-center gap-1 text-[10px] font-medium text-text-tertiary border border-border-default rounded-full px-1.5 h-[18px]"
+              className="flex items-center gap-1 text-2xs font-medium text-muted-foreground border border-border rounded-full px-1.5 h-[18px]"
               title="Set outside your shell profile — Atlas can read it but not edit it."
             >
               <Lock size={9} />
@@ -309,7 +315,7 @@ function ProviderTableRow({
             </span>
           )}
         </span>
-        <span className={cn(COL.chevron, "flex items-center justify-end text-text-tertiary")}>
+        <span className={cn(COL.chevron, "flex items-center justify-end text-muted-foreground")}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
       </button>
@@ -384,9 +390,9 @@ function ProviderEditor({
   };
 
   return (
-    <div className="bg-[var(--bg-elevated)]/40 border-t border-border-subtle px-3 py-3">
+    <div className="bg-[var(--card)]/40 border-t border-border-subtle px-3 py-3">
       {readOnly && (
-        <p className="mb-2.5 max-w-[640px] text-[10.5px] leading-snug text-text-tertiary">
+        <p className="mb-2.5 max-w-[640px] text-xs leading-snug text-muted-foreground">
           <span className="font-mono">{envVar}</span> is set outside your shell profile — Atlas
           found it in the environment but not in any file it reads, so it can&apos;t edit or remove
           it here. Change it wherever it&apos;s exported (a login script, launchd, or a wrapper).
@@ -395,22 +401,23 @@ function ProviderEditor({
 
       {entry && (
         <div className="mb-2.5 flex items-center gap-2">
-          <code className="flex-1 min-w-0 truncate rounded bg-[var(--bg-base)] border border-border-subtle px-2 py-1 font-mono text-[10.5px] text-text-secondary">
+          <code className="flex-1 min-w-0 truncate rounded bg-[var(--background)] border border-border-subtle px-2 py-1 font-mono text-xs text-secondary-foreground">
             {revealed !== null ? revealed || "(empty)" : `${envVar}=••••${entry.last4}`}
           </code>
-          <button
-            type="button"
-            onClick={() => void onReveal()}
-            title={revealed !== null ? "Hide" : "Reveal"}
-            className="flex items-center justify-center h-6 w-6 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            {revealed !== null ? <EyeOff size={12} /> : <Eye size={12} />}
-          </button>
+          <Hint label={revealed !== null ? "Hide" : "Reveal"}>
+            <button
+              type="button"
+              onClick={() => void onReveal()}
+              className="flex items-center justify-center h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors"
+            >
+              {revealed !== null ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          </Hint>
           {revealed !== null && revealed && (
             <button
               type="button"
               onClick={() => void copyText(revealed)}
-              className="h-6 rounded-md px-2 text-[10.5px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              className="h-6 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-element-hover transition-colors"
             >
               Copy
             </button>
@@ -422,14 +429,14 @@ function ProviderEditor({
         <div className="flex items-start gap-3 max-w-[640px]">
           <div className="flex-1 min-w-0 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-medium text-text-primary">
+              <label className="text-xs font-medium text-foreground">
                 {entry ? "Replace key" : "API key"}
               </label>
               {provider.docsUrl && (
                 <button
                   type="button"
                   onClick={() => void openUrl(provider.docsUrl!)}
-                  className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary transition-colors"
+                  className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Get key
                   <ExternalLink size={10} />
@@ -450,8 +457,8 @@ function ProviderEditor({
                 onClick={() => void onSave()}
                 disabled={busy || !draft.trim()}
                 className={cn(
-                  "flex items-center gap-1.5 h-7 rounded-md px-3 text-[11px] font-medium",
-                  "bg-[var(--accent-primary)] text-[var(--bg-base)]",
+                  "flex items-center gap-1.5 h-7 rounded-md px-3 text-xs font-medium",
+                  "bg-[var(--primary)] text-[var(--background)]",
                   "hover:opacity-90 transition-opacity",
                   "disabled:opacity-40 disabled:cursor-not-allowed",
                 )}
@@ -464,16 +471,16 @@ function ProviderEditor({
                   type="button"
                   onClick={() => void onRemove()}
                   disabled={busy}
-                  className="flex items-center gap-1 h-7 rounded-md px-2.5 text-[11px] text-text-tertiary hover:text-[var(--danger,#e5484d)] hover:bg-bg-hover transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1 h-7 rounded-md px-2.5 text-xs text-muted-foreground hover:text-destructive hover:bg-element-hover transition-colors disabled:opacity-50"
                 >
                   <Trash2 size={12} />
                   Remove
                 </button>
               )}
             </div>
-            <p className="pt-0.5 font-mono text-[10px] text-text-tertiary">
+            <p className="pt-0.5 font-mono text-2xs text-muted-foreground">
               {entry ? "Rewrites" : "Appends"}{" "}
-              <span className="text-text-secondary">export {envVar}=…</span>
+              <span className="text-secondary-foreground">export {envVar}=…</span>
               {writesTo ? ` in ${tildePath(writesTo)}` : ""}
             </p>
           </div>

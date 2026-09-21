@@ -41,6 +41,10 @@ const MIN_DECLARED = 250;
 const MIN_REGISTERED = 250;
 const MIN_INVOKED = 200;
 
+/** Repo-relative with forward slashes whatever the OS, so paths compare
+ *  against the hand-written tables below on Windows too. */
+const posixRelative = (file: string) => path.relative(REPO_ROOT, file).split(path.sep).join("/");
+
 function walk(dir: string, extensions: string[]): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -77,7 +81,7 @@ function declaredCommands(): Map<string, string[]> {
       const match = src.slice(attr.index + attr[0].length).match(/\bfn\s+([a-z_][a-z0-9_]*)/i);
       if (!match) continue;
       const name = match[1];
-      const where = path.relative(REPO_ROOT, file);
+      const where = posixRelative(file);
       found.set(name, [...(found.get(name) ?? []), where]);
     }
   }
@@ -113,23 +117,73 @@ function registeredCommands(): string[] {
 }
 
 /**
- * Command names the frontend calls as string literals.
- *
- * Comment lines are skipped for the same reason as on the Rust side: prose
- * citing a command name should not be able to assert that it exists.
+ * Comments are removed before scanning, for the same reason as on the Rust
+ * side: prose citing a command name should not be able to assert that it
+ * exists. `//` only opens a comment when it isn't the tail of `https://`-style
+ * text inside a string (the `[^:]` guard); that is imprecise but errs toward
+ * keeping code, never toward keeping a comment.
  */
+function stripTsComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:\\])\/\/.*$/gm, "$1");
+}
+
+/**
+ * The optional type argument between `invoke` and `(`. Balanced angle
+ * brackets up to four levels deep — `invoke<Record<string, Array<X>>>("…")` —
+ * and `=>` inside a function type doesn't count as a closing bracket. The old
+ * `<[^>]*>` stopped at the first `>`, so every call with a nested generic
+ * (`models_pricing_get`, `capture_screenshot`, …) went unchecked.
+ */
+const TYPE_ARG = (() => {
+  const atom = "(?:=>|[^<>])";
+  let level = `<${atom}*>`;
+  for (let i = 0; i < 3; i++) level = `<(?:${atom}|${level})*>`;
+  return level;
+})();
+
+/** `invoke<…>("name"` — the name may sit on the line after the `(`. */
+const INVOKE_LITERAL = new RegExp(
+  `\\binvoke\\s*(?:${TYPE_ARG})?\\s*\\(\\s*["'\`]([a-zA-Z0-9_]+)["'\`]`,
+  "g",
+);
+
+/** `invoke<…>(someVariable` — a command name this scan cannot read. */
+const INVOKE_DYNAMIC = new RegExp(
+  `\\binvoke\\s*(?:${TYPE_ARG})?\\s*\\(\\s*([A-Za-z_$][\\w$]*)\\s*[,)]`,
+  "g",
+);
+
+/**
+ * The call sites that pass `invoke` a variable, with the literal command
+ * names that flow into that variable in the same file. A literal scan can't
+ * follow data flow, so each site is listed by hand; the tests below check
+ * that the list is complete (a new dynamic site fails until it's added
+ * here), that each literal still appears in its file, and that each is
+ * registered.
+ */
+const DYNAMIC_INVOKE_SITES: Record<string, string[]> = {
+  // `runHunkOp(cmd, …)` → `invoke(cmd, …)`
+  "src/features/git/components/git-manager/changes-view.tsx": [
+    "git_stage_hunk",
+    "git_unstage_hunk",
+    "git_discard_hunk",
+  ],
+};
+
+function frontendFiles(): Array<{ where: string; src: string }> {
+  return walk(TS_SRC, [".ts", ".tsx"]).map((file) => ({
+    where: posixRelative(file),
+    src: stripTsComments(readFileSync(file, "utf8")),
+  }));
+}
+
+/** Command names the frontend calls as string literals. */
 function invokedCommands(): Map<string, string[]> {
   const found = new Map<string, string[]>();
-  const pattern = /\binvoke\s*(?:<[^>]*>)?\s*\(\s*["'`]([a-zA-Z0-9_]+)["'`]/g;
-  for (const file of walk(TS_SRC, [".ts", ".tsx"])) {
-    const where = path.relative(REPO_ROOT, file);
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      const trimmed = line.trimStart();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
-      for (const match of line.matchAll(pattern)) {
-        const name = match[1];
-        found.set(name, [...(found.get(name) ?? []), where]);
-      }
+  for (const { where, src } of frontendFiles()) {
+    for (const match of src.matchAll(INVOKE_LITERAL)) {
+      const name = match[1];
+      found.set(name, [...(found.get(name) ?? []), where]);
     }
   }
   return found;
@@ -169,10 +223,23 @@ function frontendCommandLiterals(): Set<string> {
   return found;
 }
 
+/** Shipping files that pass `invoke` a non-literal first argument. Tests and
+ *  the mock backend under `src/dev/` forward names generically by design. */
+function dynamicInvokeFiles(): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  for (const { where, src } of frontendFiles()) {
+    if (where.startsWith("src/dev/") || /\.test\.tsx?$/.test(where)) continue;
+    const idents = [...src.matchAll(INVOKE_DYNAMIC)].map((m) => m[1]);
+    if (idents.length) found.set(where, idents);
+  }
+  return found;
+}
+
 describe("tauri IPC contract", () => {
   const declared = declaredCommands();
   const registered = registeredCommands();
   const invoked = invokedCommands();
+  const dynamic = dynamicInvokeFiles();
   const registeredSet = new Set(registered);
 
   // These three run first so that a broken parser reports itself as a broken
@@ -209,6 +276,35 @@ describe("tauri IPC contract", () => {
     // Fails when a Rust command is renamed or deleted without updating its
     // callers, and when a call site has a typo.
     expect(missing).toEqual([]);
+  });
+
+  it("reads invoke() calls with nested generics and a name on the next line", () => {
+    // Each of these is only ever called through a nested or multi-line type
+    // argument; if the generic match regressed they'd silently drop out.
+    for (const name of [
+      "models_pricing_get",
+      "capture_screenshot",
+      "knowledge_export_server",
+      "import_into_knowledge",
+    ]) {
+      expect(invoked.has(name), `invoke("${name}") not seen`).toBe(true);
+    }
+  });
+
+  it("every dynamic invoke(variable) site is listed, with its literals", () => {
+    // A new `invoke(cmd, …)` whose name the literal scan can't see must be
+    // listed in DYNAMIC_INVOKE_SITES, or its command goes unchecked.
+    expect([...dynamic.keys()].sort()).toEqual(Object.keys(DYNAMIC_INVOKE_SITES).sort());
+
+    const problems: string[] = [];
+    for (const [file, names] of Object.entries(DYNAMIC_INVOKE_SITES)) {
+      const src = readFileSync(path.join(REPO_ROOT, file), "utf8");
+      for (const name of names) {
+        if (!src.includes(`"${name}"`)) problems.push(`${name} no longer appears in ${file}`);
+        if (!registeredSet.has(name)) problems.push(`${name} (${file}) is not registered`);
+      }
+    }
+    expect(problems).toEqual([]);
   });
 
   it("every #[tauri::command] is registered in generate_handler!", () => {

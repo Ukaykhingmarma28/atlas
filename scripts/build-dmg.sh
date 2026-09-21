@@ -48,25 +48,48 @@ if ! rustup target list --installed | grep -qx "${TARGET}"; then
   rustup target add "${TARGET}"
 fi
 
+# The Liquid Glass icon ships precompiled (scripts/app-icons.mjs has why), so
+# the build never needs Xcode — but an edited .icon that was never re-rendered
+# ships the old icon. A dev build only warns; release-macos.sh refuses.
+if ! node scripts/app-icons.mjs --check; then
+  log "WARNING: app icons are stale — this build ships the last rendered ones"
+fi
+
 # The C-building dependencies need an SDK path. The macOS SDK is universal, so
 # the same root serves both architectures — this is about it being SET, not
 # about which arch it points at.
 export SDKROOT="${SDKROOT:-$(xcrun --show-sdk-path)}"
 
+# `--bundles app` only: Tauri's own dmg step always uses the app icon as the
+# mounted volume's icon, with no config to change it. layout-dmg.sh builds the
+# dmg instead — same as release-macos.sh — and gives the volume the drive icon.
 log "Building Atlas for ${TARGET}"
-node scripts/with-posthog-env.mjs tauri build --target "${TARGET}" --bundles app,dmg
+node scripts/with-posthog-env.mjs tauri build --target "${TARGET}" --bundles app
 
 # Cargo's target dir is the workspace root's `target/`, not
 # `src-tauri/target/` — the repo became a cargo workspace in #38.
-DMG_DIR="target/${TARGET}/release/bundle/dmg"
-DMG_PATH="$(ls -t "${DMG_DIR}"/*.dmg 2>/dev/null | head -n1 || true)"
-if [[ -z "${DMG_PATH}" ]]; then
-  echo "build-dmg: no .dmg produced under ${DMG_DIR}" >&2
+BUNDLE_ROOT="target/${TARGET}/release/bundle"
+APP_PATH="${BUNDLE_ROOT}/macos/Atlas.app"
+if [[ ! -d "${APP_PATH}" ]]; then
+  echo "build-dmg: no .app produced at ${APP_PATH}" >&2
   exit 1
 fi
 
+VERSION="$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
+DMG_DIR="${BUNDLE_ROOT}/dmg"
+DMG_PATH="${DMG_DIR}/Atlas_${VERSION}_${TARGET%%-*}.dmg"
+mkdir -p "${DMG_DIR}"
+
+STAGING="$(mktemp -d)"
+trap 'rm -rf "${STAGING}"' EXIT
+cp -R "${APP_PATH}" "${STAGING}/Atlas.app"
+ln -s /Applications "${STAGING}/Applications"
+
+log "Building DMG at ${DMG_PATH}"
+bash scripts/layout-dmg.sh "${STAGING}" "${DMG_PATH}" "Atlas"
+
 # By path, not by "newest anywhere" — see the header.
-bash scripts/set-dmg-icon.sh src-tauri/icons/icon.icns "${DMG_PATH}"
+bash scripts/set-dmg-icon.sh src-tauri/icons/Icon.icns "${DMG_PATH}"
 
 log "Done: ${DMG_PATH}"
 log "Unsigned — for a shippable build use scripts/release-macos.sh"

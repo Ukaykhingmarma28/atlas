@@ -1007,7 +1007,7 @@ pub fn agents_kill_plugin(plugin_id: String, host: State<'_, Arc<AgentHost>>) ->
 pub async fn agents_new_session(
     agent_id: AgentId,
     cwd: PathBuf,
-    // Extra workspace roots. Only reaches agents that advertised
+    // Extra project roots. Only reaches agents that advertised
     // `sessionCapabilities.additionalDirectories`; dropped with a log otherwise.
     additional_directories: Option<Vec<PathBuf>>,
     host: State<'_, Arc<AgentHost>>,

@@ -7,13 +7,13 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/features/log/lib/log", () => ({ logEvent: () => {} }));
 const scheduleAppStateSave = vi.fn();
-vi.mock("@/features/project/stores/project-store", () => ({
+vi.mock("@/features/app/stores/app-store", () => ({
   scheduleAppStateSave: () => scheduleAppStateSave(),
 }));
-vi.mock("@/features/workspaces/stores/workspace-store", () => ({
-  useWorkspaceStore: { getState: () => ({ workspaces: [], groups: [], actions: {} }) },
+vi.mock("@/features/projects/stores/project-store", () => ({
+  useProjectStore: { getState: () => ({ projects: [], groups: [], actions: {} }) },
 }));
-vi.mock("@/features/workspaces/stores/recent-chats-store", () => ({
+vi.mock("@/features/projects/stores/recent-chats-store", () => ({
   useRecentChatsStore: { getState: () => ({ actions: {} }) },
 }));
 vi.mock("../lib/org-telemetry", () => ({ syncOrgTelemetry: () => {} }));

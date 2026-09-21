@@ -1,10 +1,15 @@
-//! The rules that decide what a resumed session shows the user.
+//! The helpers left over from the Claude JSONL replay, which is gone: Atlas no
+//! longer reads another program's storage to draw a resumed session (ADR-0001).
+//! What survives has live callers that still depend on exactly these rules.
 //!
-//! Every case here is a line Claude Code actually writes into its JSONL and a
-//! decision about whether it is conversation. Getting one wrong is visible:
-//! a compaction summary replayed as a user message is multiple KB of harness
-//! prose at the top of the thread, and an un-stripped memory block becomes the
-//! session's title.
+//! - `encode_cwd` names the `~/.claude/projects/<slug>` folder that the
+//!   checkpoint importer (`capture.rs`) and the session handoff
+//!   (`memory_pack.rs`) read. A slug that differs from Claude Code's own finds
+//!   nothing, for any project whose path has a space or a dot.
+//! - `strip_injected_context` / `is_injected_user_text` keep Atlas's own memory
+//!   scaffolding and harness text out of what reads as the user's words — in
+//!   thread titles, the memory timeline and the handoff. An un-stripped memory
+//!   block becomes the session's title.
 
 use atlas_agent_transcript::{
     encode_cwd, is_injected_user_text, strip_injected_context, wrap_memory_envelope,

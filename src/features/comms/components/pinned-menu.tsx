@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Loader2, Pin, Search } from "lucide-react";
 import { timeAgo } from "@/lib/time-ago";
+import { Hint } from "@/ui/tooltip";
 import { CommsAvatar } from "./comms-avatar";
 import { comms } from "../lib/comms-api";
 import { toPlainText } from "../lib/to-plain-text";
@@ -76,85 +77,82 @@ export function PinnedMenu({
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          title={`${count} pinned`}
-          className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          <Pin size={10} />
-          <span className="tabular-nums">{count}</span>
-        </button>
-      </Popover.Trigger>
+      <Hint label={`${count} pinned`}>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              className="flex h-5 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+            >
+              <Pin size={10} />
+              <span className="tabular-nums">{count}</span>
+            </button>
+          }
+        />
+      </Hint>
       <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
-        >
-          <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
-            <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-white/5 px-3">
-              <Search size={11} className="shrink-0 text-text-tertiary" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search pins…"
-                aria-label="Search pinned messages"
-                className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
-              />
-            </div>
+        <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
+            <div className="flex max-h-[min(420px,60vh)] w-[320px] flex-col">
+              <div className="flex h-[32px] shrink-0 items-center gap-1.5 border-b border-border-subtle px-3">
+                <Search size={11} className="shrink-0 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search pins…"
+                  aria-label="Search pinned messages"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                />
+              </div>
 
-            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
-              {rows === null && (
-                <div className="flex items-center justify-center gap-1.5 py-6 text-[11px] text-text-tertiary">
-                  <Loader2 size={11} className="animate-spin" />
-                  Loading pins…
-                </div>
-              )}
-              {rows !== null && filtered.length === 0 && (
-                <div className="py-6 text-center text-[11px] text-text-ghost">
-                  {rows.length === 0 ? "Nothing pinned yet." : "No pins match."}
-                </div>
-              )}
-              {filtered.map((pin, i) => {
-                const msg = pin.message;
-                const author = msg ? (members.get(msg.author_id) ?? null) : null;
-                return (
-                  <button
-                    key={pin.message_id}
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      if (msg) onJump(msg.id);
-                    }}
-                    className={
-                      "flex w-full cursor-pointer flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]" +
-                      (i === filtered.length - 1 ? "" : " border-b border-white/5")
-                    }
-                  >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <CommsAvatar member={author} size={16} />
-                      <span className="min-w-0 truncate text-[11px] font-medium text-text-primary">
-                        {author?.name ?? "Unknown"}
+              <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
+                {rows === null && (
+                  <div className="flex items-center justify-center gap-1.5 py-6 text-xs text-muted-foreground">
+                    <Loader2 size={11} className="animate-spin" />
+                    Loading pins…
+                  </div>
+                )}
+                {rows !== null && filtered.length === 0 && (
+                  <div className="py-6 text-center text-xs text-disabled">
+                    {rows.length === 0 ? "Nothing pinned yet." : "No pins match."}
+                  </div>
+                )}
+                {filtered.map((pin, i) => {
+                  const msg = pin.message;
+                  const author = msg ? (members.get(msg.author_id) ?? null) : null;
+                  return (
+                    <button
+                      key={pin.message_id}
+                      type="button"
+                      onClick={() => {
+                        setOpen(false);
+                        if (msg) onJump(msg.id);
+                      }}
+                      className={
+                        "flex w-full cursor-pointer flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)]" +
+                        (i === filtered.length - 1 ? "" : " border-b border-border-subtle")
+                      }
+                    >
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <CommsAvatar member={author} size={16} />
+                        <span className="min-w-0 truncate text-xs font-medium text-foreground">
+                          {author?.name ?? "Unknown"}
+                        </span>
+                        <span className="ml-auto shrink-0 text-3xs text-[var(--muted-foreground)]">
+                          {timeAgo(new Date(pin.at).toISOString(), { suffix: true })}
+                        </span>
+                      </div>
+                      <span className="line-clamp-2 pl-[22px] text-xs leading-snug text-secondary-foreground">
+                        {(msg && toPlainText(msg.body, members)) ||
+                          (msg?.attachments?.length ? "(attachment)" : "…")}
                       </span>
-                      <span className="ml-auto shrink-0 text-[9px] text-[var(--text-tertiary)]">
-                        {timeAgo(new Date(pin.at).toISOString(), { suffix: true })}
-                      </span>
-                    </div>
-                    <span className="line-clamp-2 pl-[22px] text-[11px] leading-snug text-text-secondary">
-                      {(msg && toPlainText(msg.body, members)) ||
-                        (msg?.attachments?.length ? "(attachment)" : "…")}
-                    </span>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        </Popover.Content>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

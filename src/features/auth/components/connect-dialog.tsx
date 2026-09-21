@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { Check, Copy, Loader2, MonitorSmartphone } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -61,21 +61,21 @@ export function ConnectDialog() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim backdrop-blur-sm" />
+        <Dialog.Popup
           className={cn(
-            "fixed left-1/2 top-[24%] z-[var(--z-modal)] -translate-x-1/2",
-            "w-[440px] max-w-[92vw] rounded-lg border border-border-default bg-bg-elevated",
-            "shadow-[var(--shadow-overlay)] text-text-primary",
+            "fixed left-1/2 top-[24%] z-modal -translate-x-1/2",
+            "w-[440px] max-w-[92vw] rounded-lg border border-border bg-card",
+            "shadow-md text-foreground",
           )}
         >
-          <div className="flex items-start gap-2.5 border-b border-border-default px-4 py-3">
-            <MonitorSmartphone className="mt-0.5 size-4 text-text-tertiary" />
+          <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
+            <MonitorSmartphone className="mt-0.5 size-4 text-muted-foreground" />
             <div>
               <Dialog.Title className="text-sm font-medium">
                 Connect your Atlas account
               </Dialog.Title>
-              <Dialog.Description className="mt-0.5 text-xs text-text-secondary">
+              <Dialog.Description className="mt-0.5 text-xs text-secondary-foreground">
                 Approve this device in your browser to finish.
               </Dialog.Description>
             </div>
@@ -83,16 +83,16 @@ export function ConnectDialog() {
 
           <div className="p-4">
             {done ? (
-              <div className="flex items-center gap-2 px-1 py-5 text-xs text-text-secondary">
-                <Check size={14} className="text-[var(--status-success)]" />
+              <div className="flex items-center gap-2 px-1 py-5 text-xs text-secondary-foreground">
+                <Check size={14} className="text-[var(--atlas-status-success-foreground)]" />
                 Connected.
               </div>
             ) : error ? (
               <div className="px-1 py-4">
-                <p className="text-xs text-[var(--status-error)]">{error}</p>
+                <p className="text-xs text-[var(--atlas-status-error-foreground)]">{error}</p>
                 <button
                   onClick={() => void beginSignIn()}
-                  className="mt-3 rounded border border-border-default px-2.5 py-1 text-xs text-text-primary transition-colors hover:bg-[#ffffff08]"
+                  className="mt-3 rounded border border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-element-hover"
                 >
                   Try again
                 </button>
@@ -104,21 +104,24 @@ export function ConnectDialog() {
                     {/* `select-all` so a click-drag grabs the whole code and
                         nothing else — the clipboard button is the fast path,
                         not the only one, and it can be refused by the OS. */}
-                    <div className="rounded border border-border-default bg-[var(--bg-base)] px-3 py-4">
-                      <p className="select-all text-center font-mono text-[22px] tracking-[0.3em] text-text-primary">
+                    <div className="rounded border border-border bg-[var(--background)] px-3 py-4">
+                      <p className="select-all text-center font-mono text-2xl tracking-[0.3em] text-foreground">
                         {connecting.userCode}
                       </p>
                       <button
                         onClick={() => void copyCode()}
                         className={cn(
-                          "mx-auto mt-3 flex items-center gap-1.5 rounded border border-border-default",
-                          "cursor-pointer px-2.5 py-1 text-[11px] transition-colors",
-                          "text-text-secondary hover:bg-[#ffffff08] hover:text-text-primary",
+                          "mx-auto mt-3 flex items-center gap-1.5 rounded border border-border",
+                          "cursor-pointer px-2.5 py-1 text-xs transition-colors",
+                          "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
                         )}
                       >
                         {copied ? (
                           <>
-                            <Check size={12} className="text-[var(--status-success)]" />
+                            <Check
+                              size={12}
+                              className="text-[var(--atlas-status-success-foreground)]"
+                            />
                             Copied
                           </>
                         ) : (
@@ -135,9 +138,9 @@ export function ConnectDialog() {
                         user can point at rather than at a step they have to
                         recognise — and it has to be changed here whenever it
                         changes there. */}
-                    <p className="mt-3 px-1 text-[11px] leading-relaxed text-text-tertiary">
+                    <p className="mt-3 px-1 text-xs leading-relaxed text-muted-foreground">
                       Paste this at{" "}
-                      <span className="font-mono text-text-secondary">
+                      <span className="font-mono text-secondary-foreground">
                         {connecting.verificationUri}
                       </span>
                       , which just opened in your browser, then press Approve.
@@ -145,7 +148,7 @@ export function ConnectDialog() {
                   </>
                 ) : null}
 
-                <div className="flex items-center gap-2 px-1 pt-4 text-xs text-text-secondary">
+                <div className="flex items-center gap-2 px-1 pt-4 text-xs text-secondary-foreground">
                   <Loader2 size={14} className="animate-spin" />
                   {starting ? "Starting…" : "Waiting for you to approve in the browser…"}
                 </div>
@@ -153,15 +156,15 @@ export function ConnectDialog() {
             )}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-border-default px-4 py-2.5">
+          <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
             <button
               onClick={() => (done ? closeDialog() : void cancelSignIn())}
-              className="rounded px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-[#ffffff08] hover:text-text-primary"
+              className="rounded px-2.5 py-1 text-xs text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
             >
               {done ? "Close" : "Cancel"}
             </button>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

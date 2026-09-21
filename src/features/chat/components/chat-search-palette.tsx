@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
+import { DialogOverlay } from "@/ui/dialog";
 import { Search, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Kbd, KbdGroup } from "@/ui/kbd";
@@ -65,38 +66,37 @@ export function ChatSearchPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-[var(--z-overlay)]" />
-        <Dialog.Content
+        <DialogOverlay />
+        <Dialog.Popup
           className={cn(
-            "fixed top-[20%] left-1/2 -translate-x-1/2 z-[var(--z-modal)]",
+            "fixed top-[20%] left-1/2 -translate-x-1/2 z-modal",
             "w-[560px] max-h-[440px] rounded-xl overflow-hidden",
-            "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
-            "shadow-[var(--shadow-overlay)]",
+            "bg-[var(--card)] border border-[var(--border)]",
+            "shadow-md",
             "flex flex-col",
           )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            inputRef.current?.focus();
-          }}
+          // Base UI's initialFocus replaces Radix's onOpenAutoFocus +
+          // preventDefault + focus(): hand it the element to land on.
+          initialFocus={inputRef}
         >
           <Dialog.Title className="sr-only">Find user message</Dialog.Title>
-          <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border-default)] shrink-0">
-            <Search size={14} className="text-[var(--text-tertiary)] shrink-0" />
+          <div className="flex items-center gap-2 px-4 h-[44px] border-b border-[var(--border)] shrink-0">
+            <Search size={14} className="text-[var(--muted-foreground)] shrink-0" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Find a question you asked…"
-              className="flex-1 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              className="flex-1 bg-transparent outline-none text-base text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
             />
-            <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
+            <span className="text-2xs text-[var(--muted-foreground)] font-mono">
               {filtered.length}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto hide-scrollbar py-1">
             {filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-[11px] text-[var(--text-tertiary)]">
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
                 {userMessages.length === 0 ? "No user messages yet." : "No matches."}
               </div>
             ) : (
@@ -117,26 +117,28 @@ export function ChatSearchPalette({
                     }}
                     className={cn(
                       "w-full flex items-start gap-3 px-4 py-2 text-left cursor-pointer",
-                      active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                      active
+                        ? "bg-[var(--atlas-element-selected)]"
+                        : "hover:bg-[var(--atlas-element-hover)]",
                     )}
                   >
                     <span
                       className={cn(
-                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--accent-primary-muted)]",
+                        "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[var(--atlas-primary-muted)]",
                       )}
                     >
-                      <User size={10} className="text-[var(--accent-primary)]" />
+                      <User size={10} className="text-[var(--primary)]" />
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+                        <span className="text-xs font-semibold text-[var(--secondary-foreground)] uppercase tracking-wide">
                           You
                         </span>
-                        <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                        <span className="text-2xs font-mono text-[var(--muted-foreground)]">
                           {ts}
                         </span>
                       </div>
-                      <div className="text-[12px] text-[var(--text-primary)] truncate mt-0.5">
+                      <div className="text-sm text-[var(--foreground)] truncate mt-0.5">
                         {preview}
                       </div>
                     </div>
@@ -145,7 +147,7 @@ export function ChatSearchPalette({
               })
             )}
           </div>
-          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] shrink-0">
+          <div className="flex items-center gap-3 px-4 h-[28px] border-t border-[var(--border)] text-2xs text-[var(--muted-foreground)] shrink-0">
             <KbdGroup>
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>
@@ -160,7 +162,7 @@ export function ChatSearchPalette({
               <span>close</span>
             </KbdGroup>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

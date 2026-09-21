@@ -3,7 +3,7 @@ import { AlertTriangle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { KbdKeys } from "@/ui/kbd";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -111,8 +111,8 @@ export function KeybindingsTable({
       <div
         className={cn(
           GRID,
-          "sticky top-0 z-10 h-[26px] border-b border-border-default bg-bg-primary px-2",
-          "text-[10px] font-semibold uppercase tracking-wider text-text-tertiary",
+          "sticky top-0 z-10 h-[26px] border-b border-border bg-background px-2",
+          "text-2xs font-semibold uppercase tracking-wider text-muted-foreground",
         )}
       >
         <span />
@@ -123,7 +123,7 @@ export function KeybindingsTable({
       </div>
 
       {flat.length === 0 && (
-        <div className="flex h-24 items-center justify-center text-[11px] text-text-tertiary">
+        <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
           {emptyHint ?? "No matching keybindings"}
         </div>
       )}
@@ -131,7 +131,7 @@ export function KeybindingsTable({
       {groups.map((g) => (
         <Fragment key={g.title}>
           {g.title && (
-            <div className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
+            <div className="px-3 pt-2.5 pb-1 text-2xs uppercase tracking-wider text-muted-foreground">
               {g.title}
             </div>
           )}
@@ -155,20 +155,20 @@ export function KeybindingsTable({
 
       {unknownIds.length > 0 && (
         <>
-          <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-text-muted">
+          <div className="px-3 pt-3 pb-1 text-2xs uppercase tracking-wider text-muted-foreground">
             Unknown commands
           </div>
           {unknownIds.map((id) => (
-            <div key={id} className={cn(GRID, "h-[28px] px-2 text-[11px] text-text-tertiary")}>
+            <div key={id} className={cn(GRID, "h-[28px] px-2 text-xs text-muted-foreground")}>
               <span />
-              <span className="truncate font-mono text-[10.5px]">{id}</span>
-              <span className="text-text-muted">not in this version of Atlas</span>
+              <span className="truncate font-mono text-xs">{id}</span>
+              <span className="text-muted-foreground">not in this version of Atlas</span>
               <span />
               <button
                 type="button"
                 onClick={() => removeUnknown(id)}
                 disabled={locked}
-                className="text-[10.5px] text-text-secondary hover:text-text-primary disabled:opacity-40 cursor-pointer text-left"
+                className="text-xs text-secondary-foreground hover:text-foreground disabled:opacity-40 cursor-pointer text-left"
               >
                 Remove
               </button>
@@ -228,124 +228,135 @@ function Row({
 
   return (
     <ContextMenu onOpenChange={(open) => open && onSelect()}>
-      <ContextMenuTrigger asChild>
-        <div
-          data-action-id={row.id}
-          onClick={onSelect}
-          onDoubleClick={() => onRecord("change")}
-          className={cn(
-            GRID,
-            "group h-[28px] px-2 text-[11px] border-b border-border-subtle cursor-default select-none",
-            selected ? "bg-bg-selected" : "hover:bg-bg-hover",
-          )}
-        >
-          <button
-            type="button"
-            aria-label="Change keybinding"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRecord("change");
-            }}
+      <ContextMenuTrigger
+        render={
+          <div
+            data-action-id={row.id}
+            onClick={onSelect}
+            onDoubleClick={() => onRecord("change")}
             className={cn(
-              "flex h-5 w-5 items-center justify-center rounded text-text-tertiary hover:text-text-primary transition-opacity cursor-pointer",
-              selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              GRID,
+              "group h-[28px] px-2 text-xs border-b border-border-subtle cursor-default select-none",
+              selected ? "bg-element-selected" : "hover:bg-element-hover",
             )}
           >
-            <Pencil size={11} />
-          </button>
-
-          <div className="flex min-w-0 items-baseline gap-2">
+            <Hint label="Change keybinding">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRecord("change");
+                }}
+                className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground transition-opacity cursor-pointer",
+                  selected
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                )}
+              >
+                <Pencil size={11} />
+              </button>
+            </Hint>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span
+                className={cn(
+                  "truncate",
+                  selected
+                    ? "text-foreground"
+                    : "text-secondary-foreground group-hover:text-foreground",
+                )}
+              >
+                {row.def.title}
+              </span>
+              <span className="hidden truncate font-mono text-2xs text-muted-foreground @[640px]:inline">
+                {row.id}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              {row.bindings.length === 0 ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                row.bindings.map((b) => <KbdKeys key={b.serialized} keys={displayKeys(b.combo)} />)
+              )}
+              {row.invalid.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <AlertTriangle
+                        size={11}
+                        className="shrink-0 text-[var(--atlas-status-error-foreground)]"
+                      />
+                    }
+                  />
+                  <TooltipContent>
+                    Invalid in keybindings.json: {row.invalid.join(", ")}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {worst && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Show conflicting bindings"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (firstCombo) onShowSame(firstCombo);
+                        }}
+                        className="flex shrink-0 cursor-pointer"
+                      >
+                        <AlertTriangle
+                          size={11}
+                          className={
+                            worst === "hard"
+                              ? "text-[var(--atlas-status-error-foreground)]"
+                              : "text-[var(--atlas-status-warning-foreground)]"
+                          }
+                        />
+                      </button>
+                    }
+                  />
+                  <TooltipContent>
+                    {worst === "hard"
+                      ? "Also bound in the same context: "
+                      : "Also bound elsewhere: "}
+                    {[...new Set(shown.map((b) => ACTION_BY_ID[b.actionId].title))].join(", ")}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <span className="truncate font-mono text-2xs text-muted-foreground">
+              {WHEN_LABELS[row.def.when] || <span className="text-muted-foreground">—</span>}
+            </span>
             <span
               className={cn(
-                "truncate",
-                selected
-                  ? "text-text-primary"
-                  : "text-text-secondary group-hover:text-text-primary",
+                "text-xs",
+                row.overridden ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              {row.def.title}
-            </span>
-            <span className="hidden truncate font-mono text-[9.5px] text-text-muted @[640px]:inline">
-              {row.id}
+              {source}
             </span>
           </div>
-
-          <div className="flex min-w-0 items-center gap-2">
-            {row.bindings.length === 0 ? (
-              <span className="text-text-muted">—</span>
-            ) : (
-              row.bindings.map((b) => <KbdKeys key={b.serialized} keys={displayKeys(b.combo)} />)
-            )}
-            {row.invalid.length > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <AlertTriangle size={11} className="shrink-0 text-[var(--status-error)]" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  Invalid in keybindings.json: {row.invalid.join(", ")}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {worst && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (firstCombo) onShowSame(firstCombo);
-                    }}
-                    className="flex shrink-0 cursor-pointer"
-                  >
-                    <AlertTriangle
-                      size={11}
-                      className={
-                        worst === "hard"
-                          ? "text-[var(--status-error)]"
-                          : "text-[var(--status-warning)]"
-                      }
-                    />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {worst === "hard" ? "Also bound in the same context: " : "Also bound elsewhere: "}
-                  {[...new Set(shown.map((b) => ACTION_BY_ID[b.actionId].title))].join(", ")}
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-
-          <span className="truncate font-mono text-[10px] text-text-tertiary">
-            {WHEN_LABELS[row.def.when] || <span className="text-text-muted">—</span>}
-          </span>
-
-          <span
-            className={cn(
-              "text-[10.5px]",
-              row.overridden ? "text-text-primary" : "text-text-tertiary",
-            )}
-          >
-            {source}
-          </span>
-        </div>
-      </ContextMenuTrigger>
+        }
+      />
       <ContextMenuContent>
-        <ContextMenuItem onSelect={onCopy}>
+        <ContextMenuItem onClick={onCopy}>
           Copy
           <ContextMenuShortcut>⌘C</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void copyText(row.id)}>Copy Command ID</ContextMenuItem>
-        <ContextMenuItem onSelect={() => void copyText(row.def.title)}>
+        <ContextMenuItem onClick={() => void copyText(row.id)}>Copy Command ID</ContextMenuItem>
+        <ContextMenuItem onClick={() => void copyText(row.def.title)}>
           Copy Command Title
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => onRecord("change")}>
+        <ContextMenuItem onClick={() => onRecord("change")}>
           Change Keybinding…
           <ContextMenuShortcut>↩</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onRecord("add")}>Add Keybinding…</ContextMenuItem>
+        <ContextMenuItem onClick={() => onRecord("add")}>Add Keybinding…</ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem disabled={locked || row.bindings.length === 0} onSelect={() => onRemove()}>
+        <ContextMenuItem disabled={locked || row.bindings.length === 0} onClick={() => onRemove()}>
           Remove Keybinding
           <ContextMenuShortcut>⌫</ContextMenuShortcut>
         </ContextMenuItem>
@@ -355,18 +366,18 @@ function Row({
               key={b.serialized}
               inset
               disabled={locked}
-              onSelect={() => onRemove(b.serialized)}
+              onClick={() => onRemove(b.serialized)}
             >
               Remove {displayLabel(b.combo)}
             </ContextMenuItem>
           ))}
-        <ContextMenuItem disabled={locked || !row.overridden} onSelect={onReset}>
+        <ContextMenuItem disabled={locked || !row.overridden} onClick={onReset}>
           Reset Keybinding
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           disabled={!firstCombo}
-          onSelect={() => firstCombo && onShowSame(firstCombo)}
+          onClick={() => firstCombo && onShowSame(firstCombo)}
         >
           Show Same Keybindings
         </ContextMenuItem>

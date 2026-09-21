@@ -264,8 +264,8 @@ export const SlashMenu = forwardRef<SlashMenuRef, SlashMenuProps>(function Slash
         style={{
           width: 280,
           padding: "10px 12px",
-          color: "var(--text-muted)",
-          fontSize: 12,
+          color: "var(--muted-foreground)",
+          fontSize: "var(--text-sm)",
         }}
       >
         No matches

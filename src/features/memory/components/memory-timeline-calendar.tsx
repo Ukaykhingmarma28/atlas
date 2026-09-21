@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import type { MemoryTimeline } from "../lib/memory-timeline-api";
 
 /**
- * Apple-Calendar-style week view. The left panel (#141414) lists branches as a
+ * Apple-Calendar-style week view. The left panel (a card-tinted gutter) lists branches as a
  * plain text list with dividers; the right grid lays out 7 day columns and
  * **stacks items as cards** by time. Hovering/selecting a branch draws smooth
  * bezier connectors from its row to each of its cards. Navigation skips empty
@@ -14,13 +15,13 @@ import type { MemoryTimeline } from "../lib/memory-timeline-api";
  *   id forms — "branch:<name>", "commit:<sha>", "session:<id>".
  */
 
-const PANEL = "#0E0F0E";
+const PANEL = "var(--card)";
 const GUTTER = 184;
 // Monochromatic — branches are disambiguated by the connector lines, not hue.
-const MONO = "#6b6b6b";
-const DOT_MEMORY = "#3fb950"; // has memory feeding into it
-const DOT_PLAIN = "rgba(255,255,255,0.7)"; // no linked memory
-const CONNECTOR = "rgba(255,255,255,0.55)";
+const MONO = "var(--muted-foreground)";
+const DOT_MEMORY = "var(--atlas-status-success-foreground)"; // has memory feeding into it
+const DOT_PLAIN = "color-mix(in srgb, var(--foreground) 70%, transparent)"; // no linked memory
+const CONNECTOR = "color-mix(in srgb, var(--foreground) 55%, transparent)";
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface CalItem {
@@ -229,12 +230,12 @@ export function MemoryTimelineCalendar({
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full">
-      {/* ── Left branch list (#141414) ── */}
+      {/* ── Left branch list ── */}
       <div
-        className="shrink-0 flex flex-col border-r border-[var(--border-default)]"
+        className="shrink-0 flex flex-col border-r border-[var(--border)]"
         style={{ width: GUTTER, background: PANEL }}
       >
-        <div className="flex items-center px-3 h-[32px] shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] border-b border-[var(--border-default)]">
+        <div className="flex items-center px-3 h-control-lg shrink-0 text-3xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] border-b border-[var(--border)]">
           Branches
         </div>
         <div className="flex-1 overflow-y-auto hide-scrollbar">
@@ -251,24 +252,26 @@ export function MemoryTimelineCalendar({
                 onMouseLeave={() => setHoverBranch((h) => (h === b.name ? null : h))}
                 onClick={() => onSelect(sel ? null : `branch:${b.name}`)}
                 className={cn(
-                  "w-full flex flex-col justify-center gap-0.5 px-3 py-2 border-b border-[var(--border-subtle)] text-left transition-colors",
-                  sel ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                  "w-full flex flex-col justify-center gap-0.5 px-3 py-2 border-b border-[var(--atlas-border-subtle)] text-left transition-colors",
+                  sel
+                    ? "bg-[var(--atlas-element-selected)]"
+                    : "hover:bg-[var(--atlas-element-hover)]",
                 )}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: MONO }} />
                   <span
                     className={cn(
-                      "text-[11px] truncate",
+                      "text-xs truncate",
                       b.is_current
-                        ? "text-[var(--text-primary)] font-medium"
-                        : "text-[var(--text-secondary)]",
+                        ? "text-[var(--foreground)] font-medium"
+                        : "text-[var(--secondary-foreground)]",
                     )}
                   >
                     {b.name}
                   </span>
                 </div>
-                <span className="text-[9px] text-[var(--text-tertiary)] pl-3.5">
+                <span className="text-3xs text-[var(--muted-foreground)] pl-3.5">
                   {model.commitCount.get(b.name) ?? 0} commits{b.is_current ? " · current" : ""}
                 </span>
               </button>
@@ -278,56 +281,58 @@ export function MemoryTimelineCalendar({
       </div>
 
       {/* ── Week calendar ── */}
-      <div className="flex-1 min-w-0 flex flex-col bg-[var(--bg-base)]">
+      <div className="flex-1 min-w-0 flex flex-col bg-[var(--background)]">
         {/* Week nav */}
-        <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
-          <button
-            onClick={goPrev}
-            disabled={!hasPrev}
-            title="Previous week with activity"
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <button
-            onClick={goNext}
-            disabled={!hasNext}
-            title="Next week with activity"
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[var(--bg-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
-          >
-            <ChevronRight size={15} />
-          </button>
+        <div className="flex items-center gap-2 px-3 h-control-lg shrink-0 border-b border-[var(--border)]">
+          <Hint label="Previous week with activity">
+            <button
+              onClick={goPrev}
+              disabled={!hasPrev}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] enabled:hover:text-[var(--foreground)] enabled:hover:bg-[var(--atlas-element-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
+            >
+              <ChevronLeft size={15} />
+            </button>
+          </Hint>
+          <Hint label="Next week with activity">
+            <button
+              onClick={goNext}
+              disabled={!hasNext}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] enabled:hover:text-[var(--foreground)] enabled:hover:bg-[var(--atlas-element-hover)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-default"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </Hint>
           <button
             onClick={goToday}
-            className="h-6 px-2.5 rounded-md border border-[var(--border-default)] text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="h-6 px-2.5 rounded-md border border-[var(--border)] text-2xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
           >
             Today
           </button>
-          <span className="text-[12px] font-medium text-[var(--text-primary)] tabular-nums ml-1">
+          <span className="text-sm font-medium text-[var(--foreground)] tabular-nums ml-1">
             {rangeLabel}
           </span>
         </div>
 
         {/* Day-column headers */}
-        <div className="flex shrink-0 border-b border-[var(--border-default)]">
+        <div className="flex shrink-0 border-b border-[var(--border)]">
           {days.map((d) => {
             const isToday = d === todayStart;
             return (
               <div
                 key={d}
-                className="flex-1 min-w-0 flex flex-col items-center justify-center py-1.5 border-l border-[var(--border-subtle)] first:border-l-0"
+                className="flex-1 min-w-0 flex flex-col items-center justify-center py-1.5 border-l border-[var(--atlas-border-subtle)] first:border-l-0"
               >
-                <span className="text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
+                <span className="text-3xs uppercase tracking-wider text-[var(--muted-foreground)]">
                   {WEEKDAYS[new Date(d).getDay()]}
                 </span>
                 <span
                   className={cn(
-                    "text-[13px] tabular-nums leading-none",
+                    "text-base tabular-nums leading-none",
                     isToday
                       ? // `w-6 h-6` (was w-5) so two-digit dates (10–31) aren't
                         // cramped/clipped inside the today circle.
-                        "text-[var(--bg-base)] bg-[var(--accent-primary)] rounded-full w-6 h-6 flex items-center justify-center font-semibold mt-0.5"
-                      : "text-[var(--text-secondary)]",
+                        "text-[var(--background)] bg-[var(--primary)] rounded-full w-6 h-6 flex items-center justify-center font-semibold mt-0.5"
+                      : "text-[var(--secondary-foreground)]",
                   )}
                 >
                   {new Date(d).getDate()}
@@ -344,7 +349,7 @@ export function MemoryTimelineCalendar({
             return (
               <div
                 key={d}
-                className="flex-1 min-w-0 flex flex-col gap-1 p-1.5 border-l border-[var(--border-subtle)] first:border-l-0"
+                className="flex-1 min-w-0 flex flex-col gap-1 p-1.5 border-l border-[var(--atlas-border-subtle)] first:border-l-0"
               >
                 {cards.map((c) => {
                   const sel = selectedId === c.id;
@@ -365,8 +370,8 @@ export function MemoryTimelineCalendar({
                       className={cn(
                         "group w-full max-w-full min-w-0 flex items-start gap-1.5 pl-1.5 pr-1 py-1 rounded-md border text-left cursor-pointer transition-all",
                         sel
-                          ? "border-[var(--text-secondary)] bg-[var(--bg-elevated-2)]"
-                          : "border-[var(--border-default)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)]",
+                          ? "border-[var(--secondary-foreground)] bg-[var(--card)]"
+                          : "border-[var(--border)] bg-[var(--card)] hover:bg-[var(--atlas-element-hover)]",
                       )}
                       style={{ opacity: dimmed ? 0.28 : 1 }}
                     >
@@ -375,10 +380,10 @@ export function MemoryTimelineCalendar({
                         style={{ background: memoryIds?.has(c.id) ? DOT_MEMORY : DOT_PLAIN }}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[10px] leading-snug text-[var(--text-secondary)] line-clamp-2 break-words">
+                        <span className="block text-2xs leading-snug text-[var(--secondary-foreground)] line-clamp-2 break-words">
                           {c.title}
                         </span>
-                        <span className="block text-[9px] tabular-nums text-[var(--text-tertiary)] mt-0.5">
+                        <span className="block text-3xs tabular-nums text-[var(--muted-foreground)] mt-0.5">
                           {fmtTime(c.ts)}
                         </span>
                       </span>

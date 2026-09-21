@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Trash2, FileText } from "lucide-react";
 import { TreeRow } from "@/features/explorer/components/tree-row";
 import { ROW_HEIGHT } from "@/features/explorer/lib/tree-constants";
+import { Hint } from "@/ui/tooltip";
 
 /** Imperative handle exposed to the sidebar so its header buttons can
  *  drive collapse-all / expand-all without lifting `expanded` state. */
@@ -156,7 +157,7 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
 
     if (entries.length === 0) {
       return (
-        <div className="px-3 py-4 text-[11px] text-text-tertiary text-center">No notes yet</div>
+        <div className="px-3 py-4 text-xs text-muted-foreground text-center">No notes yet</div>
       );
     }
 
@@ -180,7 +181,9 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
                 leafIcon={FileText}
                 leafIconNode={
                   node.entry?.icon ? (
-                    <span style={{ fontSize: 12, lineHeight: 1 }}>{node.entry.icon}</span>
+                    <span className="text-sm" style={{ lineHeight: 1 }}>
+                      {node.entry.icon}
+                    </span>
                   ) : undefined
                 }
                 onClick={() => {
@@ -190,17 +193,18 @@ export const KnowledgeTree = forwardRef<KnowledgeTreeHandle, KnowledgeTreeProps>
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                 trailing={
                   !node.isDir && onDelete ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(node.key);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-error text-text-tertiary transition-opacity"
-                      title="Delete note"
-                    >
-                      <Trash2 size={11} />
-                    </button>
+                    <Hint label="Delete note">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(node.key);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:text-error text-muted-foreground transition-opacity"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </Hint>
                   ) : null
                 }
               />

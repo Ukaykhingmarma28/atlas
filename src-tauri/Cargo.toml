@@ -125,6 +125,8 @@ atlas-comms = { path = "../crates/atlas-comms" }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 atlas-terminal = { path = "../crates/atlas-terminal" }
+atlas-icon-theme = { path = "../crates/atlas-icon-theme" }
+atlas-theme = { path = "../crates/atlas-theme" }
 atlas-embed = { path = "../crates/atlas-embed" }
 # On-device RAG/memory engine (MiniLM → usearch HNSW + manifest). The Tauri
 # layer owns the per-project engine registry + background indexer
@@ -224,6 +226,14 @@ axum = { workspace = true, features = ["http1", "tokio"] }
 # `codex-rmcp-client` already turns on (`transport-streamable-http-client`, and
 # `__reqwest` through `auth`), so it compiles nothing new.
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+# Self-deleting temp dirs for the state/config tests.
+tempfile = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Read the Windows Installer's uninstall entry for Atlas: the auto-updater
+# relaunches from (and only upgrades) the MSI's `InstallLocation`. See
+# `crate::commands::updater`. Already in the tree transitively.
+winreg = "0.55"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Native NSWindow access for the titlebar double-click "zoom" (AppKit

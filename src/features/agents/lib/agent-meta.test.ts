@@ -67,11 +67,12 @@ const NATIVE: Entry = {
 };
 
 /** A fresh profile after the user installed Claude Code and Codex from the
- *  Marketplace, with Cursor merely found on their PATH. */
+ *  Marketplace, with Cursor merely found on their PATH. Registry ids, whose
+ *  agentType is the id itself (`agent_type_for` in `catalog.rs`). */
 const AFTER_INSTALLS: Entry[] = [
   NATIVE,
-  { id: "claude-code-ts", agentType: "claude-code", name: "Claude Code", source: "npx" },
-  { id: "codex", agentType: "codex", name: "Codex", source: "npx" },
+  { id: "claude-acp", name: "Claude Code", source: "npx" },
+  { id: "codex-acp", name: "Codex", source: "npx" },
   { id: "cursor", agentType: "cursor", name: "Cursor", source: "detected", installed: false },
 ];
 
@@ -89,14 +90,14 @@ describe("switchableAgentIds", () => {
 
   it("adds an agent once the user installs it, and drops it on uninstall", () => {
     setCatalog(AFTER_INSTALLS);
-    expect(switchableAgentIds()).toContain("claude-code");
+    expect(switchableAgentIds()).toContain("claude-acp");
     setCatalog([NATIVE]);
-    expect(switchableAgentIds()).not.toContain("claude-code");
+    expect(switchableAgentIds()).not.toContain("claude-acp");
   });
 
   it("keeps the native agent first, then installs A–Z by label", () => {
     setCatalog(AFTER_INSTALLS);
-    expect(switchableAgentIds()).toEqual(["cersei", "claude-code", "codex"]);
+    expect(switchableAgentIds()).toEqual(["cersei", "claude-acp", "codex-acp"]);
   });
 
   it("leaves a merely-detected agent out — it is an offer, not a spawn", () => {
@@ -121,8 +122,8 @@ describe("switchableAgentIds", () => {
 describe("agentMeta", () => {
   it("reports source and availability once the catalog has landed", () => {
     setCatalog(AFTER_INSTALLS);
-    expect(agentMeta("claude-code").source).toBe("npx");
-    expect(agentMeta("claude-code").availability).toBe("ready");
+    expect(agentMeta("claude-acp").source).toBe("npx");
+    expect(agentMeta("claude-acp").availability).toBe("ready");
     // Detected-but-not-installed still has to be fetched before it can run.
     expect(agentMeta("cursor").availability).toBe("needs-download");
   });
@@ -143,7 +144,7 @@ describe("agentMeta", () => {
     expect(meta.source).toBeNull();
     expect(meta.availability).toBeNull();
     expect(meta.label).toBe("Cursor");
-    expect(meta.cssClass).toBe("agent-cursor");
+    expect(meta.firstPartyIcon).toBe("cursor");
   });
 
   it("prefers the catalog's name and icon for externals", () => {
@@ -153,8 +154,12 @@ describe("agentMeta", () => {
   });
 
   it("resolves an entry by agentType as well as by plugin id", () => {
-    setCatalog(AFTER_INSTALLS);
-    // Sessions persist "claude-code"; the spec id is "claude-code-ts".
+    // The one alias left: the old built-in Claude spec "claude-code-ts", whose
+    // sessions persisted "claude-code".
+    setCatalog([
+      NATIVE,
+      { id: "claude-code-ts", agentType: "claude-code", name: "Claude Code", source: "npx" },
+    ]);
     expect(agentMeta("claude-code").source).toBe("npx");
     expect(agentMeta("claude-code-ts").source).toBe("npx");
   });
@@ -181,6 +186,19 @@ describe("switchableAgentOf", () => {
     expect(switchableAgentOf("claude-code")).toBe("claude-code");
     expect(switchableAgentOf("claude-code-ts")).toBe("claude-code");
     expect(switchableAgentOf("claude-code-rs")).toBe("claude-code");
+  });
+
+  it("gives Claude Code's mark to the real Claude ids only", () => {
+    expect(agentMeta("claude-acp").firstPartyIcon).toBe("claude-code");
+    expect(agentMeta("claude-code-ts").firstPartyIcon).toBe("claude-code");
+    expect(agentMeta("claude-foo").firstPartyIcon).toBeNull();
+  });
+
+  it("does not fold other claude-prefixed ids into Claude Code", () => {
+    // The registry's own adapter keeps its id (the switcher lists claude-acp),
+    // and a third-party claude-* agent is itself.
+    expect(switchableAgentOf("claude-acp")).toBe("claude-acp");
+    expect(switchableAgentOf("claude-foo")).toBe("claude-foo");
   });
 
   it("defaults to the native agent when a session carries no identity", () => {

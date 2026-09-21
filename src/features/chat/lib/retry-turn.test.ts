@@ -39,10 +39,23 @@ vi.mock("../stores/chat-store", () => ({
 
 const { retryLastTurn } = await import("./retry-turn");
 
-/** Let the store's truncation become observable, as the real delta would. */
+/**
+ * Let the store's truncation become observable, as the real delta would:
+ * shorter than it is NOW, not a fixed length. Setting a fixed one-message list
+ * made the second rewind in a test invisible (1 → 1), so `awaitRewind` sat out
+ * its real 3 s timeout and took the hand-back path while the test still
+ * passed on the call count alone.
+ */
 function deliverRewindDelta() {
-  session = { ...session, messages: [{ role: "user" }] };
+  const messages = (session?.messages as unknown[] | undefined) ?? [];
+  session = { ...session, messages: messages.slice(0, -1) };
   subscriber?.();
+}
+
+/** The retry saw its rewind land and went on to send — not the timeout path. */
+function expectRewindObserved(times: number) {
+  expect(send).toHaveBeenCalledTimes(times);
+  expect(enqueueMessage).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -53,7 +66,7 @@ beforeEach(() => {
     status: "idle",
     acpAgentId: "agent",
     acpSessionId: "sess",
-    messages: [{ role: "user" }, { role: "assistant" }],
+    messages: [{ role: "user" }, { role: "assistant" }, { role: "user" }, { role: "assistant" }],
   };
 });
 
@@ -79,6 +92,7 @@ describe("retrying the last turn", () => {
     deliverRewindDelta();
     await Promise.all([first, second]);
     expect(rewindLastTurn).toHaveBeenCalledTimes(1);
+    expectRewindObserved(1);
   });
 
   it("allows a retry again once the previous one has settled", async () => {
@@ -93,6 +107,8 @@ describe("retrying the last turn", () => {
     deliverRewindDelta();
     await again;
     expect(rewindLastTurn).toHaveBeenCalledTimes(2);
+    // Both retries observed their own truncation (4 → 3 → 2) and sent.
+    expectRewindObserved(2);
   });
 
   it("releases the claim even when the rewind throws", async () => {
@@ -107,6 +123,7 @@ describe("retrying the last turn", () => {
     deliverRewindDelta();
     await run;
     expect(rewindLastTurn).toHaveBeenCalledTimes(2);
+    expectRewindObserved(1);
   });
 
   it("does not send, and hands the prompt back, when the rewind never reaches the transcript", async () => {

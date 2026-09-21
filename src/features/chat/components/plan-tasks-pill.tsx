@@ -62,11 +62,18 @@ function StepIcon({ status, active }: { status: string; active: boolean }) {
   if (status === "completed") {
     return (
       <svg width={16} height={16} viewBox="0 0 16 16" className="shrink-0" aria-hidden>
-        <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+        <circle
+          cx="8"
+          cy="8"
+          r="6.5"
+          fill="none"
+          stroke="var(--muted-foreground)"
+          strokeWidth="1.5"
+        />
         <path
           d="M5.2 8.2 7.2 10.2 11 5.8"
           fill="none"
-          stroke="var(--text-tertiary)"
+          stroke="var(--muted-foreground)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -80,7 +87,7 @@ function StepIcon({ status, active }: { status: string; active: boolean }) {
         width={16}
         height={16}
         viewBox="0 0 16 16"
-        className={cn("shrink-0 text-[var(--text-primary)]", active && "atlas-arc-spin")}
+        className={cn("shrink-0 text-[var(--foreground)]", active && "atlas-arc-spin")}
         aria-hidden
       >
         <circle
@@ -107,7 +114,14 @@ function StepIcon({ status, active }: { status: string; active: boolean }) {
   }
   return (
     <svg width={16} height={16} viewBox="0 0 16 16" className="shrink-0" aria-hidden>
-      <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--border-strong)" strokeWidth="1.5" />
+      <circle
+        cx="8"
+        cy="8"
+        r="6.5"
+        fill="none"
+        stroke="var(--atlas-border-strong)"
+        strokeWidth="1.5"
+      />
     </svg>
   );
 }
@@ -132,11 +146,11 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
       <ComposerDropup open={open} panelHeight={panelHeight} contentRef={contentRef} width={320}>
         <>
           <div className="flex h-9 items-center gap-2 px-3">
-            <ListTodo size={13} className="shrink-0 text-[var(--text-secondary)]" />
-            <span className="flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">
+            <ListTodo size={13} className="shrink-0 text-[var(--secondary-foreground)]" />
+            <span className="flex-1 truncate text-sm font-medium text-[var(--foreground)]">
               Implementation plan
             </span>
-            <span className="font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]">
+            <span className="font-mono text-2xs tabular-nums text-[var(--muted-foreground)]">
               {completed}/{plan.length}
             </span>
           </div>
@@ -149,11 +163,11 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
                 <StepIcon status={step.status} active={open} />
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-[11.5px] leading-5",
+                    "min-w-0 flex-1 truncate text-sm leading-5",
                     step.status === "completed" &&
-                      "text-[var(--text-tertiary)] line-through decoration-[var(--text-tertiary)]",
-                    step.status === "in_progress" && "text-[var(--text-primary)]",
-                    step.status === "pending" && "text-[var(--text-secondary)] opacity-70",
+                      "text-[var(--muted-foreground)] line-through decoration-[var(--muted-foreground)]",
+                    step.status === "in_progress" && "text-[var(--foreground)]",
+                    step.status === "pending" && "text-[var(--secondary-foreground)] opacity-70",
                   )}
                 >
                   {step.description}
@@ -168,14 +182,14 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
       <button
         onClick={toggle}
         className={cn(
-          "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-[10px] font-medium leading-none transition-colors cursor-pointer",
+          "flex h-6.5 items-center gap-1.5 rounded-full border px-2 text-2xs font-medium leading-none transition-colors cursor-pointer",
           open
-            ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+            ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+            : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
         )}
         title="Implementation plan"
       >
-        <span className="text-[var(--accent-primary)]">
+        <span className="text-[var(--primary)]">
           <ArcRing frac={plan.length ? completed / plan.length : 0} />
         </span>
         <span className="tabular-nums">
@@ -184,7 +198,7 @@ export const PlanTasksPill = memo(function PlanTasksPill({ tabId }: { tabId: str
         <ChevronUp
           size={10}
           className={cn(
-            "shrink-0 text-[var(--text-tertiary)] transition-transform duration-200",
+            "shrink-0 text-[var(--muted-foreground)] transition-transform duration-200",
             open && "rotate-180",
           )}
         />

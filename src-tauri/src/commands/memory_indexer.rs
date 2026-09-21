@@ -662,9 +662,9 @@ pub async fn force_reindex(
     registry.enqueue(Job::IndexCorpus { cwd })
 }
 
-/// Workspace-close teardown: release `cwd`'s engine, FS watcher and debounce
+/// Project-close teardown: release `cwd`'s engine, FS watcher and debounce
 /// task. Counterpart of `fileindex_close_project`/`git_watch_stop` — without it
-/// every workspace ever opened kept a recursive FSEvents stream + an in-RAM
+/// every project ever opened kept a recursive FSEvents stream + an in-RAM
 /// index for the life of the process.
 #[tauri::command]
 pub async fn memory_indexer_close_project(

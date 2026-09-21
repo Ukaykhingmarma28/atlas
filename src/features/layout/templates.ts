@@ -4,7 +4,7 @@ type LeftSection = "files" | "knowledge";
 type RightSection = "changes" | "github" | "git-graph";
 
 /** A predefined panel/split/tab arrangement applied via the layout switcher
- *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE workspace. */
+ *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE project. */
 export interface LayoutTemplate {
   id: string;
   name: string;
@@ -72,10 +72,10 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     columns: [{ type: "chat", title: "Agents" }],
   },
   {
-    id: "console",
-    name: "Console",
-    description: "The cross-project analytics dashboard.",
+    id: "usage",
+    name: "Usage",
+    description: "Organisation token usage and cost.",
     panels: {},
-    columns: [{ type: "mission-control", title: "Console" }],
+    columns: [{ type: "usage", title: "Usage" }],
   },
 ];

@@ -6,7 +6,7 @@
 //! gates over its own format-neutral `TranscriptTurn`.
 //!
 //! Two things in this module are on-disk contracts rather than implementation
-//! details, and both are pinned in `tests/cersei_parity.rs`:
+//! details, and both are pinned in `tests/behaviour.rs`:
 //!
 //! - [`MemoryCategory::label`] is written into the memdir markdown.
 //! - [`persist_memories`]'s rendered line is parsed back by the record store's
@@ -40,7 +40,7 @@ impl MemoryCategory {
     }
 
     /// Parse a label. Accepts the aliases a model plausibly emits.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "preference" | "userpreference" | "user_preference" => Some(Self::UserPreference),
             "project" | "projectfact" | "project_fact" => Some(Self::ProjectFact),
@@ -102,7 +102,7 @@ pub fn parse_extraction_output(output: &str) -> Vec<ExtractedMemory> {
                 return None;
             }
 
-            let category = MemoryCategory::from_str(parts[0].trim())?;
+            let category = MemoryCategory::parse(parts[0].trim())?;
             let confidence = parts[1].trim().parse::<f32>().ok()? / 10.0;
             let content = parts[2].trim().to_string();
 

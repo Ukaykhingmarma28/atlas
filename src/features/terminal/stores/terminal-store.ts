@@ -54,19 +54,19 @@ interface TerminalState {
    *  (HMR, a tab switch that unmounts the panel), which for a login would mean
    *  signing in twice. */
   pendingCommands: Record<string, string>;
-  /** Which workspace each terminal TAB belongs to.
+  /** Which project each terminal TAB belongs to.
    *
    *  A notification about a terminal has to be able to find its way back to
    *  it, and a tab id alone is not enough once the tab has left the layout
-   *  mirror (its workspace went to the background). The layout store's view
+   *  mirror (its project went to the background). The layout store's view
    *  snapshot knows too, but only after a commit; this is written at the
-   *  moment the tab is initialised, by the panel that knows its workspace. */
+   *  moment the tab is initialised, by the panel that knows its project. */
   owners: Record<string, string>;
 }
 
 interface TerminalActions {
   actions: {
-    initTab: (tabId: string, workspaceId?: string) => void;
+    initTab: (tabId: string, projectId?: string) => void;
     addTerminalToPane: (tabId: string, paneId: string) => void;
     splitPane: (tabId: string, paneId: string, direction: SplitDirection) => void;
     closeTerminalInPane: (tabId: string, paneId: string, ptyId: string) => void;
@@ -95,12 +95,12 @@ interface TerminalActions {
      *  A NEW terminal every time, even when the tab already has one: the
      *  existing shell may be mid-command, and typing into it would interleave
      *  with whatever the user is doing. */
-    addTerminalForCommand: (tabId: string, workspaceId?: string) => string;
+    addTerminalForCommand: (tabId: string, projectId?: string) => string;
     /** Queue a command for one terminal. */
     setPendingCommand: (terminalId: string, command: string) => void;
     /** Take the queued command, if any. Removes it — see `pendingCommands`. */
     takePendingCommand: (terminalId: string) => string | undefined;
-    /** Drop several terminal tabs (used when a workspace is DISCARDED). PTYs
+    /** Drop several terminal tabs (used when a project is DISCARDED). PTYs
      *  are already closed by the BlockTerminal unmount; this frees the trees. */
     removeTabs: (tabIds: string[]) => void;
   };
@@ -228,13 +228,13 @@ export const useTerminalStore = createSelectors(
       pendingCommands: {},
       owners: {},
       actions: {
-        initTab: (tabId, workspaceId) => {
+        initTab: (tabId, projectId) => {
           if (get().tabs[tabId]) {
             // Already seeded (e.g. by addTerminalForCommand); still record the
             // owner if we learn it now.
-            if (workspaceId && get().owners[tabId] !== workspaceId) {
+            if (projectId && get().owners[tabId] !== projectId) {
               set((s) => {
-                s.owners[tabId] = workspaceId;
+                s.owners[tabId] = projectId;
               });
             }
             return;
@@ -246,7 +246,7 @@ export const useTerminalStore = createSelectors(
               root: { type: "pane", id: paneId, terminals: [ptyId], activeTerminalId: ptyId },
               activePaneId: paneId,
             };
-            if (workspaceId) s.owners[tabId] = workspaceId;
+            if (projectId) s.owners[tabId] = projectId;
           });
         },
 
@@ -413,11 +413,11 @@ export const useTerminalStore = createSelectors(
             }
           }),
 
-        addTerminalForCommand: (tabId, workspaceId) => {
+        addTerminalForCommand: (tabId, projectId) => {
           const ptyId = genId("pty");
           set((s) => {
             const paneId = genId("pane");
-            if (workspaceId) s.owners[tabId] = workspaceId;
+            if (projectId) s.owners[tabId] = projectId;
             const t = s.tabs[tabId];
             if (!t) {
               // The tab has no terminal state yet — it was just created, and

@@ -57,7 +57,8 @@
       "resources/nvm.sh": "resources/nvm.sh",
       "licenses/Atlas-LICENSE.txt": "licenses/Atlas-LICENSE.txt",
       "licenses/OpenAI-Codex-LICENSE.txt": "licenses/OpenAI-Codex-LICENSE.txt",
-      "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt"
+      "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt",
+      "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },
     "category": "DeveloperTool",
     "shortDescription": "Atlas \u2014 agent-first ideation and planning tool",
@@ -67,15 +68,22 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/Icon.icns",
+      "icons/icon.ico",
+      "icons/app-icons/Assets.car"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "entitlements": "entitlements.plist",
       "exceptionDomain": null,
       "signingIdentity": null,
-      "providerShortName": null
+      "providerShortName": null,
+      "dmg": {
+        "background": "icons/dmg-background.png",
+        "windowSize": { "width": 512, "height": 352 },
+        "appPosition": { "x": 140, "y": 160 },
+        "applicationFolderPosition": { "x": 372, "y": 160 }
+      }
     }
   }
 }

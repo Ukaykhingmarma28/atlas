@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import {
   ArrowUp,
   Square,
@@ -77,6 +78,7 @@ import {
   exceedsBudget,
   targetDimensions,
 } from "../lib/image-policy";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { ComposerAddMenu } from "./composer-add-menu";
 import type { GithubRepo } from "@/features/github/types";
 import { metaFromSearch } from "@/features/github/types";
@@ -84,14 +86,14 @@ import { imageMimeFromPath } from "@/lib/byok/model-capabilities";
 import type { ImageAttachment } from "@/types/agents";
 import type {
   MentionFile,
-  MentionWorkspace,
+  MentionProject,
   MentionRepo,
   MentionPastSession,
   PastSessionRef,
 } from "../lib/mentions";
 import { toast } from "sonner";
 import { useComposerFileDrop } from "../hooks/use-composer-file-drop";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import type { MentionTrigger } from "../lib/cm-mention-extension";
 import type { SlashTrigger } from "../lib/cm-slash-extension";
 // Value import — MUST come from the CodeMirror-free module, not from
@@ -165,6 +167,7 @@ async function downscaleAttachment(image: ImageAttachment): Promise<ImageAttachm
     // transparent pixels composite to BLACK — a macOS window capture (rounded
     // corners, drop shadow, routinely over budget) came out with black
     // corners and a black halo (#71). Paint the ground white first.
+    // ratchet-allow: the JPEG ground for a window capture (#71), not app chrome.
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(bitmap, 0, 0, width, height);
@@ -213,10 +216,12 @@ interface MessageInputProps {
  */
 function acpModeColor(modeId: string | undefined): string {
   const id = (modeId ?? "").toLowerCase();
-  if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id)) return "var(--status-error)";
-  if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--accent-primary)";
-  if (/auto|default|edit|accept|agent|workspace/.test(id)) return "var(--status-success)";
-  return "var(--text-tertiary)";
+  if (/full|bypass|\ball\b|danger|yolo|unrestricted/.test(id))
+    return "var(--atlas-status-error-foreground)";
+  if (/read.?only|\bplan\b|ask|suggest/.test(id)) return "var(--primary)";
+  if (/auto|default|edit|accept|agent|project/.test(id))
+    return "var(--atlas-status-success-foreground)";
+  return "var(--muted-foreground)";
 }
 
 interface CodebaseIndexStatus {
@@ -231,7 +236,7 @@ interface CodebaseIndexStatus {
  *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
  *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
 function CerseiMemoryPill() {
-  const projectPath = useProjectStore((s) => s.currentProject?.path ?? null);
+  const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [status, setStatus] = useState<CodebaseIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
 
@@ -283,16 +288,14 @@ function CerseiMemoryPill() {
       onClick={reindex}
       disabled={indexing}
       title="Codebase index that grounds the agent's memory recall — click to re-index"
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
-        <Loader2 size={11} className="animate-spin text-[var(--accent-primary)]" />
+        <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
       ) : (
         <Database
           size={11}
-          className={
-            status?.indexed ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]"
-          }
+          className={status?.indexed ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
         />
       )}
       {label}
@@ -318,12 +321,12 @@ function EffortPill({ tabId }: { tabId: string }) {
   return (
     <button
       onClick={cycle}
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[10px] leading-none font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
       title="Reasoning effort (thinking budget) — Anthropic models"
     >
       <Brain
         size={11}
-        className={active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]"}
+        className={active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
       />
       {active ? `Think: ${effort}` : "Think"}
     </button>
@@ -351,15 +354,15 @@ const GROUP_ORDER: ComposerGroup[] = ["agent", "mode", "model"];
 function claudeModeDotClass(mode: ClaudePermissionMode): string {
   switch (mode) {
     case "acceptEdits":
-      return "bg-[var(--status-success)]";
+      return "bg-[var(--atlas-status-success-foreground)]";
     case "plan":
-      return "bg-[var(--accent-primary)]";
+      return "bg-[var(--primary)]";
     case "bypassPermissions":
-      return "bg-[var(--status-error)]";
+      return "bg-[var(--atlas-status-error-foreground)]";
     case "auto":
-      return "bg-[var(--status-warning)]";
+      return "bg-[var(--atlas-status-warning-foreground)]";
     default:
-      return "bg-[var(--text-tertiary)]";
+      return "bg-[var(--muted-foreground)]";
   }
 }
 
@@ -502,10 +505,10 @@ function ComposerGroupsMenu({
   const labelCls = (_active: boolean) => "ml-1.5 whitespace-nowrap";
   const pillCls = (active: boolean) =>
     cn(
-      "flex items-center px-1.5 h-6.5 rounded-full border text-[10px] leading-none font-medium transition-colors cursor-pointer",
+      "flex items-center px-1.5 h-6.5 rounded-full border text-2xs leading-none font-medium transition-colors cursor-pointer",
       active
-        ? "border-[var(--border-strong)] bg-[var(--bg-selected)] text-[var(--text-primary)]"
-        : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
+        ? "border-[var(--atlas-border-strong)] bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+        : "border-[var(--border)] bg-[var(--card)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
     );
 
   return (
@@ -516,7 +519,7 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-50 mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+        className="absolute bottom-full left-0 z-popover mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -544,14 +547,14 @@ function ComposerGroupsMenu({
                         }}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                          active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                          active
+                            ? "bg-[var(--atlas-element-selected)]"
+                            : "hover:bg-[var(--atlas-element-hover)]",
                         )}
                       >
-                        <AgentMark agentType={a} className="!h-4 !w-4 !text-[9px] !rounded" />
-                        <span className="flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">
-                          {agentMeta(a).label}
-                        </span>
-                        {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                        <AgentMark agentType={a} className="!h-4 !w-4 !text-3xs !rounded" />
+                        <span className="flex-1 truncate label">{agentMeta(a).label}</span>
+                        {active && <Check size={11} className="text-[var(--primary)]" />}
                       </button>
                     );
                   })}
@@ -565,13 +568,13 @@ function ComposerGroupsMenu({
                     close();
                   }}
                 />
-                <div className="h-px bg-[var(--border-default)]" />
+                <div className="h-px bg-[var(--border)]" />
                 <button
                   onClick={() => {
                     close();
                     openSettingsSection("agents");
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] text-[var(--text-secondary)] transition-colors cursor-pointer hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  className="flex w-full items-center gap-1.5 px-3 py-2 text-xs text-[var(--secondary-foreground)] transition-colors cursor-pointer hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
                 >
                   <Plus size={11} className="shrink-0" />
                   Add more agents
@@ -592,16 +595,16 @@ function ComposerGroupsMenu({
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                        active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                        active
+                          ? "bg-[var(--atlas-element-selected)]"
+                          : "hover:bg-[var(--atlas-element-hover)]",
                       )}
                     >
                       <span
                         className={cn("h-1.5 w-1.5 shrink-0 rounded-full", claudeModeDotClass(m))}
                       />
-                      <span className="flex-1 text-[11px] font-medium text-[var(--text-primary)]">
-                        {CLAUDE_PERMISSION_MODE_LABEL[m]}
-                      </span>
-                      {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                      <span className="flex-1 label">{CLAUDE_PERMISSION_MODE_LABEL[m]}</span>
+                      {active && <Check size={11} className="text-[var(--primary)]" />}
                     </button>
                   );
                 })}
@@ -611,7 +614,7 @@ function ComposerGroupsMenu({
             {openGroup === "mode" && !isClaude && (
               <div className="p-1">
                 {!hasAcpModes ? (
-                  <div className="flex items-center gap-1.5 px-2 py-2 text-[11px] text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-[var(--muted-foreground)]">
                     <Loader2 size={11} className="animate-spin" /> Loading modes…
                   </div>
                 ) : (
@@ -626,7 +629,9 @@ function ComposerGroupsMenu({
                         }}
                         className={cn(
                           "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                          active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                          active
+                            ? "bg-[var(--atlas-element-selected)]"
+                            : "hover:bg-[var(--atlas-element-hover)]",
                         )}
                       >
                         <span
@@ -634,12 +639,12 @@ function ComposerGroupsMenu({
                           style={{ background: acpModeColor(m.id) }}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
+                          <span className="flex items-center gap-1.5 label">
                             {displayModeName(m.name)}
-                            {active && <Check size={11} className="text-[var(--accent-primary)]" />}
+                            {active && <Check size={11} className="text-[var(--primary)]" />}
                           </span>
                           {m.description && (
-                            <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)]">
+                            <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)]">
                               {m.description}
                             </span>
                           )}
@@ -653,43 +658,43 @@ function ComposerGroupsMenu({
 
             {openGroup === "model" && (
               <>
-                <div className="flex h-8 items-center gap-1.5 border-b border-[var(--border-subtle)] px-2.5">
-                  <Search size={12} className="shrink-0 text-[var(--text-tertiary)]" />
+                <div className="flex h-8 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2.5">
+                  <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
                   <input
                     autoFocus
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search models…"
                     spellCheck={false}
-                    className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                   />
                   {isNative && (
                     // The gateway's list, re-fetched on demand (ADR-0007).
                     // Same icon, spin and disabled idiom as the grant bar's
                     // Refresh — no new pattern.
-                    <button
-                      type="button"
-                      title="Refresh models"
-                      aria-label="Refresh models"
-                      disabled={refreshingModels}
-                      onClick={() => void refreshNativeModels()}
-                      className={cn(
-                        "shrink-0 rounded p-0.5 text-[var(--text-tertiary)] transition-colors",
-                        refreshingModels
-                          ? "cursor-default"
-                          : "cursor-pointer hover:text-[var(--text-primary)]",
-                      )}
-                    >
-                      <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
-                    </button>
+                    <Hint label="Refresh models" side="top">
+                      <button
+                        type="button"
+                        disabled={refreshingModels}
+                        onClick={() => void refreshNativeModels()}
+                        className={cn(
+                          "shrink-0 rounded p-0.5 text-[var(--muted-foreground)] transition-colors",
+                          refreshingModels
+                            ? "cursor-default"
+                            : "cursor-pointer hover:text-[var(--foreground)]",
+                        )}
+                      >
+                        <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
+                      </button>
+                    </Hint>
                   )}
                 </div>
                 <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
                   {filteredModels.length === 0 ? (
-                    <div className="px-2.5 py-2 text-[11px] text-[var(--text-tertiary)]">
+                    <div className="px-2.5 py-2 text-xs text-[var(--muted-foreground)]">
                       No models
                       {isNative && models.length === 0 && (
-                        <span className="mt-0.5 block text-[9px] leading-snug">
+                        <span className="mt-0.5 block text-3xs leading-snug">
                           Couldn't load the model list. Check your connection or sign in, then
                           refresh.
                         </span>
@@ -707,22 +712,21 @@ function ComposerGroupsMenu({
                           }}
                           className={cn(
                             "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                            active ? "bg-[var(--bg-selected)]" : "hover:bg-[var(--bg-hover)]",
+                            active
+                              ? "bg-[var(--atlas-element-selected)]"
+                              : "hover:bg-[var(--atlas-element-hover)]",
                           )}
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-primary)]">
+                            <span className="flex items-center gap-1.5 label">
                               <span className="truncate">{modelLabel(m)}</span>
                               {active && (
-                                <Check
-                                  size={11}
-                                  className="shrink-0 text-[var(--accent-primary)]"
-                                />
+                                <Check size={11} className="shrink-0 text-[var(--primary)]" />
                               )}
                             </span>
                             {m.description &&
                               m.description.trim().toLowerCase() !== "recommended" && (
-                                <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-tertiary)] line-clamp-2">
+                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)] line-clamp-2">
                                   {m.description}
                                 </span>
                               )}
@@ -746,7 +750,7 @@ function ComposerGroupsMenu({
           cycleAgentHint ? `Coding agent — pick here, ${cycleAgentHint} cycles` : "Coding agent"
         }
       >
-        <AgentMark agentType={agentType} className="!h-4 !w-4 !text-[9px] !rounded" />
+        <AgentMark agentType={agentType} className="!h-4 !w-4 !text-3xs !rounded" />
         <span className={labelCls(openGroup === "agent")}>{agentMeta(currentAgent).label}</span>
       </button>
 
@@ -787,11 +791,11 @@ function ComposerGroupsMenu({
           className={pillCls(openGroup === "model")}
           title="Model"
         >
-          <Cpu size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+          <Cpu size={11} className="shrink-0 text-[var(--muted-foreground)]" />
           <span className={cn(labelCls(openGroup === "model"), "max-w-[120px] truncate")}>
             {currentModelInfo ? modelLabel(currentModelInfo) : (currentModel ?? "Model")}
           </span>
-          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--text-tertiary)]" />
+          <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--muted-foreground)]" />
         </button>
       )}
     </div>
@@ -872,7 +876,7 @@ export function MessageInput({
   const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "claude-code");
   // Settings → General → "Enter to send". Narrow selector so a toggle flip
   // only re-renders composers, not the whole settings surface.
-  const enterToSend = useProjectStore((s) => s.settings.enterToSend);
+  const enterToSend = useSettingsStore((s) => s.settings.enterToSend);
   // `agentType` normalised for the composer sub-components (session scope,
   // agent switcher) + the label lookup. This used to be a hardcoded list of the
   // six first-party agents with everything else falling through to
@@ -1098,7 +1102,7 @@ export function MessageInput({
   }, [tabId, disabled]);
 
   // ── Mention picker orchestration ──────────────────────────────────────
-  const projectPath = useProjectStore((s) => s.currentProject?.path ?? null);
+  const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [trigger, setTrigger] = useState<MentionTrigger | null>(null);
   const pickerRef = useRef<MentionPickerHandle>(null);
   const triggerRef = useRef<MentionTrigger | null>(null);
@@ -1273,8 +1277,8 @@ export function MessageInput({
     }
   }, [imageSupported, handleDropFiles]);
 
-  const handlePickWorkspace = useCallback((workspace: MentionWorkspace) => {
-    inputRef.current?.insertMention(workspace);
+  const handlePickProject = useCallback((project: MentionProject) => {
+    inputRef.current?.insertMention(project);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
@@ -1345,7 +1349,7 @@ export function MessageInput({
         // Let the "+" menu fully close first so it (and any dropdown) isn't caught
         // in a whole-desktop capture.
         await new Promise((r) => setTimeout(r, 250));
-        const proj = useProjectStore.getState().currentProject?.path ?? null;
+        const proj = useAppStore.getState().currentProject?.path ?? null;
         const res = await invoke<{
           path: string;
           mimeType: string;
@@ -1377,7 +1381,7 @@ export function MessageInput({
   // explores it (compose_prompt turns that chip into an "explore this repo"
   // block pointing at the absolute path).
   const handleCloneRepo = useCallback(async (repo: GithubRepo) => {
-    const proj = useProjectStore.getState().currentProject?.path;
+    const proj = useAppStore.getState().currentProject?.path;
     if (!proj) {
       toast.error("Open a project before cloning a repo.");
       return;
@@ -1657,19 +1661,38 @@ export function MessageInput({
     return () => window.removeEventListener("atlas:chat-reply", handler);
   }, []);
 
-  // Prefill the composer with raw text (empty-state prompt chips). Unlike
-  // "reply" this replaces the value verbatim (no quote block) and focuses.
+  // Prefill the composer with raw text (empty-state prompt chips, a user row's
+  // "Edit as new message"). Unlike "reply" this replaces the value verbatim (no
+  // quote block) and focuses. Tab-scoped like `atlas:chat-send`: a tabId-less
+  // event still reaches every mounted composer.
+  //
+  // Replacing is destructive, so a non-empty draft that differs from the new
+  // text is offered back through an Undo toast rather than silently dropped.
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ text: string }>).detail;
+      const detail = (e as CustomEvent<{ text: string; tabId?: string }>).detail;
       if (!detail?.text) return;
+      if (detail.tabId != null && detail.tabId !== tabId) return;
+      const previous = inputRef.current?.getValue() ?? valueRef.current;
       inputRef.current?.setValue(detail.text);
       setValue(detail.text);
       requestAnimationFrame(() => inputRef.current?.focus());
+      if (previous.trim() && previous !== detail.text) {
+        toast("Replaced your draft", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              inputRef.current?.setValue(previous);
+              setValue(previous);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            },
+          },
+        });
+      }
     };
     window.addEventListener("atlas:chat-prefill", handler);
     return () => window.removeEventListener("atlas:chat-prefill", handler);
-  }, []);
+  }, [tabId, setValue]);
 
   // Focus the composer on demand. The sidebar "+ new chat" button fires this
   // when it reuses an already-empty tab: no remount happens in that case, so
@@ -1796,7 +1819,7 @@ export function MessageInput({
         {/* Queued messages above the input */}
         {queue.length > 0 && (
           <div className="mb-2 flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--text-tertiary)] px-1">
+            <div className="text-2xs uppercase tracking-wider text-[var(--muted-foreground)] px-1">
               Queued · {queue.length}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1846,8 +1869,8 @@ export function MessageInput({
             // (`z-20` in chat-panel.tsx), not just the PlanDock. This element
             // has a z-index, so it opens a stacking context, and every dropup
             // inside it — the model picker, the agent/mode picker, the toolbar
-            // tooltip — is trapped in it: their `z-50` sorts them against each
-            // other and against nothing else. At `z-10` the whole composer,
+            // tooltip — is trapped in it: their `z-popover` sorts them against
+            // each other and against nothing else. At `z-10` the whole composer,
             // menus included, painted UNDER the "Scroll to bottom" pill, which
             // also swallowed clicks on the menu's first row (the pill sets
             // `pointer-events-auto`). Raising the context is the fix; raising
@@ -1856,10 +1879,10 @@ export function MessageInput({
             // its exposed bottom strip; the INNER surface below holds the
             // input + send button (the focus ring lives there — the "active
             // field" is the input surface, not the toolbar).
-            "relative z-30 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)]",
-            "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
+            "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--card)]",
+            "shadow-md",
             // Drag-over highlight: a clear accent ring while OS files hover.
-            isDropTarget && "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40",
+            isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
             // NOTE: the disabled dim is NOT applied here. It used to be
             // (`disabled && "opacity-60"` on this shell), and it faded the
             // whole composer — footer pills, the agent switcher, and every
@@ -1873,16 +1896,16 @@ export function MessageInput({
           onFocusCapture={handleFocusCapture}
         >
           {githubSyncing !== null && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--bg-base)]/40 backdrop-blur-[1px]">
-              <span className="flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--background)]/40 backdrop-blur-[1px]">
+              <span className="flex items-center gap-2 rounded-full bg-[var(--card)] px-3 py-1 text-xs font-medium text-[var(--secondary-foreground)] shadow">
                 <Loader2 size={12} className="animate-spin" />
                 Syncing {githubSyncing}…
               </span>
             </div>
           )}
           {isDropTarget && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
-              <span className="rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
+              <span className="rounded-full bg-[var(--card)] px-3 py-1 text-xs font-medium text-[var(--secondary-foreground)] shadow">
                 Drop files to attach
               </span>
             </div>
@@ -1899,12 +1922,12 @@ export function MessageInput({
               // `.atlas-chat-cm-host` block) the field collapses and the
               // button hangs out over the footer. The floor makes the
               // geometry hold even with no editor mounted at all.
-              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)]",
+              "relative m-1 min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--background)]",
               "transition-[border-color,box-shadow] duration-150",
               // Focus treatment at HALF strength: the full border-focus +
               // /20 accent ring read far too loud on the nested surface.
-              "focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))]",
-              "focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10",
+              "focus-within:border-[color-mix(in_srgb,var(--atlas-border-strong)_50%,var(--border))]",
+              "focus-within:ring-1 focus-within:ring-[var(--primary)]/10",
               // The disabled dim, scoped to the field the lock actually
               // applies to (see the shell above). No red tint — the send
               // button is already disabled and submit()/Cmd+Enter are gated
@@ -1921,23 +1944,25 @@ export function MessageInput({
                       <img
                         src={src}
                         alt="attachment"
-                        className="h-14 w-14 object-cover rounded-lg border border-[var(--border-default)]"
+                        className="h-14 w-14 object-cover rounded-lg border border-[var(--border)]"
                       />
-                      <button
-                        onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
-                        title="Remove image"
-                      >
-                        <X size={9} />
-                      </button>
+                      {/* Right, not top: the hover preview opens above the thumbnail. */}
+                      <Hint label="Remove image" side="right">
+                        <button
+                          onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--secondary-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+                        >
+                          <X size={9} />
+                        </button>
+                      </Hint>
                       {/* Zed-style hover preview — a larger floating image above the
                         thumbnail. `pointer-events-none` so it never blocks the
                         remove button; only shown on hover. */}
-                      <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden group-hover:block">
+                      <div className="pointer-events-none absolute bottom-full left-0 z-popover mb-2 hidden group-hover:block">
                         <img
                           src={src}
                           alt=""
-                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border-default)] object-contain bg-[var(--bg-elevated)] shadow-[var(--shadow-overlay)]"
+                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--card)] shadow-md"
                         />
                       </div>
                     </div>
@@ -1973,53 +1998,57 @@ export function MessageInput({
                 <div aria-hidden="true" style={{ minHeight: 44 }} className="px-4 pt-3 pb-1" />
               )}
             </div>
-            <button
-              onClick={submit}
-              disabled={!buttonEnabled}
-              className={cn(
-                // Reference-style squircle send: a soft rounded-square,
-                // transparent at rest, muted fill + border on hover, pinned
-                // top-right of the input surface (it does not ride down as
-                // the field grows — same as the Skiper component).
-                // Geometry IN PX, not rem: Atlas's UI-scale setting shrinks
-                // the root font-size, so rem utilities (w-7/top-2 → 23px/6.5px
-                // under scale) drift against CodeMirror's hardcoded 12px/16px
-                // padding — the ruler-measured misalignment. CM's first text
-                // line centers at 12px pad + ~10px half-line = 22px; a 28px
-                // button at 8px top centers at 22px at EVERY UI scale.
-                "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
-                buttonEnabled
-                  ? "border-transparent text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-default)] cursor-pointer"
-                  : "border-transparent text-[var(--text-tertiary)] cursor-not-allowed",
-              )}
-              title={
+            {/* No wrapping span: it would sit in flow and misplace this absolute button. */}
+            <Hint
+              side="top"
+              wrap={false}
+              label={
                 mode === "stop"
                   ? stopping
                     ? "Stopping… (waiting for the agent to wind down)"
                     : "Stop generation"
                   : mode === "queue"
                     ? "Queue message (sends after current finishes)"
-                    : `Send to agent (${enterToSend ? "↵" : "⌘↵"})`
+                    : "Send to agent"
               }
+              shortcut={mode === "send" ? (enterToSend ? "↵" : "⌘↵") : undefined}
             >
-              {/* Keyed span so the arrow↔stop swap plays the scale-pop morph
-                (existing `animate-scale-in` — ends at identity, no fill). */}
-              <span
-                key={mode === "stop" ? "stop" : "send"}
-                className="flex items-center justify-center animate-scale-in"
-              >
-                {mode === "stop" ? (
-                  <Square
-                    size={11}
-                    strokeWidth={3}
-                    fill="currentColor"
-                    className={stopping ? "animate-pulse" : undefined}
-                  />
-                ) : (
-                  <ArrowUp size={15} strokeWidth={2.5} />
+              <button
+                onClick={submit}
+                disabled={!buttonEnabled}
+                className={cn(
+                  // Reference-style squircle send: a soft rounded-square,
+                  // transparent at rest, muted fill + border on hover, pinned
+                  // top-right of the input surface (it does not ride down as
+                  // the field grows — same as the Skiper component).
+                  // Geometry IN PX, not rem: Atlas's UI-scale setting shrinks
+                  // the root font-size, so rem utilities (w-7/top-2 → 23px/6.5px
+                  // under scale) drift against CodeMirror's hardcoded 12px/16px
+                  // padding — the ruler-measured misalignment. CM's first text
+                  // line centers at 12px pad + ~10px half-line = 22px; a 28px
+                  // button at 8px top centers at 22px at EVERY UI scale.
+                  "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
+                  buttonEnabled
+                    ? "border-transparent text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] hover:border-[var(--border)] cursor-pointer"
+                    : "border-transparent text-[var(--muted-foreground)] cursor-not-allowed",
                 )}
-              </span>
-            </button>
+              >
+                {/* Updates in place: Enter sends, so the arrow↔stop swap is
+                    keyboard-driven and has no animation. */}
+                <span className="flex items-center justify-center">
+                  {mode === "stop" ? (
+                    <Square
+                      size={11}
+                      strokeWidth={3}
+                      fill="currentColor"
+                      className={stopping ? "animate-pulse" : undefined}
+                    />
+                  ) : (
+                    <ArrowUp size={15} strokeWidth={2.5} />
+                  )}
+                </span>
+              </button>
+            </Hint>
           </div>
           {/* Footer strip — the exposed band of the outer shell. */}
           <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
@@ -2030,7 +2059,7 @@ export function MessageInput({
                 // footer read as dead while the fix (switch agent, request a
                 // grant) is one row away.
                 disabled={disabledProp || githubSyncing !== null}
-                projectPath={useProjectStore.getState().currentProject?.path ?? null}
+                projectPath={useAppStore.getState().currentProject?.path ?? null}
                 agentId={switchableAgent}
                 imageSupported={imageSupported}
                 onAddFilesOrPhotos={() => void pickFilesOrPhotos()}
@@ -2038,7 +2067,7 @@ export function MessageInput({
                 onTakeScreenshot={(mode) => void handleTakeScreenshot(mode)}
                 onCloneRepo={(repo) => void handleCloneRepo(repo)}
                 onPickSession={handlePickSession}
-                onPickWorkspace={handlePickWorkspace}
+                onPickProject={handlePickProject}
               />
               {/* Agent / mode / model as one grouped, animated picker — the
                   pills double as its tab strip. Cycling shortcuts (⌥/ agents,
@@ -2116,22 +2145,23 @@ function QueueChip({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-secondary)]">
+    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--card)] text-xs text-[var(--secondary-foreground)]">
       <button
         onClick={onEdit}
-        className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--text-primary)]"
+        className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--foreground)]"
         title="Edit / merge into input"
       >
-        <Pencil size={9} className="text-[var(--text-tertiary)] shrink-0" />
+        <Pencil size={9} className="text-[var(--muted-foreground)] shrink-0" />
         <span className="truncate">{text.replace(/\s+/g, " ")}</span>
       </button>
-      <button
-        onClick={onRemove}
-        className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--status-error)] cursor-pointer shrink-0"
-        title="Remove from queue"
-      >
-        <X size={10} />
-      </button>
+      <Hint label="Remove from queue" side="top">
+        <button
+          onClick={onRemove}
+          className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] cursor-pointer shrink-0"
+        >
+          <X size={10} />
+        </button>
+      </Hint>
     </div>
   );
 }

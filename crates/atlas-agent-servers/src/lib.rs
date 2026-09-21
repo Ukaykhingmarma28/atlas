@@ -67,7 +67,8 @@ pub mod session_mcp;
 
 pub use connection::{
     client_capabilities_for_agent, map_acp_error, AcpConnection, AcpConnectionDefaults,
-    AgentServerCommand, RequestElicitationSink, ThreadEventSink,
+    AgentServerCommand, ConnectionDeadlines, RequestElicitationSink, ThreadEventSink,
+    INITIALIZE_TIMEOUT,
 };
 pub use debug_log::{
     AcpDebugLog, AcpDebugMessage, AcpDebugMessageContent, AcpDebugMessageDirection,
@@ -76,7 +77,7 @@ pub use debug_log::{
 pub use handlers::ClientContext;
 pub use host_env::sanitize_host_env;
 pub use server::{
-    env_quirks, load_proxy_env, AgentServer, AgentServerDelegate, ConnectOptions,
+    env_quirks, env_quirks_from, load_proxy_env, AgentServer, AgentServerDelegate, ConnectOptions,
     CustomAgentServer, ExternalAgentServer,
 };
 pub use session::{

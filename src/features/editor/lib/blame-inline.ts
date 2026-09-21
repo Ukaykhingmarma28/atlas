@@ -17,6 +17,11 @@ import type { BlameLine } from "@/features/git/lib/git-blame-api";
  *  state entirely (untracked file / not a repo → nothing is rendered). */
 const setBlame = StateEffect.define<BlameLine[]>();
 
+// The trailing annotation reads a notch below the editor body; the previous
+// `0.9em` (~11.7px against the editor's 13px body) rounds onto the text-sm
+// (12px) step.
+const BLAME_FONT_SIZE = "var(--text-sm)";
+
 /** Convenience: dispatch a blame snapshot onto a view. */
 export function applyBlame(view: EditorView, lines: BlameLine[]): void {
   view.dispatch({ effects: setBlame.of(lines) });
@@ -150,10 +155,10 @@ const blameDecorations = ViewPlugin.fromClass(
 const blameTheme = EditorView.baseTheme({
   ".cm-blame-inline": {
     marginLeft: "2em",
-    color: "var(--text-tertiary, #6b7280)",
+    color: "var(--muted-foreground)",
     opacity: "0.65",
     fontStyle: "italic",
-    fontSize: "0.9em",
+    fontSize: BLAME_FONT_SIZE,
     whiteSpace: "pre",
     pointerEvents: "none",
     userSelect: "none",

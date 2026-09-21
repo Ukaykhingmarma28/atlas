@@ -9,8 +9,8 @@ use agent_client_protocol::schema::v1 as acp;
 use atlas_acp_thread::{event_channel, AcpThread, AgentId};
 use atlas_agent_servers::*;
 
-mod stub;
-use stub::stub_connection;
+mod support;
+use support::stub::stub_connection;
 
 fn session_id(id: &str) -> acp::SessionId {
     acp::SessionId::new(id)
@@ -225,6 +225,26 @@ fn no_trailing_stderr_when_the_last_thing_was_traffic() {
     );
 
     assert_eq!(log.trailing_stderr(), None);
+}
+
+/// An outbound request may be recorded after an agent writes its startup
+/// failure but before the exit watcher observes the child. That request must
+/// not erase the diagnostic carried by the `Exited` error.
+#[test]
+fn exit_stderr_keeps_a_reason_before_our_final_request() {
+    let log = AcpDebugLog::new();
+
+    log.record_line(AcpDebugMessageDirection::Stderr, "cannot find module acp");
+    log.record_line(
+        AcpDebugMessageDirection::Outgoing,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    assert_eq!(
+        log.exit_stderr().as_deref(),
+        Some("cannot find module acp"),
+        "our request cannot overwrite the agent's final diagnostic"
+    );
 }
 
 #[test]
@@ -495,6 +515,41 @@ fn an_agent_with_no_workaround_gets_a_clean_environment() {
     assert!(env_quirks(&AgentId::new("some-installed-agent")).is_empty());
 }
 
+/// Codex's auth reads `CODEX_API_KEY` and `OPENAI_API_KEY`. The second was once
+/// forwarded as `OPEN_AI_API_KEY` (Zed's spelling), a name nothing reads, so a
+/// key the user exported never reached the agent.
+#[test]
+fn codex_gets_the_api_keys_its_auth_actually_reads() {
+    let host = |key: &str| match key {
+        "CODEX_API_KEY" => Some("codex-key".to_owned()),
+        "OPENAI_API_KEY" => Some("openai-key".to_owned()),
+        "OPEN_AI_API_KEY" => Some("misspelled".to_owned()),
+        "ANTHROPIC_API_KEY" => Some("not-codex".to_owned()),
+        _ => None,
+    };
+    let env = env_quirks_from(&AgentId::new("codex"), host);
+
+    assert_eq!(
+        env.get("CODEX_API_KEY").map(String::as_str),
+        Some("codex-key")
+    );
+    assert_eq!(
+        env.get("OPENAI_API_KEY").map(String::as_str),
+        Some("openai-key")
+    );
+    assert_eq!(
+        env.len(),
+        2,
+        "only the keys codex reads are forwarded: {env:?}"
+    );
+}
+
+/// A key the host does not have is left out rather than forwarded empty.
+#[test]
+fn codex_forwards_no_key_the_host_does_not_have() {
+    assert!(env_quirks_from(&AgentId::new("codex"), |_| None).is_empty());
+}
+
 #[test]
 fn gemini_is_told_which_host_it_is_running_in() {
     let env = env_quirks(&AgentId::new("gemini"));
@@ -593,18 +648,36 @@ async fn the_pump_turns_a_running_command_into_thread_events() {
 
     handlers::follow_terminal_output(thread.clone(), terminal.clone(), terminal_id.clone());
 
-    let saw = tokio::time::timeout(std::time::Duration::from_secs(10), events.recv()).await;
+    // Not "any event": the pump reports once on start, and that report can
+    // precede the echo. What is under test is an event arriving once the
+    // output HAS the line. A pump that registers for wakes only after the
+    // command has printed never sends that one — the echo is the command's
+    // only output — which is how this test once timed out on a fast CI runner.
+    let reported = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while events.recv().await.is_some() {
+            let output = thread
+                .lock()
+                .unwrap()
+                .terminal_output(&terminal_id)
+                .unwrap_or_default();
+            if output.contains("streaming") {
+                return true;
+            }
+        }
+        false
+    })
+    .await;
+    let still_running = terminal.exit_status().is_none();
     let _ = terminal.kill();
-    assert!(
-        saw.is_ok(),
-        "the pump produced no thread event for a command that printed"
+    assert_eq!(
+        reported,
+        Ok(true),
+        "the pump produced no thread event carrying what the command printed"
     );
-    assert!(thread
-        .lock()
-        .unwrap()
-        .terminal_output(&terminal_id)
-        .unwrap_or_default()
-        .contains("streaming"));
+    assert!(
+        still_running,
+        "the report must arrive while the command runs"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

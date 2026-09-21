@@ -132,13 +132,13 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
   const selectedNote = notes.find((n) => n.id === selectedId);
 
   return (
-    // z-index 5 sits ABOVE react-pdf's text layer (z-index: 2) so the drawing
+    // `z-panel` (10) sits ABOVE react-pdf's text layer (z-index: 2) so the drawing
     // svg and note pins actually receive pointer events. The container itself
     // is click-through (`pointer-events: none`) so PDF text selection/links
     // still work in read mode; the svg/pins re-enable pointer-events as needed.
     <div
       className="absolute inset-0"
-      style={{ width: pageW, height: pageH, zIndex: 5, pointerEvents: "none" }}
+      style={{ width: pageW, height: pageH, zIndex: "var(--z-panel)", pointerEvents: "none" }}
     >
       <svg
         ref={svgRef}
@@ -217,7 +217,11 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
           key={n.id}
           type="button"
           onClick={() => (tool === "erase" ? remove(pdfPath, n.id) : select(n.id))}
-          className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/20 text-[10px] font-bold text-black/70 shadow-sm"
+          // ratchet-allow: a note pin drawn ON the PDF page, filled with the
+          // highlighter colour the user picked (same argument as the exempt
+          // `pdf-annotation-store` and `pdf-toolbar`). Atlas's theme does not
+          // reach inside someone else's document.
+          className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/20 text-2xs font-bold text-black/70 shadow-sm"
           style={{
             left: n.x * pageW,
             top: n.y * pageH,
@@ -233,7 +237,7 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
       {/* Note editor popover for the selected note on this page. */}
       {selectedNote && (
         <div
-          className="absolute z-10 w-56 rounded-md border border-border-default bg-bg-elevated p-2 shadow-[var(--shadow-overlay)]"
+          className="absolute z-10 w-56 rounded-md border border-border bg-card p-2 shadow-md"
           style={{
             left: Math.min(selectedNote.x * pageW + 12, pageW - 230),
             top: selectedNote.y * pageH + 12,
@@ -245,20 +249,20 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
             value={selectedNote.text}
             onChange={(e) => updateNoteText(pdfPath, selectedNote.id, e.target.value)}
             placeholder="Write a note…"
-            className="h-20 w-full resize-none rounded-sm border border-border-default bg-bg-base p-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary"
+            className="h-20 w-full resize-none rounded-sm border border-border bg-background p-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="mt-1.5 flex items-center justify-between">
             <button
               type="button"
               onClick={() => remove(pdfPath, selectedNote.id)}
-              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-[var(--status-error)] hover:bg-[var(--status-error-muted)]"
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-[var(--atlas-status-error-foreground)] hover:bg-[var(--atlas-status-error-background)]"
             >
               <Trash2 size={11} /> Delete
             </button>
             <button
               type="button"
               onClick={() => select(null)}
-              className="rounded-sm px-2 py-0.5 text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              className="rounded-sm px-2 py-0.5 text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground"
             >
               Done
             </button>

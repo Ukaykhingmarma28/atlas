@@ -373,6 +373,39 @@ impl AcpDebugLog {
         Some(lines.join("\n"))
     }
 
+    /// The stderr that explains a child process exiting.
+    ///
+    /// Outbound traffic is deliberately transparent here. During startup the
+    /// transport can accept a connection just long enough for Atlas to record
+    /// an `initialize` request after the process has already printed its
+    /// failure. That request cannot invalidate what the child said; an inbound
+    /// message can, because it proves the agent spoke after an earlier warning.
+    pub fn exit_stderr(&self) -> Option<String> {
+        let state = self.lock();
+        let mut lines = Vec::new();
+
+        for message in state.messages.iter().map(|retained| &retained.message).rev() {
+            match message.direction {
+                AcpDebugMessageDirection::Stderr => {
+                    if let AcpDebugMessageContent::Stderr { line } = &message.message {
+                        if !line.is_empty() {
+                            lines.push(line.as_ref());
+                        }
+                    }
+                }
+                AcpDebugMessageDirection::Incoming => break,
+                AcpDebugMessageDirection::Outgoing => {}
+            }
+        }
+
+        if lines.is_empty() {
+            return None;
+        }
+
+        lines.reverse();
+        Some(lines.join("\n"))
+    }
+
     /// A poisoned lock here means a panic while recording a debug line, which
     /// must not take the connection down with it.
     fn lock(&self) -> std::sync::MutexGuard<'_, AcpDebugLogState> {

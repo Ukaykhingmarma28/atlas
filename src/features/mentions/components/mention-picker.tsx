@@ -63,7 +63,7 @@ import { SKILLS_CHANGED_EVENT } from "@/features/skills/lib/skills-events";
 import { useRecentFilesStore, type RecentFile } from "@/features/chat/stores/recent-files-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     ref,
   ) {
     const recentFiles = useRecentFilesStore.use.items();
-    // Workspace mentions are scoped to the active org (see `searchWorkspaces`).
+    // Project mentions are scoped to the active org (see `searchProjects`).
     // Subscribe so switching orgs re-runs the search and the list reflects the
     // new org's projects even while the picker stays mounted.
     const activeOrganisationId = useOrgStore.use.activeOrganisationId();
@@ -159,7 +159,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     const [results, setResults] = useState<MentionData[]>([]);
     const [active, setActive] = useState(0);
     /** True until the backend FileIndex finishes its initial walk for the
-     *  active workspace. With multiple workspaces the first `@`/`~` in a
+     *  active project. With multiple projects the first `@`/`~` in a
      *  freshly-switched project can land before its index is built — without
      *  this we'd flash a misleading "No matches" instead of a loading hint. */
     const [indexing, setIndexing] = useState(false);
@@ -246,9 +246,9 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       setActive(0);
     }, [query, scope, pastSession]);
 
-    // Detect whether the active workspace's file index is still building, for
+    // Detect whether the active project's file index is still building, for
     // the file-dependent scopes (blended / file / folder). Drives the
-    // "Indexing files…" hint so the first `@` in a freshly-opened workspace
+    // "Indexing files…" hint so the first `@` in a freshly-opened project
     // shows a loading state instead of "No matches". `ensureFileIndex` returns
     // null on the already-confirmed fast path (→ not indexing).
     useEffect(() => {
@@ -279,11 +279,11 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       let unlisten: (() => void) | null = null;
       void listen<{ workspaceId?: string }>("atlas:fileindex:updated", (ev) => {
         if (cancelled) return;
-        // The event carries the owning workspace — a background reindex for
-        // ANOTHER workspace must not clear this picker's loading hint or
+        // The event carries the owning project — a background reindex for
+        // ANOTHER project must not clear this picker's loading hint or
         // re-fire its search.
         const ws = ev.payload?.workspaceId;
-        if (ws && ws !== activeWorkspaceId()) return;
+        if (ws && ws !== activeProjectId()) return;
         setIndexing(false);
         setIndexNonce((n) => n + 1);
       }).then((un) => {
@@ -373,7 +373,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       // even when scores interleave.
       const emptyQuery = !query.trim();
       // The recents mirror is a single global store reflecting the ACTIVE
-      // workspace; right after a workspace switch there's an async window
+      // project; right after a project switch there's an async window
       // where it still holds the previous project's files. Filter to THIS
       // picker's project so a recent from another project can never surface.
       const recents = emptyQuery
@@ -557,8 +557,8 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
           // grain overlay) made the compositor re-blend this layer against the
           // composer beneath it, which glitched against the blinking caret and
           // shifting message layout. Opaque black has no such coupling.
-          "bg-black border border-white/10",
-          "shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.6)]",
+          "bg-popover border border-border",
+          "inset-highlight shadow-md",
           "flex flex-col",
         )}
         // Keep mouse interactions from blurring CM:
@@ -569,14 +569,14 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
           ...positionStyle,
           width: PICKER_WIDTH,
           maxHeight: PICKER_MAX_HEIGHT,
-          zIndex: 9999,
+          zIndex: "var(--z-popover)",
         }}
       >
         {rows.length === 0 || (rows.length === 1 && rows[0].type === "header") ? (
-          <div className="flex-1 px-3 py-6 text-center text-[11px] text-text-tertiary leading-snug">
+          <div className="flex-1 px-3 py-6 text-center text-xs text-muted-foreground leading-snug">
             {indexing && (scope === null || scope === "file" || scope === "folder") ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-text-tertiary animate-pulse" />
+                <span className="size-1.5 rounded-full bg-muted-foreground animate-pulse" />
                 Indexing files…
               </span>
             ) : (
@@ -599,14 +599,14 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
             onSelect={onSelectRef}
           />
         )}
-        <div className="border-t border-white/10 px-3 h-[34px] flex items-center justify-between shrink-0">
-          <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+        <div className="border-t border-border px-3 h-[34px] flex items-center justify-between shrink-0">
+          <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
             <Kbd>↑↓</Kbd>
             <span>navigate</span>
             <Kbd>↵</Kbd>
             <span>select</span>
           </span>
-          <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+          <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
             <Kbd>esc</Kbd>
             <span>close</span>
           </span>
@@ -771,10 +771,10 @@ const PickerRow = memo(function PickerRow({
       onActivate(row);
     },
     className: cn(
-      "text-left px-3 flex items-center gap-2 text-[11.5px]",
+      "text-left px-3 flex items-center gap-2 text-sm",
       isActive
-        ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+        ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+        : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
     ),
   };
   if (row.type === "category") {
@@ -794,7 +794,7 @@ const PickerRow = memo(function PickerRow({
           <MessageSquare size={11} />
         </span>
         <span className="truncate flex-1 min-w-0">{row.session.title}</span>
-        <span className="text-[10px] text-text-tertiary shrink-0">
+        <span className="text-2xs text-muted-foreground shrink-0">
           {row.session.messageCount} msgs
         </span>
       </button>
@@ -805,13 +805,13 @@ const PickerRow = memo(function PickerRow({
     <button {...common} title={mentionTitle(m)}>
       <span className="opacity-75 w-4 flex items-center justify-center">
         {m.kind === "knowledge" && m.icon ? (
-          <span style={{ fontSize: 12, lineHeight: 1 }}>{m.icon}</span>
+          <span style={{ fontSize: "var(--text-sm)", lineHeight: 1 }}>{m.icon}</span>
         ) : (
           mentionGlyph(m)
         )}
       </span>
       <span className="truncate min-w-0">{primaryLabel(m)}</span>
-      <span className="flex-1 min-w-0 text-[10px] text-text-tertiary truncate">
+      <span className="flex-1 min-w-0 text-2xs text-muted-foreground truncate">
         {row.recentLabel ?? secondaryLabel(m)}
       </span>
     </button>

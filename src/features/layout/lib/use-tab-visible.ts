@@ -4,8 +4,8 @@ import { useLayoutStore } from "../stores/layout-store";
  * Is this tab the one showing in its split column?
  *
  * Reads the live mirror (`tabs` / `activeByGroup`), which only ever holds the
- * ACTIVE workspace's view — so a tab in a background workspace answers false
- * without a workspace check. The selector returns a boolean, so subscribers
+ * ACTIVE project's view — so a tab in a background project answers false
+ * without a project check. The selector returns a boolean, so subscribers
  * re-render only for the two tabs involved in a switch.
  *
  * Used by panels that stay mounted while hidden and want to stop spending on

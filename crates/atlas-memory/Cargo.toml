@@ -39,6 +39,7 @@ uuid = { version = "1", features = ["v4"] }
 # `#[tokio::test]` and `Runtime::new` in the tests (grafeo used to pull these
 # features in).
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
 
 # The workspace lint table is only real for members that opt in —
 # without this stanza it is dead configuration (#60).

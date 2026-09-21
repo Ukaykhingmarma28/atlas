@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle, Rss } from "lucide-react";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { themeDerived } from "@/features/theme/theme-values";
 import type { Organisation } from "@/features/organisations/types";
 
 /**
@@ -36,17 +37,17 @@ export function CommsNotConnected({ org }: { org: Organisation | null }) {
   return (
     <div className="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-2.5 overflow-hidden px-8 text-center">
       <DitherBackdrop />
-      <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-bg-elevated text-text-secondary">
+      <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-card text-secondary-foreground">
         <MessageCircle size={16} />
       </span>
       {/* Text hierarchy is one rung brighter than the chrome's default. This is
-          the only content on the panel, so `--text-ghost` (#333) — the rung for
+          the only content on the panel, so `--atlas-text-disabled` — the dim rung for
           decoration and disabled state — left the one explanation unreadable
           against the near-black surface. */}
-      <div className="relative text-[12px] font-medium text-text-primary">
+      <div className="relative text-sm font-medium text-foreground">
         {org ? `${org.name} isn't connected` : "No organisation selected"}
       </div>
-      <p className="relative max-w-[220px] text-[11px] leading-relaxed text-text-secondary">
+      <p className="relative max-w-[220px] text-xs leading-relaxed text-secondary-foreground">
         {org
           ? "Team chat needs this organisation synced to your Atlas account."
           : "Select an organisation to use team chat."}
@@ -61,7 +62,7 @@ export function CommsNotConnected({ org }: { org: Organisation | null }) {
           // one element — the vibrant-panel rule bans transform ANIMATION near
           // blur, not a still frosted control (the drop overlay already blurs
           // inside this panel).
-          className="relative mt-1 flex h-[30px] items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-4 text-[11.5px] font-medium text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-md transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+          className="relative mt-1 flex h-control-lg items-center gap-1.5 rounded-full border border-border-strong bg-[var(--atlas-element-active)] px-4 text-sm font-medium text-foreground inset-highlight backdrop-blur-md transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
         >
           {syncing ? (
             <Loader2 size={12} className="shrink-0 animate-spin" />
@@ -119,7 +120,19 @@ function DitherBackdrop() {
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      // A canvas takes a colour as a VALUE, so it cannot name the variable and
+      // has to read the resolved one. `element.emphasis` is the theme's own
+      // foreground at 16% — identical to the white it used to hardcode on a
+      // dark theme, and an equally visible dark speckle on a light one, where
+      // hardcoded white was invisible.
+      //
+      // theme-subscription-allow: re-read on every frame rather than cached at
+      // construction, and this loop never parks except while the document is
+      // hidden — so a switch lands within one 80ms step with nothing to
+      // subscribe to. (`dither-field` looks identical but DOES park, under
+      // `prefers-reduced-motion`, which is why that one takes `useThemeVersion`
+      // as an effect dependency.)
+      ctx.fillStyle = themeDerived("element.emphasis");
 
       // Wind: mostly sideways, a little lift, plus a slow phase evolution so
       // shapes morph rather than only translate.

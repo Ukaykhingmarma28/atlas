@@ -14,14 +14,14 @@ use tauri::{AppHandle, Manager};
 /// shape. Older payloads with a smaller `version` are loadable as long as
 /// the missing fields default to sensible values.
 ///
-/// v2 introduced the multi-workspace model (`workspaces`/`groups`/
+/// v2 introduced the multi-project model (`projects`/`groups`/
 /// `active_workspace_id`); `current_project` is retained only as a
 /// migration source for v1 payloads.
 ///
-/// v3 introduced the Organisation layer above workspaces
+/// v3 introduced the Organisation layer above projects
 /// (`organisations`/`active_organisation_id`, plus `org_id` on each
-/// workspace/group). v2 payloads are migrated by wrapping all existing
-/// workspaces in a default local "Personal" org.
+/// project/group). v2 payloads are migrated by wrapping all existing
+/// projects in a default local "Personal" org.
 ///
 /// v4 removed `AppSettings` from this struct entirely (issue #64) — user
 /// preferences now live in their own validated `config.toml`
@@ -31,9 +31,12 @@ use tauri::{AppHandle, Manager};
 /// was last in `state.json`.
 pub const SCHEMA_VERSION: u32 = 4;
 
+/// Just enough to name a project: the {name, path} pair the legacy v1
+/// `current_project` field and the recents list carry. `Project` proper is
+/// below.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Project {
+pub struct ProjectRef {
     pub name: String,
     pub path: String,
 }
@@ -47,20 +50,20 @@ pub struct RecentProject {
     pub last_opened: String,
 }
 
-/// A single open workspace = one project plus its UI state identity. The
+/// A single open project = one project plus its UI state identity. The
 /// `id` is the stable key that replaces `webview.label()` everywhere Rust
 /// state used to be keyed per-window (file index, git watcher, mention
 /// cache, recent files).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Workspace {
+pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
     #[serde(default)]
     pub group_id: Option<String>,
     /// Owning Organisation. `None` on pre-v3 payloads — `migrate()` backfills
-    /// it to the default org. The sidebar filters workspaces by the active org.
+    /// it to the default org. The sidebar filters projects by the active org.
     #[serde(default)]
     pub org_id: Option<String>,
     #[serde(default)]
@@ -70,27 +73,37 @@ pub struct Workspace {
     /// itself never syncs. `None` for local-only projects.
     #[serde(default)]
     pub git_url: Option<String>,
-    /// ISO-8601 timestamp of the last time this workspace was the active
+    /// Pinned to the top of the sidebar and kept out of the hot-set LRU.
+    /// Frontend-owned; Rust only stores it. Absent from this struct until
+    /// `tests/state-payload-contract.test.ts` found it: `pin()` scheduled a
+    /// save and serde dropped the field, so a pin never survived a restart.
+    #[serde(default)]
+    pub pinned: bool,
+    /// ISO-8601 timestamp of the last time this project was the active
     /// one; used to order the sidebar / pick a fallback on close.
     #[serde(default)]
     pub last_active_at: Option<String>,
 }
 
-/// A user-defined collapsible folder that groups workspaces in the sidebar.
+/// A user-defined collapsible folder that groups projects in the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceGroup {
+pub struct ProjectGroup {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub order: u32,
-    /// Owning Organisation (mirrors `Workspace::org_id`). `None` on pre-v3
+    /// Owning Organisation (mirrors `Project::org_id`). `None` on pre-v3
     /// payloads — `migrate()` backfills it to the default org.
     #[serde(default)]
     pub org_id: Option<String>,
+    /// Pinned groups float to the top of the Recent tier. See `Project::pinned`
+    /// for why this was missing.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
-/// A top-level tenant that owns a set of workspaces (the Linear "workspace
+/// A top-level tenant that owns a set of projects (the Linear "workspace
 /// picker" model). Exactly one org is active per window. Local-only until the
 /// user opts into sync per org (Chrome-profile model). The shape is a superset
 /// of the server `organization` row so cloud sync is a thin adapter:
@@ -110,7 +123,7 @@ pub struct Organisation {
     /// ISO-8601 creation timestamp.
     #[serde(default)]
     pub created_at: Option<String>,
-    /// Per-org memory of the last active workspace, so an org switch restores
+    /// Per-org memory of the last active project, so an org switch restores
     /// the user where they left off. Local-only (the server has no such notion).
     #[serde(default)]
     pub active_workspace_id: Option<String>,
@@ -131,16 +144,19 @@ pub struct AppState {
     /// the frontend now derives "current project" from
     /// `active_workspace_id`. New writes leave this `None`.
     #[serde(default)]
-    pub current_project: Option<Project>,
+    pub current_project: Option<ProjectRef>,
     #[serde(default)]
     pub recent_projects: Vec<RecentProject>,
+    /// STORAGE KEYS, not concepts: `workspaces` and `active_workspace_id` are
+    /// what `state.json` has held since v2, so renaming them would need a data
+    /// migration and break every existing install. These are projects.
     #[serde(default)]
-    pub workspaces: Vec<Workspace>,
+    pub workspaces: Vec<Project>,
     #[serde(default)]
-    pub groups: Vec<WorkspaceGroup>,
+    pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
-    /// The Organisation layer above workspaces (v3). Each workspace/group is
+    /// The Organisation layer above projects (v3). Each project/group is
     /// tagged with an `org_id`; the sidebar shows only the active org's set.
     #[serde(default)]
     pub organisations: Vec<Organisation>,
@@ -181,10 +197,13 @@ fn default_version() -> u32 {
 pub struct AppStatePatch {
     #[serde(default)]
     pub recent_projects: Vec<RecentProject>,
+    /// STORAGE KEYS, not concepts: `workspaces` and `active_workspace_id` are
+    /// what `state.json` has held since v2, so renaming them would need a data
+    /// migration and break every existing install. These are projects.
     #[serde(default)]
-    pub workspaces: Vec<Workspace>,
+    pub workspaces: Vec<Project>,
     #[serde(default)]
-    pub groups: Vec<WorkspaceGroup>,
+    pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
     #[serde(default)]
@@ -244,17 +263,17 @@ impl AppState {
     /// Migrate a freshly-deserialized older payload in place. Idempotent —
     /// re-running on an already-migrated state is a no-op.
     ///
-    /// v1 → v2: if no workspaces exist yet but a legacy `current_project` is
-    /// present, synthesize a single workspace from it and make it active.
+    /// v1 → v2: if no projects exist yet but a legacy `current_project` is
+    /// present, synthesize a single project from it and make it active.
     ///
-    /// v2 → v3: if no organisations exist yet, wrap every workspace/group in a
+    /// v2 → v3: if no organisations exist yet, wrap every project/group in a
     /// default local "Personal" org and make it active.
     fn migrate(&mut self) {
         if self.workspaces.is_empty() {
             if let Some(project) = self.current_project.take() {
                 let id = uuid::Uuid::new_v4().to_string();
                 self.active_workspace_id = Some(id.clone());
-                self.workspaces.push(Workspace {
+                self.workspaces.push(Project {
                     id,
                     name: project.name,
                     path: project.path,
@@ -262,13 +281,14 @@ impl AppState {
                     org_id: None,
                     color: None,
                     git_url: None,
+                    pinned: false,
                     last_active_at: None,
                 });
             }
         }
         self.current_project = None;
 
-        // v2 → v3: ensure a default Organisation owns all existing workspaces.
+        // v2 → v3: ensure a default Organisation owns all existing projects.
         if self.organisations.is_empty() {
             let org_id = uuid::Uuid::new_v4().to_string();
             self.organisations.push(Organisation {
@@ -298,7 +318,7 @@ impl AppState {
             }
         }
 
-        // Backfill org ownership on any untagged workspace/group (covers both
+        // Backfill org ownership on any untagged project/group (covers both
         // the fresh migration above and stray untagged entries — the frontend
         // can mint `org_id: null` rows during a boot race, and every render
         // surface filters strictly by org, so an untagged row would otherwise
@@ -324,7 +344,7 @@ impl AppState {
             }
             for ws in &mut self.workspaces {
                 if ws.org_id.is_none() {
-                    // A workspace inside an org-tagged group belongs to that
+                    // A project inside an org-tagged group belongs to that
                     // group's org; only truly orphaned rows get the default.
                     ws.org_id = Some(
                         ws.group_id
@@ -339,7 +359,7 @@ impl AppState {
                 tracing::info!(
                     count = backfilled,
                     default_org = %default_org,
-                    "backfilled org_id on untagged workspaces/groups"
+                    "backfilled org_id on untagged projects/groups"
                 );
             }
         }
@@ -380,8 +400,10 @@ impl AppState {
 
     /// Read from disk synchronously. Designed to be called from `setup()`
     /// before the webview opens — the cost is one `fs::read_to_string` of a
-    /// few-KB JSON file (~1 ms on warm cache). Returns `Self::default()` on
-    /// any I/O or parse failure so a corrupt file never blocks app launch.
+    /// few-KB JSON file (~1 ms on warm cache). Falls back to `Self::default()`
+    /// on any I/O or parse failure so a corrupt file never blocks app launch —
+    /// and, like every other input, that fallback is still migrated (see
+    /// [`Self::from_raw`]).
     ///
     /// Also returns the raw `settings` object, if any, exactly as it appeared
     /// in the file — the typed `AppState` no longer has a `settings` field
@@ -389,16 +411,30 @@ impl AppState {
     /// floor as an unrecognized key. The caller feeds this to
     /// `atlas_config::bootstrap` for the one-time `config.toml` export.
     pub fn load(app: &AppHandle) -> (Self, Option<serde_json::Value>) {
-        let Some(path) = Self::path(app) else {
-            return (Self::default(), None);
-        };
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            return (Self::default(), None);
-        };
-        let legacy_settings = serde_json::from_str::<serde_json::Value>(&raw)
-            .ok()
+        let raw = Self::path(app).and_then(|path| std::fs::read_to_string(&path).ok());
+        Self::from_raw(raw.as_deref())
+    }
+
+    /// The parse+migrate half of [`Self::load`], split out so it is reachable
+    /// without an `AppHandle`.
+    ///
+    /// `None` is a FIRST RUN (no `state.json` yet, or no resolvable app data
+    /// dir) and MUST still migrate. `load` used to return `Self::default()`
+    /// straight from its early returns, which skipped `migrate()` and left
+    /// `organisations` empty on a fresh install — the one input every other
+    /// path seeds a "Personal" org for. The frontend filters every render
+    /// surface by the active org and refuses to create a project without
+    /// one, so the visible symptom was "Open Folder" picking a directory and
+    /// doing nothing at all until the second launch, by which point the
+    /// boot-time save in `setup()` had written a `state.json` for this path
+    /// to parse and migrate.
+    fn from_raw(raw: Option<&str>) -> (Self, Option<serde_json::Value>) {
+        let legacy_settings = raw
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
             .and_then(|v| v.get("settings").cloned());
-        let mut state: AppState = serde_json::from_str(&raw).unwrap_or_default();
+        let mut state: AppState = raw
+            .map(|raw| serde_json::from_str(raw).unwrap_or_default())
+            .unwrap_or_default();
         state.migrate();
         (state, legacy_settings)
     }
@@ -489,10 +525,12 @@ impl AppState {
 mod tests {
     use super::*;
 
-    fn tmp_state_path() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("atlas-state-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("state.json")
+    /// A `state.json` path in its own temp directory. Keep the `TempDir` alive
+    /// for the test: dropping it deletes the directory.
+    fn tmp_state_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        (dir, path)
     }
 
     fn state_file_with_legacy_settings(path: &Path) {
@@ -517,7 +555,7 @@ mod tests {
     /// not destroy it.
     #[test]
     fn a_save_before_migration_preserves_the_legacy_settings() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         state_file_with_legacy_settings(&path);
 
         let state = AppState { settings_config_migrated: false, ..AppState::default() };
@@ -535,7 +573,7 @@ mod tests {
     /// in `state.json` forever.
     #[test]
     fn a_save_after_migration_drops_the_legacy_settings() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         state_file_with_legacy_settings(&path);
 
         let state = AppState { settings_config_migrated: true, ..AppState::default() };
@@ -548,7 +586,7 @@ mod tests {
     /// fresh state always wins on its own fields.
     #[test]
     fn merging_lets_the_live_state_win_on_its_own_fields() {
-        let path = tmp_state_path();
+        let (_dir, path) = tmp_state_path();
         std::fs::write(
             &path,
             serde_json::json!({ "version": 1, "settingsConfigMigrated": false, "recentProjects": [
@@ -567,18 +605,76 @@ mod tests {
 
     /// Exactly the payload `buildAppStatePayload()` sends — note the absence of
     /// `telemetryAnonId`, which is the whole point.
+    ///
+    /// `activeWorkspaceId` is the FROZEN wire key (see `AppStatePatch`): the
+    /// rename to "project" stopped at the storage boundary. This fixture used
+    /// to say `activeProjectId`, which `AppStatePatch` — no
+    /// `deny_unknown_fields` — silently dropped, so every assertion below ran
+    /// against a field the frontend had never actually set.
     fn frontend_payload() -> AppStatePatch {
         serde_json::from_value(serde_json::json!({
             "currentProject": null,
             "recentProjects": [],
             "workspaces": [],
             "groups": [],
-            "activeWorkspaceId": null,
+            "activeWorkspaceId": "proj-1",
             "organisations": [],
             "activeOrganisationId": null,
             "version": 4,
         }))
         .expect("frontend payload deserializes as a patch")
+    }
+
+    /// Guards the fixture itself: if the frozen key is ever mistyped again, the
+    /// payload deserializes to `None` and this fails instead of passing quietly.
+    #[test]
+    fn frontend_payload_carries_the_frozen_active_project_key() {
+        assert_eq!(frontend_payload().active_workspace_id.as_deref(), Some("proj-1"));
+    }
+
+    /// The same freeze, one level down. `Organisation::active_workspace_id` is
+    /// a NESTED storage key inside the `organisations` array, which the
+    /// workspace→project rename missed: the frontend sent `activeProjectId`,
+    /// serde dropped it (no `deny_unknown_fields`, `#[serde(default)]`), and
+    /// `apply_patch` committed `None` over every org's last-active project.
+    /// The frontend now translates at the seam (`organisations/types.ts`
+    /// `toOrganisationWire`); this asserts what it must translate *to*.
+    #[test]
+    fn an_organisation_carries_the_frozen_nested_active_project_key() {
+        let org: Organisation = serde_json::from_value(serde_json::json!({
+            "id": "org-1",
+            "name": "Personal",
+            "slug": "personal",
+            "activeWorkspaceId": "proj-1",
+            "syncEnabled": false,
+        }))
+        .expect("wire organisation deserializes");
+        assert_eq!(org.active_workspace_id.as_deref(), Some("proj-1"));
+
+        // …and the app-side spelling is exactly the silent drop being guarded.
+        let renamed: Organisation = serde_json::from_value(serde_json::json!({
+            "id": "org-1",
+            "name": "Personal",
+            "slug": "personal",
+            "activeProjectId": "proj-1",
+            "syncEnabled": false,
+        }))
+        .expect("an unknown key is not an error — that is the whole problem");
+        assert_eq!(renamed.active_workspace_id, None);
+    }
+
+    /// `pinned` was frontend-only: `pin()` scheduled a save and serde threw the
+    /// field away, so a pinned project or group came back unpinned on the next
+    /// launch. Found by `tests/state-payload-contract.test.ts`.
+    #[test]
+    fn a_project_and_a_group_keep_their_pin() {
+        let patch: AppStatePatch = serde_json::from_value(serde_json::json!({
+            "workspaces": [{ "id": "p1", "name": "a", "path": "/a", "pinned": true }],
+            "groups": [{ "id": "g1", "name": "g", "pinned": true }],
+        }))
+        .expect("patch deserializes");
+        assert!(patch.workspaces[0].pinned);
+        assert!(patch.groups[0].pinned);
     }
 
     /// The regression test for the analytics bug: a settings save must not cost
@@ -595,6 +691,38 @@ mod tests {
         state.apply_patch(frontend_payload());
 
         assert_eq!(state.telemetry_anon_id.as_deref(), Some("device-uuid"));
+    }
+
+    /// A first run — no `state.json` on disk — must come up with the default
+    /// Organisation, exactly like a parsed file with none does. Without one
+    /// the frontend's `requireActiveOrgId()` is `undefined`, `addProject`
+    /// bails with a log line and no UI feedback, and "Open Folder" picks a
+    /// directory and silently does nothing until the app is relaunched.
+    #[test]
+    fn a_first_run_still_gets_the_default_organisation() {
+        let (state, legacy) = AppState::from_raw(None);
+
+        assert_eq!(state.organisations.len(), 1, "no default org on a fresh install");
+        assert_eq!(state.organisations[0].name, "Personal");
+        assert_eq!(
+            state.active_organisation_id.as_deref(),
+            Some(state.organisations[0].id.as_str()),
+            "default org exists but nothing is active"
+        );
+        assert_eq!(state.version, SCHEMA_VERSION);
+        assert!(legacy.is_none());
+    }
+
+    /// A present-but-unreadable `state.json` takes the same fallback and is
+    /// migrated the same way: the two inputs must never diverge again.
+    #[test]
+    fn a_corrupt_state_file_still_gets_the_default_organisation() {
+        let (state, legacy) = AppState::from_raw(Some("{ not json"));
+
+        assert_eq!(state.organisations.len(), 1);
+        assert_eq!(state.organisations[0].name, "Personal");
+        assert!(state.active_organisation_id.is_some());
+        assert!(legacy.is_none());
     }
 
     /// A patch with unknown/extra keys (an older or newer frontend) still parses,

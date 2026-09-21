@@ -1,6 +1,6 @@
-//! One writer per Workspace.
+//! One writer per Project.
 //!
-//! Atlas is a multi-window app and two windows can hold the same Workspace open.
+//! Atlas is a multi-window app and two windows can hold the same Project open.
 //! Two capture loops writing one SQLite file with no coordination corrupts the
 //! outbox state machine — both would claim the same pending rows, and a row can
 //! be marked `sent` by one process while the other is still trying to send it.
@@ -24,7 +24,7 @@ use rusqlite::Connection;
 
 use crate::error::{Error, Result};
 
-/// Holds the Workspace's writer lock. Dropping it releases the lock.
+/// Holds the Project's writer lock. Dropping it releases the lock.
 pub struct WriterLock {
     // Held for its Drop. The open exclusive transaction *is* the lock.
     _conn: Connection,

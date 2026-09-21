@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Kbd } from "@/ui/kbd";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -318,10 +320,9 @@ export function CommsComposer({
           // the two pickers in the app read as one component.
           <div
             className={cn(
-              "absolute bottom-full left-2 right-2 z-[var(--z-dropdown)] mb-1 flex flex-col overflow-hidden rounded-lg",
-              "border border-white/10 bg-black",
-              "shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.6)]",
-              "animate-scale-in",
+              "absolute bottom-full left-2 right-2 z-popover mb-1 flex flex-col overflow-hidden rounded-lg",
+              "border border-border bg-popover",
+              "shadow-lg inset-highlight",
             )}
             // Selecting with the mouse must not blur the textarea first.
             onMouseDown={(e) => e.preventDefault()}
@@ -337,25 +338,25 @@ export function CommsComposer({
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => insertMention(m)}
                   className={cn(
-                    "flex h-[26px] w-full items-center gap-1.5 px-2 text-left transition-colors cursor-pointer",
-                    i === highlighted ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
+                    "flex h-control-md w-full items-center gap-1.5 px-2 text-left transition-colors cursor-pointer",
+                    i === highlighted
+                      ? "bg-[var(--atlas-element-selected)]"
+                      : "hover:bg-[var(--atlas-element-hover)]",
                   )}
                 >
                   <CommsAvatar member={m} size={16} />
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-text-primary">
-                    {m.name}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">{m.name}</span>
                 </button>
               ))}
             </div>
-            <div className="flex h-[26px] shrink-0 items-center justify-between border-t border-white/10 px-2">
-              <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+            <div className="flex h-control-md shrink-0 items-center justify-between border-t border-border px-2">
+              <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
                 <Kbd>↑↓</Kbd>
                 <span>navigate</span>
                 <Kbd>↵</Kbd>
                 <span>select</span>
               </span>
-              <span className="flex items-center gap-1.5 text-[9px] text-text-tertiary">
+              <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
                 <Kbd>esc</Kbd>
                 <span>close</span>
               </span>
@@ -372,16 +373,16 @@ export function CommsComposer({
           `atlas-pill-in` is the same 200ms rise the grant bar animates in with,
           and it is already disabled under prefers-reduced-motion. */}
       {(replyTo || editing) && (
-        <div className="atlas-pill-in relative z-0 mx-2 -mb-4 flex items-center gap-1.5 rounded-t-2xl bg-[var(--bg-tertiary)] px-3 pb-5 pt-1.5">
+        <div className="atlas-pill-in relative z-0 mx-2 -mb-4 flex items-center gap-1.5 rounded-t-2xl bg-[var(--popover)] px-3 pb-5 pt-1.5">
           {editing ? (
-            <Pencil size={11} className="shrink-0 text-text-tertiary" />
+            <Pencil size={11} className="shrink-0 text-muted-foreground" />
           ) : (
-            <CornerUpRight size={11} className="shrink-0 -scale-y-100 text-text-tertiary" />
+            <CornerUpRight size={11} className="shrink-0 -scale-y-100 text-muted-foreground" />
           )}
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+          <span className="shrink-0 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
             {editing ? "Editing" : "Replying to"}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[11px] text-text-secondary">
+          <span className="min-w-0 flex-1 truncate text-xs text-secondary-foreground">
             {editing ? null : (memberMap.get(intentTarget?.author_id ?? "")?.name ?? "Unknown")}
             {intentTarget && !editing ? " · " : ""}
             {intentTarget?.deleted
@@ -390,52 +391,54 @@ export function CommsComposer({
                 ? toPlainText(intentTarget.body, memberMap)
                 : null}
           </span>
-          <button
-            type="button"
-            title="Cancel"
-            onClick={onCancelIntent}
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
-          >
-            <X size={11} />
-          </button>
+          <Hint label="Cancel" side="top">
+            <button
+              type="button"
+              onClick={onCancelIntent}
+              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          </Hint>
         </div>
       )}
 
       {/* Outer shell — its exposed bottom strip is the toolbar. */}
-      <div
-        ref={shellRef}
-        className={cn(
-          // `z-10` so the shell paints over — and visually tucks — the reply
-          // strip's lower half.
-          "relative z-10 rounded-2xl border bg-[var(--bg-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-colors",
-          isDropTarget
-            ? "border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary)]/40"
-            : overLimit
-              ? "border-error"
-              : "border-border-default",
-        )}
-      >
-        {isDropTarget && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--accent-primary)]/8 backdrop-blur-[1px]">
-            <span className="rounded-full bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
-              Drop files to attach
-            </span>
-          </div>
-        )}
+      <HintGroup side="top">
+        <div
+          ref={shellRef}
+          className={cn(
+            // `z-10` so the shell paints over — and visually tucks — the reply
+            // strip's lower half.
+            "relative z-10 rounded-2xl border bg-[var(--card)] shadow-sm transition-colors",
+            isDropTarget
+              ? "border-[var(--primary)] ring-2 ring-[var(--primary)]/40"
+              : overLimit
+                ? "border-error"
+                : "border-border",
+          )}
+        >
+          {isDropTarget && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
+              <span className="rounded-full bg-card px-3 py-1 text-xs font-medium text-secondary-foreground shadow">
+                Drop files to attach
+              </span>
+            </div>
+          )}
 
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-2 pt-2">
-            {attachments.map((a) => (
-              <AttachmentChip key={a.uploadId} attachment={a} onRemove={onRemoveAttachment} />
-            ))}
-          </div>
-        )}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-2 pt-2">
+              {attachments.map((a) => (
+                <AttachmentChip key={a.uploadId} attachment={a} onRemove={onRemoveAttachment} />
+              ))}
+            </div>
+          )}
 
-        {/* Inner input surface. The disabled dimming, when it exists, belongs
+          {/* Inner input surface. The disabled dimming, when it exists, belongs
             HERE and not on the shell — on the shell it fades the toolbar and
             every popover anchored to it. */}
-        <div className="relative m-1 rounded-xl border border-border-default bg-bg-base transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--border-focus)_50%,var(--border-default))] focus-within:ring-1 focus-within:ring-[var(--accent-primary)]/10">
-          {/* EVERY vertical value here is literal px, and that is the whole
+          <div className="relative m-1 rounded-xl border border-border bg-background transition-[border-color,box-shadow] duration-150 focus-within:border-[color-mix(in_srgb,var(--atlas-border-strong)_50%,var(--border))] focus-within:ring-1 focus-within:ring-[var(--primary)]/10">
+            {/* EVERY vertical value here is literal px, and that is the whole
               point. Atlas's UI-scale shrinks the root font-size, so a rem-based
               `py-2` renders ~6px rather than 8px while `min-h-[34px]` stays a
               hard 34px — 6 + 18 + 6 = 30, and the missing 4px collected at the
@@ -444,145 +447,154 @@ export function CommsComposer({
               8 + 18 + 8 = 34, so one line is exactly centred and each extra
               line adds a clean 18px. (The agent composer pins its geometry in
               px for this same reason.) */}
-          <div className="min-h-[34px] w-full">
-            {Input ? (
-              <Input
-                handle={input}
-                value={draft}
-                placeholder={placeholder}
-                members={memberMap}
-                me={me}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-              />
-            ) : (
-              // Same geometry, so the composer does not resize when the real
-              // editor lands. Only ever seen on a cold first open.
-              <div className="px-[10px] py-[8px] text-[12.5px] leading-[18px] text-text-ghost">
-                {draft || placeholder}
-              </div>
-            )}
-          </div>
-          {/* Inline send, pinned top-right — the agent composer's placement, so
-              it stays put as the textarea grows downward. */}
-          <button
-            type="button"
-            title={editing ? "Save edit" : uploading ? "Waiting for uploads…" : "Send"}
-            disabled={!canSend}
-            onClick={submit}
-            className={cn(
-              "absolute right-[4px] top-[4px] flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
-              canSend
-                ? "text-text-primary hover:border-border-default hover:bg-bg-hover cursor-pointer"
-                : "text-text-tertiary cursor-not-allowed",
-            )}
-          >
-            {uploading ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <ArrowUp size={15} strokeWidth={2.5} />
-            )}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between gap-1 px-1.5 pb-1.5 pt-0.5">
-          <div className="flex min-w-0 items-center gap-0.5">
-            <button
-              type="button"
-              title={atLimit ? `At most ${CHAT_MESSAGE_ATTACHMENT_MAX} files` : "Attach a file"}
-              disabled={atLimit}
-              onClick={onPickFiles}
-              className={cn(
-                "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-secondary transition-colors",
-                atLimit
-                  ? "cursor-not-allowed opacity-50"
-                  : "hover:bg-bg-hover hover:text-text-primary cursor-pointer",
+            <div className="min-h-[34px] w-full">
+              {Input ? (
+                <Input
+                  handle={input}
+                  value={draft}
+                  placeholder={placeholder}
+                  members={memberMap}
+                  me={me}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                />
+              ) : (
+                // Same geometry, so the composer does not resize when the real
+                // editor lands. Only ever seen on a cold first open.
+                <div className="px-[10px] py-[8px] text-base leading-[18px] text-disabled">
+                  {draft || placeholder}
+                </div>
               )}
+            </div>
+            {/* Inline send, pinned top-right — the agent composer's placement, so
+              it stays put as the textarea grows downward. */}
+            <HintItem
+              label={editing ? "Save edit" : uploading ? "Waiting for uploads…" : "Send"}
+              className="absolute right-[4px] top-[4px]"
             >
-              <Plus size={13} />
-            </button>
-            <Divider />
-            <EmojiPicker onPick={(char) => applyEdit(insertText(selection(), char))} />
-            <button
-              type="button"
-              title="Mention someone"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                const sel = selection();
-                const needsSpace = sel.start > 0 && !/\s$/.test(draft.slice(0, sel.start));
-                const edit = insertText(sel, needsSpace ? " @" : "@");
-                applyEdit(edit);
-                setMentionQuery({ start: edit.start - 1, query: "" });
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-            >
-              <AtSign size={14} />
-            </button>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-0.5">
-            {/* Only shown near the ceiling — a permanent counter is noise. */}
-            {bytes > CHAT_BODY_MAX_BYTES * 0.8 && (
-              <span
+              <button
+                type="button"
+                disabled={!canSend}
+                onClick={submit}
                 className={cn(
-                  "mr-1 text-[9.5px] tabular-nums",
-                  overLimit ? "text-error" : "text-text-ghost",
+                  "flex h-control-md w-[26px] items-center justify-center rounded-lg border border-transparent transition-colors",
+                  canSend
+                    ? "text-foreground hover:border-border hover:bg-element-hover cursor-pointer"
+                    : "text-muted-foreground cursor-not-allowed",
                 )}
               >
-                {bytes.toLocaleString()} / {CHAT_BODY_MAX_BYTES.toLocaleString()}
-              </span>
-            )}
-            <FormatButton
-              title="Bold  ⌘B"
-              icon={Bold}
-              onApply={() => applyEdit(wrap(selection(), "**"))}
-            />
-            <FormatButton
-              title="Italic  ⌘I"
-              icon={Italic}
-              onApply={() => applyEdit(wrap(selection(), "*"))}
-            />
-            <FormatButton
-              title="Strikethrough"
-              icon={Strikethrough}
-              onApply={() => applyEdit(wrap(selection(), "~~"))}
-            />
-            <FormatButton
-              title="Code"
-              icon={Code}
-              onApply={() => applyEdit(wrap(selection(), "`"))}
-            />
-            <FormatButton
-              title="Link  ⌘K"
-              icon={Link2}
-              onApply={() => applyEdit(insertLink(selection()))}
-            />
-            <Divider />
-            <FormatButton
-              title="Bulleted list"
-              icon={List}
-              onApply={() => applyEdit(linePrefix(selection(), "- "))}
-            />
-            <FormatButton
-              title="Numbered list"
-              icon={ListOrdered}
-              onApply={() => applyEdit(linePrefix(selection(), "1. ", true))}
-            />
-            <FormatButton
-              title="Quote"
-              icon={Quote}
-              onApply={() => applyEdit(linePrefix(selection(), "> "))}
-            />
+                {uploading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ArrowUp size={15} strokeWidth={2.5} />
+                )}
+              </button>
+            </HintItem>
+          </div>
+
+          <div className="flex items-center justify-between gap-1 px-1.5 pb-1.5 pt-0.5">
+            <div className="flex min-w-0 items-center gap-0.5">
+              <HintItem
+                label={atLimit ? `At most ${CHAT_MESSAGE_ATTACHMENT_MAX} files` : "Attach a file"}
+              >
+                <button
+                  type="button"
+                  disabled={atLimit}
+                  onClick={onPickFiles}
+                  className={cn(
+                    "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-border bg-card text-secondary-foreground transition-colors",
+                    atLimit
+                      ? "cursor-not-allowed opacity-50"
+                      : "hover:bg-element-hover hover:text-foreground cursor-pointer",
+                  )}
+                >
+                  <Plus size={13} />
+                </button>
+              </HintItem>
+              <Divider />
+              <EmojiPicker onPick={(char) => applyEdit(insertText(selection(), char))} />
+              <HintItem label="Mention someone">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    const sel = selection();
+                    const needsSpace = sel.start > 0 && !/\s$/.test(draft.slice(0, sel.start));
+                    const edit = insertText(sel, needsSpace ? " @" : "@");
+                    applyEdit(edit);
+                    setMentionQuery({ start: edit.start - 1, query: "" });
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+                >
+                  <AtSign size={14} />
+                </button>
+              </HintItem>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* Only shown near the ceiling — a permanent counter is noise. */}
+              {bytes > CHAT_BODY_MAX_BYTES * 0.8 && (
+                <span
+                  className={cn(
+                    "mr-1 text-2xs tabular-nums",
+                    overLimit ? "text-error" : "text-disabled",
+                  )}
+                >
+                  {bytes.toLocaleString()} / {CHAT_BODY_MAX_BYTES.toLocaleString()}
+                </span>
+              )}
+              <FormatButton
+                title="Bold  ⌘B"
+                icon={Bold}
+                onApply={() => applyEdit(wrap(selection(), "**"))}
+              />
+              <FormatButton
+                title="Italic  ⌘I"
+                icon={Italic}
+                onApply={() => applyEdit(wrap(selection(), "*"))}
+              />
+              <FormatButton
+                title="Strikethrough"
+                icon={Strikethrough}
+                onApply={() => applyEdit(wrap(selection(), "~~"))}
+              />
+              <FormatButton
+                title="Code"
+                icon={Code}
+                onApply={() => applyEdit(wrap(selection(), "`"))}
+              />
+              <FormatButton
+                title="Link  ⌘K"
+                icon={Link2}
+                onApply={() => applyEdit(insertLink(selection()))}
+              />
+              <Divider />
+              <FormatButton
+                title="Bulleted list"
+                icon={List}
+                onApply={() => applyEdit(linePrefix(selection(), "- "))}
+              />
+              <FormatButton
+                title="Numbered list"
+                icon={ListOrdered}
+                onApply={() => applyEdit(linePrefix(selection(), "1. ", true))}
+              />
+              <FormatButton
+                title="Quote"
+                icon={Quote}
+                onApply={() => applyEdit(linePrefix(selection(), "> "))}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </HintGroup>
     </div>
   );
 }
 
 function Divider() {
-  return <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border-default" />;
+  return <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />;
 }
 
 /**
@@ -602,15 +614,16 @@ function FormatButton({
   onApply: () => void;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onApply}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-    >
-      <Icon size={13} />
-    </button>
+    <HintItem label={title}>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onApply}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+      >
+        <Icon size={13} />
+      </button>
+    </HintItem>
   );
 }
 
@@ -630,10 +643,8 @@ function AttachmentChip({
   return (
     <div
       className={cn(
-        "group/chip relative flex h-[26px] max-w-[220px] items-center gap-1.5 overflow-hidden rounded-md border px-2 text-[11px]",
-        failed
-          ? "border-error text-error"
-          : "border-border-default bg-bg-elevated text-text-secondary",
+        "group/chip relative flex h-control-md max-w-[220px] items-center gap-1.5 overflow-hidden rounded-md border px-2 text-xs",
+        failed ? "border-error text-error" : "border-border bg-card text-secondary-foreground",
       )}
     >
       {/* Progress paints behind the label rather than as a separate bar — the
@@ -641,7 +652,7 @@ function AttachmentChip({
       {attachment.state === "uploading" && (
         <span
           aria-hidden
-          className="absolute inset-y-0 left-0 bg-[var(--comms-unread)]/20 transition-[width] duration-200"
+          className="absolute inset-y-0 left-0 bg-[var(--atlas-status-success-foreground)]/20 transition-[width] duration-200"
           style={{ width: `${pct}%` }}
         />
       )}
@@ -650,14 +661,15 @@ function AttachmentChip({
       {attachment.state === "uploading" && (
         <span className="relative shrink-0 tabular-nums opacity-60">{pct}%</span>
       )}
-      <button
-        type="button"
-        title={failed ? attachment.error || "Upload failed — remove" : "Remove"}
-        onClick={() => onRemove(attachment.uploadId)}
-        className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer"
-      >
-        <X size={10} />
-      </button>
+      <Hint label={failed ? attachment.error || "Upload failed — remove" : "Remove"} side="top">
+        <button
+          type="button"
+          onClick={() => onRemove(attachment.uploadId)}
+          className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-element-active hover:text-foreground cursor-pointer"
+        >
+          <X size={10} />
+        </button>
+      </Hint>
     </div>
   );
 }

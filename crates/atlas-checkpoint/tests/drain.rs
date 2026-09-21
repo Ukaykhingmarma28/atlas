@@ -19,10 +19,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use atlas_checkpoint::artifacts::AtlasArtifact;
-use atlas_checkpoint::model::WorkspaceMode;
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
-    bind, drain, Capture, DrainStatus, Role, SessionKey, Source, Store, SyncConfig, TurnContent,
-    SPILL_THRESHOLD_BYTES,
+    bind, drain, register_workspace, Capture, DrainStatus, Role, SessionKey, Source, Store,
+    SyncConfig, TurnContent, SPILL_THRESHOLD_BYTES,
 };
 
 const WORKSPACE: &str = "ws-atlas";
@@ -199,11 +199,15 @@ fn handle(
         return;
     }
 
-    // Workspace registration.
+    // Project registration.
     if request_line.starts_with("POST /workspaces ") {
         if String::from_utf8_lossy(&body).contains("\"slug\":\"taken\"") {
             respond(&mut stream, 409, "{}");
         } else {
+            // `workspaceId` is the SERVER's key for the new id, and the one
+            // `register_workspace` reads (`sync.rs`). The Project/Workspace
+            // rename is UI vocabulary; it did not rename the wire, so a stub
+            // answering `projectId` here describes a server that doesn't exist.
             respond(&mut stream, 200, "{\"workspaceId\":\"ws-remote-1\"}");
         }
         return;
@@ -292,12 +296,12 @@ fn respond_with_header(stream: &mut TcpStream, status: u16, header: &str, body: 
 
 fn cloud_store(dir: &std::path::Path) -> Store {
     let store = Store::open(dir.join(".atlas")).expect("store opens");
-    bind(&store, WORKSPACE, dir, WorkspaceMode::Cloud).expect("binds");
+    bind(&store, WORKSPACE, dir, ProjectMode::Cloud).expect("binds");
     store
 }
 
 fn record(store: &mut Store, native_id: &str, body: &str) -> String {
-    let mut capture = Capture::new(store, WorkspaceMode::Cloud);
+    let mut capture = Capture::new(store, ProjectMode::Cloud);
     let session = capture
         .record_prompt(
             &SessionKey {
@@ -381,7 +385,7 @@ fn no_author_field_is_ever_sent() {
 }
 
 #[test]
-fn the_wire_workspace_id_is_never_the_local_row_key() {
+fn the_wire_project_id_is_never_the_local_row_key() {
     // The local row key is the project path — machine-specific, privacy-bearing,
     // and useless to the server for converging two teammates onto one timeline.
     // Every artifact must carry the registered wire identity instead.
@@ -397,9 +401,37 @@ fn the_wire_workspace_id_is_never_the_local_row_key() {
     assert!(!artifacts.is_empty());
     for artifact in artifacts {
         let json = serde_json::to_string(&artifact).unwrap();
-        assert!(json.contains(WIRE_WORKSPACE), "{json}");
+        assert!(json.contains(&format!("\"workspaceId\":\"{WIRE_WORKSPACE}\"")), "{json}");
         assert!(!json.contains(&format!("\"{WORKSPACE}\"")), "{json}");
     }
+}
+
+// ── Project registration ────────────────────────────────────────────────────
+
+#[test]
+fn registering_a_project_returns_the_server_assigned_id() {
+    // The id the stub hands back under `workspaceId` is what the caller stores
+    // as the wire identity. A stub replying under any other key would make this
+    // fail with "no id in response", which is what production would do too.
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let id = register_workspace(
+        &config(&stub.base_url, &token),
+        "atlas",
+        Some("abc123"),
+        Some("https://example.invalid/atlas.git"),
+    )
+    .expect("registers");
+    assert_eq!(id, "ws-remote-1");
+}
+
+#[test]
+fn registering_a_taken_slug_is_refused_plainly() {
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let err = register_workspace(&config(&stub.base_url, &token), "taken", None, None)
+        .expect_err("a 409 is an error");
+    assert!(err.to_string().contains("already taken"), "{err}");
 }
 
 #[test]
@@ -498,7 +530,7 @@ fn a_token_expiring_mid_drain_refreshes_and_resumes() {
 
 #[test]
 fn a_permanent_authorization_failure_stops_retrying_and_says_so() {
-    // Removed from the Organisation, or the Workspace was deleted. Presenting
+    // Removed from the Organisation, or the Project was deleted. Presenting
     // that as a transient failure would be an endless spinner.
     let dir = tempfile::tempdir().unwrap();
     let mut store = cloud_store(dir.path());
@@ -870,14 +902,14 @@ fn a_429_carries_the_servers_retry_after_hint_into_the_outcome() {
 // ── Local mode never drains ─────────────────────────────────────────────────
 
 #[test]
-fn a_local_workspace_accumulates_rows_that_never_drain() {
+fn a_local_project_accumulates_rows_that_never_drain() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join(".atlas")).unwrap();
-    bind(&store, WORKSPACE, dir.path(), WorkspaceMode::Local).unwrap();
+    bind(&store, WORKSPACE, dir.path(), ProjectMode::Local).unwrap();
 
     let mut store = store;
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         capture
             .record_prompt(
                 &SessionKey {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { useReactFlow, useViewport } from "@xyflow/react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import {
   ChevronDown,
   Crosshair,
@@ -18,7 +18,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommsAvatar } from "@/features/comms/components/comms-avatar";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { exportCanvas, type ExportFormat } from "@/features/canvas/lib/canvas-export";
@@ -46,20 +46,22 @@ export type SyncState = "synced" | "syncing" | "offline";
 function SyncDot({ sync }: { sync: SyncState }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-          {sync === "syncing" ? (
-            <Loader2 size={11} className="animate-spin text-text-tertiary" />
-          ) : (
-            <span
-              className={cn(
-                "h-[7px] w-[7px] rounded-full",
-                sync === "synced" ? "bg-[#22c55e]" : "bg-[var(--status-error,#f66)]",
-              )}
-            />
-          )}
-        </span>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+            {sync === "syncing" ? (
+              <Loader2 size={11} className="animate-spin text-muted-foreground" />
+            ) : (
+              <span
+                className={cn(
+                  "h-[7px] w-[7px] rounded-full",
+                  sync === "synced" ? "bg-success" : "bg-error",
+                )}
+              />
+            )}
+          </span>
+        }
+      />
       <TooltipContent side="bottom" sideOffset={4}>
         {sync === "synced"
           ? "Live — every change is shared as you make it"
@@ -94,89 +96,87 @@ export function SpaceHeaderPill({
   return (
     <div
       className={cn(
-        "absolute left-3 top-3 z-20 flex items-center gap-1.5 py-1 pl-1 pr-1",
-        "rounded-xl border border-white/10 bg-[var(--bg-secondary)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-2xl",
+        "absolute left-3 top-3 z-panel flex items-center gap-1.5 py-1 pl-1 pr-1",
+        "rounded-xl border border-border-subtle bg-[var(--card)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
-      <button
-        type="button"
-        onClick={onTogglePages}
-        title={pagesOpen ? "Hide pages" : "Show pages"}
-        className={cn(
-          "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors",
-          pagesOpen
-            ? "bg-bg-selected text-text-primary"
-            : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary",
-        )}
-      >
-        <PanelLeft size={13} />
-      </button>
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <Hint label={pagesOpen ? "Hide pages" : "Show pages"}>
+        <button
+          type="button"
+          onClick={onTogglePages}
+          className={cn(
+            "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors",
+            pagesOpen
+              ? "bg-element-selected text-foreground"
+              : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
+          )}
+        >
+          <PanelLeft size={13} />
+        </button>
+      </Hint>
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
       {/* The page name is the shorthand page selector — the dock is the long
           way round, and a canvas is usually two clicks from another page. */}
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            title="Switch page"
-            className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-bg-hover"
-          >
-            <SyncDot sync={sync} />
-            <span className="max-w-[180px] truncate text-[12px] font-semibold text-text-primary">
-              {active?.name || "Space"}
-            </span>
-            <ChevronDown size={11} className="shrink-0 text-text-tertiary" />
-          </button>
-        </Popover.Trigger>
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              title="Switch page"
+              className="flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1 transition-colors hover:bg-element-hover"
+            >
+              <SyncDot sync={sync} />
+              <span className="max-w-[180px] truncate text-sm font-semibold text-foreground">
+                {active?.name || "Space"}
+              </span>
+              <ChevronDown size={11} className="shrink-0 text-muted-foreground" />
+            </button>
+          }
+        />
         <Popover.Portal>
-          <Popover.Content
-            align="start"
-            sideOffset={6}
-            style={{
-              zIndex: 9999,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-          >
-            <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
-              {selectable.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    onOpenPage(p.id);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]",
-                    p.id === activePageId ? "text-text-primary" : "text-text-secondary",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
-                  {p.id === activePageId && (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-primary)]" />
-                  )}
-                </button>
-              ))}
-              {selectable.length === 0 && (
-                <div className="px-3 py-2 text-[10px] text-text-tertiary">No pages yet.</div>
-              )}
-            </div>
-          </Popover.Content>
+          <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 backdrop-blur-2xl">
+              <div className="flex max-h-[320px] w-[220px] flex-col overflow-y-auto py-1">
+                {selectable.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      onOpenPage(p.id);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--atlas-element-hover)]",
+                      p.id === activePageId ? "text-foreground" : "text-secondary-foreground",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{p.name || "Untitled"}</span>
+                    {p.id === activePageId && (
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--primary)]" />
+                    )}
+                  </button>
+                ))}
+                {selectable.length === 0 && (
+                  <div className="px-3 py-2 text-2xs text-muted-foreground">No pages yet.</div>
+                )}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
       <ZoomReadout />
-      <button
-        type="button"
-        onClick={() => rf.fitView({ duration: 350, padding: 0.2 })}
-        title="Fit to view"
-        className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
-      >
-        <Crosshair size={12} />
-      </button>
+      <Hint label="Fit to view">
+        <button
+          type="button"
+          onClick={() => rf.fitView({ duration: 350, padding: 0.2 })}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
+        >
+          <Crosshair size={12} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -191,39 +191,35 @@ function ZoomReadout() {
   const { zoom } = useViewport();
   const pct = Math.round(zoom * 100);
   const step =
-    "flex h-6 w-5 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary";
+    "flex h-6 w-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground";
   return (
     <div className="flex items-center">
-      <button
-        type="button"
-        title="Zoom out"
-        onClick={() => void rf.zoomOut({ duration: 150 })}
-        className={step}
-      >
-        <Minus size={11} />
-      </button>
+      <Hint label="Zoom out">
+        <button type="button" onClick={() => void rf.zoomOut({ duration: 150 })} className={step}>
+          <Minus size={11} />
+        </button>
+      </Hint>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => void rf.zoomTo(1, { duration: 200 })}
-            className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-[10.5px] tabular-nums text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            {pct}%
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => void rf.zoomTo(1, { duration: 200 })}
+              className="flex h-6 min-w-[38px] cursor-pointer items-center justify-center rounded-md px-1 text-xs tabular-nums text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground"
+            >
+              {pct}%
+            </button>
+          }
+        />
         <TooltipContent side="bottom" sideOffset={4}>
           Reset zoom to 100%
         </TooltipContent>
       </Tooltip>
-      <button
-        type="button"
-        title="Zoom in"
-        onClick={() => void rf.zoomIn({ duration: 150 })}
-        className={step}
-      >
-        <Plus size={11} />
-      </button>
+      <Hint label="Zoom in">
+        <button type="button" onClick={() => void rf.zoomIn({ duration: 150 })} className={step}>
+          <Plus size={11} />
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -253,6 +249,7 @@ export function SpaceActionPill({
   following,
   onFollow,
   onBeforeExport,
+  containerRef,
 }: {
   convId: string;
   actors: ReadonlyMap<string, SpaceActor>;
@@ -260,6 +257,10 @@ export function SpaceActionPill({
   following: string | null;
   onFollow: (id: string | null) => void;
   onBeforeExport: () => void;
+  /** This Space's own wrapper — scopes the export to its DOM subtree so the
+   * local Canvas tab's `.react-flow__viewport` (or another Space) is never
+   * picked up instead. */
+  containerRef: RefObject<HTMLElement | null>;
 }) {
   const rf = useReactFlow();
   const me = useCommsStore.use.me();
@@ -276,8 +277,13 @@ export function SpaceActionPill({
     // Deselect so outlines/resize handles don't bleed into the image.
     onBeforeExport();
     await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const container = containerRef.current;
+    if (!container) {
+      setBusy(null);
+      return;
+    }
     try {
-      const res = await exportCanvas(format, rf);
+      const res = await exportCanvas(format, rf, container);
       if (res === "ok") toast.success(`Exported ${format.toUpperCase()}`);
       else if (res === "empty") toast("Nothing to export — the canvas is empty.");
     } catch (e) {
@@ -313,8 +319,8 @@ export function SpaceActionPill({
   return (
     <div
       className={cn(
-        "absolute right-3 top-3 z-40 flex h-8 items-center gap-1 rounded-xl border border-white/10 px-1.5",
-        "bg-[var(--bg-secondary)]/70 shadow-[var(--shadow-overlay)] backdrop-blur-2xl",
+        "absolute right-3 top-3 z-panel flex h-8 items-center gap-1 rounded-xl border border-border-subtle px-1.5",
+        "bg-[var(--card)]/70 shadow-md backdrop-blur-2xl",
       )}
     >
       {/* Presence */}
@@ -324,23 +330,26 @@ export function SpaceActionPill({
             const riding = following === a.id;
             return (
               <Tooltip key={a.id}>
-                <TooltipTrigger asChild>
-                  {/* The avatar IS the follow toggle (the web's roster): one
-                      press rides their camera, another hands it back. */}
-                  <button
-                    type="button"
-                    aria-pressed={riding}
-                    onClick={() => onFollow(riding ? null : a.id)}
-                    className={cn(
-                      "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
-                      riding &&
-                        "z-10 scale-110 shadow-[0_0_0_2px_var(--bg-secondary),0_0_0_4px_var(--accent-primary)]",
-                    )}
-                    style={{ ["--tw-ring-color" as string]: a.colour }}
-                  >
-                    <CommsAvatar member={memberOf(a.id)} size={18} className="rounded-full" />
-                  </button>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    /* The avatar IS the follow toggle (the web's roster): one
+                      press rides their camera, another hands it back. */
+                    <button
+                      type="button"
+                      aria-pressed={riding}
+                      aria-label={`Follow ${nameOf(a)}`}
+                      onClick={() => onFollow(riding ? null : a.id)}
+                      className={cn(
+                        "inline-flex cursor-pointer rounded-full ring-2 transition-transform hover:z-10 hover:scale-110",
+                        riding &&
+                          "z-10 scale-110 ring-2 ring-primary ring-offset-2 ring-offset-card",
+                      )}
+                      style={{ ["--tw-ring-color" as string]: a.colour }}
+                    >
+                      <CommsAvatar member={memberOf(a.id)} size={18} className="rounded-full" />
+                    </button>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {riding ? `Stop following ${nameOf(a)}` : `Follow ${nameOf(a)}`}
                 </TooltipContent>
@@ -348,31 +357,35 @@ export function SpaceActionPill({
             );
           })}
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <CommsAvatar
-                  member={me ? memberOf(me) : null}
-                  size={18}
-                  className="rounded-full ring-2 ring-[var(--bg-secondary)]"
-                />
-              </span>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <span className="inline-flex">
+                  <CommsAvatar
+                    member={me ? memberOf(me) : null}
+                    size={18}
+                    className="rounded-full ring-2 ring-[var(--card)]"
+                  />
+                </span>
+              }
+            />
             <TooltipContent side="bottom" sideOffset={4}>
               You
             </TooltipContent>
           </Tooltip>
         </div>
         {peers.length > 4 && (
-          <span className="pl-1.5 text-[9.5px] text-text-tertiary">+{peers.length - 4}</span>
+          <span className="pl-1.5 text-2xs text-muted-foreground">+{peers.length - 4}</span>
         )}
         {followers.length > 0 && (
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--accent-primary)]/15 px-1.5 text-[9.5px] font-medium text-[var(--accent-primary)]">
-                <Eye size={10} />
-                {followers.length}
-              </span>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <span className="ml-1.5 flex h-[18px] items-center gap-1 rounded-full bg-[var(--primary)]/15 px-1.5 text-2xs font-medium text-[var(--primary)]">
+                  <Eye size={10} />
+                  {followers.length}
+                </span>
+              }
+            />
             <TooltipContent side="bottom" sideOffset={4}>
               {followers.length === 1
                 ? `${nameOf(followers[0])} is following you`
@@ -382,66 +395,52 @@ export function SpaceActionPill({
         )}
       </div>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={openInWeb}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"
-          >
-            <ExternalLink size={12} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" sideOffset={4}>
-          Open in web
-        </TooltipContent>
-      </Tooltip>
+      <Hint label="Open in web">
+        <button
+          type="button"
+          onClick={openInWeb}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
+        >
+          <ExternalLink size={12} />
+        </button>
+      </Hint>
 
-      <div className="mx-0.5 h-4 w-px bg-white/10" />
+      <div className="mx-0.5 h-4 w-px bg-border-subtle" />
 
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Popover.Trigger asChild>
+        <Hint label="Export canvas">
+          <Popover.Trigger
+            render={
               <button
                 type="button"
                 disabled={!!busy}
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-60"
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground disabled:opacity-60"
               >
                 {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
               </button>
-            </Popover.Trigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
-            Export canvas
-          </TooltipContent>
-        </Tooltip>
+            }
+          />
+        </Hint>
         <Popover.Portal>
-          <Popover.Content
-            align="end"
-            sideOffset={6}
-            style={{
-              zIndex: 9999,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-            }}
-            className="atlas-panel-in-tl select-none overflow-hidden rounded-xl border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl"
-          >
-            <div className="flex w-[140px] flex-col py-1">
-              {FORMATS.map((f) => (
-                <button
-                  key={f.format}
-                  type="button"
-                  onClick={() => void run(f.format)}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
-                >
-                  <f.icon size={12} className="shrink-0 text-text-tertiary" />
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </Popover.Content>
+          <Popover.Positioner className="z-popover" align="end" sideOffset={6}>
+            <Popover.Popup className="atlas-panel-in-tl inset-highlight shadow-md select-none overflow-hidden rounded-xl border border-border-subtle bg-[var(--card)]/95 backdrop-blur-2xl">
+              <div className="flex w-[140px] flex-col py-1">
+                {FORMATS.map((f) => (
+                  <button
+                    key={f.format}
+                    type="button"
+                    onClick={() => void run(f.format)}
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-secondary-foreground transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-foreground"
+                  >
+                    <f.icon size={12} className="shrink-0 text-muted-foreground" />
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
     </div>

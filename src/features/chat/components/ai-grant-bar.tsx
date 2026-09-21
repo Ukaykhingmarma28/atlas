@@ -3,6 +3,7 @@ import { Cloud, MoveUpRight, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isLocalOrg, useActiveOrganisation, useAiGrantStore } from "../stores/ai-grant-store";
@@ -105,10 +106,10 @@ export function AiGrantBar() {
         title="Atlas Agent works with organisations synced to your account"
       >
         <span className="min-w-0 truncate">
-          <span className="font-semibold text-[var(--text-primary)]">
+          <span className="font-semibold text-[var(--foreground)]">
             {orgName ?? "This organisation"}
           </span>
-          <span className="text-[var(--text-tertiary)]">
+          <span className="text-[var(--muted-foreground)]">
             {" "}
             is local — sync it to use Atlas Agent
           </span>
@@ -129,14 +130,15 @@ export function AiGrantBar() {
             <Cloud size={11} className={cn(syncing && "animate-pulse")} />
             {syncing ? "Syncing…" : "Turn on sync"}
           </button>
-          <button
-            type="button"
-            onClick={() => dismiss()}
-            title="Dismiss"
-            className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-          >
-            <X size={12} />
-          </button>
+          <Hint label="Dismiss" side="top">
+            <button
+              type="button"
+              onClick={() => dismiss()}
+              className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+            >
+              <X size={12} />
+            </button>
+          </Hint>
         </div>
       </div>
     );
@@ -147,10 +149,10 @@ export function AiGrantBar() {
   return (
     <div data-testid="ai-grant-bar" className={STRIP} title={entitlement.message}>
       <span className="min-w-0 truncate">
-        <span className="font-semibold text-[var(--text-primary)]">
+        <span className="font-semibold text-[var(--foreground)]">
           {orgName ?? "This organisation"}
         </span>
-        <span className="text-[var(--text-tertiary)]"> doesn&apos;t have AI grants</span>
+        <span className="text-[var(--muted-foreground)]"> doesn&apos;t have AI grants</span>
       </span>
 
       <div className="flex shrink-0 items-center gap-0.5">
@@ -175,14 +177,15 @@ export function AiGrantBar() {
           Request
         </button>
 
-        <button
-          type="button"
-          onClick={() => dismiss()}
-          title="Dismiss"
-          className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          <X size={12} />
-        </button>
+        <Hint label="Dismiss" side="top">
+          <button
+            type="button"
+            onClick={() => dismiss()}
+            className="shrink-0 cursor-pointer rounded p-0.5 text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+          >
+            <X size={12} />
+          </button>
+        </Hint>
       </div>
     </div>
   );

@@ -46,9 +46,8 @@ pub mod record;
 // ─── Ported-from-Cersei modules ───────────────────────────────────────────────
 //
 // These were `cersei-embeddings` / `cersei-memory` until 2026-08-22; they are
-// now Atlas's own. `tests/cersei_parity.rs` was written against the SDK
-// versions and passes unchanged against these, which is the evidence that the
-// swap did not move observable behaviour.
+// now Atlas's own. `tests/behaviour.rs` pins their observable behaviour (it
+// was written against the SDK versions and passed unchanged after the port).
 pub mod embedding;
 pub mod session;
 
@@ -412,16 +411,15 @@ const _: fn() = || {
 mod index_corpus_tests {
     use super::*;
 
-    fn tmp_root(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "atlas-memory-index-{}-{}",
-            std::process::id(),
-            name
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
+    /// deletes the directory, panic or not.
+    fn tmp_root(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("atlas-memory-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
     }
 
     fn find_model_dir() -> Option<PathBuf> {
@@ -445,8 +443,8 @@ mod index_corpus_tests {
     /// regression in that bookkeeping is caught without an embedder.
     #[test]
     fn diff_drives_manifest_and_store_without_embedding() {
-        let root = tmp_root("plumbing");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("plumbing");
+        let mut engine = MemoryEngine::open(root);
 
         // Seed: two docs already indexed (simulate a prior pass).
         let v = |seed: usize| -> Vec<f32> {
@@ -495,8 +493,6 @@ mod index_corpus_tests {
         }
         assert_eq!(engine.store.len(), 2);
         assert!(engine.manifest.key_for("a").is_none());
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn axis(seed: usize) -> Vec<f32> {
@@ -509,7 +505,7 @@ mod index_corpus_tests {
     /// hands those vectors back, so neither it nor the indexer embeds them again.
     #[test]
     fn embedded_docs_are_reused_only_while_their_content_is_unchanged() {
-        let root = tmp_root("reuse");
+        let (_tmp, root) = tmp_root("reuse");
         let mut engine = MemoryEngine::open(root.clone());
         engine
             .add_embedded(&[(doc("note:a", "Title\n\nbody a", "h_a"), axis(3))])
@@ -529,14 +525,13 @@ mod index_corpus_tests {
             .diff(&[("note:a".to_string(), "h_a".to_string())]);
         assert!(diff.add.is_empty() && diff.update.is_empty());
 
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// Adding the Graph's vectors never drops docs the indexer already holds
     /// (unlike `index_corpus`, which deletes whatever the given corpus lacks).
     #[test]
     fn adding_embedded_docs_keeps_everything_else() {
-        let root = tmp_root("keep");
+        let (_tmp, root) = tmp_root("keep");
         let mut engine = MemoryEngine::open(root.clone());
         engine
             .add_embedded(&[(doc("codebase:src/a.rs", "a", "h1"), axis(1))])
@@ -554,14 +549,13 @@ mod index_corpus_tests {
         assert_eq!(engine.cached_vector("note:b", "h3"), Some(axis(9)));
         assert_eq!(engine.store.len(), 2);
 
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// Natural-language query over the indexed memory: best first, by doc id,
     /// skipping the corpora the caller excludes (the Graph omits the codebase).
     #[test]
     fn search_ids_ranks_docs_and_skips_excluded_corpora() {
-        let root = tmp_root("search");
+        let (_tmp, root) = tmp_root("search");
         let mut engine = MemoryEngine::open(root.clone());
         let mut near_code = doc("codebase:src/x.rs", "x", "hx");
         near_code.corpus = "codebase".into();
@@ -580,25 +574,22 @@ mod index_corpus_tests {
         assert_eq!(ids, vec!["note:y", "claude:z"]);
         assert!(hits[0].1 > hits[1].1);
 
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// Full `index_corpus` against a real MiniLM model — only runs when
-    /// `ATLAS_MINILM_DIR` points at an installed model (skips cleanly otherwise,
-    /// no network). Asserts the add/update/delete counts and that re-running with
-    /// an identical corpus re-embeds nothing.
+    /// Full `index_corpus` against a real MiniLM model. Ignored by default; run
+    /// with `ATLAS_MINILM_DIR` pointing at an installed model and `--ignored`
+    /// (no network). Asserts the add/update/delete counts and that re-running
+    /// with an identical corpus re-embeds nothing.
     #[test]
+    #[ignore = "needs ATLAS_MINILM_DIR"]
     fn index_corpus_end_to_end_when_model_available() {
-        let Some(model) = find_model_dir() else {
-            eprintln!("skipping: no MiniLM model dir (set ATLAS_MINILM_DIR)");
-            return;
-        };
+        let model = find_model_dir().expect("set ATLAS_MINILM_DIR to a MiniLM model dir");
         let embedder = atlas_embed::Embedder::load(&model).expect("load MiniLM");
         let provider = MiniLmProvider::new(std::sync::Arc::new(embedder), "all-MiniLM-L6-v2");
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        let root = tmp_root("e2e");
-        let mut engine = MemoryEngine::open(root.clone());
+        let (_tmp, root) = tmp_root("e2e");
+        let mut engine = MemoryEngine::open(root);
 
         let docs = vec![
             doc("a", "rust borrow checker notes", "h1"),
@@ -621,7 +612,5 @@ mod index_corpus_tests {
         assert_eq!(stats3.updated, 1);
         assert_eq!(stats3.deleted, 1);
         assert_eq!(engine.store.len(), 1);
-
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

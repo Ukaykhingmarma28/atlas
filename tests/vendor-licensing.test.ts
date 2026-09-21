@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,9 +32,33 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VENDOR = path.join(REPO_ROOT, "vendor", "codex");
+const TAURI_DIR = path.join(REPO_ROOT, "src-tauri");
+const BUNDLED_CODEX_LICENSE = "licenses/OpenAI-Codex-LICENSE.txt";
+const BUNDLED_CODEX_NOTICE = "licenses/OpenAI-Codex-NOTICE.txt";
 
 /** The marker every modified vendored file carries. Grep-able on purpose. */
 const CHANGE_NOTICE = "Modified by Atlas";
+
+/**
+ * The second body of vendored third-party code: Material Icon Theme, bundled
+ * as Atlas's default icon theme (theme-system decision 12).
+ *
+ * MIT rather than Apache-2.0, so the obligation is shorter — the copyright
+ * notice and the licence text travel with every copy — but it fails the same
+ * silent way. A repo file reaches no recipient, and nothing in a build goes red
+ * when the `.app` ships the icons without the licence that permits them.
+ *
+ * The rest of this file guards a *fork point*; these guard a *snapshot*. The
+ * shared rule is that the licence never gets separated from what it covers.
+ */
+const MATERIAL_VENDOR = path.join(
+  REPO_ROOT,
+  "crates",
+  "atlas-icon-theme",
+  "vendor",
+  "material-icon-theme",
+);
+const BUNDLED_MATERIAL_LICENSE = "licenses/Material-Icon-Theme-LICENSE.txt";
 
 function read(file: string): string {
   return readFileSync(file, "utf8");
@@ -121,9 +145,20 @@ describe("§4(a) and §4(d) — the licence and NOTICE reach recipients", () => 
     expect(resources, "bundle.resources missing").toBeDefined();
 
     const entries = Array.isArray(resources) ? resources : Object.keys(resources);
-    const joined = entries.join("\n");
-    expect(joined, "vendored LICENSE not bundled").toMatch(/vendor\/codex\/LICENSE/);
-    expect(joined, "vendored NOTICE not bundled").toMatch(/vendor\/codex\/NOTICE/);
+    expect(entries, "vendored LICENSE not bundled").toContain(BUNDLED_CODEX_LICENSE);
+    expect(entries, "vendored NOTICE not bundled").toContain(BUNDLED_CODEX_NOTICE);
+  });
+
+  it("bundles byte-identical copies of the vendored LICENSE and NOTICE", () => {
+    // Windows WiX cannot bundle two source files named LICENSE. The bundle
+    // therefore ships explicitly named copies; keep the legal texts tied to
+    // the canonical vendored files rather than merely checking their paths.
+    expect(read(path.join(TAURI_DIR, BUNDLED_CODEX_LICENSE))).toBe(
+      read(path.join(VENDOR, "LICENSE")),
+    );
+    expect(read(path.join(TAURI_DIR, BUNDLED_CODEX_NOTICE))).toBe(
+      read(path.join(VENDOR, "NOTICE")),
+    );
   });
 
   it("bundles paths that actually exist", () => {
@@ -135,7 +170,7 @@ describe("§4(a) and §4(d) — the licence and NOTICE reach recipients", () => 
     for (const src of sources) {
       if (src.includes("*")) continue; // globs are the bundler's business
       expect(
-        existsSync(path.resolve(REPO_ROOT, "src-tauri", src)),
+        existsSync(path.resolve(TAURI_DIR, src)),
         `bundle resource does not exist: ${src}`,
       ).toBe(true);
     }
@@ -190,5 +225,57 @@ describe("§4(c) and the rename sweep — the rules are written down", () => {
       new RegExp(CHANGE_NOTICE),
     );
     expect(context, "trademark rule (§6) not signposted for the rename").toMatch(/trademark|§6/i);
+  });
+});
+
+describe("the bundled Material Icon Theme keeps its MIT notice", () => {
+  it("keeps the licence beside the icons it covers", () => {
+    const license = read(path.join(MATERIAL_VENDOR, "LICENSE.txt"));
+    expect(license).toMatch(/MIT License/i);
+    expect(license, "the copyright line is the part MIT actually requires").toMatch(
+      /Copyright \(c\) \d{4} Material Extensions/,
+    );
+  });
+
+  it("records where the assets came from", () => {
+    // Upstream, registry, version and date. Without it the next person to
+    // update the icons cannot tell what they are updating *from*.
+    const attribution = read(path.join(MATERIAL_VENDOR, "ATTRIBUTION.txt"));
+    expect(attribution).toMatch(/material-extensions\/vscode-material-icon-theme/);
+    expect(attribution).toMatch(/open-vsx\.org/);
+    expect(attribution).toMatch(/\d+\.\d+\.\d+/);
+    expect(attribution, "the CC BY-SA exclusion is a decision, not a preference").toMatch(
+      /vscode-icons/,
+    );
+  });
+
+  it("ships the licence in the built app bundle", () => {
+    const conf = JSON.parse(read(path.join(REPO_ROOT, "src-tauri", "tauri.conf.json")));
+    const resources = conf.bundle?.resources;
+    const entries = Array.isArray(resources) ? resources : Object.keys(resources);
+    expect(entries, "Material Icon Theme licence not bundled").toContain(BUNDLED_MATERIAL_LICENSE);
+  });
+
+  it("bundles a byte-identical copy", () => {
+    expect(read(path.join(TAURI_DIR, BUNDLED_MATERIAL_LICENSE))).toBe(
+      read(path.join(MATERIAL_VENDOR, "LICENSE.txt")),
+    );
+  });
+
+  it("still has the icons the licence covers", () => {
+    // A licence with nothing under it, or icons with no licence, are the same
+    // failure seen from either end.
+    const icons = readdirSync(path.join(MATERIAL_VENDOR, "icons")).filter((f) =>
+      f.endsWith(".svg"),
+    );
+    expect(icons.length).toBeGreaterThan(1000);
+    expect(existsSync(path.join(MATERIAL_VENDOR, "dist", "material-icons.json"))).toBe(true);
+  });
+
+  it("does not vendor vscode-icons, whose icons are CC BY-SA", () => {
+    // Decision 12 names it explicitly. CC BY-SA would put a share-alike
+    // obligation on anything Atlas ships alongside it, which MIT does not.
+    const vendored = readdirSync(path.join(REPO_ROOT, "crates", "atlas-icon-theme", "vendor"));
+    expect(vendored).not.toContain("vscode-icons");
   });
 });

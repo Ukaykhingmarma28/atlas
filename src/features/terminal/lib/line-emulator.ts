@@ -55,23 +55,39 @@ interface HotRow {
 
 // ── SGR ────────────────────────────────────────────────────────────────────
 
+/**
+ * The 16 ANSI slots, as the theme keys that define them.
+ *
+ * Emitted as a `--atlas-terminal-ansi-*` custom property rather than as a
+ * resolved hex, which is the one thing that makes a scrolled-back block follow
+ * the theme. Blocks
+ * are IMMUTABLE by design: a committed `ResolvedLine` keeps its object identity
+ * for ever so React can memoise on it, and `STYLE_CACHE` interns one style
+ * object per SGR signature. Baking a colour in would freeze every line already
+ * on screen at the palette it was printed under, and no repaint could reach it.
+ * A custom property is late-bound: the applier rewrites `:root` and the whole
+ * scrollback recolours with zero React work.
+ *
+ * `terminal-theme.ts` resolves the same keys for xterm, which cannot take a
+ * `var()`. The two renderers agree because they read one set of keys.
+ */
 const PALETTE_16 = [
-  "#1a1a1a",
-  "#e06c75",
-  "#98c379",
-  "#e5c07b",
-  "#61afef",
-  "#c678dd",
-  "#56b6c2",
-  "#cccccc",
-  "#5c6370",
-  "#e06c75",
-  "#98c379",
-  "#e5c07b",
-  "#61afef",
-  "#c678dd",
-  "#56b6c2",
-  "#ffffff",
+  "var(--atlas-terminal-ansi-black)",
+  "var(--atlas-terminal-ansi-red)",
+  "var(--atlas-terminal-ansi-green)",
+  "var(--atlas-terminal-ansi-yellow)",
+  "var(--atlas-terminal-ansi-blue)",
+  "var(--atlas-terminal-ansi-magenta)",
+  "var(--atlas-terminal-ansi-cyan)",
+  "var(--atlas-terminal-ansi-white)",
+  "var(--atlas-terminal-ansi-bright-black)",
+  "var(--atlas-terminal-ansi-bright-red)",
+  "var(--atlas-terminal-ansi-bright-green)",
+  "var(--atlas-terminal-ansi-bright-yellow)",
+  "var(--atlas-terminal-ansi-bright-blue)",
+  "var(--atlas-terminal-ansi-bright-magenta)",
+  "var(--atlas-terminal-ansi-bright-cyan)",
+  "var(--atlas-terminal-ansi-bright-white)",
 ];
 
 function color256(n: number): string {

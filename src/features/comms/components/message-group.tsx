@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Popover } from "@base-ui/react/popover";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Copy,
   CornerUpRight,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { copyText } from "@/lib/clipboard";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -176,7 +177,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <div
       data-msg-id={m.id}
-      className="group/msg relative flex gap-2 rounded px-1 py-px hover:bg-bg-hover [contain:layout_style]"
+      className="group/msg relative flex gap-2 rounded px-1 py-px hover:bg-element-hover [contain:layout_style]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -186,7 +187,7 @@ const MessageRow = memo(function MessageRow({
         ) : (
           // The gutter is never empty-looking on hover: a continuation
           // reveals its own time where the avatar would be.
-          <span className="hidden justify-end pr-0.5 pt-[3px] text-[9.5px] tabular-nums leading-none text-text-ghost group-hover/msg:flex">
+          <span className="hidden justify-end pr-0.5 pt-[3px] text-2xs tabular-nums leading-none text-disabled group-hover/msg:flex">
             {formatClock(m.created_at)}
           </span>
         )}
@@ -204,10 +205,10 @@ const MessageRow = memo(function MessageRow({
 
         {first && (
           <div className="flex items-baseline gap-1.5">
-            <span className="truncate text-[12px] font-semibold text-text-primary">
+            <span className="truncate text-sm font-semibold text-foreground">
               {showAuthor ? (author?.name ?? "Unknown") : (author?.name ?? "You")}
             </span>
-            <span className="shrink-0 text-[10px] tabular-nums text-text-ghost">
+            <span className="shrink-0 text-2xs tabular-nums text-disabled">
               {formatClock(m.created_at)}
             </span>
           </div>
@@ -250,7 +251,7 @@ function MessageContent({
   // The row survives a delete so a reply pointing at it still renders; the body
   // is genuinely gone from the server, so this is a tombstone, not a hide.
   if (message.deleted) {
-    return <div className="text-[12.5px] italic text-text-ghost">Message deleted</div>;
+    return <div className="text-base italic text-disabled">Message deleted</div>;
   }
 
   const pending = message.status === "sending";
@@ -265,7 +266,7 @@ function MessageContent({
             body={message.body}
             members={members}
             me={me}
-            className="min-w-0 flex-1 text-text-secondary"
+            className="min-w-0 flex-1 text-secondary-foreground"
           />
         </div>
       )}
@@ -279,7 +280,7 @@ function MessageContent({
       )}
 
       {(message.edited_at || pinned || pending || failed) && (
-        <div className="mt-0.5 flex items-center gap-1.5 text-[9.5px] text-text-ghost">
+        <div className="mt-0.5 flex items-center gap-1.5 text-2xs text-disabled">
           {pinned && <Pin size={9} />}
           {message.edited_at && <span className="italic">edited</span>}
           {/* Two rungs only — nothing on this wire reports that a message
@@ -315,14 +316,14 @@ function ReplyLine({
       disabled={deleted}
       title={deleted ? undefined : "Jump to message"}
       className={cn(
-        "group/reply flex w-full min-w-0 items-center gap-1 pb-0.5 text-left text-[10.5px] text-text-tertiary",
+        "group/reply flex w-full min-w-0 items-center gap-1 pb-0.5 text-left text-xs text-muted-foreground",
         !deleted && "cursor-pointer",
       )}
     >
       <CornerUpRight size={10} className="shrink-0 -scale-y-100 opacity-50" />
       <span
         className={cn(
-          "shrink-0 font-medium text-text-secondary",
+          "shrink-0 font-medium text-secondary-foreground",
           !deleted && "group-hover/reply:underline",
         )}
       >
@@ -377,10 +378,10 @@ function ReactionRow({
           title={c.userIds.map((id) => members.get(id)?.name ?? "Unknown").join(", ")}
           onClick={() => onReact(message.id, c.emoji, !c.mine)}
           className={cn(
-            "flex h-[21px] items-center gap-1 rounded-full border px-1.5 text-[11px] leading-none transition-colors cursor-pointer",
+            "flex h-[21px] items-center gap-1 rounded-full border px-1.5 text-xs leading-none transition-colors cursor-pointer",
             c.mine
-              ? "border-[var(--comms-unread)]/60 bg-[var(--comms-unread)]/15 text-text-primary"
-              : "border-border-default bg-bg-elevated text-text-secondary hover:bg-bg-hover",
+              ? "border-[var(--atlas-status-success-foreground)]/60 bg-[var(--atlas-status-success-foreground)]/15 text-foreground"
+              : "border-border bg-card text-secondary-foreground hover:bg-element-hover",
           )}
         >
           <span>{c.emoji}</span>
@@ -451,9 +452,9 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
       return (
         <div
           style={box}
-          className="flex w-full max-w-[520px] items-center justify-center rounded-lg border border-border-subtle bg-bg-elevated"
+          className="flex w-full max-w-[520px] items-center justify-center rounded-lg border border-border-subtle bg-card"
         >
-          <Loader2 size={14} className="animate-spin text-text-ghost" />
+          <Loader2 size={14} className="animate-spin text-disabled" />
         </div>
       );
     }
@@ -464,7 +465,7 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
           controls
           preload="metadata"
           style={box}
-          className="w-full max-w-[520px] rounded-lg border border-border-subtle bg-black"
+          className="w-full max-w-[520px] rounded-lg border border-border-subtle bg-popover"
         />
       );
     }
@@ -474,7 +475,7 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
           type="button"
           onClick={() => openConversationMedia(convId, attachment.id)}
           style={box}
-          className="block w-full max-w-[520px] overflow-hidden rounded-lg border border-border-subtle bg-bg-elevated cursor-zoom-in"
+          className="block w-full max-w-[520px] overflow-hidden rounded-lg border border-border-subtle bg-card cursor-zoom-in"
         >
           <img
             src={convertFileSrc(path)}
@@ -503,7 +504,9 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
     <div
       role="button"
       tabIndex={0}
-      title={`Download ${attachment.filename}`}
+      // A name rather than a native `title`: the title would also show over
+      // the action buttons inside, on top of their own tooltips.
+      aria-label={`Download ${attachment.filename}`}
       onClick={() => {
         if (!downloading) void saveAttachment(attachment);
       }}
@@ -513,55 +516,59 @@ function AttachmentView({ attachment, convId }: { attachment: ChatAttachment; co
           void saveAttachment(attachment);
         }
       }}
-      className="group/file flex max-w-[420px] cursor-pointer items-center gap-2 rounded-lg border border-border-default bg-bg-elevated px-2.5 py-2 transition-colors hover:border-border-strong hover:bg-bg-hover"
+      className="group/file flex max-w-[420px] cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 transition-colors hover:border-border-strong hover:bg-element-hover"
     >
       {progress ? (
-        <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[var(--comms-unread)]">
+        <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[var(--atlas-status-success-foreground)]">
           <ArcProgress got={progress.got} total={progress.total} />
         </span>
       ) : (
-        <FileText size={15} className="shrink-0 text-text-tertiary" />
+        <FileText size={15} className="shrink-0 text-muted-foreground" />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] text-text-secondary">
+        <span className="block truncate text-sm text-secondary-foreground">
           {attachment.filename}
         </span>
-        <span className="block text-[10px] tabular-nums text-text-ghost">
+        <span className="block text-2xs tabular-nums text-disabled">
           {formatBytes(attachment.bytes)}
           {failed && " · could not load"}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/file:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          title="Copy link"
-          onClick={(e) => {
-            e.stopPropagation();
-            void copyAttachmentLink(attachment);
-          }}
-          className={fileActionBtn}
-        >
-          <LinkIcon size={12} />
-        </button>
-        <button
-          type="button"
-          title="Download"
-          disabled={downloading}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!downloading) void saveAttachment(attachment);
-          }}
-          className={fileActionBtn}
-        >
-          <Download size={12} />
-        </button>
-      </span>
+      <HintGroup>
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/file:opacity-100 focus-within:opacity-100">
+          <HintItem label="Copy link">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void copyAttachmentLink(attachment);
+              }}
+              className={fileActionBtn}
+            >
+              <LinkIcon size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="Download">
+            <button
+              type="button"
+              disabled={downloading}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!downloading) void saveAttachment(attachment);
+              }}
+              className={fileActionBtn}
+            >
+              <Download size={12} />
+            </button>
+          </HintItem>
+        </span>
+      </HintGroup>
     </div>
   );
 }
 
 const fileActionBtn =
-  "flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-active hover:text-text-primary cursor-pointer";
+  "flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-active hover:text-foreground cursor-pointer";
 
 /** Save an attachment wherever the user wants it. */
 export async function saveAttachment(attachment: ChatAttachment): Promise<void> {
@@ -630,100 +637,106 @@ function HoverActions({
   }, [forceShow, onOpenChange]);
 
   return (
-    <div
-      className={cn(
-        "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border-default bg-bg-overlay p-0.5 shadow-[var(--shadow-md)]",
-        "opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100",
-        forceShow && "opacity-100",
-      )}
-    >
-      <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-        <Popover.Trigger asChild>
-          <button type="button" title="React" className={actionBtn}>
-            <SmilePlus size={12} />
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            align="end"
-            sideOffset={6}
-            className="z-[var(--z-modal)] w-[212px] rounded-lg border border-border-default bg-bg-overlay p-1.5 shadow-[var(--shadow-overlay)] animate-scale-in"
-          >
-            <div className="grid grid-cols-7 gap-0.5">
-              {/* Built FROM the allowlist, so no button here can be refused. */}
-              {CHAT_REACTION_EMOJI.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => {
-                    onReact(e);
-                    setPickerOpen(false);
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-bg-hover cursor-pointer"
-                >
-                  {e}
+    <HintGroup side="top">
+      <div
+        className={cn(
+          "absolute -top-2.5 right-2 z-10 flex items-center gap-px rounded-md border border-border bg-popover p-0.5 shadow-md",
+          "opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100",
+          forceShow && "opacity-100",
+        )}
+      >
+        <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
+          <HintItem label="React">
+            <Popover.Trigger
+              render={
+                <button type="button" className={actionBtn}>
+                  <SmilePlus size={12} />
                 </button>
-              ))}
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+              }
+            />
+          </HintItem>
+          <Popover.Portal>
+            <Popover.Positioner className="z-modal" side="top" align="end" sideOffset={6}>
+              <Popover.Popup className="w-[212px] rounded-lg border border-border bg-popover p-1.5 shadow-md origin-[var(--transform-origin)] animate-scale-in">
+                <div className="grid grid-cols-7 gap-0.5">
+                  {/* Built FROM the allowlist, so no button here can be refused. */}
+                  {CHAT_REACTION_EMOJI.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => {
+                        onReact(e);
+                        setPickerOpen(false);
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded text-md transition-colors hover:bg-element-hover cursor-pointer"
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
 
-      <button type="button" title="Reply" onClick={onReply} className={actionBtn}>
-        <CornerUpRight size={12} className="-scale-y-100" />
-      </button>
-
-      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenu.Trigger asChild>
-          <button type="button" title="More" className={actionBtn}>
-            <MoreHorizontal size={12} />
+        <HintItem label="Reply">
+          <button type="button" onClick={onReply} className={actionBtn}>
+            <CornerUpRight size={12} className="-scale-y-100" />
           </button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            side="top"
-            align="end"
-            sideOffset={6}
-            className="z-[var(--z-modal)] min-w-[168px] rounded-lg border border-border-default bg-bg-overlay p-1 shadow-[var(--shadow-overlay)] animate-scale-in"
-          >
-            <DropdownMenu.Item onSelect={onCopy} className={menuItem}>
-              <Copy size={12} /> Copy text
-            </DropdownMenu.Item>
-            {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
-            <DropdownMenu.Item onSelect={onPin} className={menuItem}>
-              {pinned ? <PinOff size={12} /> : <Pin size={12} />}
-              {pinned ? "Unpin for everyone" : "Pin for everyone"}
-            </DropdownMenu.Item>
-            {(canEdit || canDelete) && (
-              <DropdownMenu.Separator className="my-1 h-px bg-border-default" />
-            )}
-            {/* Author only — an admin can delete but never rewrite. */}
-            {canEdit && (
-              <DropdownMenu.Item onSelect={onEdit} className={menuItem}>
-                <Pencil size={12} /> Edit
-              </DropdownMenu.Item>
-            )}
-            {canDelete && (
-              <DropdownMenu.Item
-                onSelect={onDelete}
-                className={cn(menuItem, "text-error data-[highlighted]:text-error")}
-              >
-                <Trash2 size={12} /> Delete
-              </DropdownMenu.Item>
-            )}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    </div>
+        </HintItem>
+
+        <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <HintItem label="More">
+            <DropdownMenu.Trigger
+              render={
+                <button type="button" className={actionBtn}>
+                  <MoreHorizontal size={12} />
+                </button>
+              }
+            />
+          </HintItem>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Positioner className="z-modal" side="top" align="end" sideOffset={6}>
+              <DropdownMenu.Popup className="min-w-[168px] rounded-lg border border-border bg-popover p-1 shadow-md origin-[var(--transform-origin)] animate-scale-in">
+                <DropdownMenu.Item onClick={onCopy} className={menuItem}>
+                  <Copy size={12} /> Copy text
+                </DropdownMenu.Item>
+                {/* Pins are SHARED, not personal — anyone's pin is everyone's. */}
+                <DropdownMenu.Item onClick={onPin} className={menuItem}>
+                  {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                  {pinned ? "Unpin for everyone" : "Pin for everyone"}
+                </DropdownMenu.Item>
+                {(canEdit || canDelete) && (
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                )}
+                {/* Author only — an admin can delete but never rewrite. */}
+                {canEdit && (
+                  <DropdownMenu.Item onClick={onEdit} className={menuItem}>
+                    <Pencil size={12} /> Edit
+                  </DropdownMenu.Item>
+                )}
+                {canDelete && (
+                  <DropdownMenu.Item
+                    onClick={onDelete}
+                    className={cn(menuItem, "text-error data-[highlighted]:text-error")}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </DropdownMenu.Item>
+                )}
+              </DropdownMenu.Popup>
+            </DropdownMenu.Positioner>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+    </HintGroup>
   );
 }
 
 const actionBtn =
-  "flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer";
+  "flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer";
 
 const menuItem =
-  "flex items-center gap-2 rounded px-2 py-1.5 text-[11.5px] text-text-secondary outline-none transition-colors data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-primary cursor-pointer";
+  "flex items-center gap-2 rounded px-2 py-1.5 text-sm text-secondary-foreground outline-none transition-colors data-[highlighted]:bg-element-hover data-[highlighted]:text-foreground cursor-pointer";
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

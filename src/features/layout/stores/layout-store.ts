@@ -4,7 +4,13 @@ import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import { useTerminalStore, type TerminalTabState } from "@/features/terminal/stores/terminal-store";
 import { invoke } from "@tauri-apps/api/core";
-import { ORG_SCOPED_TYPES, TAB_TYPES, type TabType } from "@/lib/constants";
+import {
+  LEGACY_TAB_TYPES,
+  ORG_SCOPED_TYPES,
+  TAB_TYPES,
+  migrateTabType,
+  type TabType,
+} from "@/lib/constants";
 import type { LayoutTemplate } from "../templates";
 
 export interface Tab {
@@ -19,9 +25,9 @@ export interface Tab {
   groupId?: string;
 }
 
-/** A workspace's saved tab/split view — everything needed to restore its
+/** A project's saved tab/split view — everything needed to restore its
  *  CenterPanel without touching disk. */
-export interface WorkspaceView {
+export interface ProjectView {
   tabs: Tab[];
   activeTabId: string | null;
   groupOrder: string[];
@@ -81,14 +87,14 @@ interface LayoutState {
     sidebarWidth: number;
   };
   tabs: Tab[];
-  /** Per-workspace saved view (tabs + split layout + history). The singular
+  /** Per-project saved view (tabs + split layout + history). The singular
    *  fields below (`tabs`/`groupOrder`/`activeByGroup`/…) are a live MIRROR of
-   *  the ACTIVE workspace's view; `viewsByWs` holds every *other* open
-   *  workspace's last-committed view so CenterPanel can keep their tab subtrees
+   *  the ACTIVE project's view; `viewsByWs` holds every *other* open
+   *  project's last-committed view so CenterPanel can keep their tab subtrees
    *  mounted (hidden) for instant switching. Committed on switch-away. Session
    *  state — excluded from the persist `partialize`. */
-  viewsByWs: Record<string, WorkspaceView>;
-  /** Which workspace the singular mirror currently represents. */
+  viewsByWs: Record<string, ProjectView>;
+  /** Which project the singular mirror currently represents. */
   currentViewWsId: string | null;
   /** Mirror of the FOCUSED column's active tab — kept in sync so the many
    *  existing readers (persistence, the title bar, etc.) don't need to know about
@@ -160,22 +166,22 @@ interface LayoutActions {
     /** Toggle Zen mode: a Knowledge │ Chat │ Browser 3-column split with the
      *  global side panels hidden; toggling again restores the prior layout. */
     toggleZenMode: () => void;
-    /** Apply a predefined layout template to the active workspace: set panels +
+    /** Apply a predefined layout template to the active project: set panels +
      *  split columns + a tab of each template type per column (reusing existing
      *  tabs; other open tabs are preserved in the first column). */
     applyLayoutTemplate: (template: LayoutTemplate) => void;
     saveEditorState: (projectPath: string) => void;
-    /** Awaitable variant of `saveEditorState` used by the workspace flush
+    /** Awaitable variant of `saveEditorState` used by the project flush
      *  coordinator — resolves only once the editor-state write hits disk. */
     flushEditorState: (projectPath: string) => Promise<void>;
     loadEditorState: (projectPath: string) => Promise<void>;
-    // ── Multi-workspace view (mounted-tabs fast switching) ──
+    // ── Multi-project view (mounted-tabs fast switching) ──
     /** Save the active mirror into `viewsByWs[wsId]` (on switch-away / quit). */
-    commitWorkspaceView: (wsId: string) => void;
+    commitProjectView: (wsId: string) => void;
     /** Load `viewsByWs[wsId]` (or a fresh welcome view) into the mirror. */
-    loadWorkspaceView: (wsId: string) => void;
-    /** Drop a workspace's saved view (on close). */
-    removeWorkspaceView: (wsId: string) => void;
+    loadProjectView: (wsId: string) => void;
+    /** Drop a project's saved view (on close). */
+    removeProjectView: (wsId: string) => void;
   };
 }
 
@@ -266,7 +272,7 @@ function pushTabHistory(s: LayoutState, id: string): void {
 }
 
 /** Ensure every tab sits in a live column, every column has a valid active
- *  tab, and focus is valid. Used after bulk group changes (workspace restore,
+ *  tab, and focus is valid. Used after bulk group changes (project restore,
  *  zen toggle). */
 function reconcileGroups(s: LayoutState): void {
   if (s.groupOrder.length === 0) s.groupOrder = [DEFAULT_GROUP];
@@ -294,12 +300,12 @@ const WELCOME_TAB = (groupId: string): Tab => ({
   groupId,
 });
 
-/** Per-workspace welcome tab id — distinct so two workspaces' welcome chats
+/** Per-project welcome tab id — distinct so two projects' welcome chats
  *  don't collide in `chat-store.sessions` (which keys by tab id). */
 const welcomeIdFor = (wsId: string): string => `welcome-chat-${wsId}`;
 
-/** A fresh single-welcome-tab view for a workspace never visited this session. */
-function welcomeView(wsId: string): WorkspaceView {
+/** A fresh single-welcome-tab view for a project never visited this session. */
+function welcomeView(wsId: string): ProjectView {
   const id = welcomeIdFor(wsId);
   return {
     tabs: [
@@ -322,8 +328,8 @@ function welcomeView(wsId: string): WorkspaceView {
   };
 }
 
-/** Snapshot the singular mirror fields into a portable WorkspaceView. */
-function captureView(s: LayoutState): WorkspaceView {
+/** Snapshot the singular mirror fields into a portable ProjectView. */
+function captureView(s: LayoutState): ProjectView {
   return {
     tabs: s.tabs.map((t) => ({ ...t })),
     activeTabId: s.activeTabId,
@@ -336,28 +342,47 @@ function captureView(s: LayoutState): WorkspaceView {
 }
 
 /**
+ * Save side of the per-project layout file: every closable tab (welcome-chat
+ * is the recreated baseline), minus org-scoped ones — this file is keyed by
+ * project path, and the same project is often open in several orgs.
+ * Exported for `org-tabs.test.ts`.
+ */
+export function persistsInEditorState(t: { type: TabType; closable: boolean }): boolean {
+  return t.closable && !ORG_SCOPED_TYPES.has(t.type);
+}
+
+/**
+ * Restore side: the type a saved tab comes back as, or `null` when it is
+ * dropped. Renamed types (mission-control → usage) map forward; a type this
+ * build no longer knows is dropped; and org-scoped types are dropped because
+ * files written before they were excluded can still carry them, pointing at
+ * another org's conversation. Exported for `org-tabs.test.ts`.
+ */
+export function restoredTabType(saved: string): TabType | null {
+  const type = migrateTabType(saved);
+  if (type === null || ORG_SCOPED_TYPES.has(type)) return null;
+  return type;
+}
+
+/**
  * The per-project layout file (`save_editor_state`). Split columns + their
  * tabs, and — since v3 — the pane trees of the terminal tabs, so a split
  * terminal layout comes back the way it was left. Rust stores the JSON
  * opaquely; the shape is ours.
  *
  * Returns null in zen mode: that is a transient overlay, and persisting its
- * layout over the real workspace would reopen the app in zen.
+ * layout over the real project would reopen the app in zen.
  */
 function buildEditorState(state: LayoutState) {
   if (state.zen) return null;
-  // Persist every closable tab (welcome-chat is the recreated baseline).
-  // Org-scoped tabs are excluded: this file is keyed by project path, and the
-  // same project is often open in several orgs.
-  const tabs = state.tabs
-    .filter((t) => t.closable && !ORG_SCOPED_TYPES.has(t.type))
-    .map((t) => ({
-      id: t.id,
-      type: t.type,
-      title: t.title,
-      data: t.data,
-      groupId: groupOf(t),
-    }));
+  // Closable, non-org-scoped tabs only (see `persistsInEditorState`).
+  const tabs = state.tabs.filter(persistsInEditorState).map((t) => ({
+    id: t.id,
+    type: t.type,
+    title: t.title,
+    data: t.data,
+    groupId: groupOf(t),
+  }));
   const terminalTabIds = tabs.filter((t) => t.type === "terminal").map((t) => t.id);
   return {
     version: 3,
@@ -370,8 +395,8 @@ function buildEditorState(state: LayoutState) {
   };
 }
 
-/** Load a WorkspaceView into the singular mirror fields. */
-function applyView(s: LayoutState, v: WorkspaceView): void {
+/** Load a ProjectView into the singular mirror fields. */
+function applyView(s: LayoutState, v: ProjectView): void {
   s.tabs = v.tabs.map((t) => ({ ...t }));
   s.activeTabId = v.activeTabId;
   s.groupOrder = [...v.groupOrder];
@@ -807,7 +832,7 @@ export const useLayoutStore = createSelectors(
               const tab = s.tabs.find((t) => t.id === id);
               if (tab) tab.dirty = dirty;
             }),
-          // Persist the whole workspace layout (split columns + their tabs) per
+          // Persist the whole project layout (split columns + their tabs) per
           // project so the AKB arrangement comes back on reopen. The Rust
           // save/load commands store the JSON opaquely, so the shape is ours.
           saveEditorState: (projectPath) => {
@@ -826,18 +851,18 @@ export const useLayoutStore = createSelectors(
               stateJson: JSON.stringify(data),
             }).catch(() => {});
           },
-          commitWorkspaceView: (wsId) =>
+          commitProjectView: (wsId) =>
             set((s) => {
               s.viewsByWs[wsId] = captureView(s);
               s.currentViewWsId = wsId;
             }),
-          loadWorkspaceView: (wsId) =>
+          loadProjectView: (wsId) =>
             set((s) => {
               const v = s.viewsByWs[wsId] ?? welcomeView(wsId);
               applyView(s, v);
               s.currentViewWsId = wsId;
             }),
-          removeWorkspaceView: (wsId) =>
+          removeProjectView: (wsId) =>
             set((s) => {
               delete s.viewsByWs[wsId];
             }),
@@ -882,15 +907,17 @@ export const useLayoutStore = createSelectors(
                   }
                   // Add the saved tabs into their columns.
                   for (const saved of data.tabs!) {
-                    if (s.tabs.find((t) => t.id === saved.id)) continue;
-                    // Already-written files can still carry these; they point
-                    // at another org's conversation and must not come back.
-                    if (ORG_SCOPED_TYPES.has(saved.type as TabType)) continue;
+                    // Renamed types map forward; unknown and org-scoped
+                    // types are dropped (see `restoredTabType`).
+                    const type = restoredTabType(saved.type);
+                    if (type === null) continue;
+                    const id = saved.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[saved.id] : saved.id;
+                    if (s.tabs.find((t) => t.id === id)) continue;
                     let gid = saved.groupId ?? DEFAULT_GROUP;
                     if (!s.groupOrder.includes(gid)) gid = s.groupOrder[0];
                     s.tabs.push({
-                      id: saved.id,
-                      type: saved.type as TabType,
+                      id,
+                      type,
                       title: saved.title,
                       closable: true,
                       dirty: false,
@@ -976,7 +1003,16 @@ export const useLayoutStore = createSelectors(
           // yields a permanent placeholder tab. Drop them, and repoint
           // activeTabId if it pointed at one.
           const validTypes = new Set<string>(TAB_TYPES);
-          const tabs = (p.tabs ?? current.tabs).filter((t) => validTypes.has(t.type));
+          const tabs = (p.tabs ?? current.tabs)
+            .map((t) => {
+              // Renamed types map forward (mission-control → usage) so the
+              // tab survives the rename instead of reading as removed.
+              const type = migrateTabType(t.type);
+              if (type === null || type === t.type) return t;
+              const id = t.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[t.id] : t.id;
+              return { ...t, id, type };
+            })
+            .filter((t) => validTypes.has(t.type));
           let activeTabId = p.activeTabId ?? current.activeTabId;
           if (activeTabId !== null && !tabs.some((t) => t.id === activeTabId)) {
             activeTabId = tabs[0]?.id ?? null;

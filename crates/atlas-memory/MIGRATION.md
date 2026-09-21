@@ -6,17 +6,18 @@ in this crate (the grafeo graph that briefly sat beside it was removed in #89).
 Covers the on-disk layout, the legacy migration, the feature flags, the
 retained rollback fallbacks, and the **manual** 3-agent runtime verification.
 
-Background: the originating plan (`plans/atlas-cersei-rag-replan.md`) and the
-frozen-seam spec (`crates/atlas-cersei/ARCHITECTURE.md` §6e) were deleted with
-the Cersei path (#54); the frozen seam is restated just below, and the native
-consumer is now `atlas-native-agent`'s `search_memory` dynamic tool.
+Background: the originating plan and seam spec lived under the Cersei SDK path
+and were deleted with it (#54). The seam as it stands today is below.
 
-> **Frozen seam — unchanged.** `MemDoc { title, source, text }` +
-> `MemorySearchFn(cwd, query, limit) -> Vec<MemDoc>` are untouched. All three
-> agents (Claude Code / Codex / Cersei) retrieve through the **one** closure
-> registered by `register_memory_search` — it takes **no agent-type parameter**,
-> so the path is agent-agnostic by construction. `atlas-memory` has **no Tauri**
-> dependency and **never** depends on `atlas-cersei`.
+> **The seam.** Every agent retrieves through `memory_retrieve::retrieve(app,
+> cwd, query, limit)` in `src-tauri`, which takes **no agent-type parameter**,
+> so the path is agent-agnostic by construction. The native agent reaches it
+> through its `search_memory` dynamic tool (the `MemorySearch` callback
+> installed with `atlas_native_agent::engine::memory::register_search`, returning
+> `MemDoc { title, source, text }`); every agent, ACP agents included, also gets
+> the pushed `--- RELEVANT PROJECT MEMORY ---` block on send when memory sharing
+> is enabled for the project. `atlas-memory` has **no Tauri** dependency and
+> depends on no agent crate.
 
 ---
 
@@ -81,7 +82,7 @@ by `record::legacy` (guarded by `.record-store-migrated`), not by the engine.
 |---|---|---|
 | `ATLAS_NATIVE_EXTRACTION` | **OFF** | A/B gate for native session extraction (see below). |
 | `ATLAS_GLOBAL_MEMORY_DIR` | unset → `~/.atlas/memory/` | Overrides the global memory dir. Used by tests so they never touch the real home dir. |
-| `ATLAS_MINILM_DIR` | unset | Points tests at an installed MiniLM model dir (contains `model.safetensors`). Model-gated tests **skip cleanly** when unset — no network download. |
+| `ATLAS_MINILM_DIR` | unset | Points tests at an installed MiniLM model dir (contains `model.safetensors`). Model-gated tests are `#[ignore = "needs ATLAS_MINILM_DIR"]`; run them with `-- --ignored`. They never download a model. |
 
 ### `ATLAS_NATIVE_EXTRACTION` (default OFF) — the A/B plan
 
@@ -92,7 +93,7 @@ Accepted truthy values: `1` / `true` / `on` / `yes` (case-insensitive).
   unless the project's summarizer is a BYOK provider). This is the validated
   write-side path.
 - **ON.** `TurnFinished` instead enqueues `Job::ExtractSession{cwd, agent, session}`
-  into the background `MemoryIndexer` for **all three** agents. The gates
+  into the background `MemoryIndexer` for **every** agent. The gates
   (`should_extract`: ≥20 msgs / ≥3 tool calls / no pending tool_use) decide whether
   to run; on pass, ONE BYOK call (off the hot path) distills the format-neutral
   transcript into `extracted/*.md`, then re-embeds into HNSW.
@@ -108,26 +109,23 @@ this migration.
 
 ---
 
-## 4. Retained rollback fallbacks (do NOT delete)
+## 4. What remains for rollback
 
-These legacy paths are kept on purpose as safety nets pending live runtime
-validation:
+The pre-HNSW brute-force retrieval (`memory_retrieve::retrieve_brute_force`)
+has been deleted; HNSW is the only retrieval path and there is no switch back.
+What remains:
 
-- **`memory_retrieve::retrieve_brute_force` / `retrieve_inner`** (in
-  `src-tauri/src/commands/memory_retrieve.rs`, `#[allow(dead_code)]`) — the
-  pre-HNSW O(n) cosine path over `atlas_embed::BruteForce`. To roll back, point
-  `memory_retrieve::retrieve` at `retrieve_brute_force` instead of the engine path.
 - **Archived legacy data** — the original `shared-memory/events.jsonl` (and any
   old `memory-index/index.json[.bak]`) remain on disk, unread.
 
-A Step-10 micro-benchmark (`atlas-memory`'s `bench_hnsw_vs_brute_force`) measured
-HNSW at roughly **two orders of magnitude** faster per query than the brute-force
-cosine on a few-thousand-vector corpus, which is why HNSW is the live path while
-brute-force stays only as a rollback.
+The micro-benchmark `bench_hnsw_vs_brute_force` (in `atlas-memory`'s
+`parity_bench` module, `#[ignore]`d; run with `--ignored --nocapture`) measured
+HNSW at roughly **two orders of magnitude** faster per query than a brute-force
+cosine on a few-thousand-vector corpus.
 
 ---
 
-## 5. MANUAL 3-agent runtime verification
+## 5. MANUAL runtime verification
 
 The offline parity tests (`atlas-memory`'s `parity_bench` module) prove the
 retrieval path is agent-agnostic and that `RetrievedDoc` maps cleanly onto
@@ -136,28 +134,28 @@ MiniLM model. That last mile is a **manual** runtime check:
 
 **Prerequisites**
 - The MiniLM model installed (so `register_memory_search`'s provider resolves).
-- BYOK / API keys configured for each agent you test (`byok-keys.json`).
+- Credentials configured for each agent you test.
 - A project with some indexed memory (open it and let the `MemoryIndexer` run, or
   call the `force_reindex` command once).
 
-**Steps — repeat for Claude Code, Codex, and Cersei**
-1. `npm run dev:app` and open the test project.
+**Steps — repeat for the native agent and at least one ACP agent**
+1. `bun run dev:app` and open the test project, with memory sharing enabled.
 2. Confirm the background indexer built the index: `<project>/.atlas/memory/hnsw.usearch`
    and `manifest.json` exist and `manifest.json`'s `entries[]` is non-empty.
-3. **Claude Code** and **Codex** (push / site C): start a chat turn whose message
-   references known project memory (e.g. an established convention). Verify the
-   forwarded prompt contains a `--- RELEVANT PROJECT MEMORY ---` block with
-   on-topic snippets.
-4. **Cersei** (pull / `search_memory` tool): ask a question that should trigger the
-   tool ("what auth strategy does this project use?"). Verify the agent invokes
-   `search_memory` and the returned `## title (source)` snippets are on-topic.
-5. Confirm **identical grounding quality** across all three — same project + query
-   should surface the same underlying docs (the seam is shared), differing only in
+3. **Any agent** (push): start a chat turn whose message references known
+   project memory (e.g. an established convention). Verify the forwarded prompt
+   contains a `--- RELEVANT PROJECT MEMORY ---` block with on-topic snippets.
+4. **Native agent** (pull / `search_memory` tool): ask a question that should
+   trigger the tool ("what auth strategy does this project use?"). Verify the
+   agent invokes `search_memory` and the returned `## title (source)` snippets
+   are on-topic.
+5. Confirm **identical grounding** across agents — same project + query should
+   surface the same underlying docs (the retrieval is shared), differing only in
    push-vs-pull presentation.
 6. Flip `ATLAS_NATIVE_EXTRACTION=1`, run a long enough session per agent to pass the
    gates (≥20 msgs / ≥3 tool calls), and confirm `extracted/*.md` appears and the
    new memories become retrievable **without a manual rebuild** (the old
    "invisible until rebuild" bug is gone).
 
-If any agent loses grounding, roll back per §4 and file the discrepancy before
-removing any legacy path.
+If any agent loses grounding, file the discrepancy before removing any legacy
+path in §4.

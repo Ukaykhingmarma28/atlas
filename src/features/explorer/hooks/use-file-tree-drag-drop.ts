@@ -168,10 +168,10 @@ export function useFileTreeDragDrop(opts: {
         "font-family:var(--font-mono,monospace)",
         "line-height:1.4",
         "white-space:nowrap",
-        "color:var(--text-secondary)",
-        "background:var(--bg-elevated)",
-        "border:1px solid var(--border-default)",
-        "box-shadow:0 4px 14px rgba(0,0,0,0.3)",
+        "color:var(--secondary-foreground)",
+        "background:var(--card)",
+        "border:1px solid var(--border)",
+        "box-shadow:var(--shadow-sm)",
         "backdrop-filter:blur(12px)",
       ].join(";");
       document.body.appendChild(preview);

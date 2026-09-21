@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import {
+  Bar,
+  CAPTION,
+  Card,
+  EstTag,
+  StatusPill,
+  VALUE,
+  useCountUp,
+  useMounted,
+} from "@/components/usage-primitives";
 import { fmtCost, fmtTokens } from "@/features/monitor/lib/usage-format";
 import type { MetricRow, RateLimitWindow, SessionUsageView } from "../lib/session-usage";
 import { TickMeter } from "./usage-meter";
@@ -19,87 +29,6 @@ import { TickMeter } from "./usage-meter";
  * sections mount fresh; the count-up and the bars settle inside 220 ms.
  */
 
-const prefersReducedMotion = () =>
-  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/** Eases a number to `target` over `ms`, rAF-driven. Snaps under reduced motion. */
-function useCountUp(target: number, ms = 220): number {
-  const [value, setValue] = useState(() => (prefersReducedMotion() ? target : 0));
-  const from = useRef(value);
-  useEffect(() => {
-    if (prefersReducedMotion()) {
-      setValue(target);
-      return;
-    }
-    const start = performance.now();
-    const begin = from.current;
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / ms);
-      const eased = 1 - (1 - t) * (1 - t) * (1 - t);
-      const v = begin + (target - begin) * eased;
-      setValue(v);
-      from.current = v;
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, ms]);
-  return value;
-}
-
-/** True after mount — bars transition from 0 on first paint. */
-function useMounted(): boolean {
-  const [mounted, setMounted] = useState(prefersReducedMotion());
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  return mounted;
-}
-
-const CAPTION = "text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]";
-const VALUE = "text-[11px] tabular-nums text-[var(--text-primary)]";
-
-function Card({
-  index,
-  section,
-  children,
-}: {
-  index: number;
-  section: string;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      data-section={section}
-      className="atlas-usage-in rounded-lg border border-white/[0.06] bg-[var(--bg-elevated-2)] px-2.5 py-2"
-      style={{ "--i": index } as CSSProperties}
-    >
-      {children}
-    </section>
-  );
-}
-
-function StatusPill({ status }: { status: "ok" | "warn" | "full" }) {
-  const tone =
-    status === "full"
-      ? "border-[var(--status-error)]/40 text-[var(--status-error)]"
-      : status === "warn"
-        ? "border-[var(--status-warning)]/40 text-[var(--status-warning)]"
-        : "border-white/[0.08] text-[var(--text-secondary)]";
-  return (
-    <span
-      className={cn(
-        "inline-flex h-4 items-center rounded-full border px-1.5 text-[9px] font-medium uppercase tracking-wider",
-        tone,
-      )}
-    >
-      {status === "full" ? "Full" : status === "warn" ? "Warn" : "OK"}
-    </span>
-  );
-}
-
 function Headline({ view }: { view: SessionUsageView }) {
   const h = view.headline;
   const target = !h ? 0 : h.kind === "context" ? h.pct : h.kind === "tokens" ? h.total : h.usd;
@@ -112,20 +41,21 @@ function Headline({ view }: { view: SessionUsageView }) {
           Context · {fmtTokens(h.used)} / {fmtTokens(h.size)}
         </div>
         <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+          <span className="text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {value.toFixed(value >= 10 ? 0 : 1)}
-            <span className="ml-0.5 text-[14px] font-medium text-[var(--text-tertiary)]">%</span>
+            <span className="ml-0.5 text-md font-medium text-[var(--muted-foreground)]">%</span>
           </span>
           <StatusPill status={h.status} />
         </div>
         <TickMeter value={h.pct} className="mt-2.5" />
-        <div className={cn("mt-1 flex justify-between text-[9px]", CAPTION)}>
+        <div className={cn("mt-1 flex justify-between text-3xs", CAPTION)}>
           <span>0</span>
           <span>{fmtTokens(h.size)}</span>
         </div>
         {view.compacting ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--accent-primary)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+          <div className="mt-1.5 flex items-center gap-1.5 text-2xs text-[var(--primary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
             Compacting the context window…
           </div>
         ) : view.savedTokens ? (
@@ -140,7 +70,8 @@ function Headline({ view }: { view: SessionUsageView }) {
     return (
       <Card index={0} section="tokens-total">
         <div className={CAPTION}>Tokens · this session</div>
-        <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+        {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+        <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
           {fmtTokens(Math.round(value))}
         </div>
       </Card>
@@ -149,33 +80,11 @@ function Headline({ view }: { view: SessionUsageView }) {
   return (
     <Card index={0} section="cost-total">
       <div className={CAPTION}>Cost · this session{h.estimated ? " · est." : ""}</div>
-      <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+      {/* ratchet-allow: the popup's hero figure, above the largest scale step (24px) */}
+      <div className="mt-1 text-[28px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
         {fmtCost(value)}
       </div>
     </Card>
-  );
-}
-
-function Bar({
-  frac,
-  mounted,
-  color = "var(--text-secondary)",
-}: {
-  frac: number;
-  mounted: boolean;
-  color?: string;
-}) {
-  return (
-    <span className="block h-[3px] w-full overflow-hidden rounded-full bg-white/[0.06]">
-      <span
-        className="block h-full rounded-full"
-        style={{
-          width: `${mounted ? Math.max(2, frac * 100) : 0}%`,
-          background: color,
-          transition: "width 220ms cubic-bezier(0.32,0.72,0,1)",
-        }}
-      />
-    </span>
   );
 }
 
@@ -187,7 +96,7 @@ function TokenRows({ rows, index }: { rows: MetricRow[]; index: number }) {
       <div className="flex flex-col">
         {rows.map((r) => (
           <div key={r.key} className="flex h-6 items-center gap-2.5">
-            <span className="w-[76px] shrink-0 truncate text-[11px] text-[var(--text-secondary)]">
+            <span className="w-[76px] shrink-0 truncate text-xs text-[var(--secondary-foreground)]">
               {r.label}
             </span>
             <span className="min-w-0 flex-1">
@@ -207,22 +116,19 @@ function Cost({ cost, index }: { cost: NonNullable<SessionUsageView["cost"]>; in
       <div className="flex items-baseline justify-between">
         <span className={CAPTION}>Cost</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--text-primary)]">
+          {/* ratchet-allow: a subtotal one notch under text-lg (16px), which outshouted the rows */}
+          <span className="text-[15px] leading-none font-semibold tabular-nums text-[var(--foreground)]">
             {fmtCost(cost.total)}
           </span>
-          {cost.estimated ? (
-            <span className="rounded-full border border-white/[0.08] px-1 text-[8px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
-              est.
-            </span>
-          ) : null}
+          {cost.estimated ? <EstTag /> : null}
         </span>
       </div>
       {cost.rows.length ? (
         <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5">
           {cost.rows.map((r) => (
             <div key={r.key} className="flex items-baseline justify-between">
-              <span className="text-[10px] text-[var(--text-tertiary)]">{r.label}</span>
-              <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
+              <span className="text-2xs text-[var(--muted-foreground)]">{r.label}</span>
+              <span className="text-2xs tabular-nums text-[var(--secondary-foreground)]">
                 {fmtCost(r.cost ?? 0)}
               </span>
             </div>
@@ -264,11 +170,11 @@ function QuotaRow({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-[var(--text-secondary)]">{label}</span>
+        <span className="text-xs text-[var(--secondary-foreground)]">{label}</span>
         <span className={VALUE}>
           {Math.round(pct)}%
           {when ? (
-            <span className="ml-1.5 text-[10px] text-[var(--text-tertiary)]">{when}</span>
+            <span className="ml-1.5 text-2xs text-[var(--muted-foreground)]">{when}</span>
           ) : null}
         </span>
       </div>
@@ -277,10 +183,10 @@ function QuotaRow({
         mounted={mounted}
         color={
           pct >= 90
-            ? "var(--status-error)"
+            ? "var(--atlas-status-error-foreground)"
             : pct >= 70
-              ? "var(--status-warning)"
-              : "var(--capture-live)"
+              ? "var(--atlas-status-warning-foreground)"
+              : "var(--atlas-status-success-foreground)"
         }
       />
     </div>
@@ -347,9 +253,13 @@ function Session({
     cells.push([
       "Lines",
       <span key="lines">
-        <span className="text-[var(--capture-live)]">+{session.insertions ?? 0}</span>
-        <span className="mx-0.5 text-[var(--text-tertiary)]">/</span>
-        <span className="text-[var(--status-error)]">−{session.deletions ?? 0}</span>
+        <span className="text-[var(--atlas-status-success-foreground)]">
+          +{session.insertions ?? 0}
+        </span>
+        <span className="mx-0.5 text-[var(--muted-foreground)]">/</span>
+        <span className="text-[var(--atlas-status-error-foreground)]">
+          −{session.deletions ?? 0}
+        </span>
       </span>,
     ]);
   }
@@ -362,7 +272,7 @@ function Session({
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         {cells.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-2">
-            <span className="text-[10px] text-[var(--text-tertiary)]">{label}</span>
+            <span className="text-2xs text-[var(--muted-foreground)]">{label}</span>
             <span className={VALUE}>{value}</span>
           </div>
         ))}
@@ -380,8 +290,8 @@ export function UsagePopup({ view }: { view: SessionUsageView }) {
     <div className="flex flex-col gap-1.5 p-1.5">
       {empty ? (
         <Card index={0} section="empty">
-          <div className="text-[11px] font-medium text-[var(--text-primary)]">Nothing yet</div>
-          <p className="mt-0.5 text-[10px] leading-snug text-[var(--text-tertiary)]">
+          <div className="label">Nothing yet</div>
+          <p className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
             Usage shows up after the first turn — what this agent reports, and what Atlas records.
           </p>
         </Card>

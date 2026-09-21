@@ -7,6 +7,7 @@ import {
 } from "@tiptap/react";
 import { useState } from "react";
 import { Copy, Check } from "lucide-react";
+import { Hint } from "@/ui/tooltip";
 
 /**
  * CodeBlockLowlight wrapped in a React NodeView that adds the header
@@ -52,10 +53,12 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
           }}
         />
         <span style={{ flex: 1 }} />
-        <button type="button" className="atlas-code-copy" onClick={handleCopy} title="Copy">
-          {copied ? <Check size={11} strokeWidth={1.7} /> : <Copy size={11} strokeWidth={1.7} />}
-          {copied ? " Copied" : ""}
-        </button>
+        <Hint label={copied ? "Copied" : "Copy"}>
+          <button type="button" className="atlas-code-copy" onClick={handleCopy}>
+            {copied ? <Check size={11} strokeWidth={1.7} /> : <Copy size={11} strokeWidth={1.7} />}
+            {copied ? " Copied" : ""}
+          </button>
+        </Hint>
       </div>
       {/* NodeViewContent's `as` prop is narrowed to "div" in our Tiptap
           types — wrap in <pre> for the design's monospace block frame

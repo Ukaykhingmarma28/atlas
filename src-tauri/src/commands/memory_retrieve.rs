@@ -193,6 +193,32 @@ mod tests {
         assert!(!block.contains("sk-ABCDEF0123456789"));
     }
 
+    /// Credentials as they turn up in real transcripts, each paired with the
+    /// part that must not survive. See the known-gap tests in `memory_delta`.
+    const LEAKS: &[(&str, &str)] = &[
+        ("password: hunter2hunter2", "hunter2hunter2"),
+        ("postgres://app:s3cretPassw0rd@db.internal:5432/app", "s3cretPassw0rd"),
+        (
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl",
+            "eyJhbGciOiJIUzI1NiJ9",
+        ),
+        ("database:\n  password: hunter2hunter2", "hunter2hunter2"),
+        (r#"{"user": "app", "password": "hunter2hunter2"}"#, "hunter2hunter2"),
+    ];
+
+    /// `redacts_secrets_in_snippets` uses the one shape the redactor was
+    /// written for. A retrieved doc carrying any of these is pushed into the
+    /// agent's prompt unredacted.
+    #[test]
+    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    fn realistic_credentials_are_redacted_in_snippets() {
+        for (leak, secret) in LEAKS {
+            let docs = vec![doc("a", "Env", &format!("local setup: {leak}"))];
+            let block = compose_index_block(&docs).unwrap();
+            assert!(!block.contains(secret), "leaked {secret:?}: {block}");
+        }
+    }
+
     #[test]
     fn budget_bounds_body() {
         let big = "x".repeat(2000);

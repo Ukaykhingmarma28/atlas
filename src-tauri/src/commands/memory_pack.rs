@@ -228,14 +228,14 @@ fn same_session(recorded: &str, id: &str) -> bool {
 fn capture_heads(root: &Path, store: &Store, store_idx: usize) -> Vec<SessionHead> {
     // Live capture keys a Workspace by its canonical path; the importer by the
     // path as given. Read both, once each.
-    let mut ids = vec![crate::commands::capture::workspace_id_for(root)];
+    let mut ids = vec![crate::commands::capture::project_id_for(root)];
     let lexical = root.to_string_lossy().to_string();
     if !ids.contains(&lexical) {
         ids.push(lexical);
     }
     let mut seen = HashSet::new();
     ids.iter()
-        .flat_map(|id| store.sessions_for_workspace(id).unwrap_or_default())
+        .flat_map(|id| store.sessions_for_project(id).unwrap_or_default())
         .filter(|s| seen.insert(s.id.clone()))
         .map(|s| SessionHead {
             native_id: s.native_session_id,
@@ -476,7 +476,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 /// scratch Workspace — what the handoff reads in production.
 #[cfg(test)]
 pub(crate) mod test_support {
-    use atlas_checkpoint::{model::WorkspaceMode, Capture, Mode, Role, SessionKey, Source, Store, TurnContent};
+    use atlas_checkpoint::{model::ProjectMode, Capture, Mode, Role, SessionKey, Source, Store, TurnContent};
 
     /// A fresh scratch directory standing in for a project.
     pub(crate) fn scratch_project(label: &str) -> String {
@@ -490,9 +490,9 @@ pub(crate) mod test_support {
     /// recorded inside the turn it follows.
     pub(crate) fn record_session(project: &str, native_id: &str, agent: &str, entries: &[(Role, Mode, &str)]) {
         let mut store = Store::open(atlas_checkpoint::atlas_dir(project)).expect("capture store opens");
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let key = SessionKey {
-            workspace_id: crate::commands::capture::workspace_id_for(std::path::Path::new(project)),
+            workspace_id: crate::commands::capture::project_id_for(std::path::Path::new(project)),
             // As live capture files it: the native agent under its own source.
             source: if agent == atlas_native_agent::CERSEI_AGENT_ID { Source::Cersei } else { Source::Acp },
             native_session_id: native_id.into(),

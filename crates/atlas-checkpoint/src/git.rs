@@ -259,7 +259,7 @@ pub fn worktree_paths(dir: &Path) -> Vec<PathBuf> {
 
 /// Is this directory a git repository?
 ///
-/// Git is optional: a Workspace that is not a repository captures Sessions
+/// Git is optional: a Project that is not a repository captures Sessions
 /// perfectly well and simply never produces Checkpoints.
 pub fn is_repository(repo: &Path) -> bool {
     repo.join(".git").exists() && run(repo, &["rev-parse", "--git-dir"]).is_ok()
@@ -343,7 +343,7 @@ pub fn commits_between(repo: &Path, from: Option<&str>, to: &str) -> Result<Vec<
 /// The recovery path for a cursor that can no longer be resolved — garbage
 /// collected, or rewritten away. `rev-list from..HEAD` fails outright in that
 /// case, after which detection would silently stop forever, so a bounded
-/// re-scan is what keeps a Workspace from going quietly dark. Re-processing is
+/// re-scan is what keeps a Project from going quietly dark. Re-processing is
 /// harmless because `(Session, commit)` is the idempotency key.
 pub fn recent_commits(repo: &Path, limit: usize) -> Result<Vec<String>> {
     let out = run(
@@ -637,7 +637,7 @@ pub fn blob_at(repo: &Path, sha: &str, path: &str) -> Option<Vec<u8>> {
     output.status.success().then_some(output.stdout)
 }
 
-/// Whether `HEAD` already tracks this workspace-relative path.
+/// Whether `HEAD` already tracks this project-relative path.
 ///
 /// The fallback answer for `existed_before` when the write-sampling probe
 /// cannot run before the agent's write. A filesystem `exists()` is only
@@ -818,6 +818,12 @@ pub fn patch_id(repo: &Path, sha: &str) -> Option<String> {
     (!id.is_empty()).then(|| id.to_string())
 }
 
+// The integration tests' git helpers, isolated from the global and system
+// config. Reached by path because `tests/` is not part of the library crate.
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_support;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -832,9 +838,7 @@ mod tests {
         pub fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             let repo = Self { dir };
-            repo.git(&["init", "--initial-branch=main"]);
-            repo.git(&["config", "user.name", "Test Developer"]);
-            repo.git(&["config", "user.email", "dev@example.com"]);
+            super::test_support::init_repo(repo.path());
             repo
         }
 
@@ -843,18 +847,7 @@ mod tests {
         }
 
         pub fn git(&self, args: &[&str]) -> String {
-            let output = atlas_process::command("git")
-                .arg("-C")
-                .arg(self.path())
-                .args(args)
-                .output()
-                .expect("git runs");
-            assert!(
-                output.status.success(),
-                "git {args:?} failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            String::from_utf8_lossy(&output.stdout).into_owned()
+            super::test_support::git(self.path(), args)
         }
 
         pub fn write(&self, path: &str, content: &str) {

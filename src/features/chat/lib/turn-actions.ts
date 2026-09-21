@@ -10,7 +10,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useChatStore } from "../stores/chat-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useKnowledgeStore } from "@/features/knowledge/stores/knowledge-store";
 import { stripNextSteps } from "./next-steps";
 import { stripInjectedContext } from "./atlas-context";
@@ -41,7 +41,7 @@ function buildThreadMarkdown(tabId: string): string | null {
 }
 
 export async function saveThreadToKb(tabId: string): Promise<void> {
-  const project = useProjectStore.getState().currentProject;
+  const project = useAppStore.getState().currentProject;
   if (!project) {
     toast.error("No project open");
     return;

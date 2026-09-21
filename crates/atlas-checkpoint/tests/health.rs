@@ -1,10 +1,13 @@
 //! The capture-health signal — each of the three states driven through the
 //! public API by causing the real condition, not by setting a flag.
 
-use std::path::Path;
-use std::process::Command;
+mod support;
 
-use atlas_checkpoint::model::WorkspaceMode;
+use std::path::Path;
+
+use support::init_repo;
+
+use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
     bind, disable, evaluate_health, Capture, CaptureHealth, HealthState, HostSignals, SessionKey,
     Source, Store, SPILL_THRESHOLD_BYTES,
@@ -12,7 +15,7 @@ use atlas_checkpoint::{
 
 const WORKSPACE: &str = "ws-atlas";
 
-/// A Workspace whose git watcher is attached and healthy.
+/// A Project whose git watcher is attached and healthy.
 fn watching() -> HostSignals {
     HostSignals {
         watcher_attached: true,
@@ -22,7 +25,7 @@ fn watching() -> HostSignals {
     }
 }
 
-/// A Workspace that needs no watcher — not a git repository.
+/// A Project that needs no watcher — not a git repository.
 fn no_watcher_needed() -> HostSignals {
     HostSignals {
         watcher_attached: false,
@@ -38,7 +41,7 @@ fn store_in(root: &Path) -> Store {
 
 fn bound(root: &Path) -> Store {
     let store = store_in(root);
-    bind(&store, WORKSPACE, root, WorkspaceMode::Local).expect("binds");
+    bind(&store, WORKSPACE, root, ProjectMode::Local).expect("binds");
     store
 }
 
@@ -46,27 +49,11 @@ fn health(store: &Store, host: HostSignals) -> CaptureHealth {
     evaluate_health(store, WORKSPACE, host).expect("health evaluates")
 }
 
-fn init_repo(root: &Path) {
-    for args in [
-        vec!["init", "--initial-branch=main"],
-        vec!["config", "user.name", "Test"],
-        vec!["config", "user.email", "t@example.com"],
-    ] {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(&args)
-            .output()
-            .expect("git runs");
-        assert!(output.status.success());
-    }
-}
-
 fn record_session(store: &mut Store, native_id: &str) -> String {
-    record_session_in(store, native_id, WorkspaceMode::Local)
+    record_session_in(store, native_id, ProjectMode::Local)
 }
 
-fn record_session_in(store: &mut Store, native_id: &str, mode: WorkspaceMode) -> String {
+fn record_session_in(store: &mut Store, native_id: &str, mode: ProjectMode) -> String {
     let mut capture = Capture::new(store, mode);
     capture
         .record_prompt(
@@ -87,7 +74,7 @@ fn record_session_in(store: &mut Store, native_id: &str, mode: WorkspaceMode) ->
 // ── OK ──────────────────────────────────────────────────────────────────────
 
 #[test]
-fn a_healthy_workspace_reports_ok_with_no_issues() {
+fn a_healthy_project_reports_ok_with_no_issues() {
     let dir = tempfile::tempdir().unwrap();
     init_repo(dir.path());
     let mut store = bound(dir.path());
@@ -100,7 +87,7 @@ fn a_healthy_workspace_reports_ok_with_no_issues() {
 }
 
 #[test]
-fn a_non_git_workspace_is_healthy_without_a_watcher() {
+fn a_non_git_project_is_healthy_without_a_watcher() {
     // It never has one, and reporting that as a failure would make every
     // notebook folder permanently look broken.
     let dir = tempfile::tempdir().unwrap();
@@ -109,15 +96,15 @@ fn a_non_git_workspace_is_healthy_without_a_watcher() {
 }
 
 #[test]
-fn a_healthy_workspace_still_surfaces_its_pending_count() {
+fn a_healthy_project_still_surfaces_its_pending_count() {
     // Not a problem — the one number a developer wants continuously is whether
     // their work has reached their team.
     let dir = tempfile::tempdir().unwrap();
     let store = store_in(dir.path());
-    bind(&store, WORKSPACE, dir.path(), WorkspaceMode::Cloud).unwrap();
+    bind(&store, WORKSPACE, dir.path(), ProjectMode::Cloud).unwrap();
 
     let mut store = store;
-    record_session_in(&mut store, "s1", WorkspaceMode::Cloud);
+    record_session_in(&mut store, "s1", ProjectMode::Cloud);
 
     let health = health(&store, no_watcher_needed());
     assert_eq!(health.state, HealthState::Ok);
@@ -128,7 +115,7 @@ fn a_healthy_workspace_still_surfaces_its_pending_count() {
 // ── Degraded ────────────────────────────────────────────────────────────────
 
 #[test]
-fn a_flagged_session_moves_the_workspace_to_degraded() {
+fn a_flagged_session_moves_the_project_to_degraded() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = bound(dir.path());
     let session = record_session(&mut store, "s1");
@@ -168,7 +155,7 @@ fn a_storage_failure_flags_the_session_and_surfaces_as_degraded() {
     }
 
     {
-        let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let _ = capture.record_turn(
             &session,
             atlas_checkpoint::TurnContent {
@@ -206,7 +193,7 @@ fn a_recovered_commit_cursor_surfaces_as_degraded_with_a_note() {
     let health = health(&store, watching());
     assert_eq!(health.state, HealthState::Degraded);
     assert!(
-        health.issues.iter().any(|i| i.reason.contains("lost this Workspace's place")),
+        health.issues.iter().any(|i| i.reason.contains("lost this Project's place")),
         "{:?}",
         health.issues
     );
@@ -224,7 +211,7 @@ fn a_normal_cursor_is_not_degraded() {
 // ── Stopped ─────────────────────────────────────────────────────────────────
 
 #[test]
-fn a_dead_watcher_moves_the_workspace_to_stopped() {
+fn a_dead_watcher_moves_the_project_to_stopped() {
     // The historical clear-all path made this reachable through normal UI flow,
     // and it was invisible because a dead watcher and a quiet repository look
     // identical from the event stream. This is why liveness is checked against
@@ -250,21 +237,21 @@ fn a_dead_watcher_moves_the_workspace_to_stopped() {
 }
 
 #[test]
-fn a_workspace_that_was_never_enabled_is_off_rather_than_broken() {
+fn a_project_that_was_never_enabled_is_off_rather_than_broken() {
     let dir = tempfile::tempdir().unwrap();
     let store = store_in(dir.path());
     let health = health(&store, no_watcher_needed());
 
-    // Not `Stopped`. Nobody asked this Workspace to record anything, so there is
+    // Not `Stopped`. Nobody asked this Project to record anything, so there is
     // no fault to report — and reporting one lights three alarms (no binding, no
-    // watcher, no writer lock) on the very first Workspace a new user opens.
+    // watcher, no writer lock) on the very first Project a new user opens.
     assert_eq!(health.state, HealthState::Off);
     assert!(health.issues.is_empty(), "{:?}", health.issues);
     assert_eq!(health.summary, "Session capture is off");
 }
 
 #[test]
-fn a_paused_workspace_is_off_and_still_reports_what_it_holds() {
+fn a_paused_project_is_off_and_still_reports_what_it_holds() {
     let dir = tempfile::tempdir().unwrap();
     let store = bound(dir.path());
     disable(&store).unwrap();
@@ -308,9 +295,9 @@ fn a_second_window_reports_stopped_rather_than_silently_not_recording() {
 }
 
 #[test]
-fn a_workspace_never_opened_this_process_is_not_another_window() {
+fn a_project_never_opened_this_process_is_not_another_window() {
     // Before the first capture event lands, the host's store registry has no
-    // entry for the Workspace — no claim on the writer lock either way. The old
+    // entry for the Project — no claim on the writer lock either way. The old
     // boolean signal read that as "lost the lock" and reported a phantom second
     // window on every health poll after app start.
     let dir = tempfile::tempdir().unwrap();
@@ -363,7 +350,7 @@ fn a_revoked_drain_authorization_surfaces_without_stopping_capture() {
     // is gated — and the reason still says work is not reaching the team.
     let dir = tempfile::tempdir().unwrap();
     let store = store_in(dir.path());
-    bind(&store, WORKSPACE, dir.path(), WorkspaceMode::Cloud).unwrap();
+    bind(&store, WORKSPACE, dir.path(), ProjectMode::Cloud).unwrap();
     store
         .set_drain_state(atlas_checkpoint::model::DrainGate::NotAuthorized)
         .unwrap();
@@ -485,7 +472,7 @@ fn stopped_outranks_degraded_in_the_summary() {
     assert_eq!(health.issues[0].state, HealthState::Stopped, "worst first");
 }
 
-/// A Workspace that is both watcher-dead and has a flagged Session.
+/// A Project that is both watcher-dead and has a flagged Session.
 struct HealthSignalsBoth<'a>(&'a Store);
 
 impl HealthSignalsBoth<'_> {
@@ -520,7 +507,7 @@ fn health_returns_to_ok_by_itself_once_the_condition_clears() {
 }
 
 #[test]
-fn evaluating_health_never_fails_on_a_workspace_with_no_history() {
+fn evaluating_health_never_fails_on_a_project_with_no_history() {
     let dir = tempfile::tempdir().unwrap();
     let store = store_in(dir.path());
     let health = health(&store, no_watcher_needed());
@@ -543,8 +530,11 @@ fn evaluation_is_cheap_enough_to_run_on_every_turn() {
         health(&store, watching());
     }
     let per_call = started.elapsed() / 100;
+    // Generous on purpose: this runs unoptimized on shared CI runners. It is a
+    // guard against an evaluation that got an order of magnitude slower, not a
+    // measurement of the per-turn budget.
     assert!(
-        per_call.as_millis() < 20,
+        per_call.as_millis() < 100,
         "{per_call:?} per evaluation is too slow to run on every turn"
     );
 }

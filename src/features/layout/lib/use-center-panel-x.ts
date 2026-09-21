@@ -2,7 +2,7 @@ import { useLayoutEffect, useState } from "react";
 
 /**
  * The horizontal midpoint (viewport px) of the centre panel — the content area
- * between the workspace switcher / left sidebar and the right panel (source
+ * between the project switcher / left sidebar and the right panel (source
  * control, team chat).
  *
  * For a docked pill or a dialog, "centred" means centred on what the user is

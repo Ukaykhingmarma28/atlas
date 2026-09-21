@@ -6,9 +6,10 @@
 // Local-disabled) plus the reused ProviderModelSelector when mode === provider.
 
 import { useEffect, useMemo } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { Popover } from "@base-ui/react/popover";
 import { Share2, SlidersHorizontal, FileText, Server, Cpu, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
 import { ProviderModelSelector } from "./provider-pickers";
 import { useByokStore } from "@/features/settings/stores/byok-store";
 import { CHAT_PROVIDERS } from "@/features/settings/lib/providers";
@@ -54,10 +55,10 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
           enabled ? "Shared memory ON — injected into agents on first send" : "Shared memory OFF"
         }
         className={cn(
-          "flex items-center gap-1 h-6 px-2 rounded-full border text-[10px] font-medium transition-colors cursor-pointer outline-none",
+          "flex items-center gap-1 h-6 px-2 rounded-full border text-2xs font-medium transition-colors cursor-pointer outline-none",
           enabled
-            ? "border-[var(--border-default)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+            ? "border-[var(--border)] bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+            : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
         )}
       >
         <Share2 size={11} />
@@ -66,76 +67,76 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
 
       {/* Summarizer settings popover */}
       <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            title="Handoff summarizer settings"
-            className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] outline-none transition-colors cursor-pointer"
-          >
-            <SlidersHorizontal size={12} />
-          </button>
-        </Popover.Trigger>
+        <Hint label="Handoff summarizer settings">
+          <Popover.Trigger
+            render={
+              <button
+                type="button"
+                className="flex items-center justify-center h-6 w-6 rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer"
+              >
+                <SlidersHorizontal size={12} />
+              </button>
+            }
+          />
+        </Hint>
         <Popover.Portal>
-          <Popover.Content
-            align="end"
-            side="bottom"
-            sideOffset={6}
-            className="z-[9999] w-[300px] rounded-md border border-border-default bg-bg-elevated p-3 shadow-[var(--shadow-overlay)]"
-          >
-            <div className="eyebrow mb-2">Recent-session handoff</div>
-            <p className="mb-2.5 text-[11px] leading-snug text-text-tertiary">
-              How the previous session's tail is summarized before it is injected into the next
-              agent.
-            </p>
-
-            <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
-              <ModeSeg
-                active={pref.mode === "raw"}
-                label="Raw"
-                icon={FileText}
-                enabled
-                onClick={() => setMode("raw")}
-              />
-              <ModeSeg
-                active={pref.mode === "provider"}
-                label="Provider"
-                icon={Server}
-                enabled={providerReady}
-                onClick={() => setMode("provider")}
-              />
-              <ModeSeg
-                active={pref.mode === "local"}
-                label="Local"
-                icon={Cpu}
-                enabled={false}
-                onClick={() => {}}
-              />
-            </div>
-
-            {pref.mode === "provider" && (
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                {providerReady ? (
-                  <ProviderModelSelector
-                    configured={configured}
-                    provider={pref.provider}
-                    model={pref.model}
-                    onProvider={(provider) => void setPref({ ...pref, provider, model: "" })}
-                    onModel={(model) => void setPref({ ...pref, model })}
-                  />
-                ) : (
-                  <p className="text-[11px] text-text-tertiary">
-                    Add a provider key in Settings to use provider summaries.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {pref.mode === "raw" && (
-              <p className="mt-2.5 text-[11px] text-text-tertiary">
-                Injecting the last turns verbatim — no model call, no latency.
+          <Popover.Positioner className="z-popover" align="end" side="bottom" sideOffset={6}>
+            <Popover.Popup className="w-[300px] rounded-md border border-border bg-card p-3 shadow-md">
+              <div className="eyebrow mb-2">Recent-session handoff</div>
+              <p className="mb-2.5 text-xs leading-snug text-muted-foreground">
+                How the previous session's tail is summarized before it is injected into the next
+                agent.
               </p>
-            )}
-          </Popover.Content>
+
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
+                <ModeSeg
+                  active={pref.mode === "raw"}
+                  label="Raw"
+                  icon={FileText}
+                  enabled
+                  onClick={() => setMode("raw")}
+                />
+                <ModeSeg
+                  active={pref.mode === "provider"}
+                  label="Provider"
+                  icon={Server}
+                  enabled={providerReady}
+                  onClick={() => setMode("provider")}
+                />
+                <ModeSeg
+                  active={pref.mode === "local"}
+                  label="Local"
+                  icon={Cpu}
+                  enabled={false}
+                  onClick={() => {}}
+                />
+              </div>
+
+              {pref.mode === "provider" && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {providerReady ? (
+                    <ProviderModelSelector
+                      configured={configured}
+                      provider={pref.provider}
+                      model={pref.model}
+                      onProvider={(provider) => void setPref({ ...pref, provider, model: "" })}
+                      onModel={(model) => void setPref({ ...pref, model })}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Add a provider key in Settings to use provider summaries.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {pref.mode === "raw" && (
+                <p className="mt-2.5 text-xs text-muted-foreground">
+                  Injecting the last turns verbatim — no model call, no latency.
+                </p>
+              )}
+            </Popover.Popup>
+          </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
     </div>
@@ -162,16 +163,16 @@ function ModeSeg({
       onClick={() => enabled && onClick()}
       title={enabled ? label : `${label} (coming soon)`}
       className={cn(
-        "flex items-center gap-1 h-[22px] px-2 rounded-full text-[10px] font-medium transition-colors",
+        "flex items-center gap-1 h-[22px] px-2 rounded-full text-2xs font-medium transition-colors",
         active
-          ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+          ? "bg-[var(--atlas-element-hover)] text-[var(--foreground)]"
+          : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
         !enabled && "opacity-40 cursor-not-allowed",
       )}
     >
       <Icon size={11} />
       {label}
-      {active && <Check size={10} className="text-text-primary" />}
+      {active && <Check size={10} className="text-foreground" />}
     </button>
   );
 }

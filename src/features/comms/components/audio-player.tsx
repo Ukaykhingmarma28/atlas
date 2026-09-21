@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Download, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { ArcProgress } from "./arc-progress";
 
 /**
@@ -139,95 +140,103 @@ export const AudioPlayer = memo(function AudioPlayer({
   const bars = peaks ?? UNIFORM;
 
   return (
-    <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border-default bg-bg-elevated px-2.5 py-2">
-      {src && (
-        <audio
-          ref={audioRef}
-          src={src}
-          muted={muted}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => {
-            setPlaying(false);
-            setTime(0);
-          }}
-          onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-          onDurationChange={(e) => setDuration(e.currentTarget.duration)}
-        />
-      )}
-
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={buffering}
-        title={playing ? "Pause" : "Play"}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-active text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
-      >
-        {buffering ? (
-          <span className="text-[var(--comms-unread)]">
-            <ArcProgress got={bufferProgress?.got ?? 0} total={bufferProgress?.total ?? 0} />
-          </span>
-        ) : playing ? (
-          <Pause size={12} />
-        ) : (
-          <Play size={12} className="ml-px" />
+    <HintGroup>
+      <div className="flex w-full max-w-[420px] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2">
+        {src && (
+          <audio
+            ref={audioRef}
+            src={src}
+            muted={muted}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => {
+              setPlaying(false);
+              setTime(0);
+            }}
+            onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+            onDurationChange={(e) => setDuration(e.currentTarget.duration)}
+          />
         )}
-      </button>
 
-      <div className="min-w-0 flex-1">
-        <div
-          role="slider"
-          aria-label={`Seek ${filename}`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(frac * 100)}
-          onClick={seek}
-          className={cn("flex h-[26px] items-center gap-px", src ? "cursor-pointer" : "opacity-60")}
-        >
-          {bars.map((p, i) => {
-            const played = (i + 0.5) / BARS <= frac;
-            return (
-              <span
-                key={i}
-                className={cn(
-                  "min-w-0 flex-1 rounded-full transition-colors duration-100",
-                  played ? "bg-[var(--comms-unread)]" : "bg-border-strong",
-                )}
-                style={{ height: `${Math.round(4 + p * 18)}px` }}
-              />
-            );
-          })}
-        </div>
-        <div className="flex items-center justify-between pt-0.5">
-          <span className="text-[9.5px] tabular-nums text-text-ghost">
-            {formatTime(time)} / {formatTime(duration)}
-          </span>
-          {subtitle && <span className="text-[9.5px] text-text-ghost">{subtitle}</span>}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          title={muted ? "Unmute" : "Mute"}
-          onClick={() => setMuted((v) => !v)}
-          className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-        >
-          {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-        </button>
-        {onDownload && (
+        <HintItem label={playing ? "Pause" : "Play"}>
           <button
             type="button"
-            title="Download"
-            onClick={onDownload}
-            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+            onClick={toggle}
+            disabled={buffering}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-element-active text-foreground transition-colors hover:bg-element-hover cursor-pointer"
           >
-            <Download size={12} />
+            {buffering ? (
+              <span className="text-[var(--atlas-status-success-foreground)]">
+                <ArcProgress got={bufferProgress?.got ?? 0} total={bufferProgress?.total ?? 0} />
+              </span>
+            ) : playing ? (
+              <Pause size={12} />
+            ) : (
+              <Play size={12} className="ml-px" />
+            )}
           </button>
-        )}
+        </HintItem>
+
+        <div className="min-w-0 flex-1">
+          <div
+            role="slider"
+            aria-label={`Seek ${filename}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(frac * 100)}
+            onClick={seek}
+            className={cn(
+              "flex h-[26px] items-center gap-px",
+              src ? "cursor-pointer" : "opacity-60",
+            )}
+          >
+            {bars.map((p, i) => {
+              const played = (i + 0.5) / BARS <= frac;
+              return (
+                <span
+                  key={i}
+                  className={cn(
+                    "min-w-0 flex-1 rounded-full transition-colors duration-100",
+                    played ? "bg-[var(--atlas-status-success-foreground)]" : "bg-border-strong",
+                  )}
+                  style={{ height: `${Math.round(4 + p * 18)}px` }}
+                />
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between pt-0.5">
+            <span className="text-2xs tabular-nums text-disabled">
+              {formatTime(time)} / {formatTime(duration)}
+            </span>
+            {subtitle && <span className="text-2xs text-disabled">{subtitle}</span>}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          <HintItem label={muted ? "Unmute" : "Mute"}>
+            <button
+              type="button"
+              onClick={() => setMuted((v) => !v)}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+            >
+              {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+            </button>
+          </HintItem>
+          {onDownload && (
+            <HintItem label="Download">
+              <button
+                type="button"
+                onClick={onDownload}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+              >
+                <Download size={12} />
+              </button>
+            </HintItem>
+          )}
+        </div>
       </div>
-    </div>
+    </HintGroup>
   );
 });
 

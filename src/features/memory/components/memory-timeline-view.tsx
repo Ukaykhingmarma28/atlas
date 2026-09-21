@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Loader2, RotateCw, GitBranch, Search, X, ArrowUp } from "lucide-react";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useMemoryStore } from "../stores/memory-store";
 import { MemoryTimelineCalendar } from "./memory-timeline-calendar";
@@ -95,7 +97,7 @@ function affectingItems(selectedId: string, chain: Chain, t: MemoryTimeline): Pa
 }
 
 export function MemoryTimelineView() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const isRepo = useGitStore.use.isRepo();
   const timeline = useMemoryStore.use.timeline();
   const loading = useMemoryStore.use.timelineLoading();
@@ -201,9 +203,9 @@ export function MemoryTimelineView() {
     return (
       <Centered>
         <div className="text-center max-w-[320px] px-6 space-y-2">
-          <GitBranch size={22} className="text-[var(--text-tertiary)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-secondary)]">Timeline needs a git repo</p>
-          <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+          <GitBranch size={22} className="text-[var(--muted-foreground)] mx-auto" />
+          <p className="text-sm text-[var(--secondary-foreground)]">Timeline needs a git repo</p>
+          <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
             Initialize git to map agent sessions and memory onto branch lanes over time.
           </p>
         </div>
@@ -213,7 +215,7 @@ export function MemoryTimelineView() {
   if (loading && !timeline) {
     return (
       <Centered>
-        <Loader2 size={18} className="animate-spin text-[var(--text-tertiary)]" />
+        <Loader2 size={18} className="animate-spin text-[var(--muted-foreground)]" />
       </Centered>
     );
   }
@@ -221,10 +223,10 @@ export function MemoryTimelineView() {
     return (
       <Centered>
         <div className="text-center space-y-2">
-          <p className="text-[12px] text-[var(--text-tertiary)]">Couldn't build the timeline.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Couldn't build the timeline.</p>
           <button
             onClick={() => projectPath && void loadTimeline(projectPath, true)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -249,26 +251,26 @@ export function MemoryTimelineView() {
     : "memory affecting this, newest first";
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-base)]">
+    <div className="h-full flex flex-col bg-[var(--background)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)]">
-        <span className="text-[11px] font-medium text-[var(--text-secondary)]">Timeline</span>
+      <div className="flex items-center gap-3 px-3 h-control-lg shrink-0 border-b border-[var(--border)] text-2xs text-[var(--muted-foreground)]">
+        <span className="text-xs font-medium text-[var(--secondary-foreground)]">Timeline</span>
         <span className="tabular-nums">
           {timeline.branches.length} branches · {timeline.commits.length} commits ·{" "}
           {timeline.sessions.length} sessions
         </span>
         <div className="flex-1" />
         {/* Day-range segmented toggle (auto via breakpoint, user-overridable). */}
-        <div className="flex items-center rounded-md border border-[var(--border-default)] overflow-hidden h-6">
+        <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden h-6">
           {([3, 4, 7] as const).map((n) => (
             <button
               key={n}
               onClick={() => setPersistedDayCount(n)}
               className={cn(
-                "px-2 h-6 text-[10px] tabular-nums transition-colors cursor-pointer border-l border-[var(--border-default)] first:border-l-0",
+                "px-2 h-6 text-2xs tabular-nums transition-colors cursor-pointer border-l border-[var(--border)] first:border-l-0",
                 dayCount === n
-                  ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+                  ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+                  : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
               )}
               title={`Show ${n} days`}
             >
@@ -276,14 +278,14 @@ export function MemoryTimelineView() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => projectPath && void loadTimeline(projectPath, true)}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="Refresh"
-          aria-label="Refresh"
-        >
-          <RotateCw size={12} className={loading ? "animate-spin" : ""} />
-        </button>
+        <Hint label="Refresh">
+          <button
+            onClick={() => projectPath && void loadTimeline(projectPath, true)}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} className={loading ? "animate-spin" : ""} />
+          </button>
+        </Hint>
       </div>
 
       {/* Chart + panel + tooltip */}
@@ -312,37 +314,45 @@ export function MemoryTimelineView() {
 
         {/* Floating semantic search pill — overlaid on the chart, no box. */}
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 w-[min(620px,calc(100%-40px))]">
-          <div className="flex items-center gap-2.5 h-11 rounded-full bg-[#141414]/95 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.6)] border border-white/[0.12] px-4">
-            <Search size={15} className="text-[var(--text-tertiary)] shrink-0" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void runSearch();
-                else if (e.key === "Escape") clearSearch();
-              }}
-              placeholder="Ask how memory shaped your branches…"
-              spellCheck={false}
-              className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-            />
-            {(query || searchMode) && !searching && (
-              <button
-                onClick={clearSearch}
-                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
-                title="Clear"
-              >
-                <X size={15} />
-              </button>
-            )}
-            <button
-              onClick={() => void runSearch()}
-              disabled={!query.trim() || searching}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--accent-primary)] text-[var(--bg-base)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
-              title="Search memory impact"
-            >
-              {searching ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={15} />}
-            </button>
-          </div>
+          <HintGroup side="top">
+            <div className="flex items-center gap-2.5 h-11 rounded-full bg-card/95 backdrop-blur-2xl shadow-md border border-border px-4">
+              <Search size={15} className="text-[var(--muted-foreground)] shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void runSearch();
+                  else if (e.key === "Escape") clearSearch();
+                }}
+                placeholder="Ask how memory shaped your branches…"
+                spellCheck={false}
+                className="flex-1 min-w-0 bg-transparent outline-none text-base text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
+              />
+              {(query || searchMode) && !searching && (
+                <HintItem label="Clear">
+                  <button
+                    onClick={clearSearch}
+                    className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] shrink-0"
+                  >
+                    <X size={15} />
+                  </button>
+                </HintItem>
+              )}
+              <HintItem label="Search memory impact">
+                <button
+                  onClick={() => void runSearch()}
+                  disabled={!query.trim() || searching}
+                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] shrink-0 disabled:opacity-30 hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  {searching ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <ArrowUp size={15} />
+                  )}
+                </button>
+              </HintItem>
+            </div>
+          </HintGroup>
         </div>
       </div>
     </div>
@@ -366,7 +376,7 @@ function selectionTitle(selectedId: string | null, t: MemoryTimeline): string {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-[12px]">
+    <div className="h-full flex items-center justify-center text-[var(--muted-foreground)] text-sm">
       {children}
     </div>
   );

@@ -217,7 +217,7 @@ pub fn auth_cancel_sign_in(app: AppHandle, state: State<'_, AuthState>) -> AuthS
 
 /// Which organisation the desktop acts for — billing included (#73).
 ///
-/// The org switcher used to be frontend-only: it re-pointed workspaces and
+/// The org switcher used to be frontend-only: it re-pointed projects and
 /// telemetry and told the Rust side nothing, while every gateway request
 /// reads the active org from the auth snapshot. So the switch changed what
 /// the user SAW and not who they BILLED — an unentitled org appeared to work

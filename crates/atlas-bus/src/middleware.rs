@@ -1,28 +1,15 @@
 //! Ordered middleware chains for the agent subsystem.
 //!
-//! - Outbound: observe every emitted agent event (`E`). Used by the host for
-//!   the window broadcast, telemetry, and memory-ingest — each a small,
-//!   testable unit instead of one monolithic sink body.
-//! - Inbound: mutate an outgoing prompt context (`C`) before it reaches the
-//!   agent. Used for automatic context / skill / bootstrap injection so it
-//!   applies uniformly to the native and every ACP agent.
+//! Outbound only: observe every emitted agent event (`E`). Used by the host for
+//! the window broadcast, telemetry, and memory-ingest — each a small, testable
+//! unit instead of one monolithic sink body.
 
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 /// Observes an emitted event. Implementations must be cheap / non-blocking on
 /// the calling thread — offload heavy work (disk, network) to a spawned task.
 pub trait OutboundMiddleware<E>: Send + Sync {
     fn on_event(&self, event: &E);
-}
-
-/// Mutates an outgoing prompt context in place before dispatch. Runs in order;
-/// an implementation that can't contribute (timeout, disabled) should leave the
-/// context unchanged rather than error.
-#[async_trait]
-pub trait InboundMiddleware<C: Send>: Send + Sync {
-    async fn on_prompt(&self, cx: &mut C);
 }
 
 /// An ordered chain of outbound middleware. `run` invokes each in registration
@@ -65,44 +52,6 @@ impl<E> Default for OutboundPipeline<E> {
     }
 }
 
-/// An ordered chain of inbound middleware. `run` threads the context through
-/// each stage in order.
-pub struct InboundPipeline<C: Send> {
-    stages: Vec<Arc<dyn InboundMiddleware<C>>>,
-}
-
-impl<C: Send> InboundPipeline<C> {
-    pub fn new() -> Self {
-        Self { stages: Vec::new() }
-    }
-
-    pub fn with(mut self, stage: Arc<dyn InboundMiddleware<C>>) -> Self {
-        self.stages.push(stage);
-        self
-    }
-
-    pub fn push(&mut self, stage: Arc<dyn InboundMiddleware<C>>) {
-        self.stages.push(stage);
-    }
-
-    /// Thread `cx` through every stage, in order.
-    pub async fn run(&self, cx: &mut C) {
-        for stage in &self.stages {
-            stage.on_prompt(cx).await;
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.stages.is_empty()
-    }
-}
-
-impl<C: Send> Default for InboundPipeline<C> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,14 +75,6 @@ mod tests {
             .with(Arc::new(Recorder { tag: "b", log: log.clone() }));
         pipe.run(&5);
         assert_eq!(*log.lock().unwrap(), vec!["a:5", "b:5"]);
-    }
-
-    struct Append(&'static str);
-    #[async_trait]
-    impl InboundMiddleware<String> for Append {
-        async fn on_prompt(&self, cx: &mut String) {
-            cx.push_str(self.0);
-        }
     }
 
     /// Why a consumer that must not miss an event belongs here rather than on
@@ -186,15 +127,5 @@ mod tests {
              (received {received}, dropped {})",
             lagging.dropped()
         );
-    }
-
-    #[tokio::test]
-    async fn inbound_threads_context_in_order() {
-        let pipe = InboundPipeline::new()
-            .with(Arc::new(Append("a")))
-            .with(Arc::new(Append("b")));
-        let mut cx = String::from("start:");
-        pipe.run(&mut cx).await;
-        assert_eq!(cx, "start:ab");
     }
 }

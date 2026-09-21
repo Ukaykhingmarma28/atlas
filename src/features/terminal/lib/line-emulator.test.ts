@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { LineEmulator, linesToSegments } from "./line-emulator";
-import { resolveTerminalOutput } from "./ansi-to-segments";
 
 const text = (emu: LineEmulator) =>
   linesToSegments(emu.snapshot().lines)
     .map((s) => s.text)
     .join("");
+
+/** The whole input in one push with an unbounded hot window: nothing is ever
+ *  committed early, so this is the reference the chunked runs must match. */
+function render(input: string): string {
+  const emu = new LineEmulator({
+    hotRows: Number.MAX_SAFE_INTEGER,
+    maxLines: Number.MAX_SAFE_INTEGER,
+  });
+  emu.push(input);
+  return linesToSegments(emu.finish(false))
+    .map((s) => s.text)
+    .join("");
+}
 
 /** Split `s` into random chunks — the byte stream never respects line ends. */
 function chunks(s: string, seed: number): string[] {
@@ -37,12 +49,30 @@ const CORPUS = [
   "keep this\x1b[1G\x1b[Kgone\n12345\x1b[3G\x1b[0K\nabc\x1b[2K\n",
 ];
 
+describe("erase in display (ESC[J)", () => {
+  // A prompt library (@clack, Ink) redraws by moving the cursor to the top of
+  // the frame it drew last and erasing everything below before writing the new
+  // one. While `ESC[J` was ignored, the taller old frame survived underneath —
+  // its tail showing to the right of the new, shorter lines.
+  it("erases the previous frame", () => {
+    const stream =
+      "one (recommended)\r\ntwo\r\nthree\r\n" + "\x1b[3A" + "\x1b[J" + "one\r\ntwo\r\n";
+    expect(render(stream)).toBe("one\ntwo\n");
+  });
+
+  it("truncates the cursor's own line", () => {
+    expect(render("abcdef" + "\x1b[3D" + "\x1b[J")).toBe("abc");
+  });
+
+  it("leaves output with no erase sequence untouched", () => {
+    expect(render("hello\r\nworld")).toBe("hello\nworld");
+  });
+});
+
 describe("LineEmulator", () => {
-  it("matches the one-shot resolver for every corpus entry, in random chunk splits", () => {
+  it("matches a one-shot render for every corpus entry, in random chunk splits", () => {
     for (const s of CORPUS) {
-      const expected = resolveTerminalOutput(s)
-        .map((x) => x.text)
-        .join("");
+      const expected = render(s);
       for (const seed of [1, 7, 42]) {
         const emu = new LineEmulator({ hotRows: 64, maxLines: 10_000 });
         for (const c of chunks(s, seed)) emu.push(c);

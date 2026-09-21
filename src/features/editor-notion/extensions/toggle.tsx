@@ -7,6 +7,7 @@ import {
 } from "@tiptap/react";
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { Hint } from "@/ui/tooltip";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -105,21 +106,22 @@ function ToggleView({ node, updateAttributes }: NodeViewProps) {
   return (
     <NodeViewWrapper className="atlas-toggle" data-open={open ? "true" : "false"}>
       <div className="atlas-toggle-header" contentEditable={false}>
-        <button
-          type="button"
-          className="atlas-toggle-chev"
-          onClick={() => updateAttributes({ open: !open })}
-          title={open ? "Collapse" : "Expand"}
-        >
-          <ChevronRight
-            size={12}
-            strokeWidth={1.7}
-            style={{
-              transform: open ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 120ms",
-            }}
-          />
-        </button>
+        <Hint label={open ? "Collapse" : "Expand"}>
+          <button
+            type="button"
+            className="atlas-toggle-chev"
+            onClick={() => updateAttributes({ open: !open })}
+          >
+            <ChevronRight
+              size={12}
+              strokeWidth={1.7}
+              style={{
+                transform: open ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 120ms",
+              }}
+            />
+          </button>
+        </Hint>
         {editingTitle ? (
           <input
             className="atlas-toggle-title-input"

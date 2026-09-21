@@ -19,6 +19,8 @@ import { GithubIcon } from "@/components/github-icon";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { Hint } from "@/ui/tooltip";
 import { AgentMonogram, ExternalAgentIcon } from "@/components/agent-icons";
 import {
   acpRegistry,
@@ -262,29 +264,31 @@ export function AgentsMarketplace() {
   return (
     <div className="h-full flex flex-col">
       {/* Header — a single row: search + filter pills left, refresh right. */}
-      <div className="shrink-0 px-4 py-2 border-b border-[var(--border-default)]">
+      <div className="shrink-0 px-4 py-2 border-b border-[var(--border)]">
         <div className="flex items-center gap-2">
           <div className="relative flex-1 max-w-[320px]">
             <Search
               size={12}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
             />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search registry"
-              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--border-focus,var(--border-default))]"
+              className="w-full h-7 pl-7 pr-7 rounded-md bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-border-strong"
             />
             {query && (
-              <button
-                onClick={() => setQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <X size={11} />
-              </button>
+              <Hint label="Clear search">
+                <button
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </Hint>
             )}
           </div>
-          <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-secondary))] p-0.5">
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--card,var(--card))] p-0.5">
             {(
               [
                 ["all", "All"],
@@ -296,10 +300,10 @@ export function AgentsMarketplace() {
                 key={id}
                 onClick={() => setFilter(id)}
                 className={cn(
-                  "h-[22px] px-2.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer",
+                  "h-[22px] px-2.5 rounded-full text-xs font-medium transition-colors cursor-pointer",
                   filter === id
-                    ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
-                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                    ? "bg-[var(--atlas-element-selected,var(--atlas-element-hover))] text-[var(--foreground)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
                 )}
               >
                 {label}
@@ -312,7 +316,7 @@ export function AgentsMarketplace() {
           <button
             onClick={() => void refresh()}
             disabled={refreshing}
-            className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex items-center gap-1.5 h-6 px-2 rounded-md text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
             title={
               refreshedAt
                 ? `Last updated ${new Date(refreshedAt).toLocaleString()}`
@@ -324,7 +328,7 @@ export function AgentsMarketplace() {
           </button>
         </div>
         {error && registryEntries.length > 0 && (
-          <p className="text-[10px] text-[var(--text-tertiary)]">
+          <p className="text-2xs text-[var(--muted-foreground)]">
             Last refresh failed ({error}) — showing cached data
             {refreshedAt ? ` from ${new Date(refreshedAt).toLocaleString()}` : ""}.
           </p>
@@ -340,12 +344,12 @@ export function AgentsMarketplace() {
           // Nothing cached yet AND still working — the only case that earns a
           // blocking spinner. With a cache in hand we always paint the cache.
           <div className="h-full flex flex-col items-center justify-center gap-2">
-            <Loader2 size={18} className="animate-spin text-[var(--text-tertiary)]" />
-            <p className="text-[11px] text-[var(--text-tertiary)]">Loading the ACP registry…</p>
+            <Loader2 size={18} className="animate-spin text-[var(--muted-foreground)]" />
+            <p className="text-xs text-[var(--muted-foreground)]">Loading the ACP registry…</p>
           </div>
         ) : entries.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
-            <p className="text-[12px] text-[var(--text-tertiary)]">
+            <p className="text-sm text-[var(--muted-foreground)]">
               {registryEntries.length > 0
                 ? "No agents match."
                 : error
@@ -354,11 +358,11 @@ export function AgentsMarketplace() {
             </p>
             {registryEntries.length === 0 && error && (
               <>
-                <p className="max-w-[380px] text-[10.5px] text-[var(--text-tertiary)]">{error}</p>
+                <p className="max-w-[380px] text-xs text-[var(--muted-foreground)]">{error}</p>
                 <button
                   onClick={() => void refresh()}
                   disabled={refreshing}
-                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:cursor-default"
+                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-xs font-medium text-[var(--foreground)] border border-[var(--border)] bg-[var(--card,var(--background))] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer disabled:cursor-default"
                 >
                   <RefreshCw size={10} className={cn(refreshing && "animate-spin")} />
                   {refreshing ? "Retrying…" : "Try again"}
@@ -379,7 +383,7 @@ export function AgentsMarketplace() {
                   className={cn(section === "registry" && detectedIds.size > 0 && "mt-4")}
                 >
                   {detectedIds.size > 0 && (
-                    <h3 className="mb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
+                    <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
                       {section === "detected" ? "Detected on your system" : "Registry"}
                     </h3>
                   )}
@@ -435,12 +439,12 @@ const AgentCard = memo(function AgentCard({
     [entry.id, entry.installed],
   );
   return (
-    <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3.5 py-3 flex flex-col gap-1.5">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3.5 py-3 flex flex-col gap-1.5">
       <div className="flex items-center gap-2.5">
         {/* Explicit color, not inherited: registry icons are monochrome
             `currentColor` art, so the tile is what decides whether they are
             legible. See ExternalAgentIcon. */}
-        <span className="flex items-center justify-center size-7 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] text-[var(--text-primary)] shrink-0">
+        <span className="flex items-center justify-center size-7 rounded-md border border-[var(--border)] bg-[var(--card,var(--background))] text-[var(--foreground)] shrink-0">
           {entry.iconDataUrl ? (
             <ExternalAgentIcon dataUrl={entry.iconDataUrl} size={16} />
           ) : (
@@ -449,15 +453,15 @@ const AgentCard = memo(function AgentCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
-            <span className="text-[12.5px] font-semibold text-[var(--text-primary)] truncate">
+            <span className="text-base font-semibold text-[var(--foreground)] truncate">
               {entry.name}
             </span>
-            <span className="text-[10px] text-[var(--text-tertiary)] tabular-nums">
+            <span className="text-2xs text-[var(--muted-foreground)] tabular-nums">
               v{entry.version}
             </span>
             {entry.unverified && entry.distributionKind === "binary" && (
               <span
-                className="text-[9px] px-1 rounded bg-[var(--bg-hover)] text-[var(--text-tertiary)]"
+                className="text-3xs px-1 rounded bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)]"
                 title="This agent's binary download publishes no checksum."
               >
                 unverified
@@ -465,7 +469,7 @@ const AgentCard = memo(function AgentCard({
             )}
           </div>
           {!entry.platformSupported && (
-            <p className="text-[10px] text-[var(--warning,#c90)]">
+            <p className="text-2xs text-warning">
               Not supported on this platform
               {entry.unsupportedReason ? ` — ${entry.unsupportedReason}` : ""}
             </p>
@@ -481,11 +485,11 @@ const AgentCard = memo(function AgentCard({
         />
       </div>
       {entry.description && (
-        <p className="text-[11px] leading-snug text-[var(--text-secondary)] line-clamp-2">
+        <p className="text-xs leading-snug text-[var(--secondary-foreground)] line-clamp-2">
           {entry.description}
         </p>
       )}
-      <div className="flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-2 text-2xs text-[var(--muted-foreground)]">
         <span className="font-mono">ID: {entry.id}</span>
         {entry.distributionKind && <span className="font-mono">[{entry.distributionKind}]</span>}
         <span className="flex-1" />
@@ -499,24 +503,28 @@ const AgentCard = memo(function AgentCard({
           height={20}
           label={`≈${trend.total.toLocaleString()} downloads in the last 6 months`}
         />
-        {entry.repository && (
-          <button
-            onClick={() => void openUrl(entry.repository!)}
-            className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={entry.repository}
-          >
-            <GithubIcon size={11} />
-          </button>
-        )}
-        {entry.website && (
-          <button
-            onClick={() => void openUrl(entry.website!)}
-            className="hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={entry.website}
-          >
-            <Globe size={11} />
-          </button>
-        )}
+        <HintGroup>
+          {entry.repository && (
+            <HintItem label="Open repository">
+              <button
+                onClick={() => void openUrl(entry.repository!)}
+                className="hover:text-[var(--foreground)] transition-colors cursor-pointer"
+              >
+                <GithubIcon size={11} />
+              </button>
+            </HintItem>
+          )}
+          {entry.website && (
+            <HintItem label="Open website">
+              <button
+                onClick={() => void openUrl(entry.website!)}
+                className="hover:text-[var(--foreground)] transition-colors cursor-pointer"
+              >
+                <Globe size={11} />
+              </button>
+            </HintItem>
+          )}
+        </HintGroup>
       </div>
     </div>
   );
@@ -541,7 +549,7 @@ function CardAction({
   const kind = installKind(state);
   if (installing) {
     return (
-      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] tabular-nums">
+      <span className="flex items-center gap-1.5 h-6 px-2 rounded-md text-xs font-medium text-[var(--secondary-foreground)] border border-[var(--border)] tabular-nums">
         <Loader2 size={10} className="animate-spin" />
         {pct !== null ? `${Math.round(pct)}%` : "Installing…"}
       </span>
@@ -560,7 +568,7 @@ function CardAction({
               if (ok) onUninstall(entry);
             });
         }}
-        className="h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        className="h-6 px-2.5 rounded-md text-xs font-medium text-[var(--secondary-foreground)] border border-[var(--border)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
       >
         Remove
       </button>
@@ -575,7 +583,7 @@ function CardAction({
     return (
       <span className="flex items-center gap-1.5">
         <span
-          className="flex items-center gap-1 h-6 px-2 rounded-md text-[10.5px] font-medium text-[var(--text-tertiary)] border border-[var(--border-default)]"
+          className="flex items-center gap-1 h-6 px-2 rounded-md text-xs font-medium text-[var(--muted-foreground)] border border-[var(--border)]"
           title={
             catalog?.resolvedPath ? `Found at ${catalog.resolvedPath}` : "Found on your system"
           }
@@ -590,7 +598,7 @@ function CardAction({
               ? `Add it, running your own copy at ${catalog.resolvedPath}. Nothing is downloaded.`
               : "Add it, running the copy already on your system. Nothing is downloaded."
           }
-          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium text-[var(--text-primary)] border border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          className="flex items-center gap-1 h-6 px-2.5 rounded-md text-xs font-medium text-[var(--foreground)] border border-[var(--border)] bg-[var(--card,var(--background))] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
         >
           Install
         </button>
@@ -602,10 +610,10 @@ function CardAction({
       onClick={() => onInstall(entry, kind)}
       disabled={!entry.platformSupported}
       className={cn(
-        "flex items-center gap-1 h-6 px-2.5 rounded-md text-[10.5px] font-medium border transition-colors",
+        "flex items-center gap-1 h-6 px-2.5 rounded-md text-xs font-medium border transition-colors",
         entry.platformSupported
-          ? "text-[var(--text-primary)] border-[var(--border-default)] bg-[var(--bg-elevated,var(--bg-primary))] hover:bg-[var(--bg-hover)] cursor-pointer"
-          : "text-[var(--text-tertiary)] border-[var(--border-default)] opacity-50 cursor-not-allowed",
+          ? "text-[var(--foreground)] border-[var(--border)] bg-[var(--card,var(--background))] hover:bg-[var(--atlas-element-hover)] cursor-pointer"
+          : "text-[var(--muted-foreground)] border-[var(--border)] opacity-50 cursor-not-allowed",
       )}
     >
       <Download size={10} />

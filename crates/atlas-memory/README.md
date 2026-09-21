@@ -3,25 +3,19 @@
 Atlas's on-device retrieval-augmented memory. It turns a project's files, chat
 history, and distilled knowledge into a searchable index that the AI agents use
 to ground their answers — fully local by default (no network for the default
-path), behind one stable seam so all three agents (Claude Code, Codex, Atlas)
-share it without special-casing.
+path), behind one retrieval callback so every agent (the native agent and any
+installed ACP agent) shares it without special-casing.
 
 > New to the codebase? Read this top-to-bottom. Upgrading an existing install or
-> debugging on-disk state? See [`MIGRATION.md`](./MIGRATION.md). Want the design
-> **2026-08-22 — this crate no longer depends on the Cersei SDK.** Session-memory
-> extraction/persistence and the embedding-provider trait were ported in as
-> `src/session.rs` and `src/embedding.rs`. `tests/cersei_parity.rs` was written
-> against the SDK versions and passes unchanged against the ported ones — run it
-> before touching either. The ported grafeo graph store, its consolidation pass
-> and the dream gates were removed in #89 (retrieval is HNSW-only; global
-> promotion runs over the record table).
+> debugging on-disk state? See [`MIGRATION.md`](./MIGRATION.md).
 
-> rationale + the build plan? The originating plan and the frozen-seam spec
-> lived in `plans/atlas-cersei-rag-replan.md` and
-> `crates/atlas-cersei/ARCHITECTURE.md` §6e — both deleted with the Cersei
-> path (#54). The seam itself is stated below and enforced by this crate's
-> tests; the native consumer is now `atlas-native-agent`'s `search_memory`
-> dynamic tool.
+> **This crate no longer depends on the Cersei SDK.** Session-memory
+> extraction/persistence and the embedding-provider trait (`src/session.rs`,
+> `src/embedding.rs`) came from the SDK, which was deleted in #54; they are
+> Atlas's own code now. `tests/behaviour.rs` pins their behaviour — run it before
+> touching either. The ported grafeo graph store, its consolidation pass and the
+> dream gates were removed in #89 (retrieval is HNSW-only; global promotion runs
+> over the record table).
 
 ---
 
@@ -52,15 +46,22 @@ store promotes Facts seen in two or more repositories.
 - **The Tauri app layer** (`src-tauri/src/commands/memory_indexer.rs` +
   `memory_retrieve.rs`) owns orchestration: the per-project engine registry, the
   background indexer task, the file watcher, and the BYOK call for extraction.
-- **The seam** (`atlas-cersei/src/memory.rs`): a single injected callback
-  `MemorySearchFn(cwd, query, limit) -> Vec<MemDoc>`. **This shape is frozen** —
-  all three agents retrieve through it, so changing the engine never touches the
-  agents.
+- **The seam** is `memory_retrieve::retrieve(app, cwd, query, limit)` in
+  `src-tauri`, which takes no agent parameter. Two paths reach it:
+  - the native agent's `search_memory` dynamic tool, through the
+    `MemorySearch = Fn(cwd, query, limit) -> Vec<MemDoc>` callback that
+    `commands/agents.rs` installs with
+    `atlas_native_agent::engine::memory::register_search`;
+  - the per-send `--- RELEVANT PROJECT MEMORY ---` block, pushed into every
+    agent's prompt when memory sharing is enabled for the project.
+
+  Changing the engine never touches the agents.
 
 ```
-agent ──search_memory──▶ MemorySearchFn closure ──▶ memory_retrieve::retrieve
-                                                        └─▶ registry.engine_for(cwd)
-                                                              └─▶ MemoryEngine::retrieve   (atlas-memory)
+native agent ──search_memory──▶ MemorySearch callback ──┐
+any agent ──send (sharing on)──▶ pushed memory block ────┴─▶ memory_retrieve::retrieve
+                                                                └─▶ registry.engine_for(cwd)
+                                                                      └─▶ MemoryEngine::retrieve   (atlas-memory)
 ```
 
 ---
@@ -68,9 +69,10 @@ agent ──search_memory──▶ MemorySearchFn closure ──▶ memory_retri
 ## 3. How a developer uses it
 
 ### 3a. "I just want the agents to recall project memory"
-Nothing to do — it's wired. The **Atlas/Cersei** agent has a `search_memory` tool
-it calls on demand; **Claude Code / Codex** get the top hits *pushed* into their
-prompt (they have no pull tool). Indexing happens automatically: on project open
+Nothing to do — it's wired. The **native agent** has a `search_memory` tool it
+calls on demand; with memory sharing enabled for the project, **every agent**
+(ACP agents have no pull tool) also gets the top hits *pushed* into its prompt
+on each send. Indexing happens automatically: on project open
 (cold index), on file changes (watched + debounced), and after each finished turn.
 
 ### 3b. "I want to force a reindex"
@@ -89,7 +91,8 @@ let hits = engine.retrieve("how do we store sessions?", 6).await; // Vec<Retriev
 for h in hits { println!("{} — {}", h.title, h.source); }
 ```
 `RetrievedDoc { id, title, source, text }`. The Tauri layer maps it onto
-`atlas_cersei::MemDoc { title, source, text }` at the seam.
+`atlas_native_agent::engine::memory::MemDoc { title, source, text }` for the
+tool, dropping `id`.
 
 ### 3d. "I want to add a new corpus source" (e.g. index a new kind of doc)
 Corpus gathering lives in the **app layer**, not this crate: extend
@@ -229,10 +232,15 @@ App layer: `src-tauri/src/commands/memory_indexer.rs` (registry + indexer + watc
 
 ## 10. Testing & validation
 
-- **Unit tests** (offline, no network/model): `cd crates/atlas-memory && cargo test`
+- **Unit tests** (offline, no network/model): `cargo test -p atlas-memory`
   (store roundtrip, manifest diff, migration, retrieve fusion/floor/dedup, extraction
-  gates, global promotion, the fixture-corpus retrieval goldens). Model-dependent tests skip cleanly unless
-  `ATLAS_MINILM_DIR` is set.
+  gates, global promotion, the fixture-corpus retrieval goldens), plus
+  `tests/behaviour.rs`.
+- **Model-dependent tests** are `#[ignore = "needs ATLAS_MINILM_DIR"]`. Run them
+  with `ATLAS_MINILM_DIR=<model dir> cargo test -p atlas-memory -- --ignored`;
+  they fail, rather than skip, when the variable is unset.
+- **The HNSW-vs-brute-force benchmark** (`bench_hnsw_vs_brute_force`) is also
+  ignored: `cargo test -p atlas-memory --release bench_hnsw -- --ignored --nocapture`.
 - **Live 3-agent validation** (needs the running app, a signed-in account or a
   BYOK summariser, and the MiniLM model): launch `bun run dev:app`, drive a
   tool-heavy session (to clear the extraction gates) or end a short one, then
@@ -246,9 +254,8 @@ App layer: `src-tauri/src/commands/memory_indexer.rs` (registry + indexer + watc
 The new engine is the live retrieval path. The legacy per-turn distill
 (`memory_compile`) and its A/B flag are gone: the extractor (gateway by default
 when signed in, BYOK when the summariser preference says `provider`) is the only
-LLM writer. One safety net remains:
-- **`retrieve_brute_force`** (the old O(n) cosine path) is retained
-  (`#[allow(dead_code)]`) for rollback.
+LLM writer. The old brute-force retrieval (`retrieve_brute_force`) has been
+deleted too, so there is no retrieval rollback switch: HNSW is the only path.
 
 ---
 

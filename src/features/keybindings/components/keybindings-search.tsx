@@ -35,19 +35,19 @@ export function KeybindingsSearch({
   const empty = !state.query && !state.recorded;
 
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+    <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border px-2">
       <div
         className={cn(
-          "flex h-6 flex-1 items-center gap-1.5 rounded-md border bg-bg-elevated px-2",
+          "flex h-6 flex-1 items-center gap-1.5 rounded-md border bg-card px-2",
           state.recordKeys
             ? "border-border-strong"
-            : "border-border-default focus-within:border-border-strong",
+            : "border-border focus-within:border-border-strong",
         )}
       >
         {state.recordKeys ? (
-          <Keyboard size={12} className="shrink-0 text-text-tertiary" />
+          <Keyboard size={12} className="shrink-0 text-muted-foreground" />
         ) : (
-          <Search size={12} className="shrink-0 text-text-tertiary" />
+          <Search size={12} className="shrink-0 text-muted-foreground" />
         )}
         {state.recordKeys ? (
           <input
@@ -69,7 +69,7 @@ export function KeybindingsSearch({
               const combo = comboFromEvent(e.nativeEvent);
               if (combo) onChange({ ...state, recorded: combo });
             }}
-            className="h-full flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-muted"
+            className="h-full flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
           />
         ) : (
           <input
@@ -84,7 +84,7 @@ export function KeybindingsSearch({
               }
               e.stopPropagation();
             }}
-            className="h-full flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-muted"
+            className="h-full flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
           />
         )}
         {state.recordKeys && state.recorded && <KbdKeys keys={displayKeys(state.recorded)} />}

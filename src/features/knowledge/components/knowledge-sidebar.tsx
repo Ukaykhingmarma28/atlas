@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { logEvent } from "@/features/log/lib/log";
 import {
   FolderPlus,
@@ -87,8 +89,9 @@ export function KnowledgeSidebar({
       "list_cloned_repos",
       { projectPath },
     )
-      .then(setClonedRepos)
-      .catch(() => {});
+      // A missing or failed answer means "no clones", not a crash on `.length`.
+      .then((repos) => setClonedRepos(repos ?? []))
+      .catch(() => setClonedRepos([]));
   }, [projectPath]);
 
   useEffect(() => {
@@ -137,81 +140,90 @@ export function KnowledgeSidebar({
   return (
     <aside
       className="flex flex-col min-h-0 shrink-0 border-r border-border-subtle"
-      style={{ width, background: "var(--bg-rail)" }}
+      style={{ width, background: "var(--atlas-panel-background)" }}
     >
       {/* Header — matches the project file-tree's typography
           (10px / semibold / tracking-wider, UI font) so the two
           sidebars read as one consistent system. */}
-      <div className="flex items-center px-3 pt-3.5 pb-2 shrink-0">
-        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
-          Knowledge
-        </span>
-        <button
-          onClick={() =>
-            treeExpandedCount > 0 ? treeRef.current?.collapseAll() : treeRef.current?.expandAll()
-          }
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
-          title={treeExpandedCount > 0 ? "Collapse all" : "Expand all"}
-          style={{ width: 22, height: 22 }}
-        >
-          {treeExpandedCount > 0 ? <FoldVertical size={12} /> : <UnfoldVertical size={12} />}
-        </button>
-        <button
-          onClick={onOpenGraph}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
-          title="Open graph view"
-          style={{ width: 22, height: 22 }}
-        >
-          <Network size={12} />
-        </button>
-        <button
-          onClick={onNewFolder}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
-          title="New folder"
-          style={{ width: 22, height: 22 }}
-        >
-          <FolderPlus size={12} />
-        </button>
-        <button
-          onClick={onNewNote}
-          className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer"
-          title="New page"
-          style={{ width: 22, height: 22 }}
-        >
-          <FilePlus size={12} />
-        </button>
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
+      <HintGroup>
+        <div className="flex items-center px-3 pt-3.5 pb-2 shrink-0">
+          <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider truncate flex-1">
+            Knowledge
+          </span>
+          <HintItem label={treeExpandedCount > 0 ? "Collapse all" : "Expand all"}>
             <button
-              className="p-1 rounded text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors cursor-pointer outline-none"
-              title="Import notes / folder"
+              onClick={() =>
+                treeExpandedCount > 0
+                  ? treeRef.current?.collapseAll()
+                  : treeRef.current?.expandAll()
+              }
+              className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer"
               style={{ width: 22, height: 22 }}
             >
-              <Download size={12} />
+              {treeExpandedCount > 0 ? <FoldVertical size={12} /> : <UnfoldVertical size={12} />}
             </button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              sideOffset={4}
-              className="z-[9999] min-w-[180px] rounded-md border border-border-default bg-bg-elevated py-1 shadow-[var(--shadow-overlay)]"
+          </HintItem>
+          <HintItem label="Open graph view">
+            <button
+              onClick={onOpenGraph}
+              className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer"
+              style={{ width: 22, height: 22 }}
             >
-              <DropdownMenu.Item
-                onSelect={onImportFiles}
-                className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-              >
-                <FileText size={13} /> Import .md files…
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                onSelect={onImportFolder}
-                className="flex items-center gap-2 px-2.5 h-[28px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer outline-none"
-              >
-                <Folder size={13} /> Import folder…
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      </div>
+              <Network size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="New folder">
+            <button
+              onClick={onNewFolder}
+              className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer"
+              style={{ width: 22, height: 22 }}
+            >
+              <FolderPlus size={12} />
+            </button>
+          </HintItem>
+          <HintItem label="New page">
+            <button
+              onClick={onNewNote}
+              className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer"
+              style={{ width: 22, height: 22 }}
+            >
+              <FilePlus size={12} />
+            </button>
+          </HintItem>
+          <DropdownMenu.Root>
+            <HintItem label="Import notes / folder">
+              <DropdownMenu.Trigger
+                render={
+                  <button
+                    className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors cursor-pointer outline-none"
+                    style={{ width: 22, height: 22 }}
+                  >
+                    <Download size={12} />
+                  </button>
+                }
+              />
+            </HintItem>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
+                <DropdownMenu.Popup className="min-w-[180px] rounded-md border border-border bg-card py-1 shadow-md">
+                  <DropdownMenu.Item
+                    onClick={onImportFiles}
+                    className="flex items-center gap-2 px-2.5 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
+                  >
+                    <FileText size={13} /> Import .md files…
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onClick={onImportFolder}
+                    className="flex items-center gap-2 px-2.5 h-control-md text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-pointer outline-none"
+                  >
+                    <Folder size={13} /> Import folder…
+                  </DropdownMenu.Item>
+                </DropdownMenu.Popup>
+              </DropdownMenu.Positioner>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      </HintGroup>
 
       {/* Inline new-folder input — sits between the header and the
           tree so it doesn't overlay row content. Auto-closes on
@@ -230,7 +242,7 @@ export function KnowledgeSidebar({
               if (!folderInputValue.trim()) onFolderInputCancel?.();
             }}
             placeholder="Folder name…"
-            className="w-full bg-bg-input border border-border-default rounded text-[11px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-border-focus transition-colors"
+            className="w-full bg-panel-input border border-border rounded text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-border-strong transition-colors"
             style={{ height: 26, padding: "0 8px" }}
           />
         </div>
@@ -253,7 +265,7 @@ export function KnowledgeSidebar({
             <div className="group flex items-center gap-1 px-2 pt-3 pb-1">
               <button
                 onClick={() => setRecentsCollapsed((v) => !v)}
-                className="flex items-center gap-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-wider hover:text-text-secondary transition-colors"
+                className="flex items-center gap-1 text-2xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-secondary-foreground transition-colors"
                 title={recentsCollapsed ? "Expand" : "Collapse"}
               >
                 {recentsCollapsed ? (
@@ -264,13 +276,14 @@ export function KnowledgeSidebar({
                 Recently opened
               </button>
               <span className="flex-1" />
-              <button
-                onClick={onClearRecents}
-                className="flex h-4 w-4 items-center justify-center rounded text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-status-error transition-all cursor-pointer"
-                title="Clear recently opened"
-              >
-                <Trash2 size={11} />
-              </button>
+              <Hint label="Clear recently opened">
+                <button
+                  onClick={onClearRecents}
+                  className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-error transition-all cursor-pointer"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </Hint>
             </div>
             {!recentsCollapsed && (
               <div className="flex flex-col gap-px max-h-[160px] overflow-y-auto hide-scrollbar">
@@ -278,8 +291,7 @@ export function KnowledgeSidebar({
                   <button
                     key={r.id}
                     onClick={() => onSelectEntry(r.id)}
-                    className="flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-left text-text-tertiary hover:bg-bg-hover hover:text-text-secondary transition-colors"
-                    style={{ fontSize: 12 }}
+                    className="flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-left text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors text-sm"
                   >
                     <span className="truncate flex-1">{r.title}</span>
                   </button>
@@ -293,7 +305,7 @@ export function KnowledgeSidebar({
       {/* Repositories — bottom section */}
       {clonedRepos.length > 0 && (
         <div className="border-t border-border-subtle shrink-0 py-2.5 px-1.5">
-          <div className="px-2 pb-1.5 text-[10px] font-semibold text-text-tertiary uppercase tracking-wider">
+          <div className="px-2 pb-1.5 text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
             Repositories
           </div>
           <div className="flex flex-col gap-px max-h-[208px] overflow-y-auto hide-scrollbar">
@@ -312,32 +324,36 @@ export function KnowledgeSidebar({
                     }
                   }}
                   className={cn(
-                    "group flex items-center gap-1.5 px-2 rounded-md cursor-pointer select-none transition-colors",
+                    "group flex items-center gap-1.5 px-2 rounded-md cursor-pointer select-none transition-colors text-sm",
                     isActive
-                      ? "text-text-primary"
-                      : "text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
                   )}
                   style={{
                     height: 26,
-                    fontSize: 12,
                     fontFamily: "var(--font-mono)",
-                    background: isActive ? "var(--bg-active)" : undefined,
+                    background: isActive ? "var(--atlas-element-active)" : undefined,
                   }}
                   title={repo.path}
                 >
-                  <GitBranch size={11} className="text-text-muted shrink-0" strokeWidth={1.5} />
+                  <GitBranch
+                    size={11}
+                    className="text-muted-foreground shrink-0"
+                    strokeWidth={1.5}
+                  />
                   <span className="truncate flex-1 text-left">{repo.display_name}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteRepo(repo.name);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-error text-text-muted transition-opacity"
-                    title="Remove repo"
-                  >
-                    <Trash2 size={10} />
-                  </button>
+                  <Hint label="Remove repo">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRepo(repo.name);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:text-error text-muted-foreground transition-opacity"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </Hint>
                 </div>
               );
             })}

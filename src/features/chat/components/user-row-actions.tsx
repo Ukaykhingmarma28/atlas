@@ -1,4 +1,4 @@
-// Rewind / pin / resend / copy, under a user message.
+// Retry / pin / edit / copy, under a user message.
 //
 // The "Show more" toggle is NOT here — it lives in flow above this bar
 // (`ExpandToggle` in `transcript-rows.tsx`) because it is the only signal that
@@ -66,10 +66,11 @@
 // when it changes under the pointer); the copied state rides on the icon.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Forward, Pin, RotateCcw } from "lucide-react";
+import { Check, Copy, CornerUpRight, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { retryLastTurn } from "../lib/retry-turn";
 import { useChatPinsStore } from "../stores/chat-pins-store";
 
@@ -87,20 +88,20 @@ function ActionButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      className={cn(
-        "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
-        "hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]",
-        active ? "text-[var(--accent-primary)]" : "text-[var(--text-tertiary)]",
-      )}
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={cn(
+          "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
+          "hover:bg-[var(--card)] hover:text-[var(--foreground)]",
+          active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]",
+        )}
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 
@@ -171,14 +172,16 @@ export function UserRowActions({
 
   const onRetry = useCallback(() => void retryLastTurn(tabId), [tabId]);
 
-  // Resend is NOT retry. Retry rewinds the turn off the agent and re-runs it
-  // (destructive, native-agent-only); resend leaves the thread alone and asks
-  // the same question again as a new turn, which every agent can do. It goes
-  // through the panel's `atlas:chat-send` seam rather than calling the agent
-  // directly so it inherits the composer's whole send path — binding waits,
-  // the queued-send chip while a turn is live, logging.
-  const onResend = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("atlas:chat-send", { detail: { text, tabId } }));
+  // Edit is NOT retry. Retry rewinds the turn off the agent and re-runs it
+  // (destructive, native-agent-only). ACP has no verb to forget or rewrite a
+  // turn (see `retry-gate.ts`), so editing in place is impossible there; the
+  // honest version every agent supports is to load the prompt back into the
+  // composer and let it go out as a NEW turn, the old exchange left intact.
+  // Sending unchanged is one Enter away, which is what the old blind "Send
+  // this prompt again" button did. The composer owns the draft, so this goes
+  // through its tab-scoped `atlas:chat-prefill` seam.
+  const onEdit = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("atlas:chat-prefill", { detail: { text, tabId } }));
   }, [text, tabId]);
 
   const onPin = useCallback(() => {
@@ -191,47 +194,52 @@ export function UserRowActions({
   }, [pinScopeKey, messageId, timestamp, text]);
 
   return (
-    <div
-      className={cn(
-        // `top-full`, not "under the bubble": the attachment chip sits below
-        // the bubble too, and anchoring to the bubble would drop the bar on
-        // top of it.
-        "absolute right-0 top-full z-[2] flex items-center gap-0.5",
-        // The gap above the icons, as padding rather than a margin so the
-        // bar's box still starts exactly at `top-full`. Only the top half
-        // draws anything; the bottom 8px is empty and free to overhang the
-        // row's `pb-7`.
-        //
-        // A bubble with a "Show more" toggle already has that gap: the toggle
-        // is in flow between the bubble and this bar, so `top-full` is below
-        // IT, and a top pad here would stack on top of the toggle's own
-        // height — the icons visibly sat further from a clamped bubble than
-        // from a short one. Longhands in both branches, never `py-2` plus a
-        // `pt-0` override: shorthand-vs-longhand precedence is decided by
-        // stylesheet order, which is not something to bet spacing on.
-        toggleAbove ? "pt-0 pb-2" : "pt-2 pb-2",
-        // Hidden until the row is hovered, and it SNAPS — no transition, no
-        // fade, nothing to interpolate. `visibility` rather than `opacity`
-        // because an `opacity-0` bar is still hit-testable: it could be
-        // clicked while invisible. `focus-within` is not decoration either —
-        // without it, keyboard users would tab into controls they cannot see.
-        "invisible group-hover:visible focus-within:visible",
-      )}
-    >
-      {canRetry && (
-        <ActionButton label="Retry this message" onClick={onRetry}>
-          <RotateCcw size={12} />
+    <HintGroup>
+      <div
+        className={cn(
+          // `top-full`, not "under the bubble": the attachment chip sits below
+          // the bubble too, and anchoring to the bubble would drop the bar on
+          // top of it.
+          "absolute right-0 top-full z-popover flex items-center gap-0.5",
+          // The gap above the icons, as padding rather than a margin so the
+          // bar's box still starts exactly at `top-full`. Only the top half
+          // draws anything; the bottom 8px is empty and free to overhang the
+          // row's `pb-7`.
+          //
+          // A bubble with a "Show more" toggle already has that gap: the toggle
+          // is in flow between the bubble and this bar, so `top-full` is below
+          // IT, and a top pad here would stack on top of the toggle's own
+          // height — the icons visibly sat further from a clamped bubble than
+          // from a short one. Longhands in both branches, never `py-2` plus a
+          // `pt-0` override: shorthand-vs-longhand precedence is decided by
+          // stylesheet order, which is not something to bet spacing on.
+          toggleAbove ? "pt-0 pb-2" : "pt-2 pb-2",
+          // Hidden until the row is hovered, and it SNAPS — no transition, no
+          // fade, nothing to interpolate. `visibility` rather than `opacity`
+          // because an `opacity-0` bar is still hit-testable: it could be
+          // clicked while invisible. `focus-within` is not decoration either —
+          // without it, keyboard users would tab into controls they cannot see.
+          "invisible group-hover:visible focus-within:visible",
+        )}
+      >
+        {canRetry && (
+          <ActionButton label="Retry (replaces this response)" onClick={onRetry}>
+            <RefreshCw size={12} />
+          </ActionButton>
+        )}
+        <ActionButton label="Pin message" onClick={onPin} active={pinned}>
+          <Pin size={12} fill={pinned ? "currentColor" : "none"} />
         </ActionButton>
-      )}
-      <ActionButton label="Pin message" onClick={onPin} active={pinned}>
-        <Pin size={12} fill={pinned ? "currentColor" : "none"} />
-      </ActionButton>
-      <ActionButton label="Send this prompt again" onClick={onResend}>
-        <Forward size={12} />
-      </ActionButton>
-      <ActionButton label="Copy message" onClick={onCopy}>
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-      </ActionButton>
-    </div>
+        {/* A turn-out arrow, not a pencil. Nothing is edited in place — the
+            prompt goes back to the composer and leaves as a NEW turn, which is
+            the shape this glyph has carried here since it was a plain resend. */}
+        <ActionButton label="Edit and send as new message" onClick={onEdit}>
+          <CornerUpRight size={12} />
+        </ActionButton>
+        <ActionButton label="Copy message" onClick={onCopy}>
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </ActionButton>
+      </div>
+    </HintGroup>
   );
 }

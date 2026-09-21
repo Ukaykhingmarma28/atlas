@@ -120,8 +120,8 @@ export const LoadingState = memo(function LoadingState({
           <span
             key={i}
             className={cn(
-              "size-[2.5px] bg-[var(--text-primary)]",
-              round ? "rounded-full" : "rounded-[0.5px]",
+              "size-[2.5px] bg-[var(--foreground)]",
+              round ? "rounded-full" : "rounded-none",
               d !== null && "atlas-pixel-cell",
             )}
             style={
@@ -136,10 +136,10 @@ export const LoadingState = memo(function LoadingState({
           />
         ))}
       </span>
-      <span className="atlas-thinking-shimmer text-[11px] leading-[16px] font-medium">{label}</span>
+      <span className="atlas-thinking-shimmer text-xs leading-[16px] font-medium">{label}</span>
       <span
         ref={elapsed}
-        className="font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]"
+        className="font-mono text-2xs tabular-nums text-[var(--muted-foreground)]"
       />
     </div>
   );

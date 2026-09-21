@@ -11,7 +11,9 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { Hint } from "@/ui/tooltip";
+import { HintGroup, HintItem } from "@/ui/hint-group";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 import { ClaudeIcon, CodexIcon } from "@/components/agent-icons";
 import { memoryPolicy, type Policy } from "../lib/memory-policy-api";
@@ -34,7 +36,7 @@ const COL = {
 const TABLE_MIN_W = 180 + 280 + 150 + 64 + 40;
 
 export function MemoryPolicyView() {
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   // Cached in the module-level memory store so jumping sub-tabs / leaving and
   // returning doesn't re-run the (expensive) policy indexing.
   const phase = useMemoryStore.use.policyPhase();
@@ -119,8 +121,8 @@ export function MemoryPolicyView() {
     return (
       <Centered>
         <div className="text-center space-y-2">
-          <Loader2 size={18} className="animate-spin text-[var(--text-tertiary)] mx-auto" />
-          <p className="text-[11px] text-[var(--text-tertiary)]">
+          <Loader2 size={18} className="animate-spin text-[var(--muted-foreground)] mx-auto" />
+          <p className="text-xs text-[var(--muted-foreground)]">
             {phase === "loading" ? "Distilling preferences…" : "Checking…"}
           </p>
         </div>
@@ -132,19 +134,19 @@ export function MemoryPolicyView() {
     return (
       <Centered>
         <div className="text-center max-w-[360px] px-6 space-y-3">
-          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] flex items-center justify-center">
-            <Sparkles size={22} className="text-[var(--text-secondary)]" />
+          <div className="w-12 h-12 mx-auto rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-center">
+            <Sparkles size={22} className="text-[var(--secondary-foreground)]" />
           </div>
-          <p className="text-[13px] font-medium text-[var(--text-primary)]">
+          <p className="text-base font-medium text-[var(--foreground)]">
             Enable preference learning
           </p>
-          <p className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+          <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
             Download the on-device embedding model to distill your saved preferences into an
             editable policy table — no LLM, purely semantic.
           </p>
           <button
             onClick={() => void download()}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--accent-primary)] text-[var(--bg-base)] text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md bg-[var(--primary)] text-[var(--background)] text-xs font-medium hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Download size={13} />
             Download model
@@ -165,15 +167,15 @@ export function MemoryPolicyView() {
     return (
       <Centered>
         <div className="text-center max-w-[360px] px-6 w-full space-y-2">
-          <Loader2 size={20} className="animate-spin text-[var(--text-secondary)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-primary)]">Downloading model…</p>
-          <div className="h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
+          <Loader2 size={20} className="animate-spin text-[var(--secondary-foreground)] mx-auto" />
+          <p className="text-sm text-[var(--foreground)]">Downloading model…</p>
+          <div className="h-1.5 rounded-full bg-[var(--card)] overflow-hidden">
             <div
-              className="h-full bg-[var(--accent-primary)] transition-[width] duration-200"
+              className="h-full bg-[var(--primary)] transition-[width] duration-200"
               style={{ width: `${pct}%` }}
             />
           </div>
-          <p className="text-[10px] text-[var(--text-tertiary)] font-mono">{pct}%</p>
+          <p className="text-2xs text-[var(--muted-foreground)] font-mono">{pct}%</p>
         </div>
       </Centered>
     );
@@ -183,14 +185,17 @@ export function MemoryPolicyView() {
     return (
       <Centered>
         <div className="text-center max-w-[340px] px-6 space-y-3">
-          <AlertTriangle size={20} className="text-[var(--status-error)] mx-auto" />
-          <p className="text-[12px] text-[var(--text-secondary)]">Couldn't load policies</p>
+          <AlertTriangle
+            size={20}
+            className="text-[var(--atlas-status-error-foreground)] mx-auto"
+          />
+          <p className="text-sm text-[var(--secondary-foreground)]">Couldn't load policies</p>
           {error && (
-            <p className="text-[10px] text-[var(--text-tertiary)] font-mono break-words">{error}</p>
+            <p className="text-2xs text-[var(--muted-foreground)] font-mono break-words">{error}</p>
           )}
           <button
             onClick={() => void init(projectPath)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--border)] text-xs text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
           >
             <RotateCw size={12} /> Retry
           </button>
@@ -201,27 +206,28 @@ export function MemoryPolicyView() {
 
   // phase === "ready"
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
-        <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+    <div className="h-full flex flex-col bg-[var(--background)]">
+      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
+        <span className="text-xs font-medium text-[var(--secondary-foreground)]">
           Preferences
-          <span className="ml-1.5 text-[9px] text-[var(--text-tertiary)] tabular-nums">
+          <span className="ml-1.5 text-3xs text-[var(--muted-foreground)] tabular-nums">
             {policies.length}
           </span>
         </span>
         <div className="flex-1" />
-        <button
-          onClick={() => void loadPolicies(projectPath, true)}
-          className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-          title="Re-scan preferences"
-        >
-          <RotateCw size={12} />
-        </button>
+        <Hint label="Re-scan preferences">
+          <button
+            onClick={() => void loadPolicies(projectPath, true)}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} />
+          </button>
+        </Hint>
       </div>
 
       {policies.length === 0 ? (
         <Centered>
-          <p className="text-[12px] text-[var(--text-tertiary)] max-w-[300px] text-center px-4">
+          <p className="text-sm text-[var(--muted-foreground)] max-w-[300px] text-center px-4">
             No preferences detected yet. As Claude Code & Codex record how you like to work, they'll
             surface here.
           </p>
@@ -229,7 +235,7 @@ export function MemoryPolicyView() {
       ) : (
         <>
           {/* Filter bar */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 shrink-0 border-b border-[var(--border-subtle)]">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 shrink-0 border-b border-[var(--atlas-border-subtle)]">
             <FilterGroup
               value={originF}
               onChange={setOriginF}
@@ -267,13 +273,13 @@ export function MemoryPolicyView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter…"
-              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-focus)]"
+              className="ml-auto h-[22px] w-[130px] rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] focus:border-[var(--atlas-border-strong)]"
             />
           </div>
 
           <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
             <div style={{ minWidth: TABLE_MIN_W }}>
-              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border-default)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+              <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--background)] px-3 text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
                 <span className={COL.policy}>Policy</span>
                 <span className={COL.value}>Value</span>
                 <span className={COL.source}>Source</span>
@@ -281,7 +287,7 @@ export function MemoryPolicyView() {
                 <span className={COL.actions} />
               </div>
               {visible.length === 0 ? (
-                <div className="px-3 py-6 text-center text-[11px] text-[var(--text-tertiary)]">
+                <div className="px-3 py-6 text-center text-xs text-[var(--muted-foreground)]">
                   No policies match these filters.
                 </div>
               ) : (
@@ -306,16 +312,16 @@ function FilterGroup<T extends string>({
   options: readonly (readonly [T, string])[];
 }) {
   return (
-    <div className="flex items-center gap-0.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] p-0.5">
+    <div className="flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--card)] p-0.5">
       {options.map(([v, label]) => (
         <button
           key={v}
           onClick={() => onChange(v)}
           className={cn(
-            "h-[18px] rounded px-1.5 text-[10px] transition-colors cursor-pointer",
+            "h-[18px] rounded px-1.5 text-2xs transition-colors cursor-pointer",
             value === v
-              ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+              ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
           )}
         >
           {label}
@@ -355,15 +361,15 @@ function PolicyRow({
   };
 
   return (
-    <div className="flex items-center min-h-[42px] px-3 border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]/40 transition-colors">
+    <div className="flex items-center min-h-[42px] px-3 border-b border-[var(--atlas-border-subtle)] hover:bg-[var(--atlas-element-hover)]/40 transition-colors">
       <div className={cn(COL.policy, "pr-3 min-w-0")}>
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={cn(
-              "shrink-0 rounded px-1 py-px text-[8.5px] font-semibold uppercase tracking-wide border",
+              "shrink-0 rounded px-1 py-px text-3xs font-semibold uppercase tracking-wide border",
               policy.category === "strong"
-                ? "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]"
-                : "border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
+                ? "border-[var(--atlas-status-error-foreground)]/40 bg-[var(--atlas-status-error-foreground)]/10 text-[var(--atlas-status-error-foreground)]"
+                : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]",
             )}
             title={
               policy.category === "strong"
@@ -373,9 +379,9 @@ function PolicyRow({
           >
             {policy.category}
           </span>
-          <span className="text-[12px] text-[var(--text-primary)] truncate">{policy.key}</span>
+          <span className="text-sm text-[var(--foreground)] truncate">{policy.key}</span>
         </div>
-        <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{policy.hint}</div>
+        <div className="text-2xs text-[var(--muted-foreground)] truncate mt-0.5">{policy.hint}</div>
       </div>
 
       <div className={cn(COL.value, "pr-3")}>
@@ -388,10 +394,10 @@ function PolicyRow({
           }}
           spellCheck={false}
           className={cn(
-            "w-full bg-transparent outline-none text-[12px] text-[var(--text-secondary)] rounded px-1.5 py-1 border transition-colors",
+            "w-full bg-transparent outline-none text-sm text-[var(--secondary-foreground)] rounded px-1.5 py-1 border transition-colors",
             dirty
-              ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-              : "border-transparent hover:border-[var(--border-default)]",
+              ? "border-[var(--atlas-border-strong)] bg-[var(--card)] text-[var(--foreground)]"
+              : "border-transparent hover:border-[var(--border)]",
           )}
         />
       </div>
@@ -402,46 +408,51 @@ function PolicyRow({
         ) : (
           <ClaudeIcon className="size-3 shrink-0 opacity-70" />
         )}
-        <span className="text-[10px] text-[var(--text-tertiary)] truncate" title={policy.file_path}>
+        <span className="text-2xs text-[var(--muted-foreground)] truncate" title={policy.file_path}>
           {basename(policy.file_path)}
         </span>
       </div>
 
       <div
-        className={cn(COL.score, "text-right tabular-nums text-[10px] text-[var(--text-tertiary)]")}
+        className={cn(COL.score, "text-right tabular-nums text-2xs text-[var(--muted-foreground)]")}
       >
         {Math.round(policy.score * 100)}%
       </div>
 
-      <div className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
-        {dirty ? (
-          <>
-            <button
-              onClick={() => void save()}
-              disabled={saving}
-              className="flex items-center justify-center w-5 h-5 rounded text-[var(--status-success,#4d4d4d)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
-              title="Save (Enter)"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
-            </button>
-            <button
-              onClick={() => setDraft(policy.value)}
-              className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-              title="Revert (Esc)"
-            >
-              <X size={12} />
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => sendToAgentChat(`Preference — ${policy.key}: ${policy.value}`)}
-            className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-            title="Send to agent chat"
-          >
-            <MessageSquarePlus size={13} />
-          </button>
-        )}
-      </div>
+      <HintGroup>
+        <div className={cn(COL.actions, "flex items-center justify-end gap-0.5")}>
+          {dirty ? (
+            <>
+              <HintItem label="Save (Enter)">
+                <button
+                  onClick={() => void save()}
+                  disabled={saving}
+                  className="flex items-center justify-center w-5 h-5 rounded text-success hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
+                </button>
+              </HintItem>
+              <HintItem label="Revert (Esc)">
+                <button
+                  onClick={() => setDraft(policy.value)}
+                  className="flex items-center justify-center w-5 h-5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)]"
+                >
+                  <X size={12} />
+                </button>
+              </HintItem>
+            </>
+          ) : (
+            <HintItem label="Send to agent chat">
+              <button
+                onClick={() => sendToAgentChat(`Preference — ${policy.key}: ${policy.value}`)}
+                className="flex items-center justify-center w-5 h-5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors"
+              >
+                <MessageSquarePlus size={13} />
+              </button>
+            </HintItem>
+          )}
+        </div>
+      </HintGroup>
     </div>
   );
 }
@@ -453,7 +464,7 @@ function basename(p: string): string {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full flex items-center justify-center text-[var(--text-tertiary)] text-[12px]">
+    <div className="h-full flex items-center justify-center text-[var(--muted-foreground)] text-sm">
       {children}
     </div>
   );

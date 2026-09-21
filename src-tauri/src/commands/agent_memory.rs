@@ -306,7 +306,7 @@ fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
         Ok(Some(s)) => s,
         _ => return Vec::new(),
     };
-    let sessions = match store.sessions_for_workspace(project_path) {
+    let sessions = match store.sessions_for_project(project_path) {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!(target: "atlas::memory", "capture corpus read failed: {e}");
@@ -872,7 +872,7 @@ mod tests {
     /// The corpus must take it off there too, or the leak simply moves house.
     #[test]
     fn a_captured_transcript_is_stripped_identically() {
-        use atlas_checkpoint::{model::WorkspaceMode, Capture, SessionKey, Source, Store};
+        use atlas_checkpoint::{model::ProjectMode, Capture, SessionKey, Source, Store};
 
         let dir = scratch();
         let project = dir.to_string_lossy().to_string();
@@ -882,7 +882,7 @@ mod tests {
         );
         {
             let mut store = Store::open(dir.join(".atlas")).expect("store opens");
-            let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+            let mut capture = Capture::new(&mut store, ProjectMode::Local);
             capture
                 .record_prompt(
                     &SessionKey {
@@ -918,13 +918,13 @@ mod tests {
     /// other capture-only agent's do: through Atlas's own capture store.
     #[test]
     fn a_native_agent_session_reaches_the_corpus_through_capture() {
-        use atlas_checkpoint::{model::WorkspaceMode, Capture, SessionKey, Source, Store};
+        use atlas_checkpoint::{model::ProjectMode, Capture, SessionKey, Source, Store};
 
         let dir = scratch();
         let project = dir.to_string_lossy().to_string();
         {
             let mut store = Store::open(dir.join(".atlas")).expect("store opens");
-            let mut capture = Capture::new(&mut store, WorkspaceMode::Local);
+            let mut capture = Capture::new(&mut store, ProjectMode::Local);
             capture
                 .record_prompt(
                     &SessionKey {

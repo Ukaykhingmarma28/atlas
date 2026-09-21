@@ -61,7 +61,7 @@ use crate::blobs;
 use crate::sketch;
 use crate::error::{Error, Result};
 use crate::git::{self, ChangedPath};
-use crate::model::{FileTouch, WorkspaceMode};
+use crate::model::{FileTouch, ProjectMode};
 use crate::store::{CheckpointInput, LinkCandidate, Store};
 
 /// A git read that should have worked did not — lock contention, a mid-gc
@@ -76,9 +76,9 @@ fn git_unavailable(err: git::GitError) -> Error {
 ///
 /// `rev-list cursor..HEAD` fails outright if the cursor commit was garbage
 /// collected or rewritten away, and detection would then stop **forever** for
-/// that Workspace with nothing logged. A bounded re-scan is the recovery: it is
+/// that Project with nothing logged. A bounded re-scan is the recovery: it is
 /// cheap, `(Session, commit)` makes re-processing harmless, and the alternative
-/// is a Workspace that has silently gone dark.
+/// is a Project that has silently gone dark.
 pub const RECOVERY_SCAN_LIMIT: usize = 200;
 
 /// What one walk did.
@@ -96,18 +96,18 @@ pub struct WalkOutcome {
 
 /// Walk from the last-seen commit to HEAD, creating Checkpoints.
 ///
-/// Safe to call on every ref movement and on Workspace open. The open-time call
-/// is not a fallback: a watcher only exists for a Workspace activated at least
-/// once this app session, so for a never-activated or evicted Workspace this
+/// Safe to call on every ref movement and on Project open. The open-time call
+/// is not a fallback: a watcher only exists for a Project activated at least
+/// once this app session, so for a never-activated or evicted Project this
 /// walk is the *primary* mechanism.
 pub fn walk_new_commits(
     store: &Store,
     workspace_id: &str,
     repo: &Path,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<WalkOutcome> {
     if !git::is_repository(repo) {
-        // Git is optional. A non-repository Workspace captures Sessions and
+        // Git is optional. A non-repository Project captures Sessions and
         // simply never produces Checkpoints.
         return Ok(WalkOutcome::default());
     }
@@ -131,7 +131,7 @@ pub fn walk_new_commits(
 
     let (commits, recovered) = resolve_range(repo, cursor.as_deref(), &head);
     if commits.is_empty() {
-        // Still record the cursor, so a Workspace whose first walk finds nothing
+        // Still record the cursor, so a Project whose first walk finds nothing
         // does not re-scan from the beginning on every ref movement.
         store.set_commit_cursor(workspace_id, &head, recovered)?;
         return Ok(WalkOutcome {
@@ -163,7 +163,7 @@ pub fn walk_new_commits(
 /// The commits to examine, and whether the cursor had to be recovered.
 fn resolve_range(repo: &Path, cursor: Option<&str>, head: &str) -> (Vec<String>, bool) {
     match cursor {
-        // No cursor yet — a Workspace whose capture was just enabled. Bound the
+        // No cursor yet — a Project whose capture was just enabled. Bound the
         // first walk rather than replaying an entire repository history, which
         // for a large repo would be tens of thousands of commits none of which
         // can match a Session that did not exist yet.
@@ -200,7 +200,7 @@ pub fn link_commits(
     workspace_id: &str,
     repo: &Path,
     commits: &[String],
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<usize> {
     if commits.is_empty() || !git::is_repository(repo) {
         return Ok(0);
@@ -226,7 +226,7 @@ fn link_commit(
     commit_sha: &str,
     candidates: &mut [LinkCandidate],
     branch: Option<&str>,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<usize> {
     if candidates.is_empty() {
         // Nothing can link and nothing can be consumed. Skipping the git reads
@@ -269,7 +269,7 @@ fn evaluate_commit(
     info: &git::CommitInfo,
     candidates: &mut [LinkCandidate],
     branch: Option<&str>,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 ) -> Result<usize> {
     let changed = git::changed_paths(repo, commit_sha).map_err(git_unavailable)?;
     if changed.is_empty() {
@@ -478,14 +478,14 @@ fn links(repo: &Path, commit_sha: &str, change: &ChangedPath, touch: &FileTouch)
     sketch::retains_agent_work(agent_sketch, &committed_sketch)
 }
 
-/// Are there Checkpoints for this Workspace whose commit has gone missing?
+/// Are there Checkpoints for this Project whose commit has gone missing?
 ///
 /// Split out so a caller can cheaply decide whether reconciliation is worth
 /// running at all.
 pub fn has_unreachable_checkpoints(store: &Store, workspace_id: &str, repo: &Path) -> Result<bool> {
     use crate::model::LinkState;
     Ok(store
-        .checkpoints_for_workspace(workspace_id)?
+        .checkpoints_for_project(workspace_id)?
         .into_iter()
         // A failed probe reads as "still reachable" here: this is only a cheap
         // pre-check, and it must never nominate a Checkpoint for orphaning on
@@ -565,7 +565,7 @@ pub fn reconcile_rewrites(store: &Store, workspace_id: &str, repo: &Path) -> Res
         return Ok(outcome);
     }
 
-    let checkpoints = store.checkpoints_for_workspace(workspace_id)?;
+    let checkpoints = store.checkpoints_for_project(workspace_id)?;
     if checkpoints.is_empty() {
         return Ok(outcome);
     }

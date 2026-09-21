@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use codex_network_proxy::NetworkProxy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;

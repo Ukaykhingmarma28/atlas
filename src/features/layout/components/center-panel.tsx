@@ -11,15 +11,17 @@ import {
 } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
-import { useLayoutStore, type Tab, type WorkspaceView } from "../stores/layout-store";
-import { useWorkspaceStore } from "@/features/workspaces/stores/workspace-store";
+import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
 import { ChatPanel } from "@/features/chat/components/chat-panel";
-import { WelcomeScreen } from "@/features/project/components/welcome-screen";
+import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
@@ -76,10 +78,8 @@ const SettingsPanel = lazy(() =>
 const LogPanel = lazy(() =>
   import("@/features/log/components/log-panel").then((m) => ({ default: m.LogPanel })),
 );
-const MissionControlPanel = lazy(() =>
-  import("@/features/mission-control/components/mission-control-panel").then((m) => ({
-    default: m.MissionControlPanel,
-  })),
+const UsagePanel = lazy(() =>
+  import("@/features/usage/components/usage-panel").then((m) => ({ default: m.UsagePanel })),
 );
 const ArtifactsPanel = lazy(() =>
   import("@/features/artifacts/components/artifacts-panel").then((m) => ({
@@ -92,7 +92,7 @@ const CanvasPanel = lazy(() =>
 const MemoryPanel = lazy(() =>
   import("@/features/memory/components/memory-panel").then((m) => ({ default: m.MemoryPanel })),
 );
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useChatStore } from "@/features/chat/stores/chat-store";
@@ -118,13 +118,16 @@ import {
   FileText,
   Columns2,
   House,
-  LayoutDashboard,
+  Gauge,
   Layers,
   Frame,
 } from "lucide-react";
 import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
 
-const tabIcons: Record<TabType, React.ElementType> = {
+// Typed as the icon-theme fallback rather than `React.ElementType`: these are
+// what a tab falls back to when the icon theme has nothing for it, and
+// `ElementType` also admits raw tag names, which a fallback cannot be.
+const tabIcons: Record<TabType, FallbackIcon> = {
   chat: AtlasIcon,
   canvas: Map,
   browser: Globe,
@@ -141,7 +144,7 @@ const tabIcons: Record<TabType, React.ElementType> = {
   svg: Code,
   pdf: FileText,
   unsupported: Code,
-  "mission-control": LayoutDashboard,
+  usage: Gauge,
   artifacts: Layers,
   "comms-draft": FileText,
   spaces: Frame,
@@ -170,7 +173,7 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set([
 
 // Of the persistent types, these are the ones that keep BURNING CPU/GPU while
 // hidden — a PTY draining output, a live web embed, a Pixi/WebGL graph ticking,
-// a PDF worker. Those get unmounted for background workspaces (idle heat is the
+// a PDF worker. Those get unmounted for background projects (idle heat is the
 // bigger cost than their rebuild). The rest are inert-but-expensive-to-rebuild
 // (chat's transcript window + load path, knowledge's tree walk, settings' form
 // drafts) and stay mounted everywhere: hiding them saves nothing per frame and
@@ -190,27 +193,27 @@ const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set([
  * column. The single-column case is the normal IDE.
  */
 export function CenterPanel() {
-  const currentProject = useProjectStore.use.currentProject();
+  const currentProject = useAppStore.use.currentProject();
   // Render ONLY the bounded HOT set, not the full project registry — keeps
   // memory/DOM bounded at 100+ projects (Chrome tab-discard model). Resolve ids
-  // to workspaces, preserving registry order for stable React keys.
-  const workspacesAll = useWorkspaceStore.use.workspaces();
-  const mountedWorkspaceIds = useWorkspaceStore.use.mountedWorkspaceIds();
-  const workspaces = useMemo(() => {
-    const mounted = new Set(mountedWorkspaceIds);
-    return workspacesAll.filter((w) => mounted.has(w.id));
-  }, [workspacesAll, mountedWorkspaceIds]);
-  const activeWorkspaceId = useWorkspaceStore.use.activeWorkspaceId();
+  // to projects, preserving registry order for stable React keys.
+  const projectsAll = useProjectStore.use.projects();
+  const mountedProjectIds = useProjectStore.use.mountedProjectIds();
+  const projects = useMemo(() => {
+    const mounted = new Set(mountedProjectIds);
+    return projectsAll.filter((w) => mounted.has(w.id));
+  }, [projectsAll, mountedProjectIds]);
+  const activeProjectId = useProjectStore.use.activeProjectId();
   const viewsByWs = useLayoutStore.use.viewsByWs();
 
-  // Live mirror of the ACTIVE workspace's view.
+  // Live mirror of the ACTIVE project's view.
   const tabs = useLayoutStore.use.tabs();
   const groupOrder = useLayoutStore.use.groupOrder();
   const activeByGroup = useLayoutStore.use.activeByGroup();
   const focusedGroupId = useLayoutStore.use.focusedGroupId();
   const tabHistory = useLayoutStore.use.tabHistory();
   const tabHistoryIndex = useLayoutStore.use.tabHistoryIndex();
-  const mirrorView: WorkspaceView = useMemo(
+  const mirrorView: ProjectView = useMemo(
     () => ({
       tabs,
       groupOrder,
@@ -237,21 +240,21 @@ export function CenterPanel() {
 
   if (!currentProject) return <ProjectlessCenter />;
 
-  // Render every mounted workspace's shell in a stable container (key=ws.id),
-  // only the active one visible. Background workspaces keep the INERT expensive
+  // Render every mounted project's shell in a stable container (key=ws.id),
+  // only the active one visible. Background projects keep the INERT expensive
   // subtrees mounted (editor/chat/knowledge/settings) so switching back is
   // instant, but drop the ones that keep working while hidden — terminals,
   // browser embeds, Pixi graphs, PDFs — which were burning CPU/GPU in
-  // workspaces the user couldn't even see. A workspace with no view yet (never
+  // projects the user couldn't even see. A project with no view yet (never
   // visited this session) renders nothing until its first cold load.
   return (
     // `data-atlas-center-panel`: the anchor for overlays that should centre on
     // the CONTENT, not the window — see `use-center-panel-x.ts`. A `fixed
     // left-1/2` pill drifts off-centre by half the width of whichever side
     // panel is open.
-    <div data-atlas-center-panel className="h-full w-full bg-bg-surface relative">
-      {workspaces.map((ws) => {
-        const isActive = ws.id === activeWorkspaceId;
+    <div data-atlas-center-panel className="h-full w-full bg-background relative">
+      {projects.map((ws) => {
+        const isActive = ws.id === activeProjectId;
         const view = isActive ? mirrorView : viewsByWs[ws.id];
         if (!view) return null;
         return (
@@ -260,8 +263,8 @@ export function CenterPanel() {
             className="absolute inset-0"
             style={{ display: isActive ? "block" : "none" }}
           >
-            <WorkspaceColumns
-              workspaceId={ws.id}
+            <ProjectColumns
+              projectId={ws.id}
               view={view}
               isActive={isActive}
               runningTabIds={runningTabIds}
@@ -273,18 +276,18 @@ export function CenterPanel() {
   );
 }
 
-// Memoized so a workspace switch re-renders only the ≤2 columns whose props
-// actually change, not every mounted workspace's whole subtree (the O(N×tabs)
+// Memoized so a project switch re-renders only the ≤2 columns whose props
+// actually change, not every mounted project's whole subtree (the O(N×tabs)
 // re-render that makes even warm switches feel slow). `view` is a stable
-// reference for uninvolved workspaces; `runningTabIds` is shallow-stable.
-const WorkspaceColumns = memo(function WorkspaceColumns({
-  workspaceId,
+// reference for uninvolved projects; `runningTabIds` is shallow-stable.
+const ProjectColumns = memo(function ProjectColumns({
+  projectId,
   view,
   isActive,
   runningTabIds,
 }: {
-  workspaceId: string;
-  view: WorkspaceView;
+  projectId: string;
+  view: ProjectView;
   isActive: boolean;
   runningTabIds: Set<string>;
 }) {
@@ -292,7 +295,7 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
   // Same storage id as before the v4 upgrade, so saved split widths carry over.
   // v4 dropped `autoSaveId` in favour of this hook; the Group takes the stored
   // layout as `defaultLayout` and writes back through `onLayoutChanged`.
-  const layoutId = `atlas-center-split-${workspaceId}`;
+  const layoutId = `atlas-center-split-${projectId}`;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: layoutId });
   return (
     <Group
@@ -300,12 +303,12 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
       orientation="horizontal"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
-      className="h-full bg-bg-surface"
+      className="h-full bg-background"
     >
       {view.groupOrder.map((gid, i) => (
         <Fragment key={gid}>
           {i > 0 && (
-            <Separator className="w-px bg-border-default hover:bg-accent data-[separator=active]:bg-accent transition-colors cursor-col-resize" />
+            <Separator className="w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
           )}
           {/* Sizes are percentages: v4 reads bare numbers as PIXELS and
               unit-less strings as percentages. `order` is gone — panels are
@@ -317,7 +320,7 @@ const WorkspaceColumns = memo(function WorkspaceColumns({
               isActive={isActive}
               runningTabIds={runningTabIds}
               soloColumn={solo}
-              workspaceId={workspaceId}
+              projectId={projectId}
             />
           </Panel>
         </Fragment>
@@ -332,14 +335,14 @@ const TabColumn = memo(function TabColumn({
   isActive,
   runningTabIds,
   soloColumn,
-  workspaceId,
+  projectId,
 }: {
   groupId: string;
-  view: WorkspaceView;
+  view: ProjectView;
   isActive: boolean;
   runningTabIds: Set<string>;
   soloColumn?: boolean;
-  workspaceId: string;
+  projectId: string;
 }) {
   const splitNewHint = useActionShortcut("split.new")?.label;
   const splitCloseHint = useActionShortcut("split.close")?.label;
@@ -377,50 +380,57 @@ const TabColumn = memo(function TabColumn({
 
   return (
     <div
-      className={cn("h-full flex flex-col overflow-hidden bg-bg-surface")}
+      className={cn("h-full flex flex-col overflow-hidden bg-background")}
       onMouseDownCapture={() => setFocusedGroup(groupId)}
     >
       {tabBarVisible && (
         <div
           className={cn(
-            "flex items-stretch h-[29px] shrink-0 bg-bg-base border-b border-border-default transition-opacity",
+            "flex items-stretch h-[29px] shrink-0 bg-background border-b border-border transition-opacity",
             // When split, dim the UNFOCUSED columns' tab bars so the focused
             // one stands out (the focused pane also shows a white dot, below).
             !soloColumn && !isFocused && "opacity-45",
           )}
         >
-          <div className="flex items-center justify-center gap-0.5 w-[44px] border-r border-border-default shrink-0">
-            <button
-              onClick={navigateTabBack}
-              disabled={!canGoBack}
-              className={cn(
-                "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
-                canGoBack
-                  ? "text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-                  : "text-text-tertiary/40 cursor-not-allowed",
-              )}
-              title="Back"
-            >
-              <ChevronLeft size={13} />
-            </button>
-            <button
-              onClick={navigateTabForward}
-              disabled={!canGoForward}
-              className={cn(
-                "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
-                canGoForward
-                  ? "text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-                  : "text-text-tertiary/40 cursor-not-allowed",
-              )}
-              title="Forward"
-            >
-              <ChevronRight size={13} />
-            </button>
-          </div>
+          <HintGroup>
+            <div className="flex items-center justify-center gap-0.5 w-[44px] border-r border-border shrink-0">
+              <HintItem label="Back">
+                <button
+                  onClick={navigateTabBack}
+                  disabled={!canGoBack}
+                  className={cn(
+                    "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
+                    canGoBack
+                      ? "text-secondary-foreground hover:text-foreground hover:bg-element-hover cursor-pointer"
+                      : "text-muted-foreground/40 cursor-not-allowed",
+                  )}
+                >
+                  <ChevronLeft size={13} />
+                </button>
+              </HintItem>
+              <HintItem label="Forward">
+                <button
+                  onClick={navigateTabForward}
+                  disabled={!canGoForward}
+                  className={cn(
+                    "flex items-center justify-center w-6 h-6 rounded transition-colors outline-none",
+                    canGoForward
+                      ? "text-secondary-foreground hover:text-foreground hover:bg-element-hover cursor-pointer"
+                      : "text-muted-foreground/40 cursor-not-allowed",
+                  )}
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </HintItem>
+            </div>
+          </HintGroup>
 
           <div className="flex items-stretch min-w-0 flex-1 overflow-x-auto hide-scrollbar">
             {tabs.map((tab) => {
               const Icon = tabIcons[tab.type as TabType] ?? MessageSquare;
+              // A tab opened from a path carries it in `data.filePath`, so the
+              // strip shows the same icon the tree row it came from does.
+              const tabFilePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
               const isActive = tab.id === activeId;
               const isRunning = runningTabIds.has(tab.id);
               return (
@@ -433,42 +443,54 @@ const TabColumn = memo(function TabColumn({
                     if (e.key === "Enter" || e.key === " ") setActiveTab(tab.id);
                   }}
                   className={cn(
-                    "group relative flex items-center gap-1.5 pl-3 h-full text-[12px] font-medium shrink-0 cursor-pointer select-none border-r border-border-default",
-                    "transition-[padding-right,background-color,color] duration-150",
-                    tab.closable ? "pr-3 hover:pr-7" : "pr-3",
+                    "atlas-tab group relative flex items-center gap-1.5 px-4 h-full text-sm font-medium shrink-0 cursor-pointer select-none border-r border-border",
+                    "transition-[background-color,color] duration-150",
                     isActive
-                      ? "text-text-primary bg-bg-surface"
-                      : "text-text-tertiary bg-bg-base hover:text-text-secondary hover:bg-bg-hover",
+                      ? "text-foreground bg-background"
+                      : "text-muted-foreground bg-background hover:text-secondary-foreground hover:bg-element-hover",
                   )}
                 >
                   {isRunning ? (
-                    <Loader2 size={12} className="animate-spin text-accent shrink-0" />
+                    <Loader2 size={12} className="animate-spin text-primary shrink-0" />
+                  ) : tabFilePath ? (
+                    <FileIcon path={tabFilePath} size={12} fallback={Icon} />
                   ) : (
                     <Icon
                       size={12}
                       className={cn(
                         "shrink-0",
-                        isActive ? "text-text-secondary" : "text-text-tertiary",
+                        isActive ? "text-secondary-foreground" : "text-muted-foreground",
                       )}
                     />
                   )}
                   <span
-                    className={cn("truncate max-w-[140px] leading-none", tab.dirty && "italic")}
+                    className={cn(
+                      "truncate max-w-[140px] leading-normal",
+                      tab.dirty && "italic",
+                      // Fades out from under the close button on hover — see
+                      // `.atlas-tab-label` in globals.css.
+                      tab.closable && "atlas-tab-label",
+                    )}
                   >
                     {tab.title}
                   </span>
                   {tab.closable && (
+                    // No tooltip. An × on the tab you are hovering is not
+                    // ambiguous, and a panel opening under the pointer to say
+                    // "Close tab" is noise on the one control every user
+                    // already knows. `aria-label` still names it, since the
+                    // button's only content is an icon.
                     <button
+                      aria-label="Close tab"
                       onClick={(e) => {
                         e.stopPropagation();
                         requestCloseTab(tab.id);
                       }}
-                      title="Close tab"
                       className={cn(
                         "absolute right-1.5 top-1/2 -translate-y-1/2",
                         "inline-flex items-center justify-center w-4 h-4 rounded-full",
-                        "text-text-tertiary opacity-0 group-hover:opacity-100",
-                        "hover:bg-[#ffffff22] hover:text-text-primary transition-opacity duration-150",
+                        "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                        "hover:bg-element-hover hover:text-foreground transition-[opacity,transform] duration-150",
                       )}
                     >
                       <X size={10} strokeWidth={2.2} />
@@ -484,40 +506,46 @@ const TabColumn = memo(function TabColumn({
               was 2px behind "Split right" in a single pane and 4px behind
               "Close split" in a split one — the button sat almost flush with
               the window edge in the common case. */}
-          <div className="relative flex shrink-0 items-center pr-1.5">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute right-full top-0 h-full w-8"
-              style={{ background: "linear-gradient(to right, transparent, var(--bg-base))" }}
-            />
-            {/* Selected-pane indicator: a white dot before the +/x actions. */}
-            {!soloColumn && isFocused && (
-              <span
+          <HintGroup>
+            <div className="relative flex shrink-0 items-center pr-1.5">
+              <div
                 aria-hidden
-                title="Active pane"
-                className="self-center shrink-0 mx-1 h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)]"
+                className="pointer-events-none absolute right-full top-0 h-full w-8"
+                style={{ background: "linear-gradient(to right, transparent, var(--background))" }}
               />
-            )}
-            <NewTabDropdown addTab={addTab} groupId={groupId} />
-            {canSplit && (
-              <button
-                onClick={addGroup}
-                title={splitNewHint ? `Split right (${splitNewHint})` : "Split right"}
-                className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
-              >
-                <Columns2 size={13} />
-              </button>
-            )}
-            {canCloseGroup && (
-              <button
-                onClick={() => closeGroup(groupId)}
-                title={splitCloseHint ? `Close split (${splitCloseHint})` : "Close split"}
-                className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
+              {/* Selected-pane indicator: a white dot before the +/x actions. */}
+              {!soloColumn && isFocused && (
+                <span
+                  aria-hidden
+                  title="Active pane"
+                  className="self-center shrink-0 mx-1 h-1.5 w-1.5 rounded-full bg-[var(--primary)]"
+                />
+              )}
+              <NewTabDropdown addTab={addTab} groupId={groupId} />
+              {canSplit && (
+                <HintItem label={splitNewHint ? `Split right (${splitNewHint})` : "Split right"}>
+                  <button
+                    onClick={addGroup}
+                    className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
+                  >
+                    <Columns2 size={13} />
+                  </button>
+                </HintItem>
+              )}
+              {canCloseGroup && (
+                <HintItem
+                  label={splitCloseHint ? `Close split (${splitCloseHint})` : "Close split"}
+                >
+                  <button
+                    onClick={() => closeGroup(groupId)}
+                    className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 cursor-pointer outline-none"
+                  >
+                    <X size={13} />
+                  </button>
+                </HintItem>
+              )}
+            </div>
+          </HintGroup>
         </div>
       )}
 
@@ -525,7 +553,7 @@ const TabColumn = memo(function TabColumn({
         groupId={groupId}
         view={view}
         isActive={isActive}
-        workspaceId={workspaceId}
+        projectId={projectId}
       />
     </div>
   );
@@ -535,13 +563,13 @@ const TabContentContainer = memo(function TabContentContainer({
   groupId,
   view,
   isActive,
-  workspaceId,
+  projectId,
 }: {
   groupId: string;
-  view: WorkspaceView;
+  view: ProjectView;
   isActive: boolean;
   /** Handed to terminal tabs so they can record their owner. */
-  workspaceId: string;
+  projectId: string;
 }) {
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
   const { setActiveTab } = useLayoutStore.use.actions();
@@ -568,8 +596,8 @@ const TabContentContainer = memo(function TabContentContainer({
   }, []);
 
   // If this column's active id is stale (closed tab, etc.) snap to its first.
-  // Only for the ACTIVE workspace — `setActiveTab` mutates the live (active)
-  // store, so a background workspace must not fire it.
+  // Only for the ACTIVE project — `setActiveTab` mutates the live (active)
+  // store, so a background project must not fire it.
   useEffect(() => {
     if (isActive && !activeTab && tabs.length > 0) setActiveTab(tabs[0].id);
   }, [isActive, activeTab, tabs, setActiveTab]);
@@ -578,7 +606,7 @@ const TabContentContainer = memo(function TabContentContainer({
   // below) — but only once this column has been active for an idle slice.
   // Flipping every mounted chat from `display:none` to laid-out costs one
   // layout per thread, and doing that on app boot or in the same frame as a
-  // workspace switch (background workspaces are `display:none`) would move
+  // project switch (background projects are `display:none`) would move
   // the stall we are removing onto those paths instead.
   const [warmReady, setWarmReady] = useState(false);
   useEffect(() => {
@@ -615,7 +643,7 @@ const TabContentContainer = memo(function TabContentContainer({
       <div
         ref={ref}
         style={{ flex: "1 1 0%", minHeight: 0, overflow: "hidden" }}
-        className="flex items-center justify-center text-[12px] text-text-tertiary"
+        className="flex items-center justify-center text-sm text-muted-foreground"
       >
         Empty split — open a tab with +{newTabHint ? ` or ${newTabHint}` : ""}
       </div>
@@ -627,10 +655,10 @@ const TabContentContainer = memo(function TabContentContainer({
   }
 
   // Persist expensive tabs across tab switches within this column. For a
-  // BACKGROUND workspace we additionally drop the types that keep working while
+  // BACKGROUND project we additionally drop the types that keep working while
   // hidden (see IDLE_EXPENSIVE_TYPES) — off-screen terminals/browser embeds/
   // graphs were a major source of idle heat. Chat/knowledge/settings stay
-  // mounted even in background workspaces: unmounting chat re-ran the whole
+  // mounted even in background projects: unmounting chat re-ran the whole
   // transcript-load path (window fill, markdown settle, anchor) on every
   // switch back, and settings lost its form drafts.
   //
@@ -709,8 +737,10 @@ const TabContentContainer = memo(function TabContentContainer({
                 <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
               ) : tab.type === "settings" ? (
                 <SettingsPanel initialSection={tab.data.section as string | undefined} />
+              ) : tab.type === "spaces" ? (
+                <SpacesTab convId={tab.data.convId as string} />
               ) : (
-                <TerminalPanel tabId={tab.id} workspaceId={workspaceId} />
+                <TerminalPanel tabId={tab.id} projectId={projectId} />
               )}
             </div>
           );
@@ -749,8 +779,8 @@ function ProjectlessCenter() {
   const active = atHome ? null : (allowed.find((t) => t.id === storeActive) ?? null);
 
   return (
-    <div className="flex h-full w-full flex-col bg-bg-surface">
-      <div className="flex h-9 shrink-0 items-stretch border-b border-border-default bg-bg-base">
+    <div className="flex h-full w-full flex-col bg-background">
+      <div className="flex h-9 shrink-0 items-stretch border-b border-border bg-background">
         {/* Home is a pseudo-tab, not a store tab: it cannot close and it is
             simply "no allowed tab selected". */}
         <div
@@ -761,10 +791,10 @@ function ProjectlessCenter() {
             if (e.key === "Enter") setAtHome(true);
           }}
           className={cn(
-            "flex items-center gap-1.5 border-r border-border-default px-3 text-[12px] font-medium cursor-pointer select-none",
+            "flex items-center gap-1.5 border-r border-border px-3 text-sm font-medium cursor-pointer select-none",
             active === null
-              ? "bg-bg-surface text-text-primary"
-              : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
+              ? "bg-background text-foreground"
+              : "bg-background text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
           )}
         >
           <House size={12} className="shrink-0" />
@@ -773,6 +803,7 @@ function ProjectlessCenter() {
 
         {allowed.map((tab) => {
           const Icon = tabIcons[tab.type] ?? MessageSquare;
+          const tabFilePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
           const isActive = tab.id === active?.id;
           return (
             <div
@@ -790,31 +821,46 @@ function ProjectlessCenter() {
                 }
               }}
               className={cn(
-                "group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border-default pl-3 text-[12px] font-medium",
-                "transition-[padding-right,background-color,color] duration-150",
-                tab.closable ? "pr-3 hover:pr-7" : "pr-3",
+                "atlas-tab group relative flex shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border px-4 text-sm font-medium",
+                "transition-[background-color,color] duration-150",
                 isActive
-                  ? "bg-bg-surface text-text-primary"
-                  : "bg-bg-base text-text-tertiary hover:bg-bg-hover hover:text-text-secondary",
+                  ? "bg-background text-foreground"
+                  : "bg-background text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground",
               )}
             >
-              <Icon
-                size={12}
-                className={cn("shrink-0", isActive ? "text-text-secondary" : "text-text-tertiary")}
-              />
-              <span className="max-w-[140px] truncate leading-none">{tab.title}</span>
+              {tabFilePath ? (
+                <FileIcon path={tabFilePath} size={12} fallback={Icon} />
+              ) : (
+                <Icon
+                  size={12}
+                  className={cn(
+                    "shrink-0",
+                    isActive ? "text-secondary-foreground" : "text-muted-foreground",
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  "max-w-[140px] truncate leading-normal",
+                  tab.closable && "atlas-tab-label",
+                )}
+              >
+                {tab.title}
+              </span>
               {tab.closable && (
+                // No tooltip — see the note on the primary tab strip's close
+                // button above.
                 <button
+                  aria-label="Close tab"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
-                  title="Close tab"
                   className={cn(
                     "absolute right-1.5 top-1/2 -translate-y-1/2",
                     "inline-flex h-4 w-4 items-center justify-center rounded-full",
-                    "text-text-tertiary opacity-0 group-hover:opacity-100",
-                    "transition-opacity duration-150 hover:bg-[#ffffff22] hover:text-text-primary",
+                    "text-muted-foreground opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100",
+                    "transition-[opacity,transform] duration-150 hover:bg-element-hover hover:text-foreground",
                   )}
                 >
                   <X size={10} strokeWidth={2.2} />
@@ -858,8 +904,8 @@ function TabContent({ tab }: { tab: Tab }) {
       return <SettingsPanel initialSection={tab.data.section as string | undefined} />;
     case "log":
       return <LogPanel />;
-    case "mission-control":
-      return <MissionControlPanel />;
+    case "usage":
+      return <UsagePanel />;
     case "artifacts":
       return <ArtifactsPanel />;
     case "media":
@@ -895,12 +941,12 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
   return (
     <div className="h-full flex items-center justify-center">
       <div className="text-center space-y-3">
-        <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border-default flex items-center justify-center mx-auto">
-          <Icon size={24} className="text-text-tertiary" />
+        <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center mx-auto">
+          <Icon size={24} className="text-muted-foreground" />
         </div>
         <div>
-          <p className="text-sm font-medium text-text-primary">{tab.title}</p>
-          <p className="text-xs text-text-tertiary mt-1">Coming soon</p>
+          <p className="text-sm font-medium text-foreground">{tab.title}</p>
+          <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
         </div>
       </div>
     </div>
@@ -944,29 +990,30 @@ function NewTabDropdown({
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="self-center flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary hover:bg-bg-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
-          <Plus size={14} />
-        </button>
-      </DropdownMenu.Trigger>
+      <HintItem label="New tab">
+        <DropdownMenu.Trigger
+          render={
+            <button className="self-center flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover rounded transition-colors shrink-0 mx-1 cursor-pointer outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0">
+              <Plus size={14} />
+            </button>
+          }
+        />
+      </HintItem>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="w-[160px] rounded-lg border border-border-default bg-bg-secondary shadow-lg py-1"
-          style={{ zIndex: 99999 }}
-        >
-          {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
-            <DropdownMenu.Item
-              key={type}
-              onClick={() => handleAdd(type, label)}
-              className="flex items-center gap-2 px-3 h-[30px] text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-default outline-none"
-            >
-              <Icon size={12} className="text-text-tertiary" />
-              {label}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
+        <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
+          <DropdownMenu.Popup className="w-[160px] rounded-lg border border-border bg-card shadow-lg py-1">
+            {NEW_TAB_OPTIONS.map(({ type, label, icon: Icon }) => (
+              <DropdownMenu.Item
+                key={type}
+                onClick={() => handleAdd(type, label)}
+                className="flex items-center gap-2 px-3 h-[30px] text-xs text-secondary-foreground hover:bg-element-hover hover:text-foreground cursor-default outline-none"
+              >
+                <Icon size={12} className="text-muted-foreground" />
+                {label}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Popup>
+        </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

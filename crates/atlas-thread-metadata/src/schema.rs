@@ -113,3 +113,188 @@ CREATE TABLE IF NOT EXISTS backfilled_agents(
     at       TEXT NOT NULL
 ) STRICT;
 ";
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Barrier};
+
+    use atlas_acp_thread::connection::AgentId;
+
+    use super::*;
+    use crate::paths::PathList;
+    use crate::store::ThreadMetadataStore;
+
+    fn version_of(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn has_table(conn: &Connection, table: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+            > 0
+    }
+
+    const SENT: [u8; 16] = [1; 16];
+    const ARCHIVED: [u8; 16] = [2; 16];
+    const DRAFT: [u8; 16] = [3; 16];
+
+    /// A database exactly as a V1 build left it, with three rows: a sent
+    /// thread carrying every optional column, an archived one carrying none,
+    /// and a draft (no session id).
+    fn seed_v1(db_path: &Path) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute_batch(V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        let folders =
+            PathList::new(&[PathBuf::from("/work/b"), PathBuf::from("/work/a")]).serialize();
+        conn.execute(
+            "INSERT INTO threads (thread_id, session_id, agent_id, title, title_override, \
+                 updated_at, created_at, interacted_at, folder_paths, folder_paths_order, archived) \
+             VALUES (?1, 'sess-1', 'cersei', 'Fix the build', 'My rename', \
+                 '2026-05-02T00:00:00+00:00', '2026-05-01T00:00:00+00:00', \
+                 '2026-05-02T00:00:00+00:00', ?2, ?3, 0)",
+            rusqlite::params![SENT.as_slice(), folders.paths, folders.order],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO threads (thread_id, session_id, agent_id, updated_at, archived) \
+             VALUES (?1, 'sess-2', 'claude-code', '2026-05-01T00:00:00+00:00', 1)",
+            [ARCHIVED.as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO threads (thread_id, agent_id, updated_at) \
+             VALUES (?1, 'cersei', '2026-05-03T00:00:00+00:00')",
+            [DRAFT.as_slice()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_v1_database_gains_the_backfill_table_and_keeps_every_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+
+        let conn = Connection::open(&path).unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(version_of(&conn), SCHEMA_VERSION);
+        assert!(has_table(&conn, "backfilled_agents"));
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM threads", [], |r| r.get(0))
+            .unwrap();
+        // The migration itself drops nothing; pruning drafts is the store's
+        // job on open, not the schema's.
+        assert_eq!(rows, 3);
+
+        // Current, so a second run is the fast path.
+        migrate(&conn).unwrap();
+        assert_eq!(version_of(&conn), SCHEMA_VERSION);
+    }
+
+    /// The same upgrade through the public store, which is what the app runs
+    /// at launch: the V1 rows decode, and the new table works and persists.
+    #[test]
+    fn a_v1_database_opens_through_the_store_with_its_threads_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+
+        let agent = AgentId::new("cersei");
+        {
+            let store = ThreadMetadataStore::open(&path).expect("a V1 store opens");
+            let mut threads = store.threads();
+            threads.sort_by_key(|t| *t.thread_id.as_uuid().as_bytes());
+            assert_eq!(
+                threads.len(),
+                2,
+                "the two sent threads survive; the draft is pruned"
+            );
+
+            let sent = &threads[0];
+            assert_eq!(sent.thread_id.as_uuid().as_bytes(), &SENT);
+            assert_eq!(
+                sent.session_id.as_ref().map(|s| s.0.to_string()).as_deref(),
+                Some("sess-1")
+            );
+            assert_eq!(sent.agent_id.as_str(), "cersei");
+            assert_eq!(sent.title.as_deref(), Some("Fix the build"));
+            assert_eq!(sent.title_override.as_deref(), Some("My rename"));
+            assert!(sent.created_at.is_some() && sent.interacted_at.is_some());
+            assert_eq!(
+                sent.folder_paths(),
+                &PathList::new(&[PathBuf::from("/work/b"), PathBuf::from("/work/a")]),
+                "folder order survives"
+            );
+            assert!(!sent.archived);
+
+            let archived = &threads[1];
+            assert_eq!(archived.agent_id.as_str(), "claude-code");
+            assert_eq!(archived.title, None);
+            assert!(archived.archived);
+
+            assert!(!store.has_backfilled(&agent));
+            store.mark_backfilled(&agent);
+            store.flush().unwrap();
+        }
+
+        let store = ThreadMetadataStore::open(&path).unwrap();
+        assert_eq!(store.threads().len(), 2);
+        assert!(store.has_backfilled(&agent), "the V2 table is durable");
+    }
+
+    #[test]
+    fn a_database_from_a_newer_build_is_refused_untouched() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(V1).unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+        assert!(matches!(
+            migrate(&conn),
+            Err(Error::SchemaTooNew { found, supported })
+                if found == SCHEMA_VERSION + 1 && supported == SCHEMA_VERSION
+        ));
+        assert!(!has_table(&conn, "backfilled_agents"));
+    }
+
+    /// Two connections released at once against a V1 file: the IMMEDIATE lock
+    /// and the in-lock re-read mean both succeed and the upgrade lands once.
+    #[test]
+    fn two_connections_racing_the_upgrade_both_succeed() {
+        for round in 0..8 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("threads.db");
+            seed_v1(&path);
+
+            let barrier = Arc::new(Barrier::new(2));
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    let path = path.clone();
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        let conn = Connection::open(&path).unwrap();
+                        conn.busy_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        barrier.wait();
+                        migrate(&conn).map_err(|e| e.to_string())
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle
+                    .join()
+                    .unwrap()
+                    .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            }
+            let conn = Connection::open(&path).unwrap();
+            assert_eq!(version_of(&conn), SCHEMA_VERSION);
+            assert!(has_table(&conn, "backfilled_agents"));
+        }
+    }
+}

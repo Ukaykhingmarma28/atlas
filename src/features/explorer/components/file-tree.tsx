@@ -1,7 +1,7 @@
 import { useMemo, useRef, useCallback, useState, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
-import { activeWorkspaceId } from "@/features/workspaces/lib/active-workspace";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 import { toast } from "sonner";
 import {
   useExplorerStore,
@@ -10,10 +10,11 @@ import {
   type TreeNode,
 } from "../stores/explorer-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/project/stores/project-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { FolderPlus, FoldVertical, UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { basename } from "@/lib/paths";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { TreeRow } from "./tree-row";
@@ -75,7 +76,7 @@ export function FileTree() {
     endNewEntry,
     ensureExpanded,
   } = useExplorerStore.use.actions();
-  const projectPath = useProjectStore.use.currentProject()?.path ?? null;
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const activeTabId = useLayoutStore.use.activeTabId();
   const tabs = useLayoutStore.use.tabs();
   const { closeTab } = useLayoutStore.use.actions();
@@ -260,7 +261,7 @@ export function FileTree() {
       void invoke("recent_files_rename", {
         oldPath,
         newPath,
-        workspaceId: activeWorkspaceId(),
+        workspaceId: activeProjectId(),
       }).catch(() => {});
       // If the renamed file is open in ANY file-backed viewer (editor, media,
       // svg, pdf, unsupported), swap those tabs to the new path — otherwise the
@@ -315,7 +316,7 @@ export function FileTree() {
           void invoke("recent_files_rename", {
             oldPath: src,
             newPath: destPath,
-            workspaceId: activeWorkspaceId(),
+            workspaceId: activeProjectId(),
           }).catch(() => {});
         } else {
           await invoke("fs_copy", { from: src, to: destPath });
@@ -366,7 +367,11 @@ export function FileTree() {
       try {
         const destPath = await resolveCollision(src, destDir);
         await invoke("fs_rename", { from: src, to: destPath });
-        void invoke("recent_files_rename", { oldPath: src, newPath: destPath }).catch(() => {});
+        void invoke("recent_files_rename", {
+          oldPath: src,
+          newPath: destPath,
+          workspaceId: activeProjectId(),
+        }).catch(() => {});
         // Refresh both ends — the source's old parent loses the entry
         // and the destination gains it. The fs-watcher would catch
         // both eventually but the user expects an immediate update.
@@ -507,13 +512,13 @@ export function FileTree() {
       <>
         {isDir ? (
           <>
-            <ContextMenuItem onSelect={() => beginNewEntry(entry.path, false)}>
+            <ContextMenuItem onClick={() => beginNewEntry(entry.path, false)}>
               New File
               <ContextMenuShortcut>
                 <KbdCombo combo="⌘N" />
               </ContextMenuShortcut>
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => beginNewEntry(entry.path, true)}>
+            <ContextMenuItem onClick={() => beginNewEntry(entry.path, true)}>
               New Folder
               <ContextMenuShortcut>
                 <KbdCombo combo="⌥⌘N" />
@@ -523,49 +528,49 @@ export function FileTree() {
           </>
         ) : (
           <>
-            <ContextMenuItem onSelect={() => handleOpenFile(entry.path, entry.name)}>
+            <ContextMenuItem onClick={() => handleOpenFile(entry.path, entry.name)}>
               Open
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>
         )}
-        <ContextMenuItem onSelect={() => handleRevealInFinder(entry.path)}>
+        <ContextMenuItem onClick={() => handleRevealInFinder(entry.path)}>
           Reveal in Finder
           <ContextMenuShortcut>
             <KbdCombo combo="⌥⌘R" />
           </ContextMenuShortcut>
         </ContextMenuItem>
         {!isDir && (
-          <ContextMenuItem onSelect={() => handleOpenInDefaultApp(entry.path)}>
+          <ContextMenuItem onClick={() => handleOpenInDefaultApp(entry.path)}>
             Open in Default App
           </ContextMenuItem>
         )}
         {isDir && (
-          <ContextMenuItem onSelect={() => handleOpenInTerminal(entry.path)}>
+          <ContextMenuItem onClick={() => handleOpenInTerminal(entry.path)}>
             Open in Terminal
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => setClipboard(targetPaths, true)}>
+        <ContextMenuItem onClick={() => setClipboard(targetPaths, true)}>
           Cut{countSuffix}
           <ContextMenuShortcut>
             <KbdCombo combo="⌘X" />
           </ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => setClipboard(targetPaths, false)}>
+        <ContextMenuItem onClick={() => setClipboard(targetPaths, false)}>
           Copy{countSuffix}
           <ContextMenuShortcut>
             <KbdCombo combo="⌘C" />
           </ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void handleDuplicate(entry.path)}>
+        <ContextMenuItem onClick={() => void handleDuplicate(entry.path)}>
           Duplicate
           <ContextMenuShortcut>
             <KbdCombo combo="⌘D" />
           </ContextMenuShortcut>
         </ContextMenuItem>
         {isDir && clipboard && (
-          <ContextMenuItem onSelect={() => void handlePaste(entry.path)}>
+          <ContextMenuItem onClick={() => void handlePaste(entry.path)}>
             Paste
             <ContextMenuShortcut>
               <KbdCombo combo="⌘V" />
@@ -573,30 +578,30 @@ export function FileTree() {
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => handleCopyPath(targetPaths)}>
+        <ContextMenuItem onClick={() => handleCopyPath(targetPaths)}>
           Copy Path{countSuffix}
           <ContextMenuShortcut>
             <KbdCombo combo="⌥⌘C" />
           </ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => handleCopyRelativePath(targetPaths)}>
+        <ContextMenuItem onClick={() => handleCopyRelativePath(targetPaths)}>
           Copy Relative Path{countSuffix}
           <ContextMenuShortcut>
             <KbdCombo combo="⇧⌥⌘C" />
           </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => void handleAddToGitignore(entry.path)}>
+        <ContextMenuItem onClick={() => void handleAddToGitignore(entry.path)}>
           Add to .gitignore
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => beginRename(entry.path)}>
+        <ContextMenuItem onClick={() => beginRename(entry.path)}>
           Rename
           <ContextMenuShortcut>
             <KbdCombo combo="↵" />
           </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
-          onSelect={() =>
+          onClick={() =>
             setDeleteTargets(targets.map((t) => ({ path: t.path, name: t.name, isDir: t.is_dir })))
           }
         >
@@ -611,18 +616,18 @@ export function FileTree() {
     <ContextMenuContent>
       <ContextMenuItem
         disabled={!rootPath}
-        onSelect={() => rootPath && beginNewEntry(rootPath, false)}
+        onClick={() => rootPath && beginNewEntry(rootPath, false)}
       >
         New File
       </ContextMenuItem>
       <ContextMenuItem
         disabled={!rootPath}
-        onSelect={() => rootPath && beginNewEntry(rootPath, true)}
+        onClick={() => rootPath && beginNewEntry(rootPath, true)}
       >
         New Folder
       </ContextMenuItem>
       {rootPath && clipboard && (
-        <ContextMenuItem onSelect={() => void handlePaste(rootPath)}>
+        <ContextMenuItem onClick={() => void handlePaste(rootPath)}>
           Paste
           <ContextMenuShortcut>
             <KbdCombo combo="⌘V" />
@@ -631,17 +636,17 @@ export function FileTree() {
       )}
       <ContextMenuSeparator />
       {rootPath && (
-        <ContextMenuItem onSelect={() => handleRevealInFinder(rootPath)}>
+        <ContextMenuItem onClick={() => handleRevealInFinder(rootPath)}>
           Reveal Project in Finder
         </ContextMenuItem>
       )}
       {rootPath && (
-        <ContextMenuItem onSelect={() => handleOpenInTerminal(rootPath)}>
+        <ContextMenuItem onClick={() => handleOpenInTerminal(rootPath)}>
           Open in Terminal
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
-      <ContextMenuItem onSelect={() => collapseAll()}>Collapse All</ContextMenuItem>
+      <ContextMenuItem onClick={() => collapseAll()}>Collapse All</ContextMenuItem>
     </ContextMenuContent>
   );
 
@@ -651,143 +656,152 @@ export function FileTree() {
           (h-[29px] border-b) so the divider reads as one continuous straight
           line across the file tree and the tab bar. No refresh button — the
           file-tree updates live off the filesystem watcher. */}
-      <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border-default">
-        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider truncate flex-1">
+      <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border">
+        <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider truncate flex-1">
           {rootPath ? basename(rootPath) : "Files"}
         </span>
-        <div className="flex items-center gap-0.5">
-          <FoldExpandButton tree={tree} onCollapseAll={collapseAll} onExpandAll={expandAllLoaded} />
-          <button
-            onClick={handlePickFolder}
-            className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
-            title="Open folder"
-          >
-            <FolderPlus size={11} />
-          </button>
-        </div>
+        <HintGroup>
+          <div className="flex items-center gap-0.5">
+            <FoldExpandButton
+              tree={tree}
+              onCollapseAll={collapseAll}
+              onExpandAll={expandAllLoaded}
+            />
+            <HintItem label="Open folder">
+              <button
+                onClick={handlePickFolder}
+                className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
+              >
+                <FolderPlus size={11} />
+              </button>
+            </HintItem>
+          </div>
+        </HintGroup>
       </div>
 
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            ref={scrollRef}
-            data-tree-root
-            className={cn(
-              "flex-1 overflow-auto hide-scrollbar px-1.5 pb-2 relative",
-              dropTargetPath === ROOT_DROP &&
-                "bg-[var(--accent-primary-muted)] ring-1 ring-inset ring-accent/40",
-            )}
-            onMouseDown={onContainerMouseDown}
-            // Esc clears the multi-selection (keydown bubbles up from the
-            // focused row). Only swallow it when there's something to clear.
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && selectedPaths.length > 0) {
-                e.preventDefault();
-                e.stopPropagation();
-                clearSelection();
-              }
-            }}
-          >
-            {loading ? (
-              <PanelSkeleton rows={10} className="p-2 gap-1.5" />
-            ) : flat.length === 0 ? (
-              <div className="px-3 py-4 text-[11px] text-text-tertiary text-center">
-                Empty folder
-              </div>
-            ) : (
-              <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const row = flat[virtualRow.index];
-
-                  // Ghost row for pending new-file/new-folder input.
-                  if (row.ghost) {
-                    return (
-                      <TreeRow
-                        key={`ghost-${virtualRow.index}`}
-                        depth={row.ghost.depth}
-                        isDir={row.ghost.isDir}
-                        isExpanded={false}
-                        isActive
-                        name=""
-                        editingMode="new"
-                        initialValue=""
-                        onCommit={(name) => {
-                          if (row.ghost!.isDir) {
-                            void handleNewFolderCommit(row.ghost!.parentDir, name);
-                          } else {
-                            void handleNewFileCommit(row.ghost!.parentDir, name);
-                          }
-                        }}
-                        onCancel={endNewEntry}
-                        onClick={() => {}}
-                        style={{ transform: `translateY(${virtualRow.start}px)` }}
-                      />
-                    );
-                  }
-
-                  const node = row.node!;
-                  const isDir = node.entry.is_dir;
-                  // Files show their own status color; a collapsed dir shows a
-                  // marker when it contains a change (expanded dirs let their
-                  // children carry the signal instead, to avoid double-marking).
-                  const gitColor = isDir
-                    ? !node.expanded
-                      ? (dirtyDirs.get(node.entry.path)?.color ?? null)
-                      : null
-                    : (fileColors.get(node.entry.path) ?? null);
-                  const isSelected = selectedPaths.includes(node.entry.path);
-                  const isActive = !isDir && node.entry.path === activeFilePath;
-                  const isCut =
-                    clipboard?.isCut === true && clipboard.paths.includes(node.entry.path);
-                  const isRenaming = pendingRenamePath === node.entry.path;
-
-                  return (
-                    <ContextMenu key={node.entry.path}>
-                      <ContextMenuTrigger asChild>
-                        <div
-                          // Right-clicking a row that isn't part of the
-                          // current multi-selection collapses the
-                          // selection to just that row (Finder behavior),
-                          // so the menu acts on what the user clicked.
-                          onContextMenu={() => {
-                            if (!selectedPaths.includes(node.entry.path)) {
-                              setSelection([node.entry.path], node.entry.path);
+        <ContextMenuTrigger
+          render={
+            <div
+              ref={scrollRef}
+              data-tree-root
+              className={cn(
+                "flex-1 overflow-auto hide-scrollbar px-1.5 pb-2 relative",
+                dropTargetPath === ROOT_DROP &&
+                  "bg-[var(--atlas-primary-muted)] ring-1 ring-inset ring-primary/40",
+              )}
+              onMouseDown={onContainerMouseDown}
+              // Esc clears the multi-selection (keydown bubbles up from the
+              // focused row). Only swallow it when there's something to clear.
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && selectedPaths.length > 0) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  clearSelection();
+                }
+              }}
+            >
+              {loading ? (
+                <PanelSkeleton rows={10} className="p-2 gap-1.5" />
+              ) : flat.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  Empty folder
+                </div>
+              ) : (
+                <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+                  {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = flat[virtualRow.index];
+                    // Ghost row for pending new-file/new-folder input.
+                    if (row.ghost) {
+                      return (
+                        <TreeRow
+                          key={`ghost-${virtualRow.index}`}
+                          depth={row.ghost.depth}
+                          isDir={row.ghost.isDir}
+                          isExpanded={false}
+                          isActive
+                          name=""
+                          editingMode="new"
+                          initialValue=""
+                          onCommit={(name) => {
+                            if (row.ghost!.isDir) {
+                              void handleNewFolderCommit(row.ghost!.parentDir, name);
+                            } else {
+                              void handleNewFileCommit(row.ghost!.parentDir, name);
                             }
                           }}
-                        >
-                          <TreeRow
-                            depth={node.depth}
-                            isDir={isDir}
-                            isExpanded={node.expanded}
-                            // Selection fill wins; keep them mutually
-                            // exclusive so a row never shows two bgs.
-                            isActive={isActive && !isSelected}
-                            isSelected={isSelected}
-                            name={node.entry.name}
-                            title={node.entry.path}
-                            editingMode={isRenaming ? "rename" : undefined}
-                            initialValue={isRenaming ? node.entry.name : undefined}
-                            onCommit={(name) => void handleRenameCommit(node.entry.path, name)}
-                            onCancel={endRename}
-                            isCut={isCut}
-                            dataPath={node.entry.path}
-                            isDropTarget={isDir && dropTargetPath === node.entry.path}
-                            isDragging={dragState.draggedItem?.path === node.entry.path}
-                            gitColor={gitColor}
-                            onClick={(e) => handleRowClick(node, e)}
-                            onRename={() => beginRename(node.entry.path)}
-                            style={{ transform: `translateY(${virtualRow.start}px)` }}
-                          />
-                        </div>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent>{rowMenuItems(node.entry)}</ContextMenuContent>
-                    </ContextMenu>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </ContextMenuTrigger>
+                          onCancel={endNewEntry}
+                          onClick={() => {}}
+                          style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        />
+                      );
+                    }
+                    const node = row.node!;
+                    const isDir = node.entry.is_dir;
+                    // Files show their own status color; a collapsed dir shows a
+                    // marker when it contains a change (expanded dirs let their
+                    // children carry the signal instead, to avoid double-marking).
+                    const gitColor = isDir
+                      ? !node.expanded
+                        ? (dirtyDirs.get(node.entry.path)?.color ?? null)
+                        : null
+                      : (fileColors.get(node.entry.path) ?? null);
+                    const isSelected = selectedPaths.includes(node.entry.path);
+                    const isActive = !isDir && node.entry.path === activeFilePath;
+                    const isCut =
+                      clipboard?.isCut === true && clipboard.paths.includes(node.entry.path);
+                    const isRenaming = pendingRenamePath === node.entry.path;
+                    return (
+                      <ContextMenu key={node.entry.path}>
+                        <ContextMenuTrigger
+                          render={
+                            <div
+                              // Right-clicking a row that isn't part of the
+                              // current multi-selection collapses the
+                              // selection to just that row (Finder behavior),
+                              // so the menu acts on what the user clicked.
+                              onContextMenu={() => {
+                                if (!selectedPaths.includes(node.entry.path)) {
+                                  setSelection([node.entry.path], node.entry.path);
+                                }
+                              }}
+                            >
+                              <TreeRow
+                                depth={node.depth}
+                                isDir={isDir}
+                                isExpanded={node.expanded}
+                                // Selection fill wins; keep them mutually
+                                // exclusive so a row never shows two bgs.
+                                isActive={isActive && !isSelected}
+                                isSelected={isSelected}
+                                name={node.entry.name}
+                                title={node.entry.path}
+                                editingMode={isRenaming ? "rename" : undefined}
+                                initialValue={isRenaming ? node.entry.name : undefined}
+                                onCommit={(name) => void handleRenameCommit(node.entry.path, name)}
+                                onCancel={endRename}
+                                isCut={isCut}
+                                dataPath={node.entry.path}
+                                isDropTarget={isDir && dropTargetPath === node.entry.path}
+                                isDragging={dragState.draggedItem?.path === node.entry.path}
+                                gitColor={gitColor}
+                                iconPath={node.entry.path}
+                                onClick={(e) => handleRowClick(node, e)}
+                                onRename={() => beginRename(node.entry.path)}
+                                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                              />
+                            </div>
+                          }
+                        />
+                        <ContextMenuContent>{rowMenuItems(node.entry)}</ContextMenuContent>
+                      </ContextMenu>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          }
+        />
         {emptyAreaMenu}
       </ContextMenu>
 
@@ -835,13 +849,14 @@ function FoldExpandButton({
 }) {
   const anyExpanded = useMemo(() => hasAnyExpanded(tree), [tree]);
   return (
-    <button
-      onClick={anyExpanded ? onCollapseAll : onExpandAll}
-      className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
-      title={anyExpanded ? "Collapse all" : "Expand all"}
-    >
-      {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
-    </button>
+    <HintItem label={anyExpanded ? "Collapse all" : "Expand all"}>
+      <button
+        onClick={anyExpanded ? onCollapseAll : onExpandAll}
+        className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
+      >
+        {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
+      </button>
+    </HintItem>
   );
 }
 

@@ -12,7 +12,7 @@
 // two "expand this into the whole window" surfaces behave identically.
 
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 // Imported DIRECTLY, not lazily. This module is itself lazy-loaded by the chat,
 // so a second `lazy()` here made opening a diff two SEQUENTIAL chunk fetches —
@@ -54,25 +54,21 @@ export function GitDiffModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 bg-black/60 data-[state=open]:animate-fade-in"
-          style={{ zIndex: "var(--z-overlay)" as unknown as number }}
-        />
-        <Dialog.Content
+        <Dialog.Backdrop className="fixed inset-0 z-overlay scrim data-open:animate-fade-in" />
+        <Dialog.Popup
           aria-describedby={undefined}
           // Scales in from 95%. Without it the modal simply blinked into
           // existence, and an abrupt appearance reads as a slow one — there is
           // no motion to tell the eye that anything is arriving.
-          className="fixed top-8.5 left-4 right-4 bottom-6 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-sidebar)] shadow-[var(--shadow-overlay)] focus:outline-none data-[state=open]:animate-scale-in"
-          style={{ zIndex: "var(--z-modal)" as unknown as number }}
+          className="fixed top-8.5 left-4 right-4 bottom-6 z-modal flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--sidebar)] shadow-md focus:outline-none data-open:animate-scale-in"
         >
           <Dialog.Title className="sr-only">{title ?? "Changes"}</Dialog.Title>
-          <div className="flex h-[32px] shrink-0 items-center gap-2 border-b border-[var(--border-default)] px-3">
-            <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
+          <div className="flex h-control-lg shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+            <span className="truncate text-xs font-medium text-[var(--secondary-foreground)]">
               {title ?? "Changes"}
             </span>
             <Dialog.Close
-              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
               aria-label="Close"
             >
               <X size={13} />
@@ -95,7 +91,7 @@ export function GitDiffModal({
               onOpenInEditor={() => onOpenChange(false)}
             />
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );

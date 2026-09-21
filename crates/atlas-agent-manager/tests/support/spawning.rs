@@ -60,20 +60,37 @@ for line in sys.stdin:
     sys.stdout.flush()
 "#;
 
-fn python() -> Option<&'static str> {
-    [
-        "/usr/bin/python3",
-        "/opt/homebrew/bin/python3",
-        "/usr/local/bin/python3",
-    ]
-    .into_iter()
-    .find(|path| Path::new(path).exists())
+/// `python3` from `PATH`, else from the usual install locations; `None` means
+/// the python-backed tests skip.
+///
+/// Except under CI, where a missing interpreter is a failure: a runner without
+/// python3 would otherwise report these tests green having run none of them.
+fn python() -> Option<PathBuf> {
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("python3"))
+            .find(|candidate| candidate.is_file())
+    });
+    let found = on_path.or_else(|| {
+        [
+            "/usr/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|candidate| candidate.is_file())
+    });
+    if found.is_none() && std::env::var_os("CI").is_some_and(|ci| !ci.is_empty()) {
+        panic!("python3 is not on PATH, and CI is set: these tests would skip rather than run");
+    }
+    found
 }
 
 /// Resolves the fake agent's command, the way the real store resolves an
 /// installed agent's.
 struct PythonResolver {
-    python: &'static str,
+    python: PathBuf,
     pid_file: PathBuf,
     /// When set, the agent spawns and then waits for this file to exist before
     /// answering `initialize` — so the connect parks with a real child alive.
@@ -104,7 +121,7 @@ impl ExternalAgentServer for PythonResolver {
                 "AGENT_CAPABILITIES",
                 &format!("{:?}", self.agent_capabilities.to_string()),
             );
-        let path = PathBuf::from(self.python);
+        let path = self.python.clone();
         async move {
             Ok(AgentServerCommand {
                 path,
@@ -118,7 +135,7 @@ impl ExternalAgentServer for PythonResolver {
 
 struct SpawningCatalog {
     id: AgentId,
-    python: &'static str,
+    python: PathBuf,
     pid_file: PathBuf,
     go_file: Option<PathBuf>,
     agent_capabilities: serde_json::Value,
@@ -132,7 +149,7 @@ impl atlas_agent_manager::AgentCatalog for SpawningCatalog {
     fn agent_server(&self, id: &AgentId) -> Option<Arc<dyn ExternalAgentServer>> {
         (id == &self.id).then(|| {
             Arc::new(PythonResolver {
-                python: self.python,
+                python: self.python.clone(),
                 pid_file: self.pid_file.clone(),
                 go_file: self.go_file.clone(),
                 agent_capabilities: self.agent_capabilities.clone(),

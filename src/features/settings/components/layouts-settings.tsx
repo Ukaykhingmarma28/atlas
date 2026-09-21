@@ -17,10 +17,10 @@ export function LayoutsSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-sm font-semibold text-text-primary">Layouts</h2>
-        <p className="text-[11px] text-text-tertiary mt-0.5">
-          Rearrange panels and tabs into a ready-made workspace. Press{" "}
-          <kbd className="px-1 py-0.5 rounded bg-bg-elevated border border-border-default font-mono text-[9px]">
+        <h2 className="text-sm font-semibold text-foreground">Layouts</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Rearrange panels and tabs into a ready-made project. Press{" "}
+          <kbd className="px-1 py-0.5 rounded bg-card border border-border font-mono text-3xs">
             {switcherHint}
           </kbd>{" "}
           anytime to switch layouts.
@@ -33,13 +33,13 @@ export function LayoutsSettings() {
             key={t.id}
             onClick={() => apply(t)}
             className={cn(
-              "text-left rounded-xl border border-border-default bg-bg-secondary p-3",
-              "hover:border-[var(--border-strong)] transition-colors outline-none",
+              "text-left rounded-xl border border-border bg-card p-3",
+              "hover:border-[var(--atlas-border-strong)] transition-colors outline-none",
             )}
           >
             <LayoutThumbnail template={t} />
-            <div className="mt-2 text-[12px] font-medium text-text-primary">{t.name}</div>
-            <div className="text-[10px] text-text-tertiary leading-snug">{t.description}</div>
+            <div className="mt-2 text-sm font-medium text-foreground">{t.name}</div>
+            <div className="text-2xs text-muted-foreground leading-snug">{t.description}</div>
           </button>
         ))}
       </div>

@@ -32,12 +32,12 @@ export function CaptureDot({
 }) {
   const color =
     tone === "error"
-      ? "var(--status-error)"
+      ? "var(--atlas-status-error-foreground)"
       : tone === "warning"
-        ? "var(--status-warning)"
+        ? "var(--atlas-status-warning-foreground)"
         : tone === "idle"
-          ? "var(--text-ghost)"
-          : "var(--capture-live)";
+          ? "var(--atlas-text-disabled)"
+          : "var(--atlas-status-success-foreground)";
 
   return (
     <span className="relative grid size-[10px] shrink-0 place-items-center" aria-hidden>

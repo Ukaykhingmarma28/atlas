@@ -26,7 +26,7 @@ export type When =
   | "canvasFocus";
 
 export type ActionCategory =
-  | "Workspace"
+  | "Project"
   | "Navigation"
   | "Panels"
   | "Tabs"
@@ -67,32 +67,35 @@ const focusTab = (n: number): ActionDef => ({
 });
 
 export const ACTIONS = [
-  // ── Workspace ──
+  // ── Project ──
+  // The two `workspace.*` ids are STORAGE KEYS, not concepts: a user's custom
+  // bindings are keyed by action id in `keybindings.json`, so renaming one
+  // silently drops their shortcut. Atlas calls these projects.
   {
     id: "workspace.add",
-    title: "Add workspace…",
-    category: "Workspace",
+    title: "Add project…",
+    category: "Project",
     when: "global",
     defaults: ["cmd+shift+n"],
   },
   {
     id: "workspace.toggleSidebar",
-    title: "Toggle workspace sidebar",
-    category: "Workspace",
+    title: "Toggle project sidebar",
+    category: "Project",
     when: "global",
     defaults: ["cmd+shift+."],
   },
   {
     id: "app.settings",
     title: "Open Settings",
-    category: "Workspace",
+    category: "Project",
     when: "global",
     defaults: ["cmd+,"],
   },
   {
     id: "app.capture",
     title: "Open Session Capture",
-    category: "Workspace",
+    category: "Project",
     when: "global",
     defaults: ["cmd+alt+c"],
   },
@@ -132,6 +135,7 @@ export const ACTIONS = [
     when: "global",
     defaults: ["cmd+alt+l"],
   },
+  { id: "usage.open", title: "Open Usage", category: "Navigation", when: "global", defaults: [] },
   {
     id: "hintNav.toggle",
     title: "Hint navigation",
@@ -460,7 +464,7 @@ export function isActionId(id: string): id is ActionId {
 }
 
 export const CATEGORY_ORDER: readonly ActionCategory[] = [
-  "Workspace",
+  "Project",
   "Navigation",
   "Panels",
   "Tabs",

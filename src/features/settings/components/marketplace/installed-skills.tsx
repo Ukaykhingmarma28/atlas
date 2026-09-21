@@ -280,8 +280,8 @@ export function InstalledSkills({
 
   if (projectMissing) {
     return (
-      <div className="grid h-full place-items-center px-6 text-center text-[11px] text-text-tertiary">
-        Open a project to manage workspace skills.
+      <div className="grid h-full place-items-center px-6 text-center text-xs text-muted-foreground">
+        Open a project to manage project skills.
       </div>
     );
   }
@@ -291,14 +291,14 @@ export function InstalledSkills({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {error && (
-        <div className="mx-3 mt-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-[11px] text-error">
+        <div className="mx-3 mt-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error">
           {error}
         </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto hide-scrollbar">
         <div style={{ minWidth: TABLE_MIN_W }}>
-          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border-default bg-bg-base px-3 text-[10px] uppercase tracking-wider text-text-tertiary">
+          <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-border bg-background px-3 text-2xs uppercase tracking-wider text-muted-foreground">
             <span className={COL.name}>Name</span>
             <span className={COL.origin}>Origin</span>
             <span className={COL.tools}>Tools</span>
@@ -306,7 +306,7 @@ export function InstalledSkills({
           </div>
 
           {empty ? (
-            <div className="grid h-[180px] place-items-center text-[11px] text-text-tertiary">
+            <div className="grid h-[180px] place-items-center text-xs text-muted-foreground">
               Nothing installed in this scope. Browse Discover to add skills.
             </div>
           ) : (
@@ -318,26 +318,26 @@ export function InstalledSkills({
                   <button
                     key={`pack:${p.pack.name}`}
                     onClick={() => setTarget({ kind: "pack", pack: p })}
-                    className="flex w-full items-center h-[40px] border-b border-border-subtle px-3 text-left transition-colors hover:bg-bg-hover"
+                    className="flex w-full items-center h-[40px] border-b border-border-subtle px-3 text-left transition-colors hover:bg-element-hover"
                   >
                     <span className={cn(COL.name, "flex items-center gap-2 min-w-0")}>
-                      <Package size={13} className="shrink-0 text-text-tertiary" />
-                      <span className="truncate text-[12px] text-text-primary">{p.pack.name}</span>
+                      <Package size={13} className="shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm text-foreground">{p.pack.name}</span>
                     </span>
                     <span
                       className={cn(
                         COL.origin,
-                        "truncate font-mono text-[10px] text-text-tertiary",
+                        "truncate font-mono text-2xs text-muted-foreground",
                       )}
                     >
                       {p.source}
                     </span>
-                    <span className={cn(COL.tools, "truncate text-[10px] text-text-tertiary")}>
+                    <span className={cn(COL.tools, "truncate text-2xs text-muted-foreground")}>
                       {proj.size > 0
                         ? `${proj.size} tool${proj.size > 1 ? "s" : ""}`
                         : kindCounts(p.pack.components) || "—"}
                     </span>
-                    <span className={cn(COL.chevron, "flex justify-end text-text-tertiary")}>
+                    <span className={cn(COL.chevron, "flex justify-end text-muted-foreground")}>
                       <ChevronRight size={14} />
                     </span>
                   </button>
@@ -360,23 +360,25 @@ export function InstalledSkills({
                   <button
                     key={`skill:${s.pack ?? ""}:${s.name}`}
                     onClick={onClick}
-                    className="flex w-full items-center min-h-[44px] py-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-bg-hover"
+                    className="flex w-full items-center min-h-[44px] py-2 border-b border-border-subtle px-3 text-left transition-colors hover:bg-element-hover"
                   >
                     <span className={cn(COL.name, "min-w-0 pr-6")}>
-                      <span className="block truncate text-[12px] text-text-primary">{s.name}</span>
+                      <span className="block truncate text-sm text-foreground">{s.name}</span>
                       {s.description && (
-                        <span className="mt-0.5 text-[10px] leading-snug text-text-tertiary line-clamp-2">
+                        <span className="mt-0.5 text-2xs leading-snug text-muted-foreground line-clamp-2">
                           {s.description}
                         </span>
                       )}
                     </span>
-                    <span className={cn(COL.origin, "truncate text-[11px] text-text-tertiary")}>
+                    <span className={cn(COL.origin, "truncate text-xs text-muted-foreground")}>
                       {origin}
                     </span>
-                    <span className={cn(COL.tools, "text-[11px] text-text-secondary tabular-nums")}>
+                    <span
+                      className={cn(COL.tools, "text-xs text-secondary-foreground tabular-nums")}
+                    >
                       {onCount > 0 ? `${onCount} on` : "off"}
                     </span>
-                    <span className={cn(COL.chevron, "flex justify-end text-text-tertiary")}>
+                    <span className={cn(COL.chevron, "flex justify-end text-muted-foreground")}>
                       <ChevronRight size={14} />
                     </span>
                   </button>
@@ -445,7 +447,7 @@ function OnOff({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-border-default bg-bg-elevated p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
       {([true, false] as const).map((v) => (
         <button
           key={String(v)}
@@ -453,10 +455,10 @@ function OnOff({
           disabled={busy}
           onClick={() => onChange(v)}
           className={cn(
-            "flex h-[18px] min-w-[34px] items-center justify-center rounded-full px-2 text-[10px] font-medium transition-colors",
+            "flex h-[18px] min-w-[34px] items-center justify-center rounded-full px-2 text-2xs font-medium transition-colors",
             on === v
-              ? "bg-bg-selected text-text-primary"
-              : "text-text-tertiary hover:text-text-secondary",
+              ? "bg-element-selected text-foreground"
+              : "text-muted-foreground hover:text-secondary-foreground",
           )}
         >
           {v ? "On" : "Off"}
@@ -483,7 +485,7 @@ function ToolToggles({
 }) {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="text-[10px] uppercase tracking-wider text-text-tertiary">Deliver to</div>
+      <div className="text-2xs uppercase tracking-wider text-muted-foreground">Deliver to</div>
       {tools.map((t) => {
         const status = statusFor(t);
         const detected = detectedFor(t);
@@ -491,13 +493,13 @@ function ToolToggles({
         const readOnly = status === "pack" || status === "conflict";
         return (
           <div key={t.id} className="flex items-center justify-between">
-            <span className="text-[12px] text-text-secondary">{t.displayName}</span>
+            <span className="text-sm text-secondary-foreground">{t.displayName}</span>
             {!detected ? (
-              <span className="text-[10px] text-text-ghost" title="Tool not detected in this scope">
+              <span className="text-2xs text-disabled" title="Tool not detected in this scope">
                 n/a
               </span>
             ) : readOnly ? (
-              <span className="text-[10px] text-text-tertiary capitalize">{status}</span>
+              <span className="text-2xs text-muted-foreground capitalize">{status}</span>
             ) : (
               <OnOff
                 on={on}
@@ -568,7 +570,7 @@ function PackManageModal({
             busyFor={(t) => busy === `pack:${pack.pack.name}:${t.id}`}
             onClick={(t) => onToggle(t.id, !projected.has(t.id))}
           />
-          <div className="flex flex-col gap-2 border-t border-border-default pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <PackUpdate
               scope={scope}
               name={pack.pack.name}
@@ -648,7 +650,7 @@ function SkillManageModal({
             busyFor={(t) => busy === `skill:${skill.name}:${t.id}`}
             onClick={(t, status) => onToggle(t.id, status)}
           />
-          <div className="flex flex-col gap-2 border-t border-border-default pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <ModalAction icon={ExternalLink} label="Open in editor" onClick={onOpen} />
             {scope === "project" && (
               <ModalAction
@@ -721,7 +723,7 @@ function PackUpdate({
   };
 
   const base =
-    "flex w-full items-center gap-2 rounded-md border border-border-default px-2.5 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary";
+    "flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-element-hover hover:text-foreground";
   if (state === "checking")
     return (
       <span className={base}>

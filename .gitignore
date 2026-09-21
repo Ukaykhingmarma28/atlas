@@ -4,6 +4,10 @@ bun.lockb
 
 # Build output
 dist/
+# Upstream's own `dist/` is part of the vendored Material Icon Theme, not our
+# build output: `atlas-icon-theme` include_str!s this manifest, so a checkout
+# without it does not compile.
+!crates/atlas-icon-theme/vendor/material-icon-theme/dist/
 # Staging dir for scripts/build-frontend.mjs (content-aware sync into dist/).
 dist-next/
 target/
@@ -50,6 +54,10 @@ skills-lock.json
 # the binary at compile time (`commands/skills.rs`), so it has to ship from a
 # fresh clone the same way the vendored Codex prompts below do.
 !src-tauri/resources/**/*.md
+# The Radix -> Base UI migration reports, one per primitive family plus the
+# project summary. They are the record of what each family's API translation
+# actually changed, which is what a later reader of those wrappers needs.
+!.migration/*.md
 graphify-out/
 # Local-only working folders (plans/specs + helper scripts)
 plans/

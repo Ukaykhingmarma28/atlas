@@ -9,12 +9,13 @@
 // `<Markdown>` API; only the first render in a session waits on the chunk, and
 // `primeMarkdown()` removes even that.
 //
-// The highlight.js stylesheet stays HERE, not in the impl: it is small, and
-// keeping it on the eager side means formatted code never renders unstyled for
-// a frame while the impl chunk loads.
+// The highlight.js token stylesheet stays HERE, not in the impl: it is small,
+// and keeping it on the eager side means formatted code never renders unstyled
+// for a frame while the impl chunk loads. It is Atlas's own `styles/hljs.css`
+// (theme keys), not a fixed highlight.js palette — see decision 13.
 
 import { lazy, memo, Suspense } from "react";
-import "highlight.js/styles/github-dark.css";
+import "@/styles/hljs.css";
 import { cn } from "@/lib/utils";
 import type { MarkdownProps } from "./markdown-props";
 
@@ -38,7 +39,7 @@ export const Markdown = memo(function Markdown({ children, className }: Markdown
         // occupies about its final height and is readable immediately.
         <div
           className={cn(
-            "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text whitespace-pre-wrap",
+            "prose-chat text-[var(--foreground)] leading-relaxed break-words select-text whitespace-pre-wrap",
             className,
           )}
         >

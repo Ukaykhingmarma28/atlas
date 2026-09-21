@@ -1,5 +1,5 @@
 import { useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, Download, FileText, Globe, Loader2, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ interface EditorFooterProps {
 
 const READ_WPM = 240;
 
-type ExportKey = "note-md" | "note-html" | "workspace-md" | "workspace-html" | "server";
+type ExportKey = "note-md" | "note-html" | "project-md" | "project-html" | "server";
 
 export function EditorFooter({ wordCount, charCount, projectPath, entryId }: EditorFooterProps) {
   const readMinutes = Math.max(1, Math.round(wordCount / READ_WPM));
@@ -94,8 +94,8 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       });
     });
 
-  const handleExportWorkspaceMd = () =>
-    run("workspace-md", async () => {
+  const handleExportProjectMd = () =>
+    run("project-md", async () => {
       const target = await pickSavePath("knowledge.md", "md");
       if (!target) return;
       await invoke("knowledge_export_workspace_md", {
@@ -104,8 +104,8 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       });
     });
 
-  const handleExportWorkspaceHtml = () =>
-    run("workspace-html", async () => {
+  const handleExportProjectHtml = () =>
+    run("project-html", async () => {
       const target = await pickDirectory("knowledge-site");
       if (!target) return;
       await invoke("knowledge_export_workspace_html", {
@@ -135,13 +135,12 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
 
   return (
     <div
-      className="flex items-center shrink-0 border-t border-border-subtle text-text-tertiary"
+      className="flex items-center shrink-0 border-t border-border-subtle text-muted-foreground text-2xs"
       style={{
         height: 24,
         gap: 14,
         padding: "0 14px",
-        fontSize: 10,
-        background: "var(--bg-canvas)",
+        background: "var(--atlas-panel-background)",
       }}
     >
       <span>
@@ -156,70 +155,72 @@ export function EditorFooter({ wordCount, charCount, projectPath, entryId }: Edi
       <span className="flex-1" />
 
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <button
-            disabled={isBusy}
-            className={cn(
-              "inline-flex items-center gap-1 h-5 px-2 rounded-full",
-              "border border-border-default bg-bg-elevated text-[var(--text-primary)]",
-              "text-[10px] font-medium leading-none cursor-pointer",
-              "hover:bg-bg-hover transition-colors",
-              "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
-              isBusy && "opacity-80 cursor-wait",
-            )}
-            title={busyLabel ?? "Export"}
-          >
-            {isBusy ? (
-              <>
-                <Loader2 size={10} className="animate-spin" />
-                {busyLabel}
-              </>
-            ) : (
-              <>
-                <Download size={10} />
-                Export
-                <ChevronDown size={10} className="opacity-70" />
-              </>
-            )}
-          </button>
-        </DropdownMenu.Trigger>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              disabled={isBusy}
+              className={cn(
+                "inline-flex items-center gap-1 h-5 px-2 rounded-full",
+                "border border-border bg-card text-[var(--foreground)]",
+                "text-2xs font-medium leading-none cursor-pointer",
+                "hover:bg-element-hover transition-colors",
+                "shadow-sm",
+                isBusy && "opacity-80 cursor-wait",
+              )}
+              title={busyLabel ?? "Export"}
+            >
+              {isBusy ? (
+                <>
+                  <Loader2 size={10} className="animate-spin" />
+                  {busyLabel}
+                </>
+              ) : (
+                <>
+                  <Download size={10} />
+                  Export
+                  <ChevronDown size={10} className="opacity-70" />
+                </>
+              )}
+            </button>
+          }
+        />
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="end"
-            sideOffset={6}
-            className={cn(
-              "min-w-[200px] rounded-md p-0.5 z-[9999]",
-              "bg-black border border-border-default",
-              "shadow-[0_8px_24px_rgba(0,0,0,0.6)]",
-              "text-text-primary",
-            )}
-          >
-            <ExportMenuItem
-              icon={FileText}
-              label="Export note as .md"
-              disabled={!hasNote}
-              onSelect={handleExportNoteMd}
-            />
-            <ExportMenuItem
-              icon={Globe}
-              label="Export note as .html"
-              disabled={!hasNote}
-              onSelect={handleExportNoteHtml}
-            />
-            <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
-            <ExportMenuItem
-              icon={FileText}
-              label="Export workspace as .md"
-              onSelect={handleExportWorkspaceMd}
-            />
-            <ExportMenuItem
-              icon={Globe}
-              label="Export workspace as .html"
-              onSelect={handleExportWorkspaceHtml}
-            />
-            <DropdownMenu.Separator className="h-px bg-border-default my-0.5" />
-            <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />
-          </DropdownMenu.Content>
+          <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={6}>
+            <DropdownMenu.Popup
+              className={cn(
+                "min-w-[200px] rounded-md p-0.5",
+                "bg-popover border border-border",
+                "shadow-md",
+                "text-foreground",
+              )}
+            >
+              <ExportMenuItem
+                icon={FileText}
+                label="Export note as .md"
+                disabled={!hasNote}
+                onSelect={handleExportNoteMd}
+              />
+              <ExportMenuItem
+                icon={Globe}
+                label="Export note as .html"
+                disabled={!hasNote}
+                onSelect={handleExportNoteHtml}
+              />
+              <DropdownMenu.Separator className="h-px bg-border my-0.5" />
+              <ExportMenuItem
+                icon={FileText}
+                label="Export project as .md"
+                onSelect={handleExportProjectMd}
+              />
+              <ExportMenuItem
+                icon={Globe}
+                label="Export project as .html"
+                onSelect={handleExportProjectHtml}
+              />
+              <DropdownMenu.Separator className="h-px bg-border my-0.5" />
+              <ExportMenuItem icon={Server} label="Export server" onSelect={handleExportServer} />
+            </DropdownMenu.Popup>
+          </DropdownMenu.Positioner>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>
@@ -240,15 +241,15 @@ function ExportMenuItem({
   return (
     <DropdownMenu.Item
       disabled={disabled}
-      onSelect={() => void onSelect()}
+      onClick={() => void onSelect()}
       className={cn(
         "flex items-center gap-2 rounded px-2 py-1 outline-none cursor-pointer",
-        "text-[11.5px] text-text-secondary",
-        "focus:bg-bg-hover focus:text-text-primary",
+        "text-sm text-secondary-foreground",
+        "focus:bg-element-hover focus:text-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
       )}
     >
-      <Icon size={11} className="text-text-tertiary" />
+      <Icon size={11} className="text-muted-foreground" />
       {label}
     </DropdownMenu.Item>
   );

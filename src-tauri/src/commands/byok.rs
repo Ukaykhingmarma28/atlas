@@ -80,6 +80,7 @@ const ENV_KEY_VARS: &[(&str, &[&str])] = &[
     ("jina", &["JINA_API_KEY"]),
     ("elevenlabs", &["ELEVENLABS_API_KEY", "ELEVEN_API_KEY", "XI_API_KEY"]),
     ("empero", &["EMPERO_API_KEY"]),
+    ("orcarouter", &["ORCAROUTER_API_KEY", "ORCA_ROUTER_API_KEY", "ORCA_API_KEY"]),
 ];
 
 /// One env-imported key: which provider it maps to, the variable it came from,
@@ -690,4 +691,17 @@ fn probe_shell_vars(vars: &[&str]) -> BTreeMap<String, String> {
         .filter(|(_, v)| !v.trim().is_empty())
         .map(|(var, v)| ((*var).to_string(), v.trim().to_string()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_orcarouter_env_vars() {
+        let entry = ENV_KEY_VARS.iter().find(|(provider, _)| *provider == "orcarouter");
+        assert!(entry.is_some(), "orcarouter must be in ENV_KEY_VARS");
+        let (_, vars) = entry.unwrap();
+        assert_eq!(vars, &["ORCAROUTER_API_KEY", "ORCA_ROUTER_API_KEY", "ORCA_API_KEY"]);
+    }
 }

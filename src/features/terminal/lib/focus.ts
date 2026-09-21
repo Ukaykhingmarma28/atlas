@@ -8,7 +8,7 @@
  * themselves whenever an alt-screen app started. This walks the whole chain:
  * focused column → its active tab → a terminal tab → its active pane → the
  * pane's active terminal. The layout mirror always represents the active
- * workspace, so workspace visibility is implicit.
+ * project, so project visibility is implicit.
  */
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { collectPanes, useTerminalStore, type TerminalTabState } from "../stores/terminal-store";
@@ -23,31 +23,33 @@ export function focusedTerminalId(
   layout: LayoutSlice,
   term: { tabs: Record<string, TerminalTabState> },
 ): string | null {
+  const tabId = focusedTerminalTabId(layout);
+  return tabId ? activeTerminalOf(term.tabs[tabId]) : null;
+}
+
+/** The layout half: the focused column's active tab, if it is a terminal tab. */
+function focusedTerminalTabId(layout: LayoutSlice): string | null {
   const tabId = layout.activeByGroup[layout.focusedGroupId];
   if (!tabId) return null;
   const tab = layout.tabs.find((t) => t.id === tabId);
-  if (!tab || tab.type !== "terminal") return null;
-  const t = term.tabs[tabId];
+  return tab && tab.type === "terminal" ? tabId : null;
+}
+
+/** The terminal half: that tab's active pane's active terminal. */
+function activeTerminalOf(t: TerminalTabState | undefined): string | null {
   if (!t) return null;
   const panes = collectPanes(t.root);
   const pane = panes.find((p) => p.id === t.activePaneId) ?? panes[0];
   return pane?.activeTerminalId ?? null;
 }
 
-/** Boolean selector per terminal — two store subscriptions, no allocation. */
+/** Boolean selector per terminal — two store subscriptions, no allocation.
+ *  The same two halves `focusedTerminalId` composes, split so each store is
+ *  subscribed with a primitive and a terminal re-renders only when its answer
+ *  changes. */
 export function useIsFocusedTerminal(terminalId: string): boolean {
-  const layoutHit = useLayoutStore((s) => {
-    const tabId = s.activeByGroup[s.focusedGroupId];
-    if (!tabId) return null;
-    const tab = s.tabs.find((t) => t.id === tabId);
-    return tab && tab.type === "terminal" ? tabId : null;
-  });
-  return useTerminalStore((s) => {
-    if (!layoutHit) return false;
-    const t = s.tabs[layoutHit];
-    if (!t) return false;
-    const panes = collectPanes(t.root);
-    const pane = panes.find((p) => p.id === t.activePaneId) ?? panes[0];
-    return pane?.activeTerminalId === terminalId;
-  });
+  const layoutHit = useLayoutStore(focusedTerminalTabId);
+  return useTerminalStore(
+    (s) => layoutHit !== null && activeTerminalOf(s.tabs[layoutHit]) === terminalId,
+  );
 }

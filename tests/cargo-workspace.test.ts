@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
  *      opt-level 1 to 0 — unless its opt-level is restated per package. That
  *      is a pure `tauri dev` slowdown with no compile error to announce it.
  *
- * Same approach as `ci-coverage.test.ts` and `cersei-containment.test.ts`:
- * line regexes over manifests we own, with floor assertions so a regex that
- * stops matching fails loudly instead of passing vacuously.
+ * Same approach as `ci-coverage.test.ts`: line regexes over manifests we own,
+ * with floor assertions so a regex that stops matching fails loudly instead of
+ * passing vacuously.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -291,24 +291,46 @@ describe("dev-profile opt-levels survive the move into the workspace", () => {
     expect(missing).toEqual([]);
   });
 
+  /** The body of `[profile.release]` alone — up to the next table header, so
+   *  `[profile.release.build-override]`'s `codegen-units = 256` or a dev
+   *  stanza's `opt-level` can never satisfy a release assertion. */
+  const releaseProfile = (): string => {
+    const block = rootSrc().match(/^\s*\[profile\.release\]\s*$((?:(?!^\s*\[)[\s\S])*)/m);
+    if (!block) throw new Error("no [profile.release] table in the root Cargo.toml");
+    return block[1];
+  };
+
+  /** `key = value` on its own line, value anchored: an optional trailing
+   *  comment is all that may follow, so `codegen-units = 16` can't pass as 1. */
+  const setting = (key: string, value: string): RegExp =>
+    new RegExp(`^\\s*${escapeForRegExp(key)}\\s*=\\s*${escapeForRegExp(value)}\\s*(?:#.*)?$`, "m");
+
   it("keeps the release profile the app shipped with", () => {
-    const src = rootSrc();
-    expect(src).toMatch(/^\s*\[profile\.release\]/m);
-    for (const setting of [
-      /codegen-units\s*=\s*1/,
-      /lto\s*=\s*"thin"/,
-      /strip\s*=\s*"symbols"/,
-      /panic\s*=\s*"unwind"/,
-      /opt-level\s*=\s*3/,
+    const release = releaseProfile();
+    for (const [key, value] of [
+      ["codegen-units", "1"],
+      ["lto", '"thin"'],
+      ["strip", '"symbols"'],
+      ["panic", '"unwind"'],
+      ["opt-level", "3"],
     ]) {
-      expect(src).toMatch(setting);
+      expect(release, `[profile.release] ${key} = ${value}`).toMatch(setting(key, value));
     }
     // Asserted absent, not merely unasserted: fat LTO's final link is a
     // 12-minute single-threaded unit that reruns on every rebuild, for a
-    // binary 19 MB smaller (measured 2026-09-04 — clean 23m05s vs 8m14s,
-    // touch 14m59s vs 4m16s; docs/research/build-performance.md). Whoever
-    // wants it back measures first.
-    expect(src).not.toMatch(/lto\s*=\s*"fat"/);
+    // binary ~20 MB smaller (measured 2026-09-04; see "Build cost" in
+    // CLAUDE.md). Whoever wants it back measures first. Checked across the
+    // whole manifest, since fat LTO anywhere is the thing being refused.
+    expect(rootSrc()).not.toMatch(/^\s*lto\s*=\s*(?:"fat"|true)\s*(?:#.*)?$/m);
+  });
+
+  it("the release-profile check reads only [profile.release], with anchored values", () => {
+    // Self-test for the two ways the assertions above used to pass vacuously:
+    // a value that merely starts with the expected one, and a matching line
+    // in some other table.
+    expect("codegen-units = 16\n").not.toMatch(setting("codegen-units", "1"));
+    expect("codegen-units = 1   # comment\n").toMatch(setting("codegen-units", "1"));
+    expect(releaseProfile()).not.toMatch(/codegen-units\s*=\s*256/);
   });
 });
 
@@ -317,7 +339,7 @@ describe("the app crate emits one crate type", () => {
   // no mobile target here. A lib emitting a staticlib forces cargo to compile
   // every dependency with object code *and* bitcode, so LTO optimises the whole
   // graph twice and the lib unit writes a 1.7 GB archive nothing loads —
-  // measured 2026-09-04, docs/research/build-performance.md (R2).
+  // measured 2026-09-04; see "Build cost" in CLAUDE.md.
   it("the app lib is an rlib only (staticlib/cdylib double every dependency's codegen)", () => {
     expect(read(path.join(REPO_ROOT, "src-tauri", "Cargo.toml"))).toMatch(
       /^\s*crate-type\s*=\s*\["rlib"\]\s*$/m,
@@ -333,13 +355,13 @@ describe("plain cargo and the Tauri CLI agree on the deployment target", () => {
    * not set the same value, `cargo check` / `cargo test` and `tauri build` have
    * disjoint caches inside one `target/`: alternating them with nothing changed
    * recompiled 186 crates and cost 21m36s (measured 2026-09-04,
-   * docs/research/build-performance.md, R3).
+   * see "Build cost" in CLAUDE.md).
    *
    * Checked against the tauri config rather than a literal, because a bump to
    * `minimumSystemVersion` that forgets this file silently reintroduces the
    * split cache.
    *
-   * `REMOVE_UNUSED_COMMANDS` is asserted *absent*, against the research doc's
+   * `REMOVE_UNUSED_COMMANDS` is asserted *absent*, against an earlier
    * proposal: verified on CLI 2.11.1 (a `tauri build --runner` that dumps its
    * environment) the CLI never sets it, so setting it here splits the cache the
    * other way — and `tauri-utils`' `generate_allowed_commands` reads its mere
@@ -406,5 +428,34 @@ describe("the build scripts follow the target dir into the workspace", () => {
       uncommented(read(path.join(REPO_ROOT, rel))).includes("src-tauri/target"),
     );
     expect(stale).toEqual([]);
+  });
+});
+
+describe("one rusqlite requirement across the workspace", () => {
+  it("declares the same rusqlite requirement everywhere it is declared", () => {
+    // Cargo rejects two `libsqlite3-sys` (it declares `links = "sqlite3"`),
+    // but it silently unifies differing requirements that happen to be
+    // compatible today. The first bump of one declaration then either splits
+    // the graph or drags the others along unreviewed, so drift is the bug.
+    // The pin itself, and why it is 0.39, is documented on the declaration in
+    // `crates/atlas-thread-metadata/Cargo.toml`.
+    // Both spellings: `rusqlite = { version = "x", … }` and `rusqlite = "x"`.
+    const DECL = /^\s*rusqlite\s*=\s*(?:\{[^}]*?version\s*=\s*"([^"]+)"|"([^"]+)")/gm;
+    const declaredIn = new Map<string, string[]>();
+    for (const manifest of [ROOT_MANIFEST, ...memberManifests()]) {
+      const found = [...uncommented(read(manifest)).matchAll(DECL)].map((m) => m[1] ?? m[2]);
+      if (found.length) declaredIn.set(path.relative(REPO_ROOT, manifest), found);
+    }
+
+    expect(
+      declaredIn.size,
+      "no manifest declares rusqlite — has the regex rotted?",
+    ).toBeGreaterThan(1);
+
+    const distinct = [...new Set([...declaredIn.values()].flat())];
+    expect(
+      distinct,
+      `rusqlite requirement drifted across ${[...declaredIn.keys()].join(", ")}`,
+    ).toHaveLength(1);
   });
 });

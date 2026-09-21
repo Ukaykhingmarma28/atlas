@@ -412,9 +412,14 @@ export interface ChatMessage {
   turnSummary?: {
     turnSeq: number;
     files: TurnFile[];
-    /** Whether the workspace was a git repo when the turn ended (gates commit). */
+    /** Whether the project was a git repo when the turn ended (gates commit). */
     repoAtTurn: boolean;
   };
+  /** Wall time of the turn this message ends, in ms: from the user's message to
+   *  turn_finished. Stamped live on the trailing assistant message and NOT
+   *  persisted — replayed timestamps are the load time, not the send time, so a
+   *  restored turn has no honest duration to rebuild and renders without one. */
+  workedMs?: number;
   /** Agent-suggested next steps for this turn's footer. Generated once at
    *  turn end (parse-first, optional BYOK). `turnSeq` guards against a stale
    *  async result landing after a newer turn started. */

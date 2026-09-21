@@ -14,7 +14,7 @@ import {
   shellQuote,
 } from "./open-command-terminal";
 
-/** A workspace with one editor tab and no terminal. */
+/** A project with one editor tab and no terminal. */
 function freshLayout() {
   useLayoutStore.setState({
     tabs: [

@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { CommsAvatar } from "./comms-avatar";
 import { CommsComposer } from "./comms-composer";
 import { MessageGroup } from "./message-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { PinnedMenu } from "./pinned-menu";
 import { CallMenu } from "./call-menu";
 import { DraftsTab } from "./drafts-tab";
@@ -306,8 +306,8 @@ export const CommsConversation = memo(function CommsConversation({
               height={`${TOP_FADE}px`}
               strength={2}
               layers={4}
-              tint="color-mix(in srgb, var(--comms-surface) 90%, transparent)"
-              style={{ zIndex: 3 }}
+              tint="color-mix(in srgb, var(--background) 90%, transparent)"
+              className="z-panel"
             />
 
             {/* Drop hint over the transcript. Opacity only — no transform
@@ -316,12 +316,12 @@ export const CommsConversation = memo(function CommsConversation({
             <div
               aria-hidden
               className={cn(
-                "pointer-events-none absolute inset-0 z-[4] flex items-center justify-center",
-                "bg-[var(--accent-primary)]/8 transition-opacity duration-150",
+                "pointer-events-none absolute inset-0 z-panel flex items-center justify-center",
+                "bg-[var(--primary)]/8 transition-opacity duration-150",
                 isDropTarget ? "opacity-100" : "opacity-0",
               )}
             >
-              <span className="rounded-full border border-[var(--accent-primary)]/40 bg-bg-elevated px-3 py-1 text-[11px] font-medium text-text-secondary shadow">
+              <span className="rounded-full border border-[var(--primary)]/40 bg-card px-3 py-1 text-xs font-medium text-secondary-foreground shadow">
                 Drop files to attach
               </span>
             </div>
@@ -336,16 +336,14 @@ export const CommsConversation = memo(function CommsConversation({
                   <TranscriptSkeleton />
                 ) : messages.length === 0 && loadError ? (
                   <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-                    <span className="text-[12px] font-medium text-text-primary">
+                    <span className="text-sm font-medium text-foreground">
                       Couldn’t load this conversation
                     </span>
-                    <span className="max-w-[260px] text-[11px] text-text-tertiary">
-                      {loadError}
-                    </span>
+                    <span className="max-w-[260px] text-xs text-muted-foreground">{loadError}</span>
                     <button
                       type="button"
                       onClick={() => actions.retryConversation(conv.id)}
-                      className="mt-1 flex h-[26px] items-center gap-1.5 rounded-md border border-border-default bg-bg-hover px-3 text-[11px] font-medium text-text-primary transition-colors hover:bg-bg-active cursor-pointer"
+                      className="mt-1 flex h-control-md items-center gap-1.5 rounded-md border border-border bg-element-hover px-3 text-xs font-medium text-foreground transition-colors hover:bg-element-active cursor-pointer"
                     >
                       <RefreshCw size={11} />
                       Try again
@@ -398,12 +396,12 @@ export const CommsConversation = memo(function CommsConversation({
             <div
               aria-hidden
               className={cn(
-                "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-[1] h-[44px] transition-opacity duration-200",
+                "pointer-events-none absolute -bottom-[2px] left-0 right-0 z-panel h-[44px] transition-opacity duration-200",
                 more ? "opacity-100" : "opacity-0",
               )}
               style={{
                 background:
-                  "linear-gradient(to bottom, transparent, var(--comms-surface) 72%, var(--comms-surface))",
+                  "linear-gradient(to bottom, transparent, var(--background) 72%, var(--background))",
               }}
             />
           </div>
@@ -418,10 +416,10 @@ export const CommsConversation = memo(function CommsConversation({
                   style={{ backdropFilter: "blur(4px)" }}
                   className={cn(
                     "atlas-pill-in pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5",
-                    "border border-border-default bg-bg-elevated",
-                    "text-[11px] font-medium leading-none text-text-secondary",
-                    "shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-colors cursor-pointer",
-                    "hover:bg-bg-hover hover:text-text-primary",
+                    "border border-border bg-card",
+                    "text-xs font-medium leading-none text-secondary-foreground",
+                    "shadow-sm transition-colors cursor-pointer",
+                    "hover:bg-element-hover hover:text-foreground",
                   )}
                 >
                   <ChevronDown size={11} />
@@ -492,21 +490,23 @@ function SubTabStrip({
     { id: "files", label: "Files", icon: Folder },
   ];
   return (
-    <div className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border-default px-2">
+    <div className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border px-2">
       {tabs.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           type="button"
           onClick={() => onSelect(id)}
           className={cn(
-            "relative flex h-full items-center gap-1.5 px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer",
-            active === id ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary",
+            "relative flex h-full items-center gap-1.5 px-2.5 text-sm font-medium transition-colors cursor-pointer",
+            active === id
+              ? "text-foreground"
+              : "text-muted-foreground hover:text-secondary-foreground",
           )}
         >
           <Icon size={11} className="shrink-0 opacity-80" />
           {label}
           {active === id && (
-            <span className="absolute inset-x-2 bottom-0 h-[1.5px] rounded-full bg-text-primary" />
+            <span className="absolute inset-x-2 bottom-0 h-[1.5px] rounded-full bg-foreground" />
           )}
         </button>
       ))}
@@ -516,7 +516,7 @@ function SubTabStrip({
         type="button"
         onClick={openSpace}
         title="Open this conversation's Space"
-        className="ml-auto flex h-[22px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 text-[10.5px] font-medium text-text-tertiary transition-colors hover:bg-white/[0.1] hover:text-text-primary"
+        className="ml-auto flex h-control-sm shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-[var(--atlas-element-selected)] px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-[var(--atlas-element-active)] hover:text-foreground"
       >
         <Frame size={11} />
         Spaces
@@ -558,26 +558,27 @@ function ConversationHeader({
     // the right side grow, and a centred title would drift with every
     // addition. `min-w-0` on both keeps a long name truncating rather than
     // shoving the buttons off the edge.
-    <div className="flex h-[38px] shrink-0 items-center gap-1 border-b border-border-default px-2">
+    <div className="flex h-[38px] shrink-0 items-center gap-1 border-b border-border px-2">
       {/* Back to the tab's home view — the panel has no sidebar to fall back on. */}
-      <button
-        type="button"
-        title="Back to chats"
-        onClick={onBack}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
-      >
-        <ChevronLeft size={15} />
-      </button>
+      <Hint label="Back to chats">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground cursor-pointer"
+        >
+          <ChevronLeft size={15} />
+        </button>
+      </Hint>
 
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {isChannel ? (
           conv.visibility === "private" ? (
-            <Lock size={12} className="shrink-0 text-text-tertiary" />
+            <Lock size={12} className="shrink-0 text-muted-foreground" />
           ) : (
-            <Hash size={13} className="shrink-0 text-text-tertiary" />
+            <Hash size={13} className="shrink-0 text-muted-foreground" />
           )
         ) : isGroup ? (
-          <Users size={13} className="shrink-0 text-text-tertiary" />
+          <Users size={13} className="shrink-0 text-muted-foreground" />
         ) : (
           <CommsAvatar
             member={counterpart}
@@ -594,29 +595,27 @@ function ConversationHeader({
               title="Rename channel"
               className="group/title flex min-w-0 items-center gap-1 text-left cursor-pointer"
             >
-              <span className="min-w-0 truncate text-[12.5px] font-medium text-text-primary">
+              <span className="min-w-0 truncate text-base font-medium text-foreground">
                 {conv.name}
               </span>
               <Pencil
                 size={10}
-                className="shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover/title:opacity-100"
+                className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100"
               />
             </button>
           </RenameChannelMenu>
         ) : (
-          <span className="min-w-0 truncate text-[12.5px] font-medium text-text-primary">
-            {title}
-          </span>
+          <span className="min-w-0 truncate text-base font-medium text-foreground">{title}</span>
         )}
 
         {isGroup && (
-          <span className="shrink-0 text-[10px] text-text-ghost">
+          <span className="shrink-0 text-2xs text-disabled">
             {others.length + 1} · membership frozen
           </span>
         )}
         {isChannel && conv.workspace_ref_ids.length > 0 && (
-          <span className="shrink-0 rounded bg-bg-hover px-1 py-px text-[9px] text-text-tertiary">
-            {conv.workspace_ref_ids.length} workspace
+          <span className="shrink-0 rounded bg-element-hover px-1 py-px text-3xs text-muted-foreground">
+            {conv.workspace_ref_ids.length} project
           </span>
         )}
       </div>
@@ -633,7 +632,7 @@ function ConversationHeader({
               members={members}
               onJump={onJumpToMessage}
             />
-            <div className="mx-1 h-4 w-px bg-border-default" />
+            <div className="mx-1 h-4 w-px bg-border" />
           </>
         )}
         <div className="flex items-center gap-0.5">
@@ -644,17 +643,19 @@ function ConversationHeader({
           <div className="flex items-center -space-x-1.5 pl-1">
             {others.slice(0, 3).map((id) => (
               <Tooltip key={id}>
-                <TooltipTrigger asChild>
-                  {/* Wrapped: the trigger needs an element that takes a ref
-                      and the ring must stay on the avatar itself. */}
-                  <span className="inline-flex">
-                    <CommsAvatar
-                      member={members.get(id) ?? null}
-                      size={18}
-                      className="ring-2 ring-[var(--comms-surface)] rounded-full"
-                    />
-                  </span>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    /* Wrapped: the trigger needs an element that takes a ref
+                      and the ring must stay on the avatar itself. */
+                    <span className="inline-flex">
+                      <CommsAvatar
+                        member={members.get(id) ?? null}
+                        size={18}
+                        className="ring-2 ring-[var(--background)] rounded-full"
+                      />
+                    </span>
+                  }
+                />
                 <TooltipContent side="bottom" sideOffset={4}>
                   {members.get(id)?.name ?? "Unknown"}
                 </TooltipContent>
@@ -678,10 +679,10 @@ function ConversationIntro({
 }) {
   return (
     <div className="px-4 pb-3 pt-4">
-      <div className="text-[13px] font-semibold text-text-primary">
+      <div className="text-base font-semibold text-foreground">
         {isChannel ? `#${conv.name}` : title}
       </div>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-text-ghost">
+      <p className="mt-0.5 text-xs leading-relaxed text-disabled">
         {isChannel
           ? "This is the beginning of the channel. Anyone in the organisation can be invited, and an invitee sees the full history."
           : conv.kind === "group_dm"
@@ -696,7 +697,7 @@ function DayDivider({ at }: { at: number }) {
   return (
     <div className="flex items-center gap-2 px-3 py-3">
       <span className="h-px flex-1 bg-border-subtle" />
-      <span className="text-[9.5px] font-medium uppercase tracking-wide text-text-ghost">
+      <span className="text-2xs font-medium uppercase tracking-wide text-disabled">
         {formatDayDivider(at)}
       </span>
       <span className="h-px flex-1 bg-border-subtle" />
@@ -713,12 +714,12 @@ function TypingHint({ names }: { names: string[] }) {
         ? `${names[0]} and ${names[1]} are typing`
         : `${names.length} people are typing`;
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] text-text-ghost">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-disabled">
       <span className="flex gap-[3px]">
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="h-[3px] w-[3px] rounded-full bg-text-tertiary animate-pulse"
+            className="h-[3px] w-[3px] rounded-full bg-muted-foreground animate-pulse"
             style={{ animationDelay: `${i * 160}ms` }}
           />
         ))}
@@ -731,7 +732,7 @@ function TypingHint({ names }: { names: string[] }) {
 /**
  * Message-shaped placeholders for a transcript that has not arrived.
  *
- * Opacity-only shimmer (`atlas-marker-shimmer`): this renders inside
+ * Opacity-only shimmer (`atlas-marker-running`): this renders inside
  * `atlas-vibrant-panel`, whose grain overlay makes WKWebView mis-composite
  * anything animating a transform.
  */
@@ -740,24 +741,15 @@ function TranscriptSkeleton() {
     <div className="flex flex-col gap-3 px-3 py-4">
       {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} className="flex gap-2">
-          <div
-            className="h-[30px] w-[30px] shrink-0 rounded-full bg-[var(--bg-elevated)] opacity-50"
-            style={{ animation: "atlas-marker-shimmer 1.4s ease-in-out infinite" }}
-          />
+          <div className="h-[30px] w-[30px] shrink-0 rounded-full bg-[var(--card)] opacity-50 atlas-marker-running" />
           <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1">
             <div
-              className="h-[9px] rounded bg-[var(--bg-elevated)] opacity-50"
-              style={{
-                width: 90 + ((i * 31) % 50),
-                animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-              }}
+              className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
+              style={{ width: 90 + ((i * 31) % 50) }}
             />
             <div
-              className="h-[8px] rounded bg-[var(--bg-elevated)] opacity-35"
-              style={{
-                width: `${58 + ((i * 17) % 34)}%`,
-                animation: "atlas-marker-shimmer 1.4s ease-in-out infinite",
-              }}
+              className="h-[8px] rounded bg-[var(--card)] opacity-35 atlas-marker-running"
+              style={{ width: `${58 + ((i * 17) % 34)}%` }}
             />
           </div>
         </div>

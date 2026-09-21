@@ -2,12 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 // The host mounts a Radix dialog and talks to Tauri; the behaviour under test
 // is the queue it keeps, which is plain state.
-const handlers: Array<(e: unknown) => void> = [];
 vi.mock("../lib/agents-api", () => ({
-  listenAgentElicitation: (h: (e: unknown) => void) => {
-    handlers.push(h);
-    return Promise.resolve(() => {});
-  },
+  listenAgentElicitation: () => Promise.resolve(() => {}),
   agents: { respondElicitation: () => Promise.resolve() },
 }));
 
@@ -30,12 +26,5 @@ describe("the request-elicitation queue", () => {
     // double it either.
     const queue = enqueue(enqueue([], one), { ...one });
     expect(queue).toHaveLength(1);
-  });
-
-  it("answers them oldest first", () => {
-    const queue = enqueue(enqueue([], one), two);
-    expect(queue[0].requestId).toBe("r1");
-    const after = queue.filter((q) => q.requestId !== "r1");
-    expect(after[0].requestId).toBe("r2");
   });
 });

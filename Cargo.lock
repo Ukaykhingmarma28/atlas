@@ -694,10 +694,12 @@ dependencies = [
  "atlas-embed",
  "atlas-git",
  "atlas-gitdiff",
+ "atlas-icon-theme",
  "atlas-memory",
  "atlas-native-agent",
  "atlas-process",
  "atlas-terminal",
+ "atlas-theme",
  "atlas-thread-metadata",
  "axum",
  "base64 0.21.7",
@@ -732,6 +734,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "tempfile",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "toml_edit 0.24.1+spec-1.1.0",
@@ -740,6 +743,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "winreg 0.55.0",
 ]
 
 [[package]]
@@ -869,7 +873,6 @@ dependencies = [
 name = "atlas-bus"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "tokio",
  "tracing",
 ]
@@ -944,6 +947,7 @@ dependencies = [
  "atlas-process",
  "regex",
  "serde",
+ "tempfile",
 ]
 
 [[package]]
@@ -954,6 +958,18 @@ dependencies = [
  "serde",
  "unicode-segmentation",
  "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "atlas-icon-theme"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -969,6 +985,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1045,6 +1062,20 @@ dependencies = [
  "serde",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "atlas-theme"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "notify",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

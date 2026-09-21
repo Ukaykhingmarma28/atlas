@@ -19,7 +19,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
   return (
     <div
       className={cn(
-        "prose-chat text-[var(--text-primary)] leading-relaxed break-words select-text",
+        "prose-chat text-[var(--foreground)] leading-relaxed break-words select-text",
         className,
       )}
     >
@@ -36,7 +36,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
             if (isInline) {
               return (
                 <code
-                  className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-primary)] text-[12px] font-mono"
+                  className="px-1 py-0.5 rounded bg-[var(--card)] text-[var(--foreground)] text-sm font-mono"
                   {...rest}
                 >
                   {children}
@@ -52,7 +52,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           pre(props) {
             return (
               <pre
-                className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 text-[12px] my-2 overflow-hidden"
+                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-3 text-sm my-2 overflow-hidden"
                 style={{
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
@@ -69,7 +69,7 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
                 {...props}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[var(--accent-primary)] underline hover:opacity-80"
+                className="text-[var(--primary)] underline hover:opacity-80"
               />
             );
           },
@@ -93,38 +93,38 @@ export default function MarkdownImpl({ children, className }: MarkdownProps) {
           },
           blockquote(props) {
             return (
-              <blockquote className="border-l-2 border-[var(--border-default)] pl-3 my-2 text-[var(--text-secondary)]">
+              <blockquote className="border-l-2 border-[var(--border)] pl-3 my-2 text-[var(--secondary-foreground)]">
                 {props.children}
               </blockquote>
             );
           },
           table(props) {
             return (
-              <div className="my-3 rounded-md border border-[var(--border-default)] overflow-hidden">
-                <table className="w-full text-[12px] border-collapse">{props.children}</table>
+              <div className="my-3 rounded-md border border-[var(--border)] overflow-hidden">
+                <table className="w-full text-sm border-collapse">{props.children}</table>
               </div>
             );
           },
           thead(props) {
-            return <thead className="bg-[var(--bg-elevated)]">{props.children}</thead>;
+            return <thead className="bg-[var(--card)]">{props.children}</thead>;
           },
           th(props) {
             return (
-              <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border-default)] border-r last:border-r-0">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--secondary-foreground)] border-b border-[var(--border)] border-r last:border-r-0">
                 {props.children}
               </th>
             );
           },
           tr(props) {
             return (
-              <tr className="border-b border-[var(--border-subtle)] last:border-b-0">
+              <tr className="border-b border-[var(--atlas-border-subtle)] last:border-b-0">
                 {props.children}
               </tr>
             );
           },
           td(props) {
             return (
-              <td className="px-3 py-2 align-top text-[12px] text-[var(--text-primary)] border-r border-[var(--border-subtle)] last:border-r-0 break-words">
+              <td className="px-3 py-2 align-top text-sm text-[var(--foreground)] border-r border-[var(--atlas-border-subtle)] last:border-r-0 break-words">
                 {props.children}
               </td>
             );

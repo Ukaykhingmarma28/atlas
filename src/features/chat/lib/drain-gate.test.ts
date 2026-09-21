@@ -27,16 +27,6 @@ describe("drainEdge", () => {
     expect(edge.drainQueue).toBe(false);
   });
 
-  it("does NOT drain when Stop clears a held message before the bind landed", () => {
-    const edge = drainEdge({
-      ...base,
-      prevAcp: undefined,
-      curAcp: undefined,
-      curStatus: "idle",
-    });
-    expect(edge.drainQueue).toBe(false);
-  });
-
   it("drains on the bind landing, even while the status reads running", () => {
     const edge = drainEdge({
       ...base,

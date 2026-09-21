@@ -135,6 +135,9 @@ pub fn notify_settings_changed(app: &AppHandle, settings: &AppSettings, generati
     //    to be current before that — this covers every commit path, and
     //    `lib.rs` applies it once at boot.
     apply_curated_plugin_sync_gate(settings.curated_plugin_sync);
+    // 5. re-apply the app icon, so an external edit of `appIcon` takes
+    //    effect live like the Settings picker does. A no-op unless it changed.
+    crate::app_icon::apply(app, &settings.app_icon);
 }
 
 /// The gate for the vendored engine's curated-plugin sync
@@ -163,7 +166,7 @@ fn emit_error(app: &AppHandle, error: &ConfigError) {
 /// this is just wiring its result to Tauri events.
 ///
 /// Leaks the debouncer into a background thread for the process lifetime —
-/// there is exactly one `config.toml`, unlike the per-workspace git watcher,
+/// there is exactly one `config.toml`, unlike the per-project git watcher,
 /// so there is nothing to ever tear this down for.
 pub fn start_watcher(app: &AppHandle, handle: AtlasConfigHandle) {
     let watch_dir = {

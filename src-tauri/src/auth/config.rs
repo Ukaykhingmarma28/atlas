@@ -22,12 +22,18 @@ const BUILD_AUTH_BASE: Option<&str> = option_env!("ATLAS_AUTH_URL");
 
 /// The auth API base, with no trailing slash.
 pub fn auth_base() -> String {
-    let raw = std::env::var("ATLAS_AUTH_URL")
-        .ok()
+    resolve_auth_base(std::env::var("ATLAS_AUTH_URL").ok().as_deref(), BUILD_AUTH_BASE)
+}
+
+/// The resolution ladder with its inputs passed in, so tests can exercise it
+/// without mutating the process environment (which races every other test
+/// thread that reads it).
+pub(crate) fn resolve_auth_base(env: Option<&str>, build: Option<&str>) -> String {
+    let raw = env
         .filter(|v| !v.trim().is_empty())
-        .or_else(|| BUILD_AUTH_BASE.map(str::to_string))
-        .unwrap_or_else(|| DEFAULT_AUTH_BASE.to_string());
-    normalize(&raw)
+        .or(build)
+        .unwrap_or(DEFAULT_AUTH_BASE);
+    normalize(raw)
 }
 
 /// Trim whitespace and any trailing slashes so callers can always append

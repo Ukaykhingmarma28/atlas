@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { useEffect, useState, type ReactElement } from "react";
+import { Popover } from "@base-ui/react/popover";
 import { Hash, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { comms } from "../lib/comms-api";
@@ -20,7 +20,7 @@ export function RenameChannelMenu({
   children,
 }: {
   conv: ChatConversation;
-  children: ReactNode;
+  children: ReactElement;
 }) {
   const actions = useCommsStore.use.actions();
   const [open, setOpen] = useState(false);
@@ -54,49 +54,43 @@ export function RenameChannelMenu({
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>{children}</Popover.Trigger>
+      <Popover.Trigger render={children} />
       <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          style={{
-            zIndex: 9999,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.95)",
-          }}
-          className="overflow-hidden rounded-xl select-none border border-white/10 bg-[var(--bg-elevated)]/95 backdrop-blur-2xl atlas-panel-in-tl"
-        >
-          <div className="flex w-[240px] flex-col">
-            <div className="flex h-[32px] items-center gap-1.5 border-b border-white/5 px-3">
-              <Hash size={11} className="shrink-0 text-text-tertiary" />
-              <input
-                autoFocus
-                value={name}
-                maxLength={CHANNEL_NAME_MAX}
-                onChange={(e) => setName(e.target.value)}
-                onFocus={(e) => e.currentTarget.select()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void save();
-                  }
-                }}
-                aria-label="Channel name"
-                className="min-w-0 flex-1 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-tertiary"
-              />
+        <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
+          <Popover.Popup className="overflow-hidden rounded-xl select-none border border-border bg-[var(--card)]/95 backdrop-blur-2xl atlas-panel-in-tl shadow-lg inset-highlight">
+            <div className="flex w-[240px] flex-col">
+              <div className="flex h-[32px] items-center gap-1.5 border-b border-border-subtle px-3">
+                <Hash size={11} className="shrink-0 text-muted-foreground" />
+                <input
+                  autoFocus
+                  value={name}
+                  maxLength={CHANNEL_NAME_MAX}
+                  onChange={(e) => setName(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void save();
+                    }
+                  }}
+                  aria-label="Channel name"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="p-2">
+                <button
+                  type="button"
+                  disabled={!name.trim() || pending}
+                  onClick={() => void save()}
+                  className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--atlas-element-active)] text-xs font-medium text-foreground transition-colors hover:bg-[var(--atlas-element-emphasis)] disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
+                >
+                  {pending && <Loader2 size={11} className="animate-spin" />}
+                  Rename
+                </button>
+              </div>
             </div>
-            <div className="p-2">
-              <button
-                type="button"
-                disabled={!name.trim() || pending}
-                onClick={() => void save()}
-                className="flex h-[26px] w-full items-center justify-center gap-1.5 rounded-md bg-white/10 text-[11px] font-medium text-text-primary transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
-              >
-                {pending && <Loader2 size={11} className="animate-spin" />}
-                Rename
-              </button>
-            </div>
-          </div>
-        </Popover.Content>
+          </Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
   );

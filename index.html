@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" style="background:transparent;color-scheme:dark">
+<html lang="en" style="background: var(--atlas-boot-bg, #000)">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>Atlas</title>
     <!-- CSP NOTE: this inline <style> is why `src-tauri/tauri.conf.json` sets
          `dangerousDisableAssetCspModification: ["style-src"]`. In a bundled
@@ -37,23 +37,76 @@
          still leans on the `@layer base` .cm-editor fallback.
          Reproduce without a build: serve `dist/` behind a CSP whose style-src
          carries any nonce alongside 'unsafe-inline'. -->
+    <!-- The last theme, replayed BEFORE first paint.
+         `tokens.css` has not loaded here and neither has any module, so the
+         only thing fast enough is localStorage, written by `applyTheme` on
+         every switch (`src/features/theme/apply-theme.ts`). Two things come
+         back from it: the seven `--atlas-boot-*` colours the skeleton below
+         paints with, and the WHOLE resolved variable map, written into the
+         same `<style id="atlas-resolved-theme">` applyTheme later rewrites —
+         so React's first render, which lands before the first applyTheme,
+         already has every `--atlas-*` key in the right theme. The block's text
+         must stay byte-identical to `resolvedThemeCss()` there;
+         `apply-theme.test.ts` runs this script to check. A first run, a
+         cleared profile or a private window finds nothing and every rule
+         falls back to `tokens.css` and the literals below, so this can only
+         ever improve the flash — never cause one. -->
+    <script>
+      (function () {
+        try {
+          var cached = JSON.parse(localStorage.getItem("atlas:launch-theme") || "null");
+          if (!cached) return;
+          var root = document.documentElement;
+          var set = function (name, value) {
+            if (typeof value === "string" && value) root.style.setProperty(name, value);
+          };
+          set("--atlas-boot-bg", cached.background);
+          set("--atlas-boot-chrome", cached.chrome);
+          set("--atlas-boot-card", cached.card);
+          set("--atlas-boot-line", cached.line);
+          set("--atlas-boot-skeleton", cached.skeleton);
+          set("--atlas-boot-text", cached.text);
+          if (cached.appearance === "light" || cached.appearance === "dark") {
+            set("--atlas-boot-scheme", cached.appearance);
+            root.classList.toggle("dark", cached.appearance === "dark");
+            root.setAttribute("data-theme-appearance", cached.appearance);
+          }
+          if (typeof cached.id === "string") root.setAttribute("data-theme", cached.id);
+          var vars = cached.vars;
+          if (!vars || typeof vars !== "object") return;
+          var declarations = [];
+          for (var name in vars) {
+            var value = vars[name];
+            // Only a well-formed custom property survives: a corrupt or
+            // hand-edited entry must not be able to close the block.
+            if (!/^--[A-Za-z0-9-]+$/.test(name) || typeof value !== "string") continue;
+            if (/[;{}<\\]/.test(value)) continue;
+            declarations.push(name + ":" + value);
+          }
+          if (!declarations.length) return;
+          var style = document.createElement("style");
+          style.id = "atlas-resolved-theme";
+          style.textContent = "html:root{" + declarations.join(";") + "}";
+          document.head.appendChild(style);
+        } catch (e) {
+          /* a blocked or corrupt store just means the fallbacks below */
+        }
+      })();
+    </script>
     <style>
-      /* html / body / #root are transparent so the NSVisualEffectView blur
-         applied in `src-tauri/src/lib.rs` is visible during the brief
-         window between the OS showing the window and React's first paint.
-         Without this the WKWebView's default opaque-white background sits
-         on top of our blurred window and we see a white flash.
-         The boot skeleton (`.atlas-boot`) is opaque #050505 and the real
-         app's `AppLayout` is opaque `bg-bg-base`, so the vibrancy is
-         only ever visible for that brief pre-paint moment. */
+      /* Opaque base background, matching the native window background set in
+         `src-tauri/src/lib.rs` (which reads the same persisted theme), so
+         nothing white shows before the stylesheets load. The literals are the
+         Atlas-dark values and act as the never-cached fallback; the custom
+         properties come from the script above. */
       html, body, #root {
-        background: transparent;
+        background: var(--atlas-boot-bg, #000);
         margin: 0;
         padding: 0;
         height: 100%;
         width: 100%;
         overflow: hidden;
-        color-scheme: dark;
+        color-scheme: var(--atlas-boot-scheme, dark);
       }
 
       /* ── Boot skeleton ────────────────────────────────────────────────
@@ -67,8 +120,8 @@
         inset: 0;
         display: flex;
         flex-direction: column;
-        background: #050505;
-        color: rgba(255, 255, 255, 0.3);
+        background: var(--atlas-boot-bg, #050505);
+        color: var(--atlas-boot-text, rgba(255, 255, 255, 0.3));
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
         font-size: 11px;
         user-select: none;
@@ -77,8 +130,8 @@
       .atlas-boot-titlebar {
         height: 29px;
         flex-shrink: 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        background: #0a0a0a;
+        border-bottom: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
+        background: var(--atlas-boot-chrome, #0a0a0a);
       }
       .atlas-boot-body {
         flex: 1;
@@ -88,8 +141,8 @@
       .atlas-boot-sidebar {
         width: 220px;
         flex-shrink: 0;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
-        background: #080808;
+        border-right: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
+        background: var(--atlas-boot-chrome, #080808);
         padding: 8px 12px;
         display: flex;
         flex-direction: column;
@@ -98,12 +151,12 @@
       .atlas-boot-search {
         height: 24px;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.03));
       }
       .atlas-boot-row {
         height: 14px;
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
       }
       .atlas-boot-row.atlas-boot-row-tall { height: 24px; }
       .atlas-boot-row.atlas-boot-row-narrow { width: 55%; }
@@ -134,7 +187,7 @@
         width: 32px;
         height: 32px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
         flex-shrink: 0;
       }
       .atlas-boot-bubble {
@@ -147,7 +200,7 @@
       .atlas-boot-bubble > div {
         height: 12px;
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--atlas-boot-skeleton, rgba(255, 255, 255, 0.04));
       }
       .atlas-boot-input {
         margin: 0 auto 16px;
@@ -155,8 +208,8 @@
         max-width: 760px;
         height: 86px;
         border-radius: 14px;
-        background: #0c0c0c;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--atlas-boot-card, #0c0c0c);
+        border: 1px solid var(--atlas-boot-line, rgba(255, 255, 255, 0.05));
         flex-shrink: 0;
       }
       .atlas-boot-search,
@@ -170,36 +223,12 @@
         50%      { opacity: 1; }
       }
 
-      /* Native-macOS hairline border around the window.
-         Native apps like Zed and Chrome have a subtle 1px gray line
-         around the entire window frame; ours only had it on top
-         because the macOS titlebar provides that edge for free and
-         everything else paints to the WKWebView edge with no border.
-         A pointer-events:none overlay floats above the entire UI
-         (including the titlebar) and paints the inset shadow at the
-         WebView edge — macOS clips it to the window's rounded corners
-         the same way it clips our content. */
-      /* macOS already paints the top hairline as part of the titlebar,
-         so stacking our own on top of it doubles the line and looks
-         darker than the sides. Paint only left / right / bottom. */
-      /* Match macOS window corner radius (~10px on Sonoma/Sequoia) so
-         the border follows the rounded corner instead of getting clipped
-         by it — straight inset lines into a rounded corner read as a
-         faded/missing corner. We use `border` (not box-shadow) because
-         border honors border-radius cleanly on all four sides. The top
-         segment is hidden by the titlebar, which provides its own
-         hairline. */
-      .atlas-window-border {
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 10px;
-        z-index: 99999;
-      }
+      /* No window border or corner rounding here: macOS clips the window
+         to its rounded corners and draws the edge hairline itself. See
+         docs/research/macos-window-corners.md before adding one back. */
     </style>
   </head>
-  <body style="background:transparent">
+  <body>
     <div id="root">
       <div class="atlas-boot" aria-hidden="true">
         <div class="atlas-boot-titlebar"></div>
@@ -238,7 +267,6 @@
         </div>
       </div>
     </div>
-    <div class="atlas-window-border" aria-hidden="true"></div>
     <script>
       // Defer boot-skeleton removal until React dispatches `atlas:app-ready`.
       // The skeleton stays visible across React's first commit + the Rust

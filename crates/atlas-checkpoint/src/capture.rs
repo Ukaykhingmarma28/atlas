@@ -96,14 +96,14 @@ pub struct TurnContent {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Records agent activity into a Workspace's store.
+/// Records agent activity into a Project's store.
 pub struct Capture<'a> {
     store: &'a mut Store,
-    mode: WorkspaceMode,
+    mode: ProjectMode,
 }
 
 impl<'a> Capture<'a> {
-    pub fn new(store: &'a mut Store, mode: WorkspaceMode) -> Self {
+    pub fn new(store: &'a mut Store, mode: ProjectMode) -> Self {
         Self { store, mode }
     }
 
@@ -360,14 +360,29 @@ impl<'a> Capture<'a> {
         })
     }
 
-    /// Record token totals for a Session.
+    /// Record a cumulative usage report for a Session, against the turn it
+    /// arrived in.
     ///
     /// Note the caller is responsible for not passing a context-window gauge as
     /// an input/output split — [`TokenTotals`] has separate fields for exactly
     /// that reason. Only the native agent reports a real split; for ACP agents
     /// the accurate figures are backfilled from the agent's own transcript.
-    pub fn record_usage(&mut self, session_id: &str, totals: &TokenTotals) -> Result<()> {
-        self.store.set_token_totals(session_id, totals)
+    ///
+    /// `totals` is the agent's running total, not an increment: the store
+    /// works out what this report added since the last one and writes that to
+    /// the per-turn ledger (see `Store::record_usage_delta`). `model` is the
+    /// model this turn ran on when the caller knows it; `None` falls back to
+    /// the Session's model.
+    pub fn record_usage(
+        &mut self,
+        session_id: &str,
+        turn_seq: i64,
+        model: Option<&str>,
+        totals: &TokenTotals,
+    ) -> Result<()> {
+        self.store
+            .record_usage_delta(session_id, turn_seq, model, totals)
+            .map(|_| ())
     }
 
     /// Scrub, flagging the Session and failing closed if scrubbing did not
@@ -491,8 +506,11 @@ fn strip_host_machinery(role: Role, body: &str) -> String {
 }
 
 fn scrub(body: &str) -> Result<atlas_redact::Redacted> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| atlas_redact::redact(body)))
-        .map_err(|_| Error::RedactionFailed("redactor panicked on this content".into()))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        injected_redactor_panic();
+        atlas_redact::redact(body)
+    }))
+    .map_err(|_| Error::RedactionFailed("redactor panicked on this content".into()))
 }
 
 /// Shape-aware scrub under the same panic guard as [`scrub`].
@@ -505,8 +523,30 @@ fn scrub(body: &str) -> Result<atlas_redact::Redacted> {
 /// identical because the failure mode is identical: a redactor panic must
 /// become [`Error::RedactionFailed`], never an unwind through the caller.
 fn scrub_auto(body: &str) -> Result<atlas_redact::Redacted> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| atlas_redact::redact_auto(body)))
-        .map_err(|_| Error::RedactionFailed("redactor panicked on this content".into()))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        injected_redactor_panic();
+        atlas_redact::redact_auto(body)
+    }))
+    .map_err(|_| Error::RedactionFailed("redactor panicked on this content".into()))
+}
+
+// Test-only seam: a redactor that panics on demand. `atlas_redact` has no
+// input known to panic it — that is the point of it — so the fail-closed arm
+// of the guard above is otherwise unreachable from a test. Thread-local, so
+// one test arming it cannot leak into another running in parallel. Compiled
+// out of every non-test build: `injected_redactor_panic` is an empty inline fn
+// there.
+#[cfg(test)]
+thread_local! {
+    static REDACTOR_PANICS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[inline(always)]
+fn injected_redactor_panic() {
+    #[cfg(test)]
+    if REDACTOR_PANICS.with(std::cell::Cell::get) {
+        panic!("injected redactor panic (test seam)");
+    }
 }
 
 /// Whether a body is large enough to be spilled beside the database rather than
@@ -585,5 +625,259 @@ mod machinery_tests {
     fn ordinary_content_passes_untouched() {
         assert_eq!(strip_host_machinery(Role::User, "hello"), "hello");
         assert_eq!(strip_host_machinery(Role::Assistant, "hi"), "hi");
+    }
+}
+
+/// Fail-closed redaction, proven against a real store.
+///
+/// These run under the debug test profile, which always unwinds, so they prove
+/// the *handling* — a panicking redactor becomes [`Error::RedactionFailed`] and
+/// nothing reaches the database or the blob directory. They cannot prove the
+/// release profile keeps `panic = "unwind"`; under `abort` the guard would never
+/// run and the process would die instead. That setting lives in the root
+/// `Cargo.toml` and is guarded there, not here.
+#[cfg(test)]
+mod fail_closed_tests {
+    use super::*;
+
+    /// Arms the injected panic for the life of the guard, on this thread only.
+    struct PanickingRedactor;
+
+    impl PanickingRedactor {
+        fn arm() -> Self {
+            REDACTOR_PANICS.with(|p| p.set(true));
+            Self
+        }
+    }
+
+    impl Drop for PanickingRedactor {
+        fn drop(&mut self) {
+            REDACTOR_PANICS.with(|p| p.set(false));
+        }
+    }
+
+    fn key() -> SessionKey {
+        SessionKey {
+            workspace_id: "ws".into(),
+            source: Source::Acp,
+            native_session_id: "native-1".into(),
+        }
+    }
+
+    /// Every file under `.atlas/blobs`, however deep.
+    fn blob_files(atlas: &std::path::Path) -> Vec<std::path::PathBuf> {
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else {
+                    out.push(path);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&atlas.join("blobs"), &mut out);
+        out
+    }
+
+    /// Big enough to spill, so a write that slipped past the guard would leave
+    /// a blob behind as well as a row.
+    fn spilling_body() -> String {
+        format!(
+            "API_KEY=supersecretvalue123 {}",
+            "x".repeat(crate::blobs::SPILL_THRESHOLD_BYTES * 2)
+        )
+    }
+
+    fn assert_flagged(store: &Store, session_id: &str) {
+        let session = store.session(session_id).unwrap().expect("session row");
+        assert!(
+            session.needs_attention,
+            "a redaction failure must flag the Session"
+        );
+        assert!(
+            session
+                .attention_reason
+                .as_deref()
+                .is_some_and(|r| r.contains("redaction failed")),
+            "{:?}",
+            session.attention_reason
+        );
+    }
+
+    #[test]
+    fn a_panicking_redactor_drops_the_turn_and_writes_no_row_or_blob() {
+        let dir = tempfile::tempdir().unwrap();
+        let atlas = dir.path().join(".atlas");
+        let mut store = Store::open(&atlas).unwrap();
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+        let session_id = capture
+            .ensure_session(&key(), None, None, None, None)
+            .unwrap();
+
+        let result = {
+            let _armed = PanickingRedactor::arm();
+            capture.record_turn(
+                &session_id,
+                TurnContent {
+                    turn_seq: 1,
+                    native_message_id: Some("m1".into()),
+                    role: Role::Assistant,
+                    mode: Mode::Text,
+                    body: spilling_body(),
+                    created_at: None,
+                },
+            )
+        };
+
+        assert!(
+            matches!(result, Err(Error::RedactionFailed(_))),
+            "{result:?}"
+        );
+        assert!(store.messages_for_session(&session_id).unwrap().is_empty());
+        assert!(blob_files(&atlas).is_empty(), "{:?}", blob_files(&atlas));
+        assert_flagged(&store, &session_id);
+
+        // The guard is per-call, not a latch: the next turn records normally.
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+        capture
+            .record_turn(
+                &session_id,
+                TurnContent {
+                    turn_seq: 2,
+                    native_message_id: Some("m2".into()),
+                    role: Role::Assistant,
+                    mode: Mode::Text,
+                    body: "fine".into(),
+                    created_at: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(store.messages_for_session(&session_id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_panicking_redactor_drops_the_prompt_and_its_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let atlas = dir.path().join(".atlas");
+        let mut store = Store::open(&atlas).unwrap();
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+
+        let result = {
+            let _armed = PanickingRedactor::arm();
+            capture.record_prompt(
+                &key(),
+                "deploy with API_KEY=supersecretvalue123",
+                1,
+                None,
+                None,
+                None,
+            )
+        };
+        assert!(
+            matches!(result, Err(Error::RedactionFailed(_))),
+            "{result:?}"
+        );
+
+        // The Session row exists (it is created before any content is
+        // scrubbed) but carries neither the prompt nor a title derived from it.
+        let session_id = store
+            .session_id_for("ws", Source::Acp, "native-1")
+            .unwrap()
+            .expect("session row");
+        let session = store.session(&session_id).unwrap().unwrap();
+        assert_eq!(session.title, None);
+        assert!(store.messages_for_session(&session_id).unwrap().is_empty());
+        assert!(blob_files(&atlas).is_empty());
+        assert_flagged(&store, &session_id);
+    }
+
+    #[test]
+    fn a_panicking_redactor_drops_the_tool_call_and_the_edit_patch() {
+        let dir = tempfile::tempdir().unwrap();
+        let atlas = dir.path().join(".atlas");
+        let mut store = Store::open(&atlas).unwrap();
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+        let session_id = capture
+            .ensure_session(&key(), None, None, None, None)
+            .unwrap();
+        let locations = serde_json::json!([]);
+        let result_bytes = spilling_body().into_bytes();
+
+        let _armed = PanickingRedactor::arm();
+        let call = capture.record_tool_call(
+            &session_id,
+            ToolCallContent {
+                turn_seq: 1,
+                native_call_id: Some("call-1"),
+                tool_name: ToolName::Bash,
+                title: Some("env"),
+                kind: Some("execute"),
+                status: ToolStatus::Completed,
+                locations: &locations,
+                arguments: Some(r#"{"command":"env"}"#),
+                result: Some(&result_bytes),
+            },
+        );
+        assert!(matches!(call, Err(Error::RedactionFailed(_))), "{call:?}");
+
+        let patch = capture.record_edit_patch(
+            &session_id,
+            "no-such-call",
+            1,
+            "src/main.rs",
+            "+API_KEY=supersecretvalue123",
+        );
+        assert!(matches!(patch, Err(Error::RedactionFailed(_))), "{patch:?}");
+        drop(_armed);
+
+        assert!(store
+            .tool_calls_for_session(&session_id)
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .agent_edits_for_session(&session_id)
+            .unwrap()
+            .is_empty());
+        assert!(blob_files(&atlas).is_empty(), "{:?}", blob_files(&atlas));
+        assert_flagged(&store, &session_id);
+    }
+
+    #[test]
+    fn a_binary_tool_result_is_never_scrubbed_so_it_cannot_trip_the_guard() {
+        // The other side of the UTF-8 split: non-text bytes skip redaction, so
+        // an armed redactor fails only on the (text) arguments.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join(".atlas")).unwrap();
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+        let session_id = capture
+            .ensure_session(&key(), None, None, None, None)
+            .unwrap();
+        let locations = serde_json::json!([]);
+        let binary = [0xff_u8, 0xfe, 0x00, 0x01];
+
+        let _armed = PanickingRedactor::arm();
+        capture
+            .record_tool_call(
+                &session_id,
+                ToolCallContent {
+                    turn_seq: 1,
+                    native_call_id: Some("call-bin"),
+                    tool_name: ToolName::Read,
+                    title: None,
+                    kind: None,
+                    status: ToolStatus::Completed,
+                    locations: &locations,
+                    arguments: None,
+                    result: Some(&binary),
+                },
+            )
+            .expect("binary result bypasses the redactor");
+        drop(_armed);
+        assert_eq!(store.tool_calls_for_session(&session_id).unwrap().len(), 1);
     }
 }

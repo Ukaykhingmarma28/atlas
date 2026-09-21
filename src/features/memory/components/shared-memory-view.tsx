@@ -35,7 +35,8 @@ import {
   Loader2,
   Download,
 } from "lucide-react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Dialog } from "@base-ui/react/dialog";
+import { DialogOverlay } from "@/ui/dialog";
 import { toast } from "sonner";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
@@ -43,6 +44,7 @@ import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
 import type {
   ClaudeImportLine,
@@ -209,11 +211,11 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   );
 
   return (
-    <div className={cn("h-full flex flex-col bg-[var(--bg-base)]", className)}>
+    <div className={cn("h-full flex flex-col bg-[var(--background)]", className)}>
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border-default)]">
+      <div className="flex items-center gap-2 px-3 h-[32px] shrink-0 border-b border-[var(--border)]">
         {/* Events / Plans toggle — pill group, matches the Memory nav. */}
-        <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--card)] p-0.5">
           <SegBtn
             active={tab === "events"}
             onClick={() => setTab("events")}
@@ -257,26 +259,28 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-1.5 h-6 rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-2 w-[190px] focus-within:border-[var(--border-strong)]">
-          <Search size={11} className="text-[var(--text-tertiary)] shrink-0" />
+        <div className="flex items-center gap-1.5 h-6 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 w-[190px] focus-within:border-[var(--atlas-border-strong)]">
+          <Search size={11} className="text-[var(--muted-foreground)] shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${tab}…`}
             spellCheck={false}
-            className="flex-1 min-w-0 bg-transparent outline-none text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            className="flex-1 min-w-0 bg-transparent outline-none text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
           />
         </div>
 
-        <IconButton label="Refresh" onClick={() => void refresh()}>
-          <RefreshCw size={12} />
-        </IconButton>
-        <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
-          <Download size={12} />
-        </IconButton>
-        <IconButton label="Clear shared memory" onClick={() => void clear()}>
-          <Trash2 size={12} />
-        </IconButton>
+        <HintGroup>
+          <IconButton label="Refresh" onClick={() => void refresh()}>
+            <RefreshCw size={12} />
+          </IconButton>
+          <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
+            <Download size={12} />
+          </IconButton>
+          <IconButton label="Clear shared memory" onClick={() => void clear()}>
+            <Trash2 size={12} />
+          </IconButton>
+        </HintGroup>
       </div>
       <ImportClaudeMemoryModal
         open={importing}
@@ -344,23 +348,23 @@ function EventRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="border-b border-[var(--border-subtle)]">
+    <div className="border-b border-[var(--atlas-border-subtle)]">
       <button
         onClick={onToggle}
         className={cn(
           "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--bg-elevated)]/50" : "hover:bg-[var(--bg-hover)]",
+          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
         )}
       >
         <span
           className={cn(
             EVENT_COL.seq,
-            "font-mono text-[10px] tabular-nums text-[var(--text-ghost)]",
+            "font-mono text-2xs tabular-nums text-[var(--atlas-text-disabled)]",
           )}
         >
           {e.seq}
         </span>
-        <span className={cn(EVENT_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+        <span className={cn(EVENT_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
           {eventTime(e.ts)}
         </span>
         <span className={EVENT_COL.agent}>
@@ -370,14 +374,14 @@ function EventRow({
           <KindChip kind={e.kind} />
         </span>
         <span className={cn(EVENT_COL.detail, "min-w-0 pr-3")}>
-          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
-            {eventDetail(e) || <span className="text-[var(--text-ghost)]">—</span>}
+          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+            {eventDetail(e) || <span className="text-[var(--atlas-text-disabled)]">—</span>}
           </span>
         </span>
         <span
           className={cn(
             EVENT_COL.chevron,
-            "flex items-center justify-end text-[var(--text-tertiary)]",
+            "flex items-center justify-end text-[var(--muted-foreground)]",
           )}
         >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -391,7 +395,7 @@ function EventRow({
 function EventDetail({ event: e }: { event: MemoryEvent }) {
   const detail = eventDetail(e);
   return (
-    <div className="bg-[var(--bg-elevated)]/40 border-t border-[var(--border-subtle)] px-4 py-3 space-y-3">
+    <div className="bg-[var(--card)]/40 border-t border-[var(--atlas-border-subtle)] px-4 py-3 space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <MetaChip label="Seq" value={`#${e.seq}`} mono />
         <MetaChip label="Kind" value={e.kind.replace(/_/g, " ")} />
@@ -401,8 +405,8 @@ function EventDetail({ event: e }: { event: MemoryEvent }) {
         {e.sessionId && <MetaChip label="Session" value={e.sessionId.slice(0, 8)} mono />}
       </div>
       {detail && (
-        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
-          <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[1.55] text-[var(--secondary-foreground)]">
             {detail}
           </pre>
         </div>
@@ -456,23 +460,23 @@ function PlanRow({
   const status = str(e.payload?.status) || "active";
   const firstLine = text.split("\n").find((l) => l.trim()) ?? "";
   return (
-    <div className="border-b border-[var(--border-subtle)]">
+    <div className="border-b border-[var(--atlas-border-subtle)]">
       <button
         onClick={onToggle}
         className={cn(
           "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--bg-elevated)]/50" : "hover:bg-[var(--bg-hover)]",
+          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
         )}
       >
         <span
           className={cn(
             PLAN_COL.seq,
-            "font-mono text-[10px] tabular-nums text-[var(--text-ghost)]",
+            "font-mono text-2xs tabular-nums text-[var(--atlas-text-disabled)]",
           )}
         >
           {e.seq}
         </span>
-        <span className={cn(PLAN_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+        <span className={cn(PLAN_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
           {eventTime(e.ts)}
         </span>
         <span className={PLAN_COL.agent}>
@@ -482,29 +486,29 @@ function PlanRow({
           <StatusChip status={status} />
         </span>
         <span className={cn(PLAN_COL.plan, "min-w-0 pr-3")}>
-          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
-            {firstLine || <span className="text-[var(--text-ghost)]">—</span>}
+          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+            {firstLine || <span className="text-[var(--atlas-text-disabled)]">—</span>}
           </span>
         </span>
         <span
           className={cn(
             PLAN_COL.chevron,
-            "flex items-center justify-end text-[var(--text-tertiary)]",
+            "flex items-center justify-end text-[var(--muted-foreground)]",
           )}
         >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
       </button>
       {expanded && (
-        <div className="bg-[var(--bg-elevated)]/40 border-t border-[var(--border-subtle)] px-4 py-3 space-y-3">
+        <div className="bg-[var(--card)]/40 border-t border-[var(--atlas-border-subtle)] px-4 py-3 space-y-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             <MetaChip label="Seq" value={`#${e.seq}`} mono />
             <MetaChip label="Status" value={status} />
             <MetaChip label="Agent" value={agentMetaForSource(e.agent).label} />
             <MetaChip label="When" value={fmtDateTime(e.ts)} />
           </div>
-          <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
-            <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[1.55] text-[var(--secondary-foreground)]">
               {text || "—"}
             </pre>
           </div>
@@ -557,15 +561,15 @@ function EntryRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="border-b border-[var(--border-subtle)]">
+    <div className="border-b border-[var(--atlas-border-subtle)]">
       <button
         onClick={onToggle}
         className={cn(
           "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--bg-elevated)]/50" : "hover:bg-[var(--bg-hover)]",
+          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
         )}
       >
-        <span className={cn(ENTRY_COL.time, "text-[10px] text-[var(--text-tertiary)]")}>
+        <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
           {eventTime(e.updatedAt)}
         </span>
         <span className={ENTRY_COL.kind}>
@@ -578,7 +582,7 @@ function EntryRow({
           {entryAgent(e.agent) ? (
             <AgentTag agent={e.agent} />
           ) : (
-            <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+            <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
               {e.agent || "—"}
             </span>
           )}
@@ -586,20 +590,20 @@ function EntryRow({
         <span
           className={cn(
             ENTRY_COL.confidence,
-            "tabular-nums text-[10px] text-[var(--text-tertiary)]",
+            "tabular-nums text-2xs text-[var(--muted-foreground)]",
           )}
         >
           {confidenceLabel(e.confidence)}
         </span>
         <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
-          <span className="block truncate text-[12px] text-[var(--text-secondary)]">
-            {e.content || <span className="text-[var(--text-ghost)]">—</span>}
+          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+            {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
           </span>
         </span>
         <span
           className={cn(
             ENTRY_COL.chevron,
-            "flex items-center justify-end text-[var(--text-tertiary)]",
+            "flex items-center justify-end text-[var(--muted-foreground)]",
           )}
         >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -654,7 +658,7 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
   };
 
   return (
-    <div className="bg-[var(--bg-elevated)]/40 border-t border-[var(--border-subtle)] px-4 py-3 space-y-3">
+    <div className="bg-[var(--card)]/40 border-t border-[var(--atlas-border-subtle)] px-4 py-3 space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <MetaChip label="Kind" value={KIND_LABEL[e.kind] ?? e.kind.replace(/_/g, " ")} />
         <MetaChip label="Source" value={sourceLabel(e.source)} />
@@ -708,13 +712,13 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
           rows={Math.min(8, Math.max(2, draft.split("\n").length))}
           aria-label="Memory content"
           className={cn(
-            "block w-full resize-y rounded-lg border bg-[var(--bg-base)] px-3 py-2 font-sans text-[12px] leading-[1.55] text-[var(--text-primary)] outline-none transition-colors",
-            dirty ? "border-[var(--border-strong)]" : "border-[var(--border-default)]",
+            "block w-full resize-y rounded-lg border bg-[var(--background)] px-3 py-2 font-sans text-sm leading-[1.55] text-[var(--foreground)] outline-none transition-colors",
+            dirty ? "border-[var(--atlas-border-strong)]" : "border-[var(--border)]",
           )}
         />
       ) : (
-        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2">
-          <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.55] text-[var(--text-secondary)]">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[1.55] text-[var(--secondary-foreground)]">
             {e.content || "—"}
           </pre>
         </div>
@@ -808,28 +812,28 @@ function ImportClaudeMemoryModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content
+        <DialogOverlay className="backdrop-blur-sm" />
+        <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
             "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
-            "border border-border-default bg-bg-elevated shadow-[var(--shadow-overlay)] animate-scale-in",
+            "border border-border bg-card shadow-lg animate-scale-in",
           )}
         >
-          <div className="flex items-center gap-3 border-b border-border-default px-4 py-2.5">
-            <Dialog.Title className="text-[13px] font-semibold text-text-primary">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+            <Dialog.Title className="text-base font-semibold text-foreground">
               Import Claude memory
             </Dialog.Title>
             <Dialog.Close
-              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
               aria-label="Close"
             >
               <X size={13} />
             </Dialog.Close>
           </div>
 
-          <p className="px-4 pt-3 text-[11px] leading-relaxed text-text-tertiary">
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
             {preview?.alreadyImported
               ? "Already imported: Claude's memory for this project was brought in before, so there is nothing new to import."
               : "Bring the memories Claude Code kept for this project into shared memory, so every agent sees them. Imported lines are marked as from Claude, at 70% confidence."}
@@ -837,11 +841,11 @@ function ImportClaudeMemoryModal({
 
           <div className="flex-1 overflow-auto hide-scrollbar px-2 py-2">
             {preview === null ? (
-              <div className="px-2 py-6 text-center text-[11px] text-text-tertiary">
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
                 Reading Claude's memory…
               </div>
             ) : preview.lines.length === 0 ? (
-              <div className="px-2 py-6 text-center text-[11px] text-text-tertiary">
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
                 Claude has no memory for this project.
               </div>
             ) : (
@@ -856,8 +860,8 @@ function ImportClaudeMemoryModal({
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2.5">
-            <Dialog.Close className="rounded px-2.5 py-1 text-[11px] text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer">
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
               Cancel
             </Dialog.Close>
             <button
@@ -865,15 +869,15 @@ function ImportClaudeMemoryModal({
               disabled={importing || fresh === 0 || selected.size === 0}
               onClick={() => void runImport()}
               className={cn(
-                "rounded px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer",
-                "bg-accent text-text-inverse hover:bg-accent-hover",
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                "bg-primary text-primary-foreground hover:bg-primary",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >
               {importing ? "Importing…" : selected.size > 0 ? `Import ${selected.size}` : "Import"}
             </button>
           </div>
-        </Dialog.Content>
+        </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
   );
@@ -898,17 +902,17 @@ function ImportLineRow({
       className={cn(
         "flex items-center gap-1.5 w-full rounded px-2 py-1.5 text-left transition-colors",
         !line.isNew && "cursor-not-allowed opacity-60",
-        line.isNew && (checked ? "bg-bg-selected" : "cursor-pointer hover:bg-bg-hover"),
+        line.isNew && (checked ? "bg-element-selected" : "cursor-pointer hover:bg-element-hover"),
       )}
     >
       <span className="w-[64px] shrink-0">
         <KindChip kind={line.kind} />
       </span>
-      <span className="flex-1 min-w-0 truncate text-[11px] text-text-primary">{line.content}</span>
+      <span className="flex-1 min-w-0 truncate text-xs text-foreground">{line.content}</span>
       {!line.isNew && (
-        <span className="shrink-0 text-[10px] text-text-tertiary">already in memory</span>
+        <span className="shrink-0 text-2xs text-muted-foreground">already in memory</span>
       )}
-      {checked && <Check size={12} className="text-text-secondary shrink-0" />}
+      {checked && <Check size={12} className="text-secondary-foreground shrink-0" />}
     </button>
   );
 }
@@ -917,7 +921,7 @@ function ImportLineRow({
 
 function HeaderRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border-default)] bg-[var(--bg-base)] px-3 text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className="sticky top-0 z-10 flex items-center h-[28px] border-b border-[var(--border)] bg-[var(--background)] px-3 text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
       {children}
     </div>
   );
@@ -925,7 +929,7 @@ function HeaderRow({ children }: { children: React.ReactNode }) {
 
 function EmptyRows({ label }: { label: string }) {
   return (
-    <div className="grid place-items-center h-[160px] text-[11px] text-[var(--text-tertiary)]">
+    <div className="grid place-items-center h-[160px] text-xs text-[var(--muted-foreground)]">
       {label}
     </div>
   );
@@ -948,16 +952,16 @@ function SegBtn({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 h-[20px] px-2.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer",
+        "flex items-center gap-1.5 h-control-xs px-2.5 rounded-full text-xs font-medium transition-colors cursor-pointer",
         active
-          ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
-          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+          ? "bg-[var(--atlas-element-selected,var(--atlas-element-hover))] text-[var(--foreground)]"
+          : "text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
       )}
     >
       <span className={active ? "opacity-100" : "opacity-60"}>{icon}</span>
       {label}
       {count > 0 && (
-        <span className="text-[9px] tabular-nums text-[var(--text-ghost)]">{count}</span>
+        <span className="text-3xs tabular-nums text-[var(--atlas-text-disabled)]">{count}</span>
       )}
     </button>
   );
@@ -1005,10 +1009,10 @@ function FilterMenu({
         onClick={() => setOpen((o) => !o)}
         title={`Filter by ${label.toLowerCase()}`}
         className={cn(
-          "flex items-center gap-1 h-6 rounded-md border px-2 text-[11px] transition-colors cursor-pointer",
+          "flex items-center gap-1 h-6 rounded-md border px-2 text-xs transition-colors cursor-pointer",
           active
-            ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-            : "border-[var(--border-default)] text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]",
+            ? "border-[var(--atlas-border-strong)] bg-[var(--card)] text-[var(--foreground)]"
+            : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--secondary-foreground)]",
         )}
       >
         <ListFilter size={11} className="shrink-0" />
@@ -1019,7 +1023,7 @@ function FilterMenu({
         />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1 shadow-lg">
+        <div className="absolute top-full left-0 z-popover mt-1.5 max-h-[280px] min-w-[170px] overflow-y-auto hide-scrollbar rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg">
           <FilterOption
             label={`All ${label.toLowerCase()}s`}
             active={!value}
@@ -1058,14 +1062,14 @@ function FilterOption({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors cursor-pointer",
+        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors cursor-pointer",
         active
-          ? "bg-[var(--bg-selected,var(--bg-hover))] text-[var(--text-primary)]"
-          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]",
+          ? "bg-[var(--atlas-element-selected,var(--atlas-element-hover))] text-[var(--foreground)]"
+          : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)]",
       )}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {active && <Check size={11} className="shrink-0 text-[var(--accent-primary)]" />}
+      {active && <Check size={11} className="shrink-0 text-[var(--primary)]" />}
     </button>
   );
 }
@@ -1076,7 +1080,7 @@ function AgentTag({ agent }: { agent: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 min-w-0">
       <AgentMark agentType={pluginIdForSource(agent)} />
-      <span className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--text-tertiary)]">
+      <span className="truncate font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
         {agentMetaForSource(agent).label}
       </span>
     </span>
@@ -1098,7 +1102,7 @@ const KIND_LABEL: Record<string, string> = {
 /** The table's small label chip (kind, source). */
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex max-w-full items-center rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-tertiary)]">
+    <span className="inline-flex max-w-full items-center rounded bg-[var(--card)] px-1.5 py-0.5 text-2xs text-[var(--muted-foreground)]">
       <span className="truncate">{children}</span>
     </span>
   );
@@ -1118,10 +1122,10 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs",
         done
-          ? "bg-[var(--status-success-bg,var(--bg-elevated))] text-[var(--status-success,var(--text-tertiary))]"
-          : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
+          ? "bg-[var(--atlas-status-success-background,var(--card))] text-[var(--atlas-status-success-foreground,var(--muted-foreground))]"
+          : "bg-[var(--card)] text-[var(--muted-foreground)]",
       )}
     >
       {status}
@@ -1132,9 +1136,11 @@ function StatusChip({ status }: { status: string }) {
 function MetaChip({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-wider text-[var(--text-ghost)]">{label}</span>
+      <span className="text-3xs uppercase tracking-wider text-[var(--atlas-text-disabled)]">
+        {label}
+      </span>
       <span
-        className={cn("text-[11px] text-[var(--text-secondary)]", mono && "font-mono text-[10px]")}
+        className={cn("text-xs text-[var(--secondary-foreground)]", mono && "font-mono text-2xs")}
       >
         {value}
       </span>
@@ -1152,29 +1158,29 @@ function IconButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:scale-[0.96]"
-    >
-      {children}
-    </button>
+    <HintItem label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] active:scale-[0.96]"
+      >
+        {children}
+      </button>
+    </HintItem>
   );
 }
 
 function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]">
+      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]">
         <Share2 size={16} />
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-[13px] font-medium text-[var(--text-secondary)]">
+        <span className="text-base font-medium text-[var(--secondary-foreground)]">
           No shared memory yet
         </span>
-        <p className="max-w-[34ch] text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p className="max-w-[34ch] text-sm leading-[1.5] text-[var(--muted-foreground)]">
           As agents plan, decide, and edit files, their work is captured here as events and shared
           with every agent on this project.
         </p>

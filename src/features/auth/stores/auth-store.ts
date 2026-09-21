@@ -132,7 +132,7 @@ const useAuthStoreBase = create<AuthStoreState>()((set, get) => ({
       try {
         const snapshot = await auth.snapshot();
         // Never resurrect the dialog from hydration — if a grant is still in
-        // flight it belongs in the title bar, not popped over the workspace.
+        // flight it belongs in the title bar, not popped over the project.
         set({ snapshot });
       } catch {
         // A failed hydrate leaves the default signed-out state, which is the

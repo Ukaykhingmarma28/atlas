@@ -44,7 +44,7 @@ export function KnowledgeInspector({
   return (
     <aside
       className="flex flex-col min-h-0 shrink-0 border-l border-border-subtle"
-      style={{ width, background: "var(--bg-base)" }}
+      style={{ width, background: "var(--background)" }}
     >
       {/* Pill-style tab strip — active tab gets a full rounded white
           background, inactive tabs are plain text. Matches the
@@ -61,19 +61,18 @@ export function KnowledgeInspector({
               key={id}
               onClick={() => setTab(id)}
               className={cn(
-                "transition-colors",
+                "transition-colors text-sm",
                 active
-                  ? "bg-text-primary text-text-inverse font-semibold"
-                  : "text-text-tertiary hover:text-text-secondary",
+                  ? "bg-foreground text-primary-foreground font-semibold"
+                  : "text-muted-foreground hover:text-secondary-foreground",
               )}
               style={{
-                fontSize: 12,
                 padding: "0 12px",
                 borderRadius: 9999,
                 height: 24,
                 lineHeight: 1,
-                background: active ? "var(--text-primary)" : "transparent",
-                color: active ? "var(--text-inverse)" : undefined,
+                background: active ? "var(--foreground)" : "transparent",
+                color: active ? "var(--primary-foreground)" : undefined,
                 cursor: "pointer",
               }}
             >
@@ -87,13 +86,13 @@ export function KnowledgeInspector({
         {tab === "outline" && (
           <>
             <div
-              className="text-text-tertiary uppercase mb-2"
-              style={{ fontSize: 10.5, letterSpacing: "0.08em" }}
+              className="text-muted-foreground uppercase mb-2 text-xs"
+              style={{ letterSpacing: "0.08em" }}
             >
               On this page
             </div>
             {outline.length === 0 ? (
-              <div className="text-text-muted italic" style={{ fontSize: 11 }}>
+              <div className="text-muted-foreground italic text-xs">
                 Add H2 or H3 headings to build an outline
               </div>
             ) : (
@@ -106,17 +105,16 @@ export function KnowledgeInspector({
                     key={`${h.id}-${idx}`}
                     onClick={() => onJumpToHeading(h.id)}
                     className={cn(
-                      "block w-full text-left transition-colors",
+                      "block w-full text-left transition-colors text-base",
                       isActive
-                        ? "text-text-primary"
-                        : "text-text-tertiary hover:text-text-secondary",
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-secondary-foreground",
                     )}
                     style={{
-                      fontSize: 12.5,
                       lineHeight: 1.5,
                       padding: `3px 0 3px ${isActive ? 10 : headingDepthOf(h.level)}px`,
                       borderLeft: isActive
-                        ? "1.5px solid var(--text-primary)"
+                        ? "1.5px solid var(--foreground)"
                         : "1.5px solid transparent",
                       marginLeft: isActive ? -10 : 0,
                     }}
@@ -128,17 +126,15 @@ export function KnowledgeInspector({
             )}
 
             <div className="mt-6 pt-3.5 border-t border-border-subtle" style={{ marginTop: 22 }}>
-              <div className="eyebrow mb-2.5" style={{ fontSize: 9.5 }}>
-                Page stats
-              </div>
+              <div className="eyebrow mb-2.5">Page stats</div>
               {pageStats.map(([k, v]) => (
                 <div
                   key={k}
-                  className="flex justify-between border-b border-border-subtle text-text-tertiary"
-                  style={{ padding: "5px 0", fontSize: 12 }}
+                  className="flex justify-between border-b border-border-subtle text-muted-foreground text-sm"
+                  style={{ padding: "5px 0" }}
                 >
                   <span>{k}</span>
-                  <span className="mono tnum text-text-primary">{v}</span>
+                  <span className="mono tnum text-foreground">{v}</span>
                 </div>
               ))}
             </div>
@@ -147,11 +143,9 @@ export function KnowledgeInspector({
 
         {tab === "links" && (
           <>
-            <div className="eyebrow mb-2.5" style={{ fontSize: 9.5 }}>
-              Pages linking here · {backlinks.length}
-            </div>
+            <div className="eyebrow mb-2.5">Pages linking here · {backlinks.length}</div>
             {backlinks.length === 0 ? (
-              <div className="text-text-muted italic" style={{ fontSize: 11 }}>
+              <div className="text-muted-foreground italic text-xs">
                 No backlinks yet. Reference this page from another note with
                 <span className="mono"> [[note-id]] </span>
                 and it'll show up here.
@@ -176,20 +170,23 @@ export function KnowledgeInspector({
                       cursor: "pointer",
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--bg-hover)";
+                      e.currentTarget.style.background = "var(--atlas-element-hover)";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = "transparent";
                     }}
                   >
-                    <span style={{ fontSize: 14, lineHeight: 1, color: "var(--text-tertiary)" }}>
+                    <span
+                      className="text-md"
+                      style={{ lineHeight: 1, color: "var(--muted-foreground)" }}
+                    >
                       ›
                     </span>
                     <div style={{ minWidth: 0 }}>
                       <div
+                        className="text-base"
                         style={{
-                          fontSize: 12.5,
-                          color: "var(--text-primary)",
+                          color: "var(--foreground)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -198,9 +195,9 @@ export function KnowledgeInspector({
                         {b.fromTitle}
                       </div>
                       <div
+                        className="text-xs"
                         style={{
-                          fontSize: 10.5,
-                          color: "var(--text-tertiary)",
+                          color: "var(--muted-foreground)",
                           lineHeight: 1.4,
                           // Two-line clamp on the snippet so cards stay compact.
                           display: "-webkit-box",
