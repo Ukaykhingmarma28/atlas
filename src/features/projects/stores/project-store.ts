@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
 import { basename } from "@/lib/paths";
+import { toast } from "sonner";
 import { logEvent } from "@/features/log/lib/log";
 import { flushAll } from "../lib/flush-registry";
 import { captureSnapshot, restoreSnapshot, evictSnapshot } from "../lib/project-snapshot";
@@ -34,6 +35,20 @@ import { markFileIndexClosedFor } from "@/features/file-picker/lib/file-picker-a
 const requireActiveOrgId = (): string | undefined => {
   const org = useOrgStore.getState();
   return org.activeOrganisationId ?? org.organisations[0]?.id;
+};
+
+/** The refusal above used to be a log line and nothing else — and that log
+ *  entry is only persisted once a project exists, so a fresh install where
+ *  the Rust seed had not run showed "Open Folder" doing nothing at all. Say
+ *  so on screen: the state is not recoverable from inside the app, since the
+ *  org switcher hides itself with no active org. */
+const NO_ORG_MESSAGE =
+  "Atlas couldn't find an organisation to own this. Restart Atlas and try again.";
+
+const refuseWithoutOrg = (summary: string, payload?: Record<string, unknown>): null => {
+  logEvent({ source: "project", kind: "project-add-refused", summary, payload });
+  toast.error(NO_ORG_MESSAGE);
+  return null;
 };
 
 /** Default hot-set cap — how many projects stay mounted/resident at once.
@@ -272,13 +287,7 @@ export const useProjectStore = createSelectors(
         // from a second org now creates that org's own project row.
         const org = requireActiveOrgId();
         if (!org) {
-          logEvent({
-            source: "project",
-            kind: "project-add-refused",
-            summary: "no organisation available to own a new project",
-            payload: { path },
-          });
-          return null;
+          return refuseWithoutOrg("no organisation available to own a new project", { path });
         }
         const existing = get().projects.find((w) => w.path === path && w.orgId === org);
         if (existing) {
@@ -313,13 +322,7 @@ export const useProjectStore = createSelectors(
         // Same (path, org) identity + legacy-adopt rules as addProject above.
         const org = requireActiveOrgId();
         if (!org) {
-          logEvent({
-            source: "project",
-            kind: "project-add-refused",
-            summary: "no organisation available to own a new project entry",
-            payload: { path },
-          });
-          return null;
+          return refuseWithoutOrg("no organisation available to own a new project entry", { path });
         }
         const existing = get().projects.find((w) => w.path === path && w.orgId === org);
         if (existing) return existing.id;
@@ -642,14 +645,7 @@ export const useProjectStore = createSelectors(
       },
       addGroup: (name) => {
         const org = requireActiveOrgId();
-        if (!org) {
-          logEvent({
-            source: "project",
-            kind: "project-add-refused",
-            summary: "no organisation available to own a new group",
-          });
-          return null;
-        }
+        if (!org) return refuseWithoutOrg("no organisation available to own a new group");
         const group: ProjectGroup = {
           id: uuid(),
           name,
