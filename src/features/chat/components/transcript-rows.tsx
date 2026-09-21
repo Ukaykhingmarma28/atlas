@@ -522,8 +522,20 @@ export const MarkerRowView = memo(function MarkerRowView({
  *
  * One sentence you click — "Read files, ran commands" — matching the Codex
  * desktop app, led by the icon of the sentence's first fragment. While a call
- * is running the line names that call instead ("Reading flow.tsx") and wears
- * its icon, then returns to the sentence when it finishes.
+ * is running the line names that call instead ("Running bun run typecheck")
+ * and wears its icon, then returns to the sentence when it finishes.
+ *
+ * The block does NOT open itself while live. The one line carries the live
+ * state instead, and earns it by saying three things the settled sentence
+ * cannot: what is running right now, how many actions are already behind it,
+ * and how long the current one has been going. Auto-expanding was the
+ * alternative and was rejected — it makes the transcript reflow under the
+ * reader mid-turn, for detail that is one click away and that the folded
+ * summary reports a second later anyway.
+ *
+ * The numeric gutter is the same right-hand slot `MarkerRowView` puts `+n −m`
+ * in, for the same reason: the left of a marker line is a sentence, the right
+ * is a column of figures, and they should not interleave.
  *
  * The chevron appears on hover and stays visible when open.
  */
@@ -555,6 +567,19 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
         <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
           {row.running ? row.liveLabel : row.summary}
         </span>
+        {row.running &&
+          (row.liveDone > 0 || row.liveStartedAt !== null) && (
+            // Gap rather than a "·" between the two figures: the elapsed one is
+            // written straight to the DOM and is blank for its first second, so
+            // any separator React rendered beside it would dangle on its own
+            // until the first tick.
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-2xs text-[var(--atlas-text-disabled)] tabular-nums">
+              {row.liveDone > 0 && <span>{row.liveDone} done</span>}
+              {row.liveStartedAt !== null && (
+                <LiveElapsed startedAt={row.liveStartedAt} minMs={1000} />
+              )}
+            </span>
+          )}
         <ChevronRight
           size={ICON_PX}
           strokeWidth={ICON_STROKE}
@@ -600,11 +625,17 @@ function formatWorked(ms: number): string {
  * stops painting it (the next visible paint is exact, being derived from
  * `startedAt`).
  */
-function LiveElapsed({ startedAt }: { startedAt: number }) {
+function LiveElapsed({ startedAt, minMs = 0 }: { startedAt: number; minMs?: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const write = () => {
-      if (ref.current) ref.current.textContent = formatWorked(Date.now() - startedAt);
+      const ms = Date.now() - startedAt;
+      // Below `minMs` the figure stays blank rather than reading "0s". A tool
+      // marker uses this: most reads finish inside a frame or two, and a "0s"
+      // blinking in and out beside every one of them is noise that says
+      // nothing. The turn header leaves it at 0 — there, "Working for" needs
+      // a figure after it from the first paint.
+      if (ref.current) ref.current.textContent = ms < minMs ? "" : formatWorked(ms);
     };
     const paint = () => {
       if (document.visibilityState === "visible") write();
@@ -618,7 +649,7 @@ function LiveElapsed({ startedAt }: { startedAt: number }) {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", paint);
     };
-  }, [startedAt]);
+  }, [startedAt, minMs]);
   return <span ref={ref} className="tabular-nums" />;
 }
 

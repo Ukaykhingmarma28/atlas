@@ -136,6 +136,10 @@ export interface MarkerRow extends RowBase {
   /** Only set for edit markers, so the row can show `+n −m` inline. */
   added: number;
   removed: number;
+  /** Epoch ms the call was first seen, client-stamped by the store. `undefined`
+   *  on any call restored from a transcript — see `ToolCallDisplay.startedAt`.
+   *  Feeds the live elapsed figure; nothing settled reads it. */
+  startedAt: number | undefined;
 }
 
 export interface MarkerGroupRow extends RowBase {
@@ -161,6 +165,18 @@ export interface MarkerGroupRow extends RowBase {
   /** The active call's own glyph while `running` — the live line names that
    *  call, so it wears that call's icon rather than the block's. */
   liveTool: MarkerTool | null;
+  /** Epoch ms the active call started, for the ticking figure in the live line's
+   *  right gutter. The turn header above already counts the whole turn; this
+   *  answers the different question a folded block otherwise hides — how long
+   *  THIS command has been going, and therefore whether it is stuck. */
+  liveStartedAt: number | null;
+  /** Calls in this block already finished, shown beside the live line.
+   *
+   *  Deliberately not "3 of 6": tool calls stream in one at a time, so the
+   *  total does not exist until the block ends. Counting what is DONE is the
+   *  only honest progress a collapsed block can report, and it is the whole of
+   *  the accumulation a one-line live state can show. */
+  liveDone: number;
 }
 
 /**
@@ -448,29 +464,50 @@ function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: Marker
   };
 }
 
-/** A live disclosure names the current action, then returns to its aggregate
+/**
+ * A live disclosure names the current action, then returns to its aggregate
  * sentence when that action finishes. Keep the phrase short enough to occupy
- * the same quiet, single-line slot as the collapsed summary. */
+ * the same quiet, single-line slot as the collapsed summary.
+ *
+ * The rule is "name the target, fall back to the generic phrase" — the generic
+ * phrases exist for calls whose target Atlas could not read, NOT as the normal
+ * case. `run` is why: "Running command" made `bun run build:app` and `ls`
+ * render as the same line, and the command is the entire content of a run.
+ *
+ * Which part of the target gets named differs by tool, and it is not a style
+ * choice. A path's basename identifies it ("Reading turn-rows.ts") while its
+ * parent directories are noise at this size; a command, a pattern or a URL has
+ * no such tail, and slicing one on "/" would cut it mid-token. So paths take
+ * the last segment and everything else is used whole — CSS truncates the line.
+ */
 function liveMarkerLabel(marker: MarkerRow): string {
+  const target = marker.detail;
+  const basename = target.split("/").pop() ?? target;
   switch (marker.tool) {
     case "read":
-      return marker.detail ? `Reading ${marker.detail.split("/").pop()}` : "Reading files";
+      return target ? `Reading ${basename}` : "Reading files";
     case "edit":
+      return target ? `Editing ${basename}` : "Editing files";
     case "delete":
+      return target ? `Deleting ${basename}` : "Deleting files";
     case "move":
-      return "Editing files";
-    case "search":
-      return "Searching files";
+      return target ? `Moving ${basename}` : "Moving files";
     case "list":
-      return "Listing files";
+      return target ? `Listing ${basename}` : "Listing files";
+    case "file":
+      return target ? `Opening ${basename}` : "Opening a file";
+    // `search`'s detail is already a phrase ("pattern in dir"), so it reads as
+    // the object of "searching for" rather than as a name.
+    case "search":
+      return target ? `Searching for ${target}` : "Searching files";
     case "run":
-      return "Running command";
+      return target ? `Running ${target}` : "Running command";
     case "fetch":
-      return "Fetching content";
+      return target ? `Fetching ${target}` : "Fetching content";
     case "think":
       return "Thinking…";
     default:
-      return "Using a tool";
+      return target ? `Running ${marker.verb} ${target}` : "Using a tool";
   }
 }
 
@@ -596,6 +633,7 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     path: path ?? undefined,
     added,
     removed,
+    startedAt: tc.startedAt,
   };
 }
 
@@ -792,6 +830,8 @@ export function projectRows(
         running: false,
         liveLabel: null,
         liveTool: null,
+        liveStartedAt: null,
+        liveDone: 0,
       });
       markers = [];
     };
@@ -858,13 +898,28 @@ export function projectRows(
       for (let rowIndex = rowStart; rowIndex < rows.length; rowIndex++) {
         const row = rows[rowIndex];
         if (row.kind !== RowKind.MarkerGroup) continue;
-        const active = [...row.markers]
-          .reverse()
-          .find((marker) => marker.state === "running" || marker.state === "pending");
+        // A RUNNING call outranks a later PENDING one. Agents that fan out
+        // announce several calls before starting them, so the last unfinished
+        // marker is routinely one that has not begun — taking it would put
+        // "Running cargo test" on screen before cargo test was launched.
+        let running: MarkerRow | null = null;
+        let pending: MarkerRow | null = null;
+        let done = 0;
+        for (const marker of row.markers) {
+          if (marker.state === "running") running = marker;
+          else if (marker.state === "pending") pending = marker;
+          else done += 1;
+        }
+        const active = running ?? pending;
         if (!active) continue;
         row.running = true;
         row.liveLabel = liveMarkerLabel(active);
         row.liveTool = active.tool;
+        row.liveDone = done;
+        // Only a running call is timed. A pending one has not started; its
+        // stamp is when it was ANNOUNCED, so counting from it would report
+        // queue time as work.
+        row.liveStartedAt = running?.startedAt ?? null;
       }
     }
 

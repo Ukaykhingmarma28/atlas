@@ -711,4 +711,27 @@ describe("applyAgentDelta: a whole turn, in wire order", () => {
     // The full snapshot replaced the streamed result rather than doubling it.
     expect(messages()[3].toolCalls[0].result).toBe("a.ts\nb.ts\n");
   });
+
+  // `startedAt` is the only field on a tool call the wire does not carry — the
+  // session-delta wire is frozen and has no start time, so the store stamps
+  // one. The live elapsed figure on a running block is read from it, which
+  // makes "stamped once, never restarted" the invariant worth pinning.
+  it("stamps a tool call's start on first sight and keeps it across updates", () => {
+    boundTab();
+    const before = Date.now();
+    apply(d("tool_call_upserted", { message_id: "t", tool_call: wireTool("tc1") }));
+    const startedAt = last().toolCalls[0].startedAt;
+    expect(startedAt).toBeGreaterThanOrEqual(before);
+
+    // The completion arrives as an upsert for the SAME id, and `toChatToolCall`
+    // mints a record without the field. If that overwrote the stamp the clock
+    // would reset on every status change the agent reported.
+    apply(
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc1", { status: "completed", result: "ok" }),
+      }),
+    );
+    expect(last().toolCalls[0]).toMatchObject({ status: "completed", startedAt });
+  });
 });

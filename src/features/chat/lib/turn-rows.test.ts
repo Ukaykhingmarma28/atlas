@@ -423,7 +423,7 @@ describe("tool activity in the transcript", () => {
     expect(group?.summary).toBe("Read a file");
   });
 
-  it("shows Editing files for a live edit and clears the live label when settled", () => {
+  it("names the file a live edit is writing, and clears the live label when settled", () => {
     const call = toolCall({
       id: "edit",
       status: "running",
@@ -435,7 +435,7 @@ describe("tool activity in the transcript", () => {
       ...OPTS,
       streaming: true,
     }).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
-    expect(live?.liveLabel).toBe("Editing files");
+    expect(live?.liveLabel).toBe("Editing a.ts");
     const settled = projectRows([message("m1", "", [{ ...call, status: "completed" }])], {
       ...OPTS,
       streaming: false,
@@ -444,6 +444,104 @@ describe("tool activity in the transcript", () => {
       false,
       null,
       "Edited a file",
+    ]);
+  });
+
+  // The regression this whole live line exists to prevent: "Running command"
+  // rendered `bun run build:app` and `ls` as the same sentence, so the one
+  // thing on screen during the longest wait in a turn said nothing about it.
+  it("names the command a live run is executing", () => {
+    const group = projectRows(
+      [
+        message("m1", "", [
+          toolCall({
+            id: "a",
+            status: "running",
+            kind: "execute",
+            toolName: "bun run typecheck",
+            arguments: { command: "bun run typecheck" },
+          }),
+        ]),
+      ],
+      { ...OPTS, streaming: true },
+    ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
+    expect([group?.liveTool, group?.liveLabel]).toEqual(["run", "Running bun run typecheck"]);
+  });
+
+  it("names the running call, not a later one still pending", () => {
+    const group = projectRows(
+      [
+        message("m1", "", [
+          toolCall({
+            id: "a",
+            status: "running",
+            kind: "execute",
+            arguments: { command: "cargo build" },
+          }),
+          toolCall({
+            id: "b",
+            status: "pending",
+            kind: "execute",
+            arguments: { command: "cargo test" },
+          }),
+        ]),
+      ],
+      { ...OPTS, streaming: true },
+    ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
+    // Naming `b` would claim cargo test was running before it had started.
+    expect(group?.liveLabel).toBe("Running cargo build");
+  });
+
+  it("counts finished calls beside the live line and times only the running one", () => {
+    const group = projectRows(
+      [
+        message("m1", "", [
+          toolCall({
+            id: "a",
+            kind: "read",
+            toolName: "read",
+            arguments: { file_path: "/r/a.ts" },
+          }),
+          toolCall({ id: "b", status: "failed", kind: "execute", arguments: { command: "ls" } }),
+          toolCall({
+            id: "c",
+            status: "running",
+            kind: "execute",
+            arguments: { command: "cargo test" },
+            startedAt: 1_700_000_000_000,
+          }),
+          toolCall({ id: "d", status: "pending", kind: "read", toolName: "read" }),
+        ]),
+      ],
+      { ...OPTS, streaming: true },
+    ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
+    // Failed counts as finished; pending does not. The total (4) is deliberately
+    // not reported — it only exists because this fixture arrived all at once.
+    expect(group?.liveDone).toBe(2);
+    expect(group?.liveStartedAt).toBe(1_700_000_000_000);
+  });
+
+  it("has no clock to run when the only unfinished call is pending", () => {
+    const group = projectRows(
+      [
+        message("m1", "", [
+          toolCall({
+            id: "a",
+            status: "pending",
+            kind: "execute",
+            arguments: { command: "cargo test" },
+            startedAt: 1_700_000_000_000,
+          }),
+        ]),
+      ],
+      { ...OPTS, streaming: true },
+    ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
+    // The stamp is when the call was ANNOUNCED. Counting from it would put
+    // queue time on screen as if the command were working.
+    expect([group?.running, group?.liveLabel, group?.liveStartedAt]).toEqual([
+      true,
+      "Running cargo test",
+      null,
     ]);
   });
 });
@@ -478,7 +576,7 @@ describe("the icon a folded block leads with", () => {
     );
     // The block's own icon is the book — a search counts toward "read files",
     // which leads "ran commands" — but the live line wears the magnifier.
-    expect([g?.tool, g?.liveTool, g?.liveLabel]).toEqual(["read", "search", "Searching files"]);
+    expect([g?.tool, g?.liveTool, g?.liveLabel]).toEqual(["read", "search", "Searching for foo"]);
   });
 });
 

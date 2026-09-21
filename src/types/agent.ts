@@ -459,6 +459,20 @@ export interface ToolCallDisplay {
   status: "pending" | "running" | "completed" | "failed";
   duration: number | null;
   /**
+   * Epoch ms this call was FIRST SEEN by the store, stamped client-side.
+   *
+   * Not a wire field: the session-delta wire is frozen, and it carries no start
+   * time (`duration` is only ever `null` — see `toChatToolCall`). A `tool_call`
+   * delta is pushed the moment the agent announces the call, so first-sight is
+   * the start to within one IPC hop, which is what the live elapsed figure on a
+   * running block needs and all it needs.
+   *
+   * Absent on calls restored from a transcript snapshot — a reloaded thread has
+   * no live clock to run, and inventing one would date every historical call to
+   * the moment the tab opened.
+   */
+  startedAt?: number;
+  /**
    * Structural content the agent attached to this call. Absent for almost every
    * call — only ACP agents that report edits as `ToolCallContent::Diff` (rather
    * than as recognisable Write/Edit arguments) populate it.

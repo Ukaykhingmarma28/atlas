@@ -2202,9 +2202,18 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       }
       const found = findToolCall(session, env.tool_call.id);
       if (found) {
+        // `toChatToolCall` mints a fresh record with no `startedAt`; assigning
+        // it over the existing one leaves the stamp from first sight in place,
+        // which is the whole point — the clock must not restart on the
+        // pending→running→completed updates for the same call.
         Object.assign(found.tc, toChatToolCall(env.tool_call));
         return;
       }
+      // First sight of this call: stamp the start the live elapsed figure
+      // counts from. The delta arrives when the agent announces the call, so
+      // this is its start to within one IPC hop.
+      const fresh = toChatToolCall(env.tool_call);
+      fresh.startedAt = Date.now();
       // Collapse consecutive tool calls into ONE assistant message
       // so the thread doesn't render N separate message-item boxes
       // (each with its own padding) for every Find/Read/Bash the
@@ -2217,12 +2226,10 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // message.
       const last = session.messages[session.messages.length - 1];
       if (last && last.role === "assistant" && last.mode === "tool") {
-        last.toolCalls.push(toChatToolCall(env.tool_call));
+        last.toolCalls.push(fresh);
         return;
       }
-      session.messages.push(
-        stampProducingModel(session, makeAssistantToolMessage(toChatToolCall(env.tool_call))),
-      );
+      session.messages.push(stampProducingModel(session, makeAssistantToolMessage(fresh)));
       return;
     }
     case "tool_call_output_chunk": {
