@@ -38,16 +38,40 @@ const VENDOR = path.join(REPO_ROOT, "vendor", "codex");
 /** Source-ish files worth scanning. Excludes lockfiles and binary fixtures. */
 const SCANNED = new Set([".rs", ".toml", ".json", ".md", ".bazel", ".sh", ".py", ".ts"]);
 
-function sourceFiles(dir = VENDOR): string[] {
+function walk(dir = VENDOR): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (e.name === "target" || e.name === "node_modules") continue;
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...sourceFiles(p));
+    if (e.isDirectory()) out.push(...walk(p));
     else if (SCANNED.has(path.extname(e.name))) out.push(p);
   }
   return out;
+}
+
+/**
+ * The vendored tree is ~4k files and every assertion below scans all of it.
+ * Walking it AND re-reading every file once per assertion cost ~18s for this
+ * file, which put individual tests over vitest's 5s default whenever enough
+ * suites ran in parallel — a timeout that looked like a phone-home regression.
+ * The traversal and the file contents are immutable for the run, so both are
+ * read once and shared. Nothing about what is asserted changes.
+ */
+let walked: string[] | null = null;
+function sourceFiles(): string[] {
+  walked ??= walk();
+  return walked;
+}
+
+const fileText = new Map<string, string>();
+function textOf(file: string): string {
+  let text = fileText.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, "utf8");
+    fileText.set(file, text);
+  }
+  return text;
 }
 
 /**
@@ -102,7 +126,7 @@ function codeOnly(file: string, src: string): string {
 function codeMatching(needle: RegExp): string[] {
   return sourceFiles()
     .filter((f) => !isTestCode(f))
-    .filter((f) => needle.test(codeOnly(f, readFileSync(f, "utf8"))))
+    .filter((f) => needle.test(codeOnly(f, textOf(f))))
     .map((f) => path.relative(REPO_ROOT, f));
 }
 
@@ -110,7 +134,7 @@ function codeMatching(needle: RegExp): string[] {
 function filesMatching(needle: RegExp): string[] {
   return sourceFiles()
     .filter((f) => !isTestCode(f))
-    .filter((f) => needle.test(readFileSync(f, "utf8")))
+    .filter((f) => needle.test(textOf(f)))
     .map((f) => path.relative(REPO_ROOT, f));
 }
 
@@ -166,11 +190,13 @@ describe("the ChatGPT analytics client is gone", () => {
   it("sends no HTTP request from the analytics crate", () => {
     // The crate keeps its public surface — core calls ~35 `track_*` methods —
     // but nothing behind them may reach the network. No client, no POST.
-    const analytics = sourceFiles(path.join(VENDOR, "analytics"));
+    // `walk`, not `sourceFiles`: this assertion is scoped to one crate, and
+    // the memoized `sourceFiles()` is the whole vendored tree.
+    const analytics = walk(path.join(VENDOR, "analytics"));
     expect(analytics.length, "analytics crate not found").toBeGreaterThan(3);
 
     const offenders = analytics
-      .filter((f) => /reqwest|\.post\(|\.send\(\)\s*$/m.test(readFileSync(f, "utf8")))
+      .filter((f) => /reqwest|\.post\(|\.send\(\)\s*$/m.test(textOf(f)))
       .map((f) => path.relative(REPO_ROOT, f));
     expect(offenders).toEqual([]);
   });

@@ -132,13 +132,52 @@ function buildAppStatePayload(): AppStatePatchWire {
   };
 }
 
+/** Whether the in-memory state is authoritative enough to write back.
+ *
+ *  `bootstrap_app_state` is the ONLY read of `state.json` in the app's
+ *  lifetime. Until it delivers, every contributing store above holds its EMPTY
+ *  default — and `AppState::apply_patch` REPLACES `workspaces`, `groups` and
+ *  `organisations` wholesale rather than merging them, so persisting that
+ *  payload deletes the user's entire project and org list. The quit flush
+ *  below runs unconditionally, so one undelivered snapshot would cost them
+ *  everything on the way out, through no action of their own.
+ *
+ *  Hence DEFAULT-DENY: writes are off until the boot path has actually
+ *  hydrated from a snapshot. Guarding the rejection alone would have left the
+ *  cases that never settle — a hung IPC, a deadlocked lock, a cancelled boot —
+ *  writing empty state, because the "it failed" branch never runs to suspend
+ *  them. Starting closed covers every not-delivered path by construction.
+ *
+ *  Nothing re-reads `state.json` after boot, so once a session has come up
+ *  without a snapshot the writes stay off for its lifetime; the boot path
+ *  tells the user to restart, which is what recovers the on-disk data. */
+let appStateWritable = false;
+
+/** Flipped on by the boot path: `true` once a snapshot has hydrated the
+ *  stores, `false` when it finally failed (and by tests). See
+ *  `appStateWritable` for why this exists. */
+export function setAppStateWritable(writable: boolean): void {
+  appStateWritable = writable;
+}
+
+/** The single write point, so a future caller can't route around the guard. */
+function persistAppState(label: string): Promise<void> {
+  if (!appStateWritable) {
+    console.warn(
+      `${label} suppressed: no boot snapshot arrived, so the in-memory state is empty rather than the user's`,
+    );
+    return Promise.resolve();
+  }
+  return invoke<void>("save_app_state", { payload: buildAppStatePayload() }).catch((e) => {
+    console.warn(`${label} failed:`, e);
+  });
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 export function scheduleAppStateSave(): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    invoke("save_app_state", { payload: buildAppStatePayload() }).catch((e) =>
-      console.warn("save_app_state failed:", e),
-    );
+    void persistAppState("save_app_state");
   }, 500);
 }
 
@@ -149,9 +188,7 @@ export async function flushAppStateSave(): Promise<void> {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  await invoke("save_app_state", { payload: buildAppStatePayload() }).catch((e) =>
-    console.warn("flushAppStateSave failed:", e),
-  );
+  await persistAppState("flushAppStateSave");
 }
 
 // The project list + active id must be durable on quit/close, so register it
