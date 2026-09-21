@@ -1,4 +1,4 @@
-bunx lint-staged
+bun x lint-staged
 bun run typecheck
 # The contract suites in tests/ (repo invariants: IPC/event wiring, the
 # ratchets, CI coverage, the codex quarantine). About a second, and the thing

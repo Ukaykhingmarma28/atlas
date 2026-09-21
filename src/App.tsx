@@ -14,7 +14,11 @@ import {
 } from "@/features/keybindings/stores/keybindings-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
-import { useAppStore, type AppStateWire } from "@/features/app/stores/app-store";
+import {
+  useAppStore,
+  setAppStateWritable,
+  type AppStateWire,
+} from "@/features/app/stores/app-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import {
   listenAgents,
@@ -399,22 +403,58 @@ export function App() {
       const cliPath = await invoke<string | null>("cli_take_initial_project_path").catch(
         () => null,
       );
-      try {
-        const payload = await invoke<AppStateWire>("bootstrap_app_state");
-        if (cancelled) return;
-        startTransition(() => {
-          useAppStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
-          // Hydration replaces the org list wholesale, so re-apply any server
-          // orgs from a snapshot that may have already arrived — otherwise a
-          // sign-in that landed before this bootstrap would be overwritten.
-          const snap = useAuthStore.getState().snapshot;
-          if (snap.status === "signed-in" && snap.orgs) {
-            useOrgStore.getState().actions.mergeServerOrgs(snap.orgs);
+      // `bootstrap_app_state` is the only read of `state.json` Atlas ever
+      // performs, so a failure here is NOT "start empty and carry on": the
+      // stores keep their empty defaults, `AppState::apply_patch` replaces the
+      // persisted lists wholesale, and the unconditional quit flush would then
+      // write that emptiness over the user's real projects and orgs. Retry
+      // first — a transient IPC hiccup shouldn't cost a session.
+      let snapshot: AppStateWire | null = null;
+      for (let attempt = 1; attempt <= 3 && !snapshot; attempt++) {
+        try {
+          snapshot = await invoke<AppStateWire>("bootstrap_app_state");
+        } catch (e) {
+          console.warn(`bootstrap_app_state attempt ${attempt} failed:`, e);
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
           }
-        });
-      } catch (e) {
-        console.warn("bootstrap_app_state failed; starting empty:", e);
-        if (!cancelled) {
+        }
+      }
+      if (cancelled) return;
+      try {
+        if (snapshot) {
+          const payload = snapshot;
+          startTransition(() => {
+            // The stores are about to hold the user's real state, so writing
+            // them back is safe from here on. Before this line they hold empty
+            // defaults and persistence is denied — see `appStateWritable`.
+            setAppStateWritable(true);
+            useAppStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
+            // Hydration replaces the org list wholesale, so re-apply any server
+            // orgs from a snapshot that may have already arrived — otherwise a
+            // sign-in that landed before this bootstrap would be overwritten.
+            const snap = useAuthStore.getState().snapshot;
+            if (snap.status === "signed-in" && snap.orgs) {
+              useOrgStore.getState().actions.mergeServerOrgs(snap.orgs);
+            }
+          });
+        } else {
+          // Every attempt failed. Come up in an explicitly READ-ONLY session
+          // rather than letting the empty stores overwrite `state.json`: the
+          // user's projects and orgs are still on disk, and a restart is what
+          // brings them back. Without this the app looks merely "empty" and
+          // then makes that permanent on quit.
+          setAppStateWritable(false);
+          logEvent({
+            source: "atlas",
+            kind: "bootstrap-failed",
+            summary: "bootstrap_app_state failed after 3 attempts; app-state writes suspended",
+            status: "failure",
+          });
+          toast.error(
+            "Atlas couldn't load your projects. Your saved data is safe on disk — restart Atlas to get it back.",
+            { duration: Infinity },
+          );
           startTransition(() => {
             useAppStore.getState().actions.hydrate(
               {
@@ -428,7 +468,11 @@ export function App() {
         }
       } finally {
         if (!cancelled) {
-          if (cliPath) {
+          // Only open the CLI path when we actually have a snapshot. Without
+          // one there is no org to own the project, so `addProject` would
+          // refuse anyway — and its "no organisation" toast would bury the
+          // boot-failure one that actually tells the user what to do.
+          if (cliPath && snapshot) {
             logEvent({
               source: "atlas",
               kind: "cli-launch-open-project",
