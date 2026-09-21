@@ -40,6 +40,10 @@
           "libayatana-appindicator3-1",
           "bubblewrap",
           "libglib2.0-0"
+        ],
+        "provides": [
+          "tryatlas",
+          "atl"
         ]
       },
       "rpm": {
@@ -49,6 +53,10 @@
           "libayatana-appindicator-gtk3",
           "bubblewrap",
           "glib2"
+        ],
+        "provides": [
+          "tryatlas",
+          "atl"
         ]
       },
       "appimage": {

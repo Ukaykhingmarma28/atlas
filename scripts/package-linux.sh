@@ -20,10 +20,14 @@ ARCH="${1:-x86_64}"
 case "$ARCH" in
   x86_64|x64|amd64)
     ARCH="x86_64"
+    DEB_ARCH="amd64"
+    RPM_ARCH="x86_64"
     RUST_TARGET="x86_64-unknown-linux-gnu"
     ;;
   aarch64|arm64)
     ARCH="aarch64"
+    DEB_ARCH="arm64"
+    RPM_ARCH="aarch64"
     RUST_TARGET="aarch64-unknown-linux-gnu"
     ;;
   *)
@@ -234,4 +238,156 @@ cp "${TARBALL_PATH}" "${AUR_DIR}/"
 
 
 echo "Created AUR PKGBUILD: ${AUR_DIR}/PKGBUILD"
+
+# 8. Generate conflict-free Debian package (tryatlas_<version>_<arch>.deb)
+echo "Building conflict-free Debian package (tryatlas_${VERSION}_${DEB_ARCH}.deb)..."
+DEB_STAGING="${OUTPUT_DIR}/deb-staging"
+rm -rf "${DEB_STAGING}"
+mkdir -p "${DEB_STAGING}/DEBIAN"
+mkdir -p "${DEB_STAGING}/usr/bin"
+mkdir -p "${DEB_STAGING}/usr/share/applications"
+mkdir -p "${DEB_STAGING}/usr/share/icons"
+mkdir -p "${DEB_STAGING}/usr/share/licenses/tryatlas"
+
+# Payload installs /usr/bin/atl and symlinks /usr/bin/tryatlas (does NOT claim /usr/bin/atlas in package index)
+cp "${STAGE_DIR}/bin/atlas" "${DEB_STAGING}/usr/bin/atl"
+chmod 755 "${DEB_STAGING}/usr/bin/atl"
+ln -sf atl "${DEB_STAGING}/usr/bin/tryatlas"
+
+# Desktop integration & icons
+cp -r "${STAGE_DIR}/share/applications/"* "${DEB_STAGING}/usr/share/applications/"
+cp -r "${STAGE_DIR}/share/icons/"* "${DEB_STAGING}/usr/share/icons/"
+cp -r "${STAGE_DIR}/share/licenses/atlas/"* "${DEB_STAGING}/usr/share/licenses/tryatlas/"
+
+cat <<EOF > "${DEB_STAGING}/DEBIAN/control"
+Package: tryatlas
+Version: ${VERSION}
+Section: devel
+Priority: optional
+Architecture: ${DEB_ARCH}
+Maintainer: Atlas Team <contact@tryatlas.cc>
+Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, bubblewrap, libglib2.0-0
+Provides: tryatlas (= ${VERSION}), atl (= ${VERSION})
+Description: Atlas — agent-first ideation and planning tool
+ Atlas is an agent-first IDE and planning tool for software development.
+EOF
+
+cat <<'EOF' > "${DEB_STAGING}/DEBIAN/postinst"
+#!/bin/sh
+set -e
+if [ ! -e /usr/bin/atlas ]; then
+  ln -sf atl /usr/bin/atlas
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+fi
+EOF
+chmod 755 "${DEB_STAGING}/DEBIAN/postinst"
+
+cat <<'EOF' > "${DEB_STAGING}/DEBIAN/postrm"
+#!/bin/sh
+set -e
+if [ -L /usr/bin/atlas ] && [ "$(readlink /usr/bin/atlas)" = "atl" ]; then
+  rm -f /usr/bin/atlas
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+fi
+EOF
+chmod 755 "${DEB_STAGING}/DEBIAN/postrm"
+
+DEB_FILE="${OUTPUT_DIR}/tryatlas_${VERSION}_${DEB_ARCH}.deb"
+if command -v dpkg-deb >/dev/null 2>&1; then
+  dpkg-deb --build "${DEB_STAGING}" "${DEB_FILE}"
+else
+  echo "2.0" > "${DEB_STAGING}/debian-binary"
+  tar -czf "${DEB_STAGING}/control.tar.gz" -C "${DEB_STAGING}/DEBIAN" .
+  tar -czf "${DEB_STAGING}/data.tar.gz" -C "${DEB_STAGING}" --exclude=DEBIAN --exclude=debian-binary --exclude=control.tar.gz --exclude=data.tar.gz usr
+  ar -rc "${DEB_FILE}" "${DEB_STAGING}/debian-binary" "${DEB_STAGING}/control.tar.gz" "${DEB_STAGING}/data.tar.gz"
+fi
+rm -rf "${DEB_STAGING}"
+echo "Created conflict-free Debian package: ${DEB_FILE}"
+
+# 9. Generate conflict-free RPM package (tryatlas-<version>-1.<arch>.rpm)
+if command -v rpmbuild >/dev/null 2>&1; then
+  echo "Building conflict-free RPM package (tryatlas-${VERSION}-1.${RPM_ARCH}.rpm)..."
+  RPM_TOPDIR="${OUTPUT_DIR}/rpmbuild"
+  rm -rf "${RPM_TOPDIR}"
+  mkdir -p "${RPM_TOPDIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+  cat <<EOF > "${RPM_TOPDIR}/SPECS/tryatlas.spec"
+%global _enable_debug_package 0
+%global debug_package %{nil}
+%global __os_install_post %{nil}
+
+Name:           tryatlas
+Version:        ${VERSION}
+Release:        1%{?dist}
+Summary:        Atlas — agent-first ideation and planning tool
+License:        Apache-2.0
+URL:            https://tryatlas.cc
+Provides:       tryatlas = %{version}-%{release}
+Provides:       atl = %{version}-%{release}
+AutoReqProv:    no
+Requires:       webkit2gtk4.1, gtk3, libayatana-appindicator-gtk3, bubblewrap, glib2
+
+%description
+Atlas is an agent-first IDE and planning tool for software development.
+
+%install
+mkdir -p %{buildroot}/usr/bin
+mkdir -p %{buildroot}/usr/share/applications
+mkdir -p %{buildroot}/usr/share/icons/hicolor
+mkdir -p %{buildroot}/usr/share/licenses/tryatlas
+
+install -m 755 ${STAGE_DIR}/bin/atlas %{buildroot}/usr/bin/atl
+ln -sf atl %{buildroot}/usr/bin/tryatlas
+cp -r ${STAGE_DIR}/share/applications/* %{buildroot}/usr/share/applications/
+cp -r ${STAGE_DIR}/share/icons/hicolor/* %{buildroot}/usr/share/icons/hicolor/
+cp -r ${STAGE_DIR}/share/licenses/atlas/* %{buildroot}/usr/share/licenses/tryatlas/
+
+%post
+if [ ! -e /usr/bin/atlas ]; then
+  ln -sf atl /usr/bin/atlas
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+fi
+
+%postun
+if [ -L /usr/bin/atlas ] && [ "\$(readlink /usr/bin/atlas)" = "atl" ]; then
+  rm -f /usr/bin/atlas
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+fi
+
+%files
+/usr/bin/atl
+/usr/bin/tryatlas
+/usr/share/applications/*.desktop
+/usr/share/icons/hicolor/*/apps/atlas.png
+/usr/share/licenses/tryatlas/*
+EOF
+
+  rpmbuild --define "_topdir ${RPM_TOPDIR}" -bb "${RPM_TOPDIR}/SPECS/tryatlas.spec"
+  cp "${RPM_TOPDIR}"/RPMS/*/*.rpm "${OUTPUT_DIR}/"
+  rm -rf "${RPM_TOPDIR}"
+  echo "Created conflict-free RPM package in ${OUTPUT_DIR}"
+else
+  echo "rpmbuild not available, skipping RPM package generation"
+fi
+
 echo "Packaging complete in ${OUTPUT_DIR}"
