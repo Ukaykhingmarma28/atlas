@@ -53,6 +53,7 @@ impl CliLaunchState {
 /// when:
 ///   - exactly one positional arg after the executable
 ///   - the arg is an existing directory
+///
 /// Otherwise `None` — the app boots into its normal hydrated state.
 ///
 /// We intentionally don't pull in `clap` for one positional arg.
