@@ -12,7 +12,7 @@
  * key token — e.g. `cmd+shift+b`, `alt+;`, `cmd+alt+space`, `shift+tab`.
  */
 
-import { isWindows } from "@/lib/platform";
+import { isLinux, isWindows } from "@/lib/platform";
 
 export interface Combo {
   /** `KeyboardEvent.code` value, e.g. "KeyB", "Digit1", "BracketLeft", "Space". */
@@ -115,6 +115,8 @@ const MODIFIER_FLAG: Record<string, keyof Omit<Combo, "code">> = {
   cmd: "meta",
   meta: "meta",
   command: "meta",
+  super: "meta",
+  win: "meta",
   ctrl: "ctrl",
   control: "ctrl",
   alt: "alt",
@@ -218,13 +220,13 @@ function matchCode(e: KeyboardEvent, code: string): boolean {
 }
 
 /** Keycaps for display — modifiers in the macOS order ⌃ ⌥ ⇧ ⌘, then the key.
- *  Windows spells them out in its own Ctrl, Alt, Shift order, and a `cmd`
- *  combo reads as Ctrl there because that is what `matchesCombo` accepts. */
+ *  Windows and Linux spell them out in Ctrl, Alt, Shift order (with Win/Super for meta),
+ *  and a `cmd` combo reads as Ctrl there because that is what `matchesCombo` accepts. */
 export function displayKeys(c: Combo): string[] {
   const keys: string[] = [];
-  if (isWindows) {
+  if (isWindows || isLinux) {
     if (c.ctrl) keys.push("Ctrl");
-    if (c.meta) keys.push(c.ctrl ? "Win" : "Ctrl");
+    if (c.meta) keys.push(c.ctrl ? (isLinux ? "Super" : "Win") : "Ctrl");
     if (c.alt) keys.push("Alt");
     if (c.shift) keys.push("Shift");
     keys.push(displayKey(c));
@@ -251,7 +253,7 @@ function displayKey(c: Combo): string {
 
 /** Compact single-string label ("⌘⇧B", "Ctrl+Shift+B") for `title=` tooltips. */
 export function displayLabel(c: Combo): string {
-  return displayKeys(c).join(isWindows ? "+" : "");
+  return displayKeys(c).join(isWindows || isLinux ? "+" : "");
 }
 
 /** Split a legacy glyph string ("⌘⇧F", "⌥Space") into keycaps: every modifier

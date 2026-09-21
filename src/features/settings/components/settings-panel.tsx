@@ -39,7 +39,7 @@ import { setEnabled as setTelemetryEnabled } from "@/features/telemetry/posthog-
 import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { updater } from "@/features/updater/lib/updater-api";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
-import { isWindows } from "@/lib/platform";
+import { isLinux, isWindows } from "@/lib/platform";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -678,7 +678,9 @@ function UpdatesSettings() {
         description={
           isWindows
             ? "Check for a newer version in the background and download the installer automatically. Windows asks for permission before it is installed. Turn off to never check or download."
-            : "Check for a newer version in the background and download it automatically. Updates are Apple-signed and notarized; Atlas verifies the signature before installing. Turn off to never check or download."
+            : isLinux
+              ? "Check for a newer version in the background. On Linux, update via your package manager (AUR, deb, rpm) or download the latest release asset. Turn off to never check."
+              : "Check for a newer version in the background and download it automatically. Updates are Apple-signed and notarized; Atlas verifies the signature before installing. Turn off to never check or download."
         }
       >
         <Toggle

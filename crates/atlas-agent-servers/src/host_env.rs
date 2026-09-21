@@ -71,7 +71,18 @@ fn enrich_path() {
 /// hardcoded extras already applied in `apply_cheap_path_extras`.
 #[cfg(unix)]
 fn merge_login_shell_path() {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "macos") {
+                "/bin/zsh".to_string()
+            } else if std::path::Path::new("/bin/bash").exists() {
+                "/bin/bash".to_string()
+            } else {
+                "/bin/sh".to_string()
+            }
+        });
 
     // `probe_shell` runs `-lic` — login AND interactive, so both
     // `.zprofile` (nvm/fnm) and `.zshrc` (opencode, most curl-installers)

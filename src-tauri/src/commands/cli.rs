@@ -53,6 +53,7 @@ impl CliLaunchState {
 /// when:
 ///   - exactly one positional arg after the executable
 ///   - the arg is an existing directory
+///
 /// Otherwise `None` — the app boots into its normal hydrated state.
 ///
 /// We intentionally don't pull in `clap` for one positional arg.
@@ -108,7 +109,94 @@ pub struct CliStatus {
 }
 
 fn helper_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas"))
+    dirs::home_dir().map(|h| {
+        if cfg!(target_os = "linux") {
+            h.join(".local").join("bin").join("atl")
+        } else {
+            h.join(".local").join("bin").join("atlas")
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn is_atlas_binary(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    if !is_elf_binary(path) {
+        return false;
+    }
+    if let Ok(mut f) = std::fs::File::open(path) {
+        const NEEDLE: &[u8] = b"dev.atlas.ide";
+        const CHUNK_SIZE: usize = 64 * 1024;
+        const MAX_SCAN: usize = 32 * 1024 * 1024;
+
+        let mut buf = vec![0u8; CHUNK_SIZE + NEEDLE.len() - 1];
+        let mut carry_len = 0;
+        let mut total_read = 0;
+
+        while total_read < MAX_SCAN {
+            let to_read = (MAX_SCAN - total_read).min(CHUNK_SIZE);
+            let n = match f.read(&mut buf[carry_len..carry_len + to_read]) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            };
+            total_read += n;
+            let valid_len = carry_len + n;
+            if buf[..valid_len].windows(NEEDLE.len()).any(|w| w == NEEDLE) {
+                return true;
+            }
+            carry_len = valid_len.min(NEEDLE.len() - 1);
+            buf.copy_within(valid_len - carry_len..valid_len, 0);
+        }
+    }
+    false
+}
+
+fn system_bin_path() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for candidate in [
+            "/usr/bin/atl",
+            "/usr/local/bin/atl",
+            "/usr/bin/tryatlas",
+            "/usr/local/bin/tryatlas",
+            "/usr/bin/atlas",
+            "/usr/local/bin/atlas",
+            "/opt/atlas/bin/atlas",
+        ] {
+            let p = PathBuf::from(candidate);
+            if p.is_file() {
+                if let Ok(meta) = p.metadata() {
+                    if meta.permissions().mode() & 0o111 != 0 {
+                        if candidate.ends_with("/atlas") && !is_atlas_binary(&p) {
+                            continue;
+                        }
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn is_elf_binary(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut magic = [0u8; 4];
+        if f.read_exact(&mut magic).is_ok() {
+            return magic == [0x7f, b'E', b'L', b'F'];
+        }
+    }
+    false
+}
+
+#[cfg(not(unix))]
+fn is_elf_binary(_path: &std::path::Path) -> bool {
+    false
 }
 
 fn read_installed_version(path: &std::path::Path) -> Option<String> {
@@ -117,12 +205,51 @@ fn read_installed_version(path: &std::path::Path) -> Option<String> {
         .find_map(|l| l.strip_prefix("# atlas-cli-version: ").map(|v| v.trim().to_string()))
 }
 
+fn read_installed_appimage(path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    raw.lines().find_map(|l| {
+        l.strip_prefix("# atlas-appimage-path: ")
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    })
+}
+
 #[tauri::command]
 pub fn cli_status() -> CliStatus {
-    let path = helper_path();
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    if let Some(sys) = system_bin_path() {
+        return CliStatus {
+            installed: true,
+            path: Some(sys.to_string_lossy().into_owned()),
+            installed_version: Some(current_version.clone()),
+            current_version,
+        };
+    }
+    let path = helper_path();
+    // If ~/.local/bin/atlas is a real compiled ELF binary, report it as installed
+    if let Some(p) = path.as_deref() {
+        if p.exists() && is_elf_binary(p) {
+            return CliStatus {
+                installed: true,
+                path: Some(p.to_string_lossy().into_owned()),
+                installed_version: Some(current_version.clone()),
+                current_version,
+            };
+        }
+    }
     let (installed, installed_version) = match path.as_deref() {
-        Some(p) if p.exists() => (true, read_installed_version(p)),
+        Some(p) if p.exists() => {
+            let ver = read_installed_version(p);
+            if let Some(target) = read_installed_appimage(p) {
+                if !std::path::Path::new(&target).is_file() {
+                    (true, None)
+                } else {
+                    (true, ver)
+                }
+            } else {
+                (true, ver)
+            }
+        }
         _ => (false, None),
     };
     CliStatus {
@@ -148,6 +275,53 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
         return Err("the atlas CLI helper is not available on Windows yet".to_string());
     }
     let version = env!("CARGO_PKG_VERSION").to_string();
+
+    // If Atlas is already installed system-wide (e.g. /usr/bin/atlas on Linux),
+    // prevent ~/.local/bin/atlas from shadowing it, and clean up any old helper.
+    if let Some(sys) = system_bin_path() {
+        if let Some(helper) = helper_path() {
+            if helper.exists() {
+                if let Ok(content) = std::fs::read_to_string(&helper) {
+                    if content.contains("atlas-cli-version") || content.contains("open -na") {
+                        let _ = std::fs::remove_file(&helper);
+                    }
+                }
+            }
+        }
+        if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
+            if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
+                if meta.file_type().is_symlink() {
+                    let is_broken = !atlas_link.exists();
+                    let points_to_atl = std::fs::read_link(&atlas_link)
+                        .map(|target| target == std::path::Path::new("atl") || target.ends_with("atl"))
+                        .unwrap_or(false);
+                    if is_broken || points_to_atl {
+                        let _ = std::fs::remove_file(&atlas_link);
+                    }
+                }
+            }
+        }
+        return Ok(CliStatus {
+            installed: true,
+            path: Some(sys.to_string_lossy().into_owned()),
+            installed_version: Some(version.clone()),
+            current_version: version,
+        });
+    }
+
+    // If ~/.local/bin/atlas is an ELF binary (e.g. tarball installed to ~/.local),
+    // never overwrite the real binary with a shell script helper!
+    if let Some(helper) = helper_path() {
+        if helper.exists() && is_elf_binary(&helper) {
+            return Ok(CliStatus {
+                installed: true,
+                path: Some(helper.to_string_lossy().into_owned()),
+                installed_version: Some(version.clone()),
+                current_version: version,
+            });
+        }
+    }
+
     let path = helper_path().ok_or_else(|| "could not resolve $HOME".to_string())?;
 
     tokio::task::spawn_blocking({
@@ -158,7 +332,10 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
                 std::fs::create_dir_all(dir)
                     .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
             }
-            let body = HELPER_TEMPLATE.replace("{{VERSION}}", &version);
+            let appimage_path = std::env::var("APPIMAGE").unwrap_or_default();
+            let body = HELPER_TEMPLATE
+                .replace("{{VERSION}}", &version)
+                .replace("{{APPIMAGE_PATH}}", &appimage_path);
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, body).map_err(|e| format!("write tmp: {e}"))?;
 
@@ -175,6 +352,25 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
 
             std::fs::rename(&tmp, &path)
                 .map_err(|e| format!("rename to {}: {e}", path.display()))?;
+
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
+                    let usr_atlas = std::path::Path::new("/usr/bin/atlas");
+                    let safe_to_link = !usr_atlas.exists() || is_atlas_binary(usr_atlas);
+                    if safe_to_link {
+                        if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
+                            if meta.file_type().is_symlink() && !atlas_link.exists() {
+                                let _ = std::fs::remove_file(&atlas_link);
+                                let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                            }
+                        } else {
+                            let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                        }
+                    }
+                }
+            }
+
             Ok(())
         }
     })

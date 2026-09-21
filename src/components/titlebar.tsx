@@ -43,7 +43,7 @@ import type { Binding, CaptureHealth } from "@/features/capture/types";
 import { activeProjectId } from "@/features/projects/lib/active-project";
 import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { isDev } from "@/lib/env";
-import { isMac, isWindows } from "@/lib/platform";
+import { isLinux, isMac, isWindows } from "@/lib/platform";
 
 function useTauriWindow() {
   const windowRef = useRef<TauriWindow | null>(null);
@@ -100,7 +100,7 @@ export function Titlebar() {
   // sits under the lights and carries that gap itself, so the titlebar reclaims
   // the space. Fullscreen hides the lights entirely. (Unpinned overlay mode
   // doesn't occupy flow width, so it never affects this.) Only macOS has
-  // traffic lights on the left; Windows gets `WindowControls` on the right.
+  // traffic lights on the left; Windows and Linux get `WindowControls` on the right.
   const sidebarPinned = useProjectStore.use.sidebarPinned();
   const sidebarOpen = useProjectStore.use.sidebarOpen();
   const dockedSidebar = sidebarPinned && sidebarOpen;
@@ -136,7 +136,7 @@ export function Titlebar() {
 
   // macOS double-click-to-zoom. Tauri's `toggleMaximize()` doesn't map to
   // AppKit's zoom, so we call a native `performZoom:` command instead. It does
-  // map to maximize on Windows, which is the convention there.
+  // map to maximize on Windows and Linux, which is the convention there.
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!isTitlebarSurface(e.target)) return;
     if (isMac) void invoke("window_zoom").catch(() => {});
@@ -149,7 +149,7 @@ export function Titlebar() {
       onDoubleClick={handleDoubleClick}
       className={cn(
         "relative z-titlebar flex h-titlebar select-none items-center bg-[var(--background)] border-b border-border",
-        isWindows ? "pr-0" : "pr-3",
+        isWindows || isLinux ? "pr-0" : "pr-3",
         isFullscreen || dockedSidebar || !isMac ? "pl-3" : "pl-[72px]",
       )}
     >
@@ -181,15 +181,16 @@ export function Titlebar() {
         </div>
       )}
 
-      {isWindows && <WindowControls />}
+      {(isWindows || isLinux) && <WindowControls />}
     </div>
   );
 }
 
 /**
- * Minimize / maximize / close. Windows only: the window there is undecorated
- * (`src-tauri/tauri.windows.conf.json`), so this titlebar is the only chrome,
- * whereas macOS keeps its native traffic lights in the overlay title bar.
+ * Minimize / maximize / close. Windows and Linux: the window there is undecorated
+ * (`src-tauri/tauri.windows.conf.json`, `src-tauri/tauri.linux.conf.json`), so this
+ * titlebar is the only chrome, whereas macOS keeps its native traffic lights in
+ * the overlay title bar.
  */
 function WindowControls() {
   const windowRef = useRef<TauriWindow | null>(null);

@@ -481,9 +481,8 @@ pub async fn fs_duplicate(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Open a folder in the system terminal. macOS only for now —
-/// returns `Err("unsupported")` on other platforms so the frontend
-/// can show a sensible toast.
+/// Open a folder in the system terminal.
+/// Supported on macOS and Linux.
 #[tauri::command]
 pub async fn fs_open_in_terminal(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -496,7 +495,48 @@ pub async fn fs_open_in_terminal(path: String) -> Result<(), String> {
                 .map(|_| ())
                 .map_err(|e| format!("Failed to open Terminal: {e}"))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        {
+            use std::process::Command;
+            let target_path = std::path::Path::new(&path);
+            let target_dir = if target_path.is_dir() {
+                target_path
+            } else if let Some(parent) = target_path.parent() {
+                parent
+            } else {
+                target_path
+            };
+            let dir_str = target_dir.to_string_lossy();
+
+            // Modern desktop spec, common desktop terminals, and popular standalone emulators.
+            let terminals: &[(&str, &[&str])] = &[
+                ("xdg-terminal-exec", &[]),
+                ("x-terminal-emulator", &[]),
+                ("ptyxis", &["--working-directory", &dir_str]),
+                ("gnome-terminal", &["--working-directory", &dir_str]),
+                ("kitty", &["--directory", &dir_str]),
+                ("foot", &["--working-directory", &dir_str]),
+                ("alacritty", &["--working-directory", &dir_str]),
+                ("ghostty", &["--working-directory", &dir_str]),
+                ("wezterm", &["start", "--cwd", &dir_str]),
+                ("konsole", &["--workdir", &dir_str]),
+                ("xfce4-terminal", &["--working-directory", &dir_str]),
+                ("xterm", &[]),
+            ];
+
+            for (term, args) in terminals {
+                if Command::new(term)
+                    .args(*args)
+                    .current_dir(target_dir)
+                    .spawn()
+                    .is_ok()
+                {
+                    return Ok(());
+                }
+            }
+            Err("No supported terminal emulator found".to_string())
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
             let _ = path;
             Err::<(), String>("unsupported".to_string())
