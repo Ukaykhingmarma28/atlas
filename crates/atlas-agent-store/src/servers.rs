@@ -349,10 +349,16 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                 // *real* prefix; hand it a symlinked one (a relocated
                 // `~/Library`, `/tmp` on macOS) and every entry comes back as
                 // `../../real/path/node_modules/…`, which nothing below can
-                // match against the tree. Resolve once, up front.
-                let install_dir = tokio::fs::canonicalize(&install_dir)
-                    .await
-                    .with_context(|| format!("resolving {install_dir:?}"))?;
+                // match against the tree. Resolve once, up front — and keep
+                // the plain spelling of the result, because npm and Node both
+                // choke on the `\\?\`-verbatim form Windows canonicalizes to
+                // (#277). Every consumer below, the filesystem checks
+                // included, gets the same plain path.
+                let install_dir = plain_process_path(
+                    tokio::fs::canonicalize(&install_dir)
+                        .await
+                        .with_context(|| format!("resolving {install_dir:?}"))?,
+                );
 
                 // Node first, and through the status-aware path: this is the
                 // one step that can take minutes on a fresh machine, and every
@@ -605,6 +611,41 @@ pub fn npx_install_dir(registry_dir: &std::path::Path, id: &str) -> PathBuf {
     registry_dir.join("npx").join(sanitize_path_component(id))
 }
 
+/// The plain spelling of a canonicalized path, safe to hand to a child process.
+///
+/// `canonicalize` on Windows returns the `\\?\`-verbatim spelling, and the two
+/// processes this module spawns cannot digest it: npm's Arborist recurses to a
+/// stack overflow when it is the `--prefix` (`RangeError: Maximum call stack
+/// size exceeded at resolve`), and Node fails with `EISDIR: lstat 'C:'` when it
+/// is the script argument — both reproduced in #277, where a clean-install
+/// Codex ACP agent could not start at all. Stripping the prefix keeps the
+/// symlink resolution `canonicalize` did (the path still points at the same
+/// directory); only the spelling changes.
+///
+/// Only the two spellings that have a plain equivalent are stripped:
+/// `\\?\C:\...` (drive) and `\\?\UNC\server\share` (→ `\\server\share`).
+/// Device paths (`\\?\Volume{...}`) have no plain spelling and are returned
+/// unchanged, as is anything that does not carry the prefix. Not gated on
+/// `cfg!(windows)`: POSIX `canonicalize` never produces the prefix, and an
+/// unconditional strip keeps this testable on the Linux CI runners — the same
+/// call the app makes on Windows.
+fn plain_process_path(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    let Some(rest) = text.strip_prefix(r"\\?\") else {
+        return path;
+    };
+    if let Some(share) = rest.strip_prefix(r"UNC\") {
+        return PathBuf::from(format!(r"\\{share}"));
+    }
+    // `C:\...`: a drive letter, a colon, and a separator. The separator matters
+    // — bare `C:` means "the current directory on C", a different location.
+    let bytes = rest.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+        return PathBuf::from(rest);
+    }
+    path
+}
+
 async fn is_dir(path: &std::path::Path) -> bool {
     tokio::fs::metadata(path)
         .await
@@ -617,6 +658,48 @@ mod tests {
     use super::*;
 
     const PACKAGE: &str = "@scope/agent";
+
+    #[test]
+    fn plain_process_path_drops_windows_verbatim_prefixes() {
+        // A disk path canonicalized on Windows comes back `\\?\C:\...`; npm's
+        // Arborist recurses to a stack overflow on it as `--prefix`, and Node
+        // fails `lstat 'C:'` when it is the script argument (#277).
+        assert_eq!(
+            plain_process_path(PathBuf::from(
+                r"\\?\C:\Users\u\AppData\Roaming\dev.atlas.ide\external-agents\registry\npx\codex-acp"
+            )),
+            PathBuf::from(
+                r"C:\Users\u\AppData\Roaming\dev.atlas.ide\external-agents\registry\npx\codex-acp"
+            )
+        );
+        // The UNC spelling must come back as `\\server\share`, not
+        // `UNC\server\share`.
+        assert_eq!(
+            plain_process_path(PathBuf::from(r"\\?\UNC\server\share\agent")),
+            PathBuf::from(r"\\server\share\agent")
+        );
+    }
+
+    #[test]
+    fn plain_process_path_keeps_every_plain_spelling_untouched() {
+        for plain in [
+            r"C:\Users\u\AppData\Roaming\dev.atlas.ide",
+            "/home/u/.local/share/dev.atlas.ide/npx/codex-acp",
+            // The marker only counts at the very front: a POSIX path with a
+            // literal backslash component stays exactly as it is.
+            r"/tmp/\\?\inside",
+            // A device path has no plain spelling; keep the verbatim one.
+            r"\\?\Volume{12345678-1234-1234-1234-123456789abc}\agent",
+            // Nothing after the prefix to hand back.
+            r"\\?\",
+        ] {
+            assert_eq!(
+                plain_process_path(PathBuf::from(plain)),
+                PathBuf::from(plain),
+                "changed {plain:?}"
+            );
+        }
+    }
 
     #[test]
     fn target_cmd_accepts_dot_relative_paths_and_bare_names() {
