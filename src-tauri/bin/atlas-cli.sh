@@ -69,10 +69,12 @@ if [ -z "$app" ] && command -v mdfind >/dev/null 2>&1; then
 fi
 if [ -z "$app" ]; then
   for dir in "/usr/bin" "/usr/local/bin" "/opt/atlas/bin"; do
-    if [ -x "$dir/atlas" ]; then
-      app="$dir/atlas"
-      break
-    fi
+    for name in "atl" "tryatlas" "atlas"; do
+      if [ -x "$dir/$name" ]; then
+        app="$dir/$name"
+        break 2
+      fi
+    done
   done
 fi
 if [ -z "$app" ] && [ -n "{{APPIMAGE_PATH}}" ] && [ -x "{{APPIMAGE_PATH}}" ]; then
@@ -91,7 +93,7 @@ fi
 if [ "$(uname -s)" = "Darwin" ]; then
   exec open -na "$app" --args "$abs"
 else
-  # Ensure we never recursively invoke this script itself if installed as ~/.local/bin/atlas
+  # Ensure we never recursively invoke this script itself if installed as ~/.local/bin/atl or ~/.local/bin/atlas
   if [ -z "$app" ]; then
     this_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     while IFS= read -r candidate; do
@@ -101,11 +103,11 @@ else
         app="$candidate"
         break
       fi
-    done < <(type -ap atlas 2>/dev/null || true)
+    done < <(type -ap atl tryatlas atlas 2>/dev/null || true)
   fi
 
   if [ -z "$app" ]; then
-    echo "atlas: could not find Atlas installation (searched /usr/bin, /usr/local/bin, /opt/atlas/bin, and PATH)" >&2
+    echo "atlas: could not find Atlas installation (searched /usr/bin, /usr/local/bin, /opt/atlas/bin, and PATH for atl, tryatlas, or atlas)" >&2
     exit 1
   fi
   exec "$app" "$abs"

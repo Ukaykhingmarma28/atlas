@@ -108,18 +108,50 @@ pub struct CliStatus {
 }
 
 fn helper_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas"))
+    dirs::home_dir().map(|h| {
+        if cfg!(target_os = "linux") {
+            h.join(".local").join("bin").join("atl")
+        } else {
+            h.join(".local").join("bin").join("atlas")
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn is_atlas_binary(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    if !is_elf_binary(path) {
+        return false;
+    }
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut buffer = Vec::with_capacity(65536);
+        let _ = (&mut f).take(1024 * 1024).read_to_end(&mut buffer);
+        let needle = b"dev.atlas.ide";
+        return buffer.windows(needle.len()).any(|w| w == needle);
+    }
+    false
 }
 
 fn system_bin_path() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::PermissionsExt;
-        for candidate in ["/usr/bin/atlas", "/usr/local/bin/atlas", "/opt/atlas/bin/atlas"] {
+        for candidate in [
+            "/usr/bin/atl",
+            "/usr/local/bin/atl",
+            "/usr/bin/tryatlas",
+            "/usr/local/bin/tryatlas",
+            "/usr/bin/atlas",
+            "/usr/local/bin/atlas",
+            "/opt/atlas/bin/atlas",
+        ] {
             let p = PathBuf::from(candidate);
             if p.is_file() {
                 if let Ok(meta) = p.metadata() {
                     if meta.permissions().mode() & 0o111 != 0 {
+                        if candidate.ends_with("/atlas") && !is_atlas_binary(&p) {
+                            continue;
+                        }
                         return Some(p);
                     }
                 }
@@ -286,6 +318,18 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
 
             std::fs::rename(&tmp, &path)
                 .map_err(|e| format!("rename to {}: {e}", path.display()))?;
+
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
+                    let usr_atlas = std::path::Path::new("/usr/bin/atlas");
+                    let safe_to_link = !usr_atlas.exists() || is_atlas_binary(usr_atlas);
+                    if safe_to_link && !atlas_link.exists() {
+                        let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                    }
+                }
+            }
+
             Ok(())
         }
     })

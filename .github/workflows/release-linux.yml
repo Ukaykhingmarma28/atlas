@@ -134,8 +134,8 @@ jobs:
             pacman -Syu --noconfirm base-devel pacman-contrib zstd
             useradd -m builder
             chown -R builder:builder /workspace/dist/release-linux
-            su builder -c "cd /workspace/dist/release-linux/aur-atlas-bin && makepkg -f --nodeps"
-            cp /workspace/dist/release-linux/aur-atlas-bin/*.pkg.tar.zst /workspace/dist/release-linux/
+            su builder -c "cd /workspace/dist/release-linux/aur-tryatlas-bin && makepkg -f --nodeps"
+            cp /workspace/dist/release-linux/aur-tryatlas-bin/*.pkg.tar.zst /workspace/dist/release-linux/
             chmod -R a+rw /workspace/dist/release-linux
           '
 
@@ -152,7 +152,7 @@ jobs:
           # Copy Arch Linux package
           cp dist/release-linux/*.pkg.tar.zst dist/artifacts/
           # Copy AUR PKGBUILD for convenience
-          cp dist/release-linux/aur-atlas-bin/PKGBUILD dist/artifacts/PKGBUILD-atlas-bin
+          cp dist/release-linux/aur-tryatlas-bin/PKGBUILD dist/artifacts/PKGBUILD-tryatlas-bin
 
           cd dist/artifacts
           rm -f SHA256SUMS.txt

@@ -81,9 +81,11 @@ mkdir -p "${STAGE_DIR}/bin"
 mkdir -p "${STAGE_DIR}/share/applications"
 mkdir -p "${STAGE_DIR}/share/licenses/atlas"
 
-# 1. Copy binary
+# 1. Copy binary and create atl/tryatlas symlinks
 cp "$ATLAS_BIN" "${STAGE_DIR}/bin/atlas"
 chmod 755 "${STAGE_DIR}/bin/atlas"
+ln -sf atlas "${STAGE_DIR}/bin/atl"
+ln -sf atlas "${STAGE_DIR}/bin/tryatlas"
 
 # 2. Copy desktop file
 cp "src-tauri/resources/dev.atlas.ide.desktop" "${STAGE_DIR}/share/applications/"
@@ -118,9 +120,15 @@ if [ "$EUID" -ne 0 ] && [ "$PREFIX" = "/usr/local" ]; then
 fi
 echo "Installing Atlas to ${PREFIX}..."
 install -d "${PREFIX}/bin" "${PREFIX}/share/applications" "${PREFIX}/share/licenses/atlas"
-install -m 755 bin/atlas "${PREFIX}/bin/atlas"
+install -m 755 bin/atlas "${PREFIX}/bin/atl"
+ln -sf atl "${PREFIX}/bin/tryatlas"
+if [ ! -e "${PREFIX}/bin/atlas" ]; then
+  ln -sf atl "${PREFIX}/bin/atlas"
+fi
 install -m 644 share/applications/dev.atlas.ide.desktop "${PREFIX}/share/applications/dev.atlas.ide.desktop"
 ln -sf dev.atlas.ide.desktop "${PREFIX}/share/applications/atlas.desktop" || cp share/applications/dev.atlas.ide.desktop "${PREFIX}/share/applications/atlas.desktop"
+ln -sf dev.atlas.ide.desktop "${PREFIX}/share/applications/atl.desktop" || true
+ln -sf dev.atlas.ide.desktop "${PREFIX}/share/applications/tryatlas.desktop" || true
 cp -r share/icons "${PREFIX}/share/"
 cp -r share/licenses/atlas/* "${PREFIX}/share/licenses/atlas/"
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -129,7 +137,7 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q -t "${PREFIX}/share/icons/hicolor" 2>/dev/null || true
 fi
-echo "Atlas installed successfully to ${PREFIX}!"
+echo "Atlas installed successfully to ${PREFIX}! (run 'atl' or 'tryatlas')"
 EOF
 chmod 755 "${STAGE_DIR}/install.sh"
 
@@ -141,9 +149,15 @@ if [ "$EUID" -ne 0 ] && [ "$PREFIX" = "/usr/local" ]; then
   PREFIX="${HOME}/.local"
 fi
 echo "Uninstalling Atlas from ${PREFIX}..."
-rm -f "${PREFIX}/bin/atlas"
+rm -f "${PREFIX}/bin/atl"
+rm -f "${PREFIX}/bin/tryatlas"
+if [ -L "${PREFIX}/bin/atlas" ]; then
+  rm -f "${PREFIX}/bin/atlas"
+fi
 rm -f "${PREFIX}/share/applications/dev.atlas.ide.desktop"
 rm -f "${PREFIX}/share/applications/atlas.desktop"
+rm -f "${PREFIX}/share/applications/atl.desktop"
+rm -f "${PREFIX}/share/applications/tryatlas.desktop"
 for size in 32 64 128 256 512; do
   rm -f "${PREFIX}/share/icons/hicolor/${size}x${size}/apps/atlas.png"
 done
@@ -169,13 +183,13 @@ TARBALL_SHA256="$(sha256sum "${TARBALL_PATH}" | awk '{print $1}')"
 echo "Tarball SHA256: ${TARBALL_SHA256}"
 
 # 7. Generate AUR PKGBUILD
-AUR_DIR="${OUTPUT_DIR}/aur-atlas-bin"
+AUR_DIR="${OUTPUT_DIR}/aur-tryatlas-bin"
 mkdir -p "${AUR_DIR}"
 REPO="${GITHUB_REPOSITORY:-pacifio/atlas}"
 
 cat <<EOF > "${AUR_DIR}/PKGBUILD"
 # Maintainer: Atlas Team <contact@tryatlas.cc>
-pkgname=atlas-bin
+pkgname=tryatlas-bin
 _pkgname=atlas
 pkgver=${VERSION}
 pkgrel=1
@@ -193,16 +207,17 @@ depends=(
 optdepends=(
     'xdg-terminal-exec: Open folders in default terminal'
 )
-provides=("atlas=\${pkgver}")
-conflicts=('atlas')
+provides=("tryatlas=\${pkgver}" "atl=\${pkgver}")
 source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/${REPO}/releases/download/${RELEASE_TAG}/atlas-\${pkgver}-linux-x86_64.tar.gz")
 sha256sums_x86_64=('${TARBALL_SHA256}')
 
 package() {
     cd "\${srcdir}/atlas-\${pkgver}"
-    install -Dm755 bin/atlas "\${pkgdir}/usr/bin/atlas"
+    install -Dm755 bin/atlas "\${pkgdir}/usr/bin/atl"
+    ln -sf atl "\${pkgdir}/usr/bin/tryatlas"
     install -Dm644 share/applications/dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/dev.atlas.ide.desktop"
-    ln -sf dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/atlas.desktop"
+    ln -sf dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/tryatlas.desktop"
+    ln -sf dev.atlas.ide.desktop "\${pkgdir}/usr/share/applications/atl.desktop"
     for size in 32 64 128 256 512; do
         if [ -f "share/icons/hicolor/\${size}x\${size}/apps/atlas.png" ]; then
             install -Dm644 "share/icons/hicolor/\${size}x\${size}/apps/atlas.png" \\
