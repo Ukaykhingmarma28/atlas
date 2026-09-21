@@ -772,9 +772,7 @@ export class TerminalSession {
     }
     // Relaunch an interactive root shell with Atlas's zsh integration so blocks
     // / prompt markers keep working as root. $HOME is expanded by the root zsh.
-    // Only applied when zsh integration is active (reg.zshDir); non-zsh shells
-    // (e.g. bash on Linux) pass the command through unchanged.
-    if (SUDO_SHELL_RE.test(trimmed) && Boolean(reg.zshDir)) {
+    if (SUDO_SHELL_RE.test(trimmed) && reg.zshDir) {
       this.writeText(
         `sudo zsh -c 'ZDOTDIR="${reg.zshDir}" ATLAS_USER_ZDOTDIR="$HOME" exec zsh -i'\n`,
       );

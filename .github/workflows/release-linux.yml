@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'alpha-*'
-      - 'v*'
-      - 'exp-*'
   workflow_dispatch:
     inputs:
       version:
@@ -41,9 +39,12 @@ jobs:
 
       - name: Extract release version
         id: meta
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            RAW_VER="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            RAW_VER="$INPUT_VERSION"
           elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             RAW_VER="${GITHUB_REF_NAME}"
           else
@@ -54,8 +55,8 @@ jobs:
           VERSION="${VERSION#exp-}"
           VERSION="${VERSION#v}"
 
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
           elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
@@ -165,11 +166,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Atlas ${{ steps.meta.outputs.version }}
           files: |
             dist/artifacts/*
-          generate_release_notes: true
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

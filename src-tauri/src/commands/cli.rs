@@ -152,6 +152,15 @@ fn read_installed_version(path: &std::path::Path) -> Option<String> {
         .find_map(|l| l.strip_prefix("# atlas-cli-version: ").map(|v| v.trim().to_string()))
 }
 
+fn read_installed_appimage(path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    raw.lines().find_map(|l| {
+        l.strip_prefix("# atlas-appimage-path: ")
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    })
+}
+
 #[tauri::command]
 pub fn cli_status() -> CliStatus {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
@@ -176,7 +185,18 @@ pub fn cli_status() -> CliStatus {
         }
     }
     let (installed, installed_version) = match path.as_deref() {
-        Some(p) if p.exists() => (true, read_installed_version(p)),
+        Some(p) if p.exists() => {
+            let ver = read_installed_version(p);
+            if let Some(target) = read_installed_appimage(p) {
+                if !std::path::Path::new(&target).is_file() {
+                    (true, None)
+                } else {
+                    (true, ver)
+                }
+            } else {
+                (true, ver)
+            }
+        }
         _ => (false, None),
     };
     CliStatus {
@@ -246,7 +266,10 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
                 std::fs::create_dir_all(dir)
                     .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
             }
-            let body = HELPER_TEMPLATE.replace("{{VERSION}}", &version);
+            let appimage_path = std::env::var("APPIMAGE").unwrap_or_default();
+            let body = HELPER_TEMPLATE
+                .replace("{{VERSION}}", &version)
+                .replace("{{APPIMAGE_PATH}}", &appimage_path);
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, body).map_err(|e| format!("write tmp: {e}"))?;
 

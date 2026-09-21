@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # atlas-cli-version: {{VERSION}}
+# atlas-appimage-path: {{APPIMAGE_PATH}}
 # {{VERSION}} is substituted at install time from CARGO_PKG_VERSION
 # (src-tauri/Cargo.toml), not tauri.conf.json's `version` field —
 # the two can drift.
@@ -73,6 +74,12 @@ if [ -z "$app" ]; then
       break
     fi
   done
+fi
+if [ -z "$app" ] && [ -n "{{APPIMAGE_PATH}}" ] && [ -x "{{APPIMAGE_PATH}}" ]; then
+  app="{{APPIMAGE_PATH}}"
+fi
+if [ -z "$app" ] && [ -n "${APPIMAGE:-}" ] && [ -x "${APPIMAGE:-}" ]; then
+  app="${APPIMAGE}"
 fi
 if [ -z "$app" ] && [ "$(uname -s)" = "Darwin" ]; then
   app="Atlas.app"  # let `open` resolve via LaunchServices as a fallback
