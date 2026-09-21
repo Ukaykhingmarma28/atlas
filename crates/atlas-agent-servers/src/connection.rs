@@ -33,6 +33,7 @@ use crate::session::{
     AcpSession, CancelSignal, CancelWaiter, ConfigOptions, SessionDirectories, SessionRegistry,
 };
 use crate::session_list::AcpSessionList;
+use crate::session_mcp::{self, SessionMcpRequest, SessionMcpServers};
 
 /// Zed rejects anything below v1 outright rather than trying to degrade.
 const MINIMUM_SUPPORTED_VERSION: ProtocolVersion = ProtocolVersion::V1;
@@ -147,6 +148,9 @@ pub struct AcpConnection {
     deadlines: Mutex<ConnectionDeadlines>,
     thread_events: ThreadEventSink,
     debug_log: AcpDebugLog,
+    /// Decides the MCP servers each session request carries. `None` sends
+    /// every session an empty list.
+    session_mcp: Option<Arc<dyn SessionMcpServers>>,
     _io_task: tokio::task::JoinHandle<()>,
     _stderr_task: tokio::task::JoinHandle<()>,
     _wait_task: tokio::task::JoinHandle<()>,
@@ -389,10 +393,17 @@ impl AcpConnection {
             deadlines: Mutex::new(ConnectionDeadlines::default()),
             thread_events,
             debug_log,
+            session_mcp: None,
             _io_task: io_task,
             _stderr_task: stderr_task,
             _wait_task: wait_task,
         })
+    }
+
+    /// Hand each session the MCP servers `session_mcp` offers.
+    pub fn with_session_mcp(mut self, session_mcp: Option<Arc<dyn SessionMcpServers>>) -> Self {
+        self.session_mcp = session_mcp;
+        self
     }
 
     pub fn subscribe_debug_messages(
@@ -448,6 +459,26 @@ impl AcpConnection {
         )
     }
 
+    /// What the host offers the session about to be opened in `cwd`, and the
+    /// part of it this agent may be sent — only the transports it advertised.
+    fn mcp_offer(
+        &self,
+        cwd: &std::path::Path,
+        session_id: Option<&acp::SessionId>,
+    ) -> (session_mcp::SessionMcpOffer, Vec<acp::McpServer>) {
+        let offer = session_mcp::offer_for(
+            self.session_mcp.as_ref(),
+            &SessionMcpRequest {
+                agent_id: self.id.clone(),
+                http_mcp: self.agent_capabilities.mcp_capabilities.http,
+                cwd: cwd.to_path_buf(),
+                session_id: session_id.cloned(),
+            },
+        );
+        let servers = session_mcp::admissible(offer.servers(), &self.agent_capabilities.mcp_capabilities);
+        (offer, servers)
+    }
+
     fn new_thread(
         self: &Arc<Self>,
         session_id: acp::SessionId,
@@ -487,6 +518,7 @@ impl AcpConnection {
             ConnectionTo<Agent>,
             acp::SessionId,
             SessionDirectories,
+            Vec<acp::McpServer>,
         ) -> BoxFuture<'static, Result<SessionConfigResponse>>,
     ) -> Result<AcpThreadHandle> {
         if self.sessions.pending_acquire(&session_id) {
@@ -499,6 +531,10 @@ impl AcpConnection {
         }
 
         let directories = self.directories(&work_dirs)?;
+        // Offered only now that a request will really go out: a session that
+        // is already open was acquired above and keeps the servers (and the
+        // token) it was opened with. Dropped unbound on any failure below.
+        let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, Some(&session_id));
         let thread = self.new_thread(session_id.clone(), work_dirs, title);
 
         self.sessions.pending_begin(session_id.clone());
@@ -513,7 +549,7 @@ impl AcpConnection {
             },
         );
 
-        let response = match rpc_call(self.connection.clone(), session_id.clone(), directories).await
+        let response = match rpc_call(self.connection.clone(), session_id.clone(), directories, mcp_servers).await
         {
             Ok(response) => response,
             Err(err) => {
@@ -539,6 +575,7 @@ impl AcpConnection {
         if attached.is_none() {
             return Err(anyhow!("session was closed before load completed"));
         }
+        mcp_offer.bind(&session_id);
 
         Ok(thread)
     }
@@ -899,10 +936,13 @@ impl AgentConnection for AcpConnection {
     ) -> BoxFuture<'static, Result<AcpThreadHandle>> {
         async move {
             let directories = self.directories(&work_dirs)?;
+            // Offered before the id exists; bound to it once the agent answers,
+            // and released (dropped unbound) if it never does.
+            let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, None);
             let response = self
                 .request_deadline("session/new", async {
                     self.connection
-                        .send_request(directories.into_new_session_request(Vec::new()))
+                        .send_request(directories.into_new_session_request(mcp_servers))
                         .block_task()
                         .await
                         .map_err(map_acp_error)
@@ -910,6 +950,7 @@ impl AgentConnection for AcpConnection {
                 .await?;
 
             let session_id = response.session_id.clone();
+            mcp_offer.bind(&session_id);
             let thread = self.new_thread(session_id.clone(), work_dirs, None);
             let modes = session_modes_of(response.modes, response.config_options.as_deref());
 
@@ -939,6 +980,10 @@ impl AgentConnection for AcpConnection {
         self.agent_capabilities.load_session
     }
 
+    fn supports_http_mcp(&self) -> bool {
+        self.agent_capabilities.mcp_capabilities.http
+    }
+
     fn load_session(
         self: Arc<Self>,
         session_id: acp::SessionId,
@@ -948,9 +993,10 @@ impl AgentConnection for AcpConnection {
         async move {
             let this = self.clone();
             self.request_deadline("session/load", async move {
-                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
+                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs, mcp_servers| {
                     async move {
                         let mut request = acp::LoadSessionRequest::new(id, dirs.cwd);
+                        request.mcp_servers = mcp_servers;
                         if !dirs.additional_directories.is_empty() {
                             request.additional_directories = dirs.additional_directories;
                         }
@@ -986,9 +1032,10 @@ impl AgentConnection for AcpConnection {
         async move {
             let this = self.clone();
             self.request_deadline("session/resume", async move {
-                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs| {
+                this.open_or_create_session(session_id, work_dirs, title, |conn, id, dirs, mcp_servers| {
                     async move {
                         let mut request = acp::ResumeSessionRequest::new(id, dirs.cwd);
+                        request.mcp_servers = mcp_servers;
                         if !dirs.additional_directories.is_empty() {
                             request.additional_directories = dirs.additional_directories;
                         }

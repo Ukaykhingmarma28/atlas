@@ -1,30 +1,21 @@
-//! Shared Cross-Agent Memory — per-project settings + first-send tracking.
+//! Shared memory — per-project settings.
 //!
-//! The feature injects Atlas's already-unified per-project memory (curated fact
-//! pack + recent-session handoff) into an agent's prompt on the **first send**
-//! of a session, so a freshly-switched agent (Claude → Codex, or a new session)
-//! inherits the conventions and context the previous agent learned. The actual
-//! pack/handoff building lives in [`super::memory_pack`]; the optional provider
-//! summarization in [`super::memory_summarize`]; the injection call site is
-//! `agents_send` in [`super::agents`].
+//! Two per-project JSON files under `.atlas/` (atomic-written, mirroring the
+//! `plans.rs` / `canvas.rs` convention):
+//!   - `.atlas/memory-sharing.json`     → `{ "enabled": bool }` (default true).
+//!     Gates everything: whether a session is handed the memory tool server,
+//!     whether its deltas are captured, whether the extractor runs.
+//!   - `.atlas/memory-summarizer.json`  → [`SummarizerPref`], the model that
+//!     summarises the recent-session handoff `memory_briefing` serves, and
+//!     that routes the extractor.
 //!
-//! This module owns the *state* and *settings*:
-//! - [`MemorySharingState`] — in-memory tracking of which sessions have already
-//!   had their first send (so turns 2..N are zero-overhead) plus a write-through
-//!   cache of the per-project enable toggle.
-//! - Two per-project JSON files under `.atlas/` (atomic-written, mirroring the
-//!   `plans.rs` / `canvas.rs` convention):
-//!     - `.atlas/memory-sharing.json`     → `{ "enabled": bool }` (default true)
-//!     - `.atlas/memory-summarizer.json`  → [`SummarizerPref`]
-//!
-//! State uses `parking_lot::Mutex` + `HashMap`/`HashSet` to match the existing
-//! `ModelChatState` pattern (no `dashmap` dependency in `src-tauri`).
+//! [`MemorySharingState`] is the write-through cache of the toggle, so the
+//! send path and the server's gate never read a file per call.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::agent_host::SessionKey;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -39,6 +30,11 @@ const DEFAULT_ENABLED: bool = true;
 /// `.atlas/memory-summarizer.json`. `mode` is `"raw"` (verbatim tail, the MVP
 /// default), `"provider"` (BYOK one-shot summary), or `"local"` (Phase 5 —
 /// shown in the UI but currently falls back to raw).
+///
+/// The same preference picks the extractor's model
+/// (`super::memory_extract::route_for`): `provider` → this BYOK provider and
+/// model; `local` → no extraction (reserved); anything else (`raw`, the
+/// default, or `gateway`) → the Atlas gateway when signed in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SummarizerPref {
@@ -110,22 +106,12 @@ fn read_summarizer_pref(project_path: &str) -> SummarizerPref {
 
 // ── Managed state ────────────────────────────────────────────────────────────
 
-/// In-memory state for the injection hot path. Registered once via `.manage()`.
+/// The per-project toggle, cached. Registered once via `.manage()`.
 #[derive(Default)]
 pub struct MemorySharingState {
-    /// Sessions that have already had their memory pack injected. Presence ⇒
-    /// "not the first send" ⇒ skip the (relatively expensive) build entirely.
-    first_sends: Mutex<HashSet<SessionKey>>,
     /// Write-through cache of the per-project enable toggle, keyed by absolute
-    /// project path. Avoids a file read on every send.
+    /// project path. Avoids a file read on every send and every tool call.
     toggles: Mutex<HashMap<String, bool>>,
-    /// Per-session sync clock for v2 Shared Memory: the last event `seq` this
-    /// session has already had injected. 0 (or absent) ⇒ never synced, so the
-    /// next send gets the full current shared state. See `super::memory_inject`.
-    sync_clocks: Mutex<HashMap<SessionKey, u64>>,
-    /// v3 Tier 2: index doc ids already injected into a session, so the same
-    /// retrieved doc isn't re-pushed turn after turn.
-    injected_docs: Mutex<HashMap<SessionKey, HashSet<String>>>,
 }
 
 impl MemorySharingState {
@@ -143,47 +129,9 @@ impl MemorySharingState {
         v
     }
 
-    /// True if this session has already had its first-send injection.
-    pub fn already_sent(&self, key: &SessionKey) -> bool {
-        self.first_sends.lock().contains(key)
-    }
-
-    /// Record that this session's injection has happened. Idempotent. Called
-    /// only AFTER a successful pack build, so a transient build failure leaves
-    /// the session eligible to retry on the next send.
-    pub fn mark_sent(&self, key: &SessionKey) {
-        self.first_sends.lock().insert(key.clone());
-    }
-
     /// Read the per-project summarizer preference from disk (default = raw).
-    /// Used by the injection path in `agents_send`.
     pub fn summarizer_pref(&self, project_path: &str) -> SummarizerPref {
         read_summarizer_pref(project_path)
-    }
-
-    /// Last shared-memory event `seq` this session has already seen (0 = never).
-    pub fn clock_for(&self, key: &SessionKey) -> u64 {
-        self.sync_clocks.lock().get(key).copied().unwrap_or(0)
-    }
-
-    /// Advance the session's sync clock after an injection. Monotonic.
-    pub fn advance_clock(&self, key: &SessionKey, seq: u64) {
-        let mut clocks = self.sync_clocks.lock();
-        let entry = clocks.entry(key.clone()).or_insert(0);
-        if seq > *entry {
-            *entry = seq;
-        }
-    }
-
-    /// Record that index doc `doc_id` was injected into `key`'s session; returns
-    /// true the first time (caller should inject it), false on repeats. Dedup
-    /// for the v3 Tier 2 retrieval-augmented push.
-    pub fn note_index_doc(&self, key: &SessionKey, doc_id: &str) -> bool {
-        self.injected_docs
-            .lock()
-            .entry(key.clone())
-            .or_default()
-            .insert(doc_id.to_string())
     }
 
     /// Update the toggle cache after a settings write so the next send sees it.

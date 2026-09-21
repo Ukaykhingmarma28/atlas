@@ -53,10 +53,8 @@ use super::agent_host::{
 use super::agent_analytics::AnalyticsState;
 use super::catalog::emit_catalog_changed;
 use super::memory_indexer::MemoryRegistry;
-use super::memory_inject;
 use super::memory_pack;
-use super::memory_retrieve;
-use super::memory_sharing::{MemorySharingState, SummarizerPref};
+use super::memory_sharing::MemorySharingState;
 use super::memory_summarize;
 use super::shared_memory::SharedMemoryStore;
 use agent_client_protocol::schema::v1 as acp;
@@ -393,7 +391,8 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         // (cheap; no disk I/O). A delta before the session's first `agents_send`
         // has no meta yet → every memory action below is a silent no-op.
         let store = self.app.state::<SharedMemoryStore>();
-        let cwd = store.session_meta(&envelope.session_id).map(|m| m.cwd);
+        let meta = store.session_meta(&envelope.session_id);
+        let cwd = meta.as_ref().map(|m| m.cwd.clone());
 
         let is_turn_finished = matches!(envelope.delta, SessionDelta::TurnFinished { .. });
         let agent_id = envelope.agent_id;
@@ -401,7 +400,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
 
         // Site A — Shared Cross-Agent Memory (v2) capture (write-side parity for
         // all three agents). `classify` is pure/in-memory, but `append_event`
-        // does a small disk append (events.jsonl + an atomic state write), so we
+        // does a small disk write (one SQLite transaction in the record store), so we
         // run the whole `ingest` OFF the `emit` thread on the blocking pool — the
         // streaming-delta hot path must never block on disk. This feeds ONLY the
         // shared event log; the semantic vector index is now (re)built by the
@@ -433,29 +432,34 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
-            // Site B — A/B gate (Step 7). `ATLAS_NATIVE_EXTRACTION` (default OFF)
-            // selects between:
-            //  - ON  → native gated extraction in the background indexer for ALL
-            //          three agents (`Job::ExtractSession`), SKIPPING the legacy
-            //          per-turn BYOK distill. `memory_compile` is only deleted in
-            //          Step 8 once this path is validated.
-            //  - OFF → the current behaviour: spawn `compile_finished_turn` (the
-            //          legacy prose→events distill, itself a no-op unless the
-            //          project's summarizer is a BYOK provider).
-            if native_extraction_enabled() {
-                if let Some(cwd) = cwd.clone() {
-                    let registry = self.app.state::<Arc<MemoryRegistry>>();
-                    let _ = registry.enqueue(super::memory_indexer::Job::ExtractSession {
-                        cwd,
-                        agent: agent_id.0.to_string(),
-                        session: session_id,
-                    });
-                }
-            } else {
+            // Site B — the extractor's turn-finished pass, for every agent
+            // (`super::memory_extract`). The conversation is read now, off the
+            // emit thread — by the time the queue reaches the job the session
+            // may be gone, and its end pass needs these turns — then queued:
+            // the extractor applies the gates (about twenty turns and three
+            // tool calls since the last pass) and asks the gateway or the
+            // user's BYOK provider.
+            if let Some(meta) = meta {
                 let app = self.app.clone();
-                // TODO(step8): remove after ATLAS_NATIVE_EXTRACTION validated
-                tauri::async_runtime::spawn(async move {
-                    super::memory_compile::compile_finished_turn(&app, agent_id, session_id).await;
+                tauri::async_runtime::spawn_blocking(move || {
+                    let key = SessionKey {
+                        agent_id,
+                        session_id: session_id.clone(),
+                    };
+                    let Ok(snapshot) = app.state::<Arc<AgentHost>>().snapshot(&key) else {
+                        return;
+                    };
+                    let job = super::memory_indexer::Job::ExtractSession {
+                        cwd: meta.cwd,
+                        writer: super::shared_memory::Writer {
+                            agent: meta.agent,
+                            session_id,
+                        },
+                        turns: super::memory_extract::transcript_turns(&snapshot.messages),
+                    };
+                    if let Err(e) = app.state::<Arc<MemoryRegistry>>().enqueue(job) {
+                        tracing::debug!(target: "atlas::shared_memory", "turn extraction not queued: {e}");
+                    }
                 });
             }
 
@@ -463,32 +467,14 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             // not session transcripts, so a finished turn needs an explicit nudge to
             // make chat-derived corpus searchable. Fire-and-forget — `enqueue_index`
             // `try_send`s and drops on a full queue, so `emit` never blocks here.
-            // (Fires in BOTH modes; the native path additionally enqueues its own
-            // reindex after writing `extracted/*.md`.)
+            // (The extractor additionally enqueues its own reindex after it
+            // records entries.)
             if let Some(cwd) = cwd {
                 let registry = self.app.state::<Arc<MemoryRegistry>>();
                 registry.enqueue_index(&cwd);
             }
         }
     }
-}
-
-/// A/B flag for Step 7's native session extraction. **Default OFF** so the
-/// legacy `memory_compile` distill keeps running until the new path is validated
-/// on real sessions (Step 8 then removes `memory_compile`).
-///
-/// Set `ATLAS_NATIVE_EXTRACTION` to `1`/`true`/`on`/`yes` (case-insensitive) to
-/// route `TurnFinished` through the background `Job::ExtractSession` path for all
-/// three agents instead.
-fn native_extraction_enabled() -> bool {
-    matches!(
-        std::env::var("ATLAS_NATIVE_EXTRACTION")
-            .ok()
-            .as_deref()
-            .map(|s| s.trim().to_ascii_lowercase())
-            .as_deref(),
-        Some("1" | "true" | "on" | "yes")
-    )
 }
 
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
@@ -524,6 +510,92 @@ struct RequestElicitation {
     url: Option<String>,
 }
 
+/// Session lifecycle into shared memory, for projects with sharing on — the
+/// sharing toggle switches all of shared memory, bookkeeping included. An end
+/// is recorded for any session whose start was (the store keeps that set), so
+/// a toggle flipped mid-session does not leave a row open.
+///
+/// The writes run on one thread of their own, in order: they touch disk (the
+/// sharing file, the scope's git lookup, SQLite, a first-open migration) and
+/// their callers are async tasks and the thread-event drain, which must not
+/// block. One ordered queue, not a task per write, because an end overtaking
+/// its start would be dropped. The quit path's grace covers the last writes.
+struct SharingGatedLifecycle {
+    writes: std::sync::mpsc::Sender<LifecycleWrite>,
+    /// The memory tool server: its tokens are minted and revoked right here,
+    /// in memory, so a session's token exists as soon as its start is
+    /// reported; its per-session clock is dropped when the session ends.
+    server: Arc<super::memory_server::MemoryServerHost>,
+}
+
+enum LifecycleWrite {
+    Started { session_id: String, agent: String, cwd: String },
+    Ended { session_id: String },
+}
+
+impl SharingGatedLifecycle {
+    fn new(app: AppHandle, server: Arc<super::memory_server::MemoryServerHost>) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<LifecycleWrite>();
+        std::thread::Builder::new()
+            .name("atlas-session-lifecycle".into())
+            .spawn(move || {
+                for write in rx {
+                    let memory = app.state::<SharedMemoryStore>();
+                    match write {
+                        LifecycleWrite::Started { session_id, agent, cwd } => {
+                            if app.state::<MemorySharingState>().is_enabled(&cwd) {
+                                memory.session_started(&session_id, &agent, &cwd);
+                            }
+                        }
+                        LifecycleWrite::Ended { session_id } => {
+                            // The end-of-session extraction, queued behind the
+                            // session's last turn-finished pass.
+                            if let Some(ended) = memory.session_ended(&session_id) {
+                                if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
+                                    let job = super::memory_indexer::Job::SessionEnded {
+                                        cwd: ended.cwd,
+                                        writer: super::shared_memory::Writer {
+                                            agent: ended.agent,
+                                            session_id,
+                                        },
+                                    };
+                                    if let Err(e) = registry.enqueue(job) {
+                                        tracing::warn!(target: "atlas::shared_memory", "end-of-session extraction not queued: {e}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .expect("the session lifecycle thread starts");
+        Self { writes: tx, server }
+    }
+
+    fn queue(&self, write: LifecycleWrite) {
+        let _ = self.writes.send(write);
+    }
+}
+
+impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
+    fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        super::agent_host::SessionLifecycle::session_started(&**self.server.tokens(), session_id, agent, cwd);
+        self.queue(LifecycleWrite::Started {
+            session_id: session_id.to_string(),
+            agent: agent.to_string(),
+            cwd: cwd.to_string(),
+        });
+    }
+
+    fn session_ended(&self, session_id: &str) {
+        super::agent_host::SessionLifecycle::session_ended(&**self.server.tokens(), session_id);
+        self.server.clocks().forget(session_id);
+        self.queue(LifecycleWrite::Ended {
+            session_id: session_id.to_string(),
+        });
+    }
+}
+
 /// Initialise the agent stack once the Tauri app is up so the sink has a real
 /// `AppHandle` to emit through. Called from `setup`.
 ///
@@ -545,8 +617,6 @@ pub fn install_manager(app: &AppHandle) {
         config_dir.clone(),
     )));
     let sink: Arc<dyn DeltaSink> = Arc::new(TauriDeltaSink::new(app.clone()));
-    // Let the memory corpus reader find native-agent transcripts (Chat/Graph).
-    super::agent_memory::set_cersei_config_dir(config_dir.clone());
     let data_dir = app
         .path()
         .app_data_dir()
@@ -574,6 +644,66 @@ pub fn install_manager(app: &AppHandle) {
         AgentHost::new(sink, config_dir, store.clone(), registry.clone())
     };
     app.manage(host.clone());
+
+    // Shared memory: every write is announced to the webview (the Shared tab
+    // re-pulls on it), session start/end are recorded in the scope's sessions
+    // table and mint/revoke the session's memory-server token, and the memory
+    // tool server starts on the runtime (never blocking setup).
+    {
+        let memory = app.state::<SharedMemoryStore>();
+        let emitter = app.clone();
+        memory.on_change(Arc::new(move |change: &super::shared_memory::MemoryChanged| {
+            let _ = emitter.emit(super::shared_memory::MEMORY_CHANGED_EVENT, change);
+        }));
+        super::shared_memory::install_embedder(Arc::new(super::memory_indexer::ModelEmbedder::new(app.clone())));
+        // The extractor: durable entries distilled from sessions, through the
+        // gateway or the user's BYOK provider.
+        app.manage(Arc::new(super::memory_extract::Extractor::new(
+            memory.inner().clone(),
+            Arc::new(super::memory_extract::AppExtractionModel::new(app.clone())),
+        )));
+        let server = Arc::new(super::memory_server::MemoryServerHost::new());
+        app.manage(server.clone());
+        host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(app.clone(), server.clone())));
+        let gate_app = app.clone();
+        let gate: super::memory_server::SharingGate =
+            Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
+        // Every agent that can take the server is handed it on each session
+        // request, with a token of its own. It is the only way memory reaches
+        // an agent (ADR-0010): nothing is prepended to a prompt.
+        host.set_session_mcp(Arc::new(super::memory_server::MemorySessionOffers::new(
+            server.clone(),
+            gate.clone(),
+        )));
+        // `memory_search` also answers from the project's indexed documents.
+        let index_app = app.clone();
+        let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {
+            let app = index_app.clone();
+            Box::pin(async move {
+                crate::commands::memory_retrieve::retrieve(&app, &cwd, &query, limit)
+                    .await
+                    .into_iter()
+                    .map(|d| super::memory_server::IndexDoc {
+                        title: d.title,
+                        source: d.source,
+                        text: d.text,
+                    })
+                    .collect()
+            })
+        });
+        // `memory_briefing` also carries the curated pack and the
+        // recent-session handoff, built here because both need the app.
+        let bootstrap_app = app.clone();
+        let bootstrap: super::memory_server::BootstrapSource = Arc::new(move |cwd, session_id| {
+            let app = bootstrap_app.clone();
+            Box::pin(async move { build_bootstrap(&app, &cwd, &session_id).await })
+        });
+        server.start(
+            memory.inner().clone(),
+            gate,
+            super::memory_server::Sources { index: Some(index), bootstrap: Some(bootstrap) },
+        );
+    }
 
     // Connect-phase events the webview needs but no delta carries: the install
     // status text ("Downloading Node.js…") for the `Starting …` row, and a
@@ -752,16 +882,12 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
-    // Wire the native agent's `search_memory` tool to Atlas's on-device memory
-    // retrieval, mapping the retrieved docs into the agent's shape.
-    // The ported engine's `search_memory`, wired to the same retrieval (#48,
-    // acceptance bar item 11). Registered rather than passed in because these
-    // types are behind a cargo feature, and a constructor parameter would
-    // `cfg`-gate `AgentHost::new`'s signature and every caller of it.
     // The D10 token provider (#51): the native agent authenticates with the
     // user's Atlas account, minting a short-TTL access JWT per request.
     //
-    // Registered for the same reason `search_memory` is, and read at *connect*
+    // Registered rather than passed in — these types are behind a cargo
+    // feature, and a constructor parameter would `cfg`-gate `AgentHost::new`'s
+    // signature and every caller of it — and read at *connect*
     // time rather than construction — `AgentHost` is built before the auth
     // state exists, so a source resolved in its constructor would always be
     // absent and every turn would go out with no credential.
@@ -803,25 +929,6 @@ pub fn install_manager(app: &AppHandle) {
             }
         }));
     }
-
-    {
-        let app_for_engine = app.clone();
-        atlas_native_agent::engine::memory::register_search(Arc::new(move |cwd, query, k| {
-            let app = app_for_engine.clone();
-            Box::pin(async move {
-                crate::commands::memory_retrieve::retrieve(&app, &cwd, &query, k)
-                    .await
-                    .into_iter()
-                    .map(|d| atlas_native_agent::engine::memory::MemDoc {
-                        title: d.title,
-                        source: d.source,
-                        text: d.text,
-                    })
-                    .collect()
-            })
-        }));
-    }
-
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -1226,18 +1333,12 @@ pub fn agents_snapshot_meta(
     host.snapshot_meta(&key).map_err(|e| e.to_string())
 }
 
-/// Hard cap on the whole memory-injection path (pack + handoff + summarize) so
-/// a slow disk or provider can never stall the user's first message.
-const INJECT_BUDGET_SECS: u64 = 8;
-
-/// Send a user message to an agent session.
+/// Send a user message to an agent session, exactly as typed.
 ///
-/// On the **first send** of a session — when Shared Cross-Agent Memory is
-/// enabled for the project — Atlas prepends a curated memory pack + recent
-/// Claude-session handoff so a freshly-switched agent inherits prior context.
-/// The injection is best-effort and time-bounded ([`INJECT_BUDGET_SECS`]); on
-/// any timeout/error the original `text` is sent unchanged. Turns 2..N skip the
-/// build entirely (see [`MemorySharingState::already_sent`]).
+/// Shared memory is never prepended here (ADR-0010): the agent pulls it
+/// through the `atlas_memory` tools its session was offered. What this path
+/// owns on the memory side is the write half — registering the session so
+/// its deltas are captured into the scope's record.
 #[tauri::command]
 pub async fn agents_send(
     key: SessionKey,
@@ -1259,15 +1360,14 @@ pub async fn agents_send(
 
     // Image attachments ride WITH the turn (P0.2) rather than through a staging
     // side-channel drained by the next send. Held here and folded into the
-    // content at each of the three send exits below (bare / slash-command /
-    // memory-prefixed), so a send that returns early can't strand images for
-    // some later turn to pick up.
+    // content at the one send below, so nothing can strand images for some
+    // later turn to pick up.
     let images = attachments.unwrap_or_default();
     let links = resource_links.unwrap_or_default();
 
     // Resolve the project cwd. Unknown session → fail with the SAME error
     // shape `manager.send` produces, without attempting a send that would
-    // skip memory injection (one condition, one behavior — L5).
+    // skip session registration (one condition, one behavior — L5).
     // Meta only — the full snapshot deep-clones the whole transcript under the
     // SessionState mutex the streaming actor locks per chunk, and this path
     // reads three small fields.
@@ -1286,10 +1386,7 @@ pub async fn agents_send(
     // start is a bare status flip. A delta subscriber alone would produce
     // Sessions with no prompts and no titles.
     //
-    // Note it uses `text`, not the memory-prefixed string composed below:
-    // Atlas's injected context blocks are machinery, not something the user
-    // said, and a Session titled after an injected block would be nonsense.
-    // Placed before the bare-send branch so capture does not depend on whether
+    // Placed before the sharing check so capture does not depend on whether
     // memory sharing happens to be enabled for the project.
     // `plugin_id` rather than `agent_id`: the latter is a per-process UUID, and
     // the former ("claude-code", "codex", the native agent's id) is both what a
@@ -1316,9 +1413,7 @@ pub async fn agents_send(
     // Atlas's own transcript, for every agent. Recorded here for the same
     // reason capture is: the user's prompt is never emitted as a delta, so a
     // delta-only recorder produces transcripts that start mid-answer and have
-    // no title. Uses `text`, not the memory-prefixed string composed below —
-    // injected context is machinery, not what the user said, and a history row
-    // titled after it would be nonsense.
+    // no title.
     if !cwd.is_empty() {
         app.state::<Arc<super::agent_transcript::TranscriptState>>()
             .note_prompt(
@@ -1330,160 +1425,73 @@ pub async fn agents_send(
             );
     }
 
-    // No cwd or sharing disabled → bare send (no injection).
-    if cwd.is_empty() || !sharing.is_enabled(&cwd) {
-        return host
-            .send(
-                &key,
-                prompt::with_resource_links(prompt::compose(text, images), links),
-            )
-            .map_err(|e| e.to_string());
-    }
-
     // Register this session so the capture path (`TauriDeltaSink::emit`) can
-    // route its deltas into the shared event log for the project.
-    let store = app.state::<SharedMemoryStore>();
-    store.register_session(&key.session_id, &cwd, &snapshot.plugin_id);
-
-    // Slash-command turns ship verbatim: Claude Code only resolves a command
-    // (skills included) when it sits at byte 0, so prepending any block below
-    // would demote `/skill-name` to prose and the command would never fire. See
-    // `memory_pack::is_slash_command`. Returning here — rather than composing
-    // and stripping later — deliberately leaves the sync clock un-advanced and
-    // `mark_sent` uncalled, so whatever memory was pending still rides the next
-    // conversational turn instead of being consumed by a turn that dropped it.
-    if memory_pack::is_slash_command(&text) {
-        return host
-            .send(
-                &key,
-                prompt::with_resource_links(prompt::compose(text, images), links),
-            )
-            .map_err(|e| e.to_string());
+    // route its deltas into the scope's record. The text itself goes to the
+    // agent untouched: a slash command stays at byte 0 (Claude Code resolves
+    // one only there), and nothing Atlas wrote can be echoed back as the
+    // user's words.
+    if !cwd.is_empty() && sharing.is_enabled(&cwd) {
+        app.state::<SharedMemoryStore>().register_session(&key.session_id, &cwd, &plugin_id);
     }
-
-    // v2 push: per-turn shared-memory block, gated by this session's sync clock
-    // (0 ⇒ first sync = full current state; >0 ⇒ delta since last turn). Cheap
-    // in-memory read, so no timeout needed here.
-    let clock = sharing.clock_for(&key);
-    let shared_block = memory_inject::build_shared_block(store.inner(), &cwd, clock);
-    sharing.advance_clock(&key, store.last_seq(&cwd));
-
-    // Site C (Step 5: kept, NOT removed) — retrieval-augmented push: RAG the
-    // project's memory index by the user's message, keep only docs not already
-    // injected this session, and compose a budgeted `--- RELEVANT PROJECT MEMORY
-    // ---` block. This is a read-only PUSH that grounds Claude Code / Codex,
-    // which have no `search_memory` pull tool — removing it would regress their
-    // RAG. It performs NO indexing (read-only). Step 6 rewires the underlying
-    // `memory_retrieve::retrieve` onto the fresh `MemoryEngine`; the call here is
-    // unchanged. `retrieve` is best-effort + time-bounded; a missing embedding
-    // model / unbuilt index yields nothing, so this is a no-op until the index
-    // exists.
-    const INDEX_TOP_K: usize = 3;
-    let t_retrieve = std::time::Instant::now();
-    let mut index_docs = memory_retrieve::retrieve(&app, &cwd, &text, INDEX_TOP_K).await;
-    // Every millisecond here is silent "agent is thinking" to the user — a
-    // slow stage must name itself, or the next latency report is undiagnosable
-    // (this one presented as "the ACP port made Claude slower").
-    if t_retrieve.elapsed() > Duration::from_secs(1) {
-        tracing::warn!(
-            target: "atlas::agents::send_latency",
-            "pre-send memory retrieval took {:?}",
-            t_retrieve.elapsed()
-        );
-    }
-    index_docs.retain(|d| sharing.note_index_doc(&key, &d.id));
-    let index_block = memory_retrieve::compose_index_block(&index_docs);
-
-    // v1 bootstrap: on the very first send only, also prepend the curated pack +
-    // recent-session handoff (retained as the clock-0 onboarding layer, bounded
-    // by INJECT_BUDGET_SECS inside `build_injection`).
-    let base = if !sharing.already_sent(&key) {
-        let pref = sharing.summarizer_pref(&cwd);
-        let built = build_injection(&app, &cwd, &key.session_id, &pref, &text).await;
-        sharing.mark_sent(&key);
-        built
-    } else {
-        text
-    };
-
-    // Compose: [working memory] + [relevant index] + (bootstrap +) user text.
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(b) = shared_block {
-        parts.push(b);
-    }
-    if let Some(b) = index_block {
-        parts.push(b);
-    }
-    let prefixed = if parts.is_empty() {
-        base
-    } else {
-        format!("{}\n\n{}", parts.join("\n\n"), base)
-    };
     host.send(
         &key,
-        prompt::with_resource_links(prompt::compose(prefixed, images), links),
+        prompt::with_resource_links(prompt::compose(text, images), links),
     )
     .map_err(|e| e.to_string())
 }
 
-/// Assemble the memory-prefixed message. Everything runs inside a single
-/// [`INJECT_BUDGET_SECS`] timeout; on elapse it falls back to the bare text.
-async fn build_injection(
-    app: &AppHandle,
-    cwd: &str,
-    session_id: &str,
-    pref: &SummarizerPref,
-    user_text: &str,
-) -> String {
+/// Hard cap on building the briefing's first-look extras (pack + handoff +
+/// summarise) so a slow disk or provider can never stall an agent's briefing.
+const BOOTSTRAP_BUDGET_SECS: u64 = 8;
+
+/// The first-look extras `memory_briefing` serves beyond the record: the
+/// curated pack from the project's foreign memory files, then the
+/// recent-session handoff. Everything runs inside a single
+/// [`BOOTSTRAP_BUDGET_SECS`] timeout; on elapse the briefing goes out without
+/// them rather than late.
+async fn build_bootstrap(app: &AppHandle, cwd: &str, session_id: &str) -> super::memory_server::Bootstrap {
+    let pref = app.state::<MemorySharingState>().summarizer_pref(cwd);
     let cwd = cwd.to_string();
     let session_id = session_id.to_string();
 
-    let built = tokio::time::timeout(Duration::from_secs(INJECT_BUDGET_SECS), async {
+    let built = tokio::time::timeout(Duration::from_secs(BOOTSTRAP_BUDGET_SECS), async {
         // Curated pack (collect_corpus is async + does its own spawn_blocking).
-        let pack = memory_pack::build_memory_pack(&cwd).await;
+        let project_memory = memory_pack::build_memory_pack(&cwd, memory_pack::PACK_MAX_CHARS).await;
 
-        // Recent-session handoff: pure disk I/O on a blocking thread.
+        // Recent-session handoff, from what Atlas recorded for any agent:
+        // pure disk I/O on a blocking thread.
         let handoff_raw = {
             let cwd = cwd.clone();
             let sid = session_id.clone();
-            tokio::task::spawn_blocking(move || memory_pack::build_session_handoff(&cwd, &sid))
-                .await
-                .ok()
-                .flatten()
+            let transcripts = app
+                .state::<Arc<super::agent_transcript::TranscriptState>>()
+                .config_dir()
+                .to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                memory_pack::build_session_handoff(&cwd, &sid, &transcripts)
+            })
+            .await
+            .ok()
+            .flatten()
         };
 
-        let handoff_block = if let Some((raw_body, turns)) = handoff_raw {
-            let (body, attribution) = if pref.mode == "provider"
-                && !pref.provider.is_empty()
-                && !pref.model.is_empty()
-            {
-                let summary =
-                    memory_summarize::summarize(app, &raw_body, &pref.provider, &pref.model).await;
-                if summary == raw_body {
-                    (raw_body, "raw".to_string())
-                } else {
-                    (summary, format!("summarized by {}/{}", pref.provider, pref.model))
-                }
-            } else {
-                (raw_body, "raw".to_string())
-            };
-            Some(memory_pack::wrap_handoff(&body, turns, &attribution))
-        } else {
-            None
-        };
+        let recent_session = memory_pack::handoff_block(handoff_raw, &pref, |raw, provider, model| async move {
+            memory_summarize::summarize(app, &raw, &provider, &model).await
+        })
+        .await;
 
-        memory_pack::compose_injection(pack.as_deref(), handoff_block.as_deref(), user_text)
+        super::memory_server::Bootstrap { project_memory, recent_session }
     })
     .await;
 
     match built {
-        Ok(s) => s,
+        Ok(bootstrap) => bootstrap,
         Err(_) => {
             tracing::warn!(
                 target: "atlas::memory_sharing",
-                "memory injection exceeded {INJECT_BUDGET_SECS}s budget; sending bare text"
+                "briefing extras exceeded {BOOTSTRAP_BUDGET_SECS}s budget; serving the briefing without the pack and handoff"
             );
-            user_text.to_string()
+            super::memory_server::Bootstrap::default()
         }
     }
 }

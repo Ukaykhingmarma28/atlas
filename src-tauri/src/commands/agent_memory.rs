@@ -13,19 +13,8 @@
 //! to empty sections rather than erroring the whole command.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
-
-/// App config dir holding `cersei-sessions/` — set once at startup
-/// (`install_manager`) so the corpus reader can find native-agent transcripts
-/// without threading an `AppHandle` through `collect_corpus`'s many callers.
-static CERSEI_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
-
-/// Record where the native agent persists its sessions (called from startup).
-pub fn set_cersei_config_dir(dir: PathBuf) {
-    let _ = CERSEI_CONFIG_DIR.set(dir);
-}
 
 #[derive(Debug, Serialize)]
 pub struct MemoryFile {
@@ -277,9 +266,8 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
     // in the separate `codebase_index_build` command.
     docs.extend(read_codebase_docs(&project_path));
     docs.extend(read_shared_memory_docs(&project_path));
-    docs.extend(read_cersei_docs(&project_path));
     // Fold the knowledge base in (source "note") so KB notes are retrievable by
-    // every agent through the same embedding + the `search_memory` tool — they
+    // every agent through the same embedding + the `memory_search` tool — they
     // were previously reachable ONLY via manual `~`/`@note` mentions.
     docs.extend(read_knowledge_docs(&project_path));
     // Capture-backed sessions for every agent WITHOUT a dedicated reader above
@@ -295,18 +283,19 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
 }
 
 /// Agents whose sessions are already indexed by a dedicated, richer reader —
-/// the capture fallback must skip them or every Claude/Codex/cersei session
-/// would enter the corpus twice under two different sources.
+/// the capture fallback must skip them or every Claude/Codex session would
+/// enter the corpus twice under two different sources. The native agent has no
+/// dedicated reader, so its sessions come from capture like any plugin's.
 fn capture_covered_agent(agent: &str) -> bool {
-    agent.starts_with("claude") || agent == "codex" || agent == "cersei"
+    agent.starts_with("claude") || agent == "codex"
 }
 
 /// Generic corpus reader over Atlas's OWN capture store (`.atlas/sessions.db`,
 /// atlas-checkpoint). The capture middleware records EVERY agent's sessions +
 /// redacted message bodies with the plugin id in the `agent` column, so this
-/// one reader gives opencode / cursor / kilo — and any future ACP plugin —
-/// memory-corpus coverage with zero per-agent code. `source` is the plugin id
-/// verbatim (it becomes the Graph corpus + the Memory tab's agent grouping).
+/// one reader gives the native agent, opencode / cursor / kilo — and any future
+/// ACP plugin — memory-corpus coverage with zero per-agent code. `source` is
+/// the plugin id verbatim (it becomes the Graph corpus + the Memory tab's agent grouping).
 /// No-op when capture is disabled for the project — those agents then
 /// contribute only via the promoted shared-memory events, same as before.
 fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
@@ -335,8 +324,8 @@ fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
         }
         let messages = store.messages_for_session(&s.id).unwrap_or_default();
         // Transcript text from the always-inline 2 KB previews (bounded, role
-        // tagged, injection-stripped) — parity between Codex's title-only docs
-        // and cersei's full transcripts without pulling spilled blobs.
+        // tagged, injection-stripped) — bounded transcripts without pulling
+        // spilled blobs.
         let mut text = String::new();
         let mut first_user = String::new();
         for m in &messages {
@@ -427,58 +416,34 @@ fn read_knowledge_docs(project_path: &str) -> Vec<MemoryDoc> {
         .collect()
 }
 
-/// Native session transcripts, for the memory corpus.
-///
-/// Empty since #54. It read the Cersei runtime's own session JSON, which no
-/// longer exists — the ported engine keeps its working storage in a different
-/// shape, and pointing this at it would recreate the scrape-reader pattern
-/// ADR-0001 removed.
-///
-/// The narrowing is D8's and accepted: the agent's own conversations drop out
-/// of Memory ▸ Chat / Graph until the corpus is re-sourced from engine
-/// rollouts, which is spec open question 8 — a decision, not an omission. Every
-/// other corpus source (Claude, Codex, shared memory, files) is untouched.
-///
-/// Kept as a named function rather than deleted at the call site so the gap has
-/// somewhere to be documented, and somewhere obvious to be filled.
-fn read_cersei_docs(_project_path: &str) -> Vec<MemoryDoc> {
-    Vec::new()
+/// v3 Write half — surface the project's shared memory (durable kinds) into
+/// the index corpus, so settled decisions/failures/architecture/facts become
+/// embeddable + retrievable (Tier 2 read path), not just live-injected. The
+/// live plan + file churn are skipped. Reads the scope's record store; an
+/// absent/empty store is a no-op. Ids are `shared:<kind>:<entry id>`, so the
+/// vector index is keyed by entry id: a replaced entry keeps its doc, and
+/// re-runs don't duplicate.
+fn read_shared_memory_docs(project_path: &str) -> Vec<MemoryDoc> {
+    let (ts, entries) = super::shared_memory::durable_entries(project_path);
+    entries
+        .iter()
+        .filter_map(|e| shared_doc(e.id as u64, &e.agent, e.kind.as_str(), &e.content, ts))
+        .collect()
 }
 
-/// v3 Write half — surface the project's Shared Cross-Agent Memory (working
-/// memory) into the index corpus, so settled decisions/failures/architecture/
-/// facts become embeddable + retrievable (Tier 2 read path), not just
-/// live-injected. Only durable kinds are promoted; the live plan + churn are
-/// skipped. Reads the folded shared state from `.atlas/shared-memory/`; an
-/// absent/empty store is a no-op. Stable ids (`shared:<kind>:<seq>`) namespace
-/// these apart from the claude/codex docs, so re-runs don't duplicate.
-fn read_shared_memory_docs(project_path: &str) -> Vec<MemoryDoc> {
-    let state = super::shared_memory::rebuild_state(project_path);
-    let ts = state.updated_at;
-    let mut docs = Vec::new();
-    for d in &state.decisions {
-        docs.extend(shared_doc(d.seq, &d.agent, "decision", &d.text, ts));
-    }
-    for f in &state.failures {
-        docs.extend(shared_doc(f.seq, &f.agent, "failure", &f.text, ts));
-    }
-    for a in &state.architecture {
-        docs.extend(shared_doc(a.seq, &a.agent, "architecture", &a.text, ts));
-    }
-    for f in &state.facts {
-        docs.extend(shared_doc(f.seq, &f.agent, "fact", &f.text, ts));
-    }
-    docs
+/// The corpus id of a record entry's document: `shared:<kind>:<entry id>`.
+pub fn shared_doc_id(kind: &str, id: i64) -> String {
+    format!("shared:{kind}:{id}")
 }
 
 /// Build one promoted shared-memory [`MemoryDoc`]. `None` for empty text.
-fn shared_doc(seq: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<MemoryDoc> {
+fn shared_doc(id: u64, agent: &str, kind: &str, text: &str, ts: i64) -> Option<MemoryDoc> {
     let t = text.trim();
     if t.is_empty() {
         return None;
     }
     Some(MemoryDoc {
-        id: format!("shared:{kind}:{seq}"),
+        id: shared_doc_id(kind, id as i64),
         title: short_title(t),
         summary: short_title(t),
         kind: kind.to_string(),
@@ -617,11 +582,26 @@ pub(crate) fn claude_memory_dir(project_path: &str) -> std::path::PathBuf {
         .join("memory")
 }
 
+/// Read one of another agent's own files with the injected-context envelope
+/// taken back out.
+///
+/// Claude Code saves the prompts it receives into these files, and Atlas
+/// prepends an `<atlas-memory>` envelope to every prompt — so without this the
+/// corpus re-absorbs Atlas's own past injections, embeds them, and pushes the
+/// copies back on the next turn. The reader is where the loop is cut: the files
+/// themselves belong to another program and are left exactly as they are.
+///
+/// `None` for a file that does not exist, same as the plain read it replaces.
+pub(crate) fn read_without_injected_context(path: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    Some(atlas_agent_transcript::strip_injected_context(&raw))
+}
+
 fn read_claude(project_path: &str) -> ClaudeMemory {
     let home = dirs::home_dir().unwrap_or_default();
     let mem_dir = claude_memory_dir(project_path);
 
-    let index = std::fs::read_to_string(mem_dir.join("MEMORY.md")).ok();
+    let index = read_without_injected_context(&mem_dir.join("MEMORY.md"));
 
     let mut entries: Vec<MemoryFile> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(&mem_dir) {
@@ -634,7 +614,7 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            let Ok(raw) = std::fs::read_to_string(&path) else {
+            let Some(raw) = read_without_injected_context(&path) else {
                 continue;
             };
             let modified_ms = ent
@@ -662,8 +642,8 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
     // Stable, human order: type then title.
     entries.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.title.cmp(&b.title)));
 
-    let project_md = std::fs::read_to_string(Path::new(project_path).join("CLAUDE.md")).ok();
-    let global_md = std::fs::read_to_string(home.join(".claude").join("CLAUDE.md")).ok();
+    let project_md = read_without_injected_context(&Path::new(project_path).join("CLAUDE.md"));
+    let global_md = read_without_injected_context(&home.join(".claude").join("CLAUDE.md"));
 
     ClaudeMemory {
         memory_dir: mem_dir.to_string_lossy().to_string(),
@@ -675,17 +655,17 @@ fn read_claude(project_path: &str) -> ClaudeMemory {
 }
 
 #[derive(Default)]
-struct Frontmatter {
-    name: Option<String>,
-    description: Option<String>,
-    kind: Option<String>,
+pub(crate) struct Frontmatter {
+    pub(crate) name: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) kind: Option<String>,
 }
 
 /// Minimal YAML-frontmatter reader. We only need three scalar fields
 /// (`name`, `description`, `metadata.type`), so a line scan beats pulling in
 /// a YAML crate. Returns the parsed fields and the body with the frontmatter
 /// block removed.
-fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
+pub(crate) fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
     let mut fm = Frontmatter::default();
     let trimmed = raw.strip_prefix('\u{feff}').unwrap_or(raw);
     let lines: Vec<&str> = trimmed.lines().collect();
@@ -702,9 +682,12 @@ fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
     for line in &lines[1..close] {
         let indented = line.starts_with(' ') || line.starts_with('\t');
         let kv = line.trim();
-        if kv == "metadata:" {
-            in_metadata = true;
-            continue;
+        if !indented {
+            // A top-level key closes the `metadata:` block.
+            in_metadata = kv == "metadata:";
+            if in_metadata {
+                continue;
+            }
         }
         if let Some((k, v)) = kv.split_once(':') {
             let key = k.trim();
@@ -713,6 +696,11 @@ fn parse_frontmatter(raw: &str) -> (Frontmatter, String) {
                 "name" if !indented => fm.name = Some(val),
                 "description" if !indented => fm.description = Some(val),
                 "type" if in_metadata && indented => fm.kind = Some(val),
+                // Claude's documented form: `type:` at the top level. The
+                // nested `metadata.type` wins when a file has both.
+                "type" if !indented => {
+                    fm.kind.get_or_insert(val);
+                }
                 _ => {}
             }
         }
@@ -727,12 +715,11 @@ async fn read_codex(project_path: &str) -> CodexMemory {
     let home = dirs::home_dir().unwrap_or_default();
     let codex_dir = home.join(".codex");
 
-    let agents_md = tokio::fs::read_to_string(Path::new(project_path).join("AGENTS.md"))
-        .await
-        .ok();
-    let global_agents_md = tokio::fs::read_to_string(codex_dir.join("AGENTS.md"))
-        .await
-        .ok();
+    // Stripped for the same reason as the `CLAUDE.md` pair in `read_claude`:
+    // these are instruction files an agent can echo an Atlas prompt into, and
+    // the corpus must not re-absorb Atlas's own injections from either agent.
+    let agents_md = read_without_injected_context(&Path::new(project_path).join("AGENTS.md"));
+    let global_agents_md = read_without_injected_context(&codex_dir.join("AGENTS.md"));
 
     let db = newest_state_db(&codex_dir);
     let threads = match &db {
@@ -828,4 +815,153 @@ async fn query_codex_threads(db: &Path, project_path: &str) -> Vec<CodexThread> 
             atlas_agent_transcript::strip_injected_context(&t.first_user_message);
     }
     threads
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+
+    /// A prompt as Atlas used to send it while context was pushed: the
+    /// envelope in front of the user's words. Readers must still strip it
+    /// from files written back then.
+    fn legacy_wire_prompt(block: &str, user_text: &str) -> String {
+        let envelope = atlas_agent_transcript::wrap_memory_envelope(&[block]).expect("a present block");
+        format!("{envelope}\n\n{user_text}")
+    }
+    use super::*;
+
+    fn scratch() -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("atlas-memory-read-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// The pollution loop, end to end at the reader: Claude saved a prompt Atlas
+    /// had prefixed into one of its own memory files. Reading that file back
+    /// must yield the user's fact and none of Atlas's injected block — otherwise
+    /// the corpus embeds its own echo and pushes it again next turn.
+    #[test]
+    fn a_saved_injection_contributes_nothing_to_the_corpus() {
+        let dir = scratch();
+        let path = dir.join("recycled.md");
+        let injected = legacy_wire_prompt(
+            "--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
+            "The team prefers bun over npm.",
+        );
+        std::fs::write(&path, format!("---\nname: recycled\n---\n\n{injected}\n")).unwrap();
+
+        let body = read_without_injected_context(&path).expect("the file exists");
+        assert!(body.contains("The team prefers bun over npm."));
+        for leaked in ["<atlas-memory>", "SHARED MEMORY", "Use RS256", "Do not save any of it"] {
+            assert!(!body.contains(leaked), "{leaked:?} was re-absorbed into the corpus");
+        }
+        // Frontmatter still parses: the strip is line-based and leaves the fence.
+        let (meta, _) = parse_frontmatter(&body);
+        assert_eq!(meta.name.as_deref(), Some("recycled"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_without_an_envelope_is_read_verbatim() {
+        let dir = scratch();
+        let path = dir.join("plain.md");
+        std::fs::write(&path, "---\nname: plain\n---\n\nJWT signing is RS256.").unwrap();
+        assert_eq!(
+            read_without_injected_context(&path).as_deref(),
+            Some("---\nname: plain\n---\n\nJWT signing is RS256.")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The same strip, one reader over: an agent whose transcript Atlas captured
+    /// echoed the prefixed prompt back, so the capture row holds the envelope.
+    /// The corpus must take it off there too, or the leak simply moves house.
+    #[test]
+    fn a_captured_transcript_is_stripped_identically() {
+        use atlas_checkpoint::{model::ProjectMode, Capture, SessionKey, Source, Store};
+
+        let dir = scratch();
+        let project = dir.to_string_lossy().to_string();
+        let wire = legacy_wire_prompt(
+            "--- SHARED MEMORY ---\n[FACTS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
+            "why is auth failing?",
+        );
+        {
+            let mut store = Store::open(dir.join(".atlas")).expect("store opens");
+            let mut capture = Capture::new(&mut store, ProjectMode::Local);
+            capture
+                .record_prompt(
+                    &SessionKey {
+                        workspace_id: project.clone(),
+                        source: Source::Acp,
+                        native_session_id: "sess-1".into(),
+                    },
+                    &wire,
+                    1,
+                    // Not claude/codex: those have richer readers of their own
+                    // and `read_capture_docs` skips them.
+                    Some("opencode"),
+                    None,
+                    Some(&project),
+                )
+                .expect("prompt recorded");
+        } // writer dropped — `read_capture_docs` opens its own reader
+
+        let docs = read_capture_docs(&project);
+        let doc = docs.first().expect("one captured session in the corpus");
+        assert!(doc.text.contains("why is auth failing?"));
+        for leaked in ["<atlas-memory>", "SHARED MEMORY", "Use RS256", "Do not save any of it"] {
+            for field in [&doc.text, &doc.title, &doc.summary] {
+                assert!(!field.contains(leaked), "{leaked:?} survived into the corpus");
+            }
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The native agent has no dedicated corpus reader (its old Cersei session
+    /// reader is gone), so its conversations reach the corpus the same way every
+    /// other capture-only agent's do: through Atlas's own capture store.
+    #[test]
+    fn a_native_agent_session_reaches_the_corpus_through_capture() {
+        use atlas_checkpoint::{model::ProjectMode, Capture, SessionKey, Source, Store};
+
+        let dir = scratch();
+        let project = dir.to_string_lossy().to_string();
+        {
+            let mut store = Store::open(dir.join(".atlas")).expect("store opens");
+            let mut capture = Capture::new(&mut store, ProjectMode::Local);
+            capture
+                .record_prompt(
+                    &SessionKey {
+                        workspace_id: project.clone(),
+                        source: Source::Acp,
+                        native_session_id: "native-1".into(),
+                    },
+                    "refactor the retry loop in the gateway client",
+                    1,
+                    Some(atlas_native_agent::CERSEI_AGENT_ID),
+                    None,
+                    Some(&project),
+                )
+                .expect("prompt recorded");
+        }
+
+        let docs = read_capture_docs(&project);
+        let doc = docs
+            .iter()
+            .find(|d| d.id == "cersei:native-1")
+            .expect("the native session is in the corpus");
+        assert_eq!(doc.source, "cersei");
+        assert!(doc.text.contains("refactor the retry loop in the gateway client"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_file_reads_as_absent() {
+        assert!(read_without_injected_context(&scratch().join("nope.md")).is_none());
+    }
 }

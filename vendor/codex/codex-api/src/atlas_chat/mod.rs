@@ -31,4 +31,5 @@ pub use request::OUTPUT_TOKEN_CLAMP;
 pub use request::build_chat_request;
 pub use request::is_claude_model;
 pub use sse::ChatDialect;
+pub use sse::NamespacedTool;
 pub use sse::spawn_chat_stream;

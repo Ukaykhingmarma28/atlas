@@ -102,6 +102,18 @@ impl HnswStore {
             .map_err(|e| anyhow!("usearch remove: {e}"))
     }
 
+    /// The vector stored under `key`, if any.
+    pub fn get(&self, key: u64) -> Option<Vec<f32>> {
+        let mut out: Vec<f32> = Vec::new();
+        match self.index.export(key, &mut out) {
+            Ok(n) if n > 0 => {
+                out.truncate(self.dim);
+                Some(out)
+            }
+            _ => None,
+        }
+    }
+
     /// Top-`k` `(key, similarity)` pairs, best first. usearch returns cosine
     /// **distance** (`1 - cos`); we convert to similarity (`1 - distance`).
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(u64, f32)>> {

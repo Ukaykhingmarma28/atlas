@@ -35,12 +35,6 @@ pub struct EngineAgentServer {
     /// — the Phase 2 dev provider, which resolves a key from the environment.
     external_auth: Option<Arc<dyn ExternalAuth>>,
     default_mode: Option<acp::SessionModeId>,
-    /// Retrieval for `search_memory`, when the caller supplies one directly.
-    ///
-    /// `None` falls back to whatever the host registered, so a test can pass
-    /// its own without global state and the app does not have to thread one
-    /// through a `cfg`-gated constructor.
-    memory_search: Option<crate::engine::memory::MemorySearch>,
     /// How the model catalogue is fetched (ADR-0007).
     ///
     /// `None` builds the gateway fetcher at connect time, over the registered
@@ -55,21 +49,12 @@ impl EngineAgentServer {
             settings,
             external_auth: None,
             default_mode: None,
-            memory_search: None,
             catalogue: None,
         }
     }
 
     pub fn with_catalogue(mut self, catalogue: Arc<dyn CatalogueFetcher>) -> Self {
         self.catalogue = Some(catalogue);
-        self
-    }
-
-    pub fn with_memory_search(
-        mut self,
-        memory_search: crate::engine::memory::MemorySearch,
-    ) -> Self {
-        self.memory_search = Some(memory_search);
         self
     }
 
@@ -114,10 +99,9 @@ impl AgentServer for EngineAgentServer {
             })
         });
         let default_mode = self.default_mode.clone().or_else(|| options.defaults.mode.clone());
-        let memory_search = self
-            .memory_search
-            .clone()
-            .or_else(crate::engine::memory::registered_search);
+        // The host's MCP servers (the memory tool server) reach the engine
+        // the same way they reach every ACP agent: offered per session.
+        let session_mcp = options.session_mcp.clone();
         let thread_events = options.thread_events.clone();
         let mut settings = self.settings.clone();
         if let Some(root) = options.root_dir.clone() {
@@ -138,7 +122,7 @@ impl AgentServer for EngineAgentServer {
                 thread_events,
                 external_auth,
                 default_mode,
-                memory_search,
+                session_mcp,
                 catalogue,
             )
             .await?;

@@ -1,0 +1,6 @@
+## Auto-extracted memories
+
+### Session memories — 2026-08-30
+- **[decision]** Use SQLite in WAL mode for app-owned stores *(confidence: 90%)*
+- **[preference]** The user prefers minimal tooling changes *(confidence: 80%)*
+- **[pattern]** Commands return Result<T, String> across IPC *(confidence: 70%)*

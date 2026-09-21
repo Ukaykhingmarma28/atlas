@@ -75,9 +75,9 @@ fn retrieved_doc_maps_cleanly_onto_memdoc() {
             text: "Project uses Better Auth with DB-backed sessions.".into(),
         },
         RetrievedDoc {
-            id: "graph::00ff".into(),
+            id: "shared:decision:7".into(),
             title: "Decision: usearch over brute-force".into(),
-            source: "graph".into(),
+            source: "shared".into(),
             text: "HNSW replaces O(n) cosine as the live recall path.".into(),
         },
         RetrievedDoc {
@@ -160,7 +160,7 @@ fn retrieve_is_agent_agnostic_and_well_formed_when_model_available() {
         },
         CorpusDoc {
             id: "d3".into(),
-            text: "Retrieval fuses usearch HNSW (primary) with graph memory via RRF.".into(),
+            text: "Retrieval searches usearch HNSW and blends global memory via RRF.".into(),
             content_hash: "h3".into(),
             corpus: "codebase".into(),
         },

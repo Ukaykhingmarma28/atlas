@@ -9,8 +9,8 @@
 //     It additionally reports `atStart`, because *completing* a command
 //     anywhere is safe (it only inserts text) while *running* one is not:
 //     Claude Code resolves a passthrough command only when it occupies byte 0
-//     of the message (`claude-agent-acp` gates on `firstText.startsWith("/")`
-//     — mirrored server-side by `memory_pack::is_slash_command`). Auto-sending
+//     of the message (`claude-agent-acp` gates on `firstText.startsWith("/")`;
+//     Atlas prepends nothing to a prompt, so byte 0 is the user's). Auto-sending
 //     a mid-message command would ship it as prose and silently do nothing, so
 //     `message-input.tsx` gates submission on that flag.
 //   - There is no document-level state field — selecting a command

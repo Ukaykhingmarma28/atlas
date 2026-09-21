@@ -39,7 +39,9 @@ use atlas_acp_thread::{
 };
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
 use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
-use atlas_agent_servers::{AcpConnectionDefaults, AgentServer, ConnectOptions};
+use atlas_agent_servers::{
+    AcpConnectionDefaults, AgentServer, ConnectOptions, SessionMcpOffer, SessionMcpRequest, SessionMcpServers,
+};
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
 use atlas_agent_wire::{
@@ -259,6 +261,32 @@ fn elicitation_response(
 /// launch rather than marked done.
 const BACKFILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+/// Told when a session starts and when it ends — shared memory's sessions
+/// table (`shared_memory::SharedMemoryStore`).
+///
+/// A session starts when it is bound (opened, loaded or resumed). It ends when
+/// it is dropped, or when its agent's process exits: the connection announces
+/// an exit on every live thread, and killing an agent or quitting the app ends
+/// the process too. `ended` may be called for a session that already ended;
+/// the implementation keeps it to one end.
+pub trait SessionLifecycle: Send + Sync {
+    /// `agent` is the durable plugin id (`cersei` for the native agent).
+    fn session_started(&self, session_id: &str, agent: &str, cwd: &str);
+    fn session_ended(&self, session_id: &str);
+}
+
+/// The MCP servers every agent connection offers its sessions, installed after
+/// the host exists (the memory tool server starts later in setup). Empty until
+/// then: a session opened before it is installed is offered nothing.
+#[derive(Default)]
+struct SessionMcpSlot(Mutex<Option<Arc<dyn SessionMcpServers>>>);
+
+impl SessionMcpServers for SessionMcpSlot {
+    fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
+        atlas_agent_servers::session_mcp::offer_for(lock(&self.0).as_ref(), request)
+    }
+}
+
 pub struct AgentHost {
     manager: Arc<AgentManager>,
     projector: Arc<DeltaProjector>,
@@ -297,6 +325,11 @@ pub struct AgentHost {
     /// stream. The receiver is taken once, by the forwarder that turns them
     /// into `atlas:agent-elicitation`.
     request_elicitations: RequestElicitations,
+    /// Where session start and end are recorded. Installed at startup; `None`
+    /// until then (and in tests that do not care).
+    lifecycle: Mutex<Option<Arc<dyn SessionLifecycle>>>,
+    /// What each session is offered in its MCP server list.
+    session_mcp: Arc<SessionMcpSlot>,
 }
 
 /// The plumbing for elicitations that belong to a connection, not a session.
@@ -369,7 +402,9 @@ impl AgentHost {
             }
         };
         let (elicitation_tx, elicitation_rx) = mpsc::unbounded_channel();
+        let session_mcp = Arc::new(SessionMcpSlot::default());
         let options = ConnectOptions {
+            session_mcp: Some(session_mcp.clone() as Arc<dyn SessionMcpServers>),
             root_dir: None,
             defaults: AcpConnectionDefaults::default(),
             thread_events: projector.thread_events(),
@@ -411,15 +446,53 @@ impl AgentHost {
                 stream: Mutex::new(Some(elicitation_rx)),
                 answered_by: Mutex::new(HashMap::new()),
             },
+            lifecycle: Mutex::new(None),
+            session_mcp,
         });
         // Weak, and installed after the host exists: the observer needs the
         // host to name the agent a session belongs to, and a strong reference
         // here would be a cycle that never drops.
-        if host.history.is_some() {
-            host.projector
-                .observe_threads(Arc::new(HistoryObserver(Arc::downgrade(&host))));
-        }
+        host.projector
+            .observe_threads(Arc::new(HostObserver(Arc::downgrade(&host))));
         host
+    }
+
+    /// Install where session start and end are recorded.
+    pub fn set_session_lifecycle(&self, lifecycle: Arc<dyn SessionLifecycle>) {
+        *lock(&self.lifecycle) = Some(lifecycle);
+    }
+
+    /// Install what every agent's sessions are offered in `mcpServers` (the
+    /// memory tool server).
+    pub fn set_session_mcp(&self, servers: Arc<dyn SessionMcpServers>) {
+        *lock(&self.session_mcp.0) = Some(servers);
+    }
+
+    fn lifecycle(&self) -> Option<Arc<dyn SessionLifecycle>> {
+        lock(&self.lifecycle).clone()
+    }
+
+    /// Record the end of every session in `ended`.
+    fn end_sessions(&self, ended: impl IntoIterator<Item = String>) {
+        if let Some(lifecycle) = self.lifecycle() {
+            for session_id in ended {
+                lifecycle.session_ended(&session_id);
+            }
+        }
+    }
+
+    /// Remove every session `agent` owns from the session table, recording
+    /// each one's end: the agent's process is going away with them.
+    fn forget_sessions_of(&self, agent: &Agent) {
+        let mut ended = Vec::new();
+        lock(&self.sessions).retain(|session_id, session| {
+            let keep = &session.agent != agent;
+            if !keep {
+                ended.push(session_id.clone());
+            }
+            keep
+        });
+        self.end_sessions(ended);
     }
 
     /// Atlas's session history, or `None` when the store could not be opened.
@@ -486,7 +559,9 @@ impl AgentHost {
         // the one that spawns a child moments after the app decided to leave
         // (ATL-227, ATL-228).
         self.manager.shutdown();
-        lock(&self.sessions).clear();
+        // Quitting ends every agent process, and with it every session.
+        let ended: Vec<String> = lock(&self.sessions).drain().map(|(id, _)| id).collect();
+        self.end_sessions(ended);
         // The projector holds each session's only strong thread handle, and
         // the thread holds the connection `Arc`. Left in place it pinned every
         // connection past both sweeps above, so no `Drop` ran and no child was
@@ -715,7 +790,7 @@ impl AgentHost {
     fn kill_agent(&self, plugin_id: &str, agent: &Agent) {
         self.forget_request_elicitations(&ThreadAgentId::new(plugin_id));
         self.manager.drop_connection(agent);
-        lock(&self.sessions).retain(|_, session| &session.agent != agent);
+        self.forget_sessions_of(agent);
     }
 
     /// Drop the native agent's connection, if one is open.
@@ -732,7 +807,7 @@ impl AgentHost {
     pub fn drop_native_connection(&self) {
         self.forget_request_elicitations(&ThreadAgentId::new(CERSEI_AGENT_ID));
         self.manager.drop_connection(&Agent::Native);
-        lock(&self.sessions).retain(|_, session| session.agent != Agent::Native);
+        self.forget_sessions_of(&Agent::Native);
     }
 
     /// Re-fetch the native agent's model catalogue from the gateway
@@ -961,6 +1036,13 @@ impl AgentHost {
                 created_at: Utc::now(),
             },
         );
+        if let Some(lifecycle) = self.lifecycle() {
+            lifecycle.session_started(
+                session_id.0.as_ref(),
+                record.plugin_id.as_str(),
+                &cwd.to_string_lossy(),
+            );
+        }
         SessionInit {
             key: SessionKey {
                 agent_id,
@@ -1000,6 +1082,7 @@ impl AgentHost {
         if !removed {
             return Ok(());
         }
+        self.end_sessions([session_id.to_string()]);
         // Only the live binding goes. The history row is the record of the
         // conversation and outlives the tab that showed it.
         if let Some(history) = self.history() {
@@ -2051,7 +2134,9 @@ fn snapshot_of(thread: &AcpThreadHandle) -> ThreadSnapshot {
     }
 }
 
-/// Keeps every live conversation's history row current.
+/// The host's view of every live thread's events: keeps each conversation's
+/// history row current, and records a session's end when its agent's process
+/// exits.
 ///
 /// Zed's `ThreadMetadataStore` subscribes to each `ConversationView`
 /// (`thread_metadata_store.rs:1188-1212`); Atlas has no views, so the projector
@@ -2059,9 +2144,9 @@ fn snapshot_of(thread: &AcpThreadHandle) -> ThreadSnapshot {
 /// handler reads its own.
 ///
 /// Weak on purpose: the host owns the projector that owns this.
-struct HistoryObserver(std::sync::Weak<AgentHost>);
+struct HostObserver(std::sync::Weak<AgentHost>);
 
-impl ThreadObserver for HistoryObserver {
+impl ThreadObserver for HostObserver {
     fn on_thread_event(
         &self,
         agent_id: AgentId,
@@ -2078,6 +2163,15 @@ impl ThreadObserver for HistoryObserver {
         let Some(host) = self.0.upgrade() else {
             return;
         };
+        // A load error on a live thread is the connection reporting that the
+        // agent's process exited (`atlas-agent-servers`, the wait task): the
+        // session has ended even though its tab is still open.
+        if matches!(
+            event,
+            atlas_acp_thread::AcpThreadEvent::LoadError(atlas_acp_thread::LoadError::Exited { .. })
+        ) {
+            host.end_sessions([session_id.to_string()]);
+        }
         let Some(history) = host.history() else {
             return;
         };
@@ -2803,6 +2897,192 @@ mod tests {
         fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
             self
         }
+    }
+
+    /// A native agent whose threads report to the host the way a real
+    /// connection's do — through the `thread_events` sink it was handed at
+    /// connect — so an event on the thread reaches the host's observer.
+    struct LiveNative {
+        session_id: &'static str,
+        events: std::sync::Mutex<Option<atlas_agent_servers::ThreadEventSink>>,
+    }
+
+    impl LiveNative {
+        fn new(session_id: &'static str) -> Arc<Self> {
+            Arc::new(Self {
+                session_id,
+                events: std::sync::Mutex::new(None),
+            })
+        }
+    }
+
+    impl AgentConnection for LiveNative {
+        fn agent_id(&self) -> atlas_acp_thread::AgentId {
+            atlas_acp_thread::AgentId::new(CERSEI_AGENT_ID)
+        }
+
+        fn telemetry_id(&self) -> Arc<str> {
+            CERSEI_AGENT_ID.into()
+        }
+
+        fn new_session(
+            self: Arc<Self>,
+            work_dirs: Vec<PathBuf>,
+        ) -> BoxFuture<'static, anyhow::Result<AcpThreadHandle>> {
+            let session_id = acp::SessionId::new(self.session_id);
+            let sink = self.events.lock().unwrap().clone().expect("connected first");
+            let thread = Arc::new(std::sync::Mutex::new(AcpThread::new(
+                session_id.clone(),
+                self.clone() as Arc<dyn AgentConnection>,
+                work_dirs,
+                None,
+                sink(&session_id),
+            )));
+            async move { Ok(thread) }.boxed()
+        }
+
+        fn auth_methods(&self) -> &[acp::AuthMethod] {
+            &[]
+        }
+
+        fn authenticate(
+            &self,
+            _method: acp::AuthMethodId,
+        ) -> BoxFuture<'static, anyhow::Result<()>> {
+            async { Ok(()) }.boxed()
+        }
+
+        fn prompt(
+            &self,
+            _params: acp::PromptRequest,
+        ) -> BoxFuture<'static, anyhow::Result<acp::PromptResponse>> {
+            async { Ok(acp::PromptResponse::new(acp::StopReason::EndTurn)) }.boxed()
+        }
+
+        fn cancel(&self, _session_id: &acp::SessionId) {}
+
+        fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+            self
+        }
+    }
+
+    impl AgentServer for LiveNative {
+        fn agent_id(&self) -> atlas_acp_thread::AgentId {
+            atlas_acp_thread::AgentId::new(CERSEI_AGENT_ID)
+        }
+
+        fn connect(
+            &self,
+            _delegate: AgentServerDelegate,
+            options: ConnectOptions,
+        ) -> BoxFuture<'static, anyhow::Result<Arc<dyn AgentConnection>>> {
+            let connection = Arc::new(LiveNative {
+                session_id: self.session_id,
+                events: std::sync::Mutex::new(Some(options.thread_events)),
+            });
+            async move { Ok(connection as Arc<dyn AgentConnection>) }.boxed()
+        }
+
+        fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+            self
+        }
+    }
+
+    /// A host recording session lifecycle into shared memory, a project
+    /// directory, and the scope's store to read the sessions table back from.
+    fn recording_host(
+        native: Arc<dyn AgentServer>,
+    ) -> (Arc<AgentHost>, PathBuf, PathBuf, Arc<atlas_memory::record::RecordStore>) {
+        let (host, dir) = fresh_host_with_native(native);
+        let tick = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let memory = crate::commands::shared_memory::SharedMemoryStore::with_clock(Arc::new(move || {
+            100 * (tick.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
+        }));
+        host.set_session_lifecycle(Arc::new(memory));
+        let project = dir.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let record = crate::commands::shared_memory::store_for(&project.to_string_lossy()).unwrap();
+        (host, dir, project, record)
+    }
+
+    /// Issue #81: opening a session records its start and owning agent, and
+    /// dropping it (a tab closed) records its end. The native agent is an
+    /// agent like any other here, recorded under its stored id.
+    #[tokio::test]
+    async fn a_dropped_session_leaves_its_start_end_and_agent() {
+        let (host, dir, project, record) = recording_host(LiveNative::new("s-drop"));
+        let agent_id = host.spawn(CERSEI_AGENT_ID).await.expect("spawn").agent_id;
+        host.new_session(agent_id, project.clone(), Vec::new())
+            .await
+            .expect("a session opens");
+
+        host.drop_session("s-drop").await.expect("drop");
+        host.drop_session("s-drop").await.expect("a second drop is a no-op");
+
+        assert_eq!(
+            record.sessions().unwrap(),
+            vec![atlas_memory::record::SessionRow {
+                session_id: "s-drop".into(),
+                agent: CERSEI_AGENT_ID.into(),
+                started_at: Some(100),
+                ended_at: Some(200),
+            }],
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Issue #81: an agent process that exits ends its sessions — the
+    /// connection announces the exit on every live thread as a load error.
+    #[tokio::test]
+    async fn an_agent_process_exit_ends_its_session() {
+        let (host, dir, project, record) = recording_host(LiveNative::new("s-exit"));
+        let agent_id = host.spawn(CERSEI_AGENT_ID).await.expect("spawn").agent_id;
+        host.new_session(agent_id, project.clone(), Vec::new())
+            .await
+            .expect("a session opens");
+
+        let thread = host.thread("s-exit").expect("live");
+        lock_thread(&thread).emit_load_error(atlas_acp_thread::LoadError::Exited {
+            status: Some(1),
+            stderr: "".into(),
+        });
+        for _ in 0..100 {
+            if record.sessions().unwrap()[0].ended_at.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        let row = &record.sessions().unwrap()[0];
+        assert_eq!(row.agent, CERSEI_AGENT_ID);
+        assert_eq!((row.started_at, row.ended_at), (Some(100), Some(200)));
+
+        // The tab closing afterwards does not end it a second time.
+        host.drop_session("s-exit").await.expect("drop");
+        let ends = record
+            .events_newest(10)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "session_end")
+            .count();
+        assert_eq!(ends, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Issue #81: stopping an agent kills its process, which ends every
+    /// session it had open.
+    #[tokio::test]
+    async fn killing_an_agent_ends_its_sessions() {
+        let (host, dir, project, record) = recording_host(LiveNative::new("s-kill"));
+        let agent_id = host.spawn(CERSEI_AGENT_ID).await.expect("spawn").agent_id;
+        host.new_session(agent_id, project.clone(), Vec::new())
+            .await
+            .expect("a session opens");
+
+        host.kill(agent_id).expect("kill");
+
+        assert_eq!(record.sessions().unwrap()[0].ended_at, Some(200));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Issue #76: a native session's model must be known to capture BEFORE

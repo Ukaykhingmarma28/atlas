@@ -1,30 +1,22 @@
-//! Step 7 — gated session memory extraction.
+//! The extractor: durable memory distilled from a session's conversation.
 //!
-//! Relocates the per-turn BYOK distill (legacy `memory_compile`) off the hot
-//! path and behind Cersei's session-extraction gates. The Cersei SDK supplies
-//! only the **gates + prompt + parser**
-//! (`cersei_agent::session_memory::{extraction_prompt, parse_extraction_output}`
-//! plus the `MemoryCategory`/`ExtractedMemory` types) — **the actual BYOK LLM
-//! call is injected by the caller** via the `llm` closure, so this crate stays
-//! Tauri-free *and* BYOK-free.
+//! One pass asks the model directly for the four durable kinds — Decision,
+//! Fact, Failure, Architecture — each with a 0–1 confidence (research note
+//! R11: no intermediate category table). It runs at two moments:
 //!
-//! Flow ([`extract_and_store`]):
-//! 1. Sync `tool_calls_since_last` from the transcript and run [`should_extract`]
-//!    (≥20 turns, ≥3 tool calls since the last extraction, no pending tool_use) —
-//!    the same gates the SDK applies, replicated locally on the neutral
-//!    [`TranscriptTurn`] (the SDK gate wants `&[cersei_types::Message]`, which we
-//!    don't reconstruct; the plan permits a thin local extractor).
-//! 2. Build the prompt from `extraction_prompt()` + the rendered transcript and
-//!    make ONE injected LLM call.
-//! 3. `parse_extraction_output` → `ExtractedMemory`s; map each `MemoryCategory`
-//!    onto a (lossy) `MemoryType` and write it to the graph
-//!    (`store_memory` + `tag_memory` carrying the real category as a topic tag,
-//!    `link_memories` within the batch where sensible).
-//! 4. Append the batch to `extracted/<session>.md` (Claude-compatible memdir,
-//!    via the SDK's `persist_memories`) so the indexer's next pass embeds it.
+//! - **Turn finished**, under the gates: at least twenty turns in the session
+//!   and, after the first pass, at least three tool calls since the last one;
+//!   never while the last assistant turn still has a tool call open.
+//! - **Session end**, once, over whatever arrived since the last pass — so a
+//!   short session still contributes.
 //!
-//! The neutral [`ExtractState`] (counts since the last extraction) is persisted
-//! per-session under the memory dir so the gates survive across turns.
+//! This module owns the gates, the prompt and the parser. The model call is
+//! injected by the caller (`llm`), and so is the write: [`extract`] returns
+//! what the model found and the caller lands it in the record store, which
+//! redacts and dedups every write. The crate stays free of any provider.
+//!
+//! [`ExtractState`] (counts since the last pass) is persisted per session under
+//! the scope's memory directory, so the gates survive a restart.
 
 use std::future::Future;
 use std::path::Path;
@@ -32,24 +24,26 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::session::{
-    extraction_prompt, parse_extraction_output, persist_memories, MemoryCategory,
-};
-use crate::graph::GraphMemory;
-use crate::graph::MemoryType;
+use crate::record::EntryKind;
 
-/// Mirrors `cersei_agent::session_memory::MIN_MESSAGES_TO_EXTRACT` (private there).
+/// Turns a session needs before the first turn-finished pass.
 const MIN_MESSAGES_TO_EXTRACT: usize = 20;
-/// Mirrors `cersei_agent::session_memory::MIN_TOOL_CALLS_BETWEEN_EXTRACTIONS`.
+/// Tool calls since the last pass before another turn-finished pass.
 const MIN_TOOL_CALLS_BETWEEN_EXTRACTIONS: usize = 3;
-/// Cap on the transcript text fed to the model (chars) — mirrors the legacy
-/// `memory_compile::MAX_TEXT` budget so BYOK cost stays bounded.
+/// Cap on the conversation text sent to the model (chars); the most recent
+/// text is kept.
 const MAX_PROMPT_CHARS: usize = 6000;
+/// Shorter items are noise ("ok", "n/a").
+const MIN_ITEM_CHARS: usize = 4;
+/// Items kept per kind from one pass.
+const MAX_PER_KIND: usize = 8;
+/// Confidence when the model gave none (or an unreadable one).
+const DEFAULT_CONFIDENCE: f64 = 0.5;
 
-/// Format-neutral transcript turn. Each agent's transcript (Cersei native /
-/// Claude Code JSONL / Codex) is adapted into this by the Tauri layer (Step 7
-/// Part B reuses the unified `AgentManager` snapshot, which already normalises
-/// all three agents into role/content/tool-call messages).
+const INSTRUCTION: &str = "You are extracting durable shared memory from a conversation between a user and an AI coding agent, so that a DIFFERENT agent working on the same repository later can continue the work. Extract only concrete, reusable items of exactly four kinds:\n- decision: a technical choice that was made (and why, briefly)\n- fact: a durable fact or convention about the project or the user's preferences\n- failure: something that was tried and failed, or an anti-pattern to avoid\n- architecture: a structural note about how the system is built\nOmit anything speculative, conversational or transient, and anything already stated as background memory. Give each item a confidence between 0 and 1 that it is correct and worth remembering.\nRespond with ONLY a JSON object (no prose, no code fences) of exactly this shape:\n{\"entries\":[{\"kind\":\"decision\",\"content\":\"one short sentence\",\"confidence\":0.9}]}\nUse {\"entries\":[]} when nothing qualifies.";
+
+/// Format-neutral transcript turn, adapted from any agent's session by the
+/// app layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptTurn {
     /// `"user"`, `"assistant"`, or `"system"` (lower-cased role label).
@@ -60,13 +54,30 @@ pub struct TranscriptTurn {
     pub tool_calls: usize,
 }
 
+/// When an extraction pass is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    /// A turn finished: runs only when the gates are met.
+    TurnFinished,
+    /// The session ended: runs once over anything new since the last pass.
+    SessionEnd,
+}
+
+/// One durable entry the model found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Extracted {
+    /// Always one of the four durable kinds.
+    pub kind: EntryKind,
+    pub content: String,
+    /// The model's own 0–1 confidence, clamped.
+    pub confidence: f64,
+}
+
 /// Per-session extraction bookkeeping, persisted under
-/// `<memory_dir>/extract-state/<session>.json`. Neutral analogue of the SDK's
-/// `SessionMemoryState` (which is `&[Message]`-shaped); we track counts against
-/// the neutral transcript instead.
+/// `<memory_dir>/extract-state/<session>.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtractState {
-    /// Transcript length at the last successful extraction pass.
+    /// Transcript length at the last extraction pass.
     pub last_extracted_turn_index: usize,
     /// Tool calls observed since `last_extracted_turn_index` (synced from the
     /// transcript before each gate check).
@@ -111,21 +122,19 @@ fn state_path(memory_dir: &Path, session_id: &str) -> std::path::PathBuf {
         .join(format!("{}.json", sanitize(session_id)))
 }
 
-/// Keep a session id filesystem-safe (it is also the on-disk JSONL stem upstream,
-/// but be defensive about path separators).
+/// Keep a session id filesystem-safe.
 fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect()
 }
 
-/// The same gates the SDK applies (`cersei_agent::session_memory::should_extract`),
-/// replicated on the neutral transcript: ≥20 turns; ≥3 tool calls since the last
-/// extraction (only enforced once a first extraction has happened); and no
-/// pending tool_use on the last assistant turn.
+/// The turn-finished gates: ≥20 turns; ≥3 tool calls since the last pass (only
+/// once a first pass has happened); no tool call open on the last assistant
+/// turn.
 ///
-/// `state.tool_calls_since_last` must already reflect the transcript — callers go
-/// through [`extract_and_store`], which syncs it first.
+/// `state.tool_calls_since_last` must already reflect the transcript — callers
+/// go through [`extract`], which syncs it first.
 pub fn should_extract(turns: &[TranscriptTurn], state: &ExtractState) -> bool {
     if turns.len() < MIN_MESSAGES_TO_EXTRACT {
         return false;
@@ -134,7 +143,6 @@ pub fn should_extract(turns: &[TranscriptTurn], state: &ExtractState) -> bool {
     {
         return false;
     }
-    // Don't extract while the last assistant turn still has an unresolved tool call.
     if let Some(last_assistant) = turns.iter().rev().find(|t| t.role == "assistant") {
         if last_assistant.tool_calls > 0 {
             return false;
@@ -143,132 +151,116 @@ pub fn should_extract(turns: &[TranscriptTurn], state: &ExtractState) -> bool {
     true
 }
 
-/// Map an extraction [`MemoryCategory`] onto the graph's coarser [`MemoryType`].
-///
-/// Lossy by design (the graph only knows `User/Feedback/Project/Reference`); the
-/// precise category is preserved separately as a topic tag (see `tag_memory`):
-/// - `UserPreference` → `User`
-/// - `ProjectFact` / `CodePattern` / `Decision` / `Constraint` → `Project`
-pub fn category_to_memory_type(category: &MemoryCategory) -> MemoryType {
-    match category {
-        MemoryCategory::UserPreference => MemoryType::User,
-        MemoryCategory::ProjectFact
-        | MemoryCategory::CodePattern
-        | MemoryCategory::Decision
-        | MemoryCategory::Constraint => MemoryType::Project,
-    }
+/// The turns since the last pass that carry any text.
+fn new_turns<'a>(turns: &'a [TranscriptTurn], state: &ExtractState) -> impl Iterator<Item = &'a TranscriptTurn> {
+    let start = state.last_extracted_turn_index.min(turns.len());
+    turns[start..].iter().filter(|t| !t.text.trim().is_empty())
 }
 
-/// Gate, extract, and store distilled memories for one session — off the hot path.
+/// Gate one pass, ask the model, and return what it found — off the hot path.
 ///
-/// `llm` is the injected BYOK seam: it receives the fully-built extraction prompt
-/// and returns the model's raw completion. This keeps `atlas-memory` BYOK-free
-/// (the Tauri layer supplies a closure over its provider plumbing).
-///
-/// Returns the number of memories stored (0 when the gates don't fire or the
-/// model produced nothing parseable). `state` is updated and persisted on every
-/// pass that clears the gates.
-pub async fn extract_and_store<F, Fut>(
+/// `llm` receives the full prompt and returns the model's raw completion. It
+/// is called at most once, and only when `trigger` allows a pass: the gates
+/// for [`Trigger::TurnFinished`]; any new assistant text for
+/// [`Trigger::SessionEnd`]. A pass that ran advances `state` (even when
+/// nothing parsed, so a dud turn does not re-trigger at once) — the caller
+/// persists it; a failed model call leaves it untouched and is returned as the
+/// error. No disk I/O: the caller runs that off the async runtime.
+pub async fn extract<F, Fut>(
     turns: &[TranscriptTurn],
     state: &mut ExtractState,
-    graph: &GraphMemory,
-    memory_dir: &Path,
-    session_id: &str,
+    trigger: Trigger,
     llm: F,
-) -> Result<usize>
+) -> Result<Vec<Extracted>>
 where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Result<String>>,
 {
     state.sync_counts(turns);
-    if !should_extract(turns, state) {
-        return Ok(0);
+    let due = match trigger {
+        Trigger::TurnFinished => should_extract(turns, state),
+        Trigger::SessionEnd => new_turns(turns, state).any(|t| t.role == "assistant"),
+    };
+    if !due {
+        return Ok(Vec::new());
     }
 
-    // ── Build the prompt: SDK system prompt + rendered transcript ──────────────
-    let prompt = build_prompt(turns);
-
-    // ── ONE injected BYOK call ────────────────────────────────────────────────
+    let prompt = build_prompt(new_turns(turns, state));
     let output = llm(prompt).await?;
-    let memories = parse_extraction_output(&output);
 
-    // The pass ran — advance the gate counters even if nothing parsed, so a dud
-    // turn doesn't immediately re-trigger on the next finished turn.
     state.extraction_count += 1;
     state.last_extracted_turn_index = turns.len();
     state.tool_calls_since_last = 0;
-    let _ = state.save(memory_dir, session_id);
 
-    if memories.is_empty() {
-        return Ok(0);
-    }
-
-    // ── Write to the graph: store + tag (category) + link within the batch ─────
-    let mut ids: Vec<(String, String)> = Vec::with_capacity(memories.len());
-    for mem in &memories {
-        let mem_type = category_to_memory_type(&mem.category);
-        match graph.store_memory(&mem.content, mem_type, mem.confidence) {
-            Ok(id) => {
-                // Carry the precise category as a topic tag (the graph type is lossy).
-                if let Err(e) = graph.tag_memory(&id, mem.category.label()) {
-                    tracing::debug!(target: "atlas_memory::extract", "tag_memory failed: {e}");
-                }
-                ids.push((id, mem.category.label().to_string()));
-            }
-            Err(e) => {
-                tracing::debug!(target: "atlas_memory::extract", "store_memory failed: {e}");
-            }
-        }
-    }
-
-    // Link consecutive same-category memories so the graph reflects intra-session
-    // relationships (best-effort; recall never depends on links existing).
-    for window in ids.windows(2) {
-        let (from, from_cat) = &window[0];
-        let (to, to_cat) = &window[1];
-        if from_cat == to_cat {
-            if let Err(e) = graph.link_memories(from, to, "co_extracted") {
-                tracing::debug!(target: "atlas_memory::extract", "link_memories failed: {e}");
-            }
-        }
-    }
-
-    // ── Append to the Claude-compatible memdir file (SDK writer) ───────────────
-    let target = memory_dir
-        .join("extracted")
-        .join(format!("{}.md", sanitize(session_id)));
-    if let Err(e) = persist_memories(&memories, &target) {
-        tracing::debug!(target: "atlas_memory::extract", "persist_memories failed: {e}");
-    }
-
-    Ok(ids.len())
+    Ok(parse_extracted(&output))
 }
 
-/// Render the extraction prompt: the SDK system prompt followed by the transcript,
-/// char-capped to [`MAX_PROMPT_CHARS`] (keeping the most recent turns).
-fn build_prompt(turns: &[TranscriptTurn]) -> String {
+/// The instruction followed by the conversation since the last pass, capped to
+/// [`MAX_PROMPT_CHARS`] (keeping the most recent text).
+fn build_prompt<'a>(turns: impl Iterator<Item = &'a TranscriptTurn>) -> String {
     let mut body = String::new();
     for turn in turns {
-        let text = turn.text.trim();
-        if text.is_empty() {
-            continue;
-        }
-        body.push_str(&format!("[{}] {}\n", turn.role, text));
+        body.push_str(&format!("[{}] {}\n", turn.role, turn.text.trim()));
     }
-    // Keep the tail if over budget — recent context is the most valuable.
     if body.len() > MAX_PROMPT_CHARS {
         let start = body.len() - MAX_PROMPT_CHARS;
-        // Snap to a char boundary.
         let start = (start..body.len())
             .find(|i| body.is_char_boundary(*i))
             .unwrap_or(start);
         body = body[start..].to_string();
     }
-    format!(
-        "{}\n\n--- CONVERSATION ---\n{}",
-        extraction_prompt(),
-        body
-    )
+    format!("{INSTRUCTION}\n\n--- CONVERSATION ---\n{body}")
+}
+
+/// Parse the model's answer. Lenient: the outermost `{…}` is read, so stray
+/// prose or code fences around it are ignored; items of any other kind, empty
+/// or near-empty items, and anything past [`MAX_PER_KIND`] per kind are
+/// dropped. Confidence is clamped to 0–1; a missing one is 0.5.
+pub fn parse_extracted(output: &str) -> Vec<Extracted> {
+    let (Some(start), Some(end)) = (output.find('{'), output.rfind('}')) else {
+        return Vec::new();
+    };
+    if end <= start {
+        return Vec::new();
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&output[start..=end]) else {
+        return Vec::new();
+    };
+    let Some(items) = value.get("entries").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+
+    let mut out: Vec<Extracted> = Vec::new();
+    for item in items {
+        let Some(kind) = item
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .and_then(|k| EntryKind::parse(k.trim().to_ascii_lowercase().as_str()))
+            .filter(|k| k.is_durable())
+        else {
+            continue;
+        };
+        let Some(content) = item.get("content").and_then(|c| c.as_str()).map(str::trim) else {
+            continue;
+        };
+        if content.chars().count() < MIN_ITEM_CHARS {
+            continue;
+        }
+        if out.iter().filter(|e| e.kind == kind).count() >= MAX_PER_KIND {
+            continue;
+        }
+        let confidence = item
+            .get("confidence")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|c| c.is_finite())
+            .map_or(DEFAULT_CONFIDENCE, |c| c.clamp(0.0, 1.0));
+        out.push(Extracted {
+            kind,
+            content: content.to_string(),
+            confidence,
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -295,55 +287,59 @@ mod tests {
             .collect()
     }
 
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("atlas-extract-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    const CANNED: &str = r#"Sure:
+```json
+{"entries":[
+ {"kind":"decision","content":"Sign JWTs with RS256","confidence":0.9},
+ {"kind":"fact","content":"The API speaks JSON over REST","confidence":0.85},
+ {"kind":"failure","content":"HS256 needs a shared secret; avoid","confidence":0.7},
+ {"kind":"architecture","content":"Server components render /todos","confidence":0.6}
+]}
+```"#;
+
     #[test]
     fn gate_false_below_message_threshold() {
-        let turns = make_turns(10);
-        assert!(!should_extract(&turns, &ExtractState::default()));
+        assert!(!should_extract(&make_turns(10), &ExtractState::default()));
     }
 
     #[test]
     fn gate_true_above_threshold() {
-        let turns = make_turns(26); // ends on an assistant turn with no tool calls
-        assert!(should_extract(&turns, &ExtractState::default()));
+        assert!(should_extract(&make_turns(26), &ExtractState::default()));
     }
 
     #[test]
     fn gate_false_during_cooldown() {
-        let turns = make_turns(26);
         let state = ExtractState {
             extraction_count: 1,
-            tool_calls_since_last: 1, // < 3
+            tool_calls_since_last: 1,
             ..Default::default()
         };
-        assert!(!should_extract(&turns, &state));
+        assert!(!should_extract(&make_turns(26), &state));
     }
 
     #[test]
     fn gate_true_after_cooldown_met() {
-        let turns = make_turns(26);
         let state = ExtractState {
             extraction_count: 1,
             tool_calls_since_last: 3,
             ..Default::default()
         };
-        assert!(should_extract(&turns, &state));
+        assert!(should_extract(&make_turns(26), &state));
     }
 
     #[test]
     fn gate_false_with_pending_tool_use() {
         let mut turns = make_turns(26);
-        // Last assistant turn still has an open tool call → don't extract yet.
         turns.push(turn("assistant", "running tool", 1));
         assert!(!should_extract(&turns, &ExtractState::default()));
-    }
-
-    #[test]
-    fn category_mapping_is_lossy_but_total() {
-        use MemoryCategory::*;
-        assert_eq!(category_to_memory_type(&UserPreference), MemoryType::User);
-        for c in [ProjectFact, CodePattern, Decision, Constraint] {
-            assert_eq!(category_to_memory_type(&c), MemoryType::Project);
-        }
     }
 
     #[test]
@@ -359,96 +355,127 @@ mod tests {
             ..Default::default()
         };
         state.sync_counts(&turns);
-        assert_eq!(state.tool_calls_since_last, 3); // only turns[2..]
+        assert_eq!(state.tool_calls_since_last, 3);
     }
 
-    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
-    /// deletes the directory, panic or not.
-    fn tmp_dir(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("atlas-memory-{name}-"))
-            .tempdir()
-            .unwrap();
-        let path = dir.path().to_path_buf();
-        (dir, path)
+    #[test]
+    fn the_model_is_asked_for_the_four_kinds_with_a_confidence_each() {
+        let found = parse_extracted(CANNED);
+        assert_eq!(
+            found,
+            vec![
+                Extracted { kind: EntryKind::Decision, content: "Sign JWTs with RS256".into(), confidence: 0.9 },
+                Extracted { kind: EntryKind::Fact, content: "The API speaks JSON over REST".into(), confidence: 0.85 },
+                Extracted { kind: EntryKind::Failure, content: "HS256 needs a shared secret; avoid".into(), confidence: 0.7 },
+                Extracted { kind: EntryKind::Architecture, content: "Server components render /todos".into(), confidence: 0.6 },
+            ]
+        );
+    }
+
+    #[test]
+    fn working_memory_kinds_short_items_and_prose_are_dropped() {
+        let out = r#"{"entries":[
+            {"kind":"plan","content":"Step one then two","confidence":1},
+            {"kind":"file_changed","content":"src/a.rs","confidence":1},
+            {"kind":"preference","content":"Likes tabs over spaces","confidence":1},
+            {"kind":"fact","content":"ok","confidence":1},
+            {"kind":"Fact","content":"Uses pnpm workspaces","confidence":7},
+            {"kind":"decision","content":"Keep SQLite in WAL mode"}
+        ]}"#;
+        let found = parse_extracted(out);
+        assert_eq!(
+            found,
+            vec![
+                Extracted { kind: EntryKind::Fact, content: "Uses pnpm workspaces".into(), confidence: 1.0 },
+                Extracted { kind: EntryKind::Decision, content: "Keep SQLite in WAL mode".into(), confidence: 0.5 },
+            ]
+        );
+        assert!(parse_extracted("I could not produce JSON.").is_empty());
+        assert!(parse_extracted(r#"{"entries":[]}"#).is_empty());
     }
 
     #[tokio::test]
-    async fn fake_llm_populates_graph_and_memdir() {
-        let (_tmp, dir) = tmp_dir("happy");
-        let graph = GraphMemory::open_in_memory().expect("in-memory graph");
+    async fn a_turn_before_the_gates_never_calls_the_model() {
+        let mut state = ExtractState::default();
+        let found = extract(&make_turns(4), &mut state, Trigger::TurnFinished, |_| async {
+            panic!("the model must not be called before the gates are met");
+            #[allow(unreachable_code)]
+            Ok(String::new())
+        })
+        .await
+        .unwrap();
+        assert!(found.is_empty());
+        assert_eq!(state.extraction_count, 0);
+    }
+
+    #[tokio::test]
+    async fn a_pass_past_the_gates_returns_entries_and_advances_the_state() {
+        let dir = tmp_dir("happy");
         let mut state = ExtractState::default();
         let turns = make_turns(26);
-
-        let canned = "\
-MEMORY: preference | 8 | User prefers Rust over Python
-MEMORY: project | 9 | The API uses REST with JSON
-MEMORY: decision | 7 | Chose PostgreSQL for persistence
-not a memory line
-"
-        .to_string();
-
-        let count = extract_and_store(
-            &turns,
-            &mut state,
-            &graph,
-            &dir,
-            "sess-1",
-            |_prompt| async move { Ok(canned) },
-        )
+        let found = extract(&turns, &mut state, Trigger::TurnFinished, |prompt| async move {
+            assert!(prompt.contains("reply 25"), "the conversation rides in the prompt");
+            Ok(CANNED.to_string())
+        })
         .await
         .unwrap();
-
-        assert_eq!(count, 3, "three valid MEMORY lines stored");
-
-        // Graph got the entries (User + Project types).
-        let users = graph.by_type(MemoryType::User);
-        let projects = graph.by_type(MemoryType::Project);
-        assert_eq!(users.len(), 1, "one UserPreference → User");
-        assert_eq!(projects.len(), 2, "project + decision → Project");
-
-        // Memdir file written, Claude-compatible.
-        let md = dir.join("extracted").join("sess-1.md");
-        let body = std::fs::read_to_string(&md).unwrap();
-        assert!(body.contains("Auto-extracted memories"));
-        assert!(body.contains("Rust over Python"));
-        assert!(body.contains("PostgreSQL"));
-
-        // State advanced so the next finished turn doesn't immediately re-extract.
+        assert_eq!(found.len(), 4);
         assert_eq!(state.extraction_count, 1);
         assert_eq!(state.last_extracted_turn_index, turns.len());
-        assert_eq!(state.tool_calls_since_last, 0);
+        state.save(&dir, "sess-1").unwrap();
+        assert_eq!(ExtractState::load(&dir, "sess-1").extraction_count, 1);
 
-        // Persisted state round-trips.
-        let reloaded = ExtractState::load(&dir, "sess-1");
-        assert_eq!(reloaded.extraction_count, 1);
+        // The very next finished turn is inside the cooldown.
+        let mut more = turns.clone();
+        more.push(turn("user", "and now?", 0));
+        more.push(turn("assistant", "done", 0));
+        let again = extract(&more, &mut state, Trigger::TurnFinished, |_| async {
+            panic!("cooldown: fewer than three tool calls since the last pass");
+            #[allow(unreachable_code)]
+            Ok(String::new())
+        })
+        .await
+        .unwrap();
+        assert!(again.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
-    async fn short_transcript_is_a_noop_and_never_calls_llm() {
-        let (_tmp, dir) = tmp_dir("short");
-        let graph = GraphMemory::open_in_memory().expect("in-memory graph");
-        let mut state = ExtractState::default();
-        let turns = make_turns(4); // below the 20-turn gate
-
-        let count = extract_and_store(
-            &turns,
-            &mut state,
-            &graph,
-            &dir,
-            "sess-short",
-            |_prompt| async move {
-                panic!("llm must not be called when the gate fails");
-                #[allow(unreachable_code)]
-                Ok(String::new())
-            },
-        )
+    async fn session_end_extracts_a_short_session_over_only_the_new_turns() {
+        let mut state = ExtractState {
+            last_extracted_turn_index: 2,
+            extraction_count: 1,
+            ..Default::default()
+        };
+        let turns = make_turns(4);
+        let found = extract(&turns, &mut state, Trigger::SessionEnd, |prompt| async move {
+            assert!(!prompt.contains("reply 1\n"), "turns already extracted are not sent again");
+            assert!(prompt.contains("reply 3"));
+            Ok(CANNED.to_string())
+        })
         .await
         .unwrap();
+        assert_eq!(found.len(), 4);
 
-        assert_eq!(count, 0);
+        // Nothing new since: a second end pass has nothing to ask about.
+        let none = extract(&turns, &mut state, Trigger::SessionEnd, |_| async {
+            panic!("nothing new since the last pass");
+            #[allow(unreachable_code)]
+            Ok(String::new())
+        })
+        .await
+        .unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_model_call_leaves_the_state_for_the_next_turn() {
+        let mut state = ExtractState::default();
+        let err = extract(&make_turns(26), &mut state, Trigger::TurnFinished, |_| async {
+            Err(anyhow::anyhow!("offline"))
+        })
+        .await;
+        assert!(err.is_err());
         assert_eq!(state.extraction_count, 0);
-        assert!(graph.by_type(MemoryType::Project).is_empty());
-        assert!(!dir.join("extracted").join("sess-short.md").exists());
     }
 }

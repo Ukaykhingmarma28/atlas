@@ -45,9 +45,8 @@ pub struct EngineSession {
     streamed: std::collections::HashSet<String>,
     /// The session's working directory.
     ///
-    /// Kept because `search_memory` retrieves per project and the engine's
-    /// tool-call request does not carry a cwd — it has no reason to, since the
-    /// tool is Atlas's.
+    /// Kept because the engine's requests do not carry one back — a fork of
+    /// the thread, for one, is started in it.
     cwd: String,
     /// The skills the engine discovered for this session's cwd, in the shape
     /// the command parser consumes. Per session because skills are cwd-scoped.
@@ -73,7 +72,23 @@ pub struct EngineSession {
 #[derive(Default)]
 pub struct EngineSessions {
     sessions: Mutex<HashMap<acp::SessionId, EngineSession>>,
+    /// Host MCP servers per engine thread, and whether each has finished
+    /// starting (ready, failed or cancelled). Keyed by the engine's thread id
+    /// rather than held on the session: the engine can report a server before
+    /// `thread/start` has answered and the session exists.
+    mcp_startup: Mutex<HashMap<String, HashMap<String, bool>>>,
+    mcp_settled: tokio::sync::Notify,
 }
+
+/// How long a turn waits for its thread's host MCP servers to finish starting.
+///
+/// The engine starts them alongside the thread and lists their tools into
+/// whichever turn begins once they are ready, so a first prompt sent at once
+/// went out without them — and the shared-memory tools are the only way
+/// memory reaches the model (ADR-0010). A loopback server is ready in
+/// milliseconds; past this, the turn goes ahead without the tools rather
+/// than stall on a server that will not come up.
+pub const MCP_STARTUP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl EngineSessions {
     pub fn insert(&self, session_id: acp::SessionId, thread: &AcpThreadHandle, cwd: String) {
@@ -109,6 +124,56 @@ impl EngineSessions {
     /// session. Dropped threads are skipped, not reaped — `insert` reaps.
     pub fn threads(&self) -> Vec<AcpThreadHandle> {
         self.lock().values().filter_map(|s| s.thread.upgrade()).collect()
+    }
+
+    /// Records that `thread_id` was configured with these host MCP servers.
+    /// A server the engine already reported keeps its settled state.
+    pub fn expect_mcp_servers(&self, thread_id: &str, servers: impl IntoIterator<Item = String>) {
+        let mut startup = self.mcp_startup_lock();
+        let entry = startup.entry(thread_id.to_string()).or_default();
+        for server in servers {
+            entry.entry(server).or_insert(false);
+        }
+    }
+
+    /// The engine's report on one MCP server's startup for one thread.
+    fn record_mcp_status(&self, thread_id: &str, server: &str, settled: bool) {
+        self.mcp_startup_lock()
+            .entry(thread_id.to_string())
+            .or_default()
+            .insert(server.to_string(), settled);
+        self.mcp_settled.notify_waiters();
+    }
+
+    fn mcp_pending(&self, thread_id: &str) -> bool {
+        self.mcp_startup_lock()
+            .get(thread_id)
+            .is_some_and(|servers| servers.values().any(|settled| !settled))
+    }
+
+    /// Waits, at most `within`, for every host MCP server `thread_id` was
+    /// configured with to finish starting. Returns whether they all did.
+    pub async fn wait_for_mcp_servers(&self, thread_id: &str, within: std::time::Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            // Registered before the check, so a report landing between the
+            // check and the wait still wakes it.
+            let notified = self.mcp_settled.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if !self.mcp_pending(thread_id) {
+                return true;
+            }
+            if tokio::time::timeout_at(deadline, notified).await.is_err() {
+                return !self.mcp_pending(thread_id);
+            }
+        }
+    }
+
+    fn mcp_startup_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, HashMap<String, bool>>> {
+        self.mcp_startup
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn cwd(&self, session_id: &acp::SessionId) -> Option<String> {
@@ -385,6 +450,21 @@ pub fn apply_notification(
     notification: ServerNotification,
 ) {
     match notification {
+        // A host MCP server finished starting (or gave up). The next turn on
+        // its thread may be waiting for exactly this; see `MCP_STARTUP_WAIT`.
+        ServerNotification::McpServerStatusUpdated(params) => {
+            let settled = !matches!(
+                params.status,
+                codex_app_server_protocol::McpServerStartupState::Starting
+            );
+            if let Some(thread_id) = params.thread_id.as_deref() {
+                sessions.record_mcp_status(thread_id, &params.name, settled);
+            }
+            if let Some(error) = params.error.as_deref() {
+                tracing::warn!(server = %params.name, %error, "an MCP server failed to start");
+            }
+        }
+
         // Streamed assistant text. The engine sends deltas; the thread appends
         // them, which is what makes text appear as it is produced rather than
         // in one block at the end.
@@ -654,6 +734,55 @@ fn notification_name(notification: &ServerNotification) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    mod mcp_startup {
+        use super::super::*;
+        use std::time::Duration;
+
+        #[tokio::test]
+        async fn a_thread_without_host_servers_never_waits() {
+            let sessions = EngineSessions::default();
+            assert!(sessions.wait_for_mcp_servers("t1", Duration::ZERO).await);
+        }
+
+        #[tokio::test]
+        async fn a_turn_waits_until_its_server_reports_ready() {
+            let sessions = Arc::new(EngineSessions::default());
+            sessions.expect_mcp_servers("t1", ["atlas_memory".to_string()]);
+            let reporter = sessions.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                reporter.record_mcp_status("t1", "atlas_memory", true);
+            });
+            assert!(sessions.wait_for_mcp_servers("t1", Duration::from_secs(5)).await);
+        }
+
+        #[tokio::test]
+        async fn a_server_that_never_settles_is_given_up_on() {
+            let sessions = EngineSessions::default();
+            sessions.expect_mcp_servers("t1", ["atlas_memory".to_string()]);
+            sessions.record_mcp_status("t1", "atlas_memory", false);
+            assert!(!sessions.wait_for_mcp_servers("t1", Duration::from_millis(20)).await);
+        }
+
+        #[tokio::test]
+        async fn a_report_before_the_session_exists_is_kept() {
+            // The engine can report a server before `thread/start` answers.
+            let sessions = EngineSessions::default();
+            sessions.record_mcp_status("t1", "atlas_memory", true);
+            sessions.expect_mcp_servers("t1", ["atlas_memory".to_string()]);
+            assert!(sessions.wait_for_mcp_servers("t1", Duration::ZERO).await);
+        }
+
+        #[tokio::test]
+        async fn a_failed_server_does_not_hold_the_turn() {
+            let sessions = EngineSessions::default();
+            sessions.expect_mcp_servers("t1", ["atlas_memory".to_string()]);
+            sessions.record_mcp_status("t1", "atlas_memory", true); // failed is settled
+            assert!(sessions.wait_for_mcp_servers("t1", Duration::ZERO).await);
+        }
+    }
+
     use super::*;
 
     #[test]

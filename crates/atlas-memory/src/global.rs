@@ -1,27 +1,43 @@
-//! Step 9b — global, cross-project memory under `~/.atlas/memory/`.
+//! Global, cross-repository memory under `~/.atlas/memory/`.
 //!
-//! A global store that outlives any single project. It is populated by a
-//! **deterministic, conservative promotion rule** driven from the per-project
-//! Step-9a consolidation pass (`consolidate`), and is optionally blended into
-//! retrieval (`MemoryEngine::retrieve`) when a project's local memory is sparse.
+//! A store that outlives any single repository. It is populated by a
+//! **deterministic, conservative promotion rule** over each repository's record
+//! store ([`promote_facts`], run by the indexer's `Compact` job), and is blended
+//! into retrieval (`MemoryEngine::retrieve`) when a repository's local memory is
+//! sparse.
 //!
 //! ## Promotion rule (deterministic; thresholds are tunable consts)
 //!
-//! A memory is promoted to global **only** when it is a `UserPreference` or a
-//! `Constraint` (label `"preference"` / `"constraint"`), its confidence is
-//! ≥ [`PROMOTION_MIN_CONFIDENCE`] (0.8), and the *same content* has appeared in
-//! ≥ [`PROMOTION_MIN_PROJECTS`] (2) **distinct project roots**. Everything else
-//! stays project-local.
+//! A record entry is promoted to global **only** when it is a Fact, its
+//! confidence is ≥ [`PROMOTION_MIN_CONFIDENCE`] (0.8), and the *same content*
+//! (the record's normalised content hash) has been seen at that confidence in
+//! ≥ [`PROMOTION_MIN_REPOSITORIES`] (2) **distinct repositories** (record-store
+//! scope roots, so two worktrees of one repository count once). Everything else
+//! stays repository-local.
+//!
+//! ## Discovering the other repositories
+//!
+//! Nothing scans the disk. Each repository records its own qualifying Facts
+//! under its scope root in the candidates ledger when it is opened; the ledger
+//! is what remembers every repository a content hash was seen in, so the second
+//! repository to record a Fact is the one that promotes it.
 //!
 //! ## Layout (`~/.atlas/memory/`)
 //!
-//! - `global-graph/` — a [`GraphMemory`] holding the promoted memories.
 //! - `MEMORY.md` — the human-readable promoted list, kept **< 200 lines**,
-//!   newest-first.
+//!   newest-first: `- **[fact]** <content> *(confidence: NN%)*`.
+//! - `global-promoted.jsonl` — every promoted memory, one `{"content": …}` line
+//!   each in promotion order, never trimmed: what recall searches (with
+//!   `MEMORY.md` for promotions made before it existed).
 //! - `global-candidates.json` — the candidates ledger: `content_hash ->
 //!   { category, max_confidence, project_roots, promoted }`. Promotion is
 //!   idempotent: a `content_hash` is promoted exactly once (the `promoted`
-//!   flag), and re-recording the same `(project_root, content)` is a no-op.
+//!   flag), re-recording the same `(repository, content)` is a no-op, and a
+//!   content `MEMORY.md` already lists is never listed twice.
+//!
+//! Rows written before the record store (`preference` / `constraint` rows keyed
+//! by an older hash) stay in the ledger untouched, and their `MEMORY.md`
+//! bullets stay recallable.
 //!
 //! ## Resolving the global dir
 //!
@@ -33,39 +49,38 @@
 //!
 //! All writes are atomic (temp + rename).
 
-use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeSet, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::graph::GraphMemory;
-use crate::graph::MemoryType;
+use crate::record::{self, EntryKind, Origin, RecordStore};
 
-/// Minimum confidence for a memory to be eligible for global promotion.
-pub const PROMOTION_MIN_CONFIDENCE: f32 = 0.8;
-/// Number of **distinct project roots** a memory must appear in before promotion.
-pub const PROMOTION_MIN_PROJECTS: usize = 2;
+/// Minimum confidence for a Fact to be eligible for global promotion.
+pub const PROMOTION_MIN_CONFIDENCE: f64 = 0.8;
+/// Number of **distinct repositories** a Fact must appear in before promotion.
+pub const PROMOTION_MIN_REPOSITORIES: usize = 2;
 /// Hard cap on `MEMORY.md` length (kept strictly under this many lines).
 pub const MEMORY_MD_MAX_LINES: usize = 200;
 /// Env override for the global memory dir (tests inject a temp dir here).
 pub const GLOBAL_DIR_ENV: &str = "ATLAS_GLOBAL_MEMORY_DIR";
 
-/// Category labels (per `MemoryCategory::label()`) eligible for promotion.
-const QUALIFYING_LABELS: [&str; 2] = ["preference", "constraint"];
+/// The ledger category (and `MEMORY.md` label) of a promoted Fact.
+const FACT_CATEGORY: &str = "fact";
 
+/// On-disk format: kept byte-for-byte from the pre-record-store list (as is the
+/// ledger's `project_roots` field name, which now holds repository roots).
 const MEMORY_MD_HEADER: &str = "# Global Memory (promoted, cross-project)";
 
 /// One ledger row, keyed by the content hash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandidateEntry {
-    /// Qualifying category label (`"preference"` or `"constraint"`).
+    /// Category label (`"fact"`; older rows carry `"preference"` / `"constraint"`).
     pub category: String,
-    /// Highest confidence seen for this content across all projects.
+    /// Highest confidence seen for this content across all repositories.
     pub max_confidence: f32,
-    /// Distinct project roots this content has been recorded from.
+    /// Distinct repository roots this content has been recorded from.
     pub project_roots: BTreeSet<String>,
     /// Whether this content has already been promoted (idempotency guard).
     pub promoted: bool,
@@ -75,7 +90,17 @@ pub struct CandidateEntry {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Ledger {
     /// `content_hash -> CandidateEntry`.
-    candidates: HashMap<String, CandidateEntry>,
+    candidates: BTreeMap<String, CandidateEntry>,
+}
+
+/// One qualifying Fact offered for promotion by one repository.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Candidate {
+    /// The record's normalised content hash — the Fact's identity across
+    /// repositories.
+    pub content_hash: String,
+    pub content: String,
+    pub confidence: f64,
 }
 
 /// Resolve the global memory dir: `ATLAS_GLOBAL_MEMORY_DIR` if set, else
@@ -97,20 +122,18 @@ fn ledger_path(dir: &Path) -> PathBuf {
     dir.join("global-candidates.json")
 }
 
-fn global_graph_path(dir: &Path) -> PathBuf {
-    dir.join("global-graph")
-}
-
 fn memory_md_path(dir: &Path) -> PathBuf {
     dir.join("MEMORY.md")
 }
 
-/// Deterministic, process-independent content hash (`DefaultHasher` uses fixed
-/// keys, so the digest is stable across runs — adequate for ledger dedup).
-fn content_hash(content: &str) -> String {
-    let mut h = DefaultHasher::new();
-    content.trim().hash(&mut h);
-    format!("{:016x}", h.finish())
+fn promoted_path(dir: &Path) -> PathBuf {
+    dir.join("global-promoted.jsonl")
+}
+
+/// One line of `global-promoted.jsonl`.
+#[derive(Debug, Serialize, Deserialize)]
+struct Promoted {
+    content: String,
 }
 
 fn load_ledger(dir: &Path) -> Ledger {
@@ -125,97 +148,86 @@ fn save_ledger(dir: &Path, ledger: &Ledger) -> Result<()> {
     write_atomic(&ledger_path(dir), &json)
 }
 
-/// Map a qualifying label onto the graph's coarse [`MemoryType`] (mirrors
-/// `extract::category_to_memory_type`: preference→User, constraint→Project).
-fn label_to_memory_type(label: &str) -> MemoryType {
-    match label {
-        "preference" => MemoryType::User,
-        _ => MemoryType::Project, // "constraint"
+/// Offer one repository's qualifying Facts to the global store, promoting any
+/// that now qualify. Resolves the global dir from env/`$HOME` — see
+/// [`promote_facts_in`] for the injectable form. Returns the number of Facts
+/// **promoted on this call**.
+pub fn promote_facts(store: &RecordStore) -> Result<usize> {
+    promote_facts_in(&global_dir(), store)
+}
+
+/// Injectable-dir form of [`promote_facts`] (tests pass a temp dir).
+pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize> {
+    let facts = store.list(EntryKind::Fact, store.count(EntryKind::Fact)?, Origin::Any)?;
+    let items: Vec<Candidate> = facts
+        .into_iter()
+        .filter(|e| e.confidence >= PROMOTION_MIN_CONFIDENCE)
+        .map(|e| Candidate {
+            content_hash: e.content_hash,
+            content: e.content,
+            confidence: e.confidence,
+        })
+        .collect();
+    if items.is_empty() {
+        return Ok(0);
     }
+    record_candidates_in(global_dir, &store.root().to_string_lossy(), &items)
 }
 
-fn open_global_graph(dir: &Path) -> Result<GraphMemory> {
-    std::fs::create_dir_all(dir).context("create global memory dir")?;
-    GraphMemory::open(&global_graph_path(dir))
-        .map_err(|e| anyhow::anyhow!("open global graph: {e}"))
-}
-
-/// Record promotion candidates from one project into the global ledger, promoting
-/// any that now qualify. Resolves the global dir from env/`$HOME` — see
-/// [`record_candidates_in`] for the injectable form.
-///
-/// `items` is `(content, category_label, confidence)`; non-qualifying items
-/// (wrong category or confidence < [`PROMOTION_MIN_CONFIDENCE`]) are ignored.
-/// Returns the number of memories **promoted on this call**.
-pub fn record_candidates(project_root: &str, items: &[(String, String, f32)]) -> Result<usize> {
-    record_candidates_in(&global_dir(), project_root, items)
-}
-
-/// Injectable-dir form of [`record_candidates`] (tests pass a temp dir).
-pub fn record_candidates_in(
-    global_dir: &Path,
-    project_root: &str,
-    items: &[(String, String, f32)],
-) -> Result<usize> {
+/// Record promotion candidates from one repository into the ledger, promoting
+/// any whose content hash has now been seen in enough repositories. Items
+/// below [`PROMOTION_MIN_CONFIDENCE`] are ignored. Returns the number promoted
+/// on this call.
+pub fn record_candidates_in(global_dir: &Path, repository_root: &str, items: &[Candidate]) -> Result<usize> {
     std::fs::create_dir_all(global_dir).context("create global memory dir")?;
     let mut ledger = load_ledger(global_dir);
+    let listed: BTreeSet<String> = listed_contents(global_dir).iter().map(|c| record::normalize(c)).collect();
 
     let mut promoted_now = 0usize;
-    let mut graph: Option<GraphMemory> = None;
-    // (label, content, confidence) bullets to append to MEMORY.md, newest-first.
+    // (label, content, confidence) bullets to add to MEMORY.md, newest-first.
     let mut md_appends: Vec<(String, String, f32)> = Vec::new();
+    let mut promoted: Vec<String> = Vec::new();
     let mut dirty = false;
 
-    for (content, category, confidence) in items {
-        let label = category.trim().to_lowercase();
-        if !QUALIFYING_LABELS.contains(&label.as_str()) {
+    for item in items {
+        if item.confidence < PROMOTION_MIN_CONFIDENCE {
             continue;
         }
-        if *confidence < PROMOTION_MIN_CONFIDENCE {
-            continue;
-        }
-
-        let hash = content_hash(content);
-        let entry = ledger.candidates.entry(hash).or_insert_with(|| CandidateEntry {
-            category: label.clone(),
-            max_confidence: *confidence,
-            project_roots: BTreeSet::new(),
-            promoted: false,
-        });
-        let newly_added = entry.project_roots.insert(project_root.to_string());
-        if *confidence > entry.max_confidence {
-            entry.max_confidence = *confidence;
+        let confidence = item.confidence as f32;
+        let entry = ledger
+            .candidates
+            .entry(item.content_hash.clone())
+            .or_insert_with(|| CandidateEntry {
+                category: FACT_CATEGORY.to_string(),
+                max_confidence: confidence,
+                project_roots: BTreeSet::new(),
+                promoted: false,
+            });
+        if entry.project_roots.insert(repository_root.to_string()) {
             dirty = true;
         }
-        if newly_added {
+        if confidence > entry.max_confidence {
+            entry.max_confidence = confidence;
             dirty = true;
         }
 
-        if !entry.promoted && entry.project_roots.len() >= PROMOTION_MIN_PROJECTS {
-            if graph.is_none() {
-                graph = Some(open_global_graph(global_dir)?);
-            }
-            let g = graph.as_ref().expect("global graph opened");
-            let mem_type = label_to_memory_type(&entry.category);
-            match g.store_memory(content.trim(), mem_type, entry.max_confidence) {
-                Ok(id) => {
-                    if let Err(e) = g.tag_memory(&id, &entry.category) {
-                        tracing::debug!(target: "atlas_memory::global", "tag_memory failed: {e}");
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(target: "atlas_memory::global", "store_memory failed: {e}");
-                    // Leave promoted=false so a later pass retries; skip MEMORY.md.
-                    continue;
-                }
-            }
+        if !entry.promoted && entry.project_roots.len() >= PROMOTION_MIN_REPOSITORIES {
             entry.promoted = true;
             promoted_now += 1;
             dirty = true;
-            md_appends.push((entry.category.clone(), content.trim().to_string(), entry.max_confidence));
+            let content = item.content.trim();
+            promoted.push(content.to_string());
+            if !listed.contains(&record::normalize(content)) {
+                md_appends.push((entry.category.clone(), content.to_string(), entry.max_confidence));
+            }
         }
     }
 
+    // The recall archive first: a crash before the ledger save re-promotes
+    // (recall dedups), while the reverse order would lose the memory.
+    if !promoted.is_empty() {
+        append_promoted(global_dir, &promoted)?;
+    }
     if dirty {
         save_ledger(global_dir, &ledger)?;
     }
@@ -225,29 +237,85 @@ pub fn record_candidates_in(
     Ok(promoted_now)
 }
 
-/// Semantic-ish recall over the global graph for retrieval blending. Resolves the
-/// global dir from env/`$HOME`. Returns `(text, score)` pairs (empty when the
-/// global graph does not yet exist — never creates it on the read path).
+/// Recall over the promoted memories for retrieval blending. Resolves the global
+/// dir from env/`$HOME`. Returns `(text, score)` pairs; empty when nothing has
+/// been promoted yet (the read path never creates anything).
 pub fn global_recall(query: &str, k: usize) -> Vec<(String, f32)> {
     global_recall_in(&global_dir(), query, k)
 }
 
-/// Injectable-dir form of [`global_recall`].
+/// Injectable-dir form of [`global_recall`]: the promoted memories whose text
+/// contains the whole query (case-sensitive), oldest promotion first, capped
+/// at `k`. Every hit contains every query word, so each scores 1.0.
 pub fn global_recall_in(global_dir: &Path, query: &str, k: usize) -> Vec<(String, f32)> {
-    if k == 0 {
+    if k == 0 || query.trim().is_empty() {
         return Vec::new();
     }
-    // Never create the global graph from the read path.
-    if !global_graph_path(global_dir).exists() {
-        return Vec::new();
+    promoted_contents(global_dir)
+        .into_iter()
+        .filter(|c| c.contains(query))
+        .take(k)
+        .map(|c| (c, 1.0))
+        .collect()
+}
+
+/// Every promoted memory, oldest first, each once: the ones `MEMORY.md`
+/// lists from before the archive existed, then the archive in order.
+fn promoted_contents(dir: &Path) -> Vec<String> {
+    let archived: Vec<String> = std::fs::read_to_string(promoted_path(dir))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Promoted>(l).ok())
+        .map(|p| p.content)
+        .collect();
+    let mut listed = listed_contents(dir);
+    listed.reverse();
+
+    let in_archive: BTreeSet<String> = archived.iter().map(|a| record::normalize(a)).collect();
+    let mut seen = BTreeSet::new();
+    listed
+        .into_iter()
+        .filter(|c| !in_archive.contains(&record::normalize(c)))
+        .chain(archived)
+        .filter(|c| seen.insert(record::normalize(c)))
+        .collect()
+}
+
+/// Append `contents` to the recall archive.
+fn append_promoted(dir: &Path, contents: &[String]) -> Result<()> {
+    use std::io::Write;
+    let mut lines = String::new();
+    for content in contents {
+        lines.push_str(&serde_json::to_string(&Promoted { content: content.clone() })?);
+        lines.push('\n');
     }
-    match GraphMemory::open(&global_graph_path(global_dir)) {
-        Ok(g) => g.recall_top_k(query, k),
-        Err(e) => {
-            tracing::debug!(target: "atlas_memory::global", "global graph open failed: {e}");
-            Vec::new()
-        }
-    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(promoted_path(dir))
+        .context("open global-promoted.jsonl")?;
+    file.write_all(lines.as_bytes()).context("append global-promoted.jsonl")
+}
+
+/// The contents `MEMORY.md` lists, newest first (empty when there is none).
+fn listed_contents(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(memory_md_path(dir))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(bullet_content)
+        .collect()
+}
+
+/// The content of one `- **[label]** content *(confidence: NN%)*` bullet.
+fn bullet_content(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("- **[")?;
+    let (_, rest) = rest.split_once("]**")?;
+    let content = match rest.rsplit_once("*(confidence:") {
+        Some((content, _)) => content,
+        None => rest,
+    };
+    let content = content.trim();
+    (!content.is_empty()).then(|| content.to_string())
 }
 
 /// Append promoted bullets to `MEMORY.md`, newest-first, re-trimming to strictly
@@ -302,147 +370,230 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::NewEntry;
 
-    /// A fresh temp dir. Keep the `TempDir` alive for the test: dropping it
-    /// deletes the directory, panic or not.
-    fn tmp_dir(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("atlas-memory-{name}-"))
-            .tempdir()
-            .unwrap();
-        let path = dir.path().to_path_buf();
-        (dir, path)
+    fn tmp_dir(name: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("atlas-memory-global-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
     }
 
-    fn item(content: &str, label: &str, conf: f32) -> (String, String, f32) {
-        (content.to_string(), label.to_string(), conf)
+    /// A repository's record store holding `facts` as `(content, confidence)`.
+    fn repository(base: &Path, name: &str, facts: &[(&str, f64)]) -> RecordStore {
+        let root = base.join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        let store = RecordStore::open(&root).unwrap();
+        for (i, (content, confidence)) in facts.iter().enumerate() {
+            store
+                .upsert(NewEntry {
+                    kind: EntryKind::Fact,
+                    key: String::new(),
+                    content: (*content).to_string(),
+                    source: "extractor".into(),
+                    agent: "claude".into(),
+                    session_id: "s1".into(),
+                    confidence: *confidence,
+                    at: i as i64 + 1,
+                })
+                .unwrap();
+        }
+        store
     }
 
-    /// One project does not promote; the SAME content from a SECOND distinct
-    /// project promotes — graph has it, MEMORY.md bullet added, ledger promoted.
+    fn md(dir: &Path) -> String {
+        std::fs::read_to_string(memory_md_path(dir)).unwrap_or_default()
+    }
+
     #[test]
-    fn second_distinct_project_promotes() {
-        let (_tmp, dir) = tmp_dir("promote");
+    fn the_same_fact_in_two_repositories_appears_in_global_memory_once() {
+        let base = tmp_dir("two-repos");
+        let global = base.join("global");
+        let a = repository(&base, "a", &[("Always use tabs", 0.9)]);
+        let b = repository(&base, "b", &[("always  use tabs", 0.85)]);
 
-        let n0 = record_candidates_in(&dir, "/proj/a", &[item("Always use tabs", "preference", 0.9)])
-            .unwrap();
-        assert_eq!(n0, 0, "one project must not promote");
+        assert_eq!(promote_facts_in(&global, &a).unwrap(), 0, "one repository does not promote");
+        assert!(!memory_md_path(&global).exists());
 
-        let l0 = load_ledger(&dir);
-        let e0 = l0.candidates.get(&content_hash("Always use tabs")).unwrap();
-        assert!(!e0.promoted);
-        assert_eq!(e0.project_roots.len(), 1);
-        // No graph created yet, and no MEMORY.md.
-        assert!(!global_graph_path(&dir).exists());
-        assert!(!memory_md_path(&dir).exists());
+        assert_eq!(promote_facts_in(&global, &b).unwrap(), 1, "the second repository promotes");
+        // Re-running either repository changes nothing.
+        assert_eq!(promote_facts_in(&global, &a).unwrap(), 0);
+        assert_eq!(promote_facts_in(&global, &b).unwrap(), 0);
 
-        let n1 = record_candidates_in(&dir, "/proj/b", &[item("Always use tabs", "preference", 0.9)])
-            .unwrap();
-        assert_eq!(n1, 1, "second distinct project promotes");
-
-        // Ledger flips to promoted with two project roots.
-        let l1 = load_ledger(&dir);
-        let e1 = l1.candidates.get(&content_hash("Always use tabs")).unwrap();
-        assert!(e1.promoted);
-        assert_eq!(e1.project_roots.len(), 2);
-
-        // Global graph now holds it.
-        let recalled = global_recall_in(&dir, "Always use tabs", 5);
-        assert!(
-            recalled.iter().any(|(t, _)| t.contains("Always use tabs")),
-            "promoted memory must be recallable from the global graph"
+        assert_eq!(
+            md(&global),
+            "# Global Memory (promoted, cross-project)\n\n- **[fact]** always  use tabs *(confidence: 90%)*\n"
         );
+        let ledger = load_ledger(&global);
+        assert_eq!(ledger.candidates.len(), 1);
+        let row = ledger.candidates.get(&record::content_hash("Always use tabs")).unwrap();
+        assert!(row.promoted);
+        assert_eq!(row.category, "fact");
+        assert_eq!(row.project_roots.len(), 2);
 
-        // MEMORY.md bullet written.
-        let md = std::fs::read_to_string(memory_md_path(&dir)).unwrap();
-        assert!(md.contains("Always use tabs"));
-        assert!(md.contains("[preference]"));
+        std::fs::remove_dir_all(&base).ok();
     }
 
-    /// Non-qualifying category or confidence < 0.8 never promotes, even across
-    /// multiple projects.
     #[test]
-    fn non_qualifying_never_promotes() {
-        let (_tmp, dir) = tmp_dir("nonqual");
+    fn a_fact_below_the_floor_or_in_one_repository_is_not_promoted() {
+        let base = tmp_dir("not-promoted");
+        let global = base.join("global");
+        let a = repository(&base, "a", &[("Prefer dark mode", 0.7), ("Only here", 0.95)]);
+        let b = repository(&base, "b", &[("Prefer dark mode", 0.7)]);
 
-        // Wrong category (project fact) in two projects.
+        assert_eq!(promote_facts_in(&global, &a).unwrap(), 0);
+        assert_eq!(promote_facts_in(&global, &b).unwrap(), 0);
+
+        assert!(!memory_md_path(&global).exists(), "nothing promoted, no list");
+        let ledger = load_ledger(&global);
+        assert_eq!(ledger.candidates.len(), 1, "only the qualifying Fact is a candidate");
+        assert!(!ledger.candidates[&record::content_hash("Only here")].promoted);
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn two_worktrees_of_one_repository_count_once() {
+        let base = tmp_dir("one-scope");
+        let global = base.join("global");
+        let a = repository(&base, "a", &[("Use RS256", 0.9)]);
+        let again = RecordStore::open(a.root()).unwrap();
+
+        promote_facts_in(&global, &a).unwrap();
+        assert_eq!(promote_facts_in(&global, &again).unwrap(), 0);
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// The list and ledger keep the shape they had before the record store
+    /// (golden captured from the graph-backed promotion, #89): header, blank
+    /// line, `- **[label]** content *(confidence: NN%)*` newest-first; ledger
+    /// `{ "candidates": { hash: { category, max_confidence, project_roots,
+    /// promoted } } }`.
+    #[test]
+    fn list_and_ledger_keep_their_shape() {
+        let dir = tmp_dir("shape");
+        let item = |hash: &str, content: &str, confidence: f64| Candidate {
+            content_hash: hash.into(),
+            content: content.into(),
+            confidence,
+        };
+        record_candidates_in(&dir, "/proj/a", &[item("h1", "Always use tabs", 0.9)]).unwrap();
+        record_candidates_in(&dir, "/proj/b", &[item("h1", "Always use tabs", 0.9)]).unwrap();
+        record_candidates_in(&dir, "/proj/b", &[item("h2", "No secrets in logs", 0.85)]).unwrap();
+        record_candidates_in(&dir, "/proj/c", &[item("h2", "No secrets in logs", 0.95)]).unwrap();
+
         assert_eq!(
-            record_candidates_in(&dir, "/a", &[item("REST API uses JSON", "project", 0.95)]).unwrap(),
-            0
+            md(&dir),
+            "# Global Memory (promoted, cross-project)\n\n\
+             - **[fact]** No secrets in logs *(confidence: 95%)*\n\
+             - **[fact]** Always use tabs *(confidence: 90%)*\n"
         );
+        let ledger: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(ledger_path(&dir)).unwrap()).unwrap();
         assert_eq!(
-            record_candidates_in(&dir, "/b", &[item("REST API uses JSON", "project", 0.95)]).unwrap(),
-            0
+            ledger,
+            serde_json::json!({
+                "candidates": {
+                    "h1": { "category": "fact", "max_confidence": 0.9, "project_roots": ["/proj/a", "/proj/b"], "promoted": true },
+                    "h2": { "category": "fact", "max_confidence": 0.95, "project_roots": ["/proj/b", "/proj/c"], "promoted": true }
+                }
+            })
         );
 
-        // Right category but below the confidence floor, in two projects.
-        assert_eq!(
-            record_candidates_in(&dir, "/a", &[item("Prefer dark mode", "preference", 0.7)]).unwrap(),
-            0
-        );
-        assert_eq!(
-            record_candidates_in(&dir, "/b", &[item("Prefer dark mode", "preference", 0.7)]).unwrap(),
-            0
-        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
-        // Nothing promoted → no graph, no MEMORY.md, ledger has no qualifying rows.
-        assert!(!global_graph_path(&dir).exists());
-        assert!(!memory_md_path(&dir).exists());
-        let l = load_ledger(&dir);
-        assert!(l.candidates.is_empty(), "non-qualifying items never enter the ledger");
+    /// A ledger and list written by the graph-backed promotion load as-is; a
+    /// Fact whose content is already listed is not listed a second time.
+    #[test]
+    fn an_already_listed_content_is_not_listed_twice() {
+        let dir = tmp_dir("legacy");
+        std::fs::write(
+            memory_md_path(&dir),
+            "# Global Memory (promoted, cross-project)\n\n- **[preference]** Always use tabs *(confidence: 90%)*\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ledger_path(&dir),
+            r#"{"candidates":{"31d418d04d3727e4":{"category":"preference","max_confidence":0.9,"project_roots":["/proj/a","/proj/b"],"promoted":true}}}"#,
+        )
+        .unwrap();
+        let item = Candidate { content_hash: "h1".into(), content: "Always use tabs".into(), confidence: 0.9 };
+        record_candidates_in(&dir, "/proj/a", std::slice::from_ref(&item)).unwrap();
+        assert_eq!(record_candidates_in(&dir, "/proj/b", &[item]).unwrap(), 1);
+
+        assert_eq!(md(&dir).lines().filter(|l| l.starts_with("- ")).count(), 1);
+        assert_eq!(load_ledger(&dir).candidates.len(), 2, "the older row is kept");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// MEMORY.md stays < 200 lines after many promotions (oldest trimmed).
     #[test]
     fn memory_md_stays_bounded() {
-        let (_tmp, dir) = tmp_dir("bounded");
-
+        let dir = tmp_dir("bounded");
         for i in 0..300 {
-            let content = format!("Constraint number {i} must always hold");
-            // Two distinct projects → promotes on the second.
-            record_candidates_in(&dir, "/a", &[item(&content, "constraint", 0.9)]).unwrap();
-            let n = record_candidates_in(&dir, "/b", &[item(&content, "constraint", 0.9)]).unwrap();
-            assert_eq!(n, 1, "each distinct content promotes once on the 2nd project");
+            let item = Candidate {
+                content_hash: format!("h{i}"),
+                content: format!("Constraint number {i} must always hold"),
+                confidence: 0.9,
+            };
+            record_candidates_in(&dir, "/a", std::slice::from_ref(&item)).unwrap();
+            assert_eq!(record_candidates_in(&dir, "/b", &[item]).unwrap(), 1);
         }
-
-        let md = std::fs::read_to_string(memory_md_path(&dir)).unwrap();
-        let lines = md.lines().count();
-        assert!(lines < MEMORY_MD_MAX_LINES, "MEMORY.md has {lines} lines, must be < 200");
-        // Newest content is retained; oldest fell off.
+        let md = md(&dir);
+        assert!(md.lines().count() < MEMORY_MD_MAX_LINES);
         assert!(md.contains("Constraint number 299"));
         assert!(!md.contains("Constraint number 0 must"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Re-running with identical inputs does not double-promote (ledger dedup +
-    /// promoted flag), and MEMORY.md is unchanged.
+    /// Every promoted memory stays recallable after MEMORY.md trims it, as
+    /// every node of the graph it replaces did.
     #[test]
-    fn idempotent_no_double_promote() {
-        let (_tmp, dir) = tmp_dir("idempotent");
-
-        record_candidates_in(&dir, "/a", &[item("No secrets in logs", "constraint", 0.85)]).unwrap();
-        let first = record_candidates_in(&dir, "/b", &[item("No secrets in logs", "constraint", 0.85)])
-            .unwrap();
-        assert_eq!(first, 1);
-        let md_after_first = std::fs::read_to_string(memory_md_path(&dir)).unwrap();
-
-        // Re-run the exact same (project, content) pairs several times.
-        for _ in 0..3 {
-            assert_eq!(
-                record_candidates_in(&dir, "/a", &[item("No secrets in logs", "constraint", 0.85)])
-                    .unwrap(),
-                0
-            );
-            assert_eq!(
-                record_candidates_in(&dir, "/b", &[item("No secrets in logs", "constraint", 0.85)])
-                    .unwrap(),
-                0
-            );
+    fn a_promotion_trimmed_from_the_list_is_still_recalled() {
+        let dir = tmp_dir("recall-trimmed");
+        for i in 0..250 {
+            let item = Candidate {
+                content_hash: format!("h{i}"),
+                content: format!("Rule number {i} always holds"),
+                confidence: 0.9,
+            };
+            record_candidates_in(&dir, "/a", std::slice::from_ref(&item)).unwrap();
+            record_candidates_in(&dir, "/b", &[item]).unwrap();
         }
+        assert!(!md(&dir).contains("Rule number 3 always"));
+        assert_eq!(
+            global_recall_in(&dir, "Rule number 3 always", 5),
+            vec![("Rule number 3 always holds".to_string(), 1.0)]
+        );
+        assert_eq!(global_recall_in(&dir, "Rule number", 300).len(), 250, "each once");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
-        // MEMORY.md unchanged (no duplicate bullets).
-        let md_now = std::fs::read_to_string(memory_md_path(&dir)).unwrap();
-        assert_eq!(md_now, md_after_first, "no duplicate promotion bullets");
-        let bullet_count = md_now.lines().filter(|l| l.starts_with("- ")).count();
-        assert_eq!(bullet_count, 1, "exactly one promoted bullet");
+    #[test]
+    fn recall_finds_promoted_memories_containing_the_query() {
+        let dir = tmp_dir("recall");
+        assert!(global_recall_in(&dir, "tabs", 5).is_empty(), "nothing promoted yet");
+        std::fs::write(
+            memory_md_path(&dir),
+            "# Global Memory (promoted, cross-project)\n\n\
+             - **[fact]** Tabs over spaces in Rust *(confidence: 95%)*\n\
+             - **[preference]** Always use tabs *(confidence: 90%)*\n\
+             - **[fact]** Commit messages are conventional *(confidence: 80%)*\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            global_recall_in(&dir, "tabs", 5),
+            vec![("Always use tabs".to_string(), 1.0)],
+            "whole-query, case-sensitive substring, like the graph it replaces"
+        );
+        assert_eq!(global_recall_in(&dir, "s", 1), vec![("Commit messages are conventional".to_string(), 1.0)]);
+        assert!(global_recall_in(&dir, "tabs", 0).is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

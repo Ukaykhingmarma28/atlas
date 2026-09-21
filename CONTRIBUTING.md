@@ -212,9 +212,11 @@ ones that check the repo as a whole, which live in `tests/`. Two of those run on
 every PR and are worth knowing about:
 
 - `tests/ipc-contract.test.ts` — every `invoke("name")` in the frontend resolves
-  to a registered `#[tauri::command]`, and every command is wired into
-  `generate_handler!`. Rename a command without updating its callers and this is
-  what tells you, instead of a dead button at runtime.
+  to a registered `#[tauri::command]`, every command is wired into
+  `generate_handler!`, and every registered command has a frontend caller.
+  Rename a command without updating its callers and this is what tells you,
+  instead of a dead button at runtime; leave a command behind after its last
+  caller goes and it tells you that too.
 - `tests/ci-coverage.test.ts` — every crate in `crates/` is in the CI matrix, so
   a new crate can't merge with its tests unrun.
 

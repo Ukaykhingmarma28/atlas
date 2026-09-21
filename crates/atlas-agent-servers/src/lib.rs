@@ -63,6 +63,7 @@ pub mod host_env;
 pub mod server;
 pub mod session;
 pub mod session_list;
+pub mod session_mcp;
 
 pub use connection::{
     client_capabilities_for_agent, map_acp_error, AcpConnection, AcpConnectionDefaults,
@@ -84,3 +85,4 @@ pub use session::{
     SessionRegistry,
 };
 pub use session_list::AcpSessionList;
+pub use session_mcp::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};

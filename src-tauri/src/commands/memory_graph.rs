@@ -1,23 +1,30 @@
 //! `memory_graph` — on-device semantic index + graph map over agent memory.
 //!
 //! Pipeline: `agent_memory::collect_corpus` → embed each doc with a local
-//! BERT sentence-transformer (`atlas-embed`, candle) → cache vectors on disk →
-//! build a similarity graph (kNN edges) augmented with explicit `[[wikilink]]`
-//! edges → answer natural-language queries by embedding the query and ranking.
+//! BERT sentence-transformer (`atlas-embed`, candle) → build a similarity graph
+//! (kNN edges) augmented with explicit `[[wikilink]]` edges → answer
+//! natural-language queries by embedding the query and ranking.
 //!
 //! The model (`all-MiniLM-L6-v2`, ~90 MB) is downloaded on demand into the
-//! global app-data dir; the per-project vector index lives in `.atlas/`.
+//! global app-data dir. Vectors live in the project's retrieval index (the
+//! `atlas-memory` HNSW engine under `.atlas/memory/`, the same one the indexer
+//! and per-turn retrieval use): the graph reuses the vectors it already holds
+//! for unchanged docs and adds the ones it had to embed, and a query searches
+//! it directly.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use atlas_embed::{BruteForce, Embedder, VectorStore};
+use atlas_embed::{BruteForce, Embedder};
+use atlas_memory::CorpusDoc;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, State};
 
 use super::agent_memory::{collect_corpus, MemoryDoc};
-use super::memory_indexer::MemoryRegistry;
+use super::memory_indexer::{indexed_vectors, to_corpus_doc, MemoryRegistry};
+
+/// Corpora Memory ▸ Graph leaves out (see `memory_index_build`).
+const GRAPH_EXCLUDED_CORPORA: [&str; 1] = ["codebase"];
 
 /// Files every BERT sentence-transformer ships — constant across embedding models;
 /// only the source repo (and dir) vary by the user's selection.
@@ -87,72 +94,6 @@ pub async fn memory_embed_download(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// ── On-disk vector index (per project) ──────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct StoredDoc {
-    id: String,
-    hash: String,
-    vector: Vec<f32>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct StoredIndex {
-    model: String,
-    dim: usize,
-    docs: Vec<StoredDoc>,
-}
-
-fn index_dir(project_path: &str) -> PathBuf {
-    std::path::Path::new(project_path)
-        .join(".atlas")
-        .join("memory-index")
-}
-
-fn index_path(project_path: &str) -> PathBuf {
-    index_dir(project_path).join("index.json")
-}
-
-fn load_index(project_path: &str) -> StoredIndex {
-    std::fs::read_to_string(index_path(project_path))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
-
-/// The graph's per-doc embeddings as `doc id → vector`, so other features (the
-/// policy table) can reuse the already-built index instead of re-embedding.
-/// Empty if the graph index hasn't been built yet.
-pub(crate) fn load_doc_vectors(project_path: &str) -> std::collections::HashMap<String, Vec<f32>> {
-    load_index(project_path)
-        .docs
-        .into_iter()
-        .map(|d| (d.id, d.vector))
-        .collect()
-}
-
-fn save_index(project_path: &str, index: &StoredIndex) -> Result<(), String> {
-    let dir = index_dir(project_path);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create index dir: {e}"))?;
-    let json = serde_json::to_string(index).map_err(|e| e.to_string())?;
-    std::fs::write(index_path(project_path), json).map_err(|e| format!("write index: {e}"))
-}
-
-fn hash_text(s: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(s.as_bytes());
-    format!("{:x}", h.finalize())
-}
-
-/// Text actually fed to the embedder — title gives short docs useful signal.
-fn embed_text(doc: &MemoryDoc) -> String {
-    if doc.text.trim().is_empty() {
-        doc.title.clone()
-    } else {
-        format!("{}\n\n{}", doc.title, doc.text)
-    }
-}
-
 // ── Graph build ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -212,7 +153,7 @@ pub async fn memory_index_build(
     let docs: Vec<MemoryDoc> = collect_corpus(&project_path)
         .await
         .into_iter()
-        .filter(|d| d.source != "codebase")
+        .filter(|d| !GRAPH_EXCLUDED_CORPORA.contains(&d.source.as_str()))
         .collect();
     if docs.is_empty() {
         return Ok(MemoryGraph {
@@ -225,73 +166,61 @@ pub async fn memory_index_build(
 
     // Shared, load-once MiniLM (reused by the indexer, retrieve, query, policy and
     // the indexer) instead of loading a fresh ~90 MB model per graph build.
-    let embedder = registry
+    let provider = registry
         .provider(&app)
         .await
-        .ok_or("model-not-downloaded")?
-        .embedder();
+        .ok_or("model-not-downloaded")?;
+    let embedder = provider.embedder();
 
-    let cache = load_index(&project_path);
-    let model_id = super::models::selected_embedding_id(&app);
-    let pp = project_path.clone();
+    // Reuse what the retrieval index already holds for unchanged docs; only the
+    // rest is embedded below, and handed back to the index afterwards.
+    let cached = indexed_vectors(&registry, &provider, &project_path, &docs).await;
 
-    tokio::task::spawn_blocking(move || build_graph_blocking(embedder, model_id, pp, docs, cache))
-        .await
-        .map_err(|e| format!("index task: {e}"))?
+    let (graph, fresh) =
+        tokio::task::spawn_blocking(move || build_graph_blocking(embedder, docs, cached))
+            .await
+            .map_err(|e| format!("index task: {e}"))??;
+
+    if !fresh.is_empty() {
+        let engine = registry.engine_for(&project_path);
+        let mut guard = engine.write().await;
+        // A model switch since the lookup leaves this batch in the old space;
+        // the indexer re-embeds everything after its reset instead.
+        if guard.index_params_match(&provider) {
+            if let Err(e) = guard.add_embedded(&fresh) {
+                tracing::warn!(target: "atlas::memory", "graph vectors not kept in the index: {e}");
+            }
+        }
+    }
+    Ok(graph)
 }
 
+/// The graph over `docs`, plus the `(doc, vector)` pairs it had to embed
+/// because `cached` (id → vector from the retrieval index) lacked them.
 fn build_graph_blocking(
     embedder: Arc<Embedder>,
-    model_id: String,
-    project_path: String,
     docs: Vec<MemoryDoc>,
-    cache: StoredIndex,
-) -> Result<MemoryGraph, String> {
+    cached: std::collections::HashMap<String, Vec<f32>>,
+) -> Result<(MemoryGraph, Vec<(CorpusDoc, Vec<f32>)>), String> {
     use std::collections::HashMap;
 
-    // Reuse cached vectors for unchanged docs (keyed by content hash) — but ONLY if
-    // the cache was built with the currently-selected embedding model. A different
-    // model produces vectors in a different space, so on a model switch we drop the
-    // cache and re-embed everything.
-    let cached: HashMap<String, Vec<f32>> = if cache.model == model_id {
-        cache.docs.into_iter().map(|d| (d.hash, d.vector)).collect()
-    } else {
-        HashMap::new()
-    };
-
-    let hashes: Vec<String> = docs.iter().map(|d| hash_text(&embed_text(d))).collect();
-
     let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(docs.len());
-    let mut dim = cache.dim;
-    for (doc, hash) in docs.iter().zip(hashes.iter()) {
-        if let Some(v) = cached.get(hash) {
+    let mut fresh: Vec<(CorpusDoc, Vec<f32>)> = Vec::new();
+    let mut dim = 0;
+    for doc in &docs {
+        if let Some(v) = cached.get(&doc.id) {
             dim = v.len();
             vectors.push(v.clone());
         } else {
+            let corpus = to_corpus_doc(doc);
             let v = embedder
-                .embed_one(&embed_text(doc))
+                .embed_one(&corpus.text)
                 .map_err(|e| format!("embed: {e}"))?;
             dim = v.len();
-            vectors.push(v);
+            vectors.push(v.clone());
+            fresh.push((corpus, v));
         }
     }
-
-    // Persist the refreshed index.
-    let stored = StoredIndex {
-        model: model_id,
-        dim,
-        docs: docs
-            .iter()
-            .zip(hashes.iter())
-            .zip(vectors.iter())
-            .map(|((d, h), v)| StoredDoc {
-                id: d.id.clone(),
-                hash: h.clone(),
-                vector: v.clone(),
-            })
-            .collect(),
-    };
-    let _ = save_index(&project_path, &stored);
 
     // ── Edges ──────────────────────────────────────────────────────────────
     let id_of: Vec<&str> = docs.iter().map(|d| d.id.as_str()).collect();
@@ -374,12 +303,15 @@ fn build_graph_blocking(
         })
         .collect();
 
-    Ok(MemoryGraph {
-        doc_count: nodes.len(),
-        dim,
-        nodes,
-        edges,
-    })
+    Ok((
+        MemoryGraph {
+            doc_count: nodes.len(),
+            dim,
+            nodes,
+            edges,
+        },
+        fresh,
+    ))
 }
 
 fn snippet(s: &str) -> String {
@@ -400,7 +332,8 @@ pub struct QueryHit {
     score: f32,
 }
 
-/// Embed `query` and rank the project's indexed memory docs against it.
+/// Embed `query` and rank the project's indexed memory docs (the Graph's
+/// corpora: everything but the codebase) against it.
 #[tauri::command]
 pub async fn memory_index_query(
     app: AppHandle,
@@ -417,36 +350,34 @@ pub async fn memory_index_query(
     if q.is_empty() {
         return Ok(vec![]);
     }
-    let index = load_index(&project_path);
-    if index.docs.is_empty() {
-        return Ok(vec![]);
-    }
     let k = top_k.unwrap_or(10);
 
     // Shared, load-once MiniLM — no per-query model reload (this is the interactive
     // search hot path).
-    let embedder = registry
+    let provider = registry
         .provider(&app)
         .await
-        .ok_or("model-not-downloaded")?
-        .embedder();
+        .ok_or("model-not-downloaded")?;
+    let embedder = provider.embedder();
+    let qv = tokio::task::spawn_blocking(move || embedder.embed_one(&q))
+        .await
+        .map_err(|e| format!("query task: {e}"))?
+        .map_err(|e| format!("embed query: {e}"))?;
 
-    tokio::task::spawn_blocking(move || -> Result<Vec<QueryHit>, String> {
-        let qv = embedder.embed_one(&q).map_err(|e| format!("embed query: {e}"))?;
-        let ids: Vec<String> = index.docs.iter().map(|d| d.id.clone()).collect();
-        let vectors: Vec<Vec<f32>> = index.docs.into_iter().map(|d| d.vector).collect();
-        let store = BruteForce::new(vectors);
-        Ok(store
-            .search(&qv, k)
-            .into_iter()
-            .map(|(i, score)| QueryHit {
-                id: ids[i].clone(),
-                score,
-            })
-            .collect())
-    })
-    .await
-    .map_err(|e| format!("query task: {e}"))?
+    let engine = registry.engine_for(&project_path);
+    let guard = engine.read().await;
+    // Vectors from another embedding model live in a different space; until the
+    // indexer rebuilds, there is nothing comparable to rank.
+    if !guard.index_params_match(&provider) {
+        return Ok(vec![]);
+    }
+    let hits = guard
+        .search_ids(&qv, k, &GRAPH_EXCLUDED_CORPORA)
+        .map_err(|e| format!("query: {e}"))?;
+    Ok(hits
+        .into_iter()
+        .map(|(id, score)| QueryHit { id, score })
+        .collect())
 }
 
 // ── Graph layout persistence (mirrors knowledge_graph_layout.rs) ────────────

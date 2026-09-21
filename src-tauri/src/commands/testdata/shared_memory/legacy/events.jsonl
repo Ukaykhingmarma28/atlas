@@ -1,0 +1,13 @@
+{"seq":1,"ts":1700000000000,"agent":"claude-code","sessionId":"s1","kind":"session_start","key":"","payload":{}}
+{"seq":2,"ts":1700000001000,"agent":"claude-code","sessionId":"s1","kind":"plan_set","key":"plan","payload":{"text":"- [pending] wire auth","status":"active"}}
+{"seq":3,"ts":1700000002000,"agent":"claude-code","sessionId":"s1","kind":"decision","key":"auth.alg","payload":{"text":"Sign JWTs with HS256"}}
+{"seq":4,"ts":1700000003000,"agent":"codex","sessionId":"s2","kind":"decision","key":"auth.alg","payload":{"text":"Sign JWTs with RS256"}}
+{"seq":5,"ts":1700000004000,"agent":"codex","sessionId":"s2","kind":"skill_used","key":"","payload":{"name":"legacy"}}
+
+this line is not json
+{"seq":6,"ts":1700000005000,"agent":"codex","sessionId":"s2","kind":"file_changed","key":"src/auth.rs","payload":{"path":"src/auth.rs","summary":"Edit src/auth.rs"}}
+{"seq":7,"ts":1700000006000,"agent":"codex","sessionId":"s2","kind":"fact","key":"","payload":{"text":"The API runs on port 4747"}}
+{"seq":8,"ts":1700000007000,"agent":"claude-code","sessionId":"s1","kind":"failure","key":"","payload":{"text":"cargo test without --lib hangs on the app crate"}}
+{"seq":9,"ts":1700000008000,"agent":"claude-code","sessionId":"s1","kind":"architecture","key":"","payload":{"text":"The Tauri backend is the only writer of shared memory"}}
+{"seq":10,"ts":1700000009000,"agent":"codex","sessionId":"s2","kind":"plan_set","key":"plan","payload":{"text":"- [completed] wire auth","status":"done"}}
+{"seq":11,"ts":1700000010000,"agent":"codex","sessionId":"s2","kind":"todo_added","key":"","payload":{"text":"write docs"}}

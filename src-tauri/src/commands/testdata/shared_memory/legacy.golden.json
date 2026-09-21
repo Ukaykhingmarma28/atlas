@@ -1,0 +1,280 @@
+{
+  "memory_get_state": {
+    "architecture": [
+      {
+        "agent": "claude-code",
+        "seq": 9,
+        "text": "The Tauri backend is the only writer of shared memory"
+      }
+    ],
+    "decisions": [
+      {
+        "agent": "codex",
+        "key": "auth.alg",
+        "seq": 4,
+        "text": "Sign JWTs with RS256"
+      }
+    ],
+    "facts": [
+      {
+        "agent": "codex",
+        "seq": 7,
+        "text": "The API runs on port 4747"
+      }
+    ],
+    "failures": [
+      {
+        "agent": "claude-code",
+        "seq": 8,
+        "text": "cargo test without --lib hangs on the app crate"
+      }
+    ],
+    "lastSeq": 11,
+    "recentChanges": [
+      {
+        "agent": "codex",
+        "path": "src/auth.rs",
+        "seq": 6,
+        "summary": "Edit src/auth.rs"
+      }
+    ],
+    "sessionAgents": {
+      "s1": "claude-code"
+    },
+    "updatedAt": 1700000010000
+  },
+  "memory_list_events": [
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "todo_added",
+      "payload": {
+        "text": "write docs"
+      },
+      "seq": 11,
+      "sessionId": "s2",
+      "ts": 1700000010000
+    },
+    {
+      "agent": "codex",
+      "key": "plan",
+      "kind": "plan_set",
+      "payload": {
+        "status": "done",
+        "text": "- [completed] wire auth"
+      },
+      "seq": 10,
+      "sessionId": "s2",
+      "ts": 1700000009000
+    },
+    {
+      "agent": "claude-code",
+      "key": "",
+      "kind": "architecture",
+      "payload": {
+        "text": "The Tauri backend is the only writer of shared memory"
+      },
+      "seq": 9,
+      "sessionId": "s1",
+      "ts": 1700000008000
+    },
+    {
+      "agent": "claude-code",
+      "key": "",
+      "kind": "failure",
+      "payload": {
+        "text": "cargo test without --lib hangs on the app crate"
+      },
+      "seq": 8,
+      "sessionId": "s1",
+      "ts": 1700000007000
+    },
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "fact",
+      "payload": {
+        "text": "The API runs on port 4747"
+      },
+      "seq": 7,
+      "sessionId": "s2",
+      "ts": 1700000006000
+    },
+    {
+      "agent": "codex",
+      "key": "src/auth.rs",
+      "kind": "file_changed",
+      "payload": {
+        "path": "src/auth.rs",
+        "summary": "Edit src/auth.rs"
+      },
+      "seq": 6,
+      "sessionId": "s2",
+      "ts": 1700000005000
+    },
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "unknown",
+      "payload": {
+        "name": "legacy"
+      },
+      "seq": 5,
+      "sessionId": "s2",
+      "ts": 1700000004000
+    },
+    {
+      "agent": "codex",
+      "key": "auth.alg",
+      "kind": "decision",
+      "payload": {
+        "text": "Sign JWTs with RS256"
+      },
+      "seq": 4,
+      "sessionId": "s2",
+      "ts": 1700000003000
+    },
+    {
+      "agent": "claude-code",
+      "key": "auth.alg",
+      "kind": "decision",
+      "payload": {
+        "text": "Sign JWTs with HS256"
+      },
+      "seq": 3,
+      "sessionId": "s1",
+      "ts": 1700000002000
+    },
+    {
+      "agent": "claude-code",
+      "key": "plan",
+      "kind": "plan_set",
+      "payload": {
+        "status": "active",
+        "text": "- [pending] wire auth"
+      },
+      "seq": 2,
+      "sessionId": "s1",
+      "ts": 1700000001000
+    },
+    {
+      "agent": "claude-code",
+      "key": "",
+      "kind": "session_start",
+      "payload": {},
+      "seq": 1,
+      "sessionId": "s1",
+      "ts": 1700000000000
+    }
+  ],
+  "memory_query:CODEX/3": [
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "todo_added",
+      "payload": {
+        "text": "write docs"
+      },
+      "seq": 11,
+      "sessionId": "s2",
+      "ts": 1700000010000
+    },
+    {
+      "agent": "codex",
+      "key": "plan",
+      "kind": "plan_set",
+      "payload": {
+        "status": "done",
+        "text": "- [completed] wire auth"
+      },
+      "seq": 10,
+      "sessionId": "s2",
+      "ts": 1700000009000
+    },
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "fact",
+      "payload": {
+        "text": "The API runs on port 4747"
+      },
+      "seq": 7,
+      "sessionId": "s2",
+      "ts": 1700000006000
+    }
+  ],
+  "memory_query:auth": [
+    {
+      "agent": "codex",
+      "key": "plan",
+      "kind": "plan_set",
+      "payload": {
+        "status": "done",
+        "text": "- [completed] wire auth"
+      },
+      "seq": 10,
+      "sessionId": "s2",
+      "ts": 1700000009000
+    },
+    {
+      "agent": "codex",
+      "key": "src/auth.rs",
+      "kind": "file_changed",
+      "payload": {
+        "path": "src/auth.rs",
+        "summary": "Edit src/auth.rs"
+      },
+      "seq": 6,
+      "sessionId": "s2",
+      "ts": 1700000005000
+    },
+    {
+      "agent": "codex",
+      "key": "auth.alg",
+      "kind": "decision",
+      "payload": {
+        "text": "Sign JWTs with RS256"
+      },
+      "seq": 4,
+      "sessionId": "s2",
+      "ts": 1700000003000
+    },
+    {
+      "agent": "claude-code",
+      "key": "auth.alg",
+      "kind": "decision",
+      "payload": {
+        "text": "Sign JWTs with HS256"
+      },
+      "seq": 3,
+      "sessionId": "s1",
+      "ts": 1700000002000
+    },
+    {
+      "agent": "claude-code",
+      "key": "plan",
+      "kind": "plan_set",
+      "payload": {
+        "status": "active",
+        "text": "- [pending] wire auth"
+      },
+      "seq": 2,
+      "sessionId": "s1",
+      "ts": 1700000001000
+    }
+  ],
+  "memory_query:empty/0": [
+    {
+      "agent": "codex",
+      "key": "",
+      "kind": "todo_added",
+      "payload": {
+        "text": "write docs"
+      },
+      "seq": 11,
+      "sessionId": "s2",
+      "ts": 1700000010000
+    }
+  ],
+  "memory_query:nothing": []
+}

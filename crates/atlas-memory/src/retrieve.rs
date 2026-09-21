@@ -4,16 +4,18 @@
 //! `memory_retrieve::retrieve`.
 //!
 //! Pipeline:
-//! 1. **Embedding (primary).** Embed the query with the shared [`MiniLmProvider`],
+//! 1. **Embedding.** Embed the query with the shared [`MiniLmProvider`],
 //!    `store.search` for cosine hits, and apply the legacy **0.30 cosine floor on
 //!    the raw similarity** — before fusion, since the floor is a cosine threshold
 //!    and is meaningless against an RRF score.
-//! 2. **Graph (secondary, down-weighted).** `graph.recall_top_k` contributes a
-//!    weighted-expansion list at a much lower RRF weight, so a graph hit can never
-//!    outrank a strong embedding hit. The graph is empty until Steps 7/9a populate
-//!    it, in which case this is a no-op.
-//! 3. **RRF fuse** the two ranked lists → **Jaccard dedup** near-identical
-//!    snippets → take `limit` → [`RetrievedDoc`].
+//! 2. **Jaccard dedup** near-identical snippets → take `limit` → [`RetrievedDoc`].
+//! 3. **Global blend.** Only when fewer than [`LOCAL_SPARSE_THRESHOLD`] local docs
+//!    survive, the promoted cross-repository memories (`crate::global`) join as a
+//!    second, lowest-weight RRF list, so a global hit never outranks a local one.
+//!
+//! The graph memory that used to be a down-weighted secondary list was removed
+//! (#89): what it held (the legacy shared log) lives in the record store, whose
+//! entries are in the HNSW corpus.
 //!
 //! HyDE / lexical query expansion (the expensive full-Hybrid path) is left behind
 //! the off-by-default [`ENABLE_HYDE_EXPANSION`] flag — not implemented here.
@@ -34,16 +36,13 @@ pub(crate) const COSINE_FLOOR: f32 = 0.30;
 const RRF_K: f32 = 60.0;
 /// Embedding list weight — the authoritative recall path.
 const W_EMBED: f32 = 1.0;
-/// Graph list weight — deliberately small so graph hits expand, never dominate.
-/// With `W_EMBED/W_GRAPH = 10` and the same `RRF_K`, the best graph hit
-/// (`0.1/61 ≈ 0.0016`) scores below the *worst* embedding hit in a pool of 20
-/// (`1/80 ≈ 0.0125`): a graph-only hit can never outrank an embedding hit.
-const W_GRAPH: f32 = 0.1;
-/// Global cross-project list weight (Step 9b). `≤ W_GRAPH` so global never
-/// dominates local; only consulted when local memory is sparse.
+/// Global cross-repository list weight. With `W_EMBED/W_GLOBAL = 20` and the
+/// same `RRF_K`, the best global hit (`0.05/61 ≈ 0.0008`) scores below the
+/// *worst* embedding hit in a pool of 20 (`1/80 ≈ 0.0125`): a global hit can
+/// never outrank a local one. Only consulted when local memory is sparse.
 const W_GLOBAL: f32 = 0.05;
-/// When fewer than this many local docs survive fusion+dedup, blend in global
-/// cross-project hits (Step 9b). A well-populated project never touches global.
+/// When fewer than this many local docs survive dedup, blend in global
+/// cross-repository hits. A well-populated repository never touches global.
 const LOCAL_SPARSE_THRESHOLD: usize = 3;
 /// Jaccard token-set similarity at/above which a later snippet is treated as a
 /// near-duplicate of one already kept and dropped.
@@ -63,14 +62,39 @@ struct Ranked {
 }
 
 impl MemoryEngine {
-    /// Fused retrieval over the HNSW (primary) + graph (secondary). Returns up to
-    /// `limit` deduped [`RetrievedDoc`]s, embedding-floored and RRF-fused. Empty on
-    /// a trivial query or when nothing clears the cosine floor.
+    /// Retrieval over the HNSW, with global memory blended in when local is
+    /// sparse. Returns up to `limit` deduped [`RetrievedDoc`]s, embedding-floored.
+    /// Empty on a trivial query or when nothing clears the cosine floor.
     pub async fn retrieve(
         &self,
         query: &str,
         limit: usize,
         provider: &MiniLmProvider,
+    ) -> Vec<RetrievedDoc> {
+        // Also checked by `retrieve_with_vector`; here it spares the model call.
+        if query.trim().len() < 4 || limit == 0 {
+            return Vec::new();
+        }
+
+        let qvec = match embed_query(query, provider).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!(target: "atlas_memory::retrieve", "embedding recall failed: {e}");
+                None
+            }
+        };
+        self.retrieve_with_vector(query, qvec.as_deref(), limit, &crate::global::global_dir())
+    }
+
+    /// [`retrieve`](Self::retrieve) once the query is embedded (`None` when it
+    /// could not be), against the global memory dir `global_dir`. The seam the
+    /// fixture-corpus tests drive without a model.
+    pub(crate) fn retrieve_with_vector(
+        &self,
+        query: &str,
+        qvec: Option<&[f32]>,
+        limit: usize,
+        global_dir: &std::path::Path,
     ) -> Vec<RetrievedDoc> {
         if query.trim().len() < 4 || limit == 0 {
             return Vec::new();
@@ -80,57 +104,36 @@ impl MemoryEngine {
         let pool = limit.saturating_mul(4).max(20);
 
         // ── 1. Embedding (primary) ────────────────────────────────────────────
-        let embed_ranked = match self.embedding_candidates(query, pool, provider).await {
-            Ok(r) => r,
-            Err(e) => {
+        let embed_ranked = match qvec.map(|v| self.vector_candidates(v, pool)) {
+            Some(Ok(r)) => r,
+            Some(Err(e)) => {
                 tracing::debug!(target: "atlas_memory::retrieve", "embedding recall failed: {e}");
                 Vec::new()
             }
+            None => Vec::new(),
         };
 
-        // ── 2. Graph (secondary, down-weighted; empty until Steps 7/9a) ────────
-        let graph_ranked = self.graph_candidates(query, pool);
+        // ── 2. Jaccard dedup → top-`limit` ────────────────────────────────────
+        let local = jaccard_dedup(rrf_fuse_weighted(&[(&embed_ranked, W_EMBED)]), limit);
 
-        // ── 3. RRF fuse → Jaccard dedup → top-`limit` ─────────────────────────
-        let local = jaccard_dedup(rrf_fuse(&embed_ranked, &graph_ranked), limit);
-
-        // ── 4. Blend global cross-project memory ONLY when local is sparse ─────
-        // (Step 9b). Global is added as a third, lowest-weight RRF list so it can
-        // never outrank a local hit; an empty/absent global graph is a no-op.
+        // ── 3. Blend global cross-repository memory ONLY when local is sparse ──
+        // Global is a second, lowest-weight RRF list so it can never outrank a
+        // local hit; nothing promoted yet is a no-op.
         if local.len() >= LOCAL_SPARSE_THRESHOLD {
             return local;
         }
-        let global_ranked = global_candidates(query, pool);
+        let global_ranked = global_candidates(global_dir, query, pool);
         if global_ranked.is_empty() {
             return local;
         }
-        let fused = rrf_fuse_weighted(&[
-            (&embed_ranked, W_EMBED),
-            (&graph_ranked, W_GRAPH),
-            (&global_ranked, W_GLOBAL),
-        ]);
+        let fused = rrf_fuse_weighted(&[(&embed_ranked, W_EMBED), (&global_ranked, W_GLOBAL)]);
         jaccard_dedup(fused, limit)
     }
 
-    /// Embed the query and return cosine hits that clear the floor, ranked best
+    /// Cosine hits for an embedded query that clear the floor, ranked best
     /// first and resolved to display docs via the manifest bimap + docstore.
-    async fn embedding_candidates(
-        &self,
-        query: &str,
-        pool: usize,
-        provider: &MiniLmProvider,
-    ) -> anyhow::Result<Vec<Ranked>> {
-        use crate::embedding::EmbeddingProvider;
-
-        let mut vecs = provider
-            .embed_batch(std::slice::from_ref(&query.to_string()))
-            .await
-            .map_err(|e| anyhow::anyhow!("embed query: {e}"))?;
-        let Some(qvec) = vecs.drain(..).next() else {
-            return Ok(Vec::new());
-        };
-
-        let hits = self.store.search(&qvec, pool)?;
+    fn vector_candidates(&self, qvec: &[f32], pool: usize) -> anyhow::Result<Vec<Ranked>> {
+        let hits = self.store.search(qvec, pool)?;
         let floored = apply_cosine_floor(hits, COSINE_FLOOR);
 
         let mut out = Vec::with_capacity(floored.len());
@@ -154,29 +157,17 @@ impl MemoryEngine {
         }
         Ok(out)
     }
+}
 
-    /// Word-overlap graph hits as a secondary contributor. Raw graph content has no
-    /// id/title/source, so a stable synthetic id (`graph::<hash>`) keys it for
-    /// fusion and the content's first line becomes the title.
-    fn graph_candidates(&self, query: &str, pool: usize) -> Vec<Ranked> {
-        self.graph
-            .recall_top_k(query, pool)
-            .into_iter()
-            .map(|(content, _score)| {
-                let (title, body) = split_graph_content(&content);
-                let id = format!("graph::{:016x}", stable_hash(&content));
-                Ranked {
-                    doc: RetrievedDoc {
-                        id: id.clone(),
-                        title,
-                        source: "graph".to_string(),
-                        text: body,
-                    },
-                    id,
-                }
-            })
-            .collect()
-    }
+/// The query's embedding, or `None` when the model returned none.
+async fn embed_query(query: &str, provider: &MiniLmProvider) -> anyhow::Result<Option<Vec<f32>>> {
+    use crate::embedding::EmbeddingProvider;
+
+    let vecs = provider
+        .embed_batch(std::slice::from_ref(&query.to_string()))
+        .await
+        .map_err(|e| anyhow::anyhow!("embed query: {e}"))?;
+    Ok(vecs.into_iter().next())
 }
 
 /// Keep only hits whose raw cosine similarity is at/above `floor`. usearch already
@@ -185,17 +176,9 @@ pub(crate) fn apply_cosine_floor(hits: Vec<(u64, f32)>, floor: f32) -> Vec<(u64,
     hits.into_iter().filter(|(_, sim)| *sim >= floor).collect()
 }
 
-/// Reciprocal-rank fusion of the embedding (primary) and graph (secondary) lists.
-/// A doc appearing in both accumulates both contributions (keyed by id). Returns
-/// `(doc, fused_score)` sorted by fused score descending; ties keep the embedding
-/// list's order (embedding ids are inserted first and scored higher).
-fn rrf_fuse(embed: &[Ranked], graph: &[Ranked]) -> Vec<(RetrievedDoc, f32)> {
-    rrf_fuse_weighted(&[(embed, W_EMBED), (graph, W_GRAPH)])
-}
-
 /// Generalised reciprocal-rank fusion over any number of `(list, weight)` pairs,
 /// applied in the given order (earlier lists win ties via first-seen order). This
-/// is the engine behind both the 2-list local fuse and the 3-list global blend.
+/// is the engine behind both the local ranking and the global blend.
 fn rrf_fuse_weighted(lists: &[(&[Ranked], f32)]) -> Vec<(RetrievedDoc, f32)> {
     // id → (accumulated score, doc, first-seen order for stable tie-breaks).
     let mut acc: HashMap<String, (f32, RetrievedDoc, usize)> = HashMap::new();
@@ -274,16 +257,14 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f32 {
     }
 }
 
-/// Global cross-project hits (Step 9b) as a lowest-weight expansion list. Mirrors
-/// [`MemoryEngine::graph_candidates`] but reads the global graph (resolved from
-/// `$HOME`/env) and tags the source `"global"` with a `global::<hash>` id so a
-/// global hit never collides with a local graph id during fusion. Empty when the
-/// global graph does not exist.
-fn global_candidates(query: &str, pool: usize) -> Vec<Ranked> {
-    crate::global::global_recall(query, pool)
+/// Global cross-repository hits as a lowest-weight expansion list, tagged with
+/// source `"global"` and a `global::<hash>` id so a global hit never collides
+/// with a local id during fusion. Empty when nothing has been promoted.
+fn global_candidates(global_dir: &std::path::Path, query: &str, pool: usize) -> Vec<Ranked> {
+    crate::global::global_recall_in(global_dir, query, pool)
         .into_iter()
         .map(|(content, _score)| {
-            let (title, body) = split_graph_content(&content);
+            let (title, body) = split_memory_text(&content);
             let id = format!("global::{:016x}", stable_hash(&content));
             Ranked {
                 doc: RetrievedDoc {
@@ -298,11 +279,11 @@ fn global_candidates(query: &str, pool: usize) -> Vec<Ranked> {
         .collect()
 }
 
-/// Title/body for a raw graph content string: first line is the title, the rest
+/// Title/body for a global memory's text: first line is the title, the rest
 /// (if any) the body.
-fn split_graph_content(content: &str) -> (String, String) {
-    // Graph content is stored flat; reuse the embedded-text split so multi-line
-    // memories still surface a sensible title, falling back to the first line.
+fn split_memory_text(content: &str) -> (String, String) {
+    // Reuse the embedded-text split so multi-line memories still surface a
+    // sensible title, falling back to the first line.
     let (title, body) = split_embedded(content);
     if body.is_empty() {
         if let Some((first, rest)) = content.split_once('\n') {
@@ -312,7 +293,7 @@ fn split_graph_content(content: &str) -> (String, String) {
     (title, body)
 }
 
-/// Stable (process-independent enough) hash of a string for synthetic graph ids.
+/// Stable (process-independent enough) hash of a string for synthetic global ids.
 fn stable_hash(s: &str) -> u64 {
     let mut h = DefaultHasher::new();
     s.hash(&mut h);
@@ -356,29 +337,29 @@ mod tests {
             ranked("b", "Beta", "second"),
             ranked("c", "Gamma", "third"),
         ];
-        let fused = rrf_fuse(&embed, &[]);
+        let fused = rrf_fuse_weighted(&[(&embed, W_EMBED)]);
         let ids: Vec<&str> = fused.iter().map(|(d, _)| d.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
         // Scores strictly decrease with rank.
         assert!(fused[0].1 > fused[1].1 && fused[1].1 > fused[2].1);
     }
 
-    /// A graph hit (even at graph rank 0) can never outrank an embedding hit.
+    /// A global hit (even at global rank 0) can never outrank an embedding hit.
     #[test]
-    fn graph_hit_cannot_outrank_strong_embedding_hit() {
-        // 20 embedding hits (the worst still beats any graph-only hit) + 1 graph.
+    fn global_hit_cannot_outrank_strong_embedding_hit() {
+        // 20 embedding hits (the worst still beats any global hit) + 1 global.
         let embed: Vec<Ranked> = (0..20)
             .map(|i| ranked(&format!("e{i}"), "E", "embed body"))
             .collect();
-        let graph = vec![ranked("g0", "G", "graph body")];
-        let fused = rrf_fuse(&embed, &graph);
+        let global = vec![ranked("g0", "G", "global body")];
+        let fused = rrf_fuse_weighted(&[(&embed, W_EMBED), (&global, W_GLOBAL)]);
 
-        let graph_pos = fused
+        let global_pos = fused
             .iter()
             .position(|(d, _)| d.id == "g0")
-            .expect("graph hit present");
-        // Every embedding hit precedes the graph-only hit.
-        assert_eq!(graph_pos, 20, "graph-only hit must sit below all 20 embedding hits");
+            .expect("global hit present");
+        // Every embedding hit precedes the global hit.
+        assert_eq!(global_pos, 20, "global hit must sit below all 20 embedding hits");
     }
 
     /// Near-identical snippets collapse to one via Jaccard dedup.
@@ -396,25 +377,198 @@ mod tests {
         assert_eq!(ids, vec!["a", "c"], "b is a near-duplicate of a and dropped");
     }
 
-    /// Empty graph → fused result is exactly the embedding list (no graph noise).
+    /// Embedding only → the fused result is exactly the embedding list.
     #[test]
-    fn empty_graph_returns_embedding_only() {
+    fn embedding_only_keeps_its_order() {
         let embed = vec![ranked("a", "A", "alpha body text"), ranked("b", "B", "beta body text")];
-        let fused = rrf_fuse(&embed, &[]);
+        let fused = rrf_fuse_weighted(&[(&embed, W_EMBED)]);
         let kept = jaccard_dedup(fused, 10);
         let ids: Vec<&str> = kept.iter().map(|d| d.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b"]);
     }
 
     /// A doc present in BOTH lists accumulates both contributions and ranks above
-    /// a doc present in only one — the intended "graph expands an embedding hit".
+    /// a doc present in only one.
     #[test]
     fn doc_in_both_lists_accumulates_score() {
         let embed = vec![ranked("a", "A", "aaa"), ranked("shared", "S", "shared body")];
-        let graph = vec![ranked("shared", "S", "shared body")];
-        let fused = rrf_fuse(&embed, &graph);
-        // "shared" gets embed(rank1) + graph(rank0); "a" gets embed(rank0) only.
+        let second = vec![ranked("shared", "S", "shared body")];
+        let fused = rrf_fuse_weighted(&[(&embed, W_EMBED), (&second, 0.1)]);
+        // "shared" gets embed(rank1) + second(rank0); "a" gets embed(rank0) only.
         // a: 1/61 = 0.01639; shared: 1/62 + 0.1/61 = 0.01613 + 0.00164 = 0.01777.
         assert_eq!(fused[0].0.id, "shared", "doc in both lists is boosted above a single-list doc");
+    }
+}
+
+/// Retrieval over a fixed fixture corpus, driven through the vector seam so no
+/// model is needed. The expected results are literal goldens recorded on the
+/// commit before the graph memory was removed (#89), when this same fixture's
+/// legacy log was folded into the graph and the graph answered every keyword
+/// query below; they must not move.
+#[cfg(test)]
+mod fixture_corpus {
+    use crate::docstore::DocText;
+    use crate::{MemoryEngine, DIM};
+    use std::path::PathBuf;
+
+    fn tmp(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("atlas-memory-fixture-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// Unit vector along the blend of basis axes `(axis, weight)`.
+    fn vec_of(parts: &[(usize, f32)]) -> Vec<f32> {
+        let mut v = vec![0.0f32; DIM];
+        for (axis, w) in parts {
+            v[*axis] += *w;
+        }
+        let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        v.iter().map(|x| x / n).collect()
+    }
+
+    /// The fixture corpus: agent memory, the record's entries as the corpus
+    /// reader folds them (`shared:<kind>:<id>`, text `[agent] content`), and a
+    /// codebase doc. The same record entries also sit in the legacy shared log,
+    /// which the engine used to fold into its graph on open; that log is now
+    /// read only by the record store's migration.
+    fn fixture_engine(root: &std::path::Path) -> MemoryEngine {
+        let log = root.join(".atlas").join("shared-memory");
+        std::fs::create_dir_all(&log).unwrap();
+        std::fs::write(
+            log.join("events.jsonl"),
+            [
+                r#"{"seq":1,"ts":1,"agent":"codex","sessionId":"s1","kind":"decision","payload":{"text":"Use RS256 for JWT signing"}}"#,
+                r#"{"seq":2,"ts":2,"agent":"claude","sessionId":"s1","kind":"fact","payload":{"text":"The build uses bun and vitest for tests"}}"#,
+                r#"{"seq":3,"ts":3,"agent":"claude","sessionId":"s2","kind":"failure","payload":{"text":"cargo test hangs when the model dir is missing"}}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let mut engine = MemoryEngine::open(root.to_path_buf());
+        let docs: [(&str, &str, &str, &str, usize); 5] = [
+            ("claude:auth.md", "Auth design", "claude", "Better Auth with DB-backed sessions", 0),
+            ("shared:decision:1", "Use RS256 for JWT signing", "shared", "[codex] Use RS256 for JWT signing", 1),
+            (
+                "shared:fact:2",
+                "The build uses bun and vitest for tests",
+                "shared",
+                "[claude] The build uses bun and vitest for tests",
+                2,
+            ),
+            (
+                "shared:failure:3",
+                "cargo test hangs when the model dir is missing",
+                "shared",
+                "[claude] cargo test hangs when the model dir is missing",
+                3,
+            ),
+            ("codebase:src/lib.rs", "src/lib.rs", "codebase", "Tauri command registration", 4),
+        ];
+        for (id, title, source, text, axis) in docs {
+            let key = engine.manifest.assign_key(id);
+            engine.store.add(key, &vec_of(&[(axis, 1.0)])).unwrap();
+            engine.manifest.upsert(id, id, source, 0);
+            engine.docstore.upsert(
+                id,
+                DocText {
+                    title: title.into(),
+                    source: source.into(),
+                    text: text.into(),
+                },
+            );
+        }
+        engine
+    }
+
+    fn ids(engine: &MemoryEngine, query: &str, qvec: &[f32], limit: usize, global: &std::path::Path) -> Vec<String> {
+        engine
+            .retrieve_with_vector(query, Some(qvec), limit, global)
+            .into_iter()
+            .map(|d| format!("{} | {} | {} | {}", d.id, d.title, d.source, d.text))
+            .collect()
+    }
+
+    #[test]
+    fn retrieval_over_the_fixture_corpus_is_unchanged() {
+        let root = tmp("corpus");
+        let global = tmp("corpus-global");
+        let engine = fixture_engine(&root);
+
+        // A prompt-shaped query: two embedding hits clear the floor.
+        assert_eq!(
+            ids(&engine, "how is JWT signing configured", &vec_of(&[(1, 1.0), (0, 0.5)]), 5, &global),
+            vec![
+                "shared:decision:1 | Use RS256 for JWT signing | shared | [codex] Use RS256 for JWT signing",
+                "claude:auth.md | Auth design | claude | Better Auth with DB-backed sessions",
+            ]
+        );
+        // A keyword that is a substring of a recorded decision.
+        assert_eq!(
+            ids(&engine, "RS256", &vec_of(&[(1, 1.0)]), 5, &global),
+            vec!["shared:decision:1 | Use RS256 for JWT signing | shared | [codex] Use RS256 for JWT signing"]
+        );
+        // A phrase from a recorded fact, near a codebase doc too.
+        assert_eq!(
+            ids(&engine, "bun and vitest", &vec_of(&[(2, 1.0), (4, 0.8)]), 5, &global),
+            vec![
+                "shared:fact:2 | The build uses bun and vitest for tests | shared | [claude] The build uses bun and vitest for tests",
+                "codebase:src/lib.rs | src/lib.rs | codebase | Tauri command registration",
+            ]
+        );
+        // The limit caps a query every doc answers.
+        assert_eq!(
+            ids(
+                &engine,
+                "cargo test hangs",
+                &vec_of(&[(3, 1.0), (2, 0.6), (0, 0.5), (1, 0.4), (4, 0.3)]),
+                2,
+                &global
+            ),
+            vec![
+                "shared:failure:3 | cargo test hangs when the model dir is missing | shared | [claude] cargo test hangs when the model dir is missing",
+                "shared:fact:2 | The build uses bun and vitest for tests | shared | [claude] The build uses bun and vitest for tests",
+            ]
+        );
+        // Nothing clears the cosine floor.
+        assert!(ids(&engine, "unrelated question", &vec_of(&[(9, 1.0)]), 5, &global).is_empty());
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&global).ok();
+    }
+
+    /// Sparse local results take promoted global memory below every local hit;
+    /// a well-populated query never consults it.
+    #[test]
+    fn promoted_memory_fills_in_when_local_is_sparse() {
+        let root = tmp("global-blend");
+        let global = tmp("global-blend-global");
+        std::fs::write(
+            global.join("MEMORY.md"),
+            "# Global Memory (promoted, cross-project)\n\n- **[fact]** JWT tokens expire after one hour *(confidence: 90%)*\n",
+        )
+        .unwrap();
+        let engine = fixture_engine(&root);
+
+        assert_eq!(
+            ids(&engine, "JWT tokens", &vec_of(&[(1, 1.0)]), 5, &global),
+            vec![
+                "shared:decision:1 | Use RS256 for JWT signing | shared | [codex] Use RS256 for JWT signing".to_string(),
+                format!(
+                    "global::{:016x} | JWT tokens expire after one hour | global | ",
+                    super::stable_hash("JWT tokens expire after one hour")
+                ),
+            ]
+        );
+        assert_eq!(
+            ids(&engine, "JWT tokens", &vec_of(&[(0, 1.0), (1, 0.9), (2, 0.8), (3, 0.7)]), 5, &global).len(),
+            4,
+            "four local hits: global is not consulted"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&global).ok();
     }
 }

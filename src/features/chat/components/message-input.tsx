@@ -233,7 +233,7 @@ interface CodebaseIndexStatus {
 }
 
 /** Codebase-index status pill for the native agent — the index that grounds
- *  `search_memory`. Shows file count (or "Index memory" when unbuilt), flips to
+ *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
  *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
 function CerseiMemoryPill() {
   const projectPath = useAppStore((s) => s.currentProject?.path ?? null);

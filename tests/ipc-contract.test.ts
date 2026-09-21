@@ -189,6 +189,40 @@ function invokedCommands(): Map<string, string[]> {
   return found;
 }
 
+/**
+ * Registered commands known to have no frontend caller, kept until their own
+ * owners retire them. Each entry is a known dead command, not a licence:
+ * remove the entry when the command is removed, and never add one for a new
+ * command.
+ */
+const KNOWN_UNCALLED = new Set([
+  // Superseded by `bootstrap_app_state`, which folds the same snapshot into
+  // the boot round-trip; nothing invokes the standalone command any more.
+  "get_atlas_config_info",
+]);
+
+/**
+ * Every command name the frontend mentions as a string literal, on any line
+ * that is not a comment. Looser than `invokedCommands` on purpose: a call site
+ * can span lines (`invoke<{ … }>(\n  "name",`), carry a generic `invoke` cannot
+ * parse (`Record<string, T>`), or pick its name in a ternary
+ * (`action === "stage" ? "git_stage_hunk" : "git_unstage_hunk"`). All of those
+ * still hand the name to `invoke` as a literal, so its presence is the caller.
+ */
+function frontendCommandLiterals(): Set<string> {
+  const found = new Set<string>();
+  const literal = /["'`]([a-z][a-z0-9_]*)["'`]/g;
+  for (const file of walk(TS_SRC, [".ts", ".tsx"])) {
+    if (/\.test\.tsx?$/.test(file) || file.includes(`${path.sep}__tests__${path.sep}`)) continue;
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+      for (const match of line.matchAll(literal)) found.add(match[1]);
+    }
+  }
+  return found;
+}
+
 /** Shipping files that pass `invoke` a non-literal first argument. Tests and
  *  the mock backend under `src/dev/` forward names generically by design. */
 function dynamicInvokeFiles(): Map<string, string[]> {
@@ -281,6 +315,22 @@ describe("tauri IPC contract", () => {
     // An unregistered handler is dead code that looks live: the fn compiles,
     // clippy is happy, and the frontend gets "command not found" at runtime.
     expect(unregistered).toEqual([]);
+  });
+
+  it("every registered command has a frontend caller", () => {
+    // A registered command nothing calls is surface with no user: it has to
+    // be maintained, reviewed and kept safe, and it hides which capability
+    // actually lives where. Delete the command, or wire its caller.
+    const literals = frontendCommandLiterals();
+    const uncalled = registered.filter((name) => !literals.has(name) && !KNOWN_UNCALLED.has(name));
+    expect(uncalled).toEqual([]);
+
+    // The allowlist only ever shrinks: an entry whose command gained a caller
+    // or was deleted must go too.
+    const stale = [...KNOWN_UNCALLED].filter(
+      (name) => literals.has(name) || !registeredSet.has(name),
+    );
+    expect(stale).toEqual([]);
   });
 
   it("registers no command that has no #[tauri::command] handler", () => {

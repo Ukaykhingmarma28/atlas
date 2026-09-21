@@ -12,7 +12,8 @@
 //!   block becomes the session's title.
 
 use atlas_agent_transcript::{
-    encode_cwd, is_injected_user_text, strip_injected_context,
+    encode_cwd, is_injected_user_text, strip_injected_context, wrap_memory_envelope,
+    MEMORY_ENVELOPE_CLOSE, MEMORY_ENVELOPE_NOTE, MEMORY_ENVELOPE_OPEN,
 };
 
 #[test]
@@ -56,5 +57,53 @@ fn an_unterminated_block_does_not_eat_the_rest_of_the_prompt() {
 fn prose_with_horizontal_rules_is_left_alone() {
     // `---` fences are ordinary markdown; only the known block labels count.
     let text = "before\n--- NOT A MEMORY BLOCK ---\nafter";
+    assert_eq!(strip_injected_context(text), text);
+}
+
+#[test]
+fn the_envelope_opens_with_the_do_not_persist_line() {
+    let env = wrap_memory_envelope(&["--- SHARED MEMORY ---\nfacts\n--- END SHARED MEMORY ---"])
+        .expect("a non-empty block makes an envelope");
+    let mut lines = env.lines();
+    assert_eq!(lines.next(), Some(MEMORY_ENVELOPE_OPEN));
+    assert_eq!(lines.next(), Some(MEMORY_ENVELOPE_NOTE));
+    assert_eq!(env.lines().last(), Some(MEMORY_ENVELOPE_CLOSE));
+}
+
+#[test]
+fn an_envelope_with_nothing_in_it_is_not_written() {
+    assert_eq!(wrap_memory_envelope(&[]), None);
+    assert_eq!(wrap_memory_envelope(&["", "   "]), None);
+}
+
+#[test]
+fn the_whole_envelope_is_stripped_including_its_note() {
+    // What an agent that saved Atlas's injected prompt writes back to disk.
+    let env = wrap_memory_envelope(&[
+        "--- SHARED MEMORY ---\nUse RS256\n--- END SHARED MEMORY ---",
+        "--- PROJECT MEMORY ---\nnever commit\n--- END PROJECT MEMORY ---",
+    ])
+    .unwrap();
+    let text = format!("{env}\n\nwhat changed?");
+    let stripped = strip_injected_context(&text);
+    assert_eq!(stripped, "what changed?");
+    for leaked in [MEMORY_ENVELOPE_OPEN, MEMORY_ENVELOPE_CLOSE, MEMORY_ENVELOPE_NOTE, "RS256", "never commit"] {
+        assert!(!stripped.contains(leaked), "{leaked:?} survived the strip");
+    }
+}
+
+#[test]
+fn an_unterminated_envelope_does_not_eat_the_rest_of_the_prompt() {
+    // A truncated preview cuts the closing tag off. Dropping the remainder is
+    // the safe side: scaffolding must never read as the user's words.
+    let text = format!("{MEMORY_ENVELOPE_OPEN}\n{MEMORY_ENVELOPE_NOTE}\nfacts");
+    assert_eq!(strip_injected_context(&text), "");
+}
+
+#[test]
+fn prose_mentioning_the_tag_inline_is_left_alone() {
+    // Only a line that IS the tag opens an envelope, so prose about the feature
+    // survives being written down.
+    let text = "we wrap blocks in an <atlas-memory> tag now";
     assert_eq!(strip_injected_context(text), text);
 }

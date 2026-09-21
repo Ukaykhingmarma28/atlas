@@ -10,7 +10,7 @@
 //! Nothing in this module writes. No hooks are installed, no refs are created,
 //! no config is touched. The repository is observed and never modified.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Where a path stood in a commit, relative to its first parent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +210,51 @@ pub fn changed_between(repo: &Path, from: &str, to: &str) -> Option<Vec<ChangedP
     )
     .ok()?;
     Some(parse_name_status(&out))
+}
+
+/// The scope root of shared memory for `dir`: the repository's **main
+/// worktree** (found through the git common dir, so every linked worktree and
+/// every subdirectory of the repository resolves to the same place), or `dir`
+/// itself when it is not inside a git repository.
+///
+/// A bare repository has no main worktree: its worktrees resolve to the bare
+/// repository directory. A submodule or separated git dir resolves to the top
+/// level of the checkout `dir` is in.
+pub fn scope_root(dir: &Path) -> PathBuf {
+    main_worktree(dir).unwrap_or_else(|| dir.to_path_buf())
+}
+
+/// The main worktree of the repository containing `dir`, or `None` outside
+/// git. See [`scope_root`].
+pub fn main_worktree(dir: &Path) -> Option<PathBuf> {
+    let out = run(dir, &["rev-parse", "--git-common-dir"]).ok()?;
+    let common = PathBuf::from(out.trim());
+    // Relative output is relative to `dir` (`git -C dir`).
+    let common = if common.is_absolute() { common } else { dir.join(common) };
+    let common = common.canonicalize().ok()?;
+    if common.file_name().is_some_and(|n| n == ".git") {
+        return common.parent().map(Path::to_path_buf);
+    }
+    // A bare repository's worktrees share no main worktree; the repository
+    // itself is what they have in common.
+    if run(&common, &["rev-parse", "--is-bare-repository"]).is_ok_and(|o| o.trim() == "true") {
+        return Some(common);
+    }
+    let top = run(dir, &["rev-parse", "--show-toplevel"]).ok()?;
+    let top = top.trim();
+    (!top.is_empty()).then(|| PathBuf::from(top))
+}
+
+/// Every worktree of the repository containing `dir` (main first, as git
+/// lists them). Empty outside git.
+pub fn worktree_paths(dir: &Path) -> Vec<PathBuf> {
+    let Ok(out) = run(dir, &["worktree", "list", "--porcelain"]) else {
+        return Vec::new();
+    };
+    out.lines()
+        .filter_map(|l| l.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// Is this directory a git repository?
@@ -818,6 +863,66 @@ mod tests {
             self.git(&["commit", "-m", message]);
             head_commit(self.path()).expect("a commit")
         }
+    }
+
+    // ── Shared-memory scope ─────────────────────────────────────────────────
+
+    /// Two worktrees of one repository (and a subdirectory of either) are one
+    /// shared-memory scope: the main worktree.
+    #[test]
+    fn two_worktrees_of_one_repository_resolve_to_one_scope() {
+        let repo = TestRepo::new();
+        repo.write("src/lib.rs", "fn main() {}");
+        repo.commit_all("initial");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let linked = elsewhere.path().join("feature");
+        repo.git(&["worktree", "add", "-b", "feature", linked.to_str().unwrap()]);
+
+        let main = repo.path().canonicalize().unwrap();
+        assert_eq!(scope_root(repo.path()), main);
+        assert_eq!(scope_root(&linked), main);
+        assert_eq!(scope_root(&linked.join("src")), main);
+        assert_eq!(scope_root(&repo.path().join("src")), main);
+
+        let listed: Vec<PathBuf> = worktree_paths(&linked)
+            .into_iter()
+            .map(|p| p.canonicalize().unwrap())
+            .collect();
+        assert_eq!(listed, vec![main, linked.canonicalize().unwrap()]);
+    }
+
+    /// Worktrees of a bare repository share the bare repository as their scope.
+    #[test]
+    fn worktrees_of_a_bare_repository_resolve_to_one_scope() {
+        let repo = TestRepo::new();
+        repo.write("a.txt", "a");
+        repo.commit_all("initial");
+        let holder = tempfile::tempdir().unwrap();
+        let bare = holder.path().join("repo.git");
+        repo.git(&["clone", "--bare", repo.path().to_str().unwrap(), bare.to_str().unwrap()]);
+        let one = holder.path().join("one");
+        let two = holder.path().join("two");
+        for (wt, branch) in [(&one, "b1"), (&two, "b2")] {
+            let out = atlas_process::command("git")
+                .arg("-C")
+                .arg(&bare)
+                .args(["worktree", "add", "-b", branch, wt.to_str().unwrap()])
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        }
+        let expected = bare.canonicalize().unwrap();
+        assert_eq!(scope_root(&one), expected);
+        assert_eq!(scope_root(&two), expected);
+    }
+
+    /// Outside git the scope is the launch directory itself.
+    #[test]
+    fn a_non_git_directory_resolves_to_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(scope_root(dir.path()), dir.path());
+        assert!(main_worktree(dir.path()).is_none());
+        assert!(worktree_paths(dir.path()).is_empty());
     }
 
     // ── Working-tree snapshots ──────────────────────────────────────────────

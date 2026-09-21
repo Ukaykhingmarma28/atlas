@@ -153,7 +153,7 @@ describe("session_chat_thread_get ↔ checkpointScope (#2)", () => {
 });
 
 describe("EventKind ↔ shared-memory-api EventKind (#3)", () => {
-  const rust = read("src-tauri", "src", "commands", "shared_memory.rs");
+  const rust = read("crates", "atlas-memory", "src", "record.rs");
   const ts = read("src", "features", "memory", "lib", "shared-memory-api.ts");
 
   it("every Rust EventKind variant has a TS union member", () => {

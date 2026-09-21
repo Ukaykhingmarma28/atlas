@@ -1507,6 +1507,7 @@ impl ModelClientSession {
                     extra_headers,
                     ChatDialect {
                         freeform_tools: built.freeform_tools,
+                        namespaced_tools: built.namespaced_tools,
                     },
                 )
                 .await;

@@ -8,10 +8,10 @@
 //! Two things in this module are on-disk contracts rather than implementation
 //! details, and both are pinned in `tests/behaviour.rs`:
 //!
-//! - [`MemoryCategory::label`] is written into the memdir markdown *and* used as
-//!   the graph topic string.
-//! - [`persist_memories`]'s rendered line is parsed back by
-//!   `crate::consolidate::prune_memdir`, so its exact shape couples the two.
+//! - [`MemoryCategory::label`] is written into the memdir markdown.
+//! - [`persist_memories`]'s rendered line is parsed back by the record store's
+//!   legacy memdir import (`crate::record::legacy`), so its exact shape couples
+//!   the two.
 
 use std::path::Path;
 
@@ -28,7 +28,7 @@ pub enum MemoryCategory {
 }
 
 impl MemoryCategory {
-    /// Wire/disk label. Written into the memdir and used as the graph topic.
+    /// Wire/disk label. Written into the memdir.
     pub fn label(&self) -> &'static str {
         match self {
             Self::UserPreference => "preference",

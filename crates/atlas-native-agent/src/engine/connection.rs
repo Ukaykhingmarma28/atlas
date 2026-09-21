@@ -46,7 +46,7 @@ use atlas_acp_thread::{
     AgentModelList, AgentModelSelector, AgentSessionModes, AgentSessionRewind, AuthorizationKind,
 };
 use crate::AgentSessionEffort;
-use atlas_agent_servers::ThreadEventSink;
+use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers, ThreadEventSink};
 use codex_app_server_client::InProcessAppServerClient;
 use codex_app_server_client::InProcessAppServerRequestHandle;
 // The v2 protocol types are re-exported at the crate root
@@ -68,7 +68,7 @@ use crate::engine::config::EngineHome;
 use crate::engine::config::EngineSettings;
 use crate::engine::config::WireDialect;
 use crate::engine::approvals;
-use crate::engine::memory::{self, MemorySearch};
+use crate::engine::mcp;
 use crate::engine::modes;
 use crate::engine::runtime::start_engine;
 use crate::engine::runtime::EngineRuntime;
@@ -347,12 +347,9 @@ pub struct EngineConnection {
     /// fact to remember.
     session_modes: Arc<Mutex<HashMap<acp::SessionId, acp::SessionModeId>>>,
     default_mode: Option<acp::SessionModeId>,
-    /// Atlas's on-device retrieval, if the host injected it.
-    ///
-    /// `None` means the index is not ready; the tool is then not advertised at
-    /// all rather than advertised and failing, because a tool the model is
-    /// told about and cannot use is worse than one it never sees.
-    memory_search: Option<MemorySearch>,
+    /// Decides the MCP servers each thread is handed (the memory tool
+    /// server), projected into the thread's config overrides.
+    session_mcp: Option<Arc<dyn SessionMcpServers>>,
 }
 
 struct PumpHandle(tokio::task::JoinHandle<()>);
@@ -397,7 +394,7 @@ impl EngineConnection {
         thread_events: ThreadEventSink,
         external_auth: Option<Arc<dyn ExternalAuth>>,
         default_mode: Option<acp::SessionModeId>,
-        memory_search: Option<MemorySearch>,
+        session_mcp: Option<Arc<dyn SessionMcpServers>>,
         catalogue: Option<Arc<dyn CatalogueFetcher>>,
     ) -> Result<Arc<Self>> {
         let (live, response) = match settings.provider.wire {
@@ -468,7 +465,6 @@ impl EngineConnection {
             sessions.clone(),
             turns.clone(),
             max_retries,
-            memory_search.clone(),
         ));
 
         Ok(Arc::new(Self {
@@ -484,7 +480,7 @@ impl EngineConnection {
             runtime: Arc::new(runtime),
             session_modes: Arc::new(Mutex::new(HashMap::new())),
             default_mode,
-            memory_search,
+            session_mcp,
         }))
     }
 
@@ -671,6 +667,27 @@ impl EngineConnection {
         }))
     }
 
+    /// What the host offers the thread about to open in `cwd`, and its config
+    /// overrides. The engine takes StreamableHttp servers, so it is asked as
+    /// an agent that advertises HTTP MCP.
+    fn mcp_offer(
+        &self,
+        cwd: &std::path::Path,
+        session_id: Option<&acp::SessionId>,
+    ) -> (SessionMcpOffer, Option<HashMap<String, serde_json::Value>>) {
+        let offer = atlas_agent_servers::session_mcp::offer_for(
+            self.session_mcp.as_ref(),
+            &SessionMcpRequest {
+                agent_id: self.id.clone(),
+                http_mcp: true,
+                cwd: cwd.to_path_buf(),
+                session_id: session_id.cloned(),
+            },
+        );
+        let config = mcp::thread_config(offer.servers());
+        (offer, config)
+    }
+
     fn new_thread(
         self: &Arc<Self>,
         session_id: acp::SessionId,
@@ -718,7 +735,6 @@ async fn pump_events(
     sessions: Arc<EngineSessions>,
     turns: Arc<TurnWaiters>,
     max_retries: usize,
-    memory_search: Option<MemorySearch>,
 ) {
     let (answers_tx, mut answers_rx) = tokio::sync::mpsc::unbounded_channel::<ServerAnswer>();
 
@@ -791,7 +807,7 @@ async fn pump_events(
                             apply_notification(&sessions, &turns, max_retries, *notification);
                         }
                         InProcessServerEvent::ServerRequest(request) => {
-                            handle_server_request(&sessions, *request, &answers_tx, &memory_search);
+                            handle_server_request(&sessions, *request, &answers_tx);
                         }
                         InProcessServerEvent::Lagged { skipped } => {
                             // Transport health, not an application event. Worth
@@ -852,24 +868,8 @@ fn handle_server_request(
     sessions: &Arc<EngineSessions>,
     request: ServerRequest,
     answers: &tokio::sync::mpsc::UnboundedSender<ServerAnswer>,
-    memory_search: &Option<MemorySearch>,
 ) {
     use codex_app_server_protocol::ServerRequest as Req;
-
-    // A tool Atlas implements itself, rather than a question for the user.
-    if let Req::DynamicToolCall { request_id, params } = &request {
-        let cwd = sessions
-            .cwd(&acp::SessionId::new(params.thread_id.as_str()))
-            .unwrap_or_default();
-        serve_dynamic_tool(
-            request_id.clone(),
-            params.clone(),
-            cwd,
-            memory_search.clone(),
-            answers.clone(),
-        );
-        return;
-    }
 
     let (request_id, thread_id, prompt) = match &request {
         Req::CommandExecutionRequestApproval { request_id, params } => (
@@ -986,50 +986,6 @@ fn handle_server_request(
     });
 }
 
-/// Answers a tool the engine asked Atlas to run.
-///
-/// Always answers. A dynamic tool call left unanswered is a turn that stops
-/// with no error and no explanation, which is the worst shape a tool failure
-/// can take — so an unknown tool and a failed search both come back as a
-/// result the model can read and move on from.
-fn serve_dynamic_tool(
-    request_id: RequestId,
-    params: v2::DynamicToolCallParams,
-    cwd: String,
-    memory_search: Option<MemorySearch>,
-    answers: tokio::sync::mpsc::UnboundedSender<ServerAnswer>,
-) {
-    tokio::spawn(async move {
-        let (text, success) = if params.tool != memory::TOOL_NAME {
-            (
-                format!("Atlas does not implement the tool {:?}.", params.tool),
-                false,
-            )
-        } else {
-            match (memory_search, memory::parse_arguments(&params.arguments)) {
-                (None, _) => (
-                    "Memory search is unavailable (the index is not ready).".to_string(),
-                    false,
-                ),
-                (_, None) => ("`query` is required.".to_string(), false),
-                (Some(search), Some((query, limit))) => {
-                    let docs = search(cwd, query, limit).await;
-                    (memory::render(&docs), true)
-                }
-            }
-        };
-
-        let result = serde_json::to_value(v2::DynamicToolCallResponse {
-            content_items: memory::output(text, success),
-            success,
-        });
-        let _ = answers.send(ServerAnswer {
-            request_id,
-            result: result.map_err(|e| format!("could not encode the tool result: {e}")),
-        });
-    });
-}
-
 /// Maps the engine's turn outcome onto the protocol's stop reason.
 ///
 /// `Failed` is deliberately not a stop reason: the protocol has no failure
@@ -1076,6 +1032,9 @@ impl AgentConnection for EngineConnection {
                 .cloned()
                 .unwrap_or_else(|| self.settings.cwd.clone());
 
+            // Offered before the thread id exists; bound to it once the
+            // engine answers, released (dropped unbound) if it never does.
+            let (mcp_offer, mcp_config) = self.mcp_offer(&cwd, None);
             let response: v2::ThreadStartResponse = self
                 .call(|request_id| ClientRequest::ThreadStart {
                     request_id,
@@ -1083,13 +1042,7 @@ impl AgentConnection for EngineConnection {
                         model: Some(self.default_model()),
                         model_provider: Some(self.settings.provider.id.clone()),
                         cwd: Some(cwd.to_string_lossy().into_owned()),
-                        // Declared only when retrieval exists. Advertising a
-                        // tool the host cannot serve teaches the model to call
-                        // something that always fails.
-                        dynamic_tools: self
-                            .memory_search
-                            .as_ref()
-                            .map(|_| vec![memory::tool_spec()]),
+                        config: mcp_config,
                         ..Default::default()
                     },
                 })
@@ -1099,6 +1052,9 @@ impl AgentConnection for EngineConnection {
             // same identifier rather than maintaining a mapping is what lets a
             // stored row resolve without a translation table.
             let session_id = acp::SessionId::new(response.thread.id.as_str());
+            self.sessions
+                .expect_mcp_servers(&response.thread.id, mcp::server_names(mcp_offer.servers()));
+            mcp_offer.bind(&session_id);
             let thread = self.new_thread(session_id.clone(), work_dirs, None);
             self.sessions.insert(
                 session_id.clone(),
@@ -1153,6 +1109,12 @@ impl AgentConnection for EngineConnection {
         true
     }
 
+    /// The engine reads StreamableHttp MCP servers from its configuration,
+    /// which each thread's start and resume carry (`engine::mcp`).
+    fn supports_http_mcp(&self) -> bool {
+        true
+    }
+
     fn supports_session_history(&self) -> bool {
         true
     }
@@ -1180,6 +1142,9 @@ impl AgentConnection for EngineConnection {
                 .cloned()
                 .unwrap_or_else(|| self.settings.cwd.clone());
 
+            // Offered for the stored id; bound below to whichever id the
+            // thread ends up with (a pre-cutover row gets a fresh one).
+            let (mcp_offer, mcp_config) = self.mcp_offer(&cwd, Some(&session_id));
             let resumed: Result<v2::ThreadResumeResponse> = self
                 .call(|request_id| ClientRequest::ThreadResume {
                     request_id,
@@ -1188,6 +1153,7 @@ impl AgentConnection for EngineConnection {
                         cwd: Some(cwd.to_string_lossy().into_owned()),
                         model: Some(self.default_model()),
                         model_provider: Some(self.settings.provider.id.clone()),
+                        config: mcp_config.clone(),
                         ..Default::default()
                     },
                 })
@@ -1217,6 +1183,12 @@ impl AgentConnection for EngineConnection {
                         })
                         .await;
                     match read {
+                        // Known gap: a thread still loaded in the engine keeps
+                        // the MCP config it was started with, so the memory
+                        // server entry offered above does not reach it, and the
+                        // token it holds was revoked when its session ended.
+                        // Its memory tools answer 401 until the engine lets go
+                        // of the thread, and nothing else carries memory to it.
                         Ok(response) => (response.thread.id, response.thread.turns),
                         Err(read_err) => {
                             // `warn!`, not `info!`: this arm is reached by an
@@ -1240,10 +1212,7 @@ impl AgentConnection for EngineConnection {
                                         model: Some(self.default_model()),
                                         model_provider: Some(self.settings.provider.id.clone()),
                                         cwd: Some(cwd.to_string_lossy().into_owned()),
-                                        dynamic_tools: self
-                                            .memory_search
-                                            .as_ref()
-                                            .map(|_| vec![memory::tool_spec()]),
+                                        config: mcp_config.clone(),
                                         ..Default::default()
                                     },
                                 })
@@ -1260,6 +1229,11 @@ impl AgentConnection for EngineConnection {
             // the store row (`resume_thread` compares it to the stored id and
             // adopts, #56); nothing here writes to history.
             let engine_session_id = acp::SessionId::new(engine_thread_id.as_str());
+            self.sessions.expect_mcp_servers(
+                &engine_session_id.to_string(),
+                mcp::server_names(mcp_offer.servers()),
+            );
+            mcp_offer.bind(&engine_session_id);
             let thread = self.new_thread(engine_session_id.clone(), work_dirs, title);
             {
                 // The response carried the thread's whole stored history — the
@@ -1594,7 +1568,22 @@ impl AgentConnection for EngineConnection {
         }
 
         let request_ids = self.request_ids.clone();
+        let sessions = self.sessions.clone();
         async move {
+            // A turn lists whichever MCP servers are up when it starts, so a
+            // first prompt sent before the host's servers finish starting
+            // went out without their tools — and the memory tools are the
+            // only way memory reaches the model. Bounded: past it, the turn
+            // goes ahead without them.
+            if !sessions
+                .wait_for_mcp_servers(&thread_id, crate::engine::sink::MCP_STARTUP_WAIT)
+                .await
+            {
+                tracing::warn!(
+                    thread = %thread_id,
+                    "host MCP servers still starting; this turn goes ahead without their tools"
+                );
+            }
             // Opens the window a stop can land in with no turn id to
             // interrupt. Every exit below closes it via `end_prompt` (#57).
             turns.begin_prompt(&thread_id);

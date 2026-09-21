@@ -40,6 +40,7 @@
 //! gateway would answer the same request with a `400` anyway; this says so one
 //! round trip earlier, and says which parameter and why.
 
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use codex_protocol::models::ContentItem;
@@ -49,7 +50,9 @@ use serde_json::Value;
 use serde_json::json;
 use tracing::warn;
 
+use super::sse::NamespacedTool;
 use crate::error::ApiError;
+use codex_protocol::DEFAULT_FUNCTION_NAMESPACE;
 
 /// The gateway's hard clamp on `max_tokens`. Asking for more is not an error,
 /// but nothing above this is honoured.
@@ -203,6 +206,9 @@ pub struct BuiltChatRequest {
     /// silently never runs. The parser cannot work this out from the reply
     /// alone, so it is carried across from here.
     pub freeform_tools: BTreeSet<String>,
+    /// Tools flattened out of a `namespace` (every MCP server's tools), by
+    /// the flat name they crossed the wire under. See `flat_tool_name`.
+    pub namespaced_tools: BTreeMap<String, NamespacedTool>,
 }
 
 pub fn build_chat_request(input: ChatRequestInput<'_>) -> Result<BuiltChatRequest, ApiError> {
@@ -218,7 +224,11 @@ pub fn build_chat_request(input: ChatRequestInput<'_>) -> Result<BuiltChatReques
     }
     let messages = merge_adjacent(messages);
 
-    let (tools, freeform_tools) = reshape_tools(input.tools);
+    let Reshaped {
+        tools,
+        freeform_tools,
+        namespaced_tools,
+    } = reshape_tools(input.tools);
 
     // The one allowlisted parameter this builder would otherwise send blind.
     let response_format = match input.output_schema {
@@ -252,6 +262,7 @@ pub fn build_chat_request(input: ChatRequestInput<'_>) -> Result<BuiltChatReques
             response_format,
         },
         freeform_tools,
+        namespaced_tools,
     })
 }
 
@@ -352,6 +363,7 @@ fn push_item(messages: &mut Vec<ChatMessage>, item: &ResponseItem, keep_images: 
         },
         ResponseItem::FunctionCall {
             name,
+            namespace,
             arguments,
             call_id,
             internal_chat_message_metadata_passthrough,
@@ -362,7 +374,9 @@ fn push_item(messages: &mut Vec<ChatMessage>, item: &ResponseItem, keep_images: 
                 id: call_id.clone(),
                 kind: "function".to_string(),
                 function: FunctionCallOut {
-                    name: name.clone(),
+                    // Under the flat name it was offered as, or the model's
+                    // own history names a tool it was never given.
+                    name: wire_name(namespace.as_deref(), name),
                     // The gateway's Anthropic translation rejects invalid JSON
                     // arguments with a `400` rather than emptying the call, so
                     // an unparseable string here fails the whole request. An
@@ -375,6 +389,7 @@ fn push_item(messages: &mut Vec<ChatMessage>, item: &ResponseItem, keep_images: 
         }),
         ResponseItem::CustomToolCall {
             name,
+            namespace,
             input,
             call_id,
             internal_chat_message_metadata_passthrough,
@@ -385,7 +400,7 @@ fn push_item(messages: &mut Vec<ChatMessage>, item: &ResponseItem, keep_images: 
                 id: call_id.clone(),
                 kind: "function".to_string(),
                 function: FunctionCallOut {
-                    name: name.clone(),
+                    name: wire_name(namespace.as_deref(), name),
                     // Flattened on the way out, so it has to be re-wrapped on
                     // the way back in. See `flatten_freeform`.
                     arguments: json!({ "input": input }).to_string(),
@@ -500,55 +515,152 @@ fn merge_adjacent(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     out
 }
 
+/// Responses tools, reshaped for this wire, plus what the reply needs to turn
+/// each flattened call back into the shape the engine dispatches.
+struct Reshaped {
+    tools: Option<Vec<Value>>,
+    freeform_tools: BTreeSet<String>,
+    namespaced_tools: BTreeMap<String, NamespacedTool>,
+}
+
 /// Responses tool JSON → Chat Completions tool JSON.
 ///
-/// Returns the names of tools that had to be flattened out of a shape this wire
-/// has no word for, so the reply can be turned back into that shape.
-fn reshape_tools(tools: &[Value]) -> (Option<Vec<Value>>, BTreeSet<String>) {
+/// Records the names of tools that had to be flattened out of a shape this
+/// wire has no word for, so the reply can be turned back into that shape.
+fn reshape_tools(tools: &[Value]) -> Reshaped {
+    let mut reshaped = Reshaped {
+        tools: None,
+        freeform_tools: BTreeSet::new(),
+        namespaced_tools: BTreeMap::new(),
+    };
     let mut out = Vec::with_capacity(tools.len());
-    let mut freeform = BTreeSet::new();
 
     for tool in tools {
         let kind = tool.get("type").and_then(Value::as_str).unwrap_or_default();
         match kind {
-            "function" => {
-                let Some(name) = tool.get("name").and_then(Value::as_str) else {
-                    warn!("tool dropped: a function tool with no name");
+            "function" | "custom" => {
+                if let Some(value) = reshape_one(tool, None, &mut reshaped) {
+                    out.push(value);
+                }
+            }
+            // One per MCP server. This wire has no namespaces, so each tool
+            // inside crosses as an ordinary function under a flat name, and
+            // the reply is mapped back to (namespace, name) for the router.
+            // Dropping the namespace instead hid every MCP tool from the model.
+            "namespace" => {
+                let Some(namespace) = tool.get("name").and_then(Value::as_str) else {
+                    warn!("tool dropped: a namespace with no name");
                     continue;
                 };
-                out.push(json!({
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": tool.get("description").and_then(Value::as_str).unwrap_or_default(),
-                        // `function.parameters` is what the gateway rewrites
-                        // into Anthropic's `input_schema`, so the key name is
-                        // load-bearing rather than cosmetic.
-                        "parameters": tool.get("parameters").cloned().unwrap_or_else(|| json!({"type": "object", "properties": {}})),
+                for child in tool
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(value) = reshape_one(child, Some(namespace), &mut reshaped) {
+                        out.push(value);
                     }
-                }));
+                }
             }
-            "custom" => {
-                let Some(name) = tool.get("name").and_then(Value::as_str) else {
-                    warn!("tool dropped: a freeform tool with no name");
-                    continue;
-                };
-                freeform.insert(name.to_string());
-                out.push(flatten_freeform(
-                    name,
-                    tool.get("description").and_then(Value::as_str).unwrap_or_default(),
-                ));
-            }
-            // `namespace`, `tool_search` and `web_search` are Responses-native
-            // and have no representation here. Sending one as-is would be a
-            // `400` that kills the whole request rather than one tool, so they
-            // are dropped — and the authored catalogue turns each of them off,
+            // `tool_search` and `web_search` are Responses-native and have no
+            // representation here. Sending one as-is would be a `400` that
+            // kills the whole request rather than one tool, so they are
+            // dropped — and the authored catalogue turns each of them off,
             // which is why this should not fire in a shipped build.
             other => warn!(tool_type = other, "tool dropped: no Chat Completions shape"),
         }
     }
 
-    ((!out.is_empty()).then_some(out), freeform)
+    reshaped.tools = (!out.is_empty()).then_some(out);
+    reshaped
+}
+
+/// One `function` or `custom` tool, optionally from inside a namespace.
+fn reshape_one(tool: &Value, namespace: Option<&str>, reshaped: &mut Reshaped) -> Option<Value> {
+    let kind = tool.get("type").and_then(Value::as_str).unwrap_or_default();
+    let Some(own_name) = tool.get("name").and_then(Value::as_str) else {
+        warn!(tool_type = kind, "tool dropped: a tool with no name");
+        return None;
+    };
+    let name = wire_name(namespace, own_name);
+    let description = tool.get("description").and_then(Value::as_str).unwrap_or_default();
+    let value = match kind {
+        "function" => json!({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                // `function.parameters` is what the gateway rewrites
+                // into Anthropic's `input_schema`, so the key name is
+                // load-bearing rather than cosmetic.
+                "parameters": tool.get("parameters").cloned().unwrap_or_else(|| json!({"type": "object", "properties": {}})),
+            }
+        }),
+        "custom" => {
+            reshaped.freeform_tools.insert(name.clone());
+            flatten_freeform(&name, description)
+        }
+        other => {
+            warn!(tool_type = other, "tool dropped: no Chat Completions shape");
+            return None;
+        }
+    };
+    if let Some(namespace) = namespace.filter(|ns| !is_default_namespace(ns)) {
+        reshaped.namespaced_tools.insert(
+            name,
+            NamespacedTool {
+                namespace: namespace.to_string(),
+                name: own_name.to_string(),
+            },
+        );
+    }
+    Some(value)
+}
+
+fn is_default_namespace(namespace: &str) -> bool {
+    namespace.is_empty() || namespace == DEFAULT_FUNCTION_NAMESPACE
+}
+
+/// The name a tool crosses this wire under: bare in the default namespace,
+/// flattened otherwise.
+fn wire_name(namespace: Option<&str>, name: &str) -> String {
+    match namespace {
+        Some(ns) if !is_default_namespace(ns) => flat_tool_name(ns, name),
+        _ => name.to_string(),
+    }
+}
+
+/// Longest tool name every provider behind the gateway accepts.
+const MAX_TOOL_NAME: usize = 64;
+
+/// One flat name for a namespaced tool, in the characters and length every
+/// provider behind the gateway accepts (`[A-Za-z0-9_-]{1,64}`).
+///
+/// MCP namespaces already end in `__` (`mcp__server__`), so the joined name
+/// reads the way the engine's own flat MCP names do. A name that would run
+/// long is cut and suffixed with a hash of the whole, so it stays stable
+/// across turns and distinct from its neighbours.
+pub(crate) fn flat_tool_name(namespace: &str, name: &str) -> String {
+    let joined = if namespace.ends_with("__") {
+        format!("{namespace}{name}")
+    } else {
+        format!("{namespace}__{name}")
+    };
+    let clean: String = joined
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    if clean.len() <= MAX_TOOL_NAME {
+        return clean;
+    }
+    // FNV-1a over the original, so two names that clean to the same prefix
+    // still come apart.
+    let hash = joined.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let suffix = format!("_{:08x}", hash as u32);
+    format!("{}{suffix}", &clean[..MAX_TOOL_NAME - suffix.len()])
 }
 
 /// A freeform tool, expressed as the only shape this wire has.

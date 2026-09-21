@@ -6,13 +6,13 @@
 //! - [`MemoryRegistry`] — a `cwd → Arc<RwLock<MemoryEngine>>` map stored as a
 //!   Tauri managed `State`. It is the **single owner** of each project's engine:
 //!   the retrieve closure (Step 6, read lock) and the indexer (write lock) both
-//!   reach the right engine through it. Opening a project for the first time runs
-//!   the Step-3 legacy migration (inside `MemoryEngine::open`), starts an FS
-//!   watcher, and enqueues an initial cold [`Job::IndexCorpus`].
+//!   reach the right engine through it. Opening a project for the first time
+//!   loads its persisted index, starts an FS watcher, and enqueues an initial
+//!   cold [`Job::IndexCorpus`].
 //! - [`MemoryIndexer`] — one owned Tokio task draining a **bounded** `mpsc` queue.
-//!   Every [`Job`] carries a `cwd` so projects stay isolated. Only `IndexCorpus`
-//!   is implemented in Step 4; `ExtractSession` (Step 7) and `Compact` (Step 9a)
-//!   are logged no-ops for now.
+//!   Every [`Job`] carries a `cwd` so projects stay isolated: corpus indexing,
+//!   the extractor's passes (turn finished and session end, see
+//!   `super::memory_extract`), and global promotion (`Compact`).
 //!
 //! Heavy work (corpus gather + embed + persist) runs off the IPC thread on the
 //! async runtime / blocking pool; the FS watcher coalesces bursts via a ~2s
@@ -43,19 +43,24 @@ const DEBOUNCE_WINDOW: Duration = Duration::from_millis(2000);
 /// A unit of background indexing work. **Every variant carries `cwd`** so the
 /// worker looks up exactly one project's engine and never touches another's.
 #[derive(Debug, Clone)]
-// `ExtractSession`/`Compact` are wired in Steps 7 / 9a; defined now so the queue
-// shape and worker match arms are stable across those steps.
-#[allow(dead_code)]
 pub enum Job {
     /// (Re)index a project's whole corpus into its HNSW store. Step 4.
     IndexCorpus { cwd: String },
-    /// Extract distilled memories from a finished session. Step 7 (no-op here).
+    /// A turn finished: the extractor's gated pass over the session's
+    /// conversation so far (read when the turn finished).
     ExtractSession {
         cwd: String,
-        agent: String,
-        session: String,
+        writer: super::shared_memory::Writer,
+        turns: Vec<atlas_memory::TranscriptTurn>,
     },
-    /// Idle-time consolidation + prune. Step 9a (no-op here).
+    /// A session ended: the extractor's one end-of-session pass.
+    SessionEnded {
+        cwd: String,
+        writer: super::shared_memory::Writer,
+    },
+    /// Offer the repository's high-confidence Facts to global memory
+    /// (`atlas_memory::global`): run once when a project opens and after an
+    /// extractor pass stores entries.
     Compact { cwd: String },
 }
 
@@ -109,6 +114,11 @@ impl MemoryRegistry {
         Some(loaded)
     }
 
+    /// The provider if it is already loaded, without waiting or loading.
+    pub fn loaded_provider(&self) -> Option<Arc<MiniLmProvider>> {
+        self.provider.try_lock().ok().and_then(|p| p.clone())
+    }
+
     /// Drop the cached embedding provider so the next [`provider`](Self::provider)
     /// call reloads from disk. Called when the user selects a different embedding
     /// model (its dir / dim / vector space changed).
@@ -124,8 +134,7 @@ impl MemoryRegistry {
         r
     }
 
-    /// Open-or-return the engine for `cwd`. On the **first** open it runs the
-    /// Step-3 legacy migration (inside `MemoryEngine::open`), starts the FS
+    /// Open-or-return the engine for `cwd`. On the **first** open it starts the FS
     /// watcher, and enqueues an initial cold `IndexCorpus{cwd}` — so a freshly
     /// opened project is indexed even before the watcher fires. Subsequent calls
     /// just clone the existing handle (no re-enqueue, no second watcher).
@@ -134,8 +143,8 @@ impl MemoryRegistry {
             return existing.value().clone();
         }
 
-        // Build outside the map so the shard lock isn't held across the (one-time)
-        // migration I/O. A lost race is harmless: `or_insert_with` keeps whoever
+        // Build outside the map so the shard lock isn't held across the index
+        // load I/O. A lost race is harmless: `or_insert_with` keeps whoever
         // won and `ptr_eq` tells us if *we* were the inserter.
         let fresh = Arc::new(RwLock::new(MemoryEngine::open(PathBuf::from(cwd))));
         let inserted = self
@@ -151,9 +160,9 @@ impl MemoryRegistry {
             let _ = self.job_tx.try_send(Job::IndexCorpus {
                 cwd: cwd.to_string(),
             });
-            // One-time idle-consolidation nudge (Step 9a). The AutoDream 24h/≥5
-            // -session gate makes this a near-no-op until actually due, so a
-            // per-open enqueue is safe; drop-on-full is fine.
+            // One global-promotion pass per open: it only reads the record's
+            // Facts and the small global ledger, so it is cheap; drop-on-full
+            // is fine (the next open or extraction re-enqueues).
             let _ = self.job_tx.try_send(Job::Compact {
                 cwd: cwd.to_string(),
             });
@@ -196,7 +205,7 @@ impl MemoryRegistry {
     }
 
     /// Get-only lookup: the engine if this project is currently open, `None`
-    /// otherwise. Background jobs (index/compact) use this instead of
+    /// otherwise. Background jobs (index/promotion) use this instead of
     /// [`engine_for`](Self::engine_for) so a stale queued job for a closed
     /// project skips instead of resurrecting the engine + watcher.
     pub fn open_engine(&self, cwd: &str) -> Option<Arc<RwLock<MemoryEngine>>> {
@@ -395,17 +404,11 @@ impl MemoryIndexer {
                         tracing::warn!(target: "atlas::memory_indexer", "IndexCorpus {cwd} failed: {e}");
                     }
                 }
-                Job::ExtractSession {
-                    cwd,
-                    agent,
-                    session,
-                } => {
-                    if let Err(e) = extract_one(&app, &registry, &cwd, &agent, &session).await {
-                        tracing::debug!(
-                            target: "atlas::memory_indexer",
-                            "ExtractSession {cwd} ({agent}/{session}) failed: {e}"
-                        );
-                    }
+                Job::ExtractSession { cwd, writer, turns } => {
+                    extract(&app, &registry, &cwd, writer, Some(turns)).await;
+                }
+                Job::SessionEnded { cwd, writer } => {
+                    extract(&app, &registry, &cwd, writer, None).await;
                 }
                 Job::Compact { cwd } => {
                     if let Err(e) = compact_one(&registry, &cwd).await {
@@ -465,139 +468,64 @@ async fn index_one(
     Ok(())
 }
 
-/// Idle-time consolidation + prune (Step 9a) for `cwd`, off the hot path.
-///
-/// Delegates to `atlas_memory::consolidate`, which uses Cersei's `AutoDream` for
-/// the 24h/≥5-session gate + lock and runs our own memdir prune. Cheap when not
-/// due — the gate short-circuits before any work — so the per-open enqueue from
-/// [`MemoryRegistry::engine_for`] is a safe near-no-op. Takes the engine **write
-/// lock** (consolidation is rare and serialized with indexing on this one task).
+/// Global promotion for `cwd`'s repository, off the hot path: its Facts at
+/// confidence ≥ 0.8 are recorded in the global candidates ledger, and any seen
+/// in two or more repositories are promoted to `~/.atlas/memory`
+/// (`atlas_memory::global`). Idempotent, so running it on every open and after
+/// every storing extraction is safe.
 async fn compact_one(registry: &MemoryRegistry, cwd: &str) -> Result<(), String> {
     // Get-only for the same reason as `index_one`: don't resurrect a closed
-    // project. Consolidation for it becomes due again next open.
-    let Some(engine) = registry.open_engine(cwd) else {
+    // project. Its promotion runs again next open.
+    if registry.open_engine(cwd).is_none() {
         return Ok(());
-    };
-    let mut guard = engine.write().await;
-    let outcome = atlas_memory::consolidate(&mut guard).map_err(|e| e.to_string())?;
-    drop(guard);
-    tracing::info!(
-        target: "atlas::memory_indexer",
-        "Compact {cwd}: {outcome:?}"
-    );
+    }
+    let cwd = cwd.to_string();
+    let promoted = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        let store = super::shared_memory::store_for(&cwd)?;
+        atlas_memory::promote_facts(&store).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if promoted > 0 {
+        tracing::info!(target: "atlas::memory_indexer", "promoted {promoted} facts to global memory");
+    }
     Ok(())
 }
 
-/// Native session extraction (Step 7) — replaces call site B for **all three**
-/// agents, off the hot path and behind Cersei's gates.
-///
-/// Reads the session's transcript through the unified `AgentManager` snapshot
-/// (which already normalises Cersei native / Claude Code JSONL / Codex into one
-/// role/content/tool-call message shape — the single format adapter), converts it
-/// to neutral [`atlas_memory::TranscriptTurn`]s, takes the engine **read lock**
-/// (graph writes are `&self`, so no write lock is needed just to store an
-/// extracted memory), and calls `atlas_memory::extract::extract_and_store` with a
-/// BYOK `llm` closure that **reuses `memory_summarize::run_completion`** — the
-/// same provider plumbing the legacy `memory_compile` uses. `atlas-memory` stays
-/// BYOK-free; the model call is injected here.
-///
-/// No-op (same contract as `memory_compile`) unless the project opted into a BYOK
-/// summarizer provider — so the default-OFF path costs nothing.
-#[expect(
-    clippy::await_holding_invalid_type,
-    reason = "extract_and_store borrows the graph out of the guard; see the comment at the read()"
-)]
-async fn extract_one(
+/// One extractor pass (`super::memory_extract`): a finished turn's gated one
+/// (`turns` = the session's conversation so far) or the session's end one
+/// (`turns` = `None`). Recorded entries are made searchable by a reindex.
+async fn extract(
     app: &AppHandle,
     registry: &MemoryRegistry,
     cwd: &str,
-    agent: &str,
-    session: &str,
-) -> Result<(), String> {
-    use super::agent_host::{AgentHost, SessionKey};
-    use atlas_agent_wire::{AgentId, MessageRole};
-
-    use super::memory_sharing::MemorySharingState;
-
-    // Gate on the BYOK summarizer pref — mirrors `compile_finished_turn`'s
-    // no-op-without-a-key behaviour so the new path is cost-neutral when unconfigured.
-    let sharing = app.state::<MemorySharingState>();
-    if !sharing.is_enabled(cwd) {
-        return Ok(());
-    }
-    let pref = sharing.summarizer_pref(cwd);
-    if pref.mode != "provider" || pref.provider.is_empty() || pref.model.is_empty() {
-        return Ok(());
-    }
-
-    // Resolve the unified snapshot for this agent's session.
-    let agent_uuid =
-        uuid::Uuid::parse_str(agent).map_err(|e| format!("invalid agent id {agent}: {e}"))?;
-    let key = SessionKey {
-        agent_id: AgentId(agent_uuid),
-        session_id: session.to_string(),
+    writer: super::shared_memory::Writer,
+    turns: Option<Vec<atlas_memory::TranscriptTurn>>,
+) {
+    let Some(extractor) = app.try_state::<Arc<super::memory_extract::Extractor>>() else {
+        return;
     };
-    let host = app.state::<std::sync::Arc<AgentHost>>();
-    let snapshot = host.snapshot(&key).map_err(|e| format!("snapshot: {e}"))?;
+    let sharing = app.state::<super::memory_sharing::MemorySharingState>();
+    let stored = match turns {
+        Some(turns) => extractor.turn_finished(&sharing, cwd, &writer, turns).await,
+        None => extractor.session_ended(&sharing, cwd, &writer).await,
+    };
+    reindex_after(registry, cwd, stored);
+}
 
-    let turns: Vec<atlas_memory::TranscriptTurn> = snapshot
-        .messages
-        .iter()
-        .map(|m| atlas_memory::TranscriptTurn {
-            role: match m.role {
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-                MessageRole::System => "system",
-            }
-            .to_string(),
-            text: m.content.clone(),
-            tool_calls: m.tool_calls.len(),
-        })
-        .collect();
-
-    // Engine read lock held across the (single, gated) BYOK call: reads are
-    // shared, the indexer runs jobs serially, and graph writes are `&self`.
-    let engine = registry.engine_for(cwd);
-    let guard = engine.read().await;
-    let graph = guard.graph();
-    let memory_dir = guard.memory_dir().to_path_buf();
-    let mut state = atlas_memory::ExtractState::load(&memory_dir, session);
-
-    let app_for_llm = app.clone();
-    let provider = pref.provider.clone();
-    let model = pref.model.clone();
-    let stored = atlas_memory::extract::extract_and_store(
-        &turns,
-        &mut state,
-        graph,
-        &memory_dir,
-        session,
-        move |prompt| async move {
-            super::memory_summarize::run_completion(&app_for_llm, prompt, &provider, &model)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    drop(guard);
-
+/// Make freshly extracted entries searchable in the retrieval index, and offer
+/// any new high-confidence Facts to global memory.
+fn reindex_after(registry: &MemoryRegistry, cwd: &str, stored: usize) {
     if stored > 0 {
-        tracing::info!(
-            target: "atlas::memory_indexer",
-            "extracted {stored} memories from {agent}/{session}; reindexing {cwd}"
-        );
-        // Make the freshly written `extracted/*.md` searchable in HNSW this cycle.
-        let _ = registry.enqueue(Job::IndexCorpus {
-            cwd: cwd.to_string(),
-        });
+        tracing::info!(target: "atlas::memory_indexer", "extracted {stored} memories; reindexing {cwd}");
+        let _ = registry.enqueue(Job::IndexCorpus { cwd: cwd.to_string() });
+        let _ = registry.enqueue(Job::Compact { cwd: cwd.to_string() });
     }
-    Ok(())
 }
 
 /// Text actually embedded for a doc — title prepended for short-doc signal.
-/// Matches `memory_graph::embed_text` so a doc's `content_hash` is stable across
-/// the legacy migration and this indexer (post-migration re-index is a near no-op).
+/// Memory ▸ Graph embeds through [`to_corpus_doc`] too, so the vectors it hands
+/// to the index hash identically and the next index pass skips them.
 fn embed_text(doc: &MemoryDoc) -> String {
     if doc.text.trim().is_empty() {
         doc.title.clone()
@@ -606,7 +534,7 @@ fn embed_text(doc: &MemoryDoc) -> String {
     }
 }
 
-/// SHA-256 hex of `s` — identical hashing to `memory_graph::hash_text`.
+/// SHA-256 hex of `s`.
 fn hash_text(s: &str) -> String {
     let mut h = Sha256::new();
     h.update(s.as_bytes());
@@ -614,7 +542,7 @@ fn hash_text(s: &str) -> String {
 }
 
 /// Map an `agent_memory::MemoryDoc` onto the neutral `atlas_memory::CorpusDoc`.
-fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
+pub(crate) fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
     let text = embed_text(doc);
     let content_hash = hash_text(&text);
     CorpusDoc {
@@ -622,6 +550,74 @@ fn to_corpus_doc(doc: &MemoryDoc) -> CorpusDoc {
         text,
         content_hash,
         corpus: doc.source.clone(),
+    }
+}
+
+/// The vectors `cwd`'s retrieval index already holds for `docs`, by doc id —
+/// only for docs whose content is unchanged since they were indexed, and none
+/// when the index was built with a different embedding model. Memory ▸ Graph
+/// and the Policy view reuse these instead of re-embedding.
+pub(crate) async fn indexed_vectors(
+    registry: &MemoryRegistry,
+    provider: &MiniLmProvider,
+    cwd: &str,
+    docs: &[MemoryDoc],
+) -> std::collections::HashMap<String, Vec<f32>> {
+    let engine = registry.engine_for(cwd);
+    let guard = engine.read().await;
+    if !guard.index_params_match(provider) {
+        return std::collections::HashMap::new();
+    }
+    docs.iter()
+        .filter_map(|d| {
+            let c = to_corpus_doc(d);
+            guard.cached_vector(&c.id, &c.content_hash).map(|v| (c.id, v))
+        })
+        .collect()
+}
+
+/// The shared-memory record's embedder (near-duplicate merge, search): the
+/// on-device model when it is loaded, else no vector — the record then
+/// dedups by key and content hash only. Never loads the model inline (a
+/// record write must not wait on it); a miss asks for a background load so a
+/// later write has it.
+pub struct ModelEmbedder {
+    app: AppHandle,
+    /// A background load is in flight; cleared when it finishes, loaded or
+    /// not (the model may not be downloaded yet), so a later miss asks again.
+    loading: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ModelEmbedder {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            app,
+            loading: Arc::default(),
+        }
+    }
+}
+
+impl atlas_memory::record::Embedder for ModelEmbedder {
+    fn embed(&self, text: &str) -> Option<atlas_memory::record::Embedding> {
+        use std::sync::atomic::Ordering;
+        let registry = self.app.try_state::<Arc<MemoryRegistry>>()?;
+        let Some(provider) = registry.loaded_provider() else {
+            if !self.loading.swap(true, Ordering::SeqCst) {
+                let app = self.app.clone();
+                let loading = self.loading.clone();
+                tauri::async_runtime::spawn(async move {
+                    let registry = app.state::<Arc<MemoryRegistry>>();
+                    let _ = registry.provider(&app).await;
+                    loading.store(false, Ordering::SeqCst);
+                });
+            }
+            return None;
+        };
+        let vector = provider.embedder().embed_one(text).ok()?;
+        Some(atlas_memory::record::Embedding {
+            model: provider.provider_name().to_string(),
+            vector,
+        })
     }
 }
 
@@ -811,6 +807,22 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// An extractor pass that stored entries reindexes and then offers the new
+    /// Facts to global memory; one that stored nothing enqueues nothing.
+    #[test]
+    fn a_storing_extraction_enqueues_reindex_then_promotion() {
+        let (job_tx, mut job_rx) = mpsc::channel::<Job>(16);
+        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
+
+        reindex_after(&registry, "/proj/a", 0);
+        assert!(job_rx.try_recv().is_err());
+
+        reindex_after(&registry, "/proj/a", 2);
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd }) if cwd == "/proj/a"));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { cwd }) if cwd == "/proj/a"));
+        assert!(job_rx.try_recv().is_err());
     }
 
     /// A job for cwd-A only ever touches cwd-A's `.atlas/memory/`; cwd-B's engine

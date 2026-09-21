@@ -52,7 +52,9 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
         type="button"
         onClick={() => void setEnabled(!enabled)}
         title={
-          enabled ? "Shared memory ON — injected into agents on first send" : "Shared memory OFF"
+          enabled
+            ? "Shared memory ON — served to agents as the atlas_memory tools"
+            : "Shared memory OFF"
         }
         className={cn(
           "flex items-center gap-1 h-6 px-2 rounded-full border text-2xs font-medium transition-colors cursor-pointer outline-none",

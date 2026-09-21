@@ -305,6 +305,14 @@ impl AgentManager {
         }
     }
 
+    /// Whether `key`'s agent advertised `mcpCapabilities.http` at
+    /// `initialize` — the one fact that decides whether it can be handed an
+    /// HTTP MCP server. `None` while it is not connected: capabilities exist
+    /// only once the handshake has answered.
+    pub fn supports_http_mcp(&self, key: &Agent) -> Option<bool> {
+        self.connected(key).map(|connection| connection.supports_http_mcp())
+    }
+
     /// The live connection an ACP agent id names.
     ///
     /// By id rather than by key, for the callers that only have one: a
@@ -1078,8 +1086,14 @@ impl AgentManager {
         Ok(state.connection)
     }
 
+    /// Every session-opening path ends here, so this is where the one
+    /// session-start line is written.
     fn register_session(&self, agent: Agent, thread: &AcpThreadHandle) {
-        let session_id = lock_thread(thread).session_id().clone();
+        let (session_id, connection) = {
+            let thread = lock_thread(thread);
+            (thread.session_id().clone(), thread.connection().clone())
+        };
+        log_session_start(&connection, &session_id);
         self.lock_sessions().insert(
             (agent.clone(), session_id),
             SessionHandle {
@@ -1109,6 +1123,24 @@ fn cancel_connect(entry: &Entry) {
     if let AgentConnectionEntry::Connecting { cancel, .. } = &*lock(entry) {
         cancel.abort();
     }
+}
+
+/// The one line a session start writes: which agent, and whether it
+/// advertised HTTP MCP support. Answers "which installed adapters can receive
+/// an HTTP MCP server" from the log of any real run.
+///
+/// `agent` is the stable id Atlas knows the agent by; `agent_name` is what the
+/// agent called itself at `initialize`. The native agent reports
+/// `http_mcp=true`: its engine takes StreamableHttp MCP servers through each
+/// thread's config.
+fn log_session_start(connection: &Arc<dyn AgentConnection>, session_id: &acp::SessionId) {
+    tracing::info!(
+        agent = %connection.agent_id(),
+        agent_name = %connection.telemetry_id(),
+        session_id = %session_id,
+        http_mcp = connection.supports_http_mcp(),
+        "agent session started"
+    );
 }
 
 /// How an agent names itself in an error a user reads.
