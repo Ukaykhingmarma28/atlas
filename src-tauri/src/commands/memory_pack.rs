@@ -143,8 +143,8 @@ pub fn build_session_handoff(
             .into_iter()
             .filter(|h| !captured.iter().any(|id| same_session(&h.native_id, id))),
     );
-    // Newest first; `sort_by` is stable, so capture wins a tie.
-    heads.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    // Newest first; `sort_by_key` is stable, so capture wins a tie.
+    heads.sort_by_key(|h| std::cmp::Reverse(h.last_activity));
 
     heads
         .iter()
