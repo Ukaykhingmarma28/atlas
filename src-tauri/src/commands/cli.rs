@@ -124,10 +124,30 @@ fn is_atlas_binary(path: &std::path::Path) -> bool {
         return false;
     }
     if let Ok(mut f) = std::fs::File::open(path) {
-        let mut buffer = Vec::with_capacity(65536);
-        let _ = (&mut f).take(1024 * 1024).read_to_end(&mut buffer);
-        let needle = b"dev.atlas.ide";
-        return buffer.windows(needle.len()).any(|w| w == needle);
+        const NEEDLE: &[u8] = b"dev.atlas.ide";
+        const CHUNK_SIZE: usize = 64 * 1024;
+        const MAX_SCAN: usize = 32 * 1024 * 1024;
+
+        let mut buf = vec![0u8; CHUNK_SIZE + NEEDLE.len() - 1];
+        let mut carry_len = 0;
+        let mut total_read = 0;
+
+        while total_read < MAX_SCAN {
+            let to_read = (MAX_SCAN - total_read).min(CHUNK_SIZE);
+            let n = match f.read(&mut buf[carry_len..carry_len + to_read]) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            };
+            total_read += n;
+            let valid_len = carry_len + n;
+            if buf[..valid_len].windows(NEEDLE.len()).any(|w| w == NEEDLE) {
+                return true;
+            }
+            carry_len = valid_len.min(NEEDLE.len() - 1);
+            buf.copy_within(valid_len - carry_len..valid_len, 0);
+        }
     }
     false
 }
@@ -267,6 +287,19 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
                 }
             }
         }
+        if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
+            if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
+                if meta.file_type().is_symlink() {
+                    let is_broken = !atlas_link.exists();
+                    let points_to_atl = std::fs::read_link(&atlas_link)
+                        .map(|target| target == std::path::Path::new("atl") || target.ends_with("atl"))
+                        .unwrap_or(false);
+                    if is_broken || points_to_atl {
+                        let _ = std::fs::remove_file(&atlas_link);
+                    }
+                }
+            }
+        }
         return Ok(CliStatus {
             installed: true,
             path: Some(sys.to_string_lossy().into_owned()),
@@ -324,8 +357,15 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
                 if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
                     let usr_atlas = std::path::Path::new("/usr/bin/atlas");
                     let safe_to_link = !usr_atlas.exists() || is_atlas_binary(usr_atlas);
-                    if safe_to_link && !atlas_link.exists() {
-                        let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                    if safe_to_link {
+                        if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
+                            if meta.file_type().is_symlink() && !atlas_link.exists() {
+                                let _ = std::fs::remove_file(&atlas_link);
+                                let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                            }
+                        } else {
+                            let _ = std::os::unix::fs::symlink("atl", &atlas_link);
+                        }
                     }
                 }
             }

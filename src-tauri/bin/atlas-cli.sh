@@ -49,6 +49,37 @@ if [ ! -d "$target" ]; then
 fi
 abs="$(cd "$target" && pwd)"
 
+resolve_path() {
+  local target="$1"
+  if [[ "$target" != */* ]]; then
+    target="$(command -v "$target" 2>/dev/null || echo "$target")"
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$target" 2>/dev/null || true
+  elif command -v readlink >/dev/null 2>&1; then
+    readlink -f "$target" 2>/dev/null || true
+  else
+    echo "$(cd "$(dirname "$target")" 2>/dev/null && pwd)/$(basename "$target")"
+  fi
+}
+
+is_helper() {
+  local target="$1"
+  [ ! -f "$target" ] && return 1
+  local magic
+  magic="$(head -c 4 "$target" 2>/dev/null || true)"
+  if [ "$magic" = $'\x7fELF' ] || [ "$magic" = $'\xcf\xfa\xed\xfe' ] || [ "$magic" = $'\xce\xfa\xed\xfe' ] || [ "$magic" = $'\xca\xfe\xba\xbe' ]; then
+    return 1
+  fi
+  if grep -q "atlas-cli-version" "$target" 2>/dev/null; then
+    return 0
+  fi
+  if head -n 1 "$target" 2>/dev/null | grep -q '^#!.*sh'; then
+    return 0
+  fi
+  return 1
+}
+
 # Find Atlas.app. macOS first looks in /Applications, then
 # ~/Applications, then PATH-y locations via `mdfind`. The latter
 # covers DMG drag-installs to unusual locations.
@@ -67,21 +98,22 @@ if [ -z "$app" ] && command -v mdfind >/dev/null 2>&1; then
   # Identifier must match `identifier` in src-tauri/tauri.conf.json.
   app="$(mdfind "kMDItemCFBundleIdentifier == 'dev.atlas.ide'" 2>/dev/null | head -n 1)"
 fi
-if [ -z "$app" ]; then
-  for dir in "/usr/bin" "/usr/local/bin" "/opt/atlas/bin"; do
-    for name in "atl" "tryatlas" "atlas"; do
-      if [ -x "$dir/$name" ]; then
-        app="$dir/$name"
-        break 2
-      fi
-    done
-  done
-fi
 if [ -z "$app" ] && [ -n "{{APPIMAGE_PATH}}" ] && [ -x "{{APPIMAGE_PATH}}" ]; then
   app="{{APPIMAGE_PATH}}"
 fi
 if [ -z "$app" ] && [ -n "${APPIMAGE:-}" ] && [ -x "${APPIMAGE:-}" ]; then
   app="${APPIMAGE}"
+fi
+if [ -z "$app" ]; then
+  for dir in "/usr/bin" "/usr/local/bin" "/opt/atlas/bin"; do
+    for name in "atl" "tryatlas" "atlas"; do
+      cand="$dir/$name"
+      if [ -x "$cand" ] && ! is_helper "$cand"; then
+        app="$cand"
+        break 2
+      fi
+    done
+  done
 fi
 if [ -z "$app" ] && [ "$(uname -s)" = "Darwin" ]; then
   app="Atlas.app"  # let `open` resolve via LaunchServices as a fallback
@@ -95,14 +127,18 @@ if [ "$(uname -s)" = "Darwin" ]; then
 else
   # Ensure we never recursively invoke this script itself if installed as ~/.local/bin/atl or ~/.local/bin/atlas
   if [ -z "$app" ]; then
-    this_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    this_script="$(resolve_path "$0")"
     while IFS= read -r candidate; do
       [ -z "$candidate" ] && continue
-      cand_real="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd)/$(basename "$candidate")"
-      if [ "$cand_real" != "$this_script" ] && [ -x "$candidate" ]; then
-        app="$candidate"
-        break
+      cand_real="$(resolve_path "$candidate")"
+      if [ -n "$cand_real" ] && [ "$cand_real" = "$this_script" ]; then
+        continue
       fi
+      if [ ! -x "$candidate" ] || is_helper "$candidate"; then
+        continue
+      fi
+      app="$candidate"
+      break
     done < <(type -ap atl tryatlas atlas 2>/dev/null || true)
   fi
 

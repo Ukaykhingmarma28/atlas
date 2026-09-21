@@ -102,7 +102,7 @@ jobs:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
         run: |
-          bun run build:app:linux -- --bundles deb,rpm,appimage
+          bun run build:app:linux -- --bundles appimage
 
       - name: Find and verify built binary
         id: find_bin

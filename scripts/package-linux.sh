@@ -198,7 +198,7 @@ _pkgname=atlas
 pkgver=${VERSION}
 pkgrel=1
 pkgdesc="Atlas — agent-first ideation and planning tool"
-arch=('x86_64')
+arch=('${ARCH}')
 url="https://tryatlas.cc"
 license=('Apache-2.0')
 depends=(
@@ -212,8 +212,8 @@ optdepends=(
     'xdg-terminal-exec: Open folders in default terminal'
 )
 provides=("tryatlas=\${pkgver}" "atl=\${pkgver}")
-source_x86_64=("atlas-\${pkgver}-linux-x86_64.tar.gz::https://github.com/${REPO}/releases/download/${RELEASE_TAG}/atlas-\${pkgver}-linux-x86_64.tar.gz")
-sha256sums_x86_64=('${TARBALL_SHA256}')
+source_${ARCH}=("atlas-\${pkgver}-linux-${ARCH}.tar.gz::https://github.com/${REPO}/releases/download/${RELEASE_TAG}/atlas-\${pkgver}-linux-${ARCH}.tar.gz")
+sha256sums_${ARCH}=('${TARBALL_SHA256}')
 
 package() {
     cd "\${srcdir}/atlas-\${pkgver}"
