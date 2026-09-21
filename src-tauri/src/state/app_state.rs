@@ -400,8 +400,10 @@ impl AppState {
 
     /// Read from disk synchronously. Designed to be called from `setup()`
     /// before the webview opens — the cost is one `fs::read_to_string` of a
-    /// few-KB JSON file (~1 ms on warm cache). Returns `Self::default()` on
-    /// any I/O or parse failure so a corrupt file never blocks app launch.
+    /// few-KB JSON file (~1 ms on warm cache). Falls back to `Self::default()`
+    /// on any I/O or parse failure so a corrupt file never blocks app launch —
+    /// and, like every other input, that fallback is still migrated (see
+    /// [`Self::from_raw`]).
     ///
     /// Also returns the raw `settings` object, if any, exactly as it appeared
     /// in the file — the typed `AppState` no longer has a `settings` field
@@ -409,16 +411,30 @@ impl AppState {
     /// floor as an unrecognized key. The caller feeds this to
     /// `atlas_config::bootstrap` for the one-time `config.toml` export.
     pub fn load(app: &AppHandle) -> (Self, Option<serde_json::Value>) {
-        let Some(path) = Self::path(app) else {
-            return (Self::default(), None);
-        };
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            return (Self::default(), None);
-        };
-        let legacy_settings = serde_json::from_str::<serde_json::Value>(&raw)
-            .ok()
+        let raw = Self::path(app).and_then(|path| std::fs::read_to_string(&path).ok());
+        Self::from_raw(raw.as_deref())
+    }
+
+    /// The parse+migrate half of [`Self::load`], split out so it is reachable
+    /// without an `AppHandle`.
+    ///
+    /// `None` is a FIRST RUN (no `state.json` yet, or no resolvable app data
+    /// dir) and MUST still migrate. `load` used to return `Self::default()`
+    /// straight from its early returns, which skipped `migrate()` and left
+    /// `organisations` empty on a fresh install — the one input every other
+    /// path seeds a "Personal" org for. The frontend filters every render
+    /// surface by the active org and refuses to create a project without
+    /// one, so the visible symptom was "Open Folder" picking a directory and
+    /// doing nothing at all until the second launch, by which point the
+    /// boot-time save in `setup()` had written a `state.json` for this path
+    /// to parse and migrate.
+    fn from_raw(raw: Option<&str>) -> (Self, Option<serde_json::Value>) {
+        let legacy_settings = raw
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
             .and_then(|v| v.get("settings").cloned());
-        let mut state: AppState = serde_json::from_str(&raw).unwrap_or_default();
+        let mut state: AppState = raw
+            .map(|raw| serde_json::from_str(raw).unwrap_or_default())
+            .unwrap_or_default();
         state.migrate();
         (state, legacy_settings)
     }
@@ -675,6 +691,38 @@ mod tests {
         state.apply_patch(frontend_payload());
 
         assert_eq!(state.telemetry_anon_id.as_deref(), Some("device-uuid"));
+    }
+
+    /// A first run — no `state.json` on disk — must come up with the default
+    /// Organisation, exactly like a parsed file with none does. Without one
+    /// the frontend's `requireActiveOrgId()` is `undefined`, `addProject`
+    /// bails with a log line and no UI feedback, and "Open Folder" picks a
+    /// directory and silently does nothing until the app is relaunched.
+    #[test]
+    fn a_first_run_still_gets_the_default_organisation() {
+        let (state, legacy) = AppState::from_raw(None);
+
+        assert_eq!(state.organisations.len(), 1, "no default org on a fresh install");
+        assert_eq!(state.organisations[0].name, "Personal");
+        assert_eq!(
+            state.active_organisation_id.as_deref(),
+            Some(state.organisations[0].id.as_str()),
+            "default org exists but nothing is active"
+        );
+        assert_eq!(state.version, SCHEMA_VERSION);
+        assert!(legacy.is_none());
+    }
+
+    /// A present-but-unreadable `state.json` takes the same fallback and is
+    /// migrated the same way: the two inputs must never diverge again.
+    #[test]
+    fn a_corrupt_state_file_still_gets_the_default_organisation() {
+        let (state, legacy) = AppState::from_raw(Some("{ not json"));
+
+        assert_eq!(state.organisations.len(), 1);
+        assert_eq!(state.organisations[0].name, "Personal");
+        assert!(state.active_organisation_id.is_some());
+        assert!(legacy.is_none());
     }
 
     /// A patch with unknown/extra keys (an older or newer frontend) still parses,

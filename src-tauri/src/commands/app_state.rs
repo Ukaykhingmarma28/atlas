@@ -38,8 +38,18 @@ pub fn bootstrap_app_state(
     config: State<'_, AtlasConfigHandle>,
 ) -> BootstrapPayload {
     let config_guard = config.lock();
+    let state = state.lock().clone();
+    // `AppState::migrate` seeds a "Personal" org on every load path, and the
+    // frontend refuses to create a project without one. If this ever fires
+    // again, a load path has stopped migrating — see `AppState::from_raw`.
+    if state.organisations.is_empty() {
+        tracing::warn!(
+            target: "atlas::app_state",
+            "bootstrapping with zero organisations; the frontend cannot add a project"
+        );
+    }
     BootstrapPayload {
-        state: state.lock().clone(),
+        state,
         settings: config_guard.effective().clone(),
         config_generation: config_guard.generation(),
         config_status: config_guard.status().clone(),
