@@ -326,20 +326,20 @@ mod tests {
 
     /// Asserts `secret` does not survive redaction of `input`.
     fn assert_redacted(input: &str, secret: &str) {
-        let r = redact(input);
+        let r = atlas_memory::record::redact(input);
         assert!(!r.contains(secret), "leaked {secret:?}: {r}");
     }
 
     /// The separator is followed by a space, so the key and the value are two
     /// tokens and neither looks like an assignment on its own.
     #[test]
-    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    #[ignore = "known gap: atlas_memory::record::redact misses this; see redaction migration"]
     fn password_after_a_colon_and_space_is_redacted() {
         assert_redacted("password: hunter2hunter2", "hunter2hunter2");
     }
 
     #[test]
-    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    #[ignore = "known gap: atlas_memory::record::redact misses this; see redaction migration"]
     fn password_in_a_postgres_dsn_is_redacted() {
         assert_redacted(
             "connect with postgres://app:s3cretPassw0rd@db.internal:5432/app",
@@ -350,7 +350,7 @@ mod tests {
     /// `Bearer` alone is under the 12-character floor, and a JWT's dots fail
     /// the opaque-blob check.
     #[test]
-    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    #[ignore = "known gap: atlas_memory::record::redact misses this; see redaction migration"]
     fn bearer_token_in_an_authorization_header_is_redacted() {
         assert_redacted(
             "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl",
@@ -359,13 +359,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    #[ignore = "known gap: atlas_memory::record::redact misses this; see redaction migration"]
     fn password_field_in_yaml_is_redacted() {
         assert_redacted("database:\n  user: app\n  password: hunter2hunter2\n", "hunter2hunter2");
     }
 
     #[test]
-    #[ignore = "known gap: memory_delta::redact misses this; see redaction migration"]
+    #[ignore = "known gap: atlas_memory::record::redact misses this; see redaction migration"]
     fn password_field_in_json_is_redacted() {
         assert_redacted(r#"{"user": "app", "password": "hunter2hunter2"}"#, "hunter2hunter2");
     }
