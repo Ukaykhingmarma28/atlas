@@ -214,8 +214,17 @@ fn read_installed_appimage(path: &std::path::Path) -> Option<String> {
     })
 }
 
+/// `cli_status` reads files (and on Linux may scan up to 32 MiB of a system
+/// binary in `is_atlas_binary`), so it runs on the blocking pool rather than
+/// the thread a sync command would occupy.
 #[tauri::command]
-pub fn cli_status() -> CliStatus {
+pub async fn cli_status() -> Result<CliStatus, String> {
+    tokio::task::spawn_blocking(status_blocking)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn status_blocking() -> CliStatus {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
     if let Some(sys) = system_bin_path() {
         return CliStatus {
@@ -276,50 +285,68 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
     }
     let version = env!("CARGO_PKG_VERSION").to_string();
 
-    // If Atlas is already installed system-wide (e.g. /usr/bin/atlas on Linux),
-    // prevent ~/.local/bin/atlas from shadowing it, and clean up any old helper.
-    if let Some(sys) = system_bin_path() {
-        if let Some(helper) = helper_path() {
-            if helper.exists() {
-                if let Ok(content) = std::fs::read_to_string(&helper) {
-                    if content.contains("atlas-cli-version") || content.contains("open -na") {
-                        let _ = std::fs::remove_file(&helper);
+    // The probes below read files (and may scan a system binary), so they
+    // share the blocking pool with the install itself.
+    if let Some(status) = tokio::task::spawn_blocking({
+        let version = version.clone();
+        move || -> Option<CliStatus> {
+            // If Atlas is already installed system-wide (e.g. /usr/bin/atlas on Linux),
+            // prevent ~/.local/bin/atlas from shadowing it, and clean up any old helper.
+            if let Some(sys) = system_bin_path() {
+                if let Some(helper) = helper_path() {
+                    if helper.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&helper) {
+                            if content.contains("atlas-cli-version") || content.contains("open -na")
+                            {
+                                let _ = std::fs::remove_file(&helper);
+                            }
+                        }
                     }
                 }
-            }
-        }
-        if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
-            if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
-                if meta.file_type().is_symlink() {
-                    let is_broken = !atlas_link.exists();
-                    let points_to_atl = std::fs::read_link(&atlas_link)
-                        .map(|target| target == std::path::Path::new("atl") || target.ends_with("atl"))
-                        .unwrap_or(false);
-                    if is_broken || points_to_atl {
-                        let _ = std::fs::remove_file(&atlas_link);
+                if let Some(atlas_link) =
+                    dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas"))
+                {
+                    if let Ok(meta) = std::fs::symlink_metadata(&atlas_link) {
+                        if meta.file_type().is_symlink() {
+                            let is_broken = !atlas_link.exists();
+                            let points_to_atl = std::fs::read_link(&atlas_link)
+                                .map(|target| {
+                                    target == std::path::Path::new("atl") || target.ends_with("atl")
+                                })
+                                .unwrap_or(false);
+                            if is_broken || points_to_atl {
+                                let _ = std::fs::remove_file(&atlas_link);
+                            }
+                        }
                     }
                 }
+                return Some(CliStatus {
+                    installed: true,
+                    path: Some(sys.to_string_lossy().into_owned()),
+                    installed_version: Some(version.clone()),
+                    current_version: version,
+                });
             }
-        }
-        return Ok(CliStatus {
-            installed: true,
-            path: Some(sys.to_string_lossy().into_owned()),
-            installed_version: Some(version.clone()),
-            current_version: version,
-        });
-    }
 
-    // If ~/.local/bin/atlas is an ELF binary (e.g. tarball installed to ~/.local),
-    // never overwrite the real binary with a shell script helper!
-    if let Some(helper) = helper_path() {
-        if helper.exists() && is_elf_binary(&helper) {
-            return Ok(CliStatus {
-                installed: true,
-                path: Some(helper.to_string_lossy().into_owned()),
-                installed_version: Some(version.clone()),
-                current_version: version,
-            });
+            // If ~/.local/bin/atlas is an ELF binary (e.g. tarball installed to ~/.local),
+            // never overwrite the real binary with a shell script helper!
+            if let Some(helper) = helper_path() {
+                if helper.exists() && is_elf_binary(&helper) {
+                    return Some(CliStatus {
+                        installed: true,
+                        path: Some(helper.to_string_lossy().into_owned()),
+                        installed_version: Some(version.clone()),
+                        current_version: version,
+                    });
+                }
+            }
+            None
         }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    {
+        return Ok(status);
     }
 
     let path = helper_path().ok_or_else(|| "could not resolve $HOME".to_string())?;
@@ -355,7 +382,9 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
 
             #[cfg(target_os = "linux")]
             {
-                if let Some(atlas_link) = dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas")) {
+                if let Some(atlas_link) =
+                    dirs::home_dir().map(|h| h.join(".local").join("bin").join("atlas"))
+                {
                     let usr_atlas = std::path::Path::new("/usr/bin/atlas");
                     let safe_to_link = !usr_atlas.exists() || is_atlas_binary(usr_atlas);
                     if safe_to_link {
@@ -382,5 +411,5 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
         "installed atlas CLI helper at {} (version {version})",
         path.display()
     );
-    Ok(cli_status())
+    cli_status().await
 }

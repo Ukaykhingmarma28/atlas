@@ -56,6 +56,7 @@ import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { isWindows, isLinux } from "@/lib/platform";
+import type { CliStatus } from "@/features/settings/components/settings-panel";
 import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
@@ -167,17 +168,12 @@ export function App() {
   // system-wide /usr/bin/atlas exists so ~/.local/bin/atlas does not shadow it.
   useEffect(() => {
     if (isWindows) return;
-    void invoke<{
-      installed: boolean;
-      path: string | null;
-      installed_version?: string | null;
-      current_version: string;
-    }>("cli_status")
+    void invoke<CliStatus>("cli_status")
       .then((status) => {
         // If installed system-wide outside ~/.local/ (e.g. /usr/bin/atlas on Linux), don't shadow it
         if (status?.installed && status.path && !status.path.includes("/.local/")) return;
         // If already installed and up to date on Linux, skip (macOS re-runs to self-heal edited/deleted helpers)
-        if (isLinux && status?.installed && status.installed_version === status.current_version)
+        if (isLinux && status?.installed && status.installedVersion === status.currentVersion)
           return;
         return invoke("cli_install_helper");
       })
