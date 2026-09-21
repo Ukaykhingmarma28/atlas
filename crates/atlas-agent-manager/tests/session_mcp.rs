@@ -18,11 +18,14 @@ use support::spawning::{manager_offering_mcp, session_requests};
 
 /// Offers one HTTP server with a fresh bearer token per request, and records
 /// what it was asked and how each offer settled.
+/// `(token, bound session)` per settled offer — `None` for one that was
+/// released.
+type SettledOffers = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 #[derive(Default)]
 struct TokenOffering {
     asked: Mutex<Vec<SessionMcpRequest>>,
-    /// `(token, bound session)` — `None` for an offer that was released.
-    settled: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    settled: SettledOffers,
 }
 
 impl SessionMcpServers for TokenOffering {
@@ -39,7 +42,7 @@ impl SessionMcpServers for TokenOffering {
             settled
                 .lock()
                 .unwrap()
-                .push((token, session.map(|id| id.to_string())));
+                .push((token, session.map(std::string::ToString::to_string)));
         })
     }
 }

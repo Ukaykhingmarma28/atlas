@@ -518,7 +518,7 @@ mod index_corpus_tests {
         // Persisted: a reopened engine still has it, and the indexer sees the
         // doc as unchanged (no re-embed).
         drop(engine);
-        let reopened = MemoryEngine::open(root.clone());
+        let reopened = MemoryEngine::open(root);
         assert_eq!(reopened.cached_vector("note:a", "h_a"), Some(axis(3)));
         let diff = reopened
             .manifest
@@ -532,7 +532,7 @@ mod index_corpus_tests {
     #[test]
     fn adding_embedded_docs_keeps_everything_else() {
         let (_tmp, root) = tmp_root("keep");
-        let mut engine = MemoryEngine::open(root.clone());
+        let mut engine = MemoryEngine::open(root);
         engine
             .add_embedded(&[(doc("codebase:src/a.rs", "a", "h1"), axis(1))])
             .unwrap();
@@ -556,7 +556,7 @@ mod index_corpus_tests {
     #[test]
     fn search_ids_ranks_docs_and_skips_excluded_corpora() {
         let (_tmp, root) = tmp_root("search");
-        let mut engine = MemoryEngine::open(root.clone());
+        let mut engine = MemoryEngine::open(root);
         let mut near_code = doc("codebase:src/x.rs", "x", "hx");
         near_code.corpus = "codebase".into();
         let mut note = doc("note:y", "y", "hy");

@@ -251,7 +251,7 @@ pub fn parse_extracted(output: &str) -> Vec<Extracted> {
         }
         let confidence = item
             .get("confidence")
-            .and_then(|c| c.as_f64())
+            .and_then(serde_json::Value::as_f64)
             .filter(|c| c.is_finite())
             .map_or(DEFAULT_CONFIDENCE, |c| c.clamp(0.0, 1.0));
         out.push(Extracted {

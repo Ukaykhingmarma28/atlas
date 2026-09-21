@@ -760,7 +760,7 @@ impl RecordStore {
                 agent: source.to_string(),
                 session_id: String::new(),
                 kind: old.kind.event_kind().as_str().to_string(),
-                key: old.key.clone(),
+                key: old.key,
                 payload,
             },
         )?;
@@ -1907,8 +1907,8 @@ pub(crate) mod tests {
         }
         let a = store.list(EntryKind::FileChanged, 10, Origin::Any).unwrap().into_iter().find(|e| e.key == "a.ts").unwrap();
         store.forget(a.id).unwrap();
-        let left: Vec<String> = store.search_events("formatted", 10).unwrap().into_iter().map(|e| e.key).collect();
-        assert_eq!(left.len(), 1);
+        let left = store.search_events("formatted", 10).unwrap().len();
+        assert_eq!(left, 1);
         assert!(store.events_newest(10).unwrap()[0].payload.to_string().contains("b.ts"));
 
         store.append_event(ev(EventKind::Fact, "", serde_json::json!({"text": "Staging is on port 6543"})), 5).unwrap();

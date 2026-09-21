@@ -136,11 +136,15 @@ mod tests {
         acp::McpServer::Http(acp::McpServerHttp::new(name, "http://127.0.0.1:1/mcp"))
     }
 
-    fn recorded() -> (Arc<Mutex<Vec<Option<String>>>>, impl FnOnce(Option<&acp::SessionId>) + Send) {
+    /// Every settle call the offer made: one entry each, `None` when the
+    /// offer was released unbound.
+    type SettleLog = Arc<Mutex<Vec<Option<String>>>>;
+
+    fn recorded() -> (SettleLog, impl FnOnce(Option<&acp::SessionId>) + Send) {
         let log = Arc::new(Mutex::new(Vec::new()));
         let sink = log.clone();
         (log, move |id: Option<&acp::SessionId>| {
-            sink.lock().unwrap().push(id.map(|id| id.to_string()));
+            sink.lock().unwrap().push(id.map(std::string::ToString::to_string));
         })
     }
 
