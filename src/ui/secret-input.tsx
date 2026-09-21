@@ -1,5 +1,6 @@
 import { forwardRef, useState } from "react";
-import { Eye, EyeOff, Copy, Check } from "lucide-react";
+import { CopyGlyph } from "@/ui/animated-icon";
+import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 
@@ -84,7 +85,7 @@ export const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(functi
         />
         {copyable && (
           <IconBtn label={copied ? "Copied" : "Copy"} onClick={() => void copy()}>
-            {copied ? <Check size={13} /> : <Copy size={13} />}
+            <CopyGlyph copied={copied} size="md" />
           </IconBtn>
         )}
         <IconBtn label={revealed ? "Hide" : "Reveal"} onClick={() => setRevealed((r) => !r)}>

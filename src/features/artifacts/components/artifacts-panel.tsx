@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Check, Filter, PanelLeft, RefreshCw, Search, X } from "lucide-react";
+import { Check, Filter, RefreshCw, Search, X } from "lucide-react";
 
 import { copyText } from "@/lib/clipboard";
 
@@ -559,7 +560,7 @@ export function ArtifactsPanel() {
                     active={!showSidebar}
                     onClick={toggleTimelineSidebar}
                   >
-                    <PanelLeft size={13} />
+                    <RailGlyph open={showSidebar} size="md" />
                   </DockButton>
                 </HintGroup>
                 <Breadcrumb

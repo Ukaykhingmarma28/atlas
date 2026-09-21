@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Check, Copy, FileJson, Link2, Upload } from "lucide-react";
+import { CopyGlyph } from "@/ui/animated-icon";
+import { AlertTriangle, ArrowLeft, Check, FileJson, Link2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
@@ -526,7 +527,7 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
                 {result.report.dropped} dropped
               </Badge>
               <Button size="sm" variant="outline" className="ml-auto" onClick={() => void copy()}>
-                <Icon icon={copied ? Check : Copy} size="sm" />
+                <CopyGlyph copied={copied} size="sm" />
                 {copied ? "Copied" : "Copy JSON"}
               </Button>
             </div>

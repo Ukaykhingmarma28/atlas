@@ -66,7 +66,8 @@
 // when it changes under the pointer); the copied state rides on the icon.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, CornerUpRight, Pin, RefreshCw } from "lucide-react";
+import { CopyGlyph } from "@/ui/animated-icon";
+import { CornerUpRight, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -237,7 +238,7 @@ export function UserRowActions({
           <CornerUpRight size={12} />
         </ActionButton>
         <ActionButton label="Copy message" onClick={onCopy}>
-          {copied ? <Check size={12} /> : <Copy size={12} />}
+          <CopyGlyph copied={copied} size="sm" />
         </ActionButton>
       </div>
     </HintGroup>

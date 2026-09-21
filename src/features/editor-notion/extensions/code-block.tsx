@@ -1,4 +1,5 @@
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { CopyGlyph } from "@/ui/animated-icon";
 import {
   NodeViewWrapper,
   NodeViewContent,
@@ -6,7 +7,6 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
 import { Hint } from "@/ui/tooltip";
 
 /**
@@ -55,7 +55,7 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
         <span style={{ flex: 1 }} />
         <Hint label={copied ? "Copied" : "Copy"}>
           <button type="button" className="atlas-code-copy" onClick={handleCopy}>
-            {copied ? <Check size={11} strokeWidth={1.7} /> : <Copy size={11} strokeWidth={1.7} />}
+            <CopyGlyph copied={copied} size="sm" />
             {copied ? " Copied" : ""}
           </button>
         </Hint>

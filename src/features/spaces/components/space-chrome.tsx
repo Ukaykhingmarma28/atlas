@@ -1,4 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { useReactFlow, useViewport } from "@xyflow/react";
 import { Popover } from "@base-ui/react/popover";
 import {
@@ -12,7 +13,6 @@ import {
   FileType2,
   Loader2,
   Minus,
-  PanelLeft,
   Plus,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -111,7 +111,7 @@ export function SpaceHeaderPill({
               : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
           )}
         >
-          <PanelLeft size={13} />
+          <RailGlyph open={pagesOpen} size="md" />
         </button>
       </Hint>
       <div className="mx-0.5 h-4 w-px bg-border-subtle" />

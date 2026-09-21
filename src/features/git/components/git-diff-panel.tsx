@@ -1,15 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { useQuery } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import {
-  ChevronUp,
-  ChevronDown,
-  RefreshCw,
-  ExternalLink,
-  FileCode2,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { ChevronUp, ChevronDown, RefreshCw, ExternalLink, FileCode2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openFile } from "@/lib/open-file";
 import { HintGroup, HintItem } from "@/ui/hint-group";
@@ -497,7 +490,7 @@ export function GitDiffPanel({
                   onClick={toggleTree}
                   className="-ml-1 rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer"
                 >
-                  {treeCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
+                  <RailGlyph open={!treeCollapsed} size="sm" />
                 </button>
               </HintItem>
               <FileCode2 size={12} className="shrink-0 text-[var(--muted-foreground)]" />

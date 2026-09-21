@@ -17,13 +17,13 @@
 // from the first within a release.
 
 import { forwardRef, memo, useState } from "react";
+import { MenuGlyph } from "@/ui/animated-icon";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Popover } from "@base-ui/react/popover";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   ChevronDown,
   Search,
-  MoreHorizontal,
   GitBranch,
   TerminalSquare,
   ClipboardList,
@@ -115,6 +115,7 @@ function ChatHeaderImpl({
 }: ChatHeaderProps) {
   const findHint = useActionShortcut("chat.find")?.label;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     // No border and NO BACKGROUND. The bar floats over the transcript (see the
@@ -203,11 +204,14 @@ function ChatHeaderImpl({
             <Search size={13} />
           </HeaderCircleButton>
 
-          <DropdownMenu.Root>
+          {/* `onOpenChange` on an otherwise uncontrolled Root: the glyph needs
+              to know the menu is open, but nothing else here does, so lifting
+              the open state outright would buy a re-render for no reason. */}
+          <DropdownMenu.Root onOpenChange={setMoreOpen}>
             <DropdownMenu.Trigger
               render={
                 <HeaderCircleButton title="More">
-                  <MoreHorizontal size={14} />
+                  <MenuGlyph active={moreOpen} size="md" />
                 </HeaderCircleButton>
               }
             />

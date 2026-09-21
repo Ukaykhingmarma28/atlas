@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { CopyGlyph } from "@/ui/animated-icon";
 import { Dialog } from "@base-ui/react/dialog";
-import { AlertTriangle, Check, Copy } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useGitStore } from "../../stores/git-store";
 import { gitErrorTitle } from "../../lib/git-errors";
 import { copyText } from "@/lib/clipboard";
@@ -79,7 +80,7 @@ export function GitErrorDialog() {
                       className="flex items-center gap-1 px-2 h-7 rounded text-xs text-secondary-foreground hover:bg-element-hover transition-colors"
                       title="Copy git output"
                     >
-                      {copied ? <Check size={11} /> : <Copy size={11} />}
+                      <CopyGlyph copied={copied} size="sm" />
                       {copied ? "Copied" : "Copy output"}
                     </button>
                   )}

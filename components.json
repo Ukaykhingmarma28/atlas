@@ -17,5 +17,25 @@
     "ui": "@/ui",
     "lib": "@/lib",
     "hooks": "@/hooks"
+  },
+  "registries": {
+    "@shadcnblocks": {
+      "url": "https://shadcnblocks.com/r/{name}",
+      "headers": {
+        "Authorization": "Bearer ${SHADCNBLOCKS_API_KEY}"
+      }
+    },
+    "@tailark-pro": {
+      "url": "https://pro.tailark.com/registry/{name}",
+      "headers": {
+        "Authorization": "Bearer ${TAILARK_API_KEY}"
+      }
+    },
+    "@skiper-ui": {
+      "url": "https://skiper-ui.com/r/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${SKIPER_LICENSE_KEY}"
+      }
+    }
   }
 }

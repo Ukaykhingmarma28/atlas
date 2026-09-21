@@ -128,6 +128,76 @@
   --animate-scale-out: scale-out 0.12s var(--ease-out-strong);
   --animate-slide-in-right: slide-in-right 0.18s var(--ease-drawer);
 
+  /* Animated icon glyphs (`src/ui/animated-icon.tsx`, decision 33). Only the
+     one-shot, click-driven ones need a keyframe: everything hover-driven is a
+     plain `transition-*` at `duration-fast` and is already composited.
+
+     `icon-check-draw` is the single non-composited animation in this file's
+     motion set — `stroke-dashoffset` paints rather than composites. It is one
+     23-unit path inside a 14px glyph, so the paint is free; the alternative
+     (no draw-on) loses the only affordance that says "the copy landed". The
+     path carries `pathLength="1"`, so the offset is in normalised units and
+     the keyframe never has to know the glyph's real path length. */
+  --animate-icon-check-draw: icon-check-draw 0.22s var(--ease-out-strong) forwards;
+  --animate-icon-send: icon-send 0.6s var(--ease-in-out-strong);
+  --animate-icon-bell-ring: icon-bell-ring 0.55s var(--ease-in-out-strong);
+
+  @keyframes icon-check-draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  /* Send: shrink, fly out right, cut back in from the left, settle. The cut is
+     the 46%→47% pair at opacity 0 — a jump the eye cannot see, which is what
+     lets one keyframe read as "the message left and the next one is ready"
+     without a second element or a JS sequence. */
+  @keyframes icon-send {
+    0% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+    18% {
+      transform: translateX(0) scale(0.8);
+      opacity: 1;
+    }
+    46% {
+      transform: translateX(160%) scale(0.8);
+      opacity: 0;
+    }
+    47% {
+      transform: translateX(-160%) scale(1);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes icon-bell-ring {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    12% {
+      transform: rotate(14deg);
+    }
+    30% {
+      transform: rotate(-11deg);
+    }
+    48% {
+      transform: rotate(8deg);
+    }
+    66% {
+      transform: rotate(-5deg);
+    }
+    84% {
+      transform: rotate(2deg);
+    }
+  }
+
   @keyframes slide-in-right {
     from {
       transform: translateX(100%);
@@ -1487,6 +1557,25 @@
   .atlas-group-slide-right,
   .atlas-pill-swap {
     animation-name: atlas-rm-fade !important;
+  }
+  /* Animated icon glyphs: the shake and the flight are decoration, so they stop
+     dead rather than fading — a bell that fades in place reads as a bug. The
+     check draw stays: it is the state change itself, not an embellishment, and
+     under reduce it simply completes instantly.
+
+     All three collapse the DURATION rather than setting `animation: none`,
+     which would be the obvious way to write this and is a bug. `SendGlyph` and
+     `BellGlyph` are pulses — the caller raises the flag on submit and lowers it
+     from `onAnimationEnd`, because the animation should track the real send
+     rather than a timer guessing at it. `animation: none` never fires
+     `animationend`, so under reduced motion that flag would latch true forever
+     and the control would never pulse again. A ~0 duration is visually
+     identical (every one of these keyframes starts and ends at rest) and still
+     fires the event. */
+  [class*="animate-icon-send"],
+  [class*="animate-icon-bell-ring"],
+  [class*="animate-icon-check-draw"] {
+    animation-duration: 0.01ms !important;
   }
   /* A popover carries its enter AND exit classes at once, so the exit swap is
      scoped to the closing state — otherwise it would also win while opening

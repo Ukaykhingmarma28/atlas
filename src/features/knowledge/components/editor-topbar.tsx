@@ -1,4 +1,5 @@
-import { ChevronRight, Folder, PanelLeft, PanelRight } from "lucide-react";
+import { ChevronRight, Folder, PanelRight } from "lucide-react";
+import { RailGlyph } from "@/ui/animated-icon";
 
 import { Hint } from "@/ui/tooltip";
 
@@ -52,7 +53,7 @@ export function EditorTopbar({
             className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22, marginLeft: -6 }}
           >
-            <PanelLeft size={12} />
+            <RailGlyph open={!sidebarHidden} size="sm" />
           </button>
         </Hint>
       )}

@@ -11,6 +11,15 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
 import { Icon, ICON_SIZES, type IconSize } from "@/ui/icon";
+import {
+  BellGlyph,
+  CopyGlyph,
+  MenuGlyph,
+  PlusMinusGlyph,
+  RailGlyph,
+  SendGlyph,
+  TrashGlyph,
+} from "@/ui/animated-icon";
 import { Input } from "@/ui/input";
 import { Kbd, KbdCombo } from "@/ui/kbd";
 import {
@@ -549,6 +558,98 @@ function IconSection() {
           {[Settings, Plus, Trash2, ChevronRight, Check, Copy, X].map((glyph, i) => (
             <Icon key={i} icon={glyph} size="md" className="text-muted-foreground" />
           ))}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * The animated glyphs, each wired to the state it is meant to read from. Click
+ * every one: these are the only primitives in the gallery whose whole point is
+ * the transition, so a static screenshot cannot review them.
+ */
+function AnimatedIconSection() {
+  const [copied, setCopied] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [rail, setRail] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [plus, setPlus] = useState(false);
+  const [ringing, setRinging] = useState(false);
+  const [muted, setMuted] = useState(false);
+
+  const cell = "flex flex-col items-center gap-2";
+  const hit =
+    "flex size-control-lg items-center justify-center rounded border border-border text-foreground hover:bg-element-hover";
+
+  return (
+    <Section
+      title="Animated icons"
+      decision="decision 33"
+      note="Glyphs that carry a state change. CSS only — no JS animation runtime. Controlled: each takes its state from the caller. Click each one."
+    >
+      <div className="flex flex-wrap items-end gap-8">
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setCopied((v) => !v)}>
+            <CopyGlyph copied={copied} size="lg" />
+          </button>
+          <span className="code text-secondary-foreground">CopyGlyph</span>
+          <span className="caption">draws the check on</span>
+        </div>
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setArmed((v) => !v)}>
+            <TrashGlyph armed={armed} size="lg" />
+          </button>
+          <span className="code text-secondary-foreground">TrashGlyph</span>
+          <span className="caption">lid hinges open</span>
+        </div>
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setSending(true)}>
+            <SendGlyph sending={sending} size="lg" onAnimationEnd={() => setSending(false)} />
+          </button>
+          <span className="code text-secondary-foreground">SendGlyph</span>
+          <span className="caption">leaves, next arrives</span>
+        </div>
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setRail((v) => !v)}>
+            <RailGlyph open={rail} size="lg" />
+          </button>
+          <span className="code text-secondary-foreground">RailGlyph</span>
+          <span className="caption">rail thickens</span>
+        </div>
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setMenu((v) => !v)}>
+            <MenuGlyph active={menu} size="lg" />
+          </button>
+          <span className="code text-secondary-foreground">MenuGlyph</span>
+          <span className="caption">bars shuffle</span>
+        </div>
+        <div className={cell}>
+          <button type="button" className={hit} onClick={() => setPlus((v) => !v)}>
+            <PlusMinusGlyph open={plus} size="lg" />
+          </button>
+          <span className="code text-secondary-foreground">PlusMinusGlyph</span>
+          <span className="caption">plus ↔ minus</span>
+        </div>
+        <div className={cell}>
+          <button
+            type="button"
+            className={hit}
+            onClick={() => {
+              setRinging(true);
+              setMuted((v) => !v);
+            }}
+          >
+            <BellGlyph
+              ringing={ringing}
+              muted={muted}
+              size="lg"
+              onAnimationEnd={() => setRinging(false)}
+            />
+          </button>
+          <span className="code text-secondary-foreground">BellGlyph</span>
+          <span className="caption">rings · mute wipes</span>
         </div>
       </div>
     </Section>
@@ -1139,6 +1240,7 @@ export function DesignSystemGallery() {
       <ZIndexSection />
       <MotionSection />
       <IconSection />
+      <AnimatedIconSection />
       <StateSection />
       <PrimitiveSection />
       <OverlaySection />

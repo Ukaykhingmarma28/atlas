@@ -8,6 +8,7 @@
 // eat the keystrokes — the same pattern the project "+" AddProjectMenu uses.
 
 import { useEffect, useMemo, useState } from "react";
+import { PlusMinusGlyph } from "@/ui/animated-icon";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -156,7 +157,7 @@ export function ComposerAddMenu({
                   : "hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-pointer",
               )}
             >
-              <Plus size={13} />
+              <PlusMinusGlyph open={open} size="md" />
             </button>
           }
         />

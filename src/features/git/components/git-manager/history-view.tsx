@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { CopyGlyph } from "@/ui/animated-icon";
 import { Popover } from "@base-ui/react/popover";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, Copy, Undo2, GitGraph, RotateCcw, Sparkles, Tag, Check } from "lucide-react";
+import { ArrowLeft, Undo2, GitGraph, RotateCcw, Sparkles, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useGitStore } from "../../stores/git-store";
@@ -59,7 +60,11 @@ export function HistoryView() {
                     }}
                     className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-element-hover"
                   >
-                    {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                    <CopyGlyph
+                      copied={copied}
+                      size="sm"
+                      className={copied ? "text-success" : undefined}
+                    />
                   </button>
                 </HintItem>
                 <HintItem label="Cherry-pick onto current branch">

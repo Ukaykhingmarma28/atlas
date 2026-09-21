@@ -1,4 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { TrashGlyph } from "@/ui/animated-icon";
+import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRemoveAgentConfirmStore } from "../lib/remove-agent-confirm";
@@ -6,6 +8,38 @@ import { useRemoveAgentConfirmStore } from "../lib/remove-agent-confirm";
 /** The app's pill-button language (matches the stop-agents dialog). */
 const pillButton =
   "inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium leading-none cursor-pointer transition-colors";
+
+/**
+ * The destructive button, split out so its hover state cannot outlive the
+ * dialog.
+ *
+ * Hover, not the dialog's own open state: the lid lifting is the beat that says
+ * "this one deletes", and it should land as the pointer arrives on Remove
+ * rather than the moment the dialog appears.
+ *
+ * It has to be its own component because `RemoveAgentDialog` is mounted once in
+ * App and only its *body* unmounts — a `useState` up there survives every open.
+ * Confirming (or pressing Esc) tears this button out from under the pointer
+ * without ever firing `pointerleave`, so the flag would still be set the next
+ * time the dialog opened and the lid would render already tipped. Owning the
+ * state here means it dies with the dialog, no reset effect needed.
+ */
+function RemoveButton({ onConfirm }: { onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <button
+      onClick={onConfirm}
+      onPointerEnter={() => setArmed(true)}
+      onPointerLeave={() => setArmed(false)}
+      onFocus={() => setArmed(true)}
+      onBlur={() => setArmed(false)}
+      className={cn(pillButton, "border-error/40 bg-[var(--card)] text-error hover:bg-error/10")}
+    >
+      <TrashGlyph armed={armed} size="sm" />
+      Remove
+    </button>
+  );
+}
 
 /**
  * "Remove this agent?" confirmation for Settings → Agents, driven by
@@ -50,16 +84,7 @@ export function RemoveAgentDialog() {
               >
                 Keep
               </button>
-              <button
-                onClick={() => settle(true)}
-                className={cn(
-                  pillButton,
-                  "border-error/40 bg-[var(--card)] text-error hover:bg-error/10",
-                )}
-              >
-                <Trash2 size={12} />
-                Remove
-              </button>
+              <RemoveButton onConfirm={() => settle(true)} />
             </div>
           </div>
         </Dialog.Popup>

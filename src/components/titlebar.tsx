@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Popover } from "@base-ui/react/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
@@ -15,7 +16,6 @@ import {
 } from "@/features/terminal/lib/terminal-notifier";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import {
-  PanelLeft,
   PanelRight,
   Bell,
   Layers,
@@ -502,7 +502,7 @@ function LeftPanelToggle() {
         onClick={toggleLeftPanel}
         className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-secondary-foreground hover:bg-element-hover transition-all duration-150"
       >
-        <PanelLeft size={14} className={leftPanel.visible ? "" : "opacity-40"} />
+        <RailGlyph open={leftPanel.visible} size="md" />
       </button>
     </HintItem>
   );

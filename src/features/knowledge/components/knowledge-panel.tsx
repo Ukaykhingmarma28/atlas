@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -37,7 +38,7 @@ import { PageProperties } from "./page-properties";
 import { IconPicker } from "./icon-picker";
 import { CoverPicker, gradientCss } from "./cover-picker";
 import { coverCacheKey, getCachedCoverUrl, putCachedCoverUrl } from "../lib/cover-url-cache";
-import { Copy, ExternalLink, GitBranch, PanelLeft, PanelRight } from "lucide-react";
+import { Copy, ExternalLink, GitBranch, PanelRight } from "lucide-react";
 
 const RECENTS_MAX = 5;
 
@@ -997,7 +998,7 @@ function RepoTopbar({
             className="p-1 rounded text-muted-foreground hover:bg-element-hover hover:text-secondary-foreground transition-colors"
             style={{ width: 22, height: 22, marginLeft: -6 }}
           >
-            <PanelLeft size={12} />
+            <RailGlyph open={!sidebarHidden} size="sm" />
           </button>
         </Hint>
       )}

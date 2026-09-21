@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { CopyGlyph } from "@/ui/animated-icon";
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, Check, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { ImageZoomView } from "@/features/media/components/image-zoom-view";
 
 interface SvgViewerProps {
@@ -59,7 +60,7 @@ export function SvgViewer({ filePath }: SvgViewerProps) {
           title="Copy SVG source"
           className="flex items-center gap-1 px-2 h-6 rounded text-2xs cursor-pointer outline-none transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] disabled:opacity-40 disabled:cursor-default"
         >
-          {copied ? <Check size={11} /> : <Copy size={11} />}
+          <CopyGlyph copied={copied} size="sm" />
           {copied ? "Copied" : "Copy code"}
         </button>
       </div>

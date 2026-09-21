@@ -1,4 +1,5 @@
-import { Crosshair, Maximize2, Minimize2, PanelLeft } from "lucide-react";
+import { Crosshair, Maximize2, Minimize2 } from "lucide-react";
+import { RailGlyph } from "@/ui/animated-icon";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { DEFAULT_PAGE_ICON } from "./pages-panel";
@@ -43,7 +44,7 @@ export function CanvasHeader({
                 : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
             )}
           >
-            <PanelLeft size={13} />
+            <RailGlyph open={pagesOpen} size="md" />
           </button>
         </HintItem>
         <div className="mx-0.5 h-4 w-px bg-border-subtle" />
