@@ -342,6 +342,7 @@ fn a_flattened_freeform_tool_comes_back_as_the_shape_its_handler_accepts() {
     // a patch, the tool never runs, and nothing says why.
     let dialect = ChatDialect {
         freeform_tools: ["apply_patch".to_string()].into_iter().collect(),
+        ..ChatDialect::default()
     };
     let events = tokio_test::block_on(play_with(
         &[
@@ -622,4 +623,47 @@ fn a_usage_block_missing_a_count_is_no_usage_rather_than_a_zero() {
         panic!("the turn completes");
     };
     assert!(usage.is_some());
+}
+
+#[test]
+fn a_flattened_namespace_tool_comes_back_under_its_namespace() {
+    // The router resolves MCP calls by (namespace, name). A call that comes
+    // back under the flat name alone is an unknown tool.
+    let dialect = ChatDialect {
+        namespaced_tools: [(
+            "mcp__atlas_memory__memory_search".to_string(),
+            NamespacedTool {
+                namespace: "mcp__atlas_memory__".to_string(),
+                name: "memory_search".to_string(),
+            },
+        )]
+        .into_iter()
+        .collect(),
+        ..ChatDialect::default()
+    };
+    let events = tokio_test::block_on(play_with(
+        &[
+            r#"{"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"m1","function":{"name":"mcp__atlas_memory__memory_search","arguments":"{\"query\":\"jwt\"}"}}]},"finish_reason":null}]}"#,
+            r#"{"id":"c1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+            "[DONE]",
+        ],
+        dialect,
+    ));
+    let call = events.iter().find_map(|event| match event {
+        Ok(ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
+            name,
+            namespace,
+            arguments,
+            ..
+        })) => Some((name.clone(), namespace.clone(), arguments.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        call,
+        Some((
+            "memory_search".to_string(),
+            Some("mcp__atlas_memory__".to_string()),
+            r#"{"query":"jwt"}"#.to_string(),
+        ))
+    );
 }

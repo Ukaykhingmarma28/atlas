@@ -32,6 +32,12 @@ legacy BYOK distill and a BYOK extractor behind an env flag, so a fresh
 install never distills. Injected blocks leak into Claude's private memory
 files and are re-injected.
 
+> **Superseded in part (2026-09-21, ADR-0010).** The "Push" row below and
+> decisions Q14, Q4 (reopened) and Q15 in §11.2 no longer hold: memory reaches
+> an agent only through the tool server, which grew from four tools to seven
+> (`memory_briefing`, `memory_changes`, `memory_get` added) and carries the
+> read-first protocol in its `instructions`. The rest of this document stands.
+
 **What changes.**
 
 | Area | Decision |

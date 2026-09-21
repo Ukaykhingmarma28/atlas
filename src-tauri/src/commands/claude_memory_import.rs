@@ -381,6 +381,14 @@ pub async fn memory_claude_import_confirm(
 
 #[cfg(test)]
 mod tests {
+
+    /// A prompt as Atlas used to send it while context was pushed: the
+    /// envelope in front of the user's words. Readers must still strip it
+    /// from files written back then.
+    fn legacy_wire_prompt(block: &str, user_text: &str) -> String {
+        let envelope = atlas_agent_transcript::wrap_memory_envelope(&[block]).expect("a present block");
+        format!("{envelope}\n\n{user_text}")
+    }
     use std::sync::Arc;
 
     use parking_lot::Mutex;
@@ -575,8 +583,8 @@ mod tests {
     #[test]
     fn enveloped_text_is_not_imported() {
         let (store, p) = (SharedMemoryStore::new(), project());
-        let injected = crate::commands::memory_pack::compose_injection(
-            &["--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---"],
+        let injected = legacy_wire_prompt(
+            "--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
             "The team prefers bun over npm.",
         );
         // No description: the line comes from the body, which Claude saved

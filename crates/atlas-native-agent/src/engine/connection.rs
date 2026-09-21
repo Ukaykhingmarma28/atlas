@@ -1052,6 +1052,8 @@ impl AgentConnection for EngineConnection {
             // same identifier rather than maintaining a mapping is what lets a
             // stored row resolve without a translation table.
             let session_id = acp::SessionId::new(response.thread.id.as_str());
+            self.sessions
+                .expect_mcp_servers(&response.thread.id, mcp::server_names(mcp_offer.servers()));
             mcp_offer.bind(&session_id);
             let thread = self.new_thread(session_id.clone(), work_dirs, None);
             self.sessions.insert(
@@ -1186,7 +1188,7 @@ impl AgentConnection for EngineConnection {
                         // server entry offered above does not reach it, and the
                         // token it holds was revoked when its session ended.
                         // Its memory tools answer 401 until the engine lets go
-                        // of the thread; the push path still grounds it.
+                        // of the thread, and nothing else carries memory to it.
                         Ok(response) => (response.thread.id, response.thread.turns),
                         Err(read_err) => {
                             // `warn!`, not `info!`: this arm is reached by an
@@ -1227,6 +1229,10 @@ impl AgentConnection for EngineConnection {
             // the store row (`resume_thread` compares it to the stored id and
             // adopts, #56); nothing here writes to history.
             let engine_session_id = acp::SessionId::new(engine_thread_id.as_str());
+            self.sessions.expect_mcp_servers(
+                &engine_session_id.to_string(),
+                mcp::server_names(mcp_offer.servers()),
+            );
             mcp_offer.bind(&engine_session_id);
             let thread = self.new_thread(engine_session_id.clone(), work_dirs, title);
             {
@@ -1562,7 +1568,22 @@ impl AgentConnection for EngineConnection {
         }
 
         let request_ids = self.request_ids.clone();
+        let sessions = self.sessions.clone();
         async move {
+            // A turn lists whichever MCP servers are up when it starts, so a
+            // first prompt sent before the host's servers finish starting
+            // went out without their tools — and the memory tools are the
+            // only way memory reaches the model. Bounded: past it, the turn
+            // goes ahead without them.
+            if !sessions
+                .wait_for_mcp_servers(&thread_id, crate::engine::sink::MCP_STARTUP_WAIT)
+                .await
+            {
+                tracing::warn!(
+                    thread = %thread_id,
+                    "host MCP servers still starting; this turn goes ahead without their tools"
+                );
+            }
             // Opens the window a stop can land in with no turn id to
             // interrupt. Every exit below closes it via `end_prompt` (#57).
             turns.begin_prompt(&thread_id);

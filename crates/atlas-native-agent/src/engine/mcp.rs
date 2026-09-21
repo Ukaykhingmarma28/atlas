@@ -39,6 +39,18 @@ pub fn thread_config(servers: &[acp::McpServer]) -> Option<HashMap<String, JsonV
     (!config.is_empty()).then_some(config)
 }
 
+/// The names the engine will report `servers` under: the HTTP ones
+/// `thread_config` projects, and no others.
+pub fn server_names(servers: &[acp::McpServer]) -> Vec<String> {
+    servers
+        .iter()
+        .filter_map(|server| match server {
+            acp::McpServer::Http(http) => Some(http.name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

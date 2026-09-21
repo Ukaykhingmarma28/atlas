@@ -894,6 +894,20 @@ impl RecordStore {
         Ok(out.into_iter().map(|e| Entry { last_used_at: Some(now), ..e }).collect())
     }
 
+    /// One entry by id, stamped as used at `now`; `None` when there is no
+    /// such entry.
+    pub fn get(&self, id: i64, now: i64) -> Result<Option<Entry>> {
+        let entry = self
+            .conn()
+            .query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)
+            .optional()?;
+        let Some(entry) = entry else {
+            return Ok(None);
+        };
+        self.mark_used(std::slice::from_ref(&entry), now)?;
+        Ok(Some(Entry { last_used_at: Some(now), ..entry }))
+    }
+
     fn mark_used(&self, entries: &[Entry], now: i64) -> Result<()> {
         if entries.is_empty() {
             return Ok(());

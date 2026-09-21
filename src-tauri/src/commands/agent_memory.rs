@@ -821,6 +821,14 @@ async fn query_codex_threads(db: &Path, project_path: &str) -> Vec<CodexThread> 
 
 #[cfg(test)]
 mod tests {
+
+    /// A prompt as Atlas used to send it while context was pushed: the
+    /// envelope in front of the user's words. Readers must still strip it
+    /// from files written back then.
+    fn legacy_wire_prompt(block: &str, user_text: &str) -> String {
+        let envelope = atlas_agent_transcript::wrap_memory_envelope(&[block]).expect("a present block");
+        format!("{envelope}\n\n{user_text}")
+    }
     use super::*;
 
     fn scratch() -> std::path::PathBuf {
@@ -837,8 +845,8 @@ mod tests {
     fn a_saved_injection_contributes_nothing_to_the_corpus() {
         let dir = scratch();
         let path = dir.join("recycled.md");
-        let injected = crate::commands::memory_pack::compose_injection(
-            &["--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---"],
+        let injected = legacy_wire_prompt(
+            "--- SHARED MEMORY ---\n[DECISIONS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
             "The team prefers bun over npm.",
         );
         std::fs::write(&path, format!("---\nname: recycled\n---\n\n{injected}\n")).unwrap();
@@ -876,8 +884,8 @@ mod tests {
 
         let dir = scratch();
         let project = dir.to_string_lossy().to_string();
-        let wire = crate::commands::memory_pack::compose_injection(
-            &["--- SHARED MEMORY ---\n[FACTS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---"],
+        let wire = legacy_wire_prompt(
+            "--- SHARED MEMORY ---\n[FACTS]\n- Use RS256 (by codex)\n--- END SHARED MEMORY ---",
             "why is auth failing?",
         );
         {

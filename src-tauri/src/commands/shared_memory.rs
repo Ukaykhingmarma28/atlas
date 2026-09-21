@@ -756,6 +756,13 @@ impl SharedMemoryStore {
         Ok(gone)
     }
 
+    /// One entry by id (`memory_get`), stamped as used. `Ok(None)` when there
+    /// is no such entry.
+    pub fn get_entry(&self, project_path: &str, id: i64) -> Result<Option<Entry>, String> {
+        let store = store_for(project_path)?;
+        store.get(id, (self.inner.clock)()).map_err(|e| format!("{e:#}"))
+    }
+
     /// Entries relevant to `query` (`memory_search`), best first. Degrades to
     /// empty when the record can't be read.
     pub fn search_entries(&self, project_path: &str, query: &str, kinds: &[EntryKind], limit: usize) -> Vec<Entry> {

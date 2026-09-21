@@ -72,6 +72,19 @@ pub struct ChatDialect {
     /// the one that runs patches accepts only `Custom`, so a call that is not
     /// turned back is a tool that silently never runs.
     pub freeform_tools: BTreeSet<String>,
+    /// Tools that lived inside a `namespace` upstream (every MCP server's
+    /// tools do) and crossed this wire under one flat name, keyed by that name.
+    ///
+    /// The router resolves a call by namespace and name, so a reply that comes
+    /// back under the flat name alone is an unknown tool.
+    pub namespaced_tools: BTreeMap<String, NamespacedTool>,
+}
+
+/// Where a flattened tool came from: its namespace and its own name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespacedTool {
+    pub namespace: String,
+    pub name: String,
 }
 
 pub fn spawn_chat_stream(
@@ -548,13 +561,18 @@ async fn emit_turn(
         // Carried on whichever shape the call takes: the provider attached it
         // to *this* call, and the replay has to hand it back on the same one.
         let passthrough = passthrough_for(extra_content);
-        let item = if dialect.freeform_tools.contains(&name) {
+        let freeform = dialect.freeform_tools.contains(&name);
+        let (name, namespace) = match dialect.namespaced_tools.get(&name) {
+            Some(origin) => (origin.name.clone(), Some(origin.namespace.clone())),
+            None => (name, None),
+        };
+        let item = if freeform {
             ResponseItem::CustomToolCall {
                 id: None,
                 status: None,
                 call_id,
                 name,
-                namespace: None,
+                namespace,
                 input: unwrap_freeform_input(&arguments),
                 internal_chat_message_metadata_passthrough: passthrough,
             }
@@ -562,7 +580,7 @@ async fn emit_turn(
             ResponseItem::FunctionCall {
                 id: None,
                 name,
-                namespace: None,
+                namespace,
                 arguments,
                 encrypted_function_args: None,
                 call_id,

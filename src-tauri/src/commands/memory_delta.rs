@@ -161,12 +161,6 @@ fn scan_assistant_text(content: &str, session_id: &str, agent: &str) -> Vec<RawE
     out
 }
 
-/// Scrub secrets from a read-path snippet or a distilled text — the same
-/// `atlas_redact` pass the record store applies to every write.
-pub fn redact(s: &str) -> String {
-    atlas_memory::record::redact(s)
-}
-
 fn cap(s: &str) -> String {
     if s.chars().count() <= TEXT_CAP {
         return s.to_string();

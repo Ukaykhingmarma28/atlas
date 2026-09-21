@@ -11,11 +11,12 @@ export interface SplitContext {
   blockCount: number;
 }
 
-// Block labels that Atlas (Rust `agents_send`) injects into the wire prompt:
-// shared cross-agent memory + retrieved long-term memory + recent-session recap.
-// The coding agent echoes the received prompt into its transcript, so resumed
-// sessions (esp. Codex, whose replay arrives via live deltas, not the JSONL the
-// Rust reader strips) would otherwise show this scaffolding as the user message.
+// Block labels Atlas used to inject into the wire prompt (shared memory,
+// retrieved long-term memory, project memory, recent-session recap). Nothing
+// is prepended any more — memory reaches agents through the atlas_memory MCP
+// tools (ADR-0010) — but transcripts written before still carry the blocks,
+// and a coding agent echoes the prompt it received, so resumed sessions from
+// that time would otherwise show the scaffolding as the user message.
 const INJECTED_CORES = [
   "SHARED MEMORY",
   "RELEVANT PROJECT MEMORY",
@@ -23,11 +24,11 @@ const INJECTED_CORES = [
   "RECENT SESSION",
 ];
 
-// Since the loop fix, every one of those blocks ships inside a single envelope
-// whose first line tells the agent the content is background and must not be
-// saved. Mirrors `MEMORY_ENVELOPE_*` in `crates/atlas-agent-transcript`; the two
-// must change together. Transcripts written before the envelope existed carry
-// the bare blocks, so both shapes stay recognised.
+// The later ones shipped inside a single envelope whose first line told the
+// agent the content was background and must not be saved. Mirrors
+// `MEMORY_ENVELOPE_*` in `crates/atlas-agent-transcript`; the two must change
+// together. Older transcripts carry the bare blocks, so both shapes stay
+// recognised.
 const MEMORY_ENVELOPE_OPEN = "<atlas-memory>";
 const MEMORY_ENVELOPE_CLOSE = "</atlas-memory>";
 

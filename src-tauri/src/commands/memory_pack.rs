@@ -1,8 +1,9 @@
-//! Shared Cross-Agent Memory — pack + handoff builders.
+//! Shared memory — the first-look extras `memory_briefing` serves beyond the
+//! record (ADR-0010: memory is pulled, never prepended).
 //!
-//! Two pieces of context get prepended to an agent's first message:
-//!   1. **Curated pack** — high-signal facts from Atlas's per-project memory
-//!      (`collect_corpus`), filtered to the curated kinds, recency-ranked, and
+//!   1. **Curated pack** — high-signal facts from the project's foreign memory
+//!      files (`collect_corpus`: Claude's memory directory, `CLAUDE.md`,
+//!      `AGENTS.md`), filtered to the curated kinds, recency-ranked, and
 //!      budget-bounded. Built by [`build_memory_pack`] / [`curate_pack`].
 //!   2. **Recent-session handoff** — the tail of the most recent *other*
 //!      session for this scope, whichever agent ran it, read from what Atlas
@@ -10,12 +11,7 @@
 //!      private files. Built by [`build_session_handoff`]; the optional
 //!      summariser is applied by [`handoff_block`].
 //!
-//! [`compose_injection`] stitches every present block in front of the user's
-//! text, inside one `<atlas-memory>` envelope that tells the agent the content
-//! is background and must not be saved. Every builder returns `Option`/empty so
-//! an absent source is a true no-op (no delimiters, no envelope, no allocation)
-//! — see the empty-pack hardening rule.
-//!
+//! Every builder returns `Option`/empty so an absent source is a true no-op.
 //! Disk-touching entry points are kept thin around pure functions
 //! (`curate_pack`, `handoff_turns`) so the ranking, filtering, and budgeting
 //! logic is unit-testable without a filesystem.
@@ -52,57 +48,54 @@ pub(crate) const HANDOFF_MAX_CHARS: usize = HANDOFF_MAX_TURNS * (TURN_MAX_CHARS 
 
 // ── Curated pack ─────────────────────────────────────────────────────────────
 
+/// One curated memory from a foreign store, as the briefing carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackEntry {
+    /// The frontmatter type: `feedback`, `user`, `project` or `reference`.
+    pub kind: String,
+    pub title: String,
+    /// The body, capped at [`ENTRY_MAX_CHARS`].
+    pub text: String,
+}
+
+/// The tail of the previous session, as the briefing carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Handoff {
+    pub text: String,
+    pub turns: usize,
+    /// `raw`, or `summarized by <provider>/<model>`.
+    pub attribution: String,
+}
+
 /// Build the curated pack for a project within `max_chars` of body (at most
-/// [`PACK_MAX_CHARS`]; the session-start briefing hands the pack what it left
-/// of that budget). Async because `collect_corpus` is async (it does its own
-/// `spawn_blocking` internally). Returns `None` when no curated facts exist —
-/// caller treats that as "inject nothing".
-pub async fn build_memory_pack(project_path: &str, max_chars: usize) -> Option<String> {
+/// [`PACK_MAX_CHARS`]). Async because `collect_corpus` is async (it does its
+/// own `spawn_blocking` internally). Empty when no curated facts exist.
+pub async fn build_memory_pack(project_path: &str, max_chars: usize) -> Vec<PackEntry> {
     let docs = collect_corpus(project_path).await;
     curate_pack(docs, max_chars)
 }
 
 /// Pure core of the pack builder: filter to curated kinds, rank newest-first,
-/// and accumulate entries until the `max_chars` body budget is hit. Returns the
-/// full block (delimiters + footer) or `None` if nothing qualifies or fits.
-pub fn curate_pack(mut docs: Vec<MemoryDoc>, max_chars: usize) -> Option<String> {
+/// and accumulate entries until the `max_chars` body budget is hit. Empty when
+/// nothing qualifies.
+pub fn curate_pack(mut docs: Vec<MemoryDoc>, max_chars: usize) -> Vec<PackEntry> {
     docs.retain(|d| PACK_KINDS.contains(&d.kind.as_str()));
-    if docs.is_empty() {
-        return None;
-    }
     // Newest first — the most recent conventions/decisions matter most.
     docs.sort_by_key(|doc| std::cmp::Reverse(doc.timestamp_ms));
 
-    let mut body = String::new();
-    let mut count = 0usize;
+    let mut out = Vec::new();
+    let mut chars = 0usize;
     for d in &docs {
-        let raw = if d.text.trim().is_empty() {
-            d.summary.as_str()
-        } else {
-            d.text.as_str()
-        };
-        let entry = format!(
-            "[{}] {}\n{}\n\n",
-            d.kind,
-            d.title,
-            truncate_chars(raw.trim(), ENTRY_MAX_CHARS)
-        );
+        let raw = if d.text.trim().is_empty() { d.summary.as_str() } else { d.text.as_str() };
+        let text = truncate_chars(raw.trim(), ENTRY_MAX_CHARS);
         // Always include at least one entry; stop before exceeding the budget.
-        // (The briefing never leaves less than the old shared block's budget,
-        // well above one capped entry.)
-        if count > 0 && body.len() + entry.len() > max_chars {
+        if !out.is_empty() && chars + text.len() > max_chars {
             break;
         }
-        body.push_str(&entry);
-        count += 1;
+        chars += text.len();
+        out.push(PackEntry { kind: d.kind.clone(), title: d.title.clone(), text });
     }
-    if count == 0 {
-        return None;
-    }
-    let footer = format!("({} memories · {} chars)", count, body.trim_end().len());
-    Some(format!(
-        "--- PROJECT MEMORY ---\n{body}{footer}\n--- END PROJECT MEMORY ---"
-    ))
+    out
 }
 
 // ── Recent-session handoff ───────────────────────────────────────────────────
@@ -367,21 +360,21 @@ fn format_turns(turns: &[(Speaker, String)]) -> String {
         .join("\n")
 }
 
-/// The handoff block for a first send, from [`build_session_handoff`]'s raw
-/// tail: summarised when the preference asks for the BYOK provider and names
-/// one, verbatim otherwise. A summariser that hands back the raw text (its
-/// failure fallback) is attributed as raw, not as a summary.
+/// The handoff, from [`build_session_handoff`]'s raw tail: summarised when
+/// the preference asks for the BYOK provider and names one, verbatim
+/// otherwise. A summariser that hands back the raw text (its failure
+/// fallback) is attributed as raw, not as a summary.
 pub async fn handoff_block<S, SF>(
     raw: Option<(String, usize)>,
     pref: &super::memory_sharing::SummarizerPref,
     summarize: S,
-) -> Option<String>
+) -> Option<Handoff>
 where
     S: FnOnce(String, String, String) -> SF,
     SF: std::future::Future<Output = String>,
 {
     let (raw_body, turns) = raw?;
-    let (body, attribution) =
+    let (text, attribution) =
         if pref.mode == "provider" && !pref.provider.is_empty() && !pref.model.is_empty() {
             let summary = summarize(raw_body.clone(), pref.provider.clone(), pref.model.clone()).await;
             if summary == raw_body {
@@ -392,70 +385,7 @@ where
         } else {
             (raw_body, "raw".to_string())
         };
-    Some(wrap_handoff(&body, turns, &attribution))
-}
-
-/// Wrap a raw handoff body in the labelled block with an attribution footer.
-pub fn wrap_handoff(body: &str, turn_count: usize, attribution: &str) -> String {
-    format!(
-        "--- RECENT SESSION ---\n{body}\n(last {turn_count} turns · {attribution})\n--- END RECENT SESSION ---"
-    )
-}
-
-// ── Composition ──────────────────────────────────────────────────────────────
-
-/// Prepend the already-wrapped `blocks` to the user's text inside one
-/// `<atlas-memory>` envelope. With no block present this returns `user_text`
-/// unchanged (zero-overhead no-op).
-///
-/// One envelope for the whole prompt, not one per block: the note line that
-/// opens it tells the agent the content is background and must not be saved,
-/// and repeating that per block would spend the budget on the same sentence
-/// four times. Every Atlas reader strips the envelope again
-/// (`atlas_agent_transcript::strip_injected_context`), so an agent that saves
-/// the prompt anyway cannot feed it back into the corpus.
-pub fn compose_injection(blocks: &[&str], user_text: &str) -> String {
-    match atlas_agent_transcript::wrap_memory_envelope(blocks) {
-        Some(envelope) => format!("{envelope}\n\n{user_text}"),
-        None => user_text.to_string(),
-    }
-}
-
-/// Does this turn's text open with a slash command (`/skill-name [args]`)?
-///
-/// Load-bearing for correctness, not a nicety. Claude Code resolves slash
-/// commands — including skills — only when the command sits at **byte 0 of the
-/// first text block** (`claude-agent-acp` gates on `firstText.startsWith("/")`,
-/// and `promptToClaude` anchors its rewrites with `^`). Every context block
-/// Atlas *prepends* therefore pushes the command off byte 0 and demotes it to
-/// prose: the command silently never fires. It is most visible on skills marked
-/// `disable-model-invocation: true`, because the model cannot see those in its
-/// own skill list either, so the turn dead-ends in "that skill isn't installed"
-/// instead of the model quietly invoking it anyway and masking the failure.
-///
-/// Deliberately rejects absolute paths — `/Users/me/foo.rs is broken` opens with
-/// a slash but is prose, and the interior `/` is what tells the two apart. A
-/// command token runs to whitespace or end-of-string over
-/// `[A-Za-z0-9_:-]` (`:` so plugin commands like `/codex:rescue` qualify).
-pub fn is_slash_command(text: &str) -> bool {
-    let Some(rest) = text.strip_prefix('/') else {
-        return false;
-    };
-    let mut chars = rest.chars();
-    // A command name opens alphanumeric: rules out `/ hello`, `/-x`, and `//`.
-    match chars.next() {
-        Some(c) if c.is_ascii_alphanumeric() => {}
-        _ => return false,
-    }
-    for c in chars {
-        if c.is_whitespace() {
-            return true; // token closed cleanly, args may follow
-        }
-        if !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':') {
-            return false; // e.g. the `/` in `/Users/me` — a path, not a command
-        }
-    }
-    true
+    Some(Handoff { text, turns, attribution })
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -672,11 +602,13 @@ mod tests {
     #[test]
     fn a_recorded_turn_drops_the_envelope_and_keeps_the_question() {
         let p = scratch_project("envelope");
-        let wire = compose_injection(
-            &["--- PROJECT MEMORY ---\nuse RS256\n--- END PROJECT MEMORY ---"],
-            "why is auth failing?",
-        );
-        let only_context = compose_injection(&["--- PROJECT MEMORY ---\nx\n--- END PROJECT MEMORY ---"], "");
+        // As Atlas wrote prompts while it still prepended context.
+        let legacy = |block: &str, user: &str| {
+            let envelope = atlas_agent_transcript::wrap_memory_envelope(&[block]).unwrap();
+            format!("{envelope}\n\n{user}")
+        };
+        let wire = legacy("--- PROJECT MEMORY ---\nuse RS256\n--- END PROJECT MEMORY ---", "why is auth failing?");
+        let only_context = legacy("--- PROJECT MEMORY ---\nx\n--- END PROJECT MEMORY ---", "");
         record_session(
             &p,
             "imported-1",
@@ -775,34 +707,34 @@ mod tests {
         assert_eq!(build_session_handoff(&plain, "now", &transcripts), None);
     }
 
-    /// Summariser behaviour, as today: raw by default; the BYOK provider when
-    /// the preference names one; raw again when the summariser falls back.
+    /// Summariser behaviour: raw by default; the BYOK provider when the
+    /// preference names one; raw again when the summariser falls back.
     #[tokio::test]
-    async fn the_optional_summariser_is_applied_as_today() {
+    async fn the_optional_summariser_is_applied() {
         use super::super::memory_sharing::SummarizerPref;
         let raw = || Some(("User: hi\nAssistant: yo".to_string(), 2));
         let provider = SummarizerPref { mode: "provider".into(), provider: "anthropic".into(), model: "m1".into() };
+        let handoff = |text: &str, attribution: &str| {
+            Some(Handoff { text: text.into(), turns: 2, attribution: attribution.into() })
+        };
 
         let never = |_: String, _: String, _: String| async { unreachable!("raw mode never summarises") };
         assert_eq!(
-            handoff_block(raw(), &SummarizerPref::default(), never).await.as_deref(),
-            Some("--- RECENT SESSION ---\nUser: hi\nAssistant: yo\n(last 2 turns · raw)\n--- END RECENT SESSION ---")
+            handoff_block(raw(), &SummarizerPref::default(), never).await,
+            handoff("User: hi\nAssistant: yo", "raw")
         );
         let incomplete = SummarizerPref { model: String::new(), ..provider.clone() };
-        assert!(handoff_block(raw(), &incomplete, never).await.unwrap().contains("(last 2 turns · raw)"));
+        assert_eq!(handoff_block(raw(), &incomplete, never).await.unwrap().attribution, "raw");
 
         let summarised = handoff_block(raw(), &provider, |text: String, p: String, m: String| async move {
             assert_eq!((text.as_str(), p.as_str(), m.as_str()), ("User: hi\nAssistant: yo", "anthropic", "m1"));
             "- greeted".to_string()
         })
         .await;
-        assert_eq!(
-            summarised.as_deref(),
-            Some("--- RECENT SESSION ---\n- greeted\n(last 2 turns · summarized by anthropic/m1)\n--- END RECENT SESSION ---")
-        );
+        assert_eq!(summarised, handoff("- greeted", "summarized by anthropic/m1"));
 
         let fell_back = handoff_block(raw(), &provider, |text: String, _: String, _: String| async move { text }).await;
-        assert!(fell_back.unwrap().contains("User: hi\nAssistant: yo\n(last 2 turns · raw)"));
+        assert_eq!(fell_back, handoff("User: hi\nAssistant: yo", "raw"));
         assert_eq!(handoff_block(None, &provider, never).await, None);
     }
 
@@ -817,21 +749,15 @@ mod tests {
             doc("thread", "Th", "t", 6),
             doc("index", "Ix", "i", 7),
         ];
-        let pack = curate_pack(docs, PACK_MAX_CHARS).expect("pack");
-        assert!(pack.contains("[feedback] Fb"));
-        assert!(pack.contains("[user] Us"));
-        assert!(pack.contains("[project] Pr"));
-        assert!(pack.contains("[reference] Rf"));
-        assert!(!pack.contains("[file]"));
-        assert!(!pack.contains("[thread]"));
-        assert!(!pack.contains("[index]"));
-        assert!(pack.contains("(4 memories"));
+        let pack = curate_pack(docs, PACK_MAX_CHARS);
+        let kinds: Vec<(&str, &str)> = pack.iter().map(|p| (p.kind.as_str(), p.title.as_str())).collect();
+        assert_eq!(kinds, [("reference", "Rf"), ("project", "Pr"), ("user", "Us"), ("feedback", "Fb")]);
     }
 
     #[test]
-    fn test_no_curated_docs_is_none() {
+    fn test_no_curated_docs_is_empty() {
         let docs = vec![doc("file", "a", "x", 1), doc("index", "b", "y", 2)];
-        assert!(curate_pack(docs, PACK_MAX_CHARS).is_none());
+        assert!(curate_pack(docs, PACK_MAX_CHARS).is_empty());
     }
 
     #[test]
@@ -843,106 +769,12 @@ mod tests {
         for i in 0..40 {
             docs.push(doc("project", &format!("D{i}"), &big, i as i64));
         }
-        let pack = curate_pack(docs, PACK_MAX_CHARS).expect("pack");
-        assert!(
-            pack.len() <= PACK_MAX_CHARS + 200,
-            "pack within budget: {}",
-            pack.len()
-        );
+        let pack = curate_pack(docs, PACK_MAX_CHARS);
+        let chars: usize = pack.iter().map(|p| p.text.len()).sum();
+        assert!(chars <= PACK_MAX_CHARS + ENTRY_MAX_CHARS, "pack within budget: {chars}");
         // Newest (highest ts = D39) must be present; an old one (D0) dropped.
-        assert!(pack.contains("[project] D39"));
-        assert!(!pack.contains("[project] D0\n"));
-    }
-
-    #[test]
-    fn test_compose_injection_empty_is_passthrough() {
-        assert_eq!(compose_injection(&[], "hello"), "hello");
-        assert_eq!(compose_injection(&["", "  "], "hello"), "hello");
-    }
-
-    /// The exact wire text of a first send carrying every block: one envelope,
-    /// the do-not-persist line first, every present block inside it in push
-    /// order, and the user's own words after it — outside the tag, so the agent
-    /// can tell the request from the background.
-    #[test]
-    fn test_compose_injection_wraps_every_block_in_one_envelope() {
-        let out = compose_injection(&["SHARED", "INDEX", "PACK", "HANDOFF"], "user text");
-        assert_eq!(
-            out,
-            "<atlas-memory>\n\
-             Background context from Atlas, not part of the user's message. \
-             Do not save any of it to your own memory.\n\
-             SHARED\n\nINDEX\n\nPACK\n\nHANDOFF\n\
-             </atlas-memory>\n\nuser text"
-        );
-        assert_eq!(out.matches("<atlas-memory>").count(), 1);
-    }
-
-    #[test]
-    fn test_compose_injection_pack_only() {
-        let out = compose_injection(&["PACK"], "u");
-        assert!(out.starts_with("<atlas-memory>\n"));
-        assert!(out.ends_with("PACK\n</atlas-memory>\n\nu"));
-    }
-
-    /// The envelope is a round trip: what `agents_send` composes is exactly what
-    /// every Atlas reader takes back off, so an agent that saves the prompt into
-    /// its own memory files contributes none of it back to the corpus.
-    #[test]
-    fn test_compose_injection_round_trips_through_the_strip() {
-        let out = compose_injection(
-            &["--- SHARED MEMORY ---\nUse RS256\n--- END SHARED MEMORY ---"],
-            "what changed?",
-        );
-        assert_eq!(
-            atlas_agent_transcript::strip_injected_context(&out),
-            "what changed?"
-        );
-    }
-
-    #[test]
-    fn test_wrap_handoff_shape() {
-        let w = wrap_handoff("User: hi\nAssistant: yo", 2, "raw");
-        assert!(w.starts_with("--- RECENT SESSION ---\n"));
-        assert!(w.contains("(last 2 turns · raw)"));
-        assert!(w.ends_with("--- END RECENT SESSION ---"));
-    }
-
-    #[test]
-    fn test_is_slash_command_accepts_commands() {
-        assert!(is_slash_command("/improve-codebase-architecture"));
-        assert!(is_slash_command("/diagnosing-bugs"));
-        assert!(is_slash_command("/codex:rescue")); // plugin command
-        assert!(is_slash_command("/to_spec"));
-        assert!(is_slash_command("/grill-with-docs some argument text"));
-        assert!(is_slash_command("/handoff\nmultiline args"));
-    }
-
-    #[test]
-    fn test_is_slash_command_rejects_prose_and_paths() {
-        // The discriminator: an interior `/` means path, not command.
-        assert!(!is_slash_command(
-            "/Users/me/Developer/atlas/src/foo.rs is broken"
-        ));
-        assert!(!is_slash_command("/etc/hosts"));
-        assert!(!is_slash_command("please run /implement for me"));
-        assert!(!is_slash_command("no slash here"));
-        assert!(!is_slash_command("/"));
-        assert!(!is_slash_command("/ leading space"));
-        assert!(!is_slash_command(""));
-    }
-
-    /// Regression: the composed wire text for a slash-command turn must keep the
-    /// command at byte 0. Prepending any context block demotes it to prose and
-    /// Claude Code never resolves the skill — the bug this guard exists to stop.
-    #[test]
-    fn test_injection_would_displace_a_slash_command() {
-        let text = "/improve-codebase-architecture";
-        assert!(is_slash_command(text));
-        let injected = compose_injection(&["--- PROJECT MEMORY ---\nx"], text);
-        assert!(
-            !injected.starts_with('/'),
-            "injection moves the command off byte 0 — callers must skip it for slash turns"
-        );
+        assert_eq!(pack[0].title, "D39");
+        assert!(pack.iter().all(|p| p.title != "D0"));
+        assert!(pack.iter().all(|p| p.text.chars().count() <= ENTRY_MAX_CHARS + 1));
     }
 }

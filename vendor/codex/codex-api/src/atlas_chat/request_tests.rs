@@ -597,3 +597,138 @@ fn eviction_never_takes_the_only_image_in_a_first_turn() {
     assert!(rendered.contains("ONLYONE"));
     assert!(!rendered.contains("earlier image omitted"));
 }
+
+#[test]
+fn a_namespace_tool_is_flattened_into_functions_and_mapped_for_the_way_back() {
+    // MCP servers reach the engine as one `namespace` tool per server. This
+    // wire has no namespaces, so dropping it (as it once did) hid every MCP
+    // tool from the model: the shared-memory server was connected and offered,
+    // and the model never saw `memory_search`.
+    let tools = [json!({
+        "type": "namespace",
+        "name": "mcp__atlas_memory__",
+        "description": "Tools in the mcp__atlas_memory__ namespace.",
+        "tools": [
+            {
+                "type": "function",
+                "name": "memory_search",
+                "description": "Search shared memory.",
+                "strict": false,
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+            {
+                "type": "custom",
+                "name": "grammar_tool",
+                "description": "freeform",
+                "format": {"type": "grammar", "syntax": "lark", "definition": "start: ..."},
+            },
+        ],
+    })];
+    let items = [message("user", "hi")];
+    let built = build("claude-sonnet-4-6", &items, &tools);
+
+    let Some(tools) = built.request.tools else {
+        panic!("the namespace's tools must survive the reshape");
+    };
+    assert_eq!(tools.len(), 2);
+    assert_eq!(
+        tools[0]["function"]["name"],
+        json!("mcp__atlas_memory__memory_search")
+    );
+    assert_eq!(
+        tools[0]["function"]["parameters"]["properties"]["query"]["type"],
+        json!("string")
+    );
+    assert_eq!(
+        tools[1]["function"]["name"],
+        json!("mcp__atlas_memory__grammar_tool")
+    );
+    assert_eq!(
+        built.namespaced_tools.get("mcp__atlas_memory__memory_search"),
+        Some(&NamespacedTool {
+            namespace: "mcp__atlas_memory__".to_string(),
+            name: "memory_search".to_string(),
+        })
+    );
+    assert!(
+        built
+            .freeform_tools
+            .contains("mcp__atlas_memory__grammar_tool")
+    );
+}
+
+#[test]
+fn a_namespace_without_a_trailing_separator_gets_one() {
+    assert_eq!(flat_tool_name("orders", "lookup"), "orders__lookup");
+    assert_eq!(flat_tool_name("mcp__orders__", "lookup"), "mcp__orders__lookup");
+}
+
+#[test]
+fn a_flat_name_is_kept_to_what_every_provider_accepts() {
+    let long = "x".repeat(80);
+    let flat = flat_tool_name("mcp__a.b c__", &long);
+    assert!(flat.len() <= 64, "{flat}");
+    assert!(
+        flat.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+        "{flat}"
+    );
+    assert_eq!(flat, flat_tool_name("mcp__a.b c__", &long), "must be stable");
+    assert_ne!(flat, flat_tool_name("mcp__a.b c__", &"y".repeat(80)));
+}
+
+#[test]
+fn a_replayed_namespaced_call_goes_back_under_its_flat_name() {
+    // The model must see the same name it called, or its own history
+    // references a tool that does not exist.
+    let items = [
+        message("user", "hi"),
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "memory_search".to_string(),
+            namespace: Some("mcp__atlas_memory__".to_string()),
+            arguments: r#"{"query":"jwt"}"#.to_string(),
+            encrypted_function_args: None,
+            call_id: "c1".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        output("c1", "[]"),
+    ];
+    let built = build("claude-sonnet-4-6", &items, &[]);
+    let body = body_of(&built);
+    let calls: Vec<&Value> = body["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("tool_calls"))
+        .collect();
+    assert_eq!(
+        calls[0][0]["function"]["name"],
+        json!("mcp__atlas_memory__memory_search")
+    );
+}
+
+#[test]
+fn a_call_in_the_default_namespace_keeps_its_bare_name() {
+    let items = [
+        message("user", "hi"),
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "shell".to_string(),
+            namespace: Some("functions".to_string()),
+            arguments: "{}".to_string(),
+            encrypted_function_args: None,
+            call_id: "c1".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        output("c1", "ok"),
+    ];
+    let body = body_of(&build("claude-sonnet-4-6", &items, &[]));
+    let calls: Vec<&Value> = body["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("tool_calls"))
+        .collect();
+    assert_eq!(calls[0][0]["function"]["name"], json!("shell"));
+}

@@ -255,6 +255,14 @@ async fn harness_with_token(
     mocks: Vec<(Option<u64>, ResponseTemplate)>,
     token: Arc<dyn AtlasTokenSource>,
 ) -> Harness {
+    harness_full(mocks, token, None).await
+}
+
+async fn harness_full(
+    mocks: Vec<(Option<u64>, ResponseTemplate)>,
+    token: Arc<dyn AtlasTokenSource>,
+    session_mcp: Option<Arc<dyn atlas_agent_servers::SessionMcpServers>>,
+) -> Harness {
     let server = MockServer::start().await;
     catalogue_mock().mount(&server).await;
     for (times, template) in mocks {
@@ -280,7 +288,7 @@ async fn harness_with_token(
         sink,
         Some(external_auth),
         None,
-        None,
+        session_mcp,
         Some(fetcher(&server, token)),
     )
     .await
@@ -1616,4 +1624,98 @@ async fn an_executed_command_appears_as_a_tool_call_with_its_output() {
         rendered.contains("checkpoint-proof"),
         "the command's real output must be on the row: {rendered}",
     );
+}
+
+#[path = "support/memory_server.rs"]
+mod memory_server;
+
+/// A completion that asks for one tool call and stops.
+fn tool_call(name: &str, arguments: &str) -> String {
+    let call = serde_json::json!({
+        "id": "chatcmpl-1",
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"tool_calls": [{
+            "index": 0, "id": "call-mem", "type": "function",
+            "function": {"name": name, "arguments": arguments},
+        }]}, "finish_reason": null}],
+    })
+    .to_string();
+    let finish = r#"{"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#;
+    frames(&[&call, finish, "[DONE]"])
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_memory_servers_tools_reach_the_gateway_and_a_call_runs() {
+    // The shipped regression: the engine connected to the memory server, but
+    // this wire dropped every MCP tool on the way out, so the model never saw
+    // `memory_search`. The Responses-wire test could not catch it — that wire
+    // carries namespaces as they are.
+    let (url, calls) = memory_server::start().await;
+    let offering = Arc::new(memory_server::OfferingMemory {
+        url,
+        asked: std::sync::Mutex::new(Vec::new()),
+        settled: Arc::default(),
+    });
+    let h = harness_full(
+        vec![
+            (
+                Some(1),
+                sse_ok(tool_call(
+                    "mcp__atlas_memory__memory_search",
+                    r#"{"query":"how do we sign tokens"}"#,
+                )),
+            ),
+            (None, sse_ok(answer("grounded answer"))),
+        ],
+        Arc::new(StaticToken),
+        Some(offering as Arc<dyn atlas_agent_servers::SessionMcpServers>),
+    )
+    .await;
+    let session_id = h.open_thread().await;
+
+    let response = match h
+        .connection
+        .prompt(acp::PromptRequest::new(session_id, text("how do we sign tokens?")))
+        .await
+    {
+        Ok(response) => response,
+        Err(err) => panic!("the turn should complete: {err:#}"),
+    };
+    assert_eq!(response.stop_reason, acp::StopReason::EndTurn);
+
+    let Some(received) = h.server.received_requests().await else {
+        panic!("the mock server must be recording requests");
+    };
+    let bodies: Vec<Value> = received
+        .iter()
+        .filter(|r| r.url.path().ends_with("/chat/completions"))
+        .filter_map(|r| serde_json::from_slice(&r.body).ok())
+        .collect();
+    let offered: Vec<String> = bodies[0]["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["function"]["name"].as_str().map(str::to_string))
+        .collect();
+    assert!(
+        offered.iter().any(|n| n == "mcp__atlas_memory__memory_search"),
+        "the model must be offered the memory tool: {offered:?}",
+    );
+
+    let calls = calls.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    assert_eq!(calls.len(), 1, "the engine should have run memory_search once: {calls:?}");
+    assert_eq!(calls[0].0, "Bearer session-token");
+    assert_eq!(calls[0].1, serde_json::json!({"query": "how do we sign tokens"}));
+
+    // The follow-up replays the call under the name the model used.
+    let replayed: Vec<String> = bodies[1]["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["tool_calls"].as_array())
+        .flatten()
+        .filter_map(|c| c["function"]["name"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(replayed, vec!["mcp__atlas_memory__memory_search".to_string()]);
+    assert!(h.assistant_text().contains("grounded answer"));
 }
