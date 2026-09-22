@@ -1,8 +1,7 @@
-import { GitBranch, Share2, SlidersHorizontal } from "lucide-react";
+import { Share2, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MemoryGraphView } from "./memory-graph-view";
 import { MemoryPolicyView } from "./memory-policy-view";
-import { MemoryTimelineView } from "./memory-timeline-view";
 import { MemorySharingControls } from "./memory-sharing-controls";
 import { SharedMemoryView } from "./shared-memory-view";
 import { useAppStore } from "@/features/app/stores/app-store";
@@ -10,17 +9,23 @@ import { useMemoryStore } from "../stores/memory-store";
 
 // ── Panel shell ─────────────────────────────────────────────────────────────
 //
-// Four views over the project's memory: the semantic Graph, the retrieval
-// Policy, the Timeline, and Shared memory. Each loads its own data on mount /
-// project change and owns its own refresh, so the shell is just navigation.
+// Three views over the project's memory: the semantic Graph, the retrieval
+// Policy, and Shared memory. Each loads its own data on mount / project change
+// and owns its own refresh, so the shell is just navigation.
 //
-// Two things used to live here and were removed on 2026-08-22:
-//   * **Chat** — an on-device RAG chat over the memory index.
-//   * **The coding-agent dropdown** — per-agent memory browsers (Claude Code,
-//     Codex, Atlas, and every capture-backed agent). It enumerated agents from
-//     three different sources and drifted out of step with the ACP registry
-//     rework, listing duplicates. Rebuilding it belongs on the registry, not on
-//     the hand-rolled agent list it was built against.
+// Three things used to live here and were removed:
+//   * **Chat** (2026-08-22) — an on-device RAG chat over the memory index.
+//   * **The coding-agent dropdown** (2026-08-22) — per-agent memory browsers
+//     (Claude Code, Codex, Atlas, and every capture-backed agent). It
+//     enumerated agents from three different sources and drifted out of step
+//     with the ACP registry rework, listing duplicates. Rebuilding it belongs
+//     on the registry, not on the hand-rolled agent list it was built against.
+//   * **Timeline** (2026-09-22) — a branch-aware board of git commits, agent
+//     sessions and the memory each one touched. Never used; it also carried
+//     the module's heaviest backend call (`memory_timeline` walked every ref
+//     and re-collected the corpus on each project visit). Removed whole, down
+//     to the Rust command — the session Timeline in the center panel is a
+//     different, unrelated feature and is untouched.
 
 export function MemoryPanel() {
   const projectPath = useAppStore.use.currentProject()?.path ?? null;
@@ -45,12 +50,6 @@ export function MemoryPanel() {
             label="Policy"
           />
           <PillSeg
-            active={sub === "timeline"}
-            onClick={() => setSubTab("timeline")}
-            icon={<GitBranch size={12} />}
-            label="Timeline"
-          />
-          <PillSeg
             active={sub === "shared"}
             onClick={() => setSubTab("shared")}
             icon={<Share2 size={12} />}
@@ -68,8 +67,6 @@ export function MemoryPanel() {
           <MemoryGraphView />
         ) : sub === "policy" ? (
           <MemoryPolicyView />
-        ) : sub === "timeline" ? (
-          <MemoryTimelineView />
         ) : projectPath ? (
           <SharedMemoryView projectPath={projectPath} />
         ) : (

@@ -51,7 +51,6 @@ pub mod memory_policy;
 pub mod memory_sharing;
 pub mod memory_summarize;
 pub mod models;
-pub mod memory_timeline;
 pub mod shared_memory;
 pub mod memory_server;
 pub mod memory_delta;

@@ -1,18 +1,16 @@
-// The Memory tab: Graph / Tree, Policy, Timeline and Shared.
+// The Memory tab: Graph / Tree, Policy and Shared.
 //
-// Every one of its four views is gated on something expensive that a browser
-// cannot have — a 90 MB on-device embedding model, a built vector index, a git
-// walk, a per-project event log — so without fakes the whole tab is four
-// different empty states. The fakes here put it on the far side of all four
-// gates: the model reads as downloaded, the index as built over the fake
-// `acme-app` tree, the timeline as a repo with history, and the shared log as a
-// project two agents have been working in for a fortnight.
+// Every one of its three views is gated on something expensive that a browser
+// cannot have — a 90 MB on-device embedding model, a built vector index, a
+// per-project event log — so without fakes the whole tab is three different
+// empty states. The fakes here put it on the far side of all three gates: the
+// model reads as downloaded, the index as built over the fake `acme-app` tree,
+// and the shared log as a project two agents have been working in for a
+// fortnight.
 //
-// Two ids have to agree across views or the tab quietly stops making sense:
-// a graph node id IS a corpus doc id (`claude:<file>.md`, `codex:<thread>`,
-// `kb:<note>`, `shared:<kind>:<seq>`), and the Timeline's memory lane reuses
-// those same ids — the timeline search maps `memory_index_query` hits back
-// through them, so a mismatch shows as a search that finds nothing.
+// A graph node id IS a corpus doc id (`claude:<file>.md`, `codex:<thread>`,
+// `kb:<note>`, `shared:<kind>:<seq>`) — search maps `memory_index_query` hits
+// back through them, so a mismatch shows as a search that finds nothing.
 //
 // Writes are kept for the session: appending an event, clearing a project,
 // editing a policy value, toggling sharing, moving a node and re-indexing all
@@ -33,13 +31,6 @@ import type {
 } from "@/features/memory/lib/memory-graph-api";
 import type { Policy } from "@/features/memory/lib/memory-policy-api";
 import type { SummarizerPref } from "@/features/memory/lib/memory-sharing-api";
-import type {
-  MemoryTimeline,
-  TimelineBranch,
-  TimelineCommit,
-  TimelineMemory,
-  TimelineSession,
-} from "@/features/memory/lib/memory-timeline-api";
 import type { EventKind, MemoryEvent, SharedState } from "@/features/memory/lib/shared-memory-api";
 import type { TypedHandlers, Unit, Unread } from "../types";
 import { fileText } from "./files";
@@ -83,8 +74,8 @@ const CLAUDE_MEM = `${HOME}/.claude/projects/${MOCK_PROJECT.path.replace(/\//g, 
  * Policy views render anything at all.
  *
  * To see the gates instead: set `MODEL_READY` to false and the Graph tab opens
- * on "Enable semantic memory", Policy on "Enable preference learning", and the
- * Timeline's search refuses with the download hint. Pressing Download then
+ * on "Enable semantic memory" and Policy on "Enable preference learning".
+ * Pressing Download then
  * streams a fake progress bar through `atlas:memory-embed:*`; flip
  * `DOWNLOAD_FAILS` to land on the "Model download failed" retry screen instead.
  */
@@ -1055,278 +1046,6 @@ function foldEvents(events: MemoryEvent[]): SharedState {
   return state;
 }
 
-// ── Timeline ────────────────────────────────────────────────────────────────
-
-const BRANCHES: TimelineBranch[] = [
-  { name: "main", is_current: true },
-  { name: "feature/auth-v2", is_current: false },
-  { name: "renovate/design-tokens-and-the-entire-colour-system-rewrite", is_current: false },
-  { name: "fix/pdf-annotations", is_current: false },
-];
-
-/**
- * The same shas, messages and dates as `fixtures/git.ts`, plus the per-branch
- * commits the graph there doesn't draw. The Timeline and the Git panel are two
- * views of one repository, and it reads as a bug when they disagree.
- */
-const COMMIT_SEEDS: [sha: string, message: string, branch: string, iso: string][] = [
-  [
-    "4f21a9033c1d8e77b0a5f1c2d3e4b5a6c7d8e9f0",
-    "feat(api): move user reads onto /v2",
-    "main",
-    "2026-09-17T09:12:00Z",
-  ],
-  [
-    "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567",
-    "Merge branch 'fix/pdf-annotations'",
-    "main",
-    "2026-09-16T18:02:00Z",
-  ],
-  [
-    "c0ffee11223344556677889900aabbccddeeff01",
-    "fix(pdf): keep highlight rects on rotate",
-    "fix/pdf-annotations",
-    "2026-09-16T11:48:00Z",
-  ],
-  [
-    "1b2c3d4e5f60718293a4b5c6d7e8f9012345678a",
-    "refactor(tokens): one source of truth for colour",
-    "main",
-    "2026-09-15T16:30:00Z",
-  ],
-  [
-    "2c3d4e5f60718293a4b5c6d7e8f9012345678abc",
-    "chore: drop the legacy token reader",
-    "main",
-    "2026-09-14T10:15:00Z",
-  ],
-  [
-    "3d4e5f60718293a4b5c6d7e8f9012345678abcde",
-    "feat(admin): paginate the user table, add the plan column, and stop refetching on window focus",
-    "main",
-    "2026-09-12T13:05:00Z",
-  ],
-  [
-    "4e5f60718293a4b5c6d7e8f9012345678abcdef0",
-    "build: move to Vite 6",
-    "main",
-    "2026-09-09T09:41:00Z",
-  ],
-  [
-    "5f60718293a4b5c6d7e8f9012345678abcdef012",
-    "docs: rewrite the README layout table",
-    "main",
-    "2026-09-05T15:20:00Z",
-  ],
-  [
-    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345601",
-    "Switch API client to v2 endpoints",
-    "feature/auth-v2",
-    "2026-09-16T17:40:00Z",
-  ],
-  [
-    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345602",
-    "feat(auth): WebAuthn registration endpoint",
-    "feature/auth-v2",
-    "2026-09-16T09:05:00Z",
-  ],
-  [
-    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345603",
-    "feat(auth): sliding session expiry",
-    "feature/auth-v2",
-    "2026-09-15T14:12:00Z",
-  ],
-  [
-    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345604",
-    "test(auth): cover the passkey assertion path",
-    "feature/auth-v2",
-    "2026-09-14T17:55:00Z",
-  ],
-  [
-    "b1b2c3d4e5f60718293a4b5c6d7e8f9012345605",
-    "chore(deps): bump every design-token package and regenerate the palette, including the dark-mode ramp",
-    "renovate/design-tokens-and-the-entire-colour-system-rewrite",
-    "2026-09-15T08:05:00Z",
-  ],
-  [
-    "b1b2c3d4e5f60718293a4b5c6d7e8f9012345606",
-    "chore(tokens): reconcile the light-mode overrides",
-    "renovate/design-tokens-and-the-entire-colour-system-rewrite",
-    "2026-09-14T19:30:00Z",
-  ],
-  [
-    "b1b2c3d4e5f60718293a4b5c6d7e8f9012345607",
-    "chore(tokens): drop the last three hex literals",
-    "renovate/design-tokens-and-the-entire-colour-system-rewrite",
-    "2026-09-13T11:20:00Z",
-  ],
-  [
-    "b1b2c3d4e5f60718293a4b5c6d7e8f9012345608",
-    "chore(tokens): regenerate after the scale change",
-    "renovate/design-tokens-and-the-entire-colour-system-rewrite",
-    "2026-09-11T16:02:00Z",
-  ],
-  [
-    "c1b2c3d4e5f60718293a4b5c6d7e8f9012345609",
-    "fix(pdf): keep the annotation layer in sync on zoom",
-    "fix/pdf-annotations",
-    "2026-09-12T14:22:00Z",
-  ],
-  [
-    "c1b2c3d4e5f60718293a4b5c6d7e8f901234560a",
-    "fix(pdf): stop double-rendering the first page",
-    "fix/pdf-annotations",
-    "2026-09-10T10:44:00Z",
-  ],
-  [
-    "d1b2c3d4e5f60718293a4b5c6d7e8f901234560b",
-    "feat(admin): plan column",
-    "main",
-    "2026-09-08T12:00:00Z",
-  ],
-  [
-    "d1b2c3d4e5f60718293a4b5c6d7e8f901234560c",
-    "chore: bun 1.2 and a lockfile refresh",
-    "main",
-    "2026-09-07T08:30:00Z",
-  ],
-  [
-    "d1b2c3d4e5f60718293a4b5c6d7e8f901234560d",
-    "fix(api): surface the 409 body on conflict",
-    "main",
-    "2026-09-06T18:10:00Z",
-  ],
-];
-
-const COMMITS: TimelineCommit[] = COMMIT_SEEDS.map(([sha, message, branch, iso]) => ({
-  sha,
-  short: sha.slice(0, 7),
-  message,
-  branch,
-  ts_ms: Date.parse(iso),
-  refs:
-    branch === "main" && sha.startsWith("4f21a90")
-      ? ["main", "origin/main"]
-      : sha.startsWith("1b2c3d4")
-        ? ["v2.4.1"]
-        : sha.startsWith("5f60718")
-          ? ["v2.4.0"]
-          : [],
-}));
-
-/**
- * `sha` is null on every row, and `branch` only on the capture-backed agents:
- * the thread-metadata store holds no git identity (ADR-0001 took the scrape
- * readers that used to supply it), and only the capture store records a branch.
- * That is what makes half these sessions link to a commit in the influence
- * chain and half not — it is the backend's shape, not a gap in the fixture.
- */
-const SESSION_SEEDS: [
-  id: string,
-  title: string,
-  agent: TimelineSession["agent"],
-  branch: string | null,
-  startMinutesAgo: number,
-  lengthMinutes: number,
-  detail: string,
-][] = [
-  [
-    S1,
-    "Purge the raw hex colours and regenerate the palette",
-    "claude",
-    null,
-    (5 * DAY) / MIN,
-    34,
-    "",
-  ],
-  [S2, "Move the user reads onto the /v2 endpoints", "codex", null, (3 * DAY) / MIN, 46, ""],
-  [
-    S3,
-    "Debounce the header search and chase the focus refetch",
-    "opencode",
-    "main",
-    (26 * HOUR) / MIN,
-    58,
-    "gpt-5-codex",
-  ],
-  [
-    S4,
-    "Reproduce the admin table's refetch on window focus",
-    "claude",
-    null,
-    (4 * HOUR) / MIN,
-    95,
-    "",
-  ],
-  [
-    "0193f0ee-5555-7000-9000-eeeeeeeeeeee",
-    "Untitled session",
-    "cursor",
-    "feature/auth-v2",
-    (2 * DAY) / MIN,
-    12,
-    "claude-sonnet-4-5",
-  ],
-  [
-    "0193f0ff-6666-7000-9000-ffffffffffff",
-    "Reconcile every surface that still reads a raw hex value instead of a token, including the two that only appear inside the light-mode media query",
-    "kilo",
-    "renovate/design-tokens-and-the-entire-colour-system-rewrite",
-    (4 * DAY) / MIN,
-    140,
-    "",
-  ],
-  [
-    "0193f100-7777-7000-9000-111111111111",
-    "Passkey enrollment screen",
-    "cersei",
-    "feature/auth-v2",
-    (6 * DAY) / MIN,
-    5,
-    "",
-  ],
-];
-
-const SESSIONS: TimelineSession[] = SESSION_SEEDS.map(
-  ([id, title, agent, branch, startMinutesAgo, lengthMinutes, detail]) => ({
-    id,
-    title,
-    agent,
-    branch,
-    sha: null,
-    ts_ms: ago(startMinutesAgo),
-    end_ms: ago(startMinutesAgo - lengthMinutes),
-    detail,
-  }),
-);
-
-/** The memory lane is the corpus again, minus the docs with no timestamp —
- *  Rust drops those, and the ids have to match the graph's or search breaks. */
-const TIMELINE_MEMORY: TimelineMemory[] = GRAPH.nodes
-  .filter((node) => node.timestampMs > 0)
-  .map((node) => ({
-    id: node.id,
-    title: node.title,
-    source: node.source,
-    kind: node.kind,
-    ts_ms: node.timestampMs,
-  }))
-  .sort((a, b) => a.ts_ms - b.ts_ms);
-
-function timelineFor(projectPath: string): MemoryTimeline {
-  if (projectPath !== MOCK_PROJECT.path) {
-    // `build_git` fails outside a repository, and the view's "Couldn't build
-    // the timeline." retry screen is the only thing that shows it.
-    throw new Error("not a git repository");
-  }
-  return {
-    branches: BRANCHES,
-    commits: COMMITS,
-    sessions: SESSIONS,
-    memory: TIMELINE_MEMORY,
-  };
-}
-
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 /**
@@ -1351,8 +1070,6 @@ export interface MemoryResponses {
   memory_query: MemoryEvent[];
   memory_append_event: number;
   memory_clear_project: Unit;
-  memory_timeline: MemoryTimeline;
-  memory_timeline_cached: MemoryTimeline | null;
   memory_indexer_close_project: Unread;
 }
 
@@ -1458,19 +1175,6 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     indexedExtraSeqs = [];
     return null;
   },
-
-  // ── timeline ─────────────────────────────────────────────────────────────
-  memory_timeline: ({ projectPath }): MemoryTimeline => timelineFor(String(projectPath)),
-  /**
-   * The disk cache is a build behind: it has the commits but not the two newest
-   * sessions, so the first paint is the cached timeline and the background
-   * recompute visibly fills it in — the optimistic path the store exists for.
-   * Anywhere else there is no cache at all, which is the null branch.
-   */
-  memory_timeline_cached: ({ projectPath }): MemoryTimeline | null =>
-    String(projectPath) === MOCK_PROJECT.path
-      ? { ...timelineFor(String(projectPath)), sessions: SESSIONS.slice(0, -2) }
-      : null,
 
   // ── housekeeping ─────────────────────────────────────────────────────────
   memory_indexer_close_project: (): null => null,

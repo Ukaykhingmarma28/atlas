@@ -739,8 +739,6 @@ pub fn run() {
             commands::shared_memory::memory_forget_entry,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
-            commands::memory_timeline::memory_timeline,
-            commands::memory_timeline::memory_timeline_cached,
             commands::memory_indexer::force_reindex,
             commands::memory_indexer::memory_indexer_close_project,
             commands::models::models_list,

@@ -34,4 +34,4 @@ export interface CodexMemory {
   threads: CodexThread[];
 }
 
-export type MemorySubTab = "graph" | "policy" | "timeline" | "shared";
+export type MemorySubTab = "graph" | "policy" | "shared";
