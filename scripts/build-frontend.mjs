@@ -41,10 +41,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = join(root, "dist");
 const NEXT = join(root, "dist-next");
 
-/** Environment for child processes: repo-local binaries first. */
+/** Environment for child processes: repo-local binaries first.
+ *
+ *  The key is looked up case-insensitively: Windows spells it `Path`, and the
+ *  spread above keeps that spelling, so assigning to `env.PATH` would add a
+ *  SECOND key holding only `node_modules/.bin` rather than extending the real
+ *  one. The child would then see both `Path` and `PATH` — case-insensitive to
+ *  Windows, so the winner is undefined — and could lose the system path with
+ *  it. See the same fix in `with-posthog-env.mjs`. */
 function childEnv() {
   const env = { ...process.env };
-  env.PATH = `${join(root, "node_modules", ".bin")}${delimiter}${env.PATH ?? ""}`;
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  env[pathKey] = `${join(root, "node_modules", ".bin")}${delimiter}${env[pathKey] ?? ""}`;
   return env;
 }
 

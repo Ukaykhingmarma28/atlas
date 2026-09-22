@@ -40,7 +40,17 @@ if (!env.ATLAS_POSTHOG_KEY && env.POSTHOG_KEY) env.ATLAS_POSTHOG_KEY = env.POSTH
 if (!env.ATLAS_POSTHOG_HOST && env.POSTHOG_HOST) env.ATLAS_POSTHOG_HOST = env.POSTHOG_HOST;
 
 // Make locally-installed bins (e.g. `tauri`) resolvable when spawning directly.
-env.PATH = `${join(root, "node_modules", ".bin")}${delimiter}${env.PATH ?? ""}`;
+//
+// The key is found case-insensitively because Windows spells it `Path`, and
+// `{ ...process.env }` is a plain object that keeps that spelling. Assigning to
+// `env.PATH` there does not extend the search path — it ADDS A SECOND KEY, and
+// `env.PATH ?? ""` reads `undefined`, so the new key holds only `node_modules/
+// .bin`. The child then receives both `Path` and `PATH`; Windows environment
+// blocks are case-insensitive, so which one wins is undefined, and when `PATH`
+// won the child lost the system path entirely — `bun is not installed in
+// %PATH%` from a shell where bun was plainly on it.
+const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+env[pathKey] = `${join(root, "node_modules", ".bin")}${delimiter}${env[pathKey] ?? ""}`;
 
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd) {
