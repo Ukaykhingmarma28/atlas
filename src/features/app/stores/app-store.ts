@@ -32,6 +32,9 @@ interface RecentProject {
   name: string;
   path: string;
   lastOpened: string;
+  /** The org this was opened under. `null` on entries written before recents
+   *  were scoped — `recentsForOrg` attributes those by path. */
+  orgId?: string | null;
 }
 
 /**
@@ -325,10 +328,17 @@ export const useAppStore = createSelectors(
           return;
         }
         const { name, path } = project;
+        // Tag the entry with the org it was opened under. Read lazily, like
+        // `requireActiveOrgId` does, to avoid an import-time cycle with the
+        // org store.
+        const orgId =
+          useOrgStore.getState().activeOrganisationId ??
+          useOrgStore.getState().organisations[0]?.id ??
+          null;
         set((s) => ({
           currentProject: { name, path },
           recentProjects: [
-            { name, path, lastOpened: new Date().toISOString() },
+            { name, path, lastOpened: new Date().toISOString(), orgId },
             ...s.recentProjects.filter((r) => r.path !== path),
           ].slice(0, 20),
         }));

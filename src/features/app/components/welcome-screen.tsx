@@ -1,4 +1,8 @@
+import { useMemo } from "react";
 import { useAppStore } from "../stores/app-store";
+import { recentsForOrg } from "../lib/recent-projects";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { FolderOpen, Clock, X, Folder } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
@@ -6,7 +10,15 @@ import { Hint } from "@/ui/tooltip";
 
 export function WelcomeScreen() {
   const paletteHint = useActionShortcut("nav.commandPalette")?.label ?? "⌘K";
-  const recentProjects = useAppStore.use.recentProjects();
+  const allRecents = useAppStore.use.recentProjects();
+  const activeOrgId = useOrgStore.use.activeOrganisationId();
+  const projects = useProjectStore.use.projects();
+  // Scoped to the active org: this list used to show every org's project
+  // names and absolute paths, and opening one forked it into the wrong org.
+  const recentProjects = useMemo(
+    () => recentsForOrg(allRecents, projects, activeOrgId),
+    [allRecents, projects, activeOrgId],
+  );
   const { openProject, removeRecent } = useAppStore.use.actions();
 
   const handleOpenFolder = async () => {

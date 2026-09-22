@@ -48,6 +48,15 @@ pub struct RecentProject {
     pub path: String,
     /// ISO-8601 timestamp; the frontend reads this verbatim.
     pub last_opened: String,
+    /// The Organisation this was opened under.
+    ///
+    /// `None` on every entry written before recents were scoped. The frontend
+    /// backfills those from the project list by path rather than showing them
+    /// everywhere: orgs are the tenant boundary, and an unscoped recents list
+    /// put one org's project names and absolute paths in front of every other
+    /// org, one click away from being forked into the wrong one.
+    #[serde(default)]
+    pub org_id: Option<String>,
 }
 
 /// A single open project = one project plus its UI state identity. The
