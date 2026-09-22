@@ -432,6 +432,14 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
+            // A turn ended without the agent ever reading memory. Say so once,
+            // and only when saying it is honest: the session must actually
+            // have been given the tools, or the notice accuses an agent of
+            // ignoring something it was never offered. Nothing is called on
+            // the agent's behalf — ADR-0010's pull stays a pull; this only
+            // observes that the pull never happened.
+            self.note_if_memory_went_unconsulted(&envelope.session_id);
+
             // Site B — the extractor's turn-finished pass, for every agent
             // (`super::memory_extract`). The conversation is read now, off the
             // emit thread — by the time the queue reaches the job the session
@@ -475,6 +483,49 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             }
         }
     }
+}
+
+impl MemoryIngestMiddleware {
+    /// Tell the UI, once per session, that a turn finished without memory ever
+    /// being read.
+    ///
+    /// Whether an agent consults memory varies run to run, and until now
+    /// nothing recorded or showed that it had not — so a confident answer
+    /// derived from the code looked exactly like one informed by a recorded
+    /// fact. This does not change that behaviour, it makes it visible.
+    ///
+    /// Silent unless all three hold: the session was given the memory tools,
+    /// it never used one, and nothing has been said about it yet.
+    fn note_if_memory_went_unconsulted(&self, session_id: &str) {
+        let Some(server) = self.app.try_state::<Arc<super::memory_server::MemoryServerHost>>() else {
+            return;
+        };
+        if server.tokens().token_for(session_id).is_none() {
+            return;
+        }
+        if !server.reads().should_say_unread(session_id) {
+            return;
+        }
+        let _ = self.app.emit(
+            MEMORY_UNCONSULTED_EVENT,
+            MemoryUnconsulted {
+                session_id: session_id.to_string(),
+            },
+        );
+    }
+}
+
+/// A session finished a turn having never read shared memory.
+///
+/// A side channel rather than a `SessionDelta`, for the same reason
+/// `atlas:agent-elicitation` is one: the delta wire is frozen, and this is a
+/// host observation about a session rather than something the agent did.
+pub const MEMORY_UNCONSULTED_EVENT: &str = "atlas:memory-unconsulted";
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryUnconsulted {
+    pub session_id: String,
 }
 
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
@@ -684,11 +735,24 @@ pub fn install_manager(app: &AppHandle) {
                     .await
                     .into_iter()
                     .map(|d| super::memory_server::IndexDoc {
+                        id: Some(d.id),
                         title: d.title,
                         source: d.source,
                         text: d.text,
                     })
                     .collect()
+            })
+        });
+        // `memory_forget` drops the entry's document from the index in the
+        // same breath, so "forgotten" is true of both halves before it says
+        // so. Bounded: the indexer holds the write lock for a whole re-embed
+        // pass, and a tool call must not queue behind one — a miss here is
+        // caught by the search-side liveness filter and by the next pass.
+        let evict_app = app.clone();
+        let evict: super::memory_server::IndexEvict = Arc::new(move |cwd, doc_id| {
+            let app = evict_app.clone();
+            Box::pin(async move {
+                crate::commands::memory_retrieve::evict_doc(&app, &cwd, &doc_id).await
             })
         });
         // `memory_briefing` also carries the curated pack and the
@@ -701,7 +765,11 @@ pub fn install_manager(app: &AppHandle) {
         server.start(
             memory.inner().clone(),
             gate,
-            super::memory_server::Sources { index: Some(index), bootstrap: Some(bootstrap) },
+            super::memory_server::Sources {
+                index: Some(index),
+                bootstrap: Some(bootstrap),
+                evict: Some(evict),
+            },
         );
     }
 

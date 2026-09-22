@@ -277,7 +277,7 @@ fn text_block(text: &str) -> acp::ContentBlock {
 /// open, and the Artifacts capture sees no writes — so no write set, and no
 /// checkpoint is ever taken. `locations` is the load-bearing field for that
 /// last part: capture's write extraction reads it first.
-fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
+pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
     match item {
         ThreadItem::CommandExecution {
             id,

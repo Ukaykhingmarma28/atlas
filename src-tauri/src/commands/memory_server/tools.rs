@@ -33,7 +33,7 @@ use rmcp::ErrorData as McpError;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::briefing::{self, SessionClocks};
+use super::briefing::{self, SessionClocks, SessionReads};
 use super::host::{SharingGate, Sources};
 use super::tokens::Grant;
 use crate::commands::memory_pack::{Handoff, PackEntry};
@@ -80,6 +80,10 @@ const OFF_NOTE: &str = "shared memory is switched off for this project";
 /// as `memory_search` returns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexDoc {
+    /// The corpus id of the hit, when the index carried one. Documents
+    /// promoted from a record entry are `shared:<kind>:<entry id>`, which is
+    /// what lets a search drop one whose entry has since been forgotten.
+    pub id: Option<String>,
     pub title: String,
     pub source: String,
     pub text: String,
@@ -88,6 +92,15 @@ pub struct IndexDoc {
 /// `(cwd, query, limit) -> ranked documents` over the project's on-device
 /// index. Empty on any failure.
 pub type IndexSearch = Arc<dyn Fn(String, String, usize) -> BoxFuture<'static, Vec<IndexDoc>> + Send + Sync>;
+
+/// `(cwd, doc id) -> was it there` — drop one document from the project's
+/// index now, rather than at the next whole-corpus pass.
+///
+/// `memory_forget` needs this: the record delete is immediate, but the index
+/// only notices a deletion when a pass re-gathers the corpus and finds the
+/// document missing. Without an eviction the forgotten text stays retrievable
+/// in the meantime, so `{"forgotten": true}` would not be true yet.
+pub type IndexEvict = Arc<dyn Fn(String, String) -> BoxFuture<'static, bool> + Send + Sync>;
 
 /// The first-look extras a briefing carries beyond the record: the curated
 /// pack read from the project's foreign stores, and the tail of the most
@@ -127,6 +140,20 @@ fn schema(value: Value) -> Arc<JsonObject> {
 fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
     Tool::new(Cow::Borrowed(name), Cow::Borrowed(description), schema(input))
 }
+
+/// The tools that READ the record. Reaching for any of them is what makes a
+/// session one that consulted memory.
+///
+/// Declared once and checked against the real tool list by a test, so a tool
+/// added later cannot quietly fall out of this set and have the host report
+/// that memory went unread when it did not.
+pub(super) const READ_TOOLS: [&str; 5] = [
+    "memory_briefing",
+    "memory_changes",
+    "memory_search",
+    "memory_get",
+    "memory_list",
+];
 
 /// The tools, read first, write last.
 pub(super) fn tools() -> Vec<Tool> {
@@ -308,14 +335,37 @@ fn with_documents(result: CallToolResult, docs: &[IndexDoc]) -> CallToolResult {
     ok_json(Value::Object(object))
 }
 
+/// The record entry id behind a `shared:<kind>:<entry id>` corpus id.
+fn shared_entry_id(doc_id: &str) -> Option<i64> {
+    let (_kind, id) = doc_id.strip_prefix("shared:")?.rsplit_once(':')?;
+    id.parse().ok()
+}
+
+/// Drop documents promoted from record entries that no longer exist.
+///
+/// Eviction on forget closes the window in the normal case; this closes it
+/// again for anything eviction missed — an evict that failed, or a document
+/// indexed before the eviction seam existed. It is deliberately narrow: only a
+/// document whose id parses as `shared:<kind>:<entry id>` is ever a candidate,
+/// and a document is never judged by its text. Anything else passes through
+/// untouched, because wrongly dropping a live document would be a worse
+/// failure than the one being fixed.
+fn live_shared_docs(memory: &SharedMemoryStore, cwd: &str, docs: Vec<IndexDoc>) -> Vec<IndexDoc> {
+    docs.into_iter()
+        .filter(|doc| match doc.id.as_deref().and_then(shared_entry_id) {
+            Some(entry_id) => memory.entry_exists(cwd, entry_id),
+            None => true,
+        })
+        .collect()
+}
+
 /// What a tool answers while sharing is off for the project: reads hold
 /// nothing, writes are refused.
 fn switched_off(name: &str) -> CallToolResult {
-    match name {
-        "memory_briefing" | "memory_changes" | "memory_search" | "memory_get" | "memory_list" => {
-            ok_json(json!({ "entries": [], "note": OFF_NOTE }))
-        }
-        _ => tool_error(OFF_NOTE),
+    if READ_TOOLS.contains(&name) {
+        ok_json(json!({ "entries": [], "note": OFF_NOTE }))
+    } else {
+        tool_error(OFF_NOTE)
     }
 }
 
@@ -326,16 +376,32 @@ pub(super) struct MemoryTools {
     memory: SharedMemoryStore,
     gate: SharingGate,
     clocks: Arc<SessionClocks>,
+    reads: Arc<SessionReads>,
     sources: Sources,
 }
 
 impl MemoryTools {
-    pub(super) fn new(memory: SharedMemoryStore, gate: SharingGate, clocks: Arc<SessionClocks>, sources: Sources) -> Self {
-        Self { memory, gate, clocks, sources }
+    pub(super) fn new(
+        memory: SharedMemoryStore,
+        gate: SharingGate,
+        clocks: Arc<SessionClocks>,
+        reads: Arc<SessionReads>,
+        sources: Sources,
+    ) -> Self {
+        Self { memory, gate, clocks, reads, sources }
     }
 
     async fn dispatch(&self, grant: Grant, request: CallToolRequestParams) -> CallToolResult {
         let name = request.name.to_string();
+        // Recorded BEFORE the sharing gate, and before dispatch. Reaching for
+        // memory is what counts as reading it: an agent that called a read
+        // tool and got the switched-off note, or an error, still looked. The
+        // alternative is telling that session it never consulted memory, which
+        // would be a false accusation. Writes are excluded on purpose — an
+        // agent that only recorded a fact has not looked at what was there.
+        if READ_TOOLS.contains(&name.as_str()) {
+            self.reads.read(&grant.session_id);
+        }
         if !(self.gate)(&grant.cwd) {
             return switched_off(&name);
         }
@@ -343,7 +409,8 @@ impl MemoryTools {
             "memory_briefing" => self.briefing(grant).await,
             "memory_changes" => self.changes(grant).await,
             "memory_search" => self.search(grant, request).await,
-            "memory_get" | "memory_list" | "memory_remember" | "memory_forget" => {
+            "memory_forget" => self.forget(grant, request).await,
+            "memory_get" | "memory_list" | "memory_remember" => {
                 let memory = self.memory.clone();
                 run_blocking(move || record_call(&memory, &grant, &request))
                     .await
@@ -403,6 +470,35 @@ impl MemoryTools {
         }
     }
 
+    /// `memory_forget`: delete the record entry, then evict the document it
+    /// was promoted into — and only then report success.
+    ///
+    /// The old implementation returned `{"forgotten": true}` as soon as the
+    /// record row was gone, while the same text stayed retrievable through
+    /// `memory_search`'s `documents` until the next whole-corpus pass. A delete
+    /// primitive whose own result says the content is gone has to mean it.
+    async fn forget(&self, grant: Grant, request: CallToolRequestParams) -> CallToolResult {
+        let args: IdArgs = match args(&request) {
+            Ok(a) => a,
+            Err(refused) => return refused,
+        };
+        let id = args.id;
+        let (memory, cwd) = (self.memory.clone(), grant.cwd.clone());
+        let gone = match run_blocking(move || memory.forget(&cwd, id)).await {
+            Ok(Ok(gone)) => gone,
+            Ok(Err(e)) => return tool_error(format!("not forgotten: {e}")),
+            Err(e) => return tool_error(format!("memory unavailable: {e}")),
+        };
+        let Some(entry) = gone else {
+            return ok_json(json!({ "forgotten": false, "id": id }));
+        };
+        if let Some(evict) = &self.sources.evict {
+            let doc_id = crate::commands::agent_memory::shared_doc_id(entry.kind.as_str(), entry.id);
+            evict(grant.cwd.clone(), doc_id).await;
+        }
+        ok_json(json!({ "forgotten": true, "id": id }))
+    }
+
     /// `memory_search` over the record, plus the index when no kinds narrow
     /// the search to working memory.
     async fn search(&self, grant: Grant, request: CallToolRequestParams) -> CallToolResult {
@@ -424,7 +520,21 @@ impl MemoryTools {
         match (&self.sources.index, args.kinds.is_empty()) {
             (Some(index), true) => {
                 let limit = args.limit.unwrap_or(INDEX_DEFAULT_LIMIT).clamp(1, INDEX_MAX_LIMIT);
-                with_documents(ok_json(result), &index(grant.cwd, args.query, limit).await)
+                let docs = index(grant.cwd.clone(), args.query, limit).await;
+                // A forgotten entry's document can outlive its record, so the
+                // record has the last word on what may be returned.
+                //
+                // On a pool failure fall back to the UNFILTERED documents, not
+                // to none: the per-document check already fails towards
+                // keeping, and defaulting to empty here would undo that and
+                // drop every live document over an error that has nothing to
+                // do with them.
+                let (memory, cwd) = (self.memory.clone(), grant.cwd.clone());
+                let unfiltered = docs.clone();
+                let docs = run_blocking(move || live_shared_docs(&memory, &cwd, docs))
+                    .await
+                    .unwrap_or(unfiltered);
+                with_documents(ok_json(result), &docs)
             }
             _ => ok_json(result),
         }
@@ -474,16 +584,6 @@ fn record_call(memory: &SharedMemoryStore, grant: &Grant, request: &CallToolRequ
             match memory.remember(&grant.cwd, &writer, kind, &args.content, &args.key) {
                 Ok(r) => ok_json(json!({ "outcome": r.outcome.as_str(), "entry": briefing::entry_json(&r.entry) })),
                 Err(e) => tool_error(format!("not remembered: {e}")),
-            }
-        }
-        "memory_forget" => {
-            let args: IdArgs = match args(request) {
-                Ok(a) => a,
-                Err(refused) => return refused,
-            };
-            match memory.forget(&grant.cwd, args.id) {
-                Ok(gone) => ok_json(json!({ "forgotten": gone.is_some(), "id": args.id })),
-                Err(e) => tool_error(format!("not forgotten: {e}")),
             }
         }
         other => tool_error(format!("unknown tool `{other}`")),

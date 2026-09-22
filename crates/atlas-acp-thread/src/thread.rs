@@ -1394,6 +1394,23 @@ impl AcpThread {
         }));
     }
 
+    /// Append a host-authored note as its OWN entry.
+    ///
+    /// [`Self::push_assistant_content_block`] merges into the last assistant
+    /// entry, which is right for a stream and wrong for a note *about* one: a
+    /// marker appended to a turn that was cut off mid-sentence would render as
+    /// the end of that sentence. Replay uses this to say that a turn never
+    /// finished, so the note has to be visibly separate from the words the
+    /// agent actually produced.
+    pub fn push_assistant_notice(&mut self, text: impl Into<String>) {
+        let block = ContentBlock::new(acp::ContentBlock::Text(acp::TextContent::new(text.into())));
+        self.push_entry(AgentThreadEntry::AssistantMessage(AssistantMessage {
+            chunks: vec![AssistantMessageChunk::Message { id: None, block }],
+            indented: false,
+            is_subagent_output: false,
+        }));
+    }
+
     // ---- tool calls -----------------------------------------------------
 
     pub fn index_for_tool_call(&self, id: &acp::ToolCallId) -> Option<usize> {

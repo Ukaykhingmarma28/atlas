@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use super::*;
 use crate::sandboxing::SandboxPermissions;
 use crate::tools::hook_names::HookToolName;
@@ -290,4 +291,33 @@ fn exec_server_env_keeps_command_native_and_carries_sandbox_context() {
     assert_eq!(request.exec_server_sandbox, None);
     assert!(!request.exec_server_enforce_managed_network);
     assert_eq!(request.exec_server_managed_network, Some(managed_network));
+}
+
+#[test]
+fn a_windows_cwd_is_treated_as_sandboxable_even_with_the_setting_off() {
+    // The write path upgrades an unset level for a Windows-shaped cwd before it
+    // builds the sandbox for the write, which is why an edit on Windows really
+    // is contained today. Patch safety has to judge against this same value;
+    // reading the raw setting is what made "Accept edits" prompt every time.
+    let windows_cwd = PathUri::parse("file:///C:/Users/dev/project").expect("windows uri");
+
+    assert_eq!(
+        executor_windows_sandbox_level(WindowsSandboxLevel::Disabled, &windows_cwd),
+        WindowsSandboxLevel::RestrictedToken,
+    );
+}
+
+#[test]
+fn a_posix_cwd_is_left_alone_and_a_chosen_level_is_never_overridden() {
+    let posix_cwd = PathUri::parse("file:///home/dev/project").expect("posix uri");
+    assert_eq!(
+        executor_windows_sandbox_level(WindowsSandboxLevel::Disabled, &posix_cwd),
+        WindowsSandboxLevel::Disabled,
+    );
+
+    let windows_cwd = PathUri::parse("file:///C:/Users/dev/project").expect("windows uri");
+    assert_eq!(
+        executor_windows_sandbox_level(WindowsSandboxLevel::Elevated, &windows_cwd),
+        WindowsSandboxLevel::Elevated,
+    );
 }

@@ -40,6 +40,7 @@ import { getAgentSync } from "../lib/agents-api";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { resumeThreadFast, ResumeError } from "../lib/resume-session";
+import { applyModeOnResume } from "../lib/resume-mode";
 
 /** One key for the whole sidebar: history is one store, so there is one query. */
 const THREAD_PROJECTS_KEY = ["thread-projects"] as const;
@@ -304,7 +305,6 @@ export const SessionSidebar = memo(function SessionSidebar({
   const {
     replaceMessages,
     setAcpBinding,
-    setAcpModes,
     setAcpModels,
     setAcpConfigOptions,
     setAcpAvailableCommands,
@@ -552,6 +552,12 @@ export const SessionSidebar = memo(function SessionSidebar({
 
       const { key, snapshot } = resumed;
       setAcpBinding(targetTabId, key.agent_id, key.session_id, threadCwd);
+      // Before the send gate opens. `setResumePending(false)` is what releases
+      // a queued prompt, so a mode applied after it can lose the race and the
+      // first turn runs under the engine's default instead of the user's pick.
+      // The session/new path guards the same race the same way.
+      await applyModeOnResume(targetTabId, key, snapshot);
+      if (isStale()) return;
       setResumePending(targetTabId, false);
       if (resumed.resumedWithoutHistory) {
         // Honest rather than mysterious. Any messages on screen came from
@@ -560,12 +566,6 @@ export const SessionSidebar = memo(function SessionSidebar({
         toast.info("This agent can't replay past messages — it won't remember what's above.");
       }
       hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan);
-      setAcpModes(
-        targetTabId,
-        snapshot.current_mode,
-        snapshot.available_modes,
-        agentTypeFromPluginId(snapshot.plugin_id),
-      );
       if (snapshot.available_models.length > 0) {
         setAcpModels(targetTabId, snapshot.current_model, snapshot.available_models);
       }

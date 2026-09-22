@@ -57,13 +57,30 @@ function format(ms: number): string {
 /** How long the indicator waits before calling the wait a stall. */
 export const STALL_AFTER_MS = 30_000;
 
+/** How long a wait has to run before the elapsed clock is worth showing.
+ *
+ *  Below this the number is noise: it appears, reads "0.2s", and is gone
+ *  before anyone has finished looking at it. Past it the wait is long enough
+ *  that "how long has this been going?" is a real question, which is the
+ *  moment the clock starts earning its place. */
+export const SHOW_ELAPSED_AFTER_MS = 3_000;
+
+/** What the indicator says while the request is still in flight.
+ *
+ *  Not "Thinking": this indicator is only ever on screen BEFORE the model has
+ *  produced anything (see `working` in `transcript.tsx` — a streaming
+ *  assistant turn only exists once it emits a row, and the indicator is gone
+ *  by then). Saying "Thinking" through a five-second wait claims the model is
+ *  working when the request may not even have reached it. */
+export const WAITING_LABEL = "Waiting for model";
+
 /** Elapsed since mount, written straight to the DOM — see the perf note above.
  *
  *  `stalled` is the one piece of React state here: it flips true ONCE, when
  *  the wait has outlasted `stallAfterMs`, so the caller can swap in a "still
  *  going…" affordance. One re-render in thirty seconds; the ticking label
  *  itself never goes through React. */
-function useElapsed(stallAfterMs: number) {
+function useElapsed(stallAfterMs: number, showAfterMs: number) {
   const ref = useRef<HTMLSpanElement>(null);
   const [stalled, setStalled] = useState(false);
   useEffect(() => {
@@ -74,7 +91,11 @@ function useElapsed(stallAfterMs: number) {
       // skipping ticks while hidden loses nothing — the next visible paint is
       // exact.
       if (document.visibilityState !== "visible") return;
-      if (ref.current) ref.current.textContent = format(performance.now() - start);
+      if (!ref.current) return;
+      const elapsed = performance.now() - start;
+      // Blank until the wait is worth counting, so a turn that starts promptly
+      // never flashes a number at the reader.
+      ref.current.textContent = elapsed < showAfterMs ? "" : format(elapsed);
     };
     paint();
     const id = window.setInterval(paint, 100);
@@ -85,16 +106,17 @@ function useElapsed(stallAfterMs: number) {
       window.clearTimeout(stallId);
       document.removeEventListener("visibilitychange", paint);
     };
-  }, [stallAfterMs]);
+  }, [stallAfterMs, showAfterMs]);
   return { ref, stalled };
 }
 
 export const LoadingState = memo(function LoadingState({
-  label = "Thinking",
+  label = WAITING_LABEL,
   variant = "dots",
   className,
   stalledContent,
   stallAfterMs = STALL_AFTER_MS,
+  showElapsedAfterMs = SHOW_ELAPSED_AFTER_MS,
 }: {
   label?: string;
   variant?: LoaderVariant;
@@ -104,8 +126,10 @@ export const LoadingState = memo(function LoadingState({
    *  is rendered (and no state flips) when this is not given. */
   stalledContent?: ReactNode;
   stallAfterMs?: number;
+  /** How long before the elapsed clock appears. See `SHOW_ELAPSED_AFTER_MS`. */
+  showElapsedAfterMs?: number;
 }) {
-  const { ref: elapsed, stalled } = useElapsed(stallAfterMs);
+  const { ref: elapsed, stalled } = useElapsed(stallAfterMs, showElapsedAfterMs);
   const { delays, dur, round } = PATTERNS[variant] ?? PATTERNS.dots;
 
   const indicator = (

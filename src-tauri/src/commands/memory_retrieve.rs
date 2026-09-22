@@ -24,6 +24,10 @@ const RETRIEVE_TIMEOUT_SECS: u64 = 6;
 
 #[derive(Debug, Clone)]
 pub struct RetrievedDoc {
+    /// The corpus id of the hit (`shared:<kind>:<entry id>` for a promoted
+    /// record entry). Carried so `memory_search` can tell a document that came
+    /// from a record entry apart from one that did not.
+    pub id: String,
     pub title: String,
     pub source: String,
     pub text: String,
@@ -98,6 +102,7 @@ async fn retrieve_engine(
 
     docs.into_iter()
         .map(|d| RetrievedDoc {
+            id: d.id,
             title: d.title,
             source: d.source,
             text: d.text,
@@ -105,3 +110,50 @@ async fn retrieve_engine(
         .collect()
 }
 
+
+/// How long `memory_forget` will wait for the index write lock before giving
+/// up on evicting the document itself.
+const EVICT_LOCK_TIMEOUT_SECS: u64 = 2;
+
+/// Drop one document from the project's index, now rather than at the next
+/// whole-corpus pass.
+///
+/// `memory_forget` calls this so that `{"forgotten": true}` is true of the
+/// index as well as the record. Bounded for the same reason retrieval is: the
+/// indexer holds the WRITE lock for an entire re-embed pass, and a tool call
+/// must not queue behind one. A miss is recoverable — `memory_search` drops a
+/// forgotten entry's document at read time, and the next pass removes it for
+/// good — so waiting indefinitely would trade bounded staleness for an
+/// unbounded stall.
+///
+/// Returns whether the document was actually removed.
+pub async fn evict_doc(app: &AppHandle, project_path: &str, doc_id: &str) -> bool {
+    let registry = app.state::<Arc<MemoryRegistry>>();
+    let engine = registry.engine_for(project_path);
+    let Ok(mut guard) = tokio::time::timeout(
+        Duration::from_secs(EVICT_LOCK_TIMEOUT_SECS),
+        engine.write(),
+    )
+    .await
+    else {
+        tracing::warn!(
+            target: "atlas::shared_memory",
+            doc_id,
+            "memory index busy — asking for a reindex instead of evicting"
+        );
+        // Self-heal: a pass that re-gathers the corpus will not find the
+        // deleted entry and will drop its document, so the window closes
+        // without anyone having to notice the eviction was skipped.
+        registry.enqueue_index(project_path);
+        return false;
+    };
+    match guard.evict(doc_id) {
+        Ok(removed) => removed,
+        Err(e) => {
+            tracing::warn!(target: "atlas::shared_memory", doc_id, "evict failed: {e:#}");
+            drop(guard);
+            registry.enqueue_index(project_path);
+            false
+        }
+    }
+}

@@ -34,7 +34,7 @@ mod tools;
 // The module's surface. The app wires `MemoryServerHost`, `MemorySessionOffers`
 // and the source types; the rest is reached through the host or by the tests.
 #[allow(unused_imports)]
-pub use briefing::SessionClocks;
+pub use briefing::{SessionClocks, SessionReads};
 #[allow(unused_imports)]
 pub use host::{MemoryServer, MemoryServerHost, SharingGate, Sources};
 #[allow(unused_imports)]
@@ -42,7 +42,7 @@ pub use offers::{MemorySessionOffers, OfferDecision};
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};
 #[allow(unused_imports)]
-pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexSearch, INSTRUCTIONS};
+pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS};
 
 /// The path the MCP endpoint is served at.
 pub const MCP_PATH: &str = "/mcp";
