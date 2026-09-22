@@ -635,14 +635,10 @@ pub fn apply_notification(
             turns.complete(&params.thread_id, params.turn);
         }
 
-        // The thread's cumulative token usage. Everything downstream was
-        // already built and waiting — `update_token_usage` fires the
-        // TokenUsageUpdated event, the projector turns it into the
-        // UsageUpdated (real input/output split) and ContextUsage (gauge)
-        // deltas, and capture's `record_usage` OVERWRITES totals, which is
-        // exactly right for a cumulative figure. Ignoring this notification
-        // is why the native agent — the one agent that reports a real split —
-        // showed no token consumption on the Timeline at all (#74).
+        // One notification carries two meters. `total` is cumulative lifetime
+        // usage and feeds the input/output split; `last` is the latest active
+        // context snapshot and feeds the context gauge. Using
+        // `total.total_tokens` for both lets the gauge climb past 100%.
         ServerNotification::ThreadTokenUsageUpdated(params) => {
             let Some(thread) = sessions.thread(&session_id(&params.thread_id)) else {
                 return;

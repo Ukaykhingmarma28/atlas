@@ -40,7 +40,8 @@ use atlas_acp_thread::{
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
 use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
 use atlas_agent_servers::{
-    AcpConnectionDefaults, AgentServer, ConnectOptions, SessionMcpOffer, SessionMcpRequest, SessionMcpServers,
+    AcpConnectionDefaults, AgentServer, ConnectOptions, SessionMcpOffer, SessionMcpRequest,
+    SessionMcpServers,
 };
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
@@ -760,7 +761,11 @@ impl AgentHost {
             tracing::warn!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, %err, "agent connect failed");
             return Err(HostError::from(err));
         }
-        tracing::info!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, "agent connected");
+        tracing::info!(
+            plugin_id,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "agent connected"
+        );
         Ok(AgentInfo {
             agent_id: self.handle_for(&agent),
             display_name: self.display_name(plugin_id),
@@ -891,11 +896,17 @@ impl AgentHost {
                 fetched_at: cache.fetched_at,
                 stale: false,
             };
-            live.replace_catalogue_metadata(next).map_err(HostError::from)?;
+            live.replace_catalogue_metadata(next)
+                .map_err(HostError::from)?;
             let before_labels: Vec<(String, Option<String>)> = before
                 .picker
                 .iter()
-                .map(|m| (m.name.to_string(), m.description.as_deref().map(str::to_string)))
+                .map(|m| {
+                    (
+                        m.name.to_string(),
+                        m.description.as_deref().map(str::to_string),
+                    )
+                })
                 .collect();
             let after_labels: Vec<(String, Option<String>)> = models
                 .iter()
@@ -915,9 +926,10 @@ impl AgentHost {
             .filter(|(_, record)| record.agent == Agent::Native)
             .map(|(id, _)| id.clone())
             .collect();
-        let running = native_sessions
-            .iter()
-            .any(|id| self.thread(id).is_ok_and(|handle| lock_thread(&handle).is_generating()));
+        let running = native_sessions.iter().any(|id| {
+            self.thread(id)
+                .is_ok_and(|handle| lock_thread(&handle).is_generating())
+        });
         if running {
             return Err(HostError::new(
                 "A turn is running. Stop it, then refresh models again — the new list applies at the next restart.",
@@ -951,14 +963,22 @@ impl AgentHost {
         let plugin_id = record.plugin_id.as_str();
         let started = std::time::Instant::now();
         tracing::info!(plugin_id, cwd = %cwd.display(), "session/new requested");
-        let thread = match self.manager.new_session(record.agent.clone(), work_dirs).await {
+        let thread = match self
+            .manager
+            .new_session(record.agent.clone(), work_dirs)
+            .await
+        {
             Ok(thread) => thread,
             Err(err) => {
                 tracing::warn!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, %err, "session/new failed");
                 return Err(HostError::from(err));
             }
         };
-        tracing::info!(plugin_id, elapsed_ms = started.elapsed().as_millis() as u64, "session/new opened");
+        tracing::info!(
+            plugin_id,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "session/new opened"
+        );
         Ok(self.bind(agent_id, &record, cwd, thread))
     }
 
@@ -1325,7 +1345,9 @@ impl AgentHost {
 
     pub async fn set_mode(&self, key: &SessionKey, mode_id: String) -> Result<()> {
         let session_id = acp::SessionId::new(key.session_id.as_str());
-        let connection = lock_thread(&self.thread(&key.session_id)?).connection().clone();
+        let connection = lock_thread(&self.thread(&key.session_id)?)
+            .connection()
+            .clone();
         let modes = connection
             .session_modes(&session_id)
             .ok_or_else(|| HostError::new("this agent has no session modes", ErrorClass::Fatal))?;
@@ -1337,7 +1359,9 @@ impl AgentHost {
 
     pub async fn set_model(&self, key: &SessionKey, model_id: String) -> Result<()> {
         let session_id = acp::SessionId::new(key.session_id.as_str());
-        let connection = lock_thread(&self.thread(&key.session_id)?).connection().clone();
+        let connection = lock_thread(&self.thread(&key.session_id)?)
+            .connection()
+            .clone();
         let selector = connection.model_selector(&session_id).ok_or_else(|| {
             HostError::new("this agent has no model selection", ErrorClass::Fatal)
         })?;
@@ -1360,7 +1384,9 @@ impl AgentHost {
         value: serde_json::Value,
     ) -> Result<()> {
         let session_id = acp::SessionId::new(key.session_id.as_str());
-        let connection = lock_thread(&self.thread(&key.session_id)?).connection().clone();
+        let connection = lock_thread(&self.thread(&key.session_id)?)
+            .connection()
+            .clone();
         let options = connection
             .session_config_options(&session_id)
             .ok_or_else(|| HostError::new("this agent has no config options", ErrorClass::Fatal))?;
@@ -1439,7 +1465,9 @@ impl AgentHost {
     /// two outcomes the UI can tell apart.
     pub async fn rewind_last_turn(&self, key: &SessionKey) -> Result<Option<String>> {
         let session_id = acp::SessionId::new(key.session_id.as_str());
-        let connection = lock_thread(&self.thread(&key.session_id)?).connection().clone();
+        let connection = lock_thread(&self.thread(&key.session_id)?)
+            .connection()
+            .clone();
         // Through the seam, not a downcast: an agent that grows a rewind gets
         // this for free, and nothing here names a concrete connection type.
         let Some(rewind) = connection.rewind(&session_id) else {
@@ -1451,7 +1479,10 @@ impl AgentHost {
             .map_err(|e| HostError::classified(e.to_string()))
     }
 
-    fn native_connection(&self, session_id: &str) -> Result<Arc<atlas_native_agent::EngineConnection>> {
+    fn native_connection(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<atlas_native_agent::EngineConnection>> {
         let connection = lock_thread(&self.thread(session_id)?).connection().clone();
         connection
             .downcast::<atlas_native_agent::EngineConnection>()
@@ -1471,20 +1502,18 @@ impl AgentHost {
         request_id: Uuid,
         decision: PermissionDecision,
     ) -> Result<()> {
-        let key = self
-            .projector
-            .permission_key(&request_id)
-            .ok_or_else(|| HostError::new("permission request is not pending", ErrorClass::Fatal))?;
+        let key = self.projector.permission_key(&request_id).ok_or_else(|| {
+            HostError::new("permission request is not pending", ErrorClass::Fatal)
+        })?;
         let handle = self.thread(session_id)?;
         match decision {
             PermissionDecision::Selected { option_id } => {
                 // The option's kind decides what the thread does with the tool
                 // call, so it is read back off the pending request rather than
                 // trusted from the frontend.
-                let kind = pending_option_kind(&handle, &key.tool_call_id, &option_id)
-                    .ok_or_else(|| {
-                        HostError::new("permission option is not offered", ErrorClass::Fatal)
-                    })?;
+                let kind = pending_option_kind(&handle, &key.tool_call_id, &option_id).ok_or_else(
+                    || HostError::new("permission option is not offered", ErrorClass::Fatal),
+                )?;
                 lock_thread(&handle).authorize_tool_call(
                     key.tool_call_id,
                     SelectedPermissionOutcome::new(acp::PermissionOptionId::new(option_id), kind),
@@ -1524,7 +1553,9 @@ impl AgentHost {
         let connection = self.manager.connection_by_agent_id(agent_id)?;
         let store = connection.request_elicitations()?;
         let wire = {
-            let store = store.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let store = store
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let (_, elicitation) = store.elicitation(entry_id)?;
             atlas_agent_delta::elicitation_wire(elicitation)
         };
@@ -1555,7 +1586,9 @@ impl AgentHost {
         let connection = self.manager.connection_by_agent_id(agent_id)?;
         let store = connection.request_elicitations()?;
         let still_pending = {
-            let store = store.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let store = store
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let (_, elicitation) = store.elicitation(entry_id)?;
             matches!(
                 elicitation.status,
@@ -1619,7 +1652,9 @@ impl AgentHost {
             let Some(store) = connection.request_elicitations() else {
                 return Ok(());
             };
-            let mut store = store.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut store = store
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             match elicitation_response(action, content)? {
                 Some(response) => store.respond_to_elicitation(&entry_id, response),
                 None => store.cancel_elicitation(&entry_id),
@@ -2078,7 +2113,8 @@ impl AgentHost {
         let Some(connection) = self.connected(&record.agent) else {
             return Ok(None);
         };
-        let Some(task) = connection.terminal_auth_command(&acp::AuthMethodId::new(method_id)) else {
+        let Some(task) = connection.terminal_auth_command(&acp::AuthMethodId::new(method_id))
+        else {
             return Ok(None);
         };
         task.await.map(Some).map_err(HostError::from)
@@ -2230,7 +2266,10 @@ pub struct ThreadProjectWire {
 fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
     ThreadRow {
         thread_id: thread.thread_id.to_key_string(),
-        session_id: thread.session_id.as_ref().map(std::string::ToString::to_string),
+        session_id: thread
+            .session_id
+            .as_ref()
+            .map(std::string::ToString::to_string),
         agent_id: thread.agent_id.to_string(),
         title: display_title(thread),
         updated_at: thread.updated_at.to_rfc3339(),
@@ -2241,14 +2280,34 @@ fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
     }
 }
 
-/// The row's title with any Atlas memory block taken out.
+/// The row's title with Atlas's own machinery taken out.
+///
+/// Two flavours of the same bug, both of them rows already on disk:
 ///
 /// Rows recorded before `snapshot_of` cleaned its fallback were named after the
 /// block's opening marker (`--- SHARED MEMORY ---`), and the store kept only
 /// that line. Such a title cleans to nothing, which is the default title; the
 /// real name replaces it the next time the conversation is live.
+///
+/// Rows recorded before `AcpThread` filtered agent titles were named after the
+/// next-steps directive Atlas appends to the wire prompt — the agent summarised
+/// Atlas instead of the conversation (see `is_host_machinery_title`). Same
+/// remedy, and for the same reason: a row named after the harness is worse than
+/// a row with no name, because the name is a lie about what the user said.
+///
+/// A rename is exempt. `title_override` is the user's own words, and the user
+/// is allowed to call a thread whatever they like.
 fn display_title(thread: &ThreadMetadata) -> String {
-    let title = atlas_agent_transcript::strip_injected_context(&thread.display_title());
+    let stored = match &thread.title_override {
+        Some(renamed) => renamed.to_string(),
+        None => thread
+            .title
+            .as_deref()
+            .filter(|title| !atlas_acp_thread::is_host_machinery_title(title))
+            .unwrap_or_default()
+            .to_string(),
+    };
+    let title = atlas_agent_transcript::strip_injected_context(&stored);
     if title.is_empty() {
         atlas_thread_metadata::DEFAULT_THREAD_TITLE.to_string()
     } else {
@@ -2463,15 +2522,22 @@ impl AuthMethodWire {
             args: obj
                 .get("args")
                 .and_then(|a| a.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
             terminal_command: terminal
                 .and_then(|t| t.get("command"))
                 .and_then(|c| c.as_str())
                 .map(str::to_string),
             terminal_args: terminal.and_then(|t| t.get("args")).and_then(|a| {
-                a.as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                a.as_array().map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
             }),
             terminal_label: terminal
                 .and_then(|t| t.get("label"))
@@ -2517,9 +2583,18 @@ fn parse_env_var(v: &serde_json::Value) -> Option<AuthEnvVar> {
     let obj = v.as_object()?;
     Some(AuthEnvVar {
         name: obj.get("name")?.as_str()?.to_string(),
-        label: obj.get("label").and_then(|l| l.as_str()).map(str::to_string),
-        secret: obj.get("secret").and_then(serde_json::Value::as_bool).unwrap_or(true),
-        optional: obj.get("optional").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        label: obj
+            .get("label")
+            .and_then(|l| l.as_str())
+            .map(str::to_string),
+        secret: obj
+            .get("secret")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true),
+        optional: obj
+            .get("optional")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -2561,7 +2636,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn lock_thread(thread: &AcpThreadHandle) -> std::sync::MutexGuard<'_, AcpThread> {
-    thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    thread
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 // ── The installed map on disk ───────────────────────────────────────────────
@@ -2654,7 +2731,9 @@ mod elicitation_response_tests {
     #[test]
     fn cancel_sends_nothing() {
         assert!(elicitation_response("cancel", None).unwrap().is_none());
-        assert!(elicitation_response("anything-else", None).unwrap().is_none());
+        assert!(elicitation_response("anything-else", None)
+            .unwrap()
+            .is_none());
     }
 
     /// A value the schema does not allow (a nested object) must be a loud
@@ -2723,7 +2802,10 @@ mod auth_method_wire_tests {
             "what the agent declared goes with it — it carries the proxy config"
         );
         assert!(
-            !wire.terminal_env.iter().any(|(name, _)| name == "ANTHROPIC_API_KEY"),
+            !wire
+                .terminal_env
+                .iter()
+                .any(|(name, _)| name == "ANTHROPIC_API_KEY"),
             "the spawn environment must not reach a field that is displayed, \
              copied to the clipboard and typed into a shell that keeps history"
         );
@@ -2747,8 +2829,8 @@ mod auth_method_wire_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_support::{fresh_host, fresh_host_with_native};
+    use super::*;
     use atlas_acp_thread::{AcpThread, AcpThreadHandle, AgentConnection};
     use atlas_agent_servers::AgentServerDelegate;
     use futures::future::BoxFuture;
@@ -2930,7 +3012,12 @@ mod tests {
             work_dirs: Vec<PathBuf>,
         ) -> BoxFuture<'static, anyhow::Result<AcpThreadHandle>> {
             let session_id = acp::SessionId::new(self.session_id);
-            let sink = self.events.lock().unwrap().clone().expect("connected first");
+            let sink = self
+                .events
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("connected first");
             let thread = Arc::new(std::sync::Mutex::new(AcpThread::new(
                 session_id.clone(),
                 self.clone() as Arc<dyn AgentConnection>,
@@ -2992,12 +3079,18 @@ mod tests {
     /// directory, and the scope's store to read the sessions table back from.
     fn recording_host(
         native: Arc<dyn AgentServer>,
-    ) -> (Arc<AgentHost>, PathBuf, PathBuf, Arc<atlas_memory::record::RecordStore>) {
+    ) -> (
+        Arc<AgentHost>,
+        PathBuf,
+        PathBuf,
+        Arc<atlas_memory::record::RecordStore>,
+    ) {
         let (host, dir) = fresh_host_with_native(native);
         let tick = Arc::new(std::sync::atomic::AtomicI64::new(0));
-        let memory = crate::commands::shared_memory::SharedMemoryStore::with_clock(Arc::new(move || {
-            100 * (tick.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
-        }));
+        let memory =
+            crate::commands::shared_memory::SharedMemoryStore::with_clock(Arc::new(move || {
+                100 * (tick.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
+            }));
         host.set_session_lifecycle(Arc::new(memory));
         let project = dir.join("project");
         std::fs::create_dir_all(&project).unwrap();
@@ -3017,7 +3110,9 @@ mod tests {
             .expect("a session opens");
 
         host.drop_session("s-drop").await.expect("drop");
-        host.drop_session("s-drop").await.expect("a second drop is a no-op");
+        host.drop_session("s-drop")
+            .await
+            .expect("a second drop is a no-op");
 
         assert_eq!(
             record.sessions().unwrap(),
@@ -3092,7 +3187,9 @@ mod tests {
     /// model, while the agent knew its model the whole time.
     #[tokio::test]
     async fn a_new_native_session_knows_its_model_before_any_pick() {
-        let native = Arc::new(RebindingNative { fresh_id: "s-model" });
+        let native = Arc::new(RebindingNative {
+            fresh_id: "s-model",
+        });
         let (host, dir) = fresh_host_with_native(native);
 
         let agent_id = host.spawn(CERSEI_AGENT_ID).await.expect("spawn").agent_id;
@@ -3121,7 +3218,9 @@ mod tests {
         let native = Arc::new(RebindingNative { fresh_id: "s-1" });
         let (host, dir) = fresh_host_with_native(native);
 
-        host.spawn(CERSEI_AGENT_ID).await.expect("native agent spawns");
+        host.spawn(CERSEI_AGENT_ID)
+            .await
+            .expect("native agent spawns");
         // The Connecting→Connected flip runs on a spawned task; on the test's
         // current-thread runtime it needs the yield before `connected` sees it.
         tokio::task::yield_now().await;
@@ -3191,7 +3290,11 @@ mod tests {
 
         let refreshed = host
             .refresh_native_models_with(&FakeCatalogue {
-                rows: vec![("model-a", true), ("model-locked", false), ("model-b", true)],
+                rows: vec![
+                    ("model-a", true),
+                    ("model-locked", false),
+                    ("model-b", true),
+                ],
                 error: None,
             })
             .await
@@ -3201,12 +3304,25 @@ mod tests {
         assert_eq!(ids, ["model-a", "model-b"], "entitled rows, gateway order");
         assert_eq!(refreshed.default_model, "model-a");
         assert!(refreshed.changed);
-        assert!(!refreshed.reconnected, "nothing was open, so nothing was torn down");
+        assert!(
+            !refreshed.reconnected,
+            "nothing was open, so nothing was torn down"
+        );
 
         let home = atlas_native_agent::engine::EngineHome::under_config_dir(&dir);
-        let cache = load_cache(home.path()).await.expect("the cache was written");
-        assert_eq!(cache.org.as_deref(), Some("org_1"), "keyed by the org it was fetched for");
-        assert_eq!(cache.rows.len(), 3, "the gateway's rows verbatim, locked one included");
+        let cache = load_cache(home.path())
+            .await
+            .expect("the cache was written");
+        assert_eq!(
+            cache.org.as_deref(),
+            Some("org_1"),
+            "keyed by the org it was fetched for"
+        );
+        assert_eq!(
+            cache.rows.len(),
+            3,
+            "the gateway's rows verbatim, locked one included"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3222,7 +3338,9 @@ mod tests {
         let Err(denied) = host
             .refresh_native_models_with(&FakeCatalogue {
                 rows: vec![],
-                error: Some(atlas_native_agent::engine::FetchError::Unauthorized(String::new())),
+                error: Some(atlas_native_agent::engine::FetchError::Unauthorized(
+                    String::new(),
+                )),
             })
             .await
         else {
@@ -3270,7 +3388,10 @@ mod tests {
         let thread_id = thread.thread_id;
         history.store().save_all(vec![thread]);
 
-        let resumed = host.resume_thread(thread_id).await.expect("resume succeeds");
+        let resumed = host
+            .resume_thread(thread_id)
+            .await
+            .expect("resume succeeds");
         assert_eq!(resumed.key.session_id, "engine-fresh-id");
 
         // The live feed's first write under the new id must land on the row
@@ -3383,7 +3504,9 @@ mod tests {
         let thread_id = thread.thread_id;
         history.store().save_all(vec![thread]);
 
-        host.delete_thread(thread_id).await.expect("delete is local");
+        host.delete_thread(thread_id)
+            .await
+            .expect("delete is local");
 
         assert!(history.store().thread(thread_id).is_none());
         let _ = std::fs::remove_dir_all(&dir);
@@ -3446,7 +3569,10 @@ mod tests {
     /// rows reopen at all.
     #[test]
     fn only_the_native_agent_keeps_its_own_readable_transcript() {
-        assert_eq!(transcript_kind_for(CERSEI_AGENT_ID), TranscriptKind::CerseiJson);
+        assert_eq!(
+            transcript_kind_for(CERSEI_AGENT_ID),
+            TranscriptKind::CerseiJson
+        );
         for id in [
             "claude-code-ts",
             "claude-code",
@@ -3534,7 +3660,10 @@ mod tests {
         );
 
         row.title = Some("--- SHARED MEMORY ---".into());
-        assert_eq!(thread_row(&row).title, atlas_thread_metadata::DEFAULT_THREAD_TITLE);
+        assert_eq!(
+            thread_row(&row).title,
+            atlas_thread_metadata::DEFAULT_THREAD_TITLE
+        );
 
         row.title = Some("Origin dropdown cleanup".into());
         assert_eq!(thread_row(&row).title, "Origin dropdown cleanup");

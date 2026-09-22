@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -264,6 +265,9 @@ pub(crate) async fn run_turn(
 
     let mut last_agent_message: Option<String> = None;
     let mut stop_hook_active = false;
+    // A gateway-sized prompt gets one compaction/rebuild attempt. A second
+    // overflow is terminal so a pathological tool set cannot loop forever.
+    let mut gateway_overflow_recovery_attempted = false;
     // Although from the perspective of codex.rs, TurnDiffTracker has the lifecycle of a Task which contains
     // many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(
@@ -534,6 +538,36 @@ pub(crate) async fn run_turn(
             }
             Err(err) if matches!(err.details(), CodexErrorDetails::TurnAborted) => {
                 return Err(err);
+            }
+            Err(err)
+                if matches!(err.details(), CodexErrorDetails::ContextWindowExceeded)
+                    && turn_context.provider.info().wire_api
+                        == codex_model_provider_info::WireApi::Chat
+                    && !gateway_overflow_recovery_attempted =>
+            {
+                gateway_overflow_recovery_attempted = true;
+                info!(
+                    turn_id = %turn_context.sub_id,
+                    "Atlas gateway prompt overflowed; compacting before one retry"
+                );
+                run_auto_compact(
+                    &sess,
+                    Arc::clone(&step_context),
+                    /*fallback_step_context*/ None,
+                    &mut client_session,
+                    InitialContextInjection::BeforeLastUserMessage {
+                        world_state: Arc::clone(&world_state),
+                        step_context: Arc::clone(&step_context),
+                    },
+                    CompactionReason::ContextLimit,
+                    CompactionPhase::MidTurn,
+                )
+                .await?;
+                if run_pending_session_start_hooks(&sess, &turn_context).await {
+                    return Ok(None);
+                }
+                can_drain_pending_input = false;
+                continue;
             }
             Err(codex_error)
                 if matches!(

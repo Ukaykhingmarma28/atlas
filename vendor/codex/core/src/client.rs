@@ -38,7 +38,6 @@ use codex_api::ChatCompletionsClient as ApiChatCompletionsClient;
 use codex_api::ChatDialect;
 use codex_api::ChatRequestInput;
 use codex_api::CompactClient as ApiCompactClient;
-use codex_api::build_chat_request;
 use codex_api::CompactionInput as ApiCompactionInput;
 use codex_api::Compression;
 use codex_api::MemoriesClient as ApiMemoriesClient;
@@ -65,8 +64,10 @@ use codex_api::StreamOptions;
 use codex_api::TransportError;
 use codex_api::WebsocketTelemetry;
 use codex_api::auth_header_telemetry;
+use codex_api::build_chat_request;
 use codex_api::build_session_headers;
 use codex_api::create_text_param_for_request;
+use codex_api::gateway_prompt_usage;
 use codex_api::response_create_client_metadata;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
@@ -1475,7 +1476,8 @@ impl ModelClientSession {
                 self.client.state.auth_env_telemetry.clone(),
             );
 
-            let mut items = prompt.get_formatted_input_for_request(/*use_responses_lite*/ false);
+            let mut items =
+                prompt.get_formatted_input_for_request(/*use_responses_lite*/ false);
             self.client.prepare_response_items_for_request(&mut items);
             // Fallible: a schema-constrained turn against a Claude model is
             // refused here rather than sent and quietly answered in prose.
@@ -1488,6 +1490,19 @@ impl ModelClientSession {
                 output_schema: prompt.output_schema.as_ref(),
             })
             .map_err(|err| self.client.state.provider.map_api_error(err))?;
+
+            // The gateway's token meter is deliberately more conservative
+            // than provider-reported usage and includes serialized tools. Do
+            // this after the exact Chat request is built, before starting an
+            // HTTP attempt, so the turn loop can compact and rebuild it.
+            let prompt_usage = gateway_prompt_usage(&built.request);
+            if prompt_usage.exceeds_limit() {
+                return Err(self
+                    .client
+                    .state
+                    .provider
+                    .map_api_error(ApiError::ContextWindowExceeded));
+            }
 
             let inference_trace_attempt = inference_trace.start_attempt();
             let mut extra_headers = http::HeaderMap::new();
