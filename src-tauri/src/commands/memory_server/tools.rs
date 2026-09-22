@@ -33,7 +33,7 @@ use rmcp::ErrorData as McpError;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::briefing::{self, SessionClocks};
+use super::briefing::{self, SessionClocks, SessionReads};
 use super::host::{SharingGate, Sources};
 use super::tokens::Grant;
 use crate::commands::memory_pack::{Handoff, PackEntry};
@@ -140,6 +140,20 @@ fn schema(value: Value) -> Arc<JsonObject> {
 fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
     Tool::new(Cow::Borrowed(name), Cow::Borrowed(description), schema(input))
 }
+
+/// The tools that READ the record. Reaching for any of them is what makes a
+/// session one that consulted memory.
+///
+/// Declared once and checked against the real tool list by a test, so a tool
+/// added later cannot quietly fall out of this set and have the host report
+/// that memory went unread when it did not.
+pub(super) const READ_TOOLS: [&str; 5] = [
+    "memory_briefing",
+    "memory_changes",
+    "memory_search",
+    "memory_get",
+    "memory_list",
+];
 
 /// The tools, read first, write last.
 pub(super) fn tools() -> Vec<Tool> {
@@ -348,11 +362,10 @@ fn live_shared_docs(memory: &SharedMemoryStore, cwd: &str, docs: Vec<IndexDoc>) 
 /// What a tool answers while sharing is off for the project: reads hold
 /// nothing, writes are refused.
 fn switched_off(name: &str) -> CallToolResult {
-    match name {
-        "memory_briefing" | "memory_changes" | "memory_search" | "memory_get" | "memory_list" => {
-            ok_json(json!({ "entries": [], "note": OFF_NOTE }))
-        }
-        _ => tool_error(OFF_NOTE),
+    if READ_TOOLS.contains(&name) {
+        ok_json(json!({ "entries": [], "note": OFF_NOTE }))
+    } else {
+        tool_error(OFF_NOTE)
     }
 }
 
@@ -363,16 +376,32 @@ pub(super) struct MemoryTools {
     memory: SharedMemoryStore,
     gate: SharingGate,
     clocks: Arc<SessionClocks>,
+    reads: Arc<SessionReads>,
     sources: Sources,
 }
 
 impl MemoryTools {
-    pub(super) fn new(memory: SharedMemoryStore, gate: SharingGate, clocks: Arc<SessionClocks>, sources: Sources) -> Self {
-        Self { memory, gate, clocks, sources }
+    pub(super) fn new(
+        memory: SharedMemoryStore,
+        gate: SharingGate,
+        clocks: Arc<SessionClocks>,
+        reads: Arc<SessionReads>,
+        sources: Sources,
+    ) -> Self {
+        Self { memory, gate, clocks, reads, sources }
     }
 
     async fn dispatch(&self, grant: Grant, request: CallToolRequestParams) -> CallToolResult {
         let name = request.name.to_string();
+        // Recorded BEFORE the sharing gate, and before dispatch. Reaching for
+        // memory is what counts as reading it: an agent that called a read
+        // tool and got the switched-off note, or an error, still looked. The
+        // alternative is telling that session it never consulted memory, which
+        // would be a false accusation. Writes are excluded on purpose — an
+        // agent that only recorded a fact has not looked at what was there.
+        if READ_TOOLS.contains(&name.as_str()) {
+            self.reads.read(&grant.session_id);
+        }
         if !(self.gate)(&grant.cwd) {
             return switched_off(&name);
         }

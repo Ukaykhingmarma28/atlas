@@ -15,7 +15,7 @@ use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{json, Value};
 
-use super::briefing::{rank_index, score, SessionClocks, INDEX_MAX_ENTRIES};
+use super::briefing::{rank_index, score, SessionClocks, SessionReads, INDEX_MAX_ENTRIES};
 use super::tools::{tool_names, tools_list, Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, TOOLS_LIST_TTL_MS};
 use super::*;
 use crate::commands::agent_host::SessionLifecycle;
@@ -40,7 +40,16 @@ fn always_on() -> SharingGate {
 }
 
 async fn serve(memory: SharedMemoryStore, tokens: Arc<MemoryTokens>, gate: SharingGate, sources: Sources) -> MemoryServer {
-    MemoryServer::start(memory, tokens, Arc::new(SessionClocks::default()), gate, sources).await.unwrap()
+    MemoryServer::start(
+        memory,
+        tokens,
+        Arc::new(SessionClocks::default()),
+        Arc::new(SessionReads::default()),
+        gate,
+        sources,
+    )
+    .await
+    .unwrap()
 }
 
 async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()>, String> {
@@ -523,6 +532,115 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// Whether a session consulted memory is NOT the same question as its sync
+/// clock. `memory_search` answers from the record without moving the clock, so
+/// reading "never looked" off the clock would accuse a session that did
+/// consult memory — and a false accusation here is worse than staying quiet.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_search_counts_as_consulting_memory_even_though_it_moves_no_clock() {
+    let project = temp_project("consulted-by-search");
+    let tokens = Arc::new(MemoryTokens::default());
+    let clocks = Arc::new(SessionClocks::default());
+    let reads = Arc::new(SessionReads::default());
+    let server = MemoryServer::start(
+        ticking_memory(),
+        tokens.clone(),
+        clocks.clone(),
+        reads.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await
+    .unwrap();
+    let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
+
+    assert!(!reads.has_read("s1"), "nothing read yet");
+
+    let (err, _) = call(&client, "memory_search", json!({ "query": "anything" })).await;
+    assert!(!err);
+
+    assert!(reads.has_read("s1"), "a search is a read");
+    assert_eq!(clocks.last_look("s1"), None, "but it is not a briefing");
+
+    client.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// Writing to memory is not reading it. An agent that recorded a fact and
+/// never looked at what was already there has still never consulted memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn remembering_something_is_not_consulting_memory() {
+    let project = temp_project("write-is-not-read");
+    let tokens = Arc::new(MemoryTokens::default());
+    let reads = Arc::new(SessionReads::default());
+    let server = MemoryServer::start(
+        ticking_memory(),
+        tokens.clone(),
+        Arc::new(SessionClocks::default()),
+        reads.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await
+    .unwrap();
+    let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
+
+    let (err, _) = call(
+        &client,
+        "memory_remember",
+        json!({ "kind": "fact", "content": "the build needs Zig 0.13" }),
+    )
+    .await;
+    assert!(!err);
+
+    assert!(!reads.has_read("s1"), "writing is not reading");
+
+    client.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// The notice is said once per session, not once per turn, and a session that
+/// ends forgets it said anything.
+#[test]
+fn the_unread_notice_is_said_once_per_session_and_never_to_a_session_that_read() {
+    let reads = SessionReads::default();
+
+    assert!(reads.should_say_unread("s1"));
+    assert!(!reads.should_say_unread("s1"), "only once, not once per turn");
+    assert!(reads.should_say_unread("s2"), "and it is per session");
+
+    // A session that read memory is never told it did not, however many
+    // turns it takes afterwards.
+    reads.read("s3");
+    assert!(!reads.should_say_unread("s3"));
+    assert!(!reads.should_say_unread("s3"));
+
+    reads.forget("s1");
+    assert!(reads.should_say_unread("s1"), "a new session may be told again");
+}
+
+/// The list the dispatcher marks reads from has to stay the record's actual
+/// read tools. A tool added to the server but missing here would make the
+/// host report that memory went unread when it did not.
+#[test]
+fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
+    let names = tool_names();
+    for read in super::tools::READ_TOOLS {
+        assert!(names.contains(&read), "{read} is not a tool the server has");
+    }
+    for write in ["memory_remember", "memory_forget"] {
+        assert!(
+            !super::tools::READ_TOOLS.contains(&write),
+            "{write} writes; it must not count as reading"
+        );
+    }
+    assert_eq!(
+        super::tools::READ_TOOLS.len() + 2,
+        names.len(),
+        "every tool is either a read or one of the two writes"
+    );
+}
+
 // ── What the server says about itself ────────────────────────────────────────
 
 /// With nothing pushed, the instructions are how an agent learns to read
@@ -621,9 +739,16 @@ fn a_session_clock_is_monotonic_and_forgotten_at_session_end() {
 
 async fn running_host(gate: SharingGate) -> Arc<MemoryServerHost> {
     let host = Arc::new(MemoryServerHost::new());
-    let server = MemoryServer::start(ticking_memory(), host.tokens().clone(), host.clocks().clone(), gate, Sources::default())
-        .await
-        .unwrap();
+    let server = MemoryServer::start(
+        ticking_memory(),
+        host.tokens().clone(),
+        host.clocks().clone(),
+        host.reads().clone(),
+        gate,
+        Sources::default(),
+    )
+    .await
+    .unwrap();
     host.adopt(server);
     host
 }

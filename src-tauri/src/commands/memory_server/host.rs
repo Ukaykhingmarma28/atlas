@@ -8,7 +8,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio::sync::oneshot;
 
-use super::briefing::SessionClocks;
+use super::briefing::{SessionClocks, SessionReads};
 use super::tokens::{require_token, MemoryTokens};
 use super::tools::{BootstrapSource, IndexEvict, IndexSearch, MemoryTools};
 use super::MCP_PATH;
@@ -47,12 +47,13 @@ impl MemoryServer {
         memory: SharedMemoryStore,
         tokens: Arc<MemoryTokens>,
         clocks: Arc<SessionClocks>,
+        reads: Arc<SessionReads>,
         gate: SharingGate,
         sources: Sources,
     ) -> std::io::Result<Self> {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
-        let tools = MemoryTools::new(memory, gate, clocks, sources);
+        let tools = MemoryTools::new(memory, gate, clocks, reads, sources);
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
             Arc::new(LocalSessionManager::default()),
@@ -102,6 +103,7 @@ impl Drop for MemoryServer {
 pub struct MemoryServerHost {
     tokens: Arc<MemoryTokens>,
     clocks: Arc<SessionClocks>,
+    reads: Arc<SessionReads>,
     server: std::sync::OnceLock<MemoryServer>,
 }
 
@@ -121,6 +123,12 @@ impl MemoryServerHost {
         &self.clocks
     }
 
+    /// Which sessions have read memory, and which have been told they did not
+    /// (dropped by the session lifecycle when the session ends).
+    pub fn reads(&self) -> &Arc<SessionReads> {
+        &self.reads
+    }
+
     /// The MCP endpoint, once the server has bound; `None` before that or if
     /// binding failed (sessions then run without memory tools).
     pub fn url(&self) -> Option<String> {
@@ -133,7 +141,15 @@ impl MemoryServerHost {
         let host = self.clone();
         tauri::async_runtime::spawn(async move {
             let started =
-                MemoryServer::start(memory, host.tokens.clone(), host.clocks.clone(), gate, sources).await;
+                MemoryServer::start(
+                    memory,
+                    host.tokens.clone(),
+                    host.clocks.clone(),
+                    host.reads.clone(),
+                    gate,
+                    sources,
+                )
+                .await;
             match started {
                 Ok(server) => {
                     let _ = host.server.set(server);

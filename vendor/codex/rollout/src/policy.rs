@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use crate::RolloutItem;
 use crate::protocol::EventMsg;
 use codex_extension_items::ExtensionItem;
@@ -113,6 +114,14 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::EnteredReviewMode(_)
         | EventMsg::ExitedReviewMode(_)
         | EventMsg::PatchApplyEnd(_)
+        // Atlas: shell commands are part of the record of a turn, and a
+        // reopened thread that shows the file edits but not the commands
+        // misrepresents what the agent did. The end event alone rebuilds a
+        // complete item (`build_command_execution_end_item`) — command, cwd,
+        // exit code and output — and the history builder already handles it,
+        // so persisting it is all that was missing. Its BEGIN stays transient:
+        // an unmatched begin would replay as a command still running.
+        | EventMsg::ExecCommandEnd(_)
         | EventMsg::ContextCompacted(_)
         | EventMsg::McpToolCallEnd(_)
         | EventMsg::WebSearchEnd(_)
@@ -123,7 +132,6 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         EventMsg::Error(_)
         | EventMsg::ThreadQueueChanged(_)
         | EventMsg::GuardianAssessment(_)
-        | EventMsg::ExecCommandEnd(_)
         | EventMsg::ViewImageToolCall(_)
         | EventMsg::CollabAgentSpawnEnd(_)
         | EventMsg::CollabAgentInteractionEnd(_)
@@ -181,5 +189,70 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabResumeBegin(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod atlas_exec_persistence_tests {
+    use super::*;
+
+    fn exec_command_end() -> EventMsg {
+        serde_json::from_value(serde_json::json!({
+            "type": "exec_command_end",
+            "call_id": "call-1",
+            "turn_id": "turn-1",
+            "command": ["ls", "-la"],
+            "cwd": "file:///tmp/project",
+            "parsed_cmd": [],
+            "stdout": "Cargo.toml\n",
+            "stderr": "",
+            "aggregated_output": "Cargo.toml\n",
+            "exit_code": 0,
+            "duration": {"secs": 0, "nanos": 12_000_000},
+            "formatted_output": "Cargo.toml\n",
+            "status": "completed",
+        }))
+        .expect("a shell completion the protocol accepts")
+    }
+
+    /// A reopened thread that shows the file edits an agent made but none of
+    /// the commands it ran misrepresents the turn. The completion carries
+    /// everything the item needs, and the history builder already knows how to
+    /// replay it — persisting it was the only missing piece.
+    #[test]
+    fn a_shell_completion_is_durable_on_a_legacy_thread() {
+        assert!(should_persist_event_msg(
+            &exec_command_end(),
+            ThreadHistoryMode::Legacy
+        ));
+    }
+
+    /// Paginated rollouts carry the same command as an `ItemCompleted`, so
+    /// persisting the legacy event too would write it twice.
+    #[test]
+    fn a_paginated_thread_does_not_persist_it_twice() {
+        assert!(!should_persist_event_msg(
+            &exec_command_end(),
+            ThreadHistoryMode::Paginated
+        ));
+    }
+
+    /// The BEGIN stays transient on purpose: a begin with no matching end —
+    /// which is exactly what a crash leaves behind — would replay as a command
+    /// that is still running.
+    #[test]
+    fn the_start_of_a_command_is_still_not_persisted() {
+        let begin: EventMsg = serde_json::from_value(serde_json::json!({
+            "type": "exec_command_begin",
+            "call_id": "call-1",
+            "turn_id": "turn-1",
+            "command": ["ls"],
+            "cwd": "file:///tmp/project",
+            "parsed_cmd": [],
+        }))
+        .expect("a shell start the protocol accepts");
+        for mode in [ThreadHistoryMode::Legacy, ThreadHistoryMode::Paginated] {
+            assert!(!should_persist_event_msg(&begin, mode));
+        }
     }
 }

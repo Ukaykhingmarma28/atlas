@@ -34,7 +34,7 @@ mod tools;
 // The module's surface. The app wires `MemoryServerHost`, `MemorySessionOffers`
 // and the source types; the rest is reached through the host or by the tests.
 #[allow(unused_imports)]
-pub use briefing::SessionClocks;
+pub use briefing::{SessionClocks, SessionReads};
 #[allow(unused_imports)]
 pub use host::{MemoryServer, MemoryServerHost, SharingGate, Sources};
 #[allow(unused_imports)]

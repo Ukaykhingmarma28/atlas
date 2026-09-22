@@ -20,7 +20,7 @@
 //! a store; the two `read_*` functions are the only ones that touch SQLite
 //! (blocking — callers run them off the async runtime).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use atlas_memory::record::{Entry, EntryKind, Origin, RecordStore};
 use parking_lot::Mutex;
@@ -49,6 +49,10 @@ pub(super) const DURABLE_KINDS: [EntryKind; 4] =
 
 /// Each session's "last looked" clock: the newest `updated_at` it has seen
 /// through `memory_briefing` or `memory_changes`. Keyed by session id.
+///
+/// Deliberately still only the clock (ADR-0010 defines it as exactly that).
+/// Whether a session read memory *at all* is a different question with a
+/// different answer, and lives in [`SessionReads`].
 #[derive(Default)]
 pub struct SessionClocks(Mutex<HashMap<String, i64>>);
 
@@ -71,6 +75,52 @@ impl SessionClocks {
     /// Drop `session_id`'s clock (its session ended).
     pub fn forget(&self, session_id: &str) {
         self.0.lock().remove(session_id);
+    }
+}
+
+/// Which sessions have read shared memory, and which have already been told
+/// they did not.
+///
+/// Separate from [`SessionClocks`] because it answers a different question.
+/// The clock moves only on a briefing or a changes call, so a session that
+/// answered perfectly well from `memory_search` has no clock at all — and
+/// reading "never looked" off the clock would accuse an agent of ignoring
+/// memory it had just used. A false accusation is worse than silence, so
+/// every read counts here, and writes do not: recording a fact is not looking
+/// at what was already there.
+#[derive(Default)]
+pub struct SessionReads {
+    read: Mutex<HashSet<String>>,
+    told: Mutex<HashSet<String>>,
+}
+
+impl SessionReads {
+    /// Record that `session_id` read memory, by whichever tool.
+    pub fn read(&self, session_id: &str) {
+        self.read.lock().insert(session_id.to_string());
+    }
+
+    /// Whether `session_id` has read memory at all.
+    pub fn has_read(&self, session_id: &str) -> bool {
+        self.read.lock().contains(session_id)
+    }
+
+    /// Whether the host should now say this session never read memory.
+    ///
+    /// True at most once per session, and only for a session that really has
+    /// read nothing. Claiming is the same act as asking, so two turns of one
+    /// session cannot both be told.
+    pub fn should_say_unread(&self, session_id: &str) -> bool {
+        if self.has_read(session_id) {
+            return false;
+        }
+        self.told.lock().insert(session_id.to_string())
+    }
+
+    /// Drop what is remembered about `session_id` (its session ended).
+    pub fn forget(&self, session_id: &str) {
+        self.read.lock().remove(session_id);
+        self.told.lock().remove(session_id);
     }
 }
 
