@@ -149,6 +149,7 @@ import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
+import { resolveEffectiveMode } from "../lib/resume-mode";
 
 interface ChatPanelProps {
   tabId: string;
@@ -437,12 +438,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           : undefined;
         const requestedAcpMode = session?.acpModeExplicit ? session.acpCurrentMode : undefined;
         const requestedMode = nowAt === "claude-code" ? requestedClaudeMode : requestedAcpMode;
-        const mode = requestedMode ?? init.current_mode;
-        const modeAdvertised =
-          !mode ||
-          init.available_modes.length === 0 ||
-          init.available_modes.some((m) => m.id === mode);
-        const effectiveMode = modeAdvertised ? mode : init.current_mode;
+        // Same rule as the resume path, so a mode means the same thing
+        // whether a session is new or reopened (`resume-mode.ts`).
+        const effectiveMode = resolveEffectiveMode(
+          requestedMode ?? undefined,
+          init.current_mode,
+          init.available_modes,
+        );
         if (effectiveMode && effectiveMode !== init.current_mode) {
           try {
             await agents.setMode(key, effectiveMode);

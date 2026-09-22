@@ -774,6 +774,19 @@ impl SharedMemoryStore {
             })
     }
 
+    /// Whether `id` is still a live entry. Never stamps it as used, so the
+    /// search-side filter can ask freely.
+    ///
+    /// Unknown (no store, read failed) answers `true`: the only caller drops
+    /// documents on a `false`, and wrongly dropping a live document is a worse
+    /// failure than briefly showing a deleted one.
+    pub fn entry_exists(&self, project_path: &str, id: i64) -> bool {
+        let Ok(store) = store_for(project_path) else {
+            return true;
+        };
+        store.exists(id).unwrap_or(true)
+    }
+
     /// The newest entries of `kind`, or of every kind, each kind capped at its
     /// display limit (`memory_list`); newest first within a kind. Degrades to
     /// empty when the record can't be read.

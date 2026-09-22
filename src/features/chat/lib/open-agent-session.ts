@@ -14,6 +14,7 @@ import {
 } from "@/types/agent";
 import { invalidateLoad } from "./load-tokens";
 import { resumeSessionFast } from "./resume-session";
+import { applyModeOnResume } from "./resume-mode";
 
 /** Active project root, preferring the legacy `currentProject` but falling back
  *  to the active project path (mirrors the sidebar's `cwd` resolution). */
@@ -161,6 +162,15 @@ export async function openAgentSession({
     setAcpBinding(targetTabId, agent.agent_id, acpSessionId, cwd);
     // Restore live status + docked plan AFTER the bind (which clears the plan).
     hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan);
+    // This path seeded the mode pill from the stored preference but never told
+    // the agent, so the pill could read Bypass while the engine enforced Ask.
+    // Applied before `setResumePending(false)`, which is what releases a queued
+    // prompt: after it, the first turn can beat the mode to the agent.
+    await applyModeOnResume(
+      targetTabId,
+      { agent_id: agent.agent_id, session_id: acpSessionId },
+      snapshot,
+    );
     setTranscriptLoading(targetTabId, false);
     setResumePending(targetTabId, false);
   } catch (err) {

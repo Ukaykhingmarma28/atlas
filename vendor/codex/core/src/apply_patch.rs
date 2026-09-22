@@ -1,8 +1,10 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 use crate::function_tool::FunctionCallError;
 use crate::safety::SafetyCheck;
 use crate::safety::assess_patch_safety;
 use crate::session::turn_context::TurnContext;
 use crate::tools::sandboxing::ExecApprovalRequirement;
+use crate::tools::sandboxing::executor_windows_sandbox_level;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
 use codex_protocol::models::PermissionProfile;
@@ -31,7 +33,13 @@ pub(crate) fn prepare_apply_patch(
         permission_profile,
         file_system_sandbox_policy,
         &action.cwd,
-        turn_context.windows_sandbox_level,
+        // Judge against the level the write would actually run under, not the
+        // raw setting. `tools::runtimes::apply_patch` upgrades an unset level
+        // for a Windows-shaped cwd before it builds the write's sandbox, so
+        // reading the raw value here refused edits as unsandboxable that the
+        // write path would in fact have contained. That mismatch is why
+        // "Accept edits" prompted for every file edit on Windows.
+        executor_windows_sandbox_level(turn_context.windows_sandbox_level, &action.cwd),
     ) {
         SafetyCheck::AutoApprove => Ok(ApplyPatchRuntimeInvocation {
             action,

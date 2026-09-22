@@ -16,7 +16,7 @@ use rmcp::{RoleClient, ServiceExt};
 use serde_json::{json, Value};
 
 use super::briefing::{rank_index, score, SessionClocks, INDEX_MAX_ENTRIES};
-use super::tools::{tool_names, tools_list, Bootstrap, BootstrapSource, IndexDoc, IndexSearch, TOOLS_LIST_TTL_MS};
+use super::tools::{tool_names, tools_list, Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, TOOLS_LIST_TTL_MS};
 use super::*;
 use crate::commands::agent_host::SessionLifecycle;
 use crate::commands::memory_pack::{Handoff, PackEntry};
@@ -162,7 +162,7 @@ async fn the_briefing_carries_working_memory_the_index_and_the_first_look_extras
         })
     });
     let tokens = Arc::new(MemoryTokens::default());
-    let server = serve(memory.clone(), tokens.clone(), always_on(), Sources { index: None, bootstrap: Some(bootstrap) }).await;
+    let server = serve(memory.clone(), tokens.clone(), always_on(), Sources { index: None, bootstrap: Some(bootstrap), evict: None }).await;
     let client = connect(&server.url(), &tokens.mint("s-new", "gemini", &p)).await.unwrap();
 
     let (err, briefing) = call(&client, "memory_briefing", json!({})).await;
@@ -375,13 +375,14 @@ async fn memory_search_also_returns_indexed_project_documents() {
         seen.lock().push((cwd, query.clone(), limit));
         Box::pin(async move {
             vec![IndexDoc {
+                id: Some("docs/adr/0003.md".to_string()),
                 title: "ADR-0003".to_string(),
                 source: "docs/adr/0003.md".to_string(),
                 text: format!("about {query}"),
             }]
         })
     });
-    let server = serve(ticking_memory(), tokens.clone(), always_on(), Sources { index: Some(index), bootstrap: None }).await;
+    let server = serve(ticking_memory(), tokens.clone(), always_on(), Sources { index: Some(index), bootstrap: None, evict: None }).await;
     let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
 
     let (err, found) = call(&client, "memory_search", json!({ "query": "the engine fork" })).await;
@@ -396,6 +397,128 @@ async fn memory_search_also_returns_indexed_project_documents() {
     // A working-memory search is a search of the record alone.
     let (_, found) = call(&client, "memory_search", json!({ "query": "x", "kinds": ["plan"] })).await;
     assert_eq!(found.get("documents"), None, "{found}");
+    client.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// #292: `memory_forget` used to answer `{"forgotten": true}` while the same
+/// text was still retrievable in the documents half of `memory_search`, until
+/// whenever the next whole-corpus pass ran. The eviction has to be part of the
+/// same operation, and it has to happen before the tool answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn forgetting_through_the_tool_evicts_the_document_before_returning() {
+    let project = temp_project("forget-evicts");
+    let tokens = Arc::new(MemoryTokens::default());
+    let evicted = Arc::new(Mutex::new(Vec::new()));
+    let seen = evicted.clone();
+    let evict: IndexEvict = Arc::new(move |cwd: String, doc_id: String| {
+        seen.lock().push((cwd, doc_id));
+        Box::pin(async move { true })
+    });
+    let server = serve(
+        ticking_memory(),
+        tokens.clone(),
+        always_on(),
+        Sources { index: None, bootstrap: None, evict: Some(evict) },
+    )
+    .await;
+    let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
+
+    let (err, remembered) = call(
+        &client,
+        "memory_remember",
+        json!({ "kind": "fact", "content": "the secondary canary token is QUOKKA-9042" }),
+    )
+    .await;
+    assert!(!err, "{remembered}");
+    let id = remembered["entry"]["id"].as_i64().expect("an entry id");
+
+    let (err, forgotten) = call(&client, "memory_forget", json!({ "id": id })).await;
+    assert!(!err, "{forgotten}");
+    assert_eq!(forgotten["forgotten"], json!(true));
+
+    // The document went with the record, addressed by its corpus id, and the
+    // eviction had already happened by the time the tool answered.
+    assert_eq!(*evicted.lock(), vec![(project.clone(), format!("shared:fact:{id}"))]);
+
+    // Forgetting something that is not there evicts nothing and says so.
+    let (_, missing) = call(&client, "memory_forget", json!({ "id": id })).await;
+    assert_eq!(missing["forgotten"], json!(false));
+    assert_eq!(evicted.lock().len(), 1, "no eviction for an entry that was not there");
+
+    client.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// The record has the last word on what a search may return. An eviction can
+/// be missed (the index was busy, or the document predates the seam), so a
+/// document promoted from an entry that no longer exists is dropped at read
+/// time too — and nothing else is, because dropping a live document would be
+/// a worse failure than the one being fixed.
+#[tokio::test(flavor = "multi_thread")]
+async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
+    let project = temp_project("stale-docs");
+    let tokens = Arc::new(MemoryTokens::default());
+    let memory = ticking_memory();
+
+    let writer = crate::commands::shared_memory::Writer {
+        agent: "cersei".to_string(),
+        session_id: "s1".to_string(),
+    };
+    let live = memory
+        .remember(&project, &writer, EntryKind::Fact, "a fact worth keeping", "")
+        .expect("remembered")
+        .entry
+        .id;
+    let gone = live + 4242; // never existed
+
+    let index: IndexSearch = Arc::new(move |_cwd, _query, _limit| {
+        Box::pin(async move {
+            vec![
+                IndexDoc {
+                    id: Some(format!("shared:fact:{live}")),
+                    title: "live".to_string(),
+                    source: "shared".to_string(),
+                    text: "[cersei] a fact worth keeping".to_string(),
+                },
+                IndexDoc {
+                    id: Some(format!("shared:fact:{gone}")),
+                    title: "forgotten".to_string(),
+                    source: "shared".to_string(),
+                    text: "[cersei] QUOKKA-9042".to_string(),
+                },
+                IndexDoc {
+                    id: Some("docs/adr/0010.md".to_string()),
+                    title: "ADR-0010".to_string(),
+                    source: "docs/adr/0010.md".to_string(),
+                    text: "an ordinary project document".to_string(),
+                },
+            ]
+        })
+    });
+    let server = serve(
+        memory,
+        tokens.clone(),
+        always_on(),
+        Sources { index: Some(index), bootstrap: None, evict: None },
+    )
+    .await;
+    let client = connect(&server.url(), &tokens.mint("s1", "cersei", &project)).await.unwrap();
+
+    let (err, found) = call(&client, "memory_search", json!({ "query": "anything at all" })).await;
+    assert!(!err, "{found}");
+    let titles: Vec<&str> = found["documents"]
+        .as_array()
+        .expect("documents")
+        .iter()
+        .filter_map(|d| d["title"].as_str())
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["live", "ADR-0010"],
+        "the forgotten entry's document is dropped; the live one and the ordinary document are not"
+    );
+
     client.cancel().await.ok();
     let _ = std::fs::remove_dir_all(&project);
 }

@@ -201,6 +201,31 @@ impl MemoryEngine {
         Ok(())
     }
 
+    /// Remove one document from the index, immediately.
+    ///
+    /// [`Self::index_corpus`] only deletes by diffing a freshly gathered corpus
+    /// against the manifest, so a record deleted between two passes stays
+    /// searchable until the next pass runs. `memory_forget` is documented as
+    /// deleting an entry, and a delete that reports success while its text is
+    /// still retrievable is not one — so the forget path evicts here rather
+    /// than waiting for a pass to notice the record is gone.
+    ///
+    /// Returns whether the document was indexed at all. Persists on a hit; a
+    /// miss touches nothing on disk.
+    pub fn evict(&mut self, doc_id: &str) -> anyhow::Result<bool> {
+        let had_text = self.docstore.get(doc_id).is_some();
+        let key = self.manifest.remove(doc_id);
+        if let Some(key) = key {
+            let _ = self.store.remove(key);
+        }
+        if key.is_none() && !had_text {
+            return Ok(false);
+        }
+        self.docstore.remove(doc_id);
+        self.persist()?;
+        Ok(true)
+    }
+
     /// Persist HNSW + manifest together under the memory dir, creating it lazily.
     /// The manifest write is atomic (temp + rename); usearch save writes whole.
     pub fn persist(&self) -> anyhow::Result<()> {
@@ -525,6 +550,43 @@ mod index_corpus_tests {
             .diff(&[("note:a".to_string(), "h_a".to_string())]);
         assert!(diff.add.is_empty() && diff.update.is_empty());
 
+    }
+
+    /// `memory_forget` deletes the record; the indexed document has to go with
+    /// it. Leaving the text behind is a delete that reports success while the
+    /// content is still searchable, which is the whole of #292.
+    #[test]
+    fn evicting_a_document_removes_its_vector_and_its_text_for_good() {
+        let (_tmp, root) = tmp_root("evict");
+        let mut engine = MemoryEngine::open(root.clone());
+        engine
+            .add_embedded(&[
+                (doc("shared:fact:44", "Keep me\n\nstill true", "h_keep"), axis(1)),
+                (
+                    doc("shared:fact:45", "Forget me\n\nQUOKKA-9042", "h_gone"),
+                    axis(2),
+                ),
+            ])
+            .unwrap();
+
+        assert!(engine.evict("shared:fact:45").unwrap());
+        assert!(
+            !engine.evict("shared:fact:45").unwrap(),
+            "a second evict has nothing to remove"
+        );
+
+        assert!(engine.docstore.get("shared:fact:45").is_none());
+        assert!(engine.manifest.key_for("shared:fact:45").is_none());
+        assert!(
+            engine.docstore.get("shared:fact:44").is_some(),
+            "the neighbour is untouched"
+        );
+
+        // And it stays gone, rather than coming back from disk on reopen.
+        drop(engine);
+        let reopened = MemoryEngine::open(root);
+        assert!(reopened.docstore.get("shared:fact:45").is_none());
+        assert!(reopened.docstore.get("shared:fact:44").is_some());
     }
 
     /// Adding the Graph's vectors never drops docs the indexer already holds

@@ -871,7 +871,9 @@ fn handle_server_request(
 ) {
     use codex_app_server_protocol::ServerRequest as Req;
 
-    let (request_id, thread_id, prompt) = match &request {
+    // `surface` and `item_id` exist only for the decision log below: an
+    // approval that is answered and then goes nowhere leaves no other trace.
+    let (request_id, thread_id, prompt, surface, item_id) = match &request {
         Req::CommandExecutionRequestApproval { request_id, params } => (
             request_id.clone(),
             params.thread_id.clone(),
@@ -881,6 +883,8 @@ fn handle_server_request(
                 params.command.clone(),
                 params.reason.clone(),
             ),
+            "command",
+            params.item_id.clone(),
         ),
         Req::FileChangeRequestApproval { request_id, params } => (
             request_id.clone(),
@@ -891,6 +895,8 @@ fn handle_server_request(
                 None,
                 params.reason.clone(),
             ),
+            "file_change",
+            params.item_id.clone(),
         ),
         Req::PermissionsRequestApproval { request_id, params } => (
             request_id.clone(),
@@ -901,6 +907,8 @@ fn handle_server_request(
                 None,
                 params.reason.clone(),
             ),
+            "permissions",
+            params.item_id.clone(),
         ),
         other => {
             // Elicitations, dynamic tool calls, attestation. Refused rather
@@ -949,6 +957,17 @@ fn handle_server_request(
     let answers = answers.clone();
     tokio::spawn(async move {
         let decision = approvals::decision_for(&waiter.await);
+        // The one record that an approval was answered, and how. A report of a
+        // turn that stalls after Allow (issue 294) is otherwise undiagnosable:
+        // nothing downstream says which tool the user released, or whether the
+        // engine ever heard the answer.
+        tracing::info!(
+            target: "atlas::approvals",
+            decision = ?decision,
+            surface,
+            item_id = %item_id,
+            "approval answered"
+        );
         // Shaped per request kind: the engine's two approval surfaces take
         // different response types even though the user answered one question.
         let result = match &request {

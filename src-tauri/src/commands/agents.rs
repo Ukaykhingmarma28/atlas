@@ -684,11 +684,24 @@ pub fn install_manager(app: &AppHandle) {
                     .await
                     .into_iter()
                     .map(|d| super::memory_server::IndexDoc {
+                        id: Some(d.id),
                         title: d.title,
                         source: d.source,
                         text: d.text,
                     })
                     .collect()
+            })
+        });
+        // `memory_forget` drops the entry's document from the index in the
+        // same breath, so "forgotten" is true of both halves before it says
+        // so. Bounded: the indexer holds the write lock for a whole re-embed
+        // pass, and a tool call must not queue behind one — a miss here is
+        // caught by the search-side liveness filter and by the next pass.
+        let evict_app = app.clone();
+        let evict: super::memory_server::IndexEvict = Arc::new(move |cwd, doc_id| {
+            let app = evict_app.clone();
+            Box::pin(async move {
+                crate::commands::memory_retrieve::evict_doc(&app, &cwd, &doc_id).await
             })
         });
         // `memory_briefing` also carries the curated pack and the
@@ -701,7 +714,11 @@ pub fn install_manager(app: &AppHandle) {
         server.start(
             memory.inner().clone(),
             gate,
-            super::memory_server::Sources { index: Some(index), bootstrap: Some(bootstrap) },
+            super::memory_server::Sources {
+                index: Some(index),
+                bootstrap: Some(bootstrap),
+                evict: Some(evict),
+            },
         );
     }
 

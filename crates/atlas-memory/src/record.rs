@@ -908,6 +908,19 @@ impl RecordStore {
         Ok(Some(Entry { last_used_at: Some(now), ..entry }))
     }
 
+    /// Whether `id` is still a live entry, WITHOUT stamping it as used.
+    ///
+    /// [`Self::get`] marks an entry used, and use count feeds ranking, so the
+    /// search-side liveness filter cannot read through `get` without inflating
+    /// the score of every entry it checks.
+    pub fn exists(&self, id: i64) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row("SELECT 1 FROM entries WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
     fn mark_used(&self, entries: &[Entry], now: i64) -> Result<()> {
         if entries.is_empty() {
             return Ok(());

@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 
 use super::briefing::SessionClocks;
 use super::tokens::{require_token, MemoryTokens};
-use super::tools::{BootstrapSource, IndexSearch, MemoryTools};
+use super::tools::{BootstrapSource, IndexEvict, IndexSearch, MemoryTools};
 use super::MCP_PATH;
 use crate::commands::shared_memory::SharedMemoryStore;
 
@@ -28,6 +28,9 @@ pub type SharingGate = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 pub struct Sources {
     pub index: Option<IndexSearch>,
     pub bootstrap: Option<BootstrapSource>,
+    /// Drop one document from the index now (`memory_forget`). Without it a
+    /// forgotten entry's text stays retrievable until the next corpus pass.
+    pub evict: Option<IndexEvict>,
 }
 
 /// The running server. Dropping it (or [`shutdown`](Self::shutdown)) stops it.
