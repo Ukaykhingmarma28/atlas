@@ -732,3 +732,103 @@ fn a_call_in_the_default_namespace_keeps_its_bare_name() {
         .collect();
     assert_eq!(calls[0][0]["function"]["name"], json!("shell"));
 }
+
+/// Everything before the newest user message is the prompt's cacheable prefix.
+/// If any of it is re-rendered between two turns of one thread, caching misses
+/// on a prefix that only Atlas changed — and the whole transcript is re-read
+/// at full price. Byte identity is the property, so these compare serialized
+/// text rather than `Value`: a key-order change would slip past `Value`
+/// equality and still cost the hit.
+#[test]
+fn a_second_turn_repeats_the_first_turns_prefix_byte_for_byte() {
+    let tools = [json!({
+        "type": "function",
+        "name": "shell",
+        "description": "Run a command.",
+        "strict": false,
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}},
+    })];
+
+    let turn_1 = [
+        message("user", "what does this project build?"),
+        assistant("A desktop app."),
+        call("c1", "shell", "{\"command\":\"ls\"}"),
+        output("c1", "Cargo.toml"),
+        message("user", "and what tests it?"),
+    ];
+    // Turn 2 is turn 1, plus what turn 1 produced, plus the new question.
+    let mut turn_2 = turn_1.to_vec();
+    turn_2.push(assistant("Cargo and vitest."));
+    turn_2.push(message("user", "which one is slower?"));
+
+    let first = body_of(&build("claude-sonnet-4-6", &turn_1, &tools));
+    let second = body_of(&build("claude-sonnet-4-6", &turn_2, &tools));
+
+    // The tool array is prefix too, and it is where a nondeterministic
+    // ordering would show up.
+    assert_eq!(
+        serde_json::to_string(&first["tools"]).expect("tools serialize"),
+        serde_json::to_string(&second["tools"]).expect("tools serialize"),
+    );
+    assert_eq!(first["model"], second["model"]);
+    assert_eq!(first["max_tokens"], second["max_tokens"]);
+
+    let (first_messages, second_messages) = (
+        first["messages"].as_array().expect("messages"),
+        second["messages"].as_array().expect("messages"),
+    );
+    assert!(
+        second_messages.len() > first_messages.len(),
+        "turn 2 must extend turn 1, or this proves nothing"
+    );
+    for (index, expected) in first_messages.iter().enumerate() {
+        assert_eq!(
+            serde_json::to_string(expected).expect("message serializes"),
+            serde_json::to_string(&second_messages[index]).expect("message serializes"),
+            "message {index} was re-rendered between turns"
+        );
+    }
+}
+
+/// The same property with the memory namespace present, since a namespace is
+/// serialized as a nested tool list and is the shape most at risk of a
+/// reordering regression.
+#[test]
+fn a_namespaced_tool_list_is_identical_across_turns() {
+    let tools = [json!({
+        "type": "namespace",
+        "name": "mcp__atlas_memory__",
+        "description": "Tools in the mcp__atlas_memory__ namespace.",
+        "tools": [
+            {
+                "type": "function",
+                "name": "memory_briefing",
+                "description": "Call this first in a session.",
+                "strict": false,
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "type": "function",
+                "name": "memory_search",
+                "description": "Search shared memory.",
+                "strict": false,
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        ],
+    })];
+
+    let turn_1 = [message("user", "first")];
+    let turn_2 = [
+        message("user", "first"),
+        assistant("answered"),
+        message("user", "second"),
+    ];
+
+    let first = body_of(&build("claude-sonnet-4-6", &turn_1, &tools));
+    let second = body_of(&build("claude-sonnet-4-6", &turn_2, &tools));
+
+    assert_eq!(
+        serde_json::to_string(&first["tools"]).expect("tools serialize"),
+        serde_json::to_string(&second["tools"]).expect("tools serialize"),
+    );
+}

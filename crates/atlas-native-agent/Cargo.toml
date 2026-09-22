@@ -57,6 +57,7 @@ codex-app-server-client = { path = "../../vendor/codex/app-server-client" }
 codex-app-server-protocol = { path = "../../vendor/codex/app-server-protocol" }
 codex-arg0 = { path = "../../vendor/codex/arg0" }
 codex-config = { path = "../../vendor/codex/config" }
+codex-utils-json-to-toml = { path = "../../vendor/codex/utils/json-to-toml" }
 codex-core = { path = "../../vendor/codex/core" }
 codex-exec-server = { path = "../../vendor/codex/exec-server" }
 codex-feedback = { path = "../../vendor/codex/feedback" }

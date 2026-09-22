@@ -1,3 +1,4 @@
+// Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 //! MCP tool metadata, filtering, and name normalization.
 //!
 //! Raw MCP tool identities must be preserved for protocol calls, while
@@ -110,6 +111,22 @@ pub(crate) fn filter_tools(tools: Vec<ToolInfo>, filter: &ToolFilter) -> Vec<Too
 ///
 /// When `prefix_mcp_tool_names` is true, the historical `mcp__` namespace
 /// prefix is added except for tools from `non_prefixed_mcp_tool_servers`.
+/// A total order over MCP tools, so the model-visible list is the same list
+/// every time it is built.
+///
+/// The list feeds the request's `tools` array, which is part of the prompt's
+/// cacheable prefix. Its source is a `HashMap` of server connections, whose
+/// iteration order is seeded per instance, and a fresh instance is built on
+/// every republish of the MCP runtime. Without an order of our own the array
+/// could reorder mid-thread and cost every later turn its cache hit, with
+/// nothing else about the request having changed.
+pub(crate) fn cache_stable_order(left: &ToolInfo, right: &ToolInfo) -> std::cmp::Ordering {
+    left.server_name
+        .cmp(&right.server_name)
+        .then_with(|| left.callable_name.cmp(&right.callable_name))
+        .then_with(|| left.tool.name.cmp(&right.tool.name))
+}
+
 pub(crate) fn normalize_tools_for_model_with_prefix<I>(
     tools: I,
     prefix_mcp_tool_names: bool,
@@ -118,6 +135,12 @@ pub(crate) fn normalize_tools_for_model_with_prefix<I>(
 where
     I: IntoIterator<Item = ToolInfo>,
 {
+    // Sorted here rather than at each caller: every path that builds a
+    // model-visible tool list goes through this function, so a listing path
+    // added later cannot quietly reintroduce a hash-ordered array.
+    let mut tools: Vec<ToolInfo> = tools.into_iter().collect();
+    tools.sort_by(cache_stable_order);
+
     let mut seen_raw_names = HashSet::new();
     let mut candidates = Vec::new();
     for tool in tools {
@@ -312,5 +335,92 @@ fn unique_callable_parts(
             return (namespace, tool_name);
         }
         attempt = attempt.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+mod cache_order_tests {
+    use super::*;
+
+    fn tool_info(server: &str, callable: &str) -> ToolInfo {
+        ToolInfo {
+            server_name: server.to_string(),
+            supports_parallel_tool_calls: false,
+            server_origin: None,
+            callable_name: callable.to_string(),
+            callable_namespace: server.to_string(),
+            namespace_description: None,
+            tool: Tool::new(
+                callable.to_string(),
+                "",
+                std::sync::Arc::new(serde_json::Map::new()),
+            ),
+            openai_file_input_optional_fields: HashMap::new(),
+            connector_id: None,
+            connector_name: None,
+            plugin_display_names: Vec::new(),
+        }
+    }
+
+    /// The model-visible tool list is built by iterating a `HashMap` of server
+    /// connections, so its order is seeded per instance and a republish of the
+    /// MCP runtime reshuffles it. That array is part of the prompt's cacheable
+    /// prefix: a reorder mid-thread costs every later turn its cache hit while
+    /// nothing else about the request has changed.
+    #[test]
+    fn tools_come_out_in_the_same_order_whatever_order_they_went_in() {
+        let canonical = vec![
+            tool_info("atlas_memory", "memory_briefing"),
+            tool_info("atlas_memory", "memory_search"),
+            tool_info("zeta", "alpha"),
+        ];
+
+        // Every permutation of the same three tools must normalize to one order.
+        let shuffles = [
+            vec![0usize, 1, 2],
+            vec![2, 1, 0],
+            vec![1, 2, 0],
+            vec![2, 0, 1],
+        ];
+        let expected: Vec<String> = canonical
+            .iter()
+            .map(|t| format!("{}::{}", t.server_name, t.callable_name))
+            .collect();
+
+        for shuffle in shuffles {
+            let input: Vec<ToolInfo> = shuffle.iter().map(|i| canonical[*i].clone()).collect();
+            let got = normalize_tools_for_model_with_prefix(input, false, &[]);
+            let names: Vec<String> = got
+                .iter()
+                .map(|t| format!("{}::{}", t.server_name, t.callable_name))
+                .collect();
+            assert_eq!(names, expected, "input order must not survive into output");
+        }
+    }
+
+    /// Ordering is by server first, so one server's tools never interleave with
+    /// another's — the array stays readable as well as stable.
+    #[test]
+    fn tools_are_grouped_by_server_before_being_ordered_by_name() {
+        let input = vec![
+            tool_info("b_server", "aaa"),
+            tool_info("a_server", "zzz"),
+            tool_info("b_server", "bbb"),
+            tool_info("a_server", "aaa"),
+        ];
+        let got = normalize_tools_for_model_with_prefix(input, false, &[]);
+        let names: Vec<String> = got
+            .iter()
+            .map(|t| format!("{}::{}", t.server_name, t.callable_name))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "a_server::aaa".to_string(),
+                "a_server::zzz".to_string(),
+                "b_server::aaa".to_string(),
+                "b_server::bbb".to_string(),
+            ],
+        );
     }
 }

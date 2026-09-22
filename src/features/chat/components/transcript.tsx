@@ -51,7 +51,7 @@ import { pinScope } from "../stores/chat-pins-store";
 import { cn } from "@/lib/utils";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { GradualBlur } from "@/components/gradual-blur";
-import { LoadingState } from "./loading-state";
+import { LoadingState, WAITING_LABEL } from "./loading-state";
 import {
   UserRowView,
   ProseRowView,
@@ -136,8 +136,9 @@ interface TranscriptProps {
   onShowJumpChange?: (visible: boolean, newCount?: number) => void;
   /** What the working indicator says while the session is still binding and
    *  the first message is held (see `ChatSession.pendingSend`) — "Starting
-   *  Claude Code" rather than "Thinking", which would claim a turn that has
-   *  not been dispatched yet. */
+   *  Claude Code", which names the one thing actually happening. Absent, the
+   *  indicator falls back to `WAITING_LABEL`: a turn that HAS been dispatched
+   *  is waiting on the model, which is a different claim again. */
   workingLabel?: string;
   /** Offered under the working indicator once a start has stalled (30 s with
    *  no session): restart the agent's process, or switch this tab to another
@@ -186,7 +187,7 @@ function saveScroll(cacheKey: string, saved: Saved): void {
  * and departure don't jolt the thread it sits under.
  */
 function WorkingIndicator({
-  label = "Thinking",
+  label = WAITING_LABEL,
   onStallRestart,
   onStallSwitch,
   onStallCopyDiagnostics,
