@@ -123,10 +123,21 @@ pub fn tool_call(
     title: Option<String>,
     reason: Option<String>,
 ) -> acp::ToolCallUpdate {
+    // The dialog renders this inside a sentence of its own — "The agent wants
+    // to run {title}?" (`permission-modal.tsx`) — so the fallback has to be a
+    // NOUN PHRASE. It used to be the sentence "The agent is asking for
+    // permission", which produced "The agent wants to run The agent is asking
+    // for permission?" on screen. Naming the kind is both grammatical and more
+    // informative than the generic line ever was.
+    let generic = match kind {
+        acp::ToolKind::Execute => "a command",
+        acp::ToolKind::Edit => "a file edit",
+        _ => "a tool call",
+    };
     let title = title
         .filter(|t| !t.trim().is_empty())
         .or_else(|| reason.clone().filter(|r| !r.trim().is_empty()))
-        .unwrap_or_else(|| "The agent is asking for permission".to_string());
+        .unwrap_or_else(|| generic.to_string());
 
     let mut fields = acp::ToolCallUpdateFields::default();
     fields.title = Some(title);
@@ -226,10 +237,28 @@ mod tests {
         assert!(call.fields.title.is_some_and(|t| !t.trim().is_empty()));
 
         let blank = tool_call("item-1", acp::ToolKind::Execute, Some("   ".into()), None);
-        assert_eq!(
-            blank.fields.title.as_deref(),
-            Some("The agent is asking for permission"),
-        );
+        assert_eq!(blank.fields.title.as_deref(), Some("a command"));
+    }
+
+    /// The dialog says "The agent wants to run {title}?", so a fallback that is
+    /// itself a sentence reads "The agent wants to run The agent is asking for
+    /// permission?". The fallback must stay a noun phrase, per kind.
+    #[test]
+    fn the_fallback_is_a_noun_phrase_the_dialog_can_embed() {
+        let cases = [
+            (acp::ToolKind::Execute, "a command"),
+            (acp::ToolKind::Edit, "a file edit"),
+            (acp::ToolKind::Fetch, "a tool call"),
+        ];
+        for (kind, expected) in cases {
+            let call = tool_call("item-1", kind, None, None);
+            let title = call.fields.title.expect("a title is always set");
+            assert_eq!(title, expected);
+            assert!(
+                !title.contains("The agent"),
+                "fallback must not be a sentence: {title}"
+            );
+        }
     }
 
     #[test]

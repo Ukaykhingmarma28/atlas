@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Hint } from "@/ui/tooltip";
+import { recentsForOrg } from "@/features/app/lib/recent-projects";
 import {
   FolderPlus,
   Folder,
@@ -729,12 +730,17 @@ export function ProjectSidebar() {
     [groups],
   );
 
-  // Recent projects = picker recents NOT already in the registry. Excludes
-  // projects open in ANY org (recents are global) so nothing double-lists.
+  // Recent projects = picker recents for THIS org, minus anything already in
+  // the registry. Excludes projects open in ANY org so nothing double-lists.
+  // Recents used to be global, which put other orgs' project names and full
+  // paths in this list — see `recentsForOrg`.
   const openPaths = useMemo(() => new Set(allProjects.map((w) => w.path)), [allProjects]);
   const recents = useMemo(
-    () => recentProjects.filter((r) => !openPaths.has(r.path)),
-    [recentProjects, openPaths],
+    () =>
+      recentsForOrg(recentProjects, allProjects, activeOrganisationId).filter(
+        (r) => !openPaths.has(r.path),
+      ),
+    [recentProjects, allProjects, activeOrganisationId, openPaths],
   );
 
   // Chats are recorded globally (no orgId), so scope the sidebar list to the

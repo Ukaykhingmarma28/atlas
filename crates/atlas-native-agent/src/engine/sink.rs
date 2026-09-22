@@ -437,6 +437,34 @@ fn lock(thread: &AcpThreadHandle) -> std::sync::MutexGuard<'_, AcpThread> {
     thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Map the engine's thread token usage onto the shape the UI reads.
+///
+/// The one subtlety, and the reason this is its own function rather than
+/// inline: `used_tokens` feeds the CONTEXT GAUGE and must come from `last`,
+/// while every other field is a cumulative total and must come from `total`.
+/// Taking `total` for the gauge divides a number that only grows by a fixed
+/// window, so the percentage passes 100% and keeps climbing — 159% after
+/// seven ordinary turns, and the 999% reports are the same arithmetic on a
+/// longer thread.
+fn token_usage_of(
+    u: &codex_app_server_protocol::ThreadTokenUsage,
+) -> atlas_acp_thread::TokenUsage {
+    let clamp = |n: i64| n.max(0) as u64;
+    let total = &u.total;
+    let last = &u.last;
+    atlas_acp_thread::TokenUsage {
+        max_tokens: u.model_context_window.map(clamp).unwrap_or(0),
+        // Current occupancy, not lifetime spend.
+        used_tokens: clamp(last.total_tokens),
+        input_tokens: clamp(total.input_tokens),
+        output_tokens: clamp(total.output_tokens),
+        max_output_tokens: None,
+        cache_read_tokens: clamp(total.cached_input_tokens),
+        cache_write_tokens: clamp(total.cache_write_input_tokens),
+        reasoning_tokens: clamp(total.reasoning_output_tokens),
+    }
+}
+
 /// Applies one engine notification.
 ///
 /// `max_retries` is the provider's configured stream-retry ceiling. It is
@@ -619,22 +647,7 @@ pub fn apply_notification(
             let Some(thread) = sessions.thread(&session_id(&params.thread_id)) else {
                 return;
             };
-            let total = &params.token_usage.total;
-            let clamp = |n: i64| n.max(0) as u64;
-            lock(&thread).update_token_usage(Some(atlas_acp_thread::TokenUsage {
-                max_tokens: params
-                    .token_usage
-                    .model_context_window
-                    .map(clamp)
-                    .unwrap_or(0),
-                used_tokens: clamp(total.total_tokens),
-                input_tokens: clamp(total.input_tokens),
-                output_tokens: clamp(total.output_tokens),
-                max_output_tokens: None,
-                cache_read_tokens: clamp(total.cached_input_tokens),
-                cache_write_tokens: clamp(total.cache_write_input_tokens),
-                reasoning_tokens: clamp(total.reasoning_output_tokens),
-            }));
+            lock(&thread).update_token_usage(Some(token_usage_of(&params.token_usage)));
         }
 
         // A stream error. `will_retry` is the engine telling us whether it is
@@ -734,6 +747,64 @@ fn notification_name(notification: &ServerNotification) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// The context gauge reads `last`; every cumulative figure reads `total`.
+    /// Mixing them is what made the percentage climb past 100% and keep going.
+    mod token_usage {
+        use super::super::token_usage_of;
+        use codex_app_server_protocol::{ThreadTokenUsage, TokenUsageBreakdown};
+
+        fn breakdown(input: i64, output: i64) -> TokenUsageBreakdown {
+            TokenUsageBreakdown {
+                input_tokens: input,
+                cached_input_tokens: 0,
+                cache_write_input_tokens: 0,
+                output_tokens: output,
+                reasoning_output_tokens: 0,
+                total_tokens: input + output,
+            }
+        }
+
+        #[test]
+        fn the_gauge_reads_the_last_request_not_the_thread_total() {
+            // A thread seven turns in: 266.4K spent in total, but the request
+            // actually on the wire carried 60K. The window is 190K.
+            let usage = ThreadTokenUsage {
+                total: breakdown(266_400, 35_400),
+                last: breakdown(60_000, 1_200),
+                model_context_window: Some(190_000),
+            };
+
+            let mapped = token_usage_of(&usage);
+
+            assert_eq!(mapped.used_tokens, 61_200, "gauge must use `last`");
+            assert!(
+                mapped.used_tokens < mapped.max_tokens,
+                "a healthy thread must not read as over its window: {} / {}",
+                mapped.used_tokens,
+                mapped.max_tokens
+            );
+            // The split stays cumulative — that is what the Timeline wants.
+            assert_eq!(mapped.input_tokens, 266_400);
+            assert_eq!(mapped.output_tokens, 35_400);
+            assert_eq!(mapped.max_tokens, 190_000);
+        }
+
+        #[test]
+        fn a_negative_count_is_clamped_rather_than_wrapping() {
+            let usage = ThreadTokenUsage {
+                total: breakdown(-5, -5),
+                last: breakdown(-5, -5),
+                model_context_window: Some(-1),
+            };
+
+            let mapped = token_usage_of(&usage);
+
+            assert_eq!(mapped.used_tokens, 0);
+            assert_eq!(mapped.input_tokens, 0);
+            assert_eq!(mapped.max_tokens, 0);
+        }
+    }
 
     mod mcp_startup {
         use super::super::*;
