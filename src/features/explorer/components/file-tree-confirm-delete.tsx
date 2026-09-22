@@ -88,13 +88,26 @@ export function FileTreeConfirmDelete({
             >
               Cancel
             </button>
+            {/* Red on a red wash, not black on solid red.
+
+                The two destructive tokens are a pair and this button was
+                wearing half of each: a fill of `--atlas-status-error-foreground`
+                (the saturated status red) lettered in `--destructive-foreground`,
+                which every dark theme defines as a near-black because it belongs
+                on *that theme's* lighter `--destructive` chip. The result was a
+                heavy black label on a bright red slab.
+
+                The error background/foreground pair is the app's existing idiom
+                for this — the same one the error banners use — so the label
+                stays the red that means danger and every theme, light or dark,
+                supplies both halves itself. */}
             <button
               type="button"
               autoFocus
               onClick={onConfirm}
               className={cn(
                 "px-3 h-7 rounded text-xs font-medium",
-                "text-destructive-foreground bg-[var(--atlas-status-error-foreground)] hover:opacity-90",
+                "border border-error/40 bg-error-muted text-error transition-colors hover:bg-error/20",
               )}
             >
               {confirmLabel}
