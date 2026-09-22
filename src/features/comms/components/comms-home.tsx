@@ -138,14 +138,16 @@ export function CommsHome() {
         <SectionLabel label="Direct messages" icon={MessagesSquare} action={<NewDmMenu />} />
         {rosterPending &&
           [0, 1, 2].map((i) => (
-            <div key={`sk${i}`} className="flex items-center gap-2.5 py-[5px] pl-3.5 pr-2.5">
-              <div className="h-[26px] w-[26px] shrink-0 rounded-full bg-[var(--card)] opacity-50 atlas-marker-running" />
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <div
-                  className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
-                  style={{ width: 88 + ((i * 37) % 60) }}
-                />
-              </div>
+            <div key={`sk${i}`} className="flex items-center gap-2 py-[5px] pl-3.5 pr-2.5">
+              {/* Mirrors DirectRow exactly — same icon slot, same avatar size,
+                  one line — so the roster landing does not shift the list. */}
+              <RowIcon>
+                <div className="h-[22px] w-[22px] shrink-0 rounded-full bg-[var(--card)] opacity-50 atlas-marker-running" />
+              </RowIcon>
+              <div
+                className="h-[9px] rounded bg-[var(--card)] opacity-50 atlas-marker-running"
+                style={{ width: 88 + ((i * 37) % 60) }}
+              />
             </div>
           ))}
         {!rosterPending &&
@@ -319,9 +321,21 @@ function ChannelRow({
 }
 
 /**
- * A direct conversation: two lines, avatar with presence, name over email —
- * after the contacts reference. The obvious third line would be "last seen",
- * which the API refuses to have exist; do not invent one.
+ * A direct conversation: ONE line, avatar with presence, name.
+ *
+ * It used to carry the counterpart's email on a second line. Nothing read it —
+ * an address is not how you pick a person out of a list of eight faces — and it
+ * cost every row a third of its height, so the section scrolled where it should
+ * have fit. The email is still what `matches` searches, so typing one still
+ * finds its owner; it just no longer occupies the rail to say so.
+ *
+ * The tempting replacement was "last active 5m ago", and it does not exist: the
+ * presence frame is a binary online SET (`docs/chat/00-api-map.md`), the roster
+ * comes from `get-full-organization` which carries no activity timestamp, and a
+ * conversation's recency is a `seq`, not a time. Do not invent one.
+ *
+ * A group's member count stays, as a trailing figure rather than a subtitle —
+ * it is the one thing about a group row that a name does not already tell you.
  */
 function DirectRow({
   conv,
@@ -353,30 +367,30 @@ function DirectRow({
     >
       <RowIcon>
         {isGroup ? (
-          <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-card text-muted-foreground">
-            <Users size={13} />
+          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-card text-muted-foreground">
+            <Users size={12} />
           </span>
         ) : (
           <CommsAvatar
             member={counterpart}
-            size={26}
+            size={22}
             online={counterpart ? online.includes(counterpart.id) : false}
           />
         )}
       </RowIcon>
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-sm leading-[1.35]",
-            unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
-          )}
-        >
-          {title}
-        </span>
-        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
-          {isGroup ? `${others.length + 1} members` : (counterpart?.email ?? "")}
-        </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          unread > 0 ? "font-medium text-foreground" : "text-secondary-foreground",
+        )}
+      >
+        {title}
       </span>
+      {isGroup && (
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {others.length + 1}
+        </span>
+      )}
       <Badges unread={unread} mentions={mentions} />
     </button>
   );
@@ -402,15 +416,10 @@ function ContactRow({
       className="flex w-full items-center gap-2 py-[5px] pl-3.5 pr-2.5 text-left transition-colors hover:bg-element-hover disabled:opacity-60 cursor-pointer"
     >
       <RowIcon>
-        <CommsAvatar member={member} size={26} online={online} />
+        <CommsAvatar member={member} size={22} online={online} />
       </RowIcon>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm leading-[1.35] text-secondary-foreground">
-          {member.name}
-        </span>
-        <span className="block truncate text-xs leading-[1.35] text-muted-foreground">
-          {member.email}
-        </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-secondary-foreground">
+        {member.name}
       </span>
       {starting && <Loader2 size={12} className="shrink-0 animate-spin text-muted-foreground" />}
     </button>
