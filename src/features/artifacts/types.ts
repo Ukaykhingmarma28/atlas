@@ -202,3 +202,16 @@ export interface BoardSession extends SessionSummary {
  * while still carrying comments.
  */
 export type SessionOrigin = "local" | "remote" | "both";
+
+/**
+ * One board read — mirrors `commands::capture::BoardPage`.
+ *
+ * `cloudPending` is the difference between "this Organisation has no Sessions"
+ * and "the remote half has not arrived yet". A synced Organisation has no local
+ * rows to show while its first server read is in flight, and an empty board at
+ * that moment must render as loading rather than as empty.
+ */
+export interface BoardPage {
+  sessions: BoardSession[];
+  cloudPending: boolean;
+}

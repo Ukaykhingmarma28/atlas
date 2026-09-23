@@ -1623,10 +1623,7 @@ pub(crate) fn remote_summary(remote: atlas_artifacts::RemoteSession) -> atlas_ch
 const BOARD_LIMIT: usize = 500;
 
 #[tauri::command]
-pub async fn artifacts_board(
-    projects: Vec<String>,
-    app: AppHandle,
-) -> Result<Vec<BoardSession>, String> {
+pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<BoardPage, String> {
     // Read the cloud cache first, on this thread: it is a lock and a clone, and
     // taking it before the blocking hop keeps the `AppHandle` out of there.
     //
@@ -1635,7 +1632,8 @@ pub async fn artifacts_board(
     // would stall a list whose whole appeal is that it is instant, and would
     // leave it empty offline where the local Sessions are perfectly readable.
     // The cache is filled on a ticker and by the socket instead.
-    let (remote, remote_names) = cloud_snapshot(&app);
+    let cloud = cloud_snapshot(&app);
+    let (remote, remote_names, cloud_pending) = (cloud.sessions, cloud.names, cloud.pending);
 
     tauri::async_runtime::spawn_blocking(move || {
         // One project means the board is filtered, and the caller wants that
@@ -1745,10 +1743,25 @@ pub async fn artifacts_board(
         // and resumed today is today's work.
         out.sort_by(|a, b| b.session.last_activity_at.cmp(&a.session.last_activity_at));
         out.truncate(limit);
-        Ok(out)
+        Ok(BoardPage { sessions: out, cloud_pending })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The board, plus whether it is finished arriving.
+///
+/// `cloud_pending` exists because an empty board has two very different
+/// meanings and the viewer could not tell them apart: a synced Organisation
+/// whose first remote read is still in flight has no local rows to show, and
+/// rendering "No sessions captured yet" at that moment is simply wrong — the
+/// list appears a moment later. It is false for a local-only Organisation,
+/// which has no remote half to wait on.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardPage {
+    pub sessions: Vec<BoardSession>,
+    pub cloud_pending: bool,
 }
 
 /// The Organisation's remote Sessions as of the last refresh, keyed by id.
@@ -1756,19 +1769,28 @@ pub async fn artifacts_board(
 /// Empty when signed out, in a local-only Organisation, or before the first
 /// refresh lands — all three of which mean "show the local board", which is a
 /// complete answer rather than a degraded one.
-/// The remote board as of the last refresh: the Sessions, and Project id → the
-/// name the Organisation gave that Project.
-type CloudSnapshot =
-    (HashMap<String, atlas_artifacts::RemoteSession>, HashMap<String, String>);
+/// The remote board as of the last refresh.
+#[derive(Default)]
+struct CloudSnapshot {
+    sessions: HashMap<String, atlas_artifacts::RemoteSession>,
+    /// Project id → the name the Organisation gave that Project.
+    names: HashMap<String, String>,
+    /// The first refresh for this Organisation has not finished yet, so an
+    /// empty board means "not looked" rather than "nothing here".
+    pending: bool,
+}
 
 fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
     let Some(state) = app.try_state::<crate::commands::artifacts_cloud::ArtifactsCloudState>()
     else {
-        return (HashMap::new(), HashMap::new());
+        return CloudSnapshot::default();
     };
+    // No synced Organisation: there is no remote half to wait for, so the local
+    // board is the whole answer and is never pending.
     let Some(org_id) = state.org.lock().ok().and_then(|org| org.clone()) else {
-        return (HashMap::new(), HashMap::new());
+        return CloudSnapshot::default();
     };
+    let pending = state.board.is_pending(&org_id);
     let board = state.board.snapshot(&org_id);
     let names = board
         .projects
@@ -1783,7 +1805,7 @@ fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
                 .map(|label| (id.clone(), label))
         })
         .collect();
-    (board.sessions, names)
+    CloudSnapshot { sessions: board.sessions, names, pending }
 }
 
 /// One Checkpoint on the board, tagged with the project it came from.

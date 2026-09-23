@@ -37,6 +37,7 @@ import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { authorOf, type AuthorDirectory } from "../lib/author-directory";
 import { groupSessions, sessionState, sessionTitle, type GroupPeriod } from "../lib/board";
 import type { BoardSession } from "../types";
+import { SidebarSkeleton } from "./timeline-skeleton";
 
 interface Props {
   sessions: BoardSession[];
@@ -303,13 +304,9 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
     virtualizer.scrollToIndex(index, { align: "center" });
   }, [openId, rows, virtualizer]);
 
-  if (loading) {
-    return (
-      <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
-        Reading the session store…
-      </p>
-    );
-  }
+  // Structure rather than a sentence: the read is usually a few milliseconds,
+  // and a line of prose that appears and vanishes reads as a flash of error.
+  if (loading) return <SidebarSkeleton dayHeight={DAY_H} sessionHeight={SESSION_H} />;
   if (rows.length === 0) return <Empty filtered={filtered} />;
 
   const items = virtualizer.getVirtualItems();

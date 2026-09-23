@@ -20,7 +20,7 @@ import { useAuthStore } from "@/features/auth/stores/auth-store";
 
 import { useSessionComments } from "../lib/use-session-comments";
 import { useArtifactsStore } from "../stores/artifacts-store";
-import type { BoardSession, SessionDetail as Detail } from "../types";
+import type { BoardPage, BoardSession, SessionDetail as Detail } from "../types";
 import {
   activeFacetCount,
   facetMatches,
@@ -42,6 +42,7 @@ import { SessionDetail } from "./session-detail";
 import { TimelineInbox } from "./timeline-inbox";
 import { TimelineResults } from "./timeline-results";
 import { TimelineSidebar } from "./timeline-sidebar";
+import { DetailSkeleton } from "./timeline-skeleton";
 
 /**
  * Is this re-read structurally the same Session we already have?
@@ -280,6 +281,18 @@ export function ArtifactsPanel() {
    *  three only narrow what is already on screen. */
   const [selection, setSelection] = useState<FacetSelection>(NO_FACETS);
   const [error, setError] = useState<string | null>(null);
+  /** Why the open Session could not be read. Scoped to its own pane — see the
+   *  `readDetail` catch. */
+  const [detailError, setDetailError] = useState<string | null>(null);
+  /**
+   * A synced Organisation's first server read has not landed.
+   *
+   * The board is local-first, so for a synced Organisation the first read comes
+   * back with nothing and `loaded` flips true — which rendered "No sessions
+   * captured yet" for the moment before the remote rows arrived. The local-only
+   * case never had this, because its first read is the whole answer.
+   */
+  const [cloudPending, setCloudPending] = useState(false);
   /** Whether the grounded chat occupies the right half of the open Session.
    *  Local, and reset when the Session changes: a chat about the Session you
    *  just left is not a chat about the one you just opened. */
@@ -316,11 +329,31 @@ export function ArtifactsPanel() {
   /** Same, for the detail read. */
   const detailSeq = useRef(0);
 
-  // The read cache holds timelines from the *previous* set of projects. Nothing
-  // reads it across a switch — the open Session is dropped too — but a stale
-  // Project's entries surviving in memory is exactly the leak this subsystem
-  // is careful about everywhere else.
-  useEffect(() => clearDetailCache, [activeOrganisationId]);
+  // Switching Organisation closes whatever was open and drops the cache.
+  //
+  // The comment here used to *claim* the open Session was dropped. It was not,
+  // and that was the bug behind the red banner over the board: a Session from
+  // the previous tenant stayed open, its detail re-read against the new one,
+  // and a Project the new Organisation has never heard of came back as a
+  // failure. A Session belongs to the Organisation it was opened in.
+  //
+  // Keyed on a ref rather than firing on mount, because a Session opened from
+  // outside — the git panel's history, a Checkpoint — is set *before* this
+  // panel mounts, and clearing on the first run would close it again.
+  const lastOrg = useRef(activeOrganisationId);
+  useEffect(() => {
+    if (lastOrg.current === activeOrganisationId) return;
+    lastOrg.current = activeOrganisationId;
+    clearDetailCache();
+    openSession(null);
+    setError(null);
+    // Back to the loading state rather than the previous tenant's rows. The
+    // refresh below repopulates; leaving them up means one Organisation's work
+    // is briefly on screen under another's name.
+    setSessions([]);
+    setLoaded(false);
+    setCloudPending(true);
+  }, [activeOrganisationId, openSession]);
 
   // A filter naming a project that is no longer open would hide everything with
   // no way back, so it is dropped rather than left dangling.
@@ -336,10 +369,12 @@ export function ArtifactsPanel() {
       // rows it returns, so filtering afterwards would show only this project's
       // share of the newest few hundred; asking for one project reads its
       // history whole.
-      const rows = await invoke<BoardSession[]>("artifacts_board", {
+      const page = await invoke<BoardPage>("artifacts_board", {
         projects: projectFilter ? [projectFilter] : projectPaths,
       });
       if (seq !== listSeq.current) return; // a newer read owns the state now
+      const rows = page.sessions;
+      setCloudPending(page.cloudPending);
       // Same-data bailout, the list-side sibling of `sameDetail`: the poll and
       // the capture/git events re-read even when nothing changed, and an
       // unconditional setSessions handed a fresh array identity to the memo'd
@@ -424,6 +459,7 @@ export function ArtifactsPanel() {
           // tree and re-renders every mounted row — hundreds of them, mid-scroll.
           setDetail((current) => (sameDetail(current, result) ? current : result));
           setEntriesPending(false);
+          setDetailError(null);
         })
         .catch((e) => {
           if (seq === detailSeq.current) {
@@ -431,7 +467,10 @@ export function ArtifactsPanel() {
             // with an empty timeline under it — that reads as "no rows".
             setDetail(null);
             setEntriesPending(false);
-            setError(String(e));
+            // Deliberately NOT `setError`: that banner spans the whole board,
+            // and one Session failing to open says nothing about the other
+            // four hundred. It goes in the pane that failed.
+            setDetailError(String(e));
           }
         });
     },
@@ -734,7 +773,11 @@ export function ArtifactsPanel() {
                   measures. */}
               <TimelineSidebar
                 sessions={scoped}
-                loading={!loaded}
+                // Still loading while the remote half is outstanding *and*
+                // there is nothing to show. Rows already on screen keep
+                // rendering through a refresh rather than flashing back to a
+                // skeleton.
+                loading={!loaded || (cloudPending && scoped.length === 0)}
                 filtered={activeFacetCount(selection) > 0 || projectFilter !== null}
                 openId={open?.sessionId ?? null}
                 period={period}
@@ -753,9 +796,9 @@ export function ArtifactsPanel() {
           <main className="min-w-0 flex-1 bg-[var(--background)]">
             {open ? (
               detail === undefined ? (
-                <Centered>Reading the session…</Centered>
+                <DetailSkeleton />
               ) : detail === null ? (
-                <NotFound onBack={() => openSession(null)} />
+                <NotFound reason={detailError} onBack={() => openSession(null)} />
               ) : (
                 // Two panes, animated. The chat's *width* is what transitions —
                 // sliding an overlay in would leave the detail at full width
@@ -801,7 +844,12 @@ export function ArtifactsPanel() {
                   </aside>
                 </div>
               )
-            ) : loaded && sessions.length === 0 ? (
+            ) : !loaded || (cloudPending && sessions.length === 0) ? (
+              // The first board read. Without this the pane falls through to
+              // the "recent Sessions" inbox with nothing in it, which reads as
+              // an Organisation with no work rather than one still loading.
+              <DetailSkeleton />
+            ) : sessions.length === 0 ? (
               <NotEnabled />
             ) : narrowed ? (
               // Narrowed, so the question changed: not "which session next" but
@@ -1202,10 +1250,19 @@ function NotEnabled() {
 
 /** The store answered: this Session does not exist (deleted, or another
  *  Project's id). Distinct from loading — a spinner here never resolves. */
-function NotFound({ onBack }: { onBack: () => void }) {
+/**
+ * The open Session could not be read.
+ *
+ * `reason` separates "the row is gone" from "the read failed", which are not
+ * the same thing and used to look identical: a Session held on the server that
+ * this Organisation cannot reach was reported as deleted.
+ */
+function NotFound({ reason, onBack }: { reason: string | null; onBack: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <p className="text-base text-[var(--secondary-foreground)]">This session no longer exists.</p>
+      <p className="text-base text-[var(--secondary-foreground)]">
+        {reason ?? "This session no longer exists."}
+      </p>
       <button
         type="button"
         onClick={onBack}
@@ -1213,14 +1270,6 @@ function NotFound({ onBack }: { onBack: () => void }) {
       >
         Back to sessions
       </button>
-    </div>
-  );
-}
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-[var(--muted-foreground)]">
-      {children}
     </div>
   );
 }

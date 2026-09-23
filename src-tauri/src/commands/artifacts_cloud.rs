@@ -211,12 +211,17 @@ async fn refresh_board(app: &AppHandle) {
             state
                 .board
                 .replace(&org_id, page.sessions, page.workspaces, page.notes);
-            let _ = app.emit(crate::commands::capture::CAPTURE_CHANGED, ());
         }
         Err(e) => {
             tracing::debug!(target: "atlas_artifacts", "board refresh failed: {e}");
+            // The wait has to end either way, or a board that cannot reach the
+            // server sits on its loading skeleton for ever.
+            state.board.mark_attempted(&org_id);
         }
     }
+    // Both arms: the board is waiting on this to stop showing a skeleton, and a
+    // failed refresh is still an answer.
+    let _ = app.emit(crate::commands::capture::CAPTURE_CHANGED, ());
 }
 
 /// Point the cloud half at an Organisation and this machine's projects.

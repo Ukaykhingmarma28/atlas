@@ -54,6 +54,13 @@ pub struct OrgBoard {
     /// Has a refresh ever succeeded? A board that has never loaded and one that
     /// is genuinely empty look identical otherwise.
     pub loaded: bool,
+    /// Has a refresh ever *finished*, successfully or not?
+    ///
+    /// Distinct from `loaded` because the viewer needs "still waiting" to end
+    /// even when the answer never arrives. Gating a loading state on `loaded`
+    /// alone leaves an Organisation that cannot reach the server showing a
+    /// skeleton for ever; gating it on this shows the honest empty board.
+    pub attempted: bool,
 }
 
 #[derive(Default)]
@@ -84,6 +91,7 @@ impl CloudBoard {
             projects: projects.into_iter().map(|p| (p.id.clone(), p)).collect(),
             notes,
             loaded: true,
+            attempted: true,
         };
         if let Ok(mut orgs) = self.orgs.write() {
             orgs.insert(org_id.to_string(), board);
@@ -113,6 +121,31 @@ impl CloudBoard {
             .ok()
             .and_then(|orgs| orgs.get(org_id).cloned())
             .unwrap_or_default()
+    }
+
+    /// Record that a refresh finished without changing any rows.
+    ///
+    /// Called on the failure path, so a viewer waiting on the first answer
+    /// stops waiting. Deliberately does **not** clear the rows a previous
+    /// refresh found: one blocked request says nothing about work that is
+    /// genuinely there.
+    pub fn mark_attempted(&self, org_id: &str) {
+        if let Ok(mut orgs) = self.orgs.write() {
+            orgs.entry(org_id.to_string()).or_default().attempted = true;
+        }
+    }
+
+    /// Is the first refresh for this Organisation still outstanding?
+    ///
+    /// What separates "this Organisation has no Sessions" from "we have not
+    /// looked yet" — the board shows a skeleton for the second and an empty
+    /// state for the first, and they used to be indistinguishable.
+    pub fn is_pending(&self, org_id: &str) -> bool {
+        self.orgs
+            .read()
+            .ok()
+            .and_then(|orgs| orgs.get(org_id).map(|board| board.attempted))
+            .is_none_or(|attempted| !attempted)
     }
 
     /// Drop everything. Called on an Organisation switch, so the incoming
@@ -196,6 +229,44 @@ mod tests {
         assert!(snap.sessions.is_empty());
         assert!(snap.notes.is_empty());
         assert!(!snap.loaded);
+    }
+
+    #[test]
+    fn an_organisation_is_pending_until_a_refresh_finishes() {
+        // The distinction the board's loading state hangs on: "no Sessions" and
+        // "not looked yet" are different answers and used to look the same.
+        let board = CloudBoard::new();
+        assert!(board.is_pending("org_1"));
+
+        board.replace("org_1", vec![], vec![], vec![]);
+        assert!(!board.is_pending("org_1"));
+    }
+
+    #[test]
+    fn a_failed_refresh_still_ends_the_wait() {
+        // Otherwise an Organisation that cannot reach the server shows a
+        // skeleton for ever instead of an honest empty board.
+        let board = CloudBoard::new();
+        board.mark_attempted("org_1");
+        assert!(!board.is_pending("org_1"));
+        assert!(!board.snapshot("org_1").loaded);
+    }
+
+    #[test]
+    fn a_failed_refresh_does_not_discard_rows_a_good_one_found() {
+        // One blocked request says nothing about work that is genuinely there.
+        let board = CloudBoard::new();
+        board.replace("org_1", vec![session("a", "ws_1", "t1")], vec![], vec![]);
+        board.mark_attempted("org_1");
+        assert_eq!(board.snapshot("org_1").sessions.len(), 1);
+    }
+
+    #[test]
+    fn a_frame_before_any_refresh_leaves_the_org_pending() {
+        // A summary frame is one row, not the board — the refresh is still owed.
+        let board = CloudBoard::new();
+        board.upsert("org_1", session("live", "ws_1", "t1"));
+        assert!(board.is_pending("org_1"));
     }
 
     #[test]

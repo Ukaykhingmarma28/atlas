@@ -30,6 +30,7 @@ import type {
   SessionSummary,
   TimelineEntry,
   ToolTally,
+  BoardPage,
 } from "@/features/artifacts/types";
 import type { Comment, CommentThreads } from "@/features/artifacts/lib/comments-api";
 import type {
@@ -1049,7 +1050,7 @@ function sourcesFor(detail: SessionDetail, scope: string[]): SourceRef[] {
  * `invoke<T>`, or `Unread` where it awaits only success or failure.
  */
 export interface ArtifactsResponses {
-  artifacts_board: BoardSession[];
+  artifacts_board: BoardPage;
   artifacts_session: SessionDetail | null;
   artifacts_cloud_retarget: Unit;
   artifacts_cloud_watch: Unit;
@@ -1256,14 +1257,16 @@ export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
       deletedAt: new Date().toISOString(),
     })),
 
-  artifacts_board: ({ projects }): BoardSession[] => {
+  artifacts_board: ({ projects }): BoardPage => {
     const paths = Array.isArray(projects) ? (projects as string[]) : [];
     const local = SEEDS.filter((seed) => paths.includes(seed.project.path)).map(boardRow);
     // The merge the real command does: local rows, plus whatever the
     // Organisation has that this machine does not.
-    return [...local, remoteBoardRow()].sort((a, b) =>
+    const sessions = [...local, remoteBoardRow()].sort((a, b) =>
       b.lastActivityAt.localeCompare(a.lastActivityAt),
     );
+    // The fixture answers in one tick, so the remote half is never outstanding.
+    return { sessions, cloudPending: false };
   },
   // `None` when the Session is not in that project's store — the panel renders
   // its "this Session is gone" state rather than erroring.
