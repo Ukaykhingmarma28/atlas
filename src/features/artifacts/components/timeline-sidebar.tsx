@@ -35,7 +35,6 @@ import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 
 import { authorOf, type AuthorDirectory } from "../lib/author-directory";
-import { observeSize } from "../lib/shared-resize-observer";
 import { groupSessions, sessionState, sessionTitle, type GroupPeriod } from "../lib/board";
 import type { BoardSession } from "../types";
 
@@ -230,14 +229,23 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
     return out;
   }, [days, expanded]);
 
+  // Both of these are memoised on `rows`, and it is load-bearing rather than
+  // habit. `getItemKey` is a dependency of the virtualizer's own
+  // `getMeasurementOptions` memo, which `getMeasurements` depends on — so a
+  // fresh closure per render invalidates both and recomputes all ~500 row
+  // measurements. The virtualizer re-renders this component on every scroll
+  // frame, which made that a per-frame cost.
+  const estimateSize = useCallback((i: number) => rowHeight(rows[i]), [rows]);
+  const getItemKey = useCallback((i: number) => rows[i]?.key ?? i, [rows]);
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     // Exact, not an estimate: every kind has a fixed height, so the list never
     // has to measure and never reflows as rows scroll into view.
-    estimateSize: (i) => rowHeight(rows[i]),
+    estimateSize,
     overscan: 12,
-    getItemKey: (i) => rows[i]?.key ?? i,
+    getItemKey,
   });
 
   const toggle = useCallback(
@@ -664,8 +672,18 @@ const SessionMeta = memo(function SessionMeta({
   );
 });
 
-/** How much of an overflowing title is given over to the fade. */
+/** How much of the title's right edge is given over to the fade. */
 const TITLE_FADE_PX = 32;
+
+/**
+ * `currentColor` rather than a literal: a mask reads only the alpha channel, so
+ * the hue is irrelevant and naming one would be a colour that means nothing.
+ *
+ * Hoisted out of the component so the two style values are one constant object
+ * rather than a fresh pair of strings per row per render.
+ */
+const TITLE_MASK = `linear-gradient(to right, currentColor calc(100% - ${TITLE_FADE_PX}px), transparent)`;
+const TITLE_FADE_STYLE = { maskImage: TITLE_MASK, WebkitMaskImage: TITLE_MASK } as const;
 
 /**
  * A title that dissolves at its right edge instead of ending in an ellipsis.
@@ -674,19 +692,33 @@ const TITLE_FADE_PX = 32;
  * — which is what this replaced — washes out whatever else shares the line, and
  * the byline sitting at that edge came out grey on every row.
  *
- * ## Why it is measured rather than a plain CSS mask
+ * ## Why this needs no measurement, despite appearances
  *
- * A mask applied unconditionally fades the last 32px of every title, including
- * short ones that fit perfectly well — "hello world" would lose its tail for no
- * reason. Only a title that actually overflows should fade, and CSS cannot ask
- * whether it does.
+ * The obvious objection is that an unconditional mask would fade the last 32px
+ * of *every* title, including short ones that fit — and this component did
+ * measure, for exactly that reason. The reasoning was wrong.
  *
- * ## Why measuring is affordable
+ * The span is `w-full`, so the mask is laid over a **full-width box**, and its
+ * fade region sits at the right edge of that box rather than at the end of the
+ * text. A short title stops well before it and is never touched. Only text that
+ * actually reaches the last 32px is faded — which is the behaviour the
+ * measurement was trying to buy.
  *
- * The nav is virtualized, so this runs for the ~20 rows on screen rather than
- * all five hundred, and it shares the timeline's single `ResizeObserver`
- * instead of constructing one per row. The observer is what catches the pane
- * being dragged narrower, which changes the answer without changing the title.
+ * ## Why measuring was not merely redundant but harmful
+ *
+ * It read `scrollWidth` from a `useLayoutEffect`, so every row scrolling into
+ * view forced a synchronous reflow and then a `setState` *before paint*,
+ * costing a second render and a second layout — per row, several rows per
+ * frame. That is what took the nav off 60fps. `Clamp` in `session-detail.tsx`
+ * is the pattern to follow if a measurement is ever genuinely needed here:
+ * plain `useEffect`, read inside the observer callback, never on the mount path.
+ *
+ * ## The one case given up
+ *
+ * A title that *ends* within the last 32px fades its final characters even
+ * though it fits. It reads as a word running to the edge, and it is rare — most
+ * titles are either clearly short or clearly long. Narrow `TITLE_FADE_PX` if it
+ * ever grates; do not bring back the measurement.
  */
 const FadingTitle = memo(function FadingTitle({
   children,
@@ -695,31 +727,13 @@ const FadingTitle = memo(function FadingTitle({
   children: React.ReactNode;
   className?: string;
 }) {
-  const ref = useRef<HTMLSpanElement | null>(null);
-  const [overflowing, setOverflowing] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    // Sub-pixel text widths round up into `scrollWidth`, so an exact fit can
-    // report a pixel of overflow. The tolerance stops a title that fits from
-    // flickering its fade on and off as the pane is dragged.
-    const measure = () => setOverflowing(el.scrollWidth - el.clientWidth > 1);
-    measure();
-    return observeSize(el, measure);
-  }, [children]);
-
-  // `currentColor` rather than a literal: a mask reads only the alpha channel,
-  // so the hue is irrelevant and naming one would be a colour that means nothing.
-  const mask = `linear-gradient(to right, currentColor calc(100% - ${TITLE_FADE_PX}px), transparent)`;
   return (
     <span
-      ref={ref}
       className={cn(
         "w-full min-w-0 overflow-hidden whitespace-nowrap text-sm leading-tight tracking-[-0.01em]",
         className,
       )}
-      style={overflowing ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+      style={TITLE_FADE_STYLE}
     >
       {children}
     </span>
