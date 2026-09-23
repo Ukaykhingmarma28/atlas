@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
  * final shape.** The seam crate links the engine — that is what "rewire the
  * seam" meant — so `crates/atlas-native-agent` is allowlisted below. It used to
  * be additionally gated behind the `ported-engine` feature so a shipping build
- * contained no engine at all; that gate is gone with the Cersei path it existed
+ * contained no engine at all; that gate is gone with the previous native path it existed
  * to protect, because the engine *is* the native agent now.
  *
  * What survives, and is the whole of the rule that still matters: **exactly one
@@ -167,7 +167,7 @@ describe("nothing that ships depends on the vendored engine", () => {
     // This assertion is inverted from what it was, and the inversion is the
     // point of #54. The engine used to be `optional = true` behind a feature
     // `default = []` left off, so a shipping build contained none of it and the
-    // Cersei path carried every turn. That path is deleted: the engine is now
+    // previous native path carried every turn. That path is deleted: the engine is now
     // the native agent, so gating it would gate the agent.
     //
     // What the quarantine still enforces, and what actually matters, is the

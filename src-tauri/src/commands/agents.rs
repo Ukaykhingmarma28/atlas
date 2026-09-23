@@ -16,7 +16,7 @@
 //!   path, before memory prefixing and before any early return (#3), reading
 //!   cheap metadata from `snapshot_meta` (#3);
 //! - `turn_seq` stamped at send time (#6);
-//! - plugin-id semantics, native-vs-ACP by `CERSEI_AGENT_ID` (#4);
+//! - plugin-id semantics, native-vs-ACP by `ATLAS_AGENT_ID` (#4);
 //! - the `atlas:capture-changed` / `atlas:git-changed` event names, untouched
 //!   because nothing here emits them (#5, #9);
 //! - agents' own transcript locations, read through `atlas-agent-transcript`
@@ -133,7 +133,7 @@ struct AnalyticsMiddleware {
 
 impl AnalyticsMiddleware {
     /// The plugin this agent was spawned from (`claude-code-ts` / `codex` /
-    /// `cersei`). A single `DashMap` lookup, safe on the delta hot path.
+    /// `atlas-agent`). A single `DashMap` lookup, safe on the delta hot path.
     ///
     /// This replaces the old `agent_kind`, which was `agent_id.0` — a random
     /// UUID minted per registration that identified nothing outside the process
@@ -148,8 +148,8 @@ impl AnalyticsMiddleware {
 
     /// Coarse bucket for funnels that don't care which ACP agent it was.
     fn family(plugin_id: &str) -> &'static str {
-        if plugin_id == atlas_native_agent::CERSEI_AGENT_ID {
-            "cersei"
+        if plugin_id == atlas_native_agent::ATLAS_AGENT_ID {
+            "native"
         } else {
             "acp"
         }
@@ -654,8 +654,8 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
 /// sink, because their middleware resolves them on the first delta; the sink
 /// must exist before the host, because the host builds the projector around it.
 pub fn install_manager(app: &AppHandle) {
-    // App config dir holds the native agent's own state
-    // and `cersei-sessions/` (its persisted transcripts). Best-effort: fall
+    // App config dir holds the native agent's own state (the engine home
+    // lives under it). Best-effort: fall
     // back to a temp dir if the platform path is unavailable. Resolved up here
     // because `TranscriptState` needs it to re-seed a session's buffer from the
     // transcript already on disk.
@@ -1252,7 +1252,7 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
 }
 
 /// Session-history rows for agents Atlas records itself. Merged into the
-/// sidebar alongside the Claude / Codex / Cersei / Kilo listings; returns an
+/// sidebar alongside the Claude / Codex / native / Kilo listings; returns an
 /// empty vec for a project with no such sessions.
 #[tauri::command]
 pub async fn agent_transcripts_list(
@@ -1615,7 +1615,7 @@ pub fn agents_set_effort(
 }
 
 // `agents_set_compress` is gone (#54). Tool-output compression was a knob on
-// the Cersei runtime's RTK compressor and the engine has no counterpart — a
+// the old native runtime's RTK compressor and the engine has no counterpart — a
 // named casualty (D8). Removed rather than stubbed, so the toggle disappears
 // instead of sitting there doing nothing.
 

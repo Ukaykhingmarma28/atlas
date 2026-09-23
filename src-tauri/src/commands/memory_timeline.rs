@@ -40,7 +40,7 @@ pub struct TimelineCommit {
 pub struct TimelineSession {
     id: String,
     title: String,
-    agent: String, // "codex" | "claude" | "cersei" | a capture plugin id ("opencode"/"cursor"/"kilo")
+    agent: String, // "codex" | "claude" | "atlas-agent" | a capture plugin id ("opencode"/"cursor"/"kilo")
     branch: Option<String>,
     sha: Option<String>,
     ts_ms: i64,
@@ -125,7 +125,7 @@ pub async fn memory_timeline(
     }
     // A second pass over the native agent's own session files used to run here,
     // contributing the message/token detail the store does not hold. It is gone
-    // with the Cersei runtime that wrote those files (#54): the engine keeps its
+    // with the old native runtime that wrote those files (#54): the engine keeps its
     // own working storage in a different shape, and reading it would recreate
     // the scrape-reader pattern ADR-0001 removed.
     //
@@ -148,7 +148,7 @@ pub async fn memory_timeline(
     .unwrap_or_default();
     for s in capture_sessions {
         let Some(agent) = s.agent.clone() else { continue };
-        if agent.starts_with("claude") || agent == "codex" || agent == "cersei" {
+        if agent.starts_with("claude") || agent == "codex" || agent == "atlas-agent" {
             continue;
         }
         let title = s

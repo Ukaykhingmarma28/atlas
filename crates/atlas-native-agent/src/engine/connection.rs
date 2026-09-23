@@ -1,6 +1,6 @@
 //! The `AgentConnection` the app plugs into, over the ported engine.
 //!
-//! This was the counterpart of the Cersei connection, now deleted (#54), and it
+//! This was the counterpart of the previous native connection, now deleted (#54), and it
 //! implements the same trait, because that is the whole point of the seam: the
 //! app cannot tell which engine is behind it.
 //!
@@ -653,7 +653,7 @@ impl EngineConnection {
         }
     }
 
-    /// Reasoning effort for one session — native-only, like the Cersei path.
+    /// Reasoning effort for one session — native-only, like the previous native path.
     pub fn session_effort(
         &self,
         session_id: &acp::SessionId,
@@ -1735,7 +1735,7 @@ impl AgentConnection for EngineConnection {
         };
         let requests = self.requests.clone();
         let request_ids = self.request_ids.clone();
-        // Fire and forget, like the Cersei path: the caller is awaiting the
+        // Fire and forget, like the previous native path: the caller is awaiting the
         // turn's own completion, and the engine answers an interrupt by
         // finishing that turn as `Interrupted`.
         //
@@ -2399,7 +2399,7 @@ impl AgentSessionEffort for EngineSessionControls {
         let request_id = self.request_ids.next();
         let thread_id = self.session_id.to_string();
         // The trait is synchronous and the call is not, so this is fire-and-
-        // forget like the Cersei path's — on the engine's runtime, because
+        // forget like the previous native path's — on the engine's runtime, because
         // the caller's thread may have none. A rejected update is logged
         // rather than surfaced, because the caller has already moved on.
         self.runtime.spawn(async move {

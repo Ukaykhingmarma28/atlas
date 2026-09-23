@@ -35,7 +35,7 @@ import { loadCachedAcpModels, saveCachedAcpModels } from "../lib/acp-models-cach
 import { resolveModelLabel } from "../lib/model-label";
 import { defaultAgentForNewSession } from "../lib/default-agent";
 import { loadCachedContextUsage, saveCachedContextUsage } from "../lib/context-usage-cache";
-import { saveCerseiModelPref, saveCerseiEffort } from "../lib/cersei-model-pref";
+import { saveNativeModelPref, saveNativeEffort } from "../lib/native-model-pref";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { extractPlanMarkdown, type PlanRecord } from "../lib/plans";
@@ -246,7 +246,7 @@ function applyPersistedModePref(sess: ChatSession, agentType: AgentType): void {
 
 /** Push an ACP agent's model selection (Claude Code / Codex) to its bound
  *  agent via `agents_set_model` (ACP `session/set_model`). Plain model id (no
- *  `provider/` prefix — that's the native Cersei form). No-op until bound. */
+ *  `provider/` prefix — that's the native form). No-op until bound. */
 function pushAcpModelToAgent(state: ChatState, sessionId: string): void {
   const session = state.sessions[sessionId];
   if (!session?.acpAgentId || !session.acpSessionId || !session.acpCurrentModel) return;
@@ -262,11 +262,11 @@ function pushAcpModelToAgent(state: ChatState, sessionId: string): void {
  *  selector, and the native agent validates it against its catalogue
  *  (`crates/atlas-native-agent/src/engine/connection.rs`, `select_model`).
  *  No-op until the session is bound and both provider + model are chosen. */
-function pushCerseiModelToAgent(state: ChatState, sessionId: string): void {
+function pushNativeModelToAgent(state: ChatState, sessionId: string): void {
   const session = state.sessions[sessionId];
   if (!session?.acpAgentId || !session.acpSessionId) return;
-  if (session.agentType !== "cersei") return;
-  const provider = session.cerseiProvider;
+  if (session.agentType !== "atlas-agent") return;
+  const provider = session.nativeProvider;
   const model = session.acpCurrentModel;
   if (!provider || !model) return;
   void invoke("agents_set_model", {
@@ -276,18 +276,18 @@ function pushCerseiModelToAgent(state: ChatState, sessionId: string): void {
 }
 
 /** Push the native agent's reasoning-effort level to its bound agent via
- *  `agents_set_effort`. No-op until bound / for non-cersei sessions. */
-function pushCerseiEffortToAgent(state: ChatState, sessionId: string): void {
+ *  `agents_set_effort`. No-op until bound / for non-native sessions. */
+function pushNativeEffortToAgent(state: ChatState, sessionId: string): void {
   const session = state.sessions[sessionId];
   if (!session?.acpAgentId || !session.acpSessionId) return;
-  if (session.agentType !== "cersei") return;
+  if (session.agentType !== "atlas-agent") return;
   void invoke("agents_set_effort", {
     key: { agent_id: session.acpAgentId, session_id: session.acpSessionId },
-    effort: session.cerseiEffort ?? "",
+    effort: session.nativeEffort ?? "",
   }).catch((err) => console.warn("agents_set_effort failed:", err));
 }
 
-// `pushCerseiCompressToAgent` stood here, pushing the RTK compression toggle
+// `pushNativeCompressToAgent` stood here, pushing the RTK compression toggle
 // through `agents_set_compress`. Both are gone (#54): the ported engine has no
 // tool-output compressor, so there was nothing on the other end of the command.
 
@@ -466,15 +466,15 @@ interface ChatActions {
      *  knobs reach the frontend, since `session/new`'s advertisement lives in
      *  the backend cell and a follow-up notification is optional (#32). */
     setAcpConfigOptions: (tabId: string, options: unknown[], sourceAgentType?: string) => void;
-    /** Native Cersei agent: pick the BYOK provider. Clears the model so the
+    /** Native agent: pick the BYOK provider. Clears the model so the
      *  composer re-selects a default for the new provider before pushing. */
-    setCerseiProvider: (sessionId: string, provider: string) => void;
-    /** Native Cersei agent: pick the model and push `provider/model` to the
+    setNativeProvider: (sessionId: string, provider: string) => void;
+    /** Native agent: pick the model and push `provider/model` to the
      *  bound agent via `agents_set_model`. No-op until the session is bound. */
-    setCerseiModel: (sessionId: string, model: string) => void;
-    /** Native Cersei agent: set the reasoning-effort level and push it. */
-    setCerseiEffort: (sessionId: string, effort: string) => void;
-    /** Native Cersei agent: toggle RTK tool-output compression and push it. */
+    setNativeModel: (sessionId: string, model: string) => void;
+    /** Native agent: set the reasoning-effort level and push it. */
+    setNativeEffort: (sessionId: string, effort: string) => void;
+    /** Native agent: toggle RTK tool-output compression and push it. */
     replaceMessages: (
       sessionId: string,
       messages: Array<{
@@ -862,8 +862,8 @@ export const useChatStore = createSelectors(
             sess.disconnected = undefined;
             sess.bindError = undefined;
             // The provider only applies to the native agent; clear it so the
-            // composer re-defaults from BYOK keys if cersei is chosen.
-            sess.cerseiProvider = undefined;
+            // composer re-defaults from BYOK keys if the native agent is chosen.
+            sess.nativeProvider = undefined;
             // Slash commands are per-agent (ACP `available_commands_update`);
             // the old agent's list must not survive the switch or it renders
             // under the new agent until its own update lands.
@@ -884,7 +884,7 @@ export const useChatStore = createSelectors(
             // Same restore as createSession: the agent's last explicit pick
             // wins over the optimistic cache seed above.
             applyPersistedModePref(sess, agentType);
-            // Models apply to both agents — seed from cache (empty for cersei).
+            // Models apply to both agents — seed from cache (empty for the native agent).
             const cachedModels = loadCachedAcpModels(agentType);
             sess.acpAvailableModels = cachedModels?.availableModels ?? [];
             sess.acpCurrentModel = undefined;
@@ -926,7 +926,7 @@ export const useChatStore = createSelectors(
                 sess.acpModesPending = false;
                 sess.acpCurrentMode = undefined;
               }
-              // For codex/cersei the resume flow calls `setAcpModes`
+              // For codex and the native agent the resume flow calls `setAcpModes`
               // immediately after with the session's real advertised modes, so
               // no cache seeding is needed here. Crucially the ACP binding
               // (acpAgentId/acpSessionId) is left intact — this only relabels.
@@ -939,7 +939,7 @@ export const useChatStore = createSelectors(
             // same-agent variant). The resume snapshot's real models/current
             // land right after via `setAcpModels` (which only seeds current
             // when unset, so clearing here is what lets it take effect).
-            sess.cerseiProvider = undefined;
+            sess.nativeProvider = undefined;
             const cachedModels = loadCachedAcpModels(agentType);
             sess.acpAvailableModels = cachedModels?.availableModels ?? [];
             sess.acpCurrentModel = undefined;
@@ -1387,34 +1387,34 @@ export const useChatStore = createSelectors(
           });
           pushAcpModelToAgent(get(), sessionId);
         },
-        setCerseiProvider: (sessionId, provider) =>
+        setNativeProvider: (sessionId, provider) =>
           set((s) => {
             const session = s.sessions[sessionId];
-            if (!session || session.cerseiProvider === provider) return;
-            session.cerseiProvider = provider;
+            if (!session || session.nativeProvider === provider) return;
+            session.nativeProvider = provider;
             // New provider → the prior model id is meaningless; let the composer
             // pick this provider's default before anything is pushed.
             session.acpCurrentModel = undefined;
           }),
-        setCerseiModel: (sessionId, model) => {
+        setNativeModel: (sessionId, model) => {
           set((s) => {
             const session = s.sessions[sessionId];
             if (session) session.acpCurrentModel = model;
           });
           // Remember the full selection so the next new chat seeds from it.
           const sess = get().sessions[sessionId];
-          if (sess?.cerseiProvider && model) {
-            saveCerseiModelPref({ provider: sess.cerseiProvider, model });
+          if (sess?.nativeProvider && model) {
+            saveNativeModelPref({ provider: sess.nativeProvider, model });
           }
-          pushCerseiModelToAgent(get(), sessionId);
+          pushNativeModelToAgent(get(), sessionId);
         },
-        setCerseiEffort: (sessionId, effort) => {
+        setNativeEffort: (sessionId, effort) => {
           set((s) => {
             const session = s.sessions[sessionId];
-            if (session) session.cerseiEffort = effort;
+            if (session) session.nativeEffort = effort;
           });
-          saveCerseiEffort(effort);
-          pushCerseiEffortToAgent(get(), sessionId);
+          saveNativeEffort(effort);
+          pushNativeEffortToAgent(get(), sessionId);
         },
         replaceMessages: (sessionId, messages) =>
           set((s) => {
@@ -1862,7 +1862,7 @@ function appendThoughtToDraft(s: ChatDraft, acpSessionId: string, text: string):
 /** A terminal (idle/error) delta carries the `turn_seq` of the turn it ends.
  *  Reject one whose turn is older than the session's current turn — a newer
  *  send already superseded it (the parallel / queued / wake premature-"done"
- *  class). A missing or 0 `turn_seq` (native cersei agent) is treated as
+ *  class). A missing or 0 `turn_seq` (native agent) is treated as
  *  current, so nothing regresses there. */
 /** Fire-and-forget backend teardown for a closed tab's session: the manager
  *  drops the actor + the driver-side guard (M6 — these used to leak for the
@@ -2002,7 +2002,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // Per-turn usage footer (native agent): derive this turn's tokens/cost as
       // the delta from the previous turn's cumulative snapshot, and attach it to
       // the trailing assistant message so it renders at the end of the turn.
-      if (session.usage && session.agentType === "cersei") {
+      if (session.usage && session.agentType === "atlas-agent") {
         const cum = {
           input: session.usage.input_tokens ?? 0,
           output: session.usage.output_tokens ?? 0,
@@ -2034,7 +2034,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // split, but they stream a cumulative context-window gauge. Snapshot the
       // latest onto the trailing assistant message so its turn card renders a
       // context gauge in the same slot the native agent uses for per-turn usage.
-      if (session.contextUsage && session.agentType !== "cersei") {
+      if (session.contextUsage && session.agentType !== "atlas-agent") {
         for (let i = session.messages.length - 1; i >= 0; i--) {
           if (session.messages[i].role === "assistant") {
             session.messages[i].contextUsage = { ...session.contextUsage };
@@ -2101,7 +2101,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
           if (tc.status === "pending" || tc.status === "running") tc.status = "failed";
         }
       }
-      // Don't hardcode "ACP error" — the native Atlas (cersei) agent is
+      // Don't hardcode "ACP error" — the native Atlas agent is
       // in-process and shares this error delta, so its provider errors (e.g. a
       // Gemini HTTP 400) were being mislabeled as ACP failures. Use a neutral
       // prefix.
@@ -2434,12 +2434,12 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       return;
     }
     case "model_changed": {
-      // The native Cersei agent's model is UI-driven and stored as a BARE id
-      // (its provider lives in `cerseiProvider`). The worker echoes back the
+      // The native agent's model is UI-driven and stored as a BARE id
+      // (its provider lives in `nativeProvider`). The worker echoes back the
       // full "provider/model" we pushed, so applying it here would re-prefix
       // the value every cycle ("google/google/google/…") via the composer's
-      // re-push. Ignore the echo for cersei — the UI is the source of truth.
-      if (session.agentType !== "cersei") session.acpCurrentModel = env.model_id;
+      // re-push. Ignore the echo for the native agent — the UI is the source of truth.
+      if (session.agentType !== "atlas-agent") session.acpCurrentModel = env.model_id;
       return;
     }
     default:

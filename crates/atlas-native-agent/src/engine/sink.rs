@@ -31,7 +31,7 @@ use crate::engine::connection::TurnWaiters;
 
 /// The threads this connection is serving, keyed by session id.
 ///
-/// Weak, for the reason the Cersei-path sink gives: a thread the host dropped
+/// Weak, for the reason the old native-path sink gives: a thread the host dropped
 /// must not be kept alive by a session table still listing it.
 pub struct EngineSession {
     thread: Weak<Mutex<AcpThread>>,
@@ -403,7 +403,7 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
 
 /// Flattens a prompt into the single string the engine's text input takes.
 ///
-/// Same rules as the Cersei path so a prompt reads identically on both sides of
+/// Same rules as the previous native path so a prompt reads identically on both sides of
 /// the switch: text passes through, a resource link contributes its URI, an
 /// embedded text resource contributes its text, and anything else is skipped
 /// rather than stringified into noise.

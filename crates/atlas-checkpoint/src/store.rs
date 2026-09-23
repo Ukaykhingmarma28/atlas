@@ -2163,7 +2163,7 @@ impl Store {
     pub fn link_candidates(&self, workspace_id: &str) -> Result<Vec<LinkCandidate>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, started_at FROM agent_session
-              WHERE workspace_id = ?1 AND source IN ('acp', 'cersei')",
+              WHERE workspace_id = ?1 AND source IN ('acp', 'native')",
         )?;
         let ids: Vec<(String, String)> = stmt
             .query_map([workspace_id], |row| {

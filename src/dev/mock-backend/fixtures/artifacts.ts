@@ -117,7 +117,7 @@ interface Seed {
   title: string | null;
   agent: string | null;
   model: string | null;
-  /** `acp`, `cersei` or `external_jsonl` — drives the row's state glyph. */
+  /** `acp`, `native` or `external_jsonl` — drives the row's state glyph. */
   source: string;
   project: Project;
   startedAt: string;
@@ -177,9 +177,9 @@ const SEEDS: Seed[] = [
     id: "sess-77b0e2",
     title:
       "Walk every place the pricing table is read, explain why the General tab crashes when models_pricing_get answers with nothing at all, and propose the smallest guard that keeps the empty state honest rather than papering over it",
-    agent: "cersei",
+    agent: "atlas-agent",
     model: "claude-sonnet-4",
-    source: "cersei",
+    source: "atlas-agent",
     project: APP,
     startedAt: at(1, 16, 20),
     lastActivityAt: at(1, 18, 4),
@@ -210,9 +210,9 @@ const SEEDS: Seed[] = [
     // The detail's filter rows and stats strip all have to render at zero.
     id: "sess-5de0b1",
     title: "What does codegen-units = 1 actually buy us here?",
-    agent: "cersei",
+    agent: "atlas-agent",
     model: "claude-sonnet-4",
-    source: "cersei",
+    source: "atlas-agent",
     project: APP,
     startedAt: at(1, 9, 30),
     lastActivityAt: at(1, 9, 34),
@@ -287,9 +287,9 @@ const SEEDS: Seed[] = [
   {
     id: "sess-c40918",
     title: "Rewrite the README layout table and the token rules under it",
-    agent: "cersei",
+    agent: "atlas-agent",
     model: "claude-sonnet-4",
-    source: "cersei",
+    source: "atlas-agent",
     project: DOCS,
     startedAt: at(9, 9, 5),
     lastActivityAt: at(9, 10, 47),

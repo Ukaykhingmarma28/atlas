@@ -8,7 +8,7 @@
 //! settings map, not the registry. A registry agent nobody installed is looked
 //! up only when a settings entry names it, so an empty map produces an empty
 //! table no matter how large the catalogue is. That is the mechanism behind "a
-//! fresh install shows only Cersei", and it is why there is nothing here to
+//! fresh install shows only the native agent", and it is why there is nothing here to
 //! disable.
 
 use std::collections::HashMap;

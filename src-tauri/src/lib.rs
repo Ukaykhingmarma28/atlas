@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 use state::{AppState, AppStateHandle};
 use tauri::Manager;
 
-// The `cersei-provider` UTF-8 patch guard is gone with the SDK it guarded
+// The old SDK UTF-8 patch guard is gone with the SDK it guarded
 // (#54). What it protected against — a decoder that corrupts multi-byte
 // characters split across HTTP chunk boundaries — is now covered inside the
 // engine's own dialect, by a fixture that splits a frame at every byte position

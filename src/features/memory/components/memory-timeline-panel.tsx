@@ -6,9 +6,9 @@ import { AgentMark } from "@/components/agent-mark";
 import { pluginIdForSource } from "../lib/memory-agent";
 
 export interface PanelItem {
-  id: string; // memory doc id ("claude:…" / "codex:…" / "cersei:…")
+  id: string; // memory doc id ("claude:…" / "codex:…" / "atlas-agent:…")
   title: string;
-  source: string; // "claude" | "codex" | "cersei"
+  source: string; // "claude" | "codex" | "atlas-agent"
   note: string; // e.g. "affected a1b2c3 on main" / "matched · impacts 3 commits"
   ts_ms: number;
   score?: number; // search relevance, 0..1

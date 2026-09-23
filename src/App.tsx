@@ -634,7 +634,7 @@ export function App() {
     // runs breaks the run so ordering is preserved. (Previously text was
     // bucketed separately and applied BEFORE other deltas, which reordered the
     // anchoring `message_appended` after its text — invisible for ACP agents
-    // whose IPC latency spread deltas across frames, but the in-process Cersei
+    // whose IPC latency spread deltas across frames, but the in-process native
     // agent emits a whole turn in one frame and the text shattered into
     // mis-ordered fragments.)
     const pendingDeltas: AgentDelta[] = [];
@@ -933,7 +933,7 @@ export function App() {
     const autoIndexAfterTurn = (acpSessionId: string) => {
       const sessions = useChatStore.getState().sessions;
       const sess = Object.values(sessions).find((s) => s.acpSessionId === acpSessionId);
-      if (sess?.agentType !== "cersei") return;
+      if (sess?.agentType !== "atlas-agent") return;
       const path = sess.workingDirectory;
       if (!path) return;
       const existing = indexTimers.get(path);
@@ -946,7 +946,7 @@ export function App() {
           // "Indexing…" then refresh its status.
           const emit = (active: boolean) =>
             window.dispatchEvent(
-              new CustomEvent("atlas:cersei-index", {
+              new CustomEvent("atlas:agent-index", {
                 detail: { path, active },
               }),
             );

@@ -20,7 +20,7 @@ export interface SessionSummary {
   title: string | null;
   agent: string | null;
   model: string | null;
-  /** `acp`, `cersei` or `external_jsonl`. */
+  /** `acp`, `native` or `external_jsonl`. */
   source: string;
   startedAt: string;
   /** When the row was last *written*. Liveness only — never group or sort on

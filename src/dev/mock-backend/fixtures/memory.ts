@@ -1279,7 +1279,7 @@ const SESSION_SEEDS: [
   [
     "0193f100-7777-7000-9000-111111111111",
     "Passkey enrollment screen",
-    "cersei",
+    "atlas-agent",
     "feature/auth-v2",
     (6 * DAY) / MIN,
     5,

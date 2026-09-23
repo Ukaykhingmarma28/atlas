@@ -132,7 +132,7 @@ atlas-embed = { path = "../crates/atlas-embed" }
 # layer owns the per-project engine registry + background indexer
 # (`commands::memory_indexer`); the crate itself stays Tauri-free.
 atlas-memory = { path = "../crates/atlas-memory" }
-# Deterministic codebase scanner (Cersei tree-sitter). Feeds the Memory-Chat RAG
+# Deterministic codebase scanner (tree-sitter). Feeds the Memory-Chat RAG
 # with up-to-date source structure. Drives `commands::codebase_index`.
 atlas-codeindex = { path = "../crates/atlas-codeindex" }
 # Structured side-by-side git diff engine (vendors delta's word-diff). Drives

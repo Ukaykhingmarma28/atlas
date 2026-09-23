@@ -308,7 +308,7 @@ describe("applyAgentDelta: one delta kind at a time", () => {
     },
     {
       name: "model_changed is ignored for the native agent, whose model the UI owns",
-      agentType: "cersei",
+      agentType: "atlas-agent",
       deltas: () => [d("model_changed", { model_id: "google/gemini" })],
       expect: () => expect(session().acpCurrentModel).toBeUndefined(),
     },

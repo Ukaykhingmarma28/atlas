@@ -283,7 +283,7 @@ async fn harness_full(
             format!("{}/v1", server.uri()),
             Some(key_var.to_string()),
         ),
-        Some("gpt-5-codex".to_string()),
+        Some("test-model".to_string()),
         home.path().to_path_buf(),
     );
     // Production leaves this `None`. Without it every sandboxed command in this
@@ -312,7 +312,7 @@ async fn harness_full(
     });
 
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         None,
@@ -1241,7 +1241,7 @@ async fn the_engine_is_handed_the_memory_server_and_a_turn_calls_memory_search()
     let asked = offering.asked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     assert_eq!(asked.len(), 1, "one offer per session request");
     assert!(asked[0].http_mcp);
-    assert_eq!(asked[0].agent_id.as_str(), "cersei");
+    assert_eq!(asked[0].agent_id.as_str(), "atlas-agent");
     assert_eq!(asked[0].session_id, None, "a new thread has no id until the engine answers");
     assert_eq!(
         *offering.settled.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
@@ -1313,7 +1313,7 @@ async fn a_row_from_before_the_engine_changed_opens_instead_of_erroring() {
         .connection
         .clone()
         .resume_session(
-            acp::SessionId::new("a-cersei-era-session-id"),
+            acp::SessionId::new("a-pre-rename-session-id"),
             vec![PathBuf::from(".")],
             Some("An old conversation".into()),
         )
@@ -1359,12 +1359,12 @@ async fn the_engine_advertises_load_because_reopening_genuinely_replays() {
 }
 
 #[tokio::test]
-async fn the_native_agent_keeps_the_stored_agent_id_across_the_swap() {
-    // D7: the stored agent id is a storage key, not a display name. Both
-    // engines answer to "cersei" so every row written before the switch still
-    // resolves after it.
+async fn the_native_agent_answers_to_its_stored_agent_id() {
+    // The stored agent id is a storage key, not a display name: every thread
+    // row the store writes for the native agent resolves through this string
+    // (ADR-0011), so the connection must report exactly it.
     let h = harness(assistant_turn("ok")).await;
-    assert_eq!(h.connection.agent_id().as_str(), "cersei");
+    assert_eq!(h.connection.agent_id().as_str(), "atlas-agent");
 }
 
 #[tokio::test]

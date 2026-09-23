@@ -645,8 +645,8 @@ unnecessary_to_owned = "deny"
 # cargo-shear cannot see the platform-specific openssl-sys usage, so we
 # silence the false positive here instead of deleting a real dependency.
 
-# ─── Cersei SDK — gone (#54) ─────────────────────────────────────────────────
-# The `cersei-provider` and `cersei-agent` patch entries lived here. They
+# ─── Previous native SDK — gone (#54) ─────────────────────────────────────────────────
+# The old SDK's two vendored-fork patch entries lived here. They
 # carried two fixes the published crates lacked: incremental UTF-8 decoding in
 # the SSE decoders, and racing `tool.execute()` against the cancel token.
 #
@@ -729,7 +729,7 @@ codegen-units = 256
 debug = "line-tables-only"
 
 # Optimize ALL transitive dependencies in dev mode at `opt-level = 1`
-# (Tauri, wry, tao, tokio, serde, reqwest, the vendored cersei forks, etc.).
+# (Tauri, wry, tao, tokio, serde, reqwest, the old vendored SDK forks, etc.).
 # First clean build pays a one-time ~3–5 minute cost; subsequent rebuilds only
 # recompile the app crate and are unaffected. Net effect: `bunx tauri dev`
 # startup drops noticeably because Tauri's runtime is no longer running

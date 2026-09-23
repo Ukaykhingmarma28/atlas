@@ -38,7 +38,7 @@ import { canSignIn, promptSignIn } from "../lib/agent-signin";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { switchAgentForTab } from "@/features/chat/lib/switch-agent";
 import { AgentMark } from "@/components/agent-mark";
-import { loadCerseiEffort } from "../lib/cersei-model-pref";
+import { loadNativeEffort } from "../lib/native-model-pref";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { modelLabel } from "../lib/model-label";
 // `ChatInput` pulls in CodeMirror (~870 KB) via `cm-mention-extension`.
@@ -235,7 +235,7 @@ interface CodebaseIndexStatus {
 /** Codebase-index status pill for the native agent — the index that grounds
  *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
  *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
-function CerseiMemoryPill() {
+function NativeMemoryPill() {
   const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [status, setStatus] = useState<CodebaseIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -259,8 +259,8 @@ function CerseiMemoryPill() {
       setIndexing(d.active);
       if (!d.active) refresh();
     };
-    window.addEventListener("atlas:cersei-index", onIdx);
-    return () => window.removeEventListener("atlas:cersei-index", onIdx);
+    window.addEventListener("atlas:agent-index", onIdx);
+    return () => window.removeEventListener("atlas:agent-index", onIdx);
   }, [projectPath, refresh]);
 
   const reindex = () => {
@@ -309,13 +309,13 @@ const EFFORT_CYCLE = ["", "low", "medium", "high", "max"] as const;
  *  thinking budget). Cycles off → low → medium → high → max. Hidden for
  *  providers that don't support a thinking budget. */
 function EffortPill({ tabId }: { tabId: string }) {
-  const provider = useChatStore((s) => s.sessions[tabId]?.cerseiProvider ?? "");
-  const effort = useChatStore((s) => s.sessions[tabId]?.cerseiEffort ?? "");
-  const { setCerseiEffort } = useChatStore.use.actions();
+  const provider = useChatStore((s) => s.sessions[tabId]?.nativeProvider ?? "");
+  const effort = useChatStore((s) => s.sessions[tabId]?.nativeEffort ?? "");
+  const { setNativeEffort } = useChatStore.use.actions();
   if (provider !== "anthropic") return null;
   const cycle = () => {
     const i = EFFORT_CYCLE.indexOf(effort as (typeof EFFORT_CYCLE)[number]);
-    setCerseiEffort(tabId, EFFORT_CYCLE[(i + 1) % EFFORT_CYCLE.length]);
+    setNativeEffort(tabId, EFFORT_CYCLE[(i + 1) % EFFORT_CYCLE.length]);
   };
   const active = effort !== "";
   return (
@@ -440,7 +440,7 @@ function ComposerGroupsMenu({
     };
   }, [openGroup]);
 
-  const isNative = agentType === "cersei";
+  const isNative = agentType === "atlas-agent";
   const refreshingModels = useNativeModelsStore.use.refreshing();
   const refreshNativeModels = useNativeModelsStore.use.actions().refresh;
 
@@ -811,7 +811,7 @@ export function MessageInput({
   disabled: disabledProp = false,
   placeholder = "Message Atlas... (@ to mention, / for commands)",
 }: MessageInputProps) {
-  const { enqueueMessage, removeQueueItem, setAcpModes, setAcpModesPending, setCerseiEffort } =
+  const { enqueueMessage, removeQueueItem, setAcpModes, setAcpModesPending, setNativeEffort } =
     useChatStore.use.actions();
   // Show the picker as soon as the agent is non-Claude — even before its modes
   // load — so the composer can render a loading pill instead of nothing during
@@ -906,29 +906,29 @@ export function MessageInput({
   // button — the toolbar, and with it the switcher, stays live, so the user can
   // always move to an agent that runs. Verified against the escape hatch: this
   // must never disable the toolbar.
-  const blockedByGrant = noAiGrant && agentType === "cersei";
+  const blockedByGrant = noAiGrant && agentType === "atlas-agent";
   const disabled = disabledProp || blockedByGrant;
   // The BYOK provider/model bindings for the native agent stood here — the
   // provider pick, the model re-push on bind, the whole BYOK selection path.
   // Gone: the native agent's model comes from the seam's published catalogue
   // through the same `setAcpModel` path every other agent uses, and its
   // "provider" is the Atlas gateway, which is not a choice.
-  // Seed the reasoning-effort from the saved preference once per cersei session,
+  // Seed the reasoning-effort from the saved preference once per native session,
   // then re-push it whenever the session is bound (mirrors the model re-push).
-  const cerseiEffort = useChatStore((s) => s.sessions[tabId]?.cerseiEffort);
-  const cerseiBound = useChatStore((s) => {
+  const nativeEffort = useChatStore((s) => s.sessions[tabId]?.nativeEffort);
+  const nativeBound = useChatStore((s) => {
     const sess = s.sessions[tabId];
-    return sess?.agentType === "cersei" && !!sess.acpAgentId && !!sess.acpSessionId
+    return sess?.agentType === "atlas-agent" && !!sess.acpAgentId && !!sess.acpSessionId
       ? `${sess.acpAgentId}::${sess.acpSessionId}`
       : null;
   });
   useEffect(() => {
-    if (agentType !== "cersei") return;
+    if (agentType !== "atlas-agent") return;
     // Undefined = never set for this session → seed from the global pref.
-    const eff = cerseiEffort ?? loadCerseiEffort();
-    if (cerseiBound || cerseiEffort === undefined) setCerseiEffort(tabId, eff);
+    const eff = nativeEffort ?? loadNativeEffort();
+    if (nativeBound || nativeEffort === undefined) setNativeEffort(tabId, eff);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, agentType, cerseiBound]);
+  }, [tabId, agentType, nativeBound]);
   // The RTK compression toggle was seeded and re-pushed here. It is gone with
   // the runtime that implemented it (#54) — the ported engine has no
   // tool-output compressor, so the control had nothing to switch (D8).
@@ -1850,7 +1850,7 @@ export function MessageInput({
             Scoped to the native agent for the same reason the lock is: the
             other agents do not use the Atlas gateway, so an org with no grant
             is not their problem and a bar over a working composer is noise. */}
-        {agentType === "cersei" && <AiGrantBar />}
+        {agentType === "atlas-agent" && <AiGrantBar />}
 
         {/* The tab's agent was uninstalled — same strip, same reason: the
             input below cannot send until the chat is switched. */}
@@ -2083,8 +2083,8 @@ export function MessageInput({
                   gateway agent cannot use. Model choice now goes through the
                   same ACP model pill as every other agent, fed by the seam's
                   published catalogue. */}
-              {agentType === "cersei" && <EffortPill tabId={tabId} />}
-              {agentType === "cersei" && <CerseiMemoryPill />}
+              {agentType === "atlas-agent" && <EffortPill tabId={tabId} />}
+              {agentType === "atlas-agent" && <NativeMemoryPill />}
             </div>
             {/* Right side, in this order: the session's usage, the agent's own
                 knobs, then the live

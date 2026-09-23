@@ -1,9 +1,9 @@
 //! The ported Codex engine, behind the seam.
 //!
 //! This module used to be gated on the `ported-engine` feature — the
-//! development-time switch of spec Phase 2, kept while the Cersei path was
+//! development-time switch of spec Phase 2, kept while the previous native path was
 //! still shipping. The cutover happened: #54 deleted the feature and the
-//! Cersei path with it, so the engine is unconditional now and there is no
+//! previous native path with it, so the engine is unconditional now and there is no
 //! kill switch here. (The feature's deletion also caused the #54 auth outage
 //! — four `#[cfg(feature = "ported-engine")]` blocks compiled to nothing —
 //! which is why `unexpected_cfgs` is a workspace deny, #60.)
@@ -12,7 +12,7 @@
 //! app-server layer**, through `codex-app-server-client`, and `src-tauri` sees
 //! only the `AgentServer` / `AgentConnection` traits it already speaks.
 //!
-//! Layout mirrors the Cersei-path seam next door, so the two are readable
+//! Layout mirrors the old native-path seam next door, so the two are readable
 //! side by side:
 //!
 //! - [`auth`] — the D10 token provider (`ExternalAuth` over an Atlas access JWT)

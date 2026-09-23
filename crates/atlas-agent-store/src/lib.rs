@@ -23,7 +23,7 @@
 //! LOCKED (research §D12-3, 2026-08-21). An external agent exists **iff** the
 //! user's installed map has an entry for it. Empty map ⇒ empty
 //! [`AgentServerStore::external_agents`] ⇒ a fresh install offers exactly the
-//! native agent (Cersei) and the marketplace.
+//! native agent and the marketplace.
 //!
 //! What that rules out, permanently:
 //!

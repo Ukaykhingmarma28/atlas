@@ -54,7 +54,7 @@ pub struct EngineHome(PathBuf);
 impl EngineHome {
     /// The engine's home inside Atlas's own config directory.
     ///
-    /// `config_dir` is what the Cersei path is handed today, so both engines
+    /// `config_dir` is what the previous native path is handed today, so both engines
     /// keep their state under the same Atlas-owned root and a profile wipe
     /// takes both.
     pub fn under_config_dir(config_dir: &Path) -> Self {
@@ -259,8 +259,9 @@ impl EngineSettings {
     /// Phase 2's tracer bullet is carried by "a dev-configured provider … until
     /// the gateway dialect lands", so the provider is a developer's choice
     /// rather than a product decision, and the environment is where a developer
-    /// makes it. Every value has a working default so the switch does something
-    /// sensible with nothing set.
+    /// makes it. The provider values have working defaults; the model has none
+    /// (ADR-0007: no hardcoded model), so with `ATLAS_ENGINE_MODEL` unset the
+    /// engine falls back to its catalogue's first-priority row.
     ///
     /// This is deliberately **not** how the shipped agent will be configured.
     /// In Phase 3 the provider becomes the Atlas gateway and the credential
@@ -268,8 +269,7 @@ impl EngineSettings {
     pub fn from_env(config_dir: &Path, cwd: PathBuf) -> Self {
         let base_url = std::env::var("ATLAS_ENGINE_BASE_URL")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-        let model =
-            std::env::var("ATLAS_ENGINE_MODEL").unwrap_or_else(|_| "gpt-5-codex".to_string());
+        let model = std::env::var("ATLAS_ENGINE_MODEL").ok();
         // Named rather than read: the engine resolves the variable itself, so
         // the key never passes through Atlas.
         let env_key = std::env::var("ATLAS_ENGINE_API_KEY_ENV")
@@ -278,7 +278,7 @@ impl EngineSettings {
         Self::new(
             EngineHome::under_config_dir(config_dir),
             EngineProvider::dev("atlas-dev", base_url, Some(env_key)),
-            Some(model),
+            model,
             cwd,
         )
     }
@@ -424,7 +424,7 @@ mod tests {
         EngineSettings::new(
             EngineHome::at(tmp.join("engine")),
             EngineProvider::dev("atlas-dev", "https://example.invalid/v1", None),
-            Some("gpt-5-codex".to_string()),
+            Some("test-model".to_string()),
             tmp.to_path_buf(),
         )
     }
@@ -453,13 +453,14 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_home_is_atlas_owned_and_never_the_users_codex_cli_state() {
+    fn the_engine_home_is_under_the_app_config_dir_never_a_dotdir_in_home() {
         // Starting the runtime writes an installation-id file into this
-        // directory. Pointing it at ~/.codex would make Atlas write into the
-        // user's real Codex CLI state.
+        // directory. It must be Atlas's own app-config tree, never the
+        // engine's default dot-directory under the user's home, which another
+        // program (or an older build) may own.
         let home = EngineHome::under_config_dir(Path::new("/Users/somebody/Library/atlas"));
         assert!(home.path().starts_with("/Users/somebody/Library/atlas"));
-        assert!(!home.path().to_string_lossy().contains(".codex"));
+        assert!(!home.path().to_string_lossy().contains("/."));
     }
 
     #[test]
@@ -505,7 +506,7 @@ mod tests {
         let keyed = EngineSettings::new(
             EngineHome::at(tmp.join("engine")),
             EngineProvider::dev("byok", "https://example.invalid/v1", Some("DEV_KEY".into())),
-            Some("gpt-5-codex".to_string()),
+            Some("test-model".to_string()),
             tmp.clone(),
         );
         assert!(
@@ -565,7 +566,7 @@ mod tests {
         let config = s.build_config(None).await.expect("config should load");
 
         assert!(s.home.path().is_dir(), "the engine home must exist after build");
-        assert_eq!(config.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(config.model.as_deref(), Some("test-model"));
         assert_eq!(
             config.model_provider.base_url.as_deref(),
             Some("https://example.invalid/v1"),

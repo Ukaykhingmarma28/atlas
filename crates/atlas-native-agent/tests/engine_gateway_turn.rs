@@ -283,7 +283,7 @@ async fn harness_full(
 
     let external_auth = Arc::new(AtlasExternalAuth::new(token.clone()));
     let connection = match EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         Some(external_auth),
@@ -758,7 +758,7 @@ async fn no_cache_and_an_unreachable_catalogue_fails_connect_honestly() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let result = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -797,7 +797,7 @@ async fn a_stale_cache_carries_the_connection_when_the_gateway_is_down() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -833,7 +833,7 @@ async fn a_fresh_cache_skips_the_fetch() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -1131,7 +1131,7 @@ async fn connection_at(
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let external_auth = Arc::new(AtlasExternalAuth::new(token.clone()));
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         Some(external_auth),

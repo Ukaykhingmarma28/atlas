@@ -3,7 +3,7 @@
 //! The modes are Atlas's, not the engine's, and the vocabulary is fixed by what
 //! the mode picker already shows — this is a translation, not a redesign
 //! (design-language invariant). The four ids also have to keep matching the
-//! Cersei path's, because the picker is shared and a mode set on one engine has
+//! previous native path's, because the picker is shared and a mode set on one engine has
 //! to mean the same thing on the other.
 //!
 //! The engine expresses permission as two orthogonal things, and both are
@@ -31,7 +31,7 @@ pub struct AtlasMode {
 
 /// The four modes, in picker order.
 ///
-/// Ids, names and descriptions are copied from the Cersei path verbatim. A
+/// Ids, names and descriptions are copied from the previous native path verbatim. A
 /// difference here would show as the picker changing when the switch flips,
 /// which is exactly what "the app cannot tell the engine changed" forbids.
 pub const MODES: [AtlasMode; 4] = [
@@ -61,7 +61,7 @@ pub const DEFAULT_MODE_ID: &str = "default";
 
 /// Normalises a mode id, tolerating another agent's vocabulary.
 ///
-/// Same reason the Cersei path does it: a picker seeded with cross-agent ids
+/// Same reason the previous native path does it: a picker seeded with cross-agent ids
 /// can hand us Claude's `bypassPermissions` or Codex's `danger-full-access`.
 /// Matching exactly meant "Bypass" silently fell through to prompting on every
 /// action — a mode that looks set and does nothing.
@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn the_picker_offers_exactly_the_four_modes_the_cersei_path_does() {
+    fn the_picker_offers_exactly_the_four_modes_the_native_path_does() {
         // The picker is shared. A fifth mode, a missing one, or a renamed one
         // would show as the UI changing when the switch flips.
         let ids: Vec<_> = MODES.iter().map(|m| m.id).collect();

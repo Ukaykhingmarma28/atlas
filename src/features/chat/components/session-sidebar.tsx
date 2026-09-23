@@ -48,7 +48,14 @@ const THREAD_PROJECTS_KEY = ["thread-projects"] as const;
 /** Short per-row agent tag. "claude" doubles as the legacy default for rows
  *  with no metadata, so the mapping from AgentType is centralised here instead
  *  of repeated ternaries that silently mislabel new agents. */
-type SidebarAgent = "claude" | "codex" | "opencode" | "cursor" | "kilo" | "cersei" | (string & {});
+type SidebarAgent =
+  | "claude"
+  | "codex"
+  | "opencode"
+  | "cursor"
+  | "kilo"
+  | "atlas-agent"
+  | (string & {});
 
 export function sidebarAgentOf(agentType: string | undefined): SidebarAgent {
   // The registry ids and the older native ids a thread row may carry fold
@@ -59,7 +66,7 @@ export function sidebarAgentOf(agentType: string | undefined): SidebarAgent {
     agentType === "opencode" ||
     agentType === "cursor" ||
     agentType === "kilo" ||
-    agentType === "cersei"
+    agentType === "atlas-agent"
   )
     return agentType;
   // The real Claude ids only. A `startsWith("claude")` also caught registry
@@ -113,7 +120,7 @@ export const AGENT_TYPE_BY_SIDEBAR: Partial<Record<string, SwitchableAgent>> = {
   opencode: "opencode",
   cursor: "cursor",
   kilo: "kilo",
-  cersei: "cersei",
+  "atlas-agent": "atlas-agent",
 };
 
 /** Compact token count: 1234 → "1.2k", 1_200_000 → "1.2M". */
@@ -325,7 +332,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // Atlas's own history — the only source. It used to be six: Claude's JSONL
-  // directory, Codex's SQLite, Kilo's SQLite, Cersei's store, Atlas's
+  // directory, Codex's SQLite, Kilo's SQLite, the old native store, Atlas's
   // transcripts and a live ACP `session/list`, merged by session id. That
   // coupled the sidebar to four private storage formats and meant an agent
   // nobody had written a reader for had no history at all (ADR-0001).
@@ -783,7 +790,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                         <CursorIcon className="size-3" />
                       ) : item.agent === "kilo" ? (
                         <KiloIcon className="size-3" />
-                      ) : item.agent === "cersei" ? (
+                      ) : item.agent === "atlas-agent" ? (
                         <AtlasIcon size={12} />
                       ) : item.agent === "claude" ? (
                         <ClaudeIcon className="size-3" />
