@@ -1,3 +1,4 @@
+<!-- Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md. -->
 ---
 name: skill-creator
 description: Create or update a Atlas Agent skill with appropriately scoped instructions and any needed supporting resources.

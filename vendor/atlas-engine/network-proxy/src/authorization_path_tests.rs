@@ -25,7 +25,7 @@ fn accepts_unambiguous_paths() {
 #[test]
 fn rejects_paths_with_ambiguous_segments_or_encodings() {
     let paths = [
-        "/openai/openai/../atlas-agent",
+        "/openai/openai\\..\\atlas-agent",
         "/openai/openai/./issues",
         "/openai/openai\\...atlas-agent",
         "/openai/openai/%2e%2e/atlas-agent",

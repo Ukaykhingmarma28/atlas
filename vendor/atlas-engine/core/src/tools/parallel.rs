@@ -496,7 +496,7 @@ mod tests {
         )?;
         let timing_events = logs
             .lines()
-            .filter(|line| line.contains("event.name=.atlas-agent.tool_call\""))
+            .filter(|line| line.contains("event.name=\"atlas_agent.tool_call\""))
             .collect::<Vec<_>>();
         assert_eq!(
             timing_events.len(),

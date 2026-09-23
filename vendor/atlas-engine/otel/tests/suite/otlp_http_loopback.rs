@@ -256,7 +256,7 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
         &body.chars().take(2000).collect::<String>()
     );
     assert!(
-        body.contains(".atlas-agent.api_request\""),
+        body.contains("\"atlas_agent.api_request\""),
         "expected API-request counter not found; body prefix: {}",
         &body.chars().take(2000).collect::<String>()
     );

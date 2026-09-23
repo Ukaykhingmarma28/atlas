@@ -128,6 +128,8 @@ export const MessageGroup = memo(function MessageGroup({
  * - **Reactions and pin state are subscribed HERE, per message id.** The store
  *   indexes reactions by message and a selector returning this row's slice (or
  *   a boolean) means a reaction anywhere else changes nothing about this fiber.
+ *   The author's presence follows the same rule, keyed by author id instead —
+ *   see `authorOnline` below.
  * - **The hover toolbar mounts on first hover, not eagerly.** Three Radix roots
  *   per row across a whole transcript was ~12 idle fibers per message; CSS
  *   already hides the toolbar until hover, so mounting it at that moment is
@@ -166,6 +168,22 @@ const MessageRow = memo(function MessageRow({
 }) {
   const m = message;
   const pinned = useCommsStore((s) => s.pinned.includes(m.id));
+  // Presence is subscribed per AUTHOR, for exactly the reason pin state is
+  // subscribed per message: `online` is an ORG-WIDE set that is re-sent whole
+  // whenever anyone anywhere connects or drops, so a row holding the array
+  // would re-render on a stranger's reconnect. A boolean selector re-renders
+  // this fiber only when THIS author's presence actually flips.
+  //
+  // `undefined` when the author is unresolved — CommsAvatar then draws no dot
+  // at all, which is honest: we do not know who they are, so we cannot know
+  // whether they are here. A `false` would assert "offline" about a stranger.
+  //
+  // Self is forced online rather than read from the set: you are demonstrably
+  // connected if this is rendering, and whether the server echoes your own id
+  // back in `presence` is not something the API map promises either way.
+  const authorOnline = useCommsStore((s) =>
+    author ? author.id === me || s.online.includes(author.id) : undefined,
+  );
   const [hovered, setHovered] = useState(false);
   // Opening a Radix menu moves the pointer and focus into a PORTAL, outside
   // this row — so `onMouseLeave` fires, and if mounting depended on hover alone
@@ -183,7 +201,7 @@ const MessageRow = memo(function MessageRow({
     >
       <div className={cn("shrink-0 pt-[3px]", GUTTER)}>
         {first ? (
-          <CommsAvatar member={author} size={30} />
+          <CommsAvatar member={author} size={30} online={authorOnline} />
         ) : (
           // The gutter is never empty-looking on hover: a continuation
           // reveals its own time where the avatar would be.

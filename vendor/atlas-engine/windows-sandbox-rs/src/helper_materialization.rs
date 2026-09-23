@@ -431,10 +431,10 @@ mod tests {
 
     #[test]
     fn helper_bin_dir_is_under_sandbox_bin() {
-        let atlas_agent_home = Path::new(r"C:\Users\example.atlas-agent");
+        let atlas_agent_home = Path::new(r"C:\Users\example\.atlas-agent");
 
         assert_eq!(
-            PathBuf::from(r"C:\Users\example.atlas-agent\.sandbox-bin"),
+            PathBuf::from(r"C:\Users\example\.atlas-agent\.sandbox-bin"),
             helper_bin_dir(atlas_agent_home)
         );
     }

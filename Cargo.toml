@@ -30,6 +30,7 @@ members = [
   "crates/atlas-agent-store",
   "crates/atlas-agent-transcript",
   "crates/atlas-agent-wire",
+  "crates/atlas-artifacts",
   "crates/atlas-bus",
   "crates/atlas-checkpoint",
   "crates/atlas-codeindex",
@@ -766,6 +767,8 @@ opt-level = 1
 [profile.dev.package.atlas-agent-transcript]
 opt-level = 1
 [profile.dev.package.atlas-agent-wire]
+opt-level = 1
+[profile.dev.package.atlas-artifacts]
 opt-level = 1
 [profile.dev.package.atlas-bus]
 opt-level = 1

@@ -176,6 +176,42 @@ export interface BoardCheckpoint {
  * assume the open Project — reading the Session back needs its own store.
  */
 export interface BoardSession extends SessionSummary {
+  /** Empty for a Session from a Project this machine has no checkout of. */
   projectPath: string;
   projectName: string;
+  /**
+   * Is this Session on the server?
+   *
+   * Project-level, not row-level: "has every row drained" would cost an outbox
+   * scan per Session on a read that runs on every capture event, to answer a
+   * question nobody asked. The queue depth is `CaptureHealth.pendingRows`.
+   */
+  synced: boolean;
+  origin: SessionOrigin;
+  /** The server Project id, for cloud reads and the realtime socket. */
+  remoteProjectId: string | null;
+  /** `null` on a local row — a Session on this disk is this account's. */
+  authorId: string | null;
+}
+
+/**
+ * Where a board row was read from.
+ *
+ * `both` is the normal state of your own work once a Project is synced. It
+ * matters because such a row can be opened from disk — faster, and offline —
+ * while still carrying comments.
+ */
+export type SessionOrigin = "local" | "remote" | "both";
+
+/**
+ * One board read — mirrors `commands::capture::BoardPage`.
+ *
+ * `cloudPending` is the difference between "this Organisation has no Sessions"
+ * and "the remote half has not arrived yet". A synced Organisation has no local
+ * rows to show while its first server read is in flight, and an empty board at
+ * that moment must render as loading rather than as empty.
+ */
+export interface BoardPage {
+  sessions: BoardSession[];
+  cloudPending: boolean;
 }

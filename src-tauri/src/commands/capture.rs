@@ -330,7 +330,7 @@ type Notifier = Arc<Mutex<Option<AppHandle>>>;
 /// appears up to fifteen seconds after you sent the prompt. Capture writes move
 /// no git ref, so `atlas:git-changed` never fires for them and there was nothing
 /// else to listen to.
-const CAPTURE_CHANGED: &str = "atlas:capture-changed";
+pub const CAPTURE_CHANGED: &str = "atlas:capture-changed";
 
 /// Coalescing window for [`CAPTURE_CHANGED`].
 ///
@@ -1517,6 +1517,22 @@ pub async fn capture_session_summary(
     .map_err(|e| e.to_string())?
 }
 
+/// Where a board row was read from.
+///
+/// `Both` is the normal state of your own work once a Project is synced: it is
+/// on this disk *and* on the server. It matters because it says a row can be
+/// opened locally — which is faster, and works offline — while still carrying
+/// comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionOrigin {
+    /// This machine only. No comments, because there is nothing to anchor to.
+    Local,
+    /// A teammate's Session, or your own from another machine.
+    Remote,
+    Both,
+}
+
 /// One row on the Timeline board, tagged with the project it came from.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1524,9 +1540,68 @@ pub struct BoardSession {
     #[serde(flatten)]
     pub session: atlas_checkpoint::SessionSummary,
     /// Needed to read the Session back: each project has its own store, so the
-    /// board has to remember which one a row came from.
+    /// board has to remember which one a row came from. Empty for a Session
+    /// from a Project this machine has no checkout of.
     pub project_path: String,
     pub project_name: String,
+    /// Is this Session on the server? True for every remote row, and for a
+    /// local row whose Project is bound to Cloud.
+    ///
+    /// Deliberately **Project-level, not row-level**: "has every one of this
+    /// Session's rows drained" would need an outbox scan per Session on a read
+    /// that runs on every capture event, to answer a question the developer is
+    /// not asking. The queue depth is already reported by `capture_health`.
+    pub synced: bool,
+    pub origin: SessionOrigin,
+    /// The server Project id, for the reads and the socket. `None` on a
+    /// Project that was never connected.
+    pub remote_project_id: Option<String>,
+    /// Stamped server-side from the verified token. `None` on a local row —
+    /// a Session on this disk is this account's by construction.
+    pub author_id: Option<String>,
+}
+
+/// Fold a remote Session into the local read model.
+///
+/// The wire does not carry four things the local model has, and they are filled
+/// with the honest empty value rather than invented: the Session's **starting**
+/// branch (only Checkpoint branches survive the push), `needs_attention` and
+/// its reason (a local-capture concern that means nothing about someone else's
+/// machine), and the input/output token split (the server keeps only the sum
+/// and the two cache figures).
+///
+/// `active_seconds` is also not the desktop's figure for the same Session — the
+/// server derives it from gap-capped message intervals, the desktop from turn
+/// spans. They legitimately disagree; the server says so on every row.
+pub(crate) fn remote_summary(remote: atlas_artifacts::RemoteSession) -> atlas_checkpoint::SessionSummary {
+    atlas_checkpoint::SessionSummary {
+        id: remote.id,
+        title: remote.title,
+        agent: remote.agent,
+        model: remote.model,
+        source: remote.source,
+        started_at: remote.started_at,
+        updated_at: remote.updated_at,
+        last_activity_at: remote.last_activity_at,
+        active_seconds: remote.active_seconds,
+        wall_seconds: remote.wall_seconds,
+        message_count: remote.message_count,
+        tool_call_count: remote.tool_call_count,
+        checkpoint_count: remote.checkpoint_count,
+        branches: remote.branches,
+        insertions: remote.insertions,
+        deletions: remote.deletions,
+        files_touched: remote.files_touched,
+        total_tokens: remote.total_tokens,
+        input_tokens: remote.input_tokens,
+        output_tokens: remote.output_tokens,
+        cache_creation_tokens: remote.cache_creation_tokens,
+        cache_read_tokens: remote.cache_read_tokens,
+        context_used: remote.context_used,
+        context_size: remote.context_size,
+        needs_attention: false,
+        attention_reason: None,
+    }
 }
 
 /// Every Session across the Organisation's projects, newest first.
@@ -1548,13 +1623,29 @@ pub struct BoardSession {
 const BOARD_LIMIT: usize = 500;
 
 #[tauri::command]
-pub async fn artifacts_board(projects: Vec<String>) -> Result<Vec<BoardSession>, String> {
+pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<BoardPage, String> {
+    // Read the cloud cache first, on this thread: it is a lock and a clone, and
+    // taking it before the blocking hop keeps the `AppHandle` out of there.
+    //
+    // **Never a network call.** This read runs on every capture event and every
+    // git change while the Timeline is open; awaiting the ingest service here
+    // would stall a list whose whole appeal is that it is instant, and would
+    // leave it empty offline where the local Sessions are perfectly readable.
+    // The cache is filled on a ticker and by the socket instead.
+    let cloud = cloud_snapshot(&app);
+    let (remote, remote_names, cloud_pending) = (cloud.sessions, cloud.names, cloud.pending);
+
     tauri::async_runtime::spawn_blocking(move || {
         // One project means the board is filtered, and the caller wants that
         // project's history rather than a slice of the newest across all of
         // them — so the cap does not apply.
-        let limit = if projects.len() == 1 { usize::MAX } else { BOARD_LIMIT };
+        let single = projects.len() == 1;
+        let limit = if single { usize::MAX } else { BOARD_LIMIT };
         let mut out: Vec<BoardSession> = Vec::new();
+        // Which remote Projects this machine has a checkout of, so a teammate's
+        // Session lands under the name the developer already knows it by.
+        let mut local_projects: HashMap<String, (String, String)> = HashMap::new();
+
         for project_path in projects {
             // One unreadable store must not blank the whole board — the other
             // projects' history is still good.
@@ -1565,16 +1656,84 @@ pub async fn artifacts_board(projects: Vec<String>) -> Result<Vec<BoardSession>,
             let Ok(summaries) = atlas_checkpoint::session_summaries(&store, &workspace_id) else {
                 continue;
             };
-            let project_name = Path::new(&project_path)
+            let folder_name = Path::new(&project_path)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| project_path.clone());
+
+            // Synced-ness is a property of the Project, read once per Project
+            // rather than per Session.
+            let binding = store.binding().ok().flatten();
+            let remote_project_id = binding
+                .as_ref()
+                .and_then(|b| b.remote_workspace_id.clone());
+
+            // A connected Project is named by the Organisation, not by whatever
+            // this machine happened to call the folder. Two people who cloned
+            // into differently-named directories must still see one Project on
+            // a shared timeline.
+            let project_name = remote_project_id
+                .as_ref()
+                .and_then(|id| remote_names.get(id).cloned())
+                .unwrap_or(folder_name);
+            let synced = binding
+                .as_ref()
+                .is_some_and(|b| b.mode == atlas_checkpoint::ProjectMode::Cloud);
+            if let Some(ref id) = remote_project_id {
+                local_projects
+                    .insert(id.clone(), (project_path.clone(), project_name.clone()));
+            }
+
             out.extend(summaries.into_iter().map(|session| BoardSession {
+                // A local row this Project has pushed is on both sides. We do
+                // not know per-row whether it drained, and do not need to: the
+                // point of `Both` is that it can be opened from disk.
+                origin: if remote.contains_key(&session.id) {
+                    SessionOrigin::Both
+                } else {
+                    SessionOrigin::Local
+                },
                 session,
                 project_path: project_path.clone(),
                 project_name: project_name.clone(),
+                synced,
+                remote_project_id: remote_project_id.clone(),
+                author_id: None,
             }));
         }
+
+        // Everything the Organisation has that this machine does not. Keyed by
+        // Session id, which is the id the local store minted and pushed
+        // verbatim — so this is a keyed union, not a reconciliation.
+        let seen: std::collections::HashSet<String> =
+            out.iter().map(|row| row.session.id.clone()).collect();
+        for (id, row) in remote {
+            if seen.contains(&id) {
+                continue;
+            }
+            let (project_path, project_name) = local_projects
+                .get(&row.workspace_id)
+                .cloned()
+                // No checkout here: leave the path empty so the opener reads it
+                // over the network, and name it as the Organisation does.
+                .unwrap_or_else(|| {
+                    let label = remote_names
+                        .get(&row.workspace_id)
+                        .cloned()
+                        .unwrap_or_else(|| row.workspace_slug.clone());
+                    (String::new(), label)
+                });
+            out.push(BoardSession {
+                project_path,
+                project_name,
+                synced: true,
+                origin: SessionOrigin::Remote,
+                remote_project_id: Some(row.workspace_id.clone()),
+                author_id: row.author_id.clone(),
+                session: remote_summary(row),
+            });
+        }
+
         // One ordering across every project, so the board reads as a timeline
         // rather than as concatenated per-project lists. Sorting before the cap
         // is what makes the cap mean "newest" rather than "whichever projects
@@ -1584,10 +1743,69 @@ pub async fn artifacts_board(projects: Vec<String>) -> Result<Vec<BoardSession>,
         // and resumed today is today's work.
         out.sort_by(|a, b| b.session.last_activity_at.cmp(&a.session.last_activity_at));
         out.truncate(limit);
-        Ok(out)
+        Ok(BoardPage { sessions: out, cloud_pending })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The board, plus whether it is finished arriving.
+///
+/// `cloud_pending` exists because an empty board has two very different
+/// meanings and the viewer could not tell them apart: a synced Organisation
+/// whose first remote read is still in flight has no local rows to show, and
+/// rendering "No sessions captured yet" at that moment is simply wrong — the
+/// list appears a moment later. It is false for a local-only Organisation,
+/// which has no remote half to wait on.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardPage {
+    pub sessions: Vec<BoardSession>,
+    pub cloud_pending: bool,
+}
+
+/// The Organisation's remote Sessions as of the last refresh, keyed by id.
+///
+/// Empty when signed out, in a local-only Organisation, or before the first
+/// refresh lands — all three of which mean "show the local board", which is a
+/// complete answer rather than a degraded one.
+/// The remote board as of the last refresh.
+#[derive(Default)]
+struct CloudSnapshot {
+    sessions: HashMap<String, atlas_artifacts::RemoteSession>,
+    /// Project id → the name the Organisation gave that Project.
+    names: HashMap<String, String>,
+    /// The first refresh for this Organisation has not finished yet, so an
+    /// empty board means "not looked" rather than "nothing here".
+    pending: bool,
+}
+
+fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
+    let Some(state) = app.try_state::<crate::commands::artifacts_cloud::ArtifactsCloudState>()
+    else {
+        return CloudSnapshot::default();
+    };
+    // No synced Organisation: there is no remote half to wait for, so the local
+    // board is the whole answer and is never pending.
+    let Some(org_id) = state.org.lock().ok().and_then(|org| org.clone()) else {
+        return CloudSnapshot::default();
+    };
+    let pending = state.board.is_pending(&org_id);
+    let board = state.board.snapshot(&org_id);
+    let names = board
+        .projects
+        .iter()
+        .filter_map(|(id, project)| {
+            // The name the Organisation chose, falling back to the handle it is
+            // addressed by. Never the raw id — that is not a label.
+            project
+                .name
+                .clone()
+                .or_else(|| project.slug.clone())
+                .map(|label| (id.clone(), label))
+        })
+        .collect();
+    CloudSnapshot { sessions: board.sessions, names, pending }
 }
 
 /// One Checkpoint on the board, tagged with the project it came from.
@@ -1822,6 +2040,9 @@ pub async fn capture_register_cloud(
     project_path: String,
     org_id: String,
     slug: String,
+    name: Option<String>,
+    visibility: Option<String>,
+    git_url: Option<String>,
     app: AppHandle,
 ) -> Result<atlas_checkpoint::Binding, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1829,7 +2050,7 @@ pub async fn capture_register_cloud(
         let root = std::path::Path::new(&project_path);
 
         // Short lock: read the advisory identity signals, then release.
-        let (root_commit_sha, git_url) = {
+        let (root_commit_sha, detected_git_url) = {
             let handle = state.writer(root)?;
             let store = lock_ok(&handle);
             let binding = store
@@ -1839,6 +2060,17 @@ pub async fn capture_register_cloud(
             (binding.root_commit_sha, binding.git_url)
         };
 
+        // The developer may have typed a Repository URL, or cleared the one we
+        // detected. An explicit empty string means "no remote", which is not
+        // the same as "we did not look".
+        let git_url = match git_url {
+            Some(typed) => {
+                let typed = typed.trim().to_string();
+                (!typed.is_empty()).then_some(typed)
+            }
+            None => detected_git_url,
+        };
+
         let token = token_provider(&app);
         let config = sync_config(&project_path, &org_id, &token);
 
@@ -1846,9 +2078,16 @@ pub async fn capture_register_cloud(
         // The returned id is the Project's wire identity from here on.
         let remote_workspace_id = atlas_checkpoint::register_workspace(
             &config,
-            &slug,
-            root_commit_sha.as_deref(),
-            git_url.as_deref(),
+            atlas_checkpoint::Registration {
+                slug: &slug,
+                name: name.as_deref(),
+                root_commit_sha: root_commit_sha.as_deref(),
+                git_url: git_url.as_deref(),
+                visibility: visibility
+                    .as_deref()
+                    .map(atlas_checkpoint::Visibility::parse)
+                    .unwrap_or_default(),
+            },
         )
         .map_err(|e| e.to_string())?;
 
@@ -1936,10 +2175,13 @@ pub struct ConnectOptions {
 ///
 /// From here on it behaves exactly like a Project created as Cloud — same
 /// capture, same drain, no separate code path. `workspace_id` is the picked
-/// `RemoteWorkspace.id`; trust comes from the picker list being server-fetched
-/// (`capture_connect_options`) moments earlier, so no extra verification
-/// round-trip is made here — a stale pick simply fails at drain time, which is
-/// a retryable state.
+/// `RemoteWorkspace.id`.
+///
+/// The server does the binding, not us: `POST /workspaces/connect` re-checks the
+/// pick against the root commit and the origin URL, and refuses to guess when
+/// several Projects match. Binding locally on the strength of a picker list
+/// fetched moments ago would silently accept a pick the server would not — and
+/// connecting the wrong directory pollutes a *shared* timeline.
 #[tauri::command]
 pub async fn capture_connect(
     project_path: String,
@@ -1947,15 +2189,46 @@ pub async fn capture_connect(
     slug: String,
     workspace_id: String,
     app: AppHandle,
-) -> Result<atlas_checkpoint::Binding, String> {
+) -> Result<ConnectResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = std::path::Path::new(&project_path);
         let state = app.state::<CaptureState>();
+
+        let detection = atlas_checkpoint::detect(root);
+        let token = token_provider(&app);
+        let config = sync_config(&project_path, &org_id, &token);
+
+        let outcome = atlas_checkpoint::connect_workspace(
+            &config,
+            atlas_checkpoint::ConnectRequest {
+                workspace_id: Some(&workspace_id),
+                slug: Some(&slug),
+                root_commit_sha: detection.root_commit_sha.as_deref(),
+                git_url: detection.git_url.as_deref(),
+                create: false,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        let (remote_id, remote_slug) = match outcome {
+            atlas_checkpoint::ConnectOutcome::Connected { workspace_id, slug: s, .. } => {
+                (workspace_id, s.unwrap_or(slug))
+            }
+            // Nothing bound. Hand the candidates back so the picker can ask
+            // again rather than reporting a failure the developer cannot act on.
+            atlas_checkpoint::ConnectOutcome::Ambiguous { candidates } => {
+                return Ok(ConnectResult { binding: None, candidates, matched: false })
+            }
+            atlas_checkpoint::ConnectOutcome::NoMatch => {
+                return Ok(ConnectResult { binding: None, candidates: Vec::new(), matched: false })
+            }
+        };
+
         let handle = state.writer(root)?;
         let binding = {
             let store = lock_ok(&handle);
             store
-                .set_cloud_binding(&org_id, &slug, Some(&workspace_id))
+                .set_cloud_binding(&org_id, &remote_slug, Some(&remote_id))
                 .map_err(|e| e.to_string())?;
             store
                 .binding()
@@ -1963,10 +2236,41 @@ pub async fn capture_connect(
                 .ok_or("enable capture for this Project first")?
         };
         state.note_drain(root);
-        Ok(binding)
+        Ok(ConnectResult { binding: Some(binding), candidates: Vec::new(), matched: true })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The answer to a connect attempt.
+///
+/// `matched: false` with candidates is the server declining to guess, which is
+/// a question for the developer rather than an error.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectResult {
+    pub binding: Option<atlas_checkpoint::Binding>,
+    pub candidates: Vec<atlas_checkpoint::RemoteWorkspace>,
+    pub matched: bool,
+}
+
+/// Is `git` on this machine at all?
+///
+/// Capture links Sessions to commits, so a machine without git gets a banner
+/// rather than a silent half-feature. Distinct from "this directory is not a
+/// repository", which `capture_detect` already answers and which `git init`
+/// fixes.
+#[tauri::command]
+pub async fn capture_git_available() -> bool {
+    tauri::async_runtime::spawn_blocking(|| {
+        atlas_process::command("git")
+            .arg("--version")
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// What promoting this Project to Cloud would disclose.
@@ -2029,6 +2333,8 @@ pub async fn capture_promote(
     project_path: String,
     org_id: String,
     slug: String,
+    name: Option<String>,
+    visibility: Option<String>,
     app: AppHandle,
 ) -> Result<i64, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2052,9 +2358,16 @@ pub async fn capture_promote(
         let config = sync_config(&project_path, &org_id, &token);
         let remote_workspace_id = atlas_checkpoint::register_workspace(
             &config,
-            &slug,
-            root_commit_sha.as_deref(),
-            git_url.as_deref(),
+            atlas_checkpoint::Registration {
+                slug: &slug,
+                name: name.as_deref(),
+                root_commit_sha: root_commit_sha.as_deref(),
+                git_url: git_url.as_deref(),
+                visibility: visibility
+                    .as_deref()
+                    .map(atlas_checkpoint::Visibility::parse)
+                    .unwrap_or_default(),
+            },
         )
         .map_err(|e| e.to_string())?;
 

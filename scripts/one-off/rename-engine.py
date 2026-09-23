@@ -97,7 +97,7 @@ R_PRODUCT = [
 ]
 # text-only product paths (in code `.codex` is a field or module access)
 R_TEXT_PATHS = [
-    (re.compile(r"\\.codex\b"), ".atlas-agent"),         # already-escaped regex spellings
+    (re.compile(r"\\\.codex\b"), "\\.atlas-agent"),      # already-escaped regex spellings
     (re.compile(r"\.codex\b"), ".atlas-agent"),          # ~/.codex, .codex/, .codex-plugin
     (re.compile(r"\\nCodex\b"), "\\nAtlas Agent"),         # a prose line break inside a string
 ]

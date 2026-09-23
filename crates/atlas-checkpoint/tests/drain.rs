@@ -21,7 +21,8 @@ use std::time::Duration;
 use atlas_checkpoint::artifacts::AtlasArtifact;
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
-    bind, drain, register_workspace, Capture, DrainStatus, Role, SessionKey, Source, Store,
+    bind, drain, register_workspace, Capture, DrainStatus, Registration, Role, SessionKey, Source,
+    Store,
     SyncConfig, TurnContent, SPILL_THRESHOLD_BYTES,
 };
 
@@ -417,9 +418,12 @@ fn registering_a_project_returns_the_server_assigned_id() {
     let token = always_token();
     let id = register_workspace(
         &config(&stub.base_url, &token),
-        "atlas",
-        Some("abc123"),
-        Some("https://example.invalid/atlas.git"),
+        Registration {
+            slug: "atlas",
+            root_commit_sha: Some("abc123"),
+            git_url: Some("https://example.invalid/atlas.git"),
+            ..Registration::default()
+        },
     )
     .expect("registers");
     assert_eq!(id, "ws-remote-1");
@@ -429,8 +433,11 @@ fn registering_a_project_returns_the_server_assigned_id() {
 fn registering_a_taken_slug_is_refused_plainly() {
     let stub = Stub::start(vec![], 200);
     let token = always_token();
-    let err = register_workspace(&config(&stub.base_url, &token), "taken", None, None)
-        .expect_err("a 409 is an error");
+    let err = register_workspace(
+        &config(&stub.base_url, &token),
+        Registration { slug: "taken", ..Registration::default() },
+    )
+    .expect_err("a 409 is an error");
     assert!(err.to_string().contains("already taken"), "{err}");
 }
 

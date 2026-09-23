@@ -1,3 +1,4 @@
+<!-- Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md. -->
 # Updating Existing Local Plugins
 
 Use this reference when a plugin already exists and the request is about updating the plugin during 

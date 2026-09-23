@@ -74,6 +74,27 @@ pub const OUTPUT_TOKEN_CLAMP: u32 = 32_768;
 /// reservation of the second.
 pub const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 16_384;
 
+/// The gateway refuses a prompt whose conservative byte estimate exceeds this.
+///
+/// This deliberately does not use the provider's token usage: the gateway
+/// measures the serialized prompt fields itself as `ceil(utf8_bytes / 3)`.
+/// Keeping the same calculation on the client lets the turn compact before a
+/// request that the gateway would certainly reject is put on the wire.
+pub const GATEWAY_PROMPT_TOKEN_LIMIT: usize = 200_000;
+
+/// The gateway's prompt meter for one Chat Completions request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatewayPromptUsage {
+    pub utf8_bytes: usize,
+    pub tokens: usize,
+}
+
+impl GatewayPromptUsage {
+    pub fn exceeds_limit(self) -> bool {
+        self.tokens > GATEWAY_PROMPT_TOKEN_LIMIT
+    }
+}
+
 /// Every key this builder may put at the top level of a request body.
 ///
 /// `model`, `max_tokens` and `stream` are the server-overridden trio; the rest
@@ -211,6 +232,38 @@ pub struct BuiltChatRequest {
     pub namespaced_tools: BTreeMap<String, NamespacedTool>,
 }
 
+/// Measure exactly the fields the gateway treats as model input.
+///
+/// `model`, `stream`, and `max_tokens` are transport/output controls, so they
+/// are intentionally excluded. Serde's compact JSON representation is the
+/// wire representation the gateway measures; counting Rust strings here would
+/// miss JSON escaping and tool-schema structure.
+pub fn gateway_prompt_usage(request: &ChatCompletionsRequest) -> GatewayPromptUsage {
+    #[derive(Serialize)]
+    struct PromptFields<'a> {
+        messages: &'a [ChatMessage],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tools: &'a Option<Vec<Value>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_choice: &'a Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        response_format: &'a Option<Value>,
+    }
+
+    let utf8_bytes = serde_json::to_vec(&PromptFields {
+        messages: &request.messages,
+        tools: &request.tools,
+        tool_choice: &request.tool_choice,
+        response_format: &request.response_format,
+    })
+    .expect("Chat Completions prompt fields are always JSON serializable")
+    .len();
+    GatewayPromptUsage {
+        utf8_bytes,
+        tokens: utf8_bytes.div_ceil(3),
+    }
+}
+
 pub fn build_chat_request(input: ChatRequestInput<'_>) -> Result<BuiltChatRequest, ApiError> {
     let mut messages: Vec<ChatMessage> = Vec::new();
     if !input.instructions.trim().is_empty() {
@@ -270,7 +323,9 @@ fn text_of(content: &[ContentItem]) -> String {
     content
         .iter()
         .filter_map(|part| match part {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => Some(text.as_str()),
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -408,18 +463,18 @@ fn push_item(messages: &mut Vec<ChatMessage>, item: &ResponseItem, keep_images: 
                 extra_content: extra_content_of(internal_chat_message_metadata_passthrough),
             }],
         }),
-        ResponseItem::FunctionCallOutput { call_id, output, .. } => {
-            messages.push(ChatMessage::Tool {
-                tool_call_id: call_id.clone(),
-                content: output.body.to_text().unwrap_or_default(),
-            })
-        }
-        ResponseItem::CustomToolCallOutput { call_id, output, .. } => {
-            messages.push(ChatMessage::Tool {
-                tool_call_id: call_id.clone(),
-                content: output.body.to_text().unwrap_or_default(),
-            })
-        }
+        ResponseItem::FunctionCallOutput {
+            call_id, output, ..
+        } => messages.push(ChatMessage::Tool {
+            tool_call_id: call_id.clone(),
+            content: output.body.to_text().unwrap_or_default(),
+        }),
+        ResponseItem::CustomToolCallOutput {
+            call_id, output, ..
+        } => messages.push(ChatMessage::Tool {
+            tool_call_id: call_id.clone(),
+            content: output.body.to_text().unwrap_or_default(),
+        }),
         // Thinking has no wire here. The gateway keeps Claude's thinking out of
         // `content` on the way back and documents no way to send it in, so a
         // replayed reasoning item would be a `400` at best. This is the
@@ -584,7 +639,10 @@ fn reshape_one(tool: &Value, namespace: Option<&str>, reshaped: &mut Reshaped) -
         return None;
     };
     let name = wire_name(namespace, own_name);
-    let description = tool.get("description").and_then(Value::as_str).unwrap_or_default();
+    let description = tool
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let value = match kind {
         "function" => json!({
             "type": "function",
@@ -649,7 +707,13 @@ pub(crate) fn flat_tool_name(namespace: &str, name: &str) -> String {
     };
     let clean: String = joined
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if clean.len() <= MAX_TOOL_NAME {
         return clean;

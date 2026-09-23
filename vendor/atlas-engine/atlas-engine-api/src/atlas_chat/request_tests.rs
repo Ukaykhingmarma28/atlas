@@ -169,6 +169,40 @@ fn max_tokens_is_always_there_and_never_above_the_clamp() {
 }
 
 #[test]
+fn gateway_prompt_meter_uses_serialized_utf8_bytes_and_the_gateway_ceiling() {
+    // Three emoji are twelve UTF-8 bytes, not three characters. The meter
+    // must also include JSON syntax and the field name, because that is the
+    // gateway's serialized-prompt calculation.
+    let items = [message("user", "😀😀😀")];
+    let built = build("claude-sonnet-4-6", &items, &[]);
+    let usage = gateway_prompt_usage(&built.request);
+    assert_eq!(usage.tokens, usage.utf8_bytes.div_ceil(3));
+    assert!(usage.utf8_bytes > "😀😀😀".len());
+    assert!(!usage.exceeds_limit());
+
+    let tools = [json!({
+        "type": "function",
+        "name": "large_schema",
+        "description": "x".repeat(12_000),
+        "parameters": {"type": "object", "properties": {}},
+    })];
+    let with_tool = build("claude-sonnet-4-6", &items, &tools);
+    assert!(
+        gateway_prompt_usage(&with_tool.request).utf8_bytes >= usage.utf8_bytes + 12_000,
+        "tool schemas are prompt-bearing fields and must count toward preflight",
+    );
+
+    // 600,003 input bytes alone exceed the 200K × 3 byte admission budget.
+    // A request at this size must compact locally rather than hit a 413.
+    let oversized = [message(
+        "user",
+        &"x".repeat(GATEWAY_PROMPT_TOKEN_LIMIT * 3 + 3),
+    )];
+    let built = build("claude-sonnet-4-6", &oversized, &[]);
+    assert!(gateway_prompt_usage(&built.request).exceeds_limit());
+}
+
+#[test]
 fn the_baked_instructions_lead_as_a_system_message() {
     // `instructions` is a Responses field and off the allowlist, so the system
     // prompt has nowhere else to go. Losing it silently would leave the agent
@@ -307,9 +341,12 @@ fn reasoning_is_dropped_because_this_wire_cannot_carry_it() {
         message("user", "hi"),
     ];
     let built = build("claude-sonnet-4-6", &items, &[]);
-    let body = serde_json::to_string(&built.request)
-        .unwrap_or_else(|err| panic!("serialize: {err}"));
-    assert!(!body.contains("opaque"), "reasoning must not reach the wire");
+    let body =
+        serde_json::to_string(&built.request).unwrap_or_else(|err| panic!("serialize: {err}"));
+    assert!(
+        !body.contains("opaque"),
+        "reasoning must not reach the wire"
+    );
     assert_eq!(built.request.messages.len(), 2, "system + user");
 }
 
@@ -493,8 +530,8 @@ fn not_one_of_the_ten_responses_fields_reaches_the_wire() {
     // builder populates that object with `reasoning_summary_delivery`, a key
     // legal nowhere here. A top-level key check would not catch it coming back
     // as a nested field of something else.
-    let rendered = serde_json::to_string(&built.request)
-        .unwrap_or_else(|err| panic!("serialize: {err}"));
+    let rendered =
+        serde_json::to_string(&built.request).unwrap_or_else(|err| panic!("serialize: {err}"));
     assert!(
         !rendered.contains("stream_options"),
         "`stream_options` must not appear at any depth: {rendered}",
@@ -503,7 +540,10 @@ fn not_one_of_the_ten_responses_fields_reaches_the_wire() {
     // Not vacuous: the body really did carry a turn with a tool round trip, so
     // the assertions above ran against a fully populated request.
     assert!(rendered.contains("\"tool_calls\"") && rendered.contains("\"messages\""));
-    assert!(rendered.contains("\"type\":\"text\""), "content parts still use `text`");
+    assert!(
+        rendered.contains("\"type\":\"text\""),
+        "content parts still use `text`"
+    );
 }
 
 fn image_message(text: &str, url: &str) -> ResponseItem {
@@ -548,8 +588,8 @@ fn an_image_survives_the_turn_it_was_attached_to_and_the_one_after() {
         message("user", "and what colour"),
     ];
     let built = build("claude-sonnet-4-6", &items, &[]);
-    let rendered = serde_json::to_string(&built.request)
-        .unwrap_or_else(|err| panic!("serialize: {err}"));
+    let rendered =
+        serde_json::to_string(&built.request).unwrap_or_else(|err| panic!("serialize: {err}"));
     assert!(
         rendered.contains("AAAA"),
         "the image is still one turn old and is still being discussed",
@@ -569,8 +609,8 @@ fn an_older_image_is_described_rather_than_re_uploaded() {
         message("user", "thanks"),
     ];
     let built = build("claude-sonnet-4-6", &items, &[]);
-    let rendered = serde_json::to_string(&built.request)
-        .unwrap_or_else(|err| panic!("serialize: {err}"));
+    let rendered =
+        serde_json::to_string(&built.request).unwrap_or_else(|err| panic!("serialize: {err}"));
 
     assert!(
         !rendered.contains("OLDBYTES"),
@@ -590,10 +630,13 @@ fn an_older_image_is_described_rather_than_re_uploaded() {
 fn eviction_never_takes_the_only_image_in_a_first_turn() {
     // The commonest case by far: one image, one prompt, no history. Evicting
     // here would mean the model never sees the thing it was asked about.
-    let items = [image_message("what is this", "data:image/png;base64,ONLYONE")];
+    let items = [image_message(
+        "what is this",
+        "data:image/png;base64,ONLYONE",
+    )];
     let built = build("claude-sonnet-4-6", &items, &[]);
-    let rendered = serde_json::to_string(&built.request)
-        .unwrap_or_else(|err| panic!("serialize: {err}"));
+    let rendered =
+        serde_json::to_string(&built.request).unwrap_or_else(|err| panic!("serialize: {err}"));
     assert!(rendered.contains("ONLYONE"));
     assert!(!rendered.contains("earlier image omitted"));
 }
@@ -644,7 +687,9 @@ fn a_namespace_tool_is_flattened_into_functions_and_mapped_for_the_way_back() {
         json!("mcp__atlas_memory__grammar_tool")
     );
     assert_eq!(
-        built.namespaced_tools.get("mcp__atlas_memory__memory_search"),
+        built
+            .namespaced_tools
+            .get("mcp__atlas_memory__memory_search"),
         Some(&NamespacedTool {
             namespace: "mcp__atlas_memory__".to_string(),
             name: "memory_search".to_string(),
@@ -660,7 +705,10 @@ fn a_namespace_tool_is_flattened_into_functions_and_mapped_for_the_way_back() {
 #[test]
 fn a_namespace_without_a_trailing_separator_gets_one() {
     assert_eq!(flat_tool_name("orders", "lookup"), "orders__lookup");
-    assert_eq!(flat_tool_name("mcp__orders__", "lookup"), "mcp__orders__lookup");
+    assert_eq!(
+        flat_tool_name("mcp__orders__", "lookup"),
+        "mcp__orders__lookup"
+    );
 }
 
 #[test]
@@ -673,7 +721,11 @@ fn a_flat_name_is_kept_to_what_every_provider_accepts() {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
         "{flat}"
     );
-    assert_eq!(flat, flat_tool_name("mcp__a.b c__", &long), "must be stable");
+    assert_eq!(
+        flat,
+        flat_tool_name("mcp__a.b c__", &long),
+        "must be stable"
+    );
     assert_ne!(flat, flat_tool_name("mcp__a.b c__", &"y".repeat(80)));
 }
 

@@ -1547,6 +1547,115 @@ async fn compact_is_visible_in_the_thread_not_a_silent_shrug() {
 }
 
 #[tokio::test]
+async fn a_gateway_sized_prompt_compacts_before_the_request_and_retries_once() {
+    // The gateway counts serialized UTF-8 prompt bytes, including tool schemas,
+    // rather than trusting the provider's previous usage. Drive a prompt just
+    // beyond that admission limit: the oversized form must never reach HTTP,
+    // local compaction must fit and summarize it, and the rebuilt turn must
+    // complete on its single recovery attempt.
+    let h = harness(vec![
+        (Some(1), sse_ok(answer("summary after preflight"))),
+        (None, sse_ok(answer("recovered after compaction"))),
+    ])
+    .await;
+    let session_id = h.open_thread().await;
+    let oversized = "x".repeat(600_003);
+
+    let response = h
+        .connection
+        .prompt(acp::PromptRequest::new(session_id, text(&oversized)))
+        .await
+        .expect("the oversized turn should compact and recover");
+
+    assert_eq!(response.stop_reason, acp::StopReason::EndTurn);
+    assert!(
+        h.assistant_text().contains("recovered after compaction"),
+        "the rebuilt turn must finish after compaction: {}",
+        h.assistant_text(),
+    );
+
+    let requests = h
+        .server
+        .received_requests()
+        .await
+        .expect("the mock server must record requests");
+    let completion_requests: Vec<_> = requests
+        .iter()
+        .filter(|request| request.url.path().ends_with("/chat/completions"))
+        .collect();
+    assert_eq!(
+        completion_requests.len(),
+        2,
+        "only the compact request and one rebuilt turn may reach the gateway",
+    );
+    assert!(
+        completion_requests
+            .iter()
+            .all(|request| request.body.len() < oversized.len()),
+        "the known-oversized request must be rejected locally before HTTP",
+    );
+}
+
+#[tokio::test]
+async fn prompt_too_large_compacts_and_retries_but_request_too_large_stops() {
+    let prompt_overflow = ResponseTemplate::new(413).set_body_raw(
+        r#"{"error":{"message":"prompt exceeds the model context","type":"invalid_request_error","code":"prompt_too_large"}}"#,
+        "application/json",
+    );
+    let h = harness(vec![
+        (Some(1), prompt_overflow),
+        (Some(1), sse_ok(answer("overflow summary"))),
+        (None, sse_ok(answer("recovered from gateway overflow"))),
+    ])
+    .await;
+    let session_id = h.open_thread().await;
+
+    let response = h
+        .connection
+        .prompt(acp::PromptRequest::new(session_id, text("ordinary prompt")))
+        .await
+        .expect("prompt_too_large should compact and retry once");
+    assert_eq!(response.stop_reason, acp::StopReason::EndTurn);
+    assert!(
+        h.assistant_text()
+            .contains("recovered from gateway overflow")
+    );
+    let attempts = h
+        .server
+        .received_requests()
+        .await
+        .expect("recording")
+        .iter()
+        .filter(|request| request.url.path().ends_with("/chat/completions"))
+        .count();
+    assert_eq!(
+        attempts, 3,
+        "one failed turn, one compact request, and one rebuilt turn"
+    );
+
+    let body_overflow = ResponseTemplate::new(413).set_body_raw(
+        r#"{"error":{"message":"body exceeds two megabytes","type":"invalid_request_error","code":"request_too_large"}}"#,
+        "application/json",
+    );
+    let h = harness(vec![(None, body_overflow)]).await;
+    let session_id = h.open_thread().await;
+    let outcome = h
+        .connection
+        .prompt(acp::PromptRequest::new(session_id, text("ordinary prompt")))
+        .await;
+    assert!(outcome.is_err(), "request_too_large must remain terminal");
+    let attempts = h
+        .server
+        .received_requests()
+        .await
+        .expect("recording")
+        .iter()
+        .filter(|request| request.url.path().ends_with("/chat/completions"))
+        .count();
+    assert_eq!(attempts, 1, "raw body overflow must not compact or retry");
+}
+
+#[tokio::test]
 async fn an_executed_command_appears_as_a_tool_call_with_its_output() {
     // The #46 wiring, end to end: the model asks for `exec_command`, the
     // engine actually runs it, and the ITEM notifications land in the thread

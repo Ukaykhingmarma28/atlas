@@ -2,7 +2,7 @@
 # Atlas's changes to this tree
 
 This directory is a hard fork of an upstream engine under the Apache License 2.0
-(`LICENSE`, `NOTICE`; fork point recorded in `docs/adr/0003-codex-fork-as-native-agent.md`).
+(`LICENSE`, `NOTICE`; fork point recorded in `docs/adr/0003-atlas-engine-fork-as-native-agent.md`).
 Apache-2.0 §4(b) asks that modified files carry a prominent notice that they were changed.
 Every source file Atlas has touched carries that notice on its first line. This file is the
 same notice for the files that cannot carry one, and it states the one change that touched

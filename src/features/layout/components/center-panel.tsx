@@ -151,7 +151,17 @@ const tabIcons: Record<TabType, FallbackIcon> = {
 };
 
 const GROUP_OF = (t: Tab) => t.groupId ?? "main";
-const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set([
+/**
+ * Declared as an `as const` TUPLE, not a bare `Set<TabType>`, so the member
+ * literals survive into the type system: `PersistentTabType` below is derived
+ * from it, and `PersistentPanel`'s `switch` is checked for exhaustiveness
+ * against that union. Adding an entry here without giving it a `case` is a
+ * COMPILE ERROR — which is the whole point. A `Set<TabType>` erased the
+ * literals, so a missing branch silently fell through to the terminal
+ * fallback and mounted a PTY instead of the panel (this is how the Spaces tab
+ * regressed in 32767aff8).
+ */
+export const PERSISTENT_TYPES_LIST = [
   "editor",
   "terminal",
   "browser",
@@ -169,7 +179,12 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set([
   // A Space is a live socket + a Y.Doc: remounting re-dials, replays the page
   // and lands re-fitted. Kept mounted so a tab switch is a tab switch.
   "spaces",
-]);
+] as const satisfies readonly TabType[];
+
+type PersistentTabType = (typeof PERSISTENT_TYPES_LIST)[number];
+type PersistentTab = Tab & { type: PersistentTabType };
+
+const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set(PERSISTENT_TYPES_LIST);
 
 // Of the persistent types, these are the ones that keep BURNING CPU/GPU while
 // hidden — a PTY draining output, a live web embed, a Pixi/WebGL graph ticking,
@@ -178,13 +193,15 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set([
 // (chat's transcript window + load path, knowledge's tree walk, settings' form
 // drafts) and stay mounted everywhere: hiding them saves nothing per frame and
 // costs a full remount on switch-back.
-const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set([
+export const IDLE_EXPENSIVE_TYPES_LIST = [
   "terminal",
   "browser",
   "knowledge-graph",
   "pdf",
   "spaces",
-]);
+] as const satisfies readonly PersistentTabType[];
+
+const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set(IDLE_EXPENSIVE_TYPES_LIST);
 
 /**
  * The center panel is one or more side-by-side **split columns**
@@ -673,8 +690,12 @@ const TabContentContainer = memo(function TabContentContainer({
   // subtree out of focus, hit-testing and find. Same contract the terminal
   // uses for its inactive panes. The active chat wrapper is the same absolute
   // box, so toggling a sibling's mode never relayouts the visible thread.
+  // The explicit predicate is load-bearing: `Set.has` does not narrow, and
+  // `PersistentPanel` below relies on `tab.type` being the `PersistentTabType`
+  // union for its exhaustiveness check.
   const persistentTabs = tabs.filter(
-    (t) => PERSISTENT_TYPES.has(t.type) && (isActive || !IDLE_EXPENSIVE_TYPES.has(t.type)),
+    (t): t is PersistentTab =>
+      PERSISTENT_TYPES.has(t.type) && (isActive || !IDLE_EXPENSIVE_TYPES.has(t.type)),
   );
   const activeIsNonPersistent = !persistentTabs.find((t) => t.id === activeTab.id);
 
@@ -717,31 +738,7 @@ const TabContentContainer = memo(function TabContentContainer({
           }
           return (
             <div key={tab.id} style={{ display: isActive ? "contents" : "none" }}>
-              {tab.type === "editor" ? (
-                <EditorPanel
-                  tabId={tab.id}
-                  filePath={tab.data.filePath as string | undefined}
-                  containerHeight={height}
-                />
-              ) : tab.type === "knowledge" ? (
-                <KnowledgePanel />
-              ) : tab.type === "browser" ? (
-                <BrowserPanel
-                  tabId={tab.id}
-                  groupId={GROUP_OF(tab)}
-                  initialUrl={tab.data.url as string | undefined}
-                />
-              ) : tab.type === "knowledge-graph" ? (
-                <KnowledgeGraph />
-              ) : tab.type === "pdf" ? (
-                <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
-              ) : tab.type === "settings" ? (
-                <SettingsPanel initialSection={tab.data.section as string | undefined} />
-              ) : tab.type === "spaces" ? (
-                <SpacesTab convId={tab.data.convId as string} />
-              ) : (
-                <TerminalPanel tabId={tab.id} projectId={projectId} />
-              )}
+              <PersistentPanel tab={tab} projectId={projectId} height={height} />
             </div>
           );
         })}
@@ -751,6 +748,68 @@ const TabContentContainer = memo(function TabContentContainer({
     </div>
   );
 });
+
+/**
+ * Mounts one persistent tab's panel.
+ *
+ * A `switch` with a `never` default, NOT an if/else-if chain with a catch-all.
+ * The chain this replaced ended in an unconditional `<TerminalPanel/>`, and
+ * because `tab.type` was the full `TabType` union in every arm, a persistent
+ * type with no branch of its own type-checked perfectly and quietly rendered a
+ * terminal — spawning a real PTY keyed to that tab's id. That shipped: a Space
+ * tab mounted PowerShell in alpha-0.3.2. Here `tab.type` is narrowed to
+ * `PersistentTabType`, so omitting a case fails `tsc` at `_exhaustive`.
+ */
+function PersistentPanel({
+  tab,
+  projectId,
+  height,
+}: {
+  tab: PersistentTab;
+  projectId: string;
+  height: number;
+}) {
+  switch (tab.type) {
+    case "editor":
+      return (
+        <EditorPanel
+          tabId={tab.id}
+          filePath={tab.data.filePath as string | undefined}
+          containerHeight={height}
+        />
+      );
+    case "knowledge":
+      return <KnowledgePanel />;
+    case "browser":
+      return (
+        <BrowserPanel
+          tabId={tab.id}
+          groupId={GROUP_OF(tab)}
+          initialUrl={tab.data.url as string | undefined}
+        />
+      );
+    case "knowledge-graph":
+      return <KnowledgeGraph />;
+    case "pdf":
+      return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
+    case "settings":
+      return <SettingsPanel initialSection={tab.data.section as string | undefined} />;
+    case "spaces":
+      return <SpacesTab convId={tab.data.convId as string} />;
+    // Chat is normally handled by the caller, which needs its own
+    // `visibility:hidden` wrapper rather than `display:none`. Listed anyway so
+    // the exhaustiveness check below is real and not a hole.
+    case "chat":
+      return <ChatPanel tabId={tab.id} />;
+    case "terminal":
+      return <TerminalPanel tabId={tab.id} projectId={projectId} />;
+    default: {
+      const _exhaustive: never = tab.type;
+      void _exhaustive;
+      return <PlaceholderContent tab={tab} />;
+    }
+  }
+}
 
 /**
  * The centre with NO project open. The old gate returned a bare

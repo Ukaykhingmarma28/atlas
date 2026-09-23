@@ -50,6 +50,10 @@ function session(overrides: Partial<BoardSession> = {}): BoardSession {
     attentionReason: null,
     projectPath: "/tmp/atlas",
     projectName: "atlas",
+    synced: false,
+    origin: "local",
+    remoteProjectId: null,
+    authorId: null,
     ...overrides,
   };
 }

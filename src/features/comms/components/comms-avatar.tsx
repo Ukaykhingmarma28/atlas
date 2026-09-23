@@ -21,7 +21,10 @@ export const CommsAvatar = memo(function CommsAvatar({
 }: {
   member: OrgMemberProfile | null;
   size?: number;
-  /** Omit entirely to draw no dot (e.g. inside a channel transcript). */
+  /** Omit entirely to draw no dot — for avatars too small or too overlapped to
+   *  carry one (a mention chip, a 16px byline, the header's facepile), and for
+   *  an unresolved member, where `false` would assert "offline" about someone
+   *  we cannot even name. */
   online?: boolean;
   className?: string;
 }) {

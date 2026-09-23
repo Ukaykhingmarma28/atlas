@@ -71,7 +71,7 @@ fn windows_wrapper_args_round_trip() {
         Some(write_roots_override.as_slice()),
         deny_read_paths_override.as_slice(),
         deny_write_paths_override.as_slice(),
-        Path::new(r"C:\Users\me.atlas-agent"),
+        Path::new(r"C:\Users\me\.atlas-agent"),
     );
 
     assert_eq!(args[0], ATLAS_AGENT_WINDOWS_SANDBOX_ARG1);

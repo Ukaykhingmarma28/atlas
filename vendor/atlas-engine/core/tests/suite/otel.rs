@@ -96,7 +96,7 @@ fn touch_command(path: &str) -> String {
 
 #[test]
 fn extract_log_field_handles_empty_bare_values() {
-    let line = "event.name=.atlas-agent.tool_result\" mcp_server= mcp_server_origin=";
+    let line = "event.name=\"atlas_agent.tool_result\" mcp_server= mcp_server_origin=";
     assert_eq!(extract_log_field(line, "mcp_server"), Some(String::new()));
     assert_eq!(
         extract_log_field(line, "mcp_server_origin"),
@@ -106,7 +106,7 @@ fn extract_log_field_handles_empty_bare_values() {
 
 #[test]
 fn extract_log_field_does_not_confuse_similar_keys() {
-    let line = "event.name=.atlas-agent.tool_result\" mcp_server_origin=stdio";
+    let line = "event.name=\"atlas_agent.tool_result\" mcp_server_origin=stdio";
     assert_eq!(extract_log_field(line, "mcp_server"), None);
     assert_eq!(
         extract_log_field(line, "mcp_server_origin"),

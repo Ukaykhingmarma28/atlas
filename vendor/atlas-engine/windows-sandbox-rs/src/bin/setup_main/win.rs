@@ -1032,7 +1032,7 @@ mod tests {
             "version": SETUP_VERSION,
             "offline_username": "AtlasEngineSandboxOffline",
             "online_username": "AtlasEngineSandboxOnline",
-            "atlas_agent_home": "C:.atlas-agent-home",
+            "atlas_agent_home": "C:\\atlas-engine-home",
             "command_cwd": "C:\\workspace",
             "read_roots": [],
             "write_roots": [],

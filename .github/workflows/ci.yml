@@ -236,6 +236,8 @@ jobs:
             clippy: true
           - crate: atlas-agent-wire
             clippy: true
+          - crate: atlas-artifacts
+            clippy: true
           - crate: atlas-bus
           - crate: atlas-checkpoint
             clippy: true

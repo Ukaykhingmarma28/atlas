@@ -214,7 +214,7 @@ mod windows_tests {
         let vars = make_vars(&[
             ("Shell", "C:\\Program Files\\Git\\bin\\bash.exe"),
             ("SystemRoot", "C:\\Windows"),
-            ("AppData", "C:\\Users.atlas-agent\\AppData\\Roaming"),
+            ("AppData", "C:\\Users\\atlas-agent\\AppData\\Roaming"),
             ("TmpDir", "C:\\Temp\\custom"),
             ("OPENAI_API_KEY", "secret"),
         ]);
@@ -235,7 +235,7 @@ mod windows_tests {
             ("SystemRoot".to_string(), "C:\\Windows".to_string()),
             (
                 "AppData".to_string(),
-                "C:\\Users.atlas-agent\\AppData\\Roaming".to_string(),
+                "C:\\Users\\atlas-agent\\AppData\\Roaming".to_string(),
             ),
             ("TmpDir".to_string(), "C:\\Temp\\custom".to_string()),
         ]);

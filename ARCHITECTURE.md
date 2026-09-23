@@ -98,7 +98,7 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 
 | Domain group | Modules |
 |---|---|
-| Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_analytics, agent_memory, catalog, registry, capture |
+| Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_analytics, agent_memory, catalog, registry, capture, artifacts_cloud |
 | Terminal / browser / fs | terminal, browser, fs |
 | Git | git, git_graph, git_watcher, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops |
 | GitHub | github |
@@ -127,7 +127,8 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 |---|---|
 | `atlas:agents` | every agent delta — message append, content-block delta, tool call, permission request, status, error, done |
 | `atlas:threads-changed` | thread-metadata store changed; the sidebar's only refresh signal |
-| `atlas:capture-changed` | Timeline / checkpoint record updated |
+| `atlas:capture-changed` | Timeline / checkpoint record updated — local capture **and** a remote board refresh |
+| `atlas:artifacts-cloud` | Timeline cloud deltas: entry upsert, comment upsert, presence, membership revoked, resync |
 | `atlas:agent-elicitation`, `atlas:agent-elicitation-resolved` | agent-initiated prompts to the user |
 | `atlas:agent-catalog:changed`, `atlas:registry-install:progress` | Marketplace catalog and install progress |
 | `atlas:auth-run:progress` / `:done` | interactive agent sign-in run |
@@ -214,7 +215,8 @@ All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members
 
 | Crate | Role |
 |---|---|
-| `atlas-checkpoint` | The agent-session record: local SQLite store (`.atlas/sessions.db`), redact-on-write capture, git commit linkage, transcript import, sync outbox. Tauri-free, so the whole surface is testable against a real database and a real git repo. |
+| `atlas-checkpoint` | The agent-session record: local SQLite store (`.atlas/sessions.db`), redact-on-write capture, git commit linkage, transcript import, sync outbox. Tauri-free, so the whole surface is testable against a real database and a real git repo. **Push only** — it drains the outbox to the ingest service and never reads a Session back. |
+| `atlas-artifacts` | The Timeline's cloud **read** half: remote Sessions, comments, and one WebSocket per connected cloud Project. Tauri-free, `TokenSource` as the only host seam, shaped on `atlas-comms`. Split from `atlas-checkpoint` because reads need tokio and tungstenite and that crate is deliberately synchronous. The invariant that makes a merged board possible: `rowId` on the wire **is** the local row id, so local and remote rows share one identity and a comment anchor resolves against a local row with no mapping table. |
 | `atlas-redact` | Single source of truth for secret redaction: layered scrubbing (Shannon entropy, vendored betterleaks rules, provider prefixes, credentialed URIs, connection strings) with JSON-aware traversal. String in, redacted string out — no I/O, no async. |
 | `atlas-git` | Git execution layer: one spawn chokepoint over the real `git` binary (so hooks run), a typed stderr→error taxonomy with friendly messages (ported from GitHub Desktop/dugite), porcelain-v2 status parsing, streaming output for long operations. |
 | `atlas-gitdiff` | Structured side-by-side diff engine: parses unified diffs, computes word-level intra-line change spans (word-diff vendored from `dandavison/delta`, MIT). |
@@ -310,6 +312,7 @@ atlas/
 │   ├── atlas-thread-metadata      app-owned session history (threads.db)
 │   ├── atlas-bus                  event bus + middleware pipeline
 │   ├── atlas-checkpoint           session record / Timeline (sessions.db)
+│   ├── atlas-artifacts            Timeline cloud reads + realtime socket
 │   ├── atlas-redact               secret redaction (single source of truth)
 │   ├── atlas-git                  git spawn chokepoint + error taxonomy
 │   ├── atlas-gitdiff              structured diff engine

@@ -1,3 +1,4 @@
+<!-- Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md. -->
 ## Memory Writing Agent: Phase 2 (Consolidation)
 
 You are a Memory Writing Agent.
