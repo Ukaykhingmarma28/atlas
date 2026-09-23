@@ -329,6 +329,34 @@ impl EngineSettings {
                 TomlValue::Integer(self.stream_max_retries as i64),
             ),
         ];
+        if cfg!(target_os = "windows") {
+            // Windows shell commands ran with no sandbox at all. File writes
+            // were already contained — `executor_windows_sandbox_level` quietly
+            // upgrades `Disabled` to `RestrictedToken` for any Windows-shaped
+            // cwd, so `apply_patch` always got a restricted token — but exec
+            // reads the level RAW off the turn context, so `Disabled` resolved
+            // through `get_platform_sandbox(false)` to `SandboxType::None`.
+            //
+            // "unelevated" is `WindowsSandboxLevel::RestrictedToken`: write
+            // containment only. Reads are NOT restricted. "No network" is
+            // environment rather than enforcement — a blackhole `HTTP_PROXY`
+            // plus `NPM_CONFIG_OFFLINE`, which every package manager in the
+            // ticket's matrix honoured, but which anything opening a raw
+            // socket can ignore. The "elevated" level enforces reads and the
+            // network properly, and needs a per-machine provisioning step, so
+            // it cannot be the default for an app people just install.
+            //
+            // Measured on Windows 11 before flipping this: build tools, git,
+            // PowerShell and the python.exe Store alias all keep working;
+            // `npm install` and `bun install` stop, because they need the
+            // network this policy has always denied and that only macOS and
+            // Linux were actually enforcing. Those recover through the
+            // orchestrator's existing escalate-and-approve path.
+            out.push((
+                "windows.sandbox".to_string(),
+                TomlValue::String("unelevated".to_string()),
+            ));
+        }
         if let Some(env_key) = &p.env_key {
             out.push((key("env_key"), TomlValue::String(env_key.clone())));
         }
@@ -491,6 +519,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_shell_commands_run_under_the_restricted_token() {
+        // Without this key the level stays `Disabled`, and exec reads the level
+        // raw, so `get_platform_sandbox(false)` hands back `None` and every
+        // shell command runs unsandboxed. "unelevated" maps to
+        // `WindowsSandboxLevel::RestrictedToken`.
+        let tmp = std::env::temp_dir();
+        let overrides = settings(&tmp).cli_overrides();
+        assert_eq!(
+            overrides
+                .iter()
+                .find(|(k, _)| k == "windows.sandbox")
+                .map(|(_, v)| v.clone()),
+            Some(TomlValue::String("unelevated".into())),
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn the_windows_sandbox_key_is_not_set_off_windows() {
+        // It is a Windows-only posture change; the other platforms already have
+        // Seatbelt and Seccomp and must not see the key at all.
+        let tmp = std::env::temp_dir();
+        assert!(
+            !settings(&tmp)
+                .cli_overrides()
+                .iter()
+                .any(|(k, _)| k == "windows.sandbox"),
+        );
+    }
+
+    #[test]
     fn an_account_authenticated_provider_declares_no_env_key() {
         // The D10 shape: no `env_key`, because auth arrives through the
         // ExternalAuth provider rather than the environment. An env_key here
@@ -575,6 +635,18 @@ mod tests {
             "the engine's own login surface must stay off (D10)",
         );
         assert_eq!(config.analytics_enabled, Some(false));
+
+        // The override has to survive config loading, not just appear in the
+        // list: `windows.sandbox = "unelevated"` is what makes exec resolve to
+        // `SandboxType::WindowsRestrictedToken` instead of `None`.
+        #[cfg(target_os = "windows")]
+        {
+            use codex_core::windows_sandbox::WindowsSandboxLevelExt;
+            assert_eq!(
+                codex_protocol::config_types::WindowsSandboxLevel::from_config(&config),
+                codex_protocol::config_types::WindowsSandboxLevel::RestrictedToken,
+            );
+        }
     }
 
     #[test]
