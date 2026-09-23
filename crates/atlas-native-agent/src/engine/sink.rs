@@ -24,8 +24,8 @@ use atlas_acp_thread::AcpThreadHandle;
 use atlas_acp_thread::RateLimitWindow;
 use atlas_acp_thread::RateLimits;
 use atlas_acp_thread::RetryStatus;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
+use atlas_engine_app_server_protocol::ServerNotification;
+use atlas_engine_app_server_protocol::ThreadItem;
 
 use crate::engine::connection::TurnWaiters;
 
@@ -288,7 +288,7 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
             exit_code,
             ..
         } => {
-            use codex_app_server_protocol::CommandExecutionStatus as S;
+            use atlas_engine_app_server_protocol::CommandExecutionStatus as S;
             let status = match status {
                 S::InProgress => acp::ToolCallStatus::InProgress,
                 // "Completed" is the ENGINE's word for "the process ran";
@@ -316,7 +316,7 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
             Some(call)
         }
         ThreadItem::FileChange { id, changes, status } => {
-            use codex_app_server_protocol::PatchApplyStatus as S;
+            use atlas_engine_app_server_protocol::PatchApplyStatus as S;
             let status = match status {
                 S::InProgress => acp::ToolCallStatus::InProgress,
                 S::Completed => acp::ToolCallStatus::Completed,
@@ -370,7 +370,7 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
             error,
             ..
         } => {
-            use codex_app_server_protocol::McpToolCallStatus as S;
+            use atlas_engine_app_server_protocol::McpToolCallStatus as S;
             let status = match status {
                 S::InProgress => acp::ToolCallStatus::InProgress,
                 S::Completed => acp::ToolCallStatus::Completed,
@@ -447,7 +447,7 @@ fn lock(thread: &AcpThreadHandle) -> std::sync::MutexGuard<'_, AcpThread> {
 /// seven ordinary turns, and the 999% reports are the same arithmetic on a
 /// longer thread.
 fn token_usage_of(
-    u: &codex_app_server_protocol::ThreadTokenUsage,
+    u: &atlas_engine_app_server_protocol::ThreadTokenUsage,
 ) -> atlas_acp_thread::TokenUsage {
     let clamp = |n: i64| n.max(0) as u64;
     let total = &u.total;
@@ -483,7 +483,7 @@ pub fn apply_notification(
         ServerNotification::McpServerStatusUpdated(params) => {
             let settled = !matches!(
                 params.status,
-                codex_app_server_protocol::McpServerStartupState::Starting
+                atlas_engine_app_server_protocol::McpServerStartupState::Starting
             );
             if let Some(thread_id) = params.thread_id.as_deref() {
                 sessions.record_mcp_status(thread_id, &params.name, settled);
@@ -608,7 +608,7 @@ pub fn apply_notification(
         ServerNotification::TurnPlanUpdated(params) => {
             let session = session_id(&params.thread_id);
             if let Some(thread) = sessions.thread(&session) {
-                use codex_app_server_protocol::TurnPlanStepStatus as S;
+                use atlas_engine_app_server_protocol::TurnPlanStepStatus as S;
                 let entries = params
                     .plan
                     .iter()
@@ -699,7 +699,7 @@ pub fn apply_notification(
         // the snapshot every turn). The projector dedupes.
         ServerNotification::AccountRateLimitsUpdated(params) => {
             let snapshot = &params.rate_limits;
-            let window = |w: &codex_app_server_protocol::RateLimitWindow| RateLimitWindow {
+            let window = |w: &atlas_engine_app_server_protocol::RateLimitWindow| RateLimitWindow {
                 used_percent: w.used_percent.clamp(0, 100) as u8,
                 window_minutes: w.window_duration_mins,
                 resets_at: w.resets_at,
@@ -752,7 +752,7 @@ mod tests {
     /// Mixing them is what made the percentage climb past 100% and keep going.
     mod token_usage {
         use super::super::token_usage_of;
-        use codex_app_server_protocol::{ThreadTokenUsage, TokenUsageBreakdown};
+        use atlas_engine_app_server_protocol::{ThreadTokenUsage, TokenUsageBreakdown};
 
         fn breakdown(input: i64, output: i64) -> TokenUsageBreakdown {
             TokenUsageBreakdown {
@@ -950,15 +950,15 @@ mod tests {
             &sessions,
             &turns,
             3,
-            ServerNotification::ItemCompleted(codex_app_server_protocol::ItemCompletedNotification {
+            ServerNotification::ItemCompleted(atlas_engine_app_server_protocol::ItemCompletedNotification {
                 thread_id: "t-patch".to_string(),
                 turn_id: "turn-1".to_string(),
                 item: ThreadItem::FileChange {
                     id: "item-1".to_string(),
-                    status: codex_app_server_protocol::PatchApplyStatus::Completed,
-                    changes: vec![codex_app_server_protocol::FileUpdateChange {
+                    status: atlas_engine_app_server_protocol::PatchApplyStatus::Completed,
+                    changes: vec![atlas_engine_app_server_protocol::FileUpdateChange {
                         path: "src/foo.rs".to_string(),
-                        kind: codex_app_server_protocol::PatchChangeKind::Update { move_path: None },
+                        kind: atlas_engine_app_server_protocol::PatchChangeKind::Update { move_path: None },
                         diff: "@@ -1 +1 @@\n-old\n+new\n".to_string(),
                     }],
                 },

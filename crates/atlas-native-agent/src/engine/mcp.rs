@@ -111,7 +111,7 @@ mod tests {
     /// off the struct the exposure policy actually consults.
     #[test]
     fn the_dotted_keys_survive_the_merge_into_the_engines_own_config() {
-        use codex_protocol::config_types::ToolExposureSurface;
+        use atlas_engine_protocol::config_types::ToolExposureSurface;
 
         let projected = thread_config(&[acp::McpServer::Http(
             acp::McpServerHttp::new("atlas_memory", "http://127.0.0.1:9/mcp")
@@ -122,15 +122,15 @@ mod tests {
         // Exactly what `ConfigManager::load_with_overrides` does with them.
         let overrides: Vec<(String, toml::Value)> = projected
             .into_iter()
-            .map(|(key, value)| (key, codex_utils_json_to_toml::json_to_toml(value)))
+            .map(|(key, value)| (key, atlas_engine_utils_json_to_toml::json_to_toml(value)))
             .collect();
-        let merged = codex_config::build_cli_overrides_layer(&overrides);
+        let merged = atlas_engine_config::build_cli_overrides_layer(&overrides);
 
         let servers = merged
             .get("mcp_servers")
             .and_then(|v| v.get("atlas_memory"))
             .expect("the dotted keys nest into mcp_servers.atlas_memory");
-        let server: codex_config::McpServerConfig =
+        let server: atlas_engine_config::McpServerConfig =
             servers.clone().try_into().expect("the engine parses it");
 
         assert_eq!(

@@ -16,11 +16,11 @@
 //! first", and approval alone cannot stop a command that never asks.
 
 use agent_client_protocol::schema::v1 as acp;
-// The app-server protocol's own copies, not `codex_protocol`'s. They mirror
+// The app-server protocol's own copies, not `atlas_engine_protocol`'s. They mirror
 // each other, but `thread/settings/update` takes these, and converting at the
 // call site would only add a layer that can be got wrong.
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::SandboxPolicy;
+use atlas_engine_app_server_protocol::AskForApproval;
+use atlas_engine_app_server_protocol::SandboxPolicy;
 
 /// One of Atlas's modes, in the shape the picker renders.
 pub struct AtlasMode {
@@ -62,7 +62,7 @@ pub const DEFAULT_MODE_ID: &str = "default";
 /// Normalises a mode id, tolerating another agent's vocabulary.
 ///
 /// Same reason the previous native path does it: a picker seeded with cross-agent ids
-/// can hand us Claude's `bypassPermissions` or Codex's `danger-full-access`.
+/// can hand us Claude's `bypassPermissions` or the engine's `danger-full-access`.
 /// Matching exactly meant "Bypass" silently fell through to prompting on every
 /// action — a mode that looks set and does nothing.
 fn normalise(mode: &str) -> &'static str {

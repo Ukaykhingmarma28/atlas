@@ -9,7 +9,7 @@
 //! # One engine, no switch
 //!
 //! The previous native runtime that used to back this seam is gone (#54). The ported
-//! Codex engine in [`engine`] is the only implementation, and it is no longer
+//! vendored engine in [`engine`] is the only implementation, and it is no longer
 //! behind a cargo feature — the development-time switch existed so the previous
 //! native path could keep shipping while the port was proved, and there is no
 //! longer a second path for it to select.

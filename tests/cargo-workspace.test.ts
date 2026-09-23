@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Guards the root cargo workspace (issue #38, spec D4 / Phase 0).
  *
- * Atlas had no `[workspace]` until the Codex port: the old ACP stack pinned
+ * Atlas had no `[workspace]` until the engine port: the old ACP stack pinned
  * `agent-client-protocol` 1.3 with an exact schema pin, the ported one pins
  * 2.0, and no single resolution could hold both. That collision is gone —
  * every consumer is on `=2.0.0` — and the port needs one workspace so the
@@ -144,7 +144,7 @@ describe("root cargo workspace", () => {
 
   it("names every crate and src-tauri as a member", () => {
     // Subset, not equality: since #42 the members list also carries the
-    // vendored Codex engine. What matters here is that none of Atlas's own
+    // vendored engine. What matters here is that none of Atlas's own
     // packages fell out of it.
     const members = workspaceList("members");
     expect(expectedMembers().filter((m) => !members.includes(m))).toEqual([]);
@@ -152,9 +152,9 @@ describe("root cargo workspace", () => {
 
   it("adds nothing to the members list but Atlas crates and the vendored engine", () => {
     // The complement of the assertion above: a member that is neither ours nor
-    // under `vendor/codex/` is someone wiring in a third tree without saying so.
+    // under `vendor/atlas-engine/` is someone wiring in a third tree without saying so.
     const stray = workspaceList("members").filter(
-      (m) => !expectedMembers().includes(m) && !m.startsWith("vendor/codex/"),
+      (m) => !expectedMembers().includes(m) && !m.startsWith("vendor/atlas-engine/"),
     );
     expect(stray).toEqual([]);
   });
@@ -237,7 +237,7 @@ describe("dev-profile opt-levels survive the move into the workspace", () => {
   it("keeps the vendored engine members non-incremental", () => {
     // They change only when the fork is patched; incremental state for them
     // was write-once, and non-incremental units are what sccache can cache.
-    const vendored = workspaceList("members").filter((m) => m.startsWith("vendor/codex/"));
+    const vendored = workspaceList("members").filter((m) => m.startsWith("vendor/atlas-engine/"));
     const missing: string[] = [];
     for (const rel of vendored) {
       const name = packageName(path.join(REPO_ROOT, rel, "Cargo.toml"));
@@ -275,7 +275,7 @@ describe("dev-profile opt-levels survive the move into the workspace", () => {
   // profile's opt-level 0 it was ~600k LOC of streaming, rollout I/O,
   // sandboxing and apply-patch running unoptimized on the hottest path (#65).
   it("restates opt-level 1 for the vendored engine members too", () => {
-    const vendored = workspaceList("members").filter((m) => m.startsWith("vendor/codex/"));
+    const vendored = workspaceList("members").filter((m) => m.startsWith("vendor/atlas-engine/"));
     expect(vendored.length, "member-list parser health").toBeGreaterThan(50);
     const missing: string[] = [];
     for (const rel of vendored) {

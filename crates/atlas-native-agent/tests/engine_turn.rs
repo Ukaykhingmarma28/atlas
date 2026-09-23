@@ -27,8 +27,8 @@ use atlas_acp_thread::{AcpThreadEvent, AgentConnection, AgentId};
 use atlas_agent_servers::ThreadEventSink;
 use atlas_native_agent::engine::config::{EngineHome, EngineProvider, EngineSettings};
 use atlas_native_agent::engine::connection::EngineConnection;
-use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
-use codex_test_binary_support::{
+use atlas_engine_sandboxing::landlock::ATLAS_AGENT_LINUX_SANDBOX_ARG0;
+use atlas_engine_test_binary_support::{
     TestBinaryDispatchGuard, TestBinaryDispatchMode, configure_test_binary_dispatch,
 };
 use serde_json::json;
@@ -42,7 +42,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 //
 // On macOS the engine sandboxes a command with `/usr/bin/sandbox-exec`, which
 // is already on disk. Linux has no equivalent: `SandboxType::LinuxSeccomp`
-// re-execs a helper binary whose *arg0* is `codex-linux-sandbox`, and if the
+// re-execs a helper binary whose *arg0* is `atlas-engine-linux-sandbox`, and if the
 // embedder supplied no path for one the engine returns
 // `MissingLinuxSandboxExecutable` from the sandbox transform — before spawning
 // anything. The tool call fails, the turn ends normally, and the three tests
@@ -53,7 +53,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 // Atlas ships macOS and has no arg0 dispatch, so the app has no helper to
 // offer (see `EngineSettings::linux_sandbox_exe`). The tests do: upstream's own
 // suites make the *test binary* the helper, and this is that same construction
-// — `vendor/codex/core/tests/suite/mod.rs`. The `#[ctor]` runs before any test
+// — `vendor/atlas-engine/core/tests/suite/mod.rs`. The `#[ctor]` runs before any test
 // thread exists, which is what makes the `set_var`/PATH work inside it sound.
 // Re-entered under one of the helper identities it dispatches and never
 // returns; on the ordinary first entry it installs the arg0 aliases and hands
@@ -62,13 +62,13 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 static TEST_BINARY_DISPATCH: Option<TestBinaryDispatchGuard> = {
     configure_test_binary_dispatch("atlas-native-agent-tests", |exe_name, argv1| {
         #[cfg(unix)]
-        if argv1 == Some(codex_exec_server::CODEX_ARG0_EXEC_HELPER_ARG1) {
+        if argv1 == Some(atlas_engine_exec_server::ATLAS_AGENT_ARG0_EXEC_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if argv1 == Some(codex_exec_server::CODEX_FS_HELPER_ARG1) {
+        if argv1 == Some(atlas_engine_exec_server::ATLAS_AGENT_FS_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if exe_name == CODEX_LINUX_SANDBOX_ARG0 {
+        if exe_name == ATLAS_AGENT_LINUX_SANDBOX_ARG0 {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         TestBinaryDispatchMode::InstallAliases
@@ -78,13 +78,13 @@ static TEST_BINARY_DISPATCH: Option<TestBinaryDispatchGuard> = {
 /// The helper path the engine is handed on Linux, and nothing elsewhere.
 ///
 /// The alias the guard installed is preferred over `current_exe()` because its
-/// basename is `codex-linux-sandbox`, which is what re-triggers arg0 dispatch
+/// basename is `atlas-engine-linux-sandbox`, which is what re-triggers arg0 dispatch
 /// on bubblewrap builds that cannot pass `--argv0`.
 #[cfg(target_os = "linux")]
 fn test_linux_sandbox_exe() -> Option<PathBuf> {
     TEST_BINARY_DISPATCH
         .as_ref()
-        .and_then(|guard| guard.paths().codex_linux_sandbox_exe.clone())
+        .and_then(|guard| guard.paths().atlas_engine_linux_sandbox_exe.clone())
         .or_else(|| std::env::current_exe().ok())
 }
 

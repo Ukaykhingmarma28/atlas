@@ -160,7 +160,7 @@ let acpPrewarmStarted = false;
 
 /** Rebind a session whose agent process died: respawn the plugin (its spawn
  *  cache was reset on disconnect) and RESUME the same session id where the
- *  transcript kind supports it (Claude JSONL, Codex engine-side) — falling
+ *  transcript kind supports it (Claude JSONL, the native engine's own) — falling
  *  back to a fresh session if the resume fails. Never runs unprompted: only
  *  the next Send or the explicit Restart affordance calls this (no silent
  *  auto-restart loops). */

@@ -8,7 +8,7 @@
 //! Config reaches the engine two ways, and the split is not arbitrary:
 //!
 //! - **`ConfigOverrides`** for the things that have no config-file spelling.
-//!   `codex_self_exe` is the load-bearing one — the engine's own docs say it
+//!   `atlas_engine_self_exe` is the load-bearing one — the engine's own docs say it
 //!   "cannot be set in the config file: it must be set in code via
 //!   `ConfigOverrides`". Sandbox and approval defaults ride along here too.
 //! - **TOML overrides** for everything that *is* a config key: the provider
@@ -22,12 +22,12 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::Result;
-use codex_core::config::Config;
-use codex_core::config::ConfigBuilder;
-use codex_core::config::ConfigOverrides;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::protocol::AskForApproval;
+use atlas_engine_core::config::Config;
+use atlas_engine_core::config::ConfigBuilder;
+use atlas_engine_core::config::ConfigOverrides;
+use atlas_engine_protocol::config_types::SandboxMode;
+use atlas_engine_protocol::openai_models::ModelsResponse;
+use atlas_engine_protocol::protocol::AskForApproval;
 use toml::Value as TomlValue;
 
 /// The engine's own `DEFAULT_STREAM_MAX_RETRIES`, restated so the seam can
@@ -41,8 +41,8 @@ pub const DEFAULT_STREAM_MAX_RETRIES: usize = 5;
 /// this path and creates a `0644` installation-id file inside it. So this must
 /// be a directory Atlas owns.
 ///
-/// It is emphatically **not** `~/.codex`. Pointing it there would have the app
-/// adopt, and write into, the user's real Codex CLI state.
+/// It is emphatically **not** `~/.atlas_engine`. Pointing it there would have the app
+/// adopt, and write into, the engine's default dot-directory under the user's home.
 ///
 /// Everything under here is engine-private working storage in D9's sense: the
 /// engine may keep rollouts and its own SQLite here, and no history or sidebar
@@ -184,12 +184,12 @@ pub struct EngineSettings {
     /// whole embedding, and it has an explicit code-level seam precisely so an
     /// embedder can satisfy it without adopting the engine's argv0 dispatch.
     pub self_exe: Option<PathBuf>,
-    /// The path to the `codex-linux-sandbox` helper, on Linux.
+    /// The path to the `atlas-engine-linux-sandbox` helper, on Linux.
     ///
     /// The seatbelt sandbox macOS uses is `/usr/bin/sandbox-exec`, already on
     /// disk, so `self_exe` above is the whole story there. Linux has no such
     /// binary: `SandboxType::LinuxSeccomp` re-execs a helper whose *arg0* is
-    /// `codex-linux-sandbox`, and with no path for it the engine refuses the
+    /// `atlas-engine-linux-sandbox`, and with no path for it the engine refuses the
     /// transform (`MissingLinuxSandboxExecutable`) before spawning anything.
     /// Under the default `WorkspaceWrite` policy that turns every sandboxed
     /// tool call into a no-op that still ends the turn normally.
@@ -202,7 +202,7 @@ pub struct EngineSettings {
     ///
     /// A real Linux build would have to earn this rather than set it: `main.rs`
     /// would need the engine's arg0 dispatch, so that Atlas re-entered as
-    /// `codex-linux-sandbox` runs the helper instead of the app, and only then
+    /// `atlas-engine-linux-sandbox` runs the helper instead of the app, and only then
     /// could this point at Atlas's own executable. That is deliberately not
     /// implemented here.
     pub linux_sandbox_exe: Option<PathBuf>,
@@ -294,7 +294,7 @@ impl EngineSettings {
             cwd: Some(self.cwd.clone()),
             approval_policy: Some(self.approval_policy),
             sandbox_mode: Some(self.sandbox_mode),
-            codex_self_exe: self.self_exe.clone(),
+            atlas_engine_self_exe: self.self_exe.clone(),
             ..Default::default()
         }
     }
@@ -405,7 +405,7 @@ impl EngineSettings {
         }
 
         ConfigBuilder::default()
-            .codex_home(self.home.path().to_path_buf())
+            .atlas_agent_home(self.home.path().to_path_buf())
             .cli_overrides(self.cli_overrides())
             .harness_overrides(self.config_overrides())
             .fallback_cwd(Some(self.cwd.clone()))
@@ -525,8 +525,8 @@ mod tests {
         // ConfigOverrides or not at all.
         let tmp = std::env::temp_dir();
         let overrides = settings(&tmp).config_overrides();
-        assert_eq!(overrides.codex_self_exe, std::env::current_exe().ok());
-        assert!(overrides.codex_self_exe.is_some(), "current_exe must resolve in a test binary");
+        assert_eq!(overrides.atlas_engine_self_exe, std::env::current_exe().ok());
+        assert!(overrides.atlas_engine_self_exe.is_some(), "current_exe must resolve in a test binary");
     }
 
     #[test]

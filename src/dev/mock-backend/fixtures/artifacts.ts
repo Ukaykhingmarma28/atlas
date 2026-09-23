@@ -346,7 +346,7 @@ const BLOBS = new Map<string, ArtifactPayload>([
     {
       text: Array.from(
         { length: 120 },
-        (_, i) => `   Compiling codex-core v0.1.0 (unit ${i + 1}/1161)`,
+        (_, i) => `   Compiling atlas-engine-core v0.1.0 (unit ${i + 1}/1161)`,
       ).join("\n"),
       binary: false,
       bytes: 132_880,

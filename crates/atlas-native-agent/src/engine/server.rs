@@ -15,7 +15,7 @@ use agent_client_protocol::schema::v1 as acp;
 use anyhow::Result;
 use atlas_acp_thread::{AgentConnection, AgentId};
 use atlas_agent_servers::{AgentServer, AgentServerDelegate, ConnectOptions};
-use codex_login::auth::ExternalAuth;
+use atlas_engine_login::auth::ExternalAuth;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 

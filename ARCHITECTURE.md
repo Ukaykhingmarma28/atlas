@@ -146,7 +146,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 
 ## Agent runtime
 
-Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritten. Two kinds of agent run behind one seam: the **native agent** — the Codex engine ported into Atlas (`crates/atlas-native-agent`, ADR-0003), running in-process — and any number of **external ACP agents** — subprocesses speaking Agent Client Protocol (JSON-RPC over stdio). Nothing above the seam knows which it is talking to.
+Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritten. Two kinds of agent run behind one seam: the **native agent** — Atlas's own engine, a hard fork vendored under `vendor/atlas-engine` and reached through `crates/atlas-native-agent` (ADR-0003, ADR-0011), running in-process — and any number of **external ACP agents** — subprocesses speaking Agent Client Protocol (JSON-RPC over stdio). Nothing above the seam knows which it is talking to.
 
 **A fresh install has no ACP agents at all.** Only the native agent is offered. An external agent exists exactly when the user installed it from the Marketplace, which writes the single entry in the installed-agents map; nothing else makes an agent runnable. Finding a binary on `PATH` is a *detection* — an offer the user can accept, never a spawn candidate. See [ADR-0002](docs/adr/0002-no-default-acp-agents.md).
 
@@ -157,7 +157,7 @@ Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritt
 | Implementation | Crate | Drives |
 |---|---|---|
 | external ACP agent | `atlas-agent-servers` | a subprocess over JSON-RPC/stdio |
-| native agent | `atlas-native-agent` | the ported Codex engine, in-process |
+| native agent | `atlas-native-agent` | the vendored `atlas-engine`, in-process |
 
 Beyond `prompt` / `cancel` / `authenticate`, **every optional behaviour is capability-gated** — either a `supports_*` predicate (`supports_load_session`, `supports_resume_session`, `supports_close_session`, `supports_logout`, `supports_http_mcp`) or an `Option<Arc<dyn …>>` sub-trait the connection returns only when the agent advertised it (`model_selector`, `session_modes`, `session_config_options`, `session_list`, `truncate`, `retry`, `set_title`, `telemetry`). A caller asks the connection what it can do; it never asks who it is.
 
@@ -193,7 +193,7 @@ Deltas return over the single `atlas:agents` channel, payload-typed by `kind`.
 
 ## Crates (`crates/`)
 
-All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members of the **root `[workspace]`** bar one (`atlas-kb-server`, below). The repo went without one for a long time, for a real reason: the ported stack pins `agent-client-protocol` 2.0 with its schema crate pinned exactly, and no single Cargo resolution could hold that alongside the old stack's exact `=1.4.0` pin. That collision is why the port had to land as one change rather than gradually. With the old stack gone the collision is gone, and the workspace landed (issue #38) so the vendored Codex engine resolves against the same graph as the app. Consequences worth knowing: one `Cargo.lock` and one `target/` at the repo root, and `[patch.crates-io]` plus every `[profile.*]` live in the root `Cargo.toml` — cargo honors both only there. `crates/atlas-kb-server` is deliberately excluded (it is built on demand at runtime under its own profile).
+All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members of the **root `[workspace]`** bar one (`atlas-kb-server`, below). The repo went without one for a long time, for a real reason: the ported stack pins `agent-client-protocol` 2.0 with its schema crate pinned exactly, and no single Cargo resolution could hold that alongside the old stack's exact `=1.4.0` pin. That collision is why the port had to land as one change rather than gradually. With the old stack gone the collision is gone, and the workspace landed (issue #38) so the vendored engine resolves against the same graph as the app. Consequences worth knowing: one `Cargo.lock` and one `target/` at the repo root, and `[patch.crates-io]` plus every `[profile.*]` live in the root `Cargo.toml` — cargo honors both only there. `crates/atlas-kb-server` is deliberately excluded (it is built on demand at runtime under its own profile).
 
 ### The ported ACP stack
 
@@ -320,7 +320,7 @@ atlas/
 │   └── atlas-kb-server            self-contained KB static-server binary
 │
 ├── vendor/                        vendored source, workspace members
-│   └── codex                        the engine behind Atlas Agent (ADR-0004)
+│   └── atlas-engine                 the engine behind Atlas Agent (ADR-0004, ADR-0011)
 │
 ├── scripts/                       build/release helpers (with-posthog-env.mjs)
 ├── landing/                       marketing site source

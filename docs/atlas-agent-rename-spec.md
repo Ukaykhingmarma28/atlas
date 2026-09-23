@@ -93,10 +93,10 @@ These are the only places the words remain, and the guard test's allowlist is ex
 
 Branch: `rename/atlas-agent` off `main`. Three PRs. At every commit point: stage and report, never commit without the user's say-so. `bun run clean:rust` after every Rust test run.
 
-### Step 0 — record the plan in the repo
+### Step 0 — record the plan in the repo ✅
 1. Copy this file to `docs/atlas-agent-rename-spec.md` (the Steps section becomes a checklist).
 
-### Step 1 (PR A) — Atlas side, engine untouched
+### Step 1 (PR A) — Atlas side, engine untouched ✅ (2026-09-23; staged)
 1. **Agent id.** `crates/atlas-native-agent/src/lib.rs:51` const + doc comment; `engine/server.rs:25,83,163-166`; `src/types/agent.ts:10,30,35,48,60`; `native-models-store.ts:22`; every `CERSEI_AGENT_ID` use in `src-tauri/src/commands/{agent_host,agents,agent_memory,memory_pack}.rs`.
 2. **Enums.** `TranscriptKind::CerseiJson` → `Native` (+ serde value, `catalog.rs:311`, `agent-catalog.ts:33`, fixture); `Source::Cersei` → `Native` (+ `as_str`/`parse`, SQL literal `store.rs:2166`, `capture.rs`, `memory_pack.rs`).
 3. **Thread-metadata V3.** Bump `SCHEMA_VERSION`, add the `DELETE`, add the migration test in `schema.rs` and `tests/store.rs`.
@@ -110,7 +110,7 @@ Branch: `rename/atlas-agent` off `main`. Three PRs. At every commit point: stage
 11. **Docs describing Atlas.** `CONTEXT.md:19-27` (storage-key doctrine: `workspace` keys stay the example; the Atlas Agent glossary entry says id `atlas-agent`), `ARCHITECTURE.md:208`, `TELEMETRY.md`, `docs/agents/timeline-gate.md:20,75`, `landing/index.html:3687-3689,3819,4157`.
 12. Run: `cargo check --workspace --locked`, `bun run test:rust`, `bun run clean:rust`, `bun run typecheck && bun run lint && bun run format:check`, `bun run test`. Smoke: new Atlas Agent thread, one turn, sidebar row under `atlas-agent`, old `cersei` rows gone. Stage and report.
 
-### Step 2 (PR B) — engine rename
+### Step 2 (PR B) — engine rename ✅ (2026-09-23; unstaged in the working tree)
 Commits in this order; `cargo check --workspace` after each.
 
 1. **Structural moves** (pure `git mv` / `git rm`, reviewable as renames):
@@ -150,7 +150,7 @@ Commits in this order; `cargo check --workspace` after each.
    - `.github/workflows/ci.yml` (`:41,71,153,289,300-301` comments; job name `engine dialect (atlas-engine-api)`; `-p` list `:189-197`) and `scripts/test-rust.sh:50-63` in sync; `clippy.toml`; `.gitignore:47,55,70,76,78`; `.gitattributes:14`; `.husky/pre-commit:4`; `.github/PULL_REQUEST_TEMPLATE.md:41`; `crates/atlas-process/tests/spawn_audit.rs:41,205`; `crates/atlas-thread-metadata/tests/sqlite_floor.rs`.
 7. Run the full verification list below. Stage and report.
 
-### Step 3 (PR C) — guard test and record
+### Step 3 (PR C) — guard test and record ✅ (2026-09-23; unstaged, folded into the same working tree as Step 2)
 1. **`tests/no-legacy-names.test.ts`**: over `git ls-files -z` (tracked only; `graphify-out/` is ignored), skip binary extensions, flag any line matching `/cersei|codex/i` unless allowlisted. Allowlist = the Residue table as path globs, each with a one-line reason, plus line regexes (the header, `github\.com/openai/codex`, model ids, `OpenAI-Codex-`, `codex-acp`, `@openai/codex`). Also assert every allowlist entry still matches something and that `vendor/codex` does not exist. Picked up by `vitest.config.ts` and `.husky/pre-commit` (`test:contracts`).
 2. **`docs/adr/0011-engine-and-native-agent-renamed.md`**: Context (stale names; §6 trademark already required product-facing removal; ADR-0003 named the fork); Decision (tree `vendor/atlas-engine`, prefix `atlas-engine-*` and why not `atlas-agent-*`; product identity Atlas Agent / `atlas-agent`; the identity table; telemetry family `native`); No migration (V3 deletes `cersei` rows; checkpoint rows degrade to `acp`; localStorage not aliased; keychain orphaned); the substitution rules and exclusion list; the residue list with reasons; the §4(b) mechanism change; Consequences (every vendored file carries a notice; PostHog dashboards keyed on `cersei` break; `graphify update` follow-up).
 3. **CONTEXT.md** `:80-120` licensing section: paths, the `ATLAS-CHANGES.md` rule, replace "the Phase 5 sweep has not run yet" with "ran in ADR-0011"; keep the header text verbatim (the test greps it). Keep the Memory-panel "Codex thread list" exception (third-party).
@@ -159,7 +159,7 @@ Commits in this order; `cargo check --workspace` after each.
 6. Delete `scripts/one-off/rename-engine.py`. Mark the checklist in `docs/atlas-agent-rename-spec.md` done.
 7. Run verification. Stage and report.
 
-### Step 4 — after merge
+### Step 4 — after merge ⏳
 1. `graphify update .` (memory: on this repo it needs `build_merge(dedup=False)` + manual old-graph prune).
 
 ## Verification
