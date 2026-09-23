@@ -117,9 +117,8 @@ impl MemoryTokens {
     /// The live token of `session_id`, if it has one — what the session's MCP
     /// server entry carries.
     ///
-    /// Also the honest test for "was this session given memory at all", which
-    /// is what keeps the unconsulted notice from accusing an agent that was
-    /// never offered the tools.
+    /// Also the honest test for "was this session given memory at all".
+    #[cfg(test)]
     pub fn token_for(&self, session_id: &str) -> Option<String> {
         self.table.lock().by_session.get(session_id).cloned()
     }

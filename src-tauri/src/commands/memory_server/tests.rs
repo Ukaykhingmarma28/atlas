@@ -599,26 +599,6 @@ async fn remembering_something_is_not_consulting_memory() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
-/// The notice is said once per session, not once per turn, and a session that
-/// ends forgets it said anything.
-#[test]
-fn the_unread_notice_is_said_once_per_session_and_never_to_a_session_that_read() {
-    let reads = SessionReads::default();
-
-    assert!(reads.should_say_unread("s1"));
-    assert!(!reads.should_say_unread("s1"), "only once, not once per turn");
-    assert!(reads.should_say_unread("s2"), "and it is per session");
-
-    // A session that read memory is never told it did not, however many
-    // turns it takes afterwards.
-    reads.read("s3");
-    assert!(!reads.should_say_unread("s3"));
-    assert!(!reads.should_say_unread("s3"));
-
-    reads.forget("s1");
-    assert!(reads.should_say_unread("s1"), "a new session may be told again");
-}
-
 /// The list the dispatcher marks reads from has to stay the record's actual
 /// read tools. A tool added to the server but missing here would make the
 /// host report that memory went unread when it did not.

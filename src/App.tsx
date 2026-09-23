@@ -20,7 +20,6 @@ import {
   type AppStateWire,
 } from "@/features/app/stores/app-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { listenMemoryUnconsulted } from "@/features/chat/lib/agents-api";
 import {
   listenAgents,
   pluginIdForAgentId,
@@ -1368,18 +1367,6 @@ export function App() {
   // once — every push from Rust patches the mirror in place.
   useEffect(() => {
     ensureRecentFilesListener();
-  }, []);
-
-  // A session that answered without ever reading shared memory says so, once.
-  // Host-observed rather than agent-reported, so it rides its own event rather
-  // than the frozen delta wire.
-  useEffect(() => {
-    const unlisten = listenMemoryUnconsulted(({ sessionId }) => {
-      useChatStore.getState().actions.noteMemoryUnconsulted(sessionId);
-    });
-    return () => {
-      void unlisten.then((f) => f());
-    };
   }, []);
 
   // Quit durability: per-switch flushes are fire-and-forget, so on window

@@ -397,10 +397,6 @@ interface ChatActions {
     /** Reflect the mode the agent chose during session creation without
      *  treating it as an Atlas user override or sending a second RPC. */
     hydrateClaudePermissionMode: (sessionId: string, mode: ClaudePermissionMode) => void;
-    /** Say, once, that this session answered without ever reading shared
-     *  memory. Keyed by ACP session id because the host observes the session,
-     *  not the tab. */
-    noteMemoryUnconsulted: (acpSessionId: string) => void;
     setClaudePermissionMode: (sessionId: string, mode: ClaudePermissionMode) => void;
     /** A plan-approval option was answered: adopt the mode it selects (or
      *  `override`, for Atlas's own "approve and bypass") and push it to the
@@ -735,14 +731,6 @@ function findToolCall(
   }
   return null;
 }
-
-/** Shown when a turn ends and the agent never read shared memory.
- *
- *  A recorded fact exists precisely because it is NOT derivable from the code,
- *  so an answer reasoned out from the repo can contradict one and look just as
- *  confident. This does not stop that; it says when it might have happened. */
-export const MEMORY_UNCONSULTED_NOTICE =
-  "(shared memory was not consulted this session — this answer was not informed by anything previously recorded)";
 
 /** Human-readable end-of-turn notice for a stop reason, or null when the
  *  outcome speaks for itself (P2.4).
@@ -1139,15 +1127,6 @@ export const useChatStore = createSelectors(
           if (next) saveLastModePref("claude-code", next === "default" ? null : next);
           pushPermissionModeToAgent(get(), sessionId, previous);
         },
-        noteMemoryUnconsulted: (acpSessionId) =>
-          set((s) => {
-            const tabId = findTabByAcpSession(s.sessions, acpSessionId);
-            const session = tabId ? s.sessions[tabId] : undefined;
-            if (!session) return;
-            // Same shape as the other end-of-turn notices: a quiet aside in
-            // the transcript, where the answer it qualifies actually is.
-            session.messages.push(makeAssistantTextMessage(MEMORY_UNCONSULTED_NOTICE));
-          }),
         hydrateClaudePermissionMode: (sessionId, mode) =>
           set((s) => {
             const session = s.sessions[sessionId];

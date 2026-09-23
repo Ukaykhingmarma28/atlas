@@ -123,8 +123,9 @@ impl MemoryServerHost {
         &self.clocks
     }
 
-    /// Which sessions have read memory, and which have been told they did not
-    /// (dropped by the session lifecycle when the session ends).
+    /// Which sessions have read memory. Only the tests ask any more; the
+    /// dispatcher still records reads so that distinction stays pinned.
+    #[cfg(test)]
     pub fn reads(&self) -> &Arc<SessionReads> {
         &self.reads
     }
