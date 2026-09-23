@@ -1,4 +1,4 @@
-import { startTransition, useState, useEffect, useRef } from "react";
+import { startTransition, useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppLayout } from "@/features/layout/components/app-layout";
 import { AppContextMenu } from "@/components/app-context-menu";
@@ -79,6 +79,7 @@ import { LoadingOrganisationOverlay } from "@/features/organisations/components/
 import { StopAgentsDialog } from "@/features/projects/components/stop-agents-dialog";
 import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import {
   isOrgReconciled,
   markOrgReconciled,
@@ -313,6 +314,37 @@ export function App() {
       console.warn("boot org reconciliation failed:", e);
     });
   }, [bootAuthStatus, bootLocalActiveOrg, bootOrganisations]);
+
+  // The Timeline's cloud half, pointed at the Organisation on screen.
+  //
+  // App scope rather than the Timeline panel, for the same reason the chat
+  // socket is: the sockets are how a teammate's Session and a new comment
+  // arrive, and a panel-scoped target would mean "Timeline closed, nothing
+  // arrives". Rust reads each project's binding to decide which of them are
+  // actually bound to Cloud — passing paths keeps that judgement in one place.
+  const cloudProjects = useActiveOrgProjects();
+  const cloudProjectsKey = useMemo(
+    () =>
+      cloudProjects
+        .map((p) => p.path)
+        .sort()
+        .join("\n"),
+    [cloudProjects],
+  );
+  useEffect(() => {
+    const active = bootOrganisations.find((o) => o.id === bootLocalActiveOrg);
+    // A local-only Organisation has no `remoteId` and nothing to point at;
+    // `null` is what tears the previous tenant's sockets down.
+    const orgId = bootAuthStatus === "signed-in" ? (active?.remoteId ?? null) : null;
+    void invoke("artifacts_cloud_retarget", {
+      orgId,
+      projectPaths: cloudProjectsKey ? cloudProjectsKey.split("\n") : [],
+    }).catch((e) => {
+      // The Timeline still renders every local Session without this; a toast
+      // for a background target would be noise.
+      console.warn("timeline cloud retarget failed:", e);
+    });
+  }, [bootAuthStatus, bootLocalActiveOrg, bootOrganisations, cloudProjectsKey]);
 
   // Team chat: the renderer is a projection of Rust's chat state. The socket
   // lives in Rust for the app's lifetime (it is also the notification

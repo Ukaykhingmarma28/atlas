@@ -4,7 +4,7 @@
  * This is deliberately the *same* renderer idea as the Git commit graph
  * (`features/git/components/commit-node.tsx`), down to the path maths: lanes at
  * fixed x, one `<svg>` per row, every segment terminating at `y = 0`,
- * `ROW_H / 2` or `ROW_H` so adjacent rows butt together seamlessly, and a lane
+ * a row's dot or its full height so adjacent rows butt together seamlessly, and a lane
  * change drawn as a cubic whose two control points sit on the segment's
  * vertical midpoint. Three hand-rolled curve attempts went by before this;
  * the graph had already solved it, and a sidebar that draws its thread exactly
@@ -24,10 +24,18 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, ChevronRight, Laptop } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+import { AccountAvatar } from "@/features/auth/components/account-avatar";
+import type { OrgMember } from "@/features/auth/lib/auth-api";
+import { useAuthStore } from "@/features/auth/stores/auth-store";
+import { useMembersStore } from "@/features/organisations/stores/members-store";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
+
+import { authorOf, type AuthorDirectory } from "../lib/author-directory";
+import { observeSize } from "../lib/shared-resize-observer";
 import { groupSessions, sessionState, sessionTitle, type GroupPeriod } from "../lib/board";
 import type { BoardSession } from "../types";
 
@@ -42,16 +50,35 @@ interface Props {
   /** How coarsely rows are grouped — the header's Day / Week / Month. */
   period: GroupPeriod;
   /** The project is passed back because each one has its own store. */
-  onOpen: (id: string, projectPath: string) => void;
+  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
 }
+
+/** One shared empty roster, so `directory` keeps its identity while none is
+ *  loaded — a fresh `[]` every render would rebuild the map and defeat `memo`
+ *  on all five hundred rows. */
+const EMPTY_MEMBERS: OrgMember[] = [];
 
 /** Fold a run of identical imported titles at this length or above. */
 const FOLD_AT = 3;
 
 // ── Graph geometry (mirrors `lib/git-graph.ts`) ──────────────────────────────
 
-/** Every row is this tall. Fixed, which is what lets the list virtualize. */
-export const ROW_H = 28;
+/**
+ * Row heights. Fixed per row *kind*, which is what lets the list virtualize
+ * without measuring.
+ *
+ * Session and cluster rows carry a second line — the Project and whether it is
+ * synced — so they are taller than a day header. Everything below derives from
+ * whichever applies, so changing one of these moves the rail with it.
+ */
+export const DAY_H = 30;
+export const SESSION_H = 40;
+/** Where a session row's dot sits: the centre of the whole two-line row.
+ *
+ *  Aligning it to the title instead put every dot a third of the way down its
+ *  row, so the thread joining them read as a staircase rather than a spine. */
+const SESSION_DOT_Y = SESSION_H / 2;
+
 /** Horizontal distance between two lanes. */
 const LANE_W = 12;
 /** Left inset of lane 0. */
@@ -119,12 +146,49 @@ type Row =
       sessions: BoardSession[];
     };
 
+/** How tall a row of this kind is. The single source the virtualizer, the
+ *  wrapper and the rail all read. */
+function rowHeight(row: Row | undefined): number {
+  return row?.kind === "day" ? DAY_H : SESSION_H;
+}
+
+/** Where a row's dot sits. A day header is one line, so its dot is centred; a
+ *  session row's belongs on the first line. */
+function dotY(row: Row): number {
+  return row.kind === "day" ? DAY_H / 2 : SESSION_DOT_Y;
+}
+
 /** Scroll position, kept across tab switches — the panel unmounts on every one,
  *  and landing back at the top of a 500-row nav loses your place. Module-level
  *  and single-valued: there is one Timeline. */
 let scrollTopCache = 0;
 
 export function TimelineSidebar({ sessions, loading, filtered, openId, period, onOpen }: Props) {
+  // Built here rather than per row: five hundred rows each subscribing to the
+  // roster would re-render the whole nav every time it revalidated.
+  const authSnapshot = useAuthStore.use.snapshot();
+  const currentUserId =
+    authSnapshot.status === "signed-in" ? (authSnapshot.user?.id ?? null) : null;
+  const organisations = useOrgStore.use.organisations();
+  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
+  // The **server** org id. A local-only Organisation has none and has no roster
+  // to fetch — every row in it is this account's anyway.
+  const remoteOrgId = organisations.find((o) => o.id === activeOrganisationId)?.remoteId ?? null;
+
+  const byOrg = useMembersStore.use.byOrg();
+  const { load: loadMembers } = useMembersStore.use.actions();
+  // Stale-while-revalidate with its own freshness window and an in-flight
+  // guard, so this is safe to fire on every mount and org switch.
+  useEffect(() => {
+    if (remoteOrgId) void loadMembers(remoteOrgId);
+  }, [remoteOrgId, loadMembers]);
+
+  const members = remoteOrgId ? (byOrg[remoteOrgId]?.members ?? EMPTY_MEMBERS) : EMPTY_MEMBERS;
+  const directory = useMemo<AuthorDirectory>(
+    // Keyed by `userId`, the human — a row's `authorId` is never a membership id.
+    () => ({ byId: new Map(members.map((m) => [m.userId, m])), currentUserId }),
+    [members, currentUserId],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const days = useMemo(() => groupSessions(sessions, period), [sessions, period]);
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -169,7 +233,9 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_H,
+    // Exact, not an estimate: every kind has a fixed height, so the list never
+    // has to measure and never reflows as rows scroll into view.
+    estimateSize: (i) => rowHeight(rows[i]),
     overscan: 12,
     getItemKey: (i) => rows[i]?.key ?? i,
   });
@@ -242,7 +308,13 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={parentRef} className="hide-scrollbar h-full overflow-y-auto py-2">
+      {/* `overflow-x-hidden` is load-bearing, not tidiness. Setting only
+       *  `overflow-y` leaves the other axis `visible`, which CSS then computes
+       *  to `auto` — so a long title made the whole nav scroll sideways, and
+       *  because the content box was wider than the pane nothing ever hit the
+       *  width it was supposed to truncate at. Clamping x is what makes
+       *  `truncate` on the rows mean anything. */}
+      <div ref={parentRef} className="hide-scrollbar h-full overflow-y-auto overflow-x-hidden py-2">
         <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
           {items.map((v) => {
             const row = rows[v.index];
@@ -256,7 +328,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
                   top: 0,
                   left: 0,
                   width: "100%",
-                  height: ROW_H,
+                  height: rowHeight(row),
                   transform: `translateY(${v.start}px)`,
                 }}
               >
@@ -265,6 +337,9 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
                   prevLane={prev ? prev.lane : null}
                   hasNext={v.index < rows.length - 1}
                   r={row.kind === "day" ? DAY_R : SESSION_R}
+                  h={rowHeight(row)}
+                  dotY={dotY(row)}
+                  prevDotY={prev ? dotY(prev) : null}
                 />
                 {row.kind === "day" ? (
                   <DayRow row={row} />
@@ -280,6 +355,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openId, period, o
                     session={row.session}
                     lane={row.lane}
                     selected={row.session.id === openId}
+                    directory={directory}
                     onOpen={onOpen}
                   />
                 )}
@@ -346,6 +422,9 @@ const Rail = memo(function Rail({
   prevLane,
   hasNext,
   r,
+  h,
+  dotY: cy,
+  prevDotY,
 }: {
   lane: number;
   /** `null` on the very first row — the thread starts at its dot. */
@@ -353,20 +432,31 @@ const Rail = memo(function Rail({
   hasNext: boolean;
   /** This row's dot radius, so the thread can stop clear of it. */
   r: number;
+  /** This row's height. Passed rather than read from a constant: day rows and
+   *  session rows are different heights now. */
+  h: number;
+  /** Where this row's dot sits vertically. */
+  dotY: number;
+  /** The row above's dot offset, measured up from this row's top edge — so the
+   *  thread leaves the previous dot rather than the previous row's midpoint.
+   *  `null` on the very first row. */
+  prevDotY: number | null;
 }) {
   const x = laneX(lane);
-  const mid = ROW_H / 2;
   const gap = trim(r);
   const parts: string[] = [];
   // The lane change always happens in the TOP half of the arriving row, so the
-  // row above can leave straight down and every join lands on a dot.
-  if (prevLane !== null) parts.push(segmentPath(laneX(prevLane), 0, x, mid - gap));
-  if (hasNext) parts.push(segmentPath(x, mid + gap, x, ROW_H));
+  // row above can leave straight down and every join lands on a dot. The
+  // segment starts at 0 — the previous row's own rail already ran from its dot
+  // down to its bottom edge, which is this row's 0.
+  void prevDotY;
+  if (prevLane !== null) parts.push(segmentPath(laneX(prevLane), 0, x, cy - gap));
+  if (hasNext) parts.push(segmentPath(x, cy + gap, x, h));
   return (
     <svg
       aria-hidden
       width={RAIL_W}
-      height={ROW_H}
+      height={h}
       className="pointer-events-none absolute left-0 top-0"
     >
       {parts.map((d) => (
@@ -388,19 +478,24 @@ const Rail = memo(function Rail({
 function Dot({
   lane,
   r,
+  cy,
   className,
   style,
 }: {
   lane: number;
   r: number;
+  /** Distance from the row's top edge to the dot's centre. Explicit rather than
+   *  `top-1/2`, because a two-line row's dot belongs on the first line, not
+   *  halfway down the pair. */
+  cy: number;
   className?: string;
   style?: React.CSSProperties;
 }) {
   return (
     <span
       aria-hidden
-      className={cn("absolute top-1/2 z-10 -translate-y-1/2 rounded-full", className)}
-      style={{ left: laneX(lane) - r, width: r * 2, height: r * 2, ...style }}
+      className={cn("absolute z-10 rounded-full", className)}
+      style={{ left: laneX(lane) - r, top: cy - r, width: r * 2, height: r * 2, ...style }}
     />
   );
 }
@@ -416,6 +511,7 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
       <Dot
         lane={0}
         r={DAY_R}
+        cy={DAY_H / 2}
         className={today ? "bg-[var(--primary)]" : undefined}
         style={today ? undefined : { background: DOT_NEUTRAL }}
       />
@@ -431,18 +527,29 @@ const DayRow = memo(function DayRow({ row }: { row: Extract<Row, { kind: "day" }
   );
 });
 
-/** The shared row shell for anything that is not a day header. */
 /**
  * The shared row shell for anything that is not a period header.
  *
- * `--atlas-element-active` for hover and a 15% accent wash for selection, not the 4%/6%
- * `--atlas-element-hover`/`--atlas-element-selected` pair: on a black surface those two are a couple
- * of levels of grey apart and the selected row was invisible. The accent wash
- * is the same one the commit graph uses for its selected commit.
+ * ## Why selection is 8% and not the 15% accent wash it was
+ *
+ * Hover used to sit on `--atlas-element-active` (8%), which left selection
+ * nowhere to go on the token scale — so it reached past the top of it for a 15%
+ * wash, brighter than `--atlas-element-emphasis`. On an AMOLED-black surface
+ * that is a light grey slab, and the row's own text loses contrast against it.
+ *
+ * The fix is the scale, not the one value: hover drops to
+ * `--atlas-element-hover` (4%) and selection takes `--atlas-element-active`
+ * (8%). Two clean steps, both from the scale, and selection is still visibly
+ * above hover — which is the thing the previous note was protecting and the
+ * reason it could not simply use the 4%/6% pair.
  */
 const ROW =
-  "relative flex h-full w-full cursor-pointer items-center pr-3 text-left transition-colors hover:bg-[var(--atlas-element-active)]";
-const ROW_SELECTED = "bg-[var(--primary)]/15 hover:bg-[var(--primary)]/15";
+  "relative flex h-full w-full cursor-pointer items-center pr-3 text-left transition-colors hover:bg-[var(--atlas-element-hover)]";
+/** The two-line variant: the title over the Project-and-author byline. */
+const ROW_STACKED =
+  "relative flex h-full w-full cursor-pointer flex-col justify-center gap-0.5 pr-3 text-left transition-colors hover:bg-[var(--atlas-element-hover)]";
+/** Held on hover too, so pointing at the open row does not brighten it. */
+const ROW_SELECTED = "bg-[var(--atlas-element-active)] hover:bg-[var(--atlas-element-active)]";
 
 // memo: the board re-renders on every capture/git event while the tab is open;
 // with the parent's same-data bailout keeping row identities stable, memo
@@ -451,13 +558,16 @@ const SessionRow = memo(function SessionRow({
   session,
   lane,
   selected,
+  directory,
   onOpen,
 }: {
   session: BoardSession;
   /** 2 when this row is inside an expanded cluster. */
   lane: 1 | 2;
   selected: boolean;
-  onOpen: (id: string, projectPath: string) => void;
+  /** Stable across renders, so `memo` on this row still pays for itself. */
+  directory: AuthorDirectory;
+  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
 }) {
   const state = sessionState(session);
   const title = sessionTitle(session.title);
@@ -466,14 +576,15 @@ const SessionRow = memo(function SessionRow({
       type="button"
       data-session-id={session.id}
       data-selected={selected || undefined}
-      onClick={() => onOpen(session.id, session.projectPath)}
+      onClick={() => onOpen(session.id, session.projectPath, session.remoteProjectId)}
       title={session.attentionReason ?? title ?? undefined}
-      className={cn(ROW, selected && ROW_SELECTED)}
+      className={cn(ROW_STACKED, selected && ROW_SELECTED)}
       style={{ paddingLeft: laneX(lane) + LABEL_GAP }}
     >
       <Dot
         lane={lane}
         r={SESSION_R}
+        cy={SESSION_DOT_Y}
         className={cn(
           state === "live" && "atlas-live-pulse bg-[var(--atlas-status-success-foreground)]",
           state === "attention" && "bg-[var(--atlas-status-warning-foreground)]",
@@ -489,9 +600,8 @@ const SessionRow = memo(function SessionRow({
               : { background: DOT_NEUTRAL }
         }
       />
-      <span
+      <FadingTitle
         className={cn(
-          "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",
           selected
             ? "text-[var(--foreground)]"
             : lane === 2 || state === "done"
@@ -501,8 +611,118 @@ const SessionRow = memo(function SessionRow({
         )}
       >
         {title ?? "Untitled session"}
-      </span>
+      </FadingTitle>
+      <SessionMeta session={session} directory={directory} />
     </button>
+  );
+});
+
+/**
+ * The second line: which Project, and whether it is on the server.
+ *
+ * The icon answers one question — "can a teammate see this?" — and it is a
+ * property of the Project, not of how much of the Session has drained. A tick
+ * that flickered with the outbox queue would read as a fault every time capture
+ * ran ahead of the network, which is always.
+ */
+const SessionMeta = memo(function SessionMeta({
+  session,
+  directory,
+}: {
+  session: BoardSession;
+  directory: AuthorDirectory;
+}) {
+  const Icon = session.synced ? Check : Laptop;
+  const author = authorOf(session.authorId, directory);
+  return (
+    <span className="flex w-full min-w-0 items-center gap-1.5 text-2xs leading-tight text-[var(--muted-foreground)]">
+      <Icon
+        size={9}
+        className={cn(
+          "shrink-0",
+          session.synced
+            ? "text-[var(--atlas-status-success-foreground)]"
+            : "text-[var(--atlas-text-disabled)]",
+        )}
+        aria-label={session.synced ? "Shared with your Organisation" : "This machine only"}
+      />
+      {/* The Project first, because it is what a reader scanning the day is
+       *  grouping by. It is the part that gives way when the pane is narrow. */}
+      <span className="min-w-0 truncate">{session.projectName}</span>
+      {/* Whose work it is, pinned right by `ml-auto` rather than by letting the
+       *  Project grow into the gap: a Project name short enough not to truncate
+       *  would otherwise drag the byline left and leave the column ragged all
+       *  the way down the list. Never truncated and never dropped — a half-name
+       *  reads as the wrong person, which is worse than no byline at all. */}
+      <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+        {author.avatar && <AccountAvatar user={author.avatar} size={10} />}
+        <span className={cn(author.isSelf && "text-[var(--atlas-text-disabled)]")}>
+          {author.label}
+        </span>
+      </span>
+    </span>
+  );
+});
+
+/** How much of an overflowing title is given over to the fade. */
+const TITLE_FADE_PX = 32;
+
+/**
+ * A title that dissolves at its right edge instead of ending in an ellipsis.
+ *
+ * The fade is on the **text**, not on the row. An overlay across the whole row
+ * — which is what this replaced — washes out whatever else shares the line, and
+ * the byline sitting at that edge came out grey on every row.
+ *
+ * ## Why it is measured rather than a plain CSS mask
+ *
+ * A mask applied unconditionally fades the last 32px of every title, including
+ * short ones that fit perfectly well — "hello world" would lose its tail for no
+ * reason. Only a title that actually overflows should fade, and CSS cannot ask
+ * whether it does.
+ *
+ * ## Why measuring is affordable
+ *
+ * The nav is virtualized, so this runs for the ~20 rows on screen rather than
+ * all five hundred, and it shares the timeline's single `ResizeObserver`
+ * instead of constructing one per row. The observer is what catches the pane
+ * being dragged narrower, which changes the answer without changing the title.
+ */
+const FadingTitle = memo(function FadingTitle({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Sub-pixel text widths round up into `scrollWidth`, so an exact fit can
+    // report a pixel of overflow. The tolerance stops a title that fits from
+    // flickering its fade on and off as the pane is dragged.
+    const measure = () => setOverflowing(el.scrollWidth - el.clientWidth > 1);
+    measure();
+    return observeSize(el, measure);
+  }, [children]);
+
+  // `currentColor` rather than a literal: a mask reads only the alpha channel,
+  // so the hue is irrelevant and naming one would be a colour that means nothing.
+  const mask = `linear-gradient(to right, currentColor calc(100% - ${TITLE_FADE_PX}px), transparent)`;
+  return (
+    <span
+      ref={ref}
+      className={cn(
+        "w-full min-w-0 overflow-hidden whitespace-nowrap text-sm leading-tight tracking-[-0.01em]",
+        className,
+      )}
+      style={overflowing ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+    >
+      {children}
+    </span>
   );
 });
 
@@ -528,7 +748,7 @@ const ClusterRow = memo(function ClusterRow({
       className={cn(ROW, holdsOpen && !expanded && ROW_SELECTED)}
       style={{ paddingLeft: laneX(1) + LABEL_GAP }}
     >
-      <Dot lane={1} r={SESSION_R} style={{ background: DOT_NEUTRAL }} />
+      <Dot lane={1} r={SESSION_R} cy={SESSION_DOT_Y} style={{ background: DOT_NEUTRAL }} />
       <span
         className={cn(
           "min-w-0 truncate text-base leading-tight tracking-[-0.01em]",

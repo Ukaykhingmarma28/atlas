@@ -687,6 +687,7 @@ dependencies = [
  "atlas-agent-store",
  "atlas-agent-transcript",
  "atlas-agent-wire",
+ "atlas-artifacts",
  "atlas-bus",
  "atlas-checkpoint",
  "atlas-codeindex",
@@ -867,6 +868,20 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "atlas-artifacts"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.28.0",
+ "tracing",
 ]
 
 [[package]]

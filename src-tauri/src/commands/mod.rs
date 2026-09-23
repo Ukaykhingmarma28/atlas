@@ -9,6 +9,7 @@ pub mod agent_transcript;
 pub mod agents;
 pub mod diagnostics;
 pub mod app_state;
+pub mod artifacts_cloud;
 pub mod atlas_config;
 pub mod browser;
 pub mod byok;

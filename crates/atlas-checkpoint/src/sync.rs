@@ -590,21 +590,62 @@ pub fn check_slug(config: &SyncConfig<'_>, slug: &str) -> SlugAvailability {
     }
 }
 
+/// Who inside the Organisation may read a Project.
+///
+/// The server's default is `Org`, and so is ours: a Project nobody restricted
+/// is one the whole Organisation can read and push to. `Restricted` is the
+/// "Restrict to named members" checkbox, and it can be changed later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Visibility {
+    #[default]
+    Org,
+    Restricted,
+}
+
+impl Visibility {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Org => "org",
+            Self::Restricted => "restricted",
+        }
+    }
+
+    /// Anything unrecognised reads as `Org` rather than failing: visibility is
+    /// a display concern here, and the server is the one that enforces it.
+    pub fn parse(raw: &str) -> Self {
+        match raw {
+            "restricted" => Self::Restricted,
+            _ => Self::Org,
+        }
+    }
+}
+
+/// What a new Project is called, and who may see it.
+///
+/// A struct rather than five positional arguments, because four of them are
+/// `Option<&str>` and a transposed pair would compile.
+#[derive(Debug, Clone, Default)]
+pub struct Registration<'a> {
+    pub slug: &'a str,
+    /// Defaults to the Slug server-side when absent.
+    pub name: Option<&'a str>,
+    pub root_commit_sha: Option<&'a str>,
+    pub git_url: Option<&'a str>,
+    pub visibility: Visibility,
+}
+
 /// Register a Project with an Organisation.
 ///
 /// **Server first.** The Slug is globally unique within the Organisation, so it
 /// has to be settled server-side before anything local changes — otherwise a
 /// rejected Slug leaves a half-bound Project behind. The identity signals
 /// travel as advisory data: the server must accept a registration with neither.
-pub fn register_workspace(
-    config: &SyncConfig<'_>,
-    slug: &str,
-    root_commit_sha: Option<&str>,
-    git_url: Option<&str>,
-) -> Result<String> {
+pub fn register_workspace(config: &SyncConfig<'_>, reg: Registration<'_>) -> Result<String> {
     let token = (config.token)()
         .ok_or_else(|| Error::Storage("not signed in".into()))?;
     let client = config.client()?;
+    let slug = reg.slug;
 
     let response = client
         .post(format!("{}/workspaces", config.base_url))
@@ -612,8 +653,10 @@ pub fn register_workspace(
         .json(&serde_json::json!({
             "orgId": config.org_id,
             "slug": slug,
-            "rootCommitSha": root_commit_sha,
-            "gitUrl": git_url,
+            "name": reg.name,
+            "rootCommitSha": reg.root_commit_sha,
+            "gitUrl": reg.git_url,
+            "visibility": reg.visibility.as_str(),
         }))
         .send()
         .map_err(|e| Error::Storage(format!("register project: {e}")))?;
@@ -653,6 +696,12 @@ pub struct RemoteWorkspace {
     pub root_commit_sha: Option<String>,
     #[serde(default)]
     pub git_url: Option<String>,
+    /// Display name. Defaulted because a Project registered before the server
+    /// carried one answers without the field.
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub visibility: Visibility,
 }
 
 /// Which Project the popover should pre-select, and why.
@@ -761,6 +810,116 @@ pub fn list_workspaces(config: &SyncConfig<'_>) -> Result<Vec<RemoteWorkspace>> 
         .ok_or_else(|| Error::Storage("list workspaces: unreadable response".into()))
 }
 
+/// What the developer is asking to connect to.
+///
+/// `workspace_id` is an explicit pick from the picker. With neither it nor
+/// `slug` set, the server matches on the fingerprints alone — which is how a
+/// teammate's fresh checkout finds the Project without being told its name.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectRequest<'a> {
+    pub workspace_id: Option<&'a str>,
+    pub slug: Option<&'a str>,
+    pub root_commit_sha: Option<&'a str>,
+    pub git_url: Option<&'a str>,
+    /// Create the Project when nothing matched. Requires `slug`.
+    pub create: bool,
+}
+
+/// How the server resolved a connect request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectOutcome {
+    Connected {
+        workspace_id: String,
+        slug: Option<String>,
+        /// `explicit`, `fingerprint`, `origin_url`, `created` or
+        /// `already_connected` — worth showing, because "we matched your root
+        /// commit" and "you picked this" earn different amounts of trust.
+        reason: Option<String>,
+    },
+    /// Several Projects matched and the server bound none of them.
+    ///
+    /// Not an error: every repository made from the same template shares a root
+    /// commit, so this is the *correct* answer and the human has to pick.
+    Ambiguous { candidates: Vec<RemoteWorkspace> },
+    /// Nothing matched, and `create` was not set.
+    NoMatch,
+}
+
+/// Connect this repository to a Project, letting the server do the matching.
+///
+/// Preferred over registering blind: the server checks the root commit first
+/// and only then the origin URL, refuses to guess when several match, and opens
+/// the sync run in the same call. Idempotent — connecting twice resumes the
+/// existing run rather than starting a second one.
+pub fn connect_workspace(
+    config: &SyncConfig<'_>,
+    req: ConnectRequest<'_>,
+) -> Result<ConnectOutcome> {
+    let token = (config.token)().ok_or_else(|| Error::Storage("not signed in".into()))?;
+    let client = config.client()?;
+
+    let response = client
+        .post(format!("{}/workspaces/connect", config.base_url))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "orgId": config.org_id,
+            "workspaceId": req.workspace_id,
+            "slug": req.slug,
+            "rootCommitSha": req.root_commit_sha,
+            "gitUrl": req.git_url,
+            "create": req.create,
+        }))
+        .send()
+        .map_err(|e| Error::Storage(format!("connect project: {e}")))?;
+
+    let status = response.status();
+    if status == 409 {
+        let slug = req.slug.unwrap_or("that slug");
+        return Err(Error::Storage(format!("the slug \"{slug}\" is already taken")));
+    }
+    if !status.is_success() {
+        return Err(Error::Storage(format!(
+            "connect project: server returned {status}"
+        )));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .map_err(|e| Error::Storage(format!("connect project: unreadable response: {e}")))?;
+
+    Ok(read_connect_outcome(&body))
+}
+
+/// Split out from the request so the response shapes are testable without a
+/// server — including the one that matters, `ambiguous` binding nothing.
+fn read_connect_outcome(body: &serde_json::Value) -> ConnectOutcome {
+    let str_at = |key: &str| {
+        body.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+
+    match body.get("status").and_then(serde_json::Value::as_str) {
+        Some("connected") => match str_at("workspaceId") {
+            Some(workspace_id) => ConnectOutcome::Connected {
+                workspace_id,
+                slug: str_at("slug"),
+                reason: str_at("reason"),
+            },
+            // `connected` without an id is not something to act on.
+            None => ConnectOutcome::NoMatch,
+        },
+        Some("ambiguous") => ConnectOutcome::Ambiguous {
+            candidates: body
+                .get("candidates")
+                .cloned()
+                .and_then(|c| serde_json::from_value(c).ok())
+                .unwrap_or_default(),
+        },
+        _ => ConnectOutcome::NoMatch,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,7 +930,77 @@ mod tests {
             slug: id.to_string(),
             root_commit_sha: sha.map(str::to_string),
             git_url: url.map(str::to_string),
+            name: None,
+            visibility: Visibility::Org,
         }
+    }
+
+    #[test]
+    fn a_connected_response_carries_the_id_the_server_chose() {
+        // Not the id we asked for: the server may resolve a slug, or answer
+        // `already_connected` with the Project we were bound to all along.
+        let body = serde_json::json!({
+            "status": "connected",
+            "workspaceId": "ws-remote-9",
+            "slug": "atlas",
+            "reason": "fingerprint",
+        });
+        assert_eq!(
+            read_connect_outcome(&body),
+            ConnectOutcome::Connected {
+                workspace_id: "ws-remote-9".into(),
+                slug: Some("atlas".into()),
+                reason: Some("fingerprint".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_response_binds_nothing_and_keeps_the_candidates() {
+        // The rule that matters. Two repositories from one template share a
+        // root commit, and picking either would pollute a shared timeline.
+        let body = serde_json::json!({
+            "status": "ambiguous",
+            "workspaceId": serde_json::Value::Null,
+            "candidates": [
+                { "id": "a", "slug": "a", "rootCommitSha": "root-1" },
+                { "id": "b", "slug": "b", "rootCommitSha": "root-1" },
+            ],
+        });
+        let ConnectOutcome::Ambiguous { candidates } = read_connect_outcome(&body) else {
+            panic!("ambiguous must not bind");
+        };
+        assert_eq!(candidates.len(), 2);
+        // The fields the server omits must default rather than drop the row.
+        assert_eq!(candidates[0].visibility, Visibility::Org);
+        assert_eq!(candidates[0].name, None);
+    }
+
+    #[test]
+    fn connected_without_an_id_is_not_acted_on() {
+        // A malformed success is not a binding. Treating it as one would write
+        // `None` as the wire identity and fail at drain time instead of here.
+        let body = serde_json::json!({ "status": "connected" });
+        assert_eq!(read_connect_outcome(&body), ConnectOutcome::NoMatch);
+    }
+
+    #[test]
+    fn an_unrecognised_status_is_no_match() {
+        assert_eq!(
+            read_connect_outcome(&serde_json::json!({ "status": "no_match" })),
+            ConnectOutcome::NoMatch
+        );
+        assert_eq!(read_connect_outcome(&serde_json::json!({})), ConnectOutcome::NoMatch);
+    }
+
+    #[test]
+    fn visibility_round_trips_and_unknown_reads_as_org() {
+        assert_eq!(Visibility::parse("restricted"), Visibility::Restricted);
+        assert_eq!(Visibility::Restricted.as_str(), "restricted");
+        assert_eq!(Visibility::parse("org"), Visibility::Org);
+        // An unrecognised value must not fail the picker; the server enforces.
+        assert_eq!(Visibility::parse("public"), Visibility::Org);
+        assert_eq!(Visibility::default(), Visibility::Org);
     }
 
     #[test]

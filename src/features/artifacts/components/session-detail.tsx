@@ -1,10 +1,12 @@
 import {
+  createContext,
   memo,
   useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
+  useContext,
   useState,
   type ReactNode,
 } from "react";
@@ -60,7 +62,9 @@ import {
 import { observeSize } from "../lib/shared-resize-observer";
 import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
+import { anchorKindFor, type Comment } from "../lib/comments-api";
 import { CodeBlock, CopyButton, prettyJson } from "./code-block";
+import { CommentButton, type CommentActions } from "./comment-thread";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
 
@@ -111,10 +115,35 @@ const NODE_CENTRE = 16;
  */
 const MEASURE = "mx-auto w-full max-w-[920px] px-14";
 
+/**
+ * Everything the comment surfaces need, or `null` on a Session that is not
+ * shared with an Organisation.
+ *
+ * One object rather than five props, because it is all-or-nothing: without a
+ * cloud Project there is no anchor to attach a comment to, so every part of it
+ * is absent together.
+ */
+export interface RowComments {
+  /** Entry `rowId` → its thread. The id is the local one, pushed verbatim. */
+  byAnchor: Record<string, Comment[]>;
+  /** Comments on the Session itself, shown from the masthead. */
+  session: Comment[];
+  actions: CommentActions;
+  /** Whose comments carry a delete affordance. */
+  currentUserId: string | null;
+}
+
 interface Props {
   detail: Detail;
   /** Needed to fetch spilled payloads via `artifacts_payload`. */
   projectPath: string;
+  /** `null` when the Session is local-only. */
+  comments?: RowComments | null;
+  /** The masthead is painted from the board row and the timeline is still on
+   *  its way. Without it an empty `entries` reads as "nothing was recorded". */
+  entriesPending?: boolean;
+  /** Set only for a Session with no local copy — see [`RemoteSourceContext`]. */
+  remote?: RemoteSource | null;
   /** Opened from a commit: land on that Checkpoint rather than at the top. */
   focusCommitSha?: string;
   /** Whether the grounded chat occupies the other half of the split. */
@@ -122,9 +151,29 @@ interface Props {
   onToggleChat?: () => void;
 }
 
+/**
+ * Where an oversized payload comes from, when it is not on this disk.
+ *
+ * A **context** rather than another prop because the components that expand a
+ * payload — a response body, a tool call's arguments, its result — sit three
+ * and four levels below the pane, behind `Calls` and `CallTable` and `CallRow`,
+ * none of which have any other reason to know about it. Threading it would put
+ * a prop nobody reads through every one of them.
+ */
+export interface RemoteSource {
+  /** The server Project id. */
+  projectId: string;
+  sessionId: string;
+}
+
+const RemoteSourceContext = createContext<RemoteSource | null>(null);
+
 export function SessionDetail({
   detail,
   projectPath,
+  comments = null,
+  entriesPending = false,
+  remote = null,
   focusCommitSha,
   chatOpen,
   onToggleChat,
@@ -448,156 +497,164 @@ export function SessionDetail({
     tools.size;
 
   return (
-    <div className="relative flex h-full min-h-0">
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
-      >
-        <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-14")}>
-          <Masthead detail={detail} />
+    <RemoteSourceContext.Provider value={remote}>
+      <div className="relative flex h-full min-h-0">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
+        >
+          <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-14")}>
+            <Masthead detail={detail} comments={comments} />
 
-          {groups.length === 0 ? (
-            <Empty detail={detail} failedOnly={failedOnly} failedCount={failedCount} />
-          ) : (
-            <div className="mt-14">
-              <Timeline
-                groups={rendered}
-                projectPath={projectPath}
-                agent={s.agent}
-                expandTools={expandTools}
-                landed={landed}
-                register={register}
+            {groups.length === 0 ? (
+              <Empty
+                detail={detail}
+                pending={entriesPending}
+                failedOnly={failedOnly}
+                failedCount={failedCount}
               />
-              {renderCount < groups.length && (
-                <p className="py-6 text-center font-mono text-xs text-[var(--muted-foreground)]">
-                  {groups.length - renderCount} more…
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Bottom fade — the cue for content below the fold, without the agent
-       *  chat's scroll-to-bottom button: a Session is read top-down and the
-       *  newest entry is not the destination.
-       *
-       *  Deeper than the chat's, and fully opaque before the controls rather
-       *  than at the very bottom edge: the action bar and the search field float
-       *  *on* this, and a linear ramp to the edge left body text legible
-       *  straight through both of them. */}
-      <div
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-0 z-20 h-32 transition-opacity duration-200",
-          more ? "opacity-100" : "opacity-0",
-        )}
-        style={{
-          background:
-            "linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--background) 60%, transparent) 28%, color-mix(in srgb, var(--background) 92%, transparent) 44%, var(--background) 55%)",
-        }}
-      />
-
-      {/* The action bar. Floating over the fade rather than docked below the
-       *  scroller: the measure is centred and a full-width toolbar would put its
-       *  controls further from the text than the text is wide. Left is what
-       *  changes the view, right is what moves through it. */}
-      <HintGroup side="top">
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 px-4 pb-3.5">
-          <BarButton
-            label="Filters"
-            active={filtersOpen || activeFilters > 0}
-            badge={activeFilters > 0 ? activeFilters : undefined}
-            onClick={() => setFiltersOpen((v) => !v)}
-          >
-            <Filter size={14} strokeWidth={1.6} />
-          </BarButton>
-
-          {/* The search field, between the two control clusters and centred in the
-           *  measure. Same pill as the memory Timeline's: floating, blurred, no
-           *  box around it — it belongs to the content, not to a toolbar. */}
-          <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--card)]/70 px-4 shadow-md backdrop-blur-2xl">
-            <Search size={15} className="shrink-0 text-[var(--muted-foreground)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setSearch("");
-              }}
-              placeholder="Search this session…"
-              spellCheck={false}
-              aria-label="Search this session"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
-            />
-            {search && (
-              <>
-                <span className="shrink-0 font-mono text-xs text-[var(--atlas-text-disabled)]">
-                  {groups.length}
-                </span>
-                <Hint label="Clear search">
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
-                  >
-                    <X size={14} />
-                  </button>
-                </Hint>
-              </>
+            ) : (
+              <div className="mt-14">
+                <Timeline
+                  groups={rendered}
+                  projectPath={projectPath}
+                  agent={s.agent}
+                  expandTools={expandTools}
+                  landed={landed}
+                  register={register}
+                  comments={comments}
+                />
+                {renderCount < groups.length && (
+                  <p className="py-6 text-center font-mono text-xs text-[var(--muted-foreground)]">
+                    {groups.length - renderCount} more…
+                  </p>
+                )}
+              </div>
             )}
           </div>
-
-          <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--card)]/70 shadow-md backdrop-blur-xl">
-            <BarButton
-              label="Next prompt"
-              bare
-              disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
-              onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
-            >
-              <ChevronsDown size={14} strokeWidth={1.6} />
-            </BarButton>
-            <span aria-hidden className="h-4 w-px bg-[var(--border)]" />
-            <BarButton
-              label={chatOpen ? "Close chat" : "Ask about this session"}
-              bare
-              active={chatOpen}
-              disabled={!onToggleChat}
-              onClick={onToggleChat}
-            >
-              <Sparkles size={14} strokeWidth={1.6} />
-            </BarButton>
-          </div>
         </div>
-      </HintGroup>
 
-      {filtersOpen && (
-        <FilterDrawer
-          detail={detail}
-          filters={filters}
-          setFilters={setFilters}
-          failedOnly={failedOnly}
-          setFailedOnly={setFailedOnly}
-          failedCount={failedCount}
-          tools={tools}
-          setTools={setTools}
-          expandTools={expandTools}
-          setExpandTools={setExpandTools}
-          foldResponses={foldResponses}
-          setFoldResponses={setFoldResponses}
-          activeFilters={activeFilters}
-          checkpoints={checkpoints}
-          onJump={(entryId) => {
-            // The drawer closes on jump. It covers the right third of the
-            // measure, and landing behind it would mean the reader has to
-            // dismiss it to see what they asked for.
-            setFiltersOpen(false);
-            setPendingJump(entryId);
+        {/* Bottom fade — the cue for content below the fold, without the agent
+         *  chat's scroll-to-bottom button: a Session is read top-down and the
+         *  newest entry is not the destination.
+         *
+         *  Deeper than the chat's, and fully opaque before the controls rather
+         *  than at the very bottom edge: the action bar and the search field float
+         *  *on* this, and a linear ramp to the edge left body text legible
+         *  straight through both of them. */}
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 z-20 h-32 transition-opacity duration-200",
+            more ? "opacity-100" : "opacity-0",
+          )}
+          style={{
+            background:
+              "linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--background) 60%, transparent) 28%, color-mix(in srgb, var(--background) 92%, transparent) 44%, var(--background) 55%)",
           }}
-          onClose={() => setFiltersOpen(false)}
         />
-      )}
-    </div>
+
+        {/* The action bar. Floating over the fade rather than docked below the
+         *  scroller: the measure is centred and a full-width toolbar would put its
+         *  controls further from the text than the text is wide. Left is what
+         *  changes the view, right is what moves through it. */}
+        <HintGroup side="top">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 px-4 pb-3.5">
+            <BarButton
+              label="Filters"
+              active={filtersOpen || activeFilters > 0}
+              badge={activeFilters > 0 ? activeFilters : undefined}
+              onClick={() => setFiltersOpen((v) => !v)}
+            >
+              <Filter size={14} strokeWidth={1.6} />
+            </BarButton>
+
+            {/* The search field, between the two control clusters and centred in the
+             *  measure. Same pill as the memory Timeline's: floating, blurred, no
+             *  box around it — it belongs to the content, not to a toolbar. */}
+            <div className="pointer-events-auto mx-auto flex h-11 min-w-0 max-w-[620px] flex-1 items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--card)]/70 px-4 shadow-md backdrop-blur-2xl">
+              <Search size={15} className="shrink-0 text-[var(--muted-foreground)]" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setSearch("");
+                }}
+                placeholder="Search this session…"
+                spellCheck={false}
+                aria-label="Search this session"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+              />
+              {search && (
+                <>
+                  <span className="shrink-0 font-mono text-xs text-[var(--atlas-text-disabled)]">
+                    {groups.length}
+                  </span>
+                  <Hint label="Clear search">
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </Hint>
+                </>
+              )}
+            </div>
+
+            <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--card)]/70 shadow-md backdrop-blur-xl">
+              <BarButton
+                label="Next prompt"
+                bare
+                disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
+                onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
+              >
+                <ChevronsDown size={14} strokeWidth={1.6} />
+              </BarButton>
+              <span aria-hidden className="h-4 w-px bg-[var(--border)]" />
+              <BarButton
+                label={chatOpen ? "Close chat" : "Ask about this session"}
+                bare
+                active={chatOpen}
+                disabled={!onToggleChat}
+                onClick={onToggleChat}
+              >
+                <Sparkles size={14} strokeWidth={1.6} />
+              </BarButton>
+            </div>
+          </div>
+        </HintGroup>
+
+        {filtersOpen && (
+          <FilterDrawer
+            detail={detail}
+            filters={filters}
+            setFilters={setFilters}
+            failedOnly={failedOnly}
+            setFailedOnly={setFailedOnly}
+            failedCount={failedCount}
+            tools={tools}
+            setTools={setTools}
+            expandTools={expandTools}
+            setExpandTools={setExpandTools}
+            foldResponses={foldResponses}
+            setFoldResponses={setFoldResponses}
+            activeFilters={activeFilters}
+            checkpoints={checkpoints}
+            onJump={(entryId) => {
+              // The drawer closes on jump. It covers the right third of the
+              // measure, and landing behind it would mean the reader has to
+              // dismiss it to see what they asked for.
+              setFiltersOpen(false);
+              setPendingJump(entryId);
+            }}
+            onClose={() => setFiltersOpen(false)}
+          />
+        )}
+      </div>
+    </RemoteSourceContext.Provider>
   );
 }
 
@@ -612,7 +669,7 @@ export function SessionDetail({
  * around it rather than three rows that happen to be stacked. Export is not
  * here; it lives in the header dock with the tab's other actions.
  */
-function Masthead({ detail }: { detail: Detail }) {
+function Masthead({ detail, comments }: { detail: Detail; comments: RowComments | null }) {
   const s = detail.summary;
   const branch = s.branches[0];
   const tokens = tokenLabel(s);
@@ -648,11 +705,27 @@ function Masthead({ detail }: { detail: Detail }) {
 
   return (
     <>
-      <h1 className="text-xl font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--foreground)]">
-        {sessionTitle(s.title) ?? (
-          <span className="text-[var(--muted-foreground)]">Untitled session</span>
+      {/* `group/row` so the session thread's button reveals on the same hover
+       *  rule as every other one — it is the same control, at Session scope. */}
+      <div className="group/row flex items-start gap-2">
+        <h1 className="min-w-0 flex-1 text-xl font-semibold leading-[1.25] tracking-[-0.02em] text-[var(--foreground)]">
+          {sessionTitle(s.title) ?? (
+            <span className="text-[var(--muted-foreground)]">Untitled session</span>
+          )}
+        </h1>
+        {/* The whole-Session thread, for anything that is not about one step. */}
+        {comments && (
+          <CommentButton
+            anchorKind="session"
+            anchorId={s.id}
+            comments={comments.session}
+            actions={comments.actions}
+            currentUserId={comments.currentUserId}
+            label="Comment on this Session"
+            className="mt-1 group-hover/row:opacity-100"
+          />
         )}
-      </h1>
+      </div>
 
       <div className="mt-[22px] flex min-w-0 flex-wrap items-center gap-2">
         {s.agent && <AgentChip agent={s.agent} />}
@@ -950,6 +1023,7 @@ const Timeline = memo(function Timeline({
   expandTools,
   landed,
   register,
+  comments,
 }: {
   groups: Group[];
   projectPath: string;
@@ -957,6 +1031,7 @@ const Timeline = memo(function Timeline({
   expandTools: boolean;
   landed: string | null;
   register: (id: string, node: HTMLDivElement | null) => void;
+  comments: RowComments | null;
 }) {
   return (
     <>
@@ -971,6 +1046,7 @@ const Timeline = memo(function Timeline({
           expandTools={expandTools}
           isLanded={group.entries.some((e) => e.id === landed)}
           register={register}
+          comments={comments}
         />
       ))}
     </>
@@ -993,6 +1069,7 @@ const Row = memo(function Row({
   expandTools,
   isLanded,
   register,
+  comments,
 }: {
   group: Group;
   first: boolean;
@@ -1004,6 +1081,8 @@ const Row = memo(function Row({
   /** A jump just landed here — ringed briefly. */
   isLanded: boolean;
   register: (id: string, node: HTMLDivElement | null) => void;
+  /** `null` on a Session that is not shared — there is nothing to anchor to. */
+  comments: RowComments | null;
 }) {
   const head = group.entries[0];
   return (
@@ -1051,15 +1130,31 @@ const Row = memo(function Row({
 
           {/* Copy the entry, from the row's own meta line. A prompt and a
            *  response are the two things anyone lifts out of a Session, and
-           *  hanging the control off the label keeps it out of the prose. */}
+           *  hanging the control off the label keeps it out of the prose.
+           *
+           *  The spacer is unconditional now: a row with a comment button and
+           *  no copy button still needs its controls pushed right, and two
+           *  independent `flex-1`s would have split the gap between them. */}
+          <span className="flex-1" />
           {(group.kind === "prompt" || group.kind === "response") && head.text && (
-            <>
-              <span className="flex-1" />
-              <CopyButton
-                text={head.text}
-                className="-my-1 self-center group-hover/row:opacity-100"
-              />
-            </>
+            <CopyButton
+              text={head.text}
+              className="-my-1 self-center group-hover/row:opacity-100"
+            />
+          )}
+          {/* Every kind can be commented on, not just the two that can be
+           *  copied — a tool call and a Checkpoint are exactly the things worth
+           *  asking about, and leaving them out would make them commentable
+           *  from the web and not from here. */}
+          {comments && (
+            <CommentButton
+              anchorKind={anchorKindFor(group.kind)}
+              anchorId={head.id}
+              comments={comments.byAnchor[head.id]}
+              actions={comments.actions}
+              currentUserId={comments.currentUserId}
+              className="-my-1 self-center group-hover/row:opacity-100"
+            />
           )}
         </div>
 
@@ -1479,6 +1574,8 @@ const CallRow = memo(function CallRow({
               json
               projectPath={projectPath}
               blobRef={spilledRef(call.argumentsRef, call.arguments)}
+              rowId={call.id}
+              part="arguments"
             />
           )}
           {call.resultBinary ? (
@@ -1493,6 +1590,8 @@ const CallRow = memo(function CallRow({
                 path={call.paths[0]}
                 projectPath={projectPath}
                 blobRef={spilledRef(call.resultRef, call.result)}
+                rowId={call.id}
+                part="result"
               />
             )
           )}
@@ -2262,6 +2361,8 @@ function Pre({
   json,
   projectPath,
   blobRef,
+  rowId,
+  part,
 }: {
   label: string;
   text: string;
@@ -2270,7 +2371,10 @@ function Pre({
   json?: boolean;
   projectPath: string;
   blobRef: string | null;
+  rowId: string;
+  part: PayloadPart;
 }) {
+  const remote = useContext(RemoteSourceContext);
   const [full, setFull] = useState<string | null>(null);
   const source = full ?? text;
   const pretty = json ? prettyJson(source) : { text: source, json: false };
@@ -2282,8 +2386,14 @@ function Pre({
         label={label}
         language={pretty.json ? "JSON" : undefined}
       />
-      {blobRef && full === null && (
-        <ShowFull projectPath={projectPath} blobRef={blobRef} onLoaded={setFull} />
+      {(blobRef || remote) && full === null && (
+        <ShowFull
+          projectPath={projectPath}
+          blobRef={blobRef}
+          rowId={rowId}
+          part={part}
+          onLoaded={setFull}
+        />
       )}
     </div>
   );
@@ -2315,6 +2425,7 @@ function Body({
   /** Pre-resolved text, when the caller already has it. */
   raw?: string;
 }) {
+  const remote = useContext(RemoteSourceContext);
   const [full, setFull] = useState<string | null>(null);
   const truncated = entry.truncated && full === null;
 
@@ -2323,8 +2434,14 @@ function Body({
       <span className="ml-1 text-xs text-[var(--muted-foreground)]">
         … {compact(entry.bodyBytes)} bytes not shown
       </span>
-      {entry.bodyRef && (
-        <ShowFull projectPath={projectPath} blobRef={entry.bodyRef} onLoaded={setFull} />
+      {(entry.bodyRef || remote) && (
+        <ShowFull
+          projectPath={projectPath}
+          blobRef={entry.bodyRef}
+          rowId={entry.id}
+          part="body"
+          onLoaded={setFull}
+        />
       )}
     </>
   );
@@ -2347,20 +2464,36 @@ function Body({
 }
 
 /**
- * Fetch a spilled payload on demand.
+ * Expand a payload the timeline only carries a preview of.
  *
  * The failure copy matters: a pruned blob store is a real state (the Session
  * still renders from previews) and "could not load" must not read as a crash.
+ *
+ * Two sources, because there are two places an oversized payload can live. A
+ * Session captured on this machine spilled it to the local blob sidecar and is
+ * addressed by content key. One captured elsewhere was never written here at
+ * all — the server holds it, addressed by the entry's row id and which part of
+ * it you want. `blobRef` picks the first; the remote context picks the second.
  */
+/** Which half of an entry to fetch. Mirrors the server's `part` parameter. */
+type PayloadPart = "body" | "arguments" | "result";
+
 function ShowFull({
   projectPath,
   blobRef,
   onLoaded,
+  rowId,
+  part,
 }: {
   projectPath: string;
-  blobRef: string;
+  /** `null` on a remote Session — nothing was spilled to this disk. */
+  blobRef: string | null;
+  /** The entry the payload belongs to, for the remote read. */
+  rowId: string;
+  part: PayloadPart;
   onLoaded: (text: string) => void;
 }) {
+  const remote = useContext(RemoteSourceContext);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2368,10 +2501,14 @@ function ShowFull({
     setBusy(true);
     setError(null);
     try {
-      const payload = await invoke<ArtifactPayload>("artifacts_payload", {
-        projectPath,
-        blobRef,
-      });
+      const payload = blobRef
+        ? await invoke<ArtifactPayload>("artifacts_payload", { projectPath, blobRef })
+        : await invoke<ArtifactPayload>("artifacts_cloud_payload", {
+            projectId: remote?.projectId,
+            sessionId: remote?.sessionId,
+            rowId,
+            part,
+          });
       if (payload.text !== null) onLoaded(payload.text);
       else setError("The full payload is binary and cannot be shown.");
     } catch {
@@ -2399,13 +2536,24 @@ function ShowFull({
 
 function Empty({
   detail,
+  pending,
   failedOnly,
   failedCount,
 }: {
   detail: Detail;
+  /** The timeline has not arrived yet — say so rather than claiming it is empty. */
+  pending: boolean;
   failedOnly: boolean;
   failedCount: number;
 }) {
+  if (pending) {
+    return (
+      <p className="flex items-center justify-center gap-2 py-16 text-center text-sm text-[var(--muted-foreground)]">
+        <Loader2 size={12} className="animate-spin" />
+        Loading the timeline…
+      </p>
+    );
+  }
   return (
     <p className="py-16 text-center text-sm text-[var(--muted-foreground)]">
       {detail.entries.length === 0

@@ -16,6 +16,9 @@ import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 
+import { useAuthStore } from "@/features/auth/stores/auth-store";
+
+import { useSessionComments } from "../lib/use-session-comments";
 import { useArtifactsStore } from "../stores/artifacts-store";
 import type { BoardSession, SessionDetail as Detail } from "../types";
 import {
@@ -161,6 +164,48 @@ const BOARD_LIMIT = 500;
  *   actually visible.
  */
 
+/** The board row a Session was opened from, if it is still on the board. */
+function boardRowFor(sessions: BoardSession[], sessionId: string): BoardSession | undefined {
+  return sessions.find((s) => s.id === sessionId);
+}
+
+/**
+ * A Session with its summary but not yet its timeline.
+ *
+ * The board row already carries every field the masthead reads, so this costs
+ * nothing and removes the whole round trip from the first paint. It is only
+ * ever shown with `entriesPending`, which is what stops the empty `entries`
+ * being read as "this Session recorded nothing".
+ */
+function shellDetail(row: BoardSession): Detail {
+  return {
+    summary: row,
+    entries: [],
+    counts: { prompts: 0, responses: 0, thinking: 0, toolCalls: 0, checkpoints: 0 },
+    tools: [],
+  };
+}
+
+/**
+ * A Session that exists only on the server, read whole.
+ *
+ * Rust pages the entries and hands back the same `SessionDetail` a local read
+ * produces, so nothing downstream knows the difference. Two fields are
+ * legitimately empty on a remote row and the viewer already handles both: a
+ * Checkpoint has no commit subject (only the machine with the checkout can run
+ * `git show`), and nothing carries a blob key.
+ */
+async function remoteDetail(
+  remoteProjectId: string | null,
+  sessionId: string,
+): Promise<Detail | null> {
+  if (!remoteProjectId) return null;
+  return invoke<Detail>("artifacts_cloud_session", {
+    projectId: remoteProjectId,
+    sessionId,
+  });
+}
+
 export function ArtifactsPanel() {
   // Every project in the active Organisation, not just the open one: the board
   // answers "what has been happening in our code", which does not stop at the
@@ -176,6 +221,16 @@ export function ArtifactsPanel() {
   const projectsKey = projectPaths.join("\n");
 
   const [sessions, setSessions] = useState<BoardSession[]>([]);
+  /**
+   * The timeline is still arriving for the Session on screen.
+   *
+   * Distinct from `detail === undefined` (nothing to show yet) because the
+   * masthead is painted from the board row the instant it is clicked, ahead of
+   * the entries. Without this the shell's empty `entries` would render
+   * "Nothing was recorded in this session." — which is exactly what a Session
+   * with genuinely no rows says, and the two must not look alike.
+   */
+  const [entriesPending, setEntriesPending] = useState(false);
   /** `undefined` while a detail read is in flight; `null` when not found. */
   const [detail, setDetail] = useState<Detail | null | undefined>(undefined);
   // Held in the store, not here: this panel unmounts on every tab switch, and
@@ -183,10 +238,22 @@ export function ArtifactsPanel() {
   const open = useArtifactsStore.use.open();
   const projectFilter = useArtifactsStore.use.projectFilter();
   const { openSession, setProjectFilter } = useArtifactsStore.use.actions();
+
+  // Comments on the open Session, or `null` when it is not shared — which is
+  // what hides every comment affordance rather than showing empty threads.
+  const authSnapshot = useAuthStore.use.snapshot();
+  const currentUserId =
+    authSnapshot.status === "signed-in" ? (authSnapshot.user?.id ?? null) : null;
+  const comments = useSessionComments(
+    open?.remoteProjectId ?? null,
+    open?.sessionId ?? null,
+    currentUserId,
+  );
   // Stable identity for the memo'd board rows — an inline arrow here would
   // re-render all ~500 of them on every panel render.
   const onOpenRow = useCallback(
-    (sessionId: string, projectPath: string) => openSession({ sessionId, projectPath }),
+    (sessionId: string, projectPath: string, remoteProjectId?: string | null) =>
+      openSession({ sessionId, projectPath, remoteProjectId: remoteProjectId ?? null }),
     [openSession],
   );
   /** True once the first board read has landed. */
@@ -334,10 +401,17 @@ export function ArtifactsPanel() {
       if (!open) return;
       const seq = ++detailSeq.current;
       if (showLoading) setDetail(undefined);
-      invoke<Detail | null>("artifacts_session", {
-        projectPath: open.projectPath,
-        sessionId: open.sessionId,
-      })
+      // A Session from a Project this machine has no checkout of has no local
+      // store to read, so it comes back over the network. Preferring the local
+      // read whenever there *is* one keeps the common case instant and offline
+      // — a synced Session of your own is on both sides.
+      const read = open.projectPath
+        ? invoke<Detail | null>("artifacts_session", {
+            projectPath: open.projectPath,
+            sessionId: open.sessionId,
+          })
+        : remoteDetail(open.remoteProjectId ?? null, open.sessionId);
+      read
         .then((result) => {
           if (result) writeCachedDetail(open.projectPath, open.sessionId, result);
           if (seq !== detailSeq.current) return;
@@ -349,10 +423,14 @@ export function ArtifactsPanel() {
           // in a structurally identical object invalidates every memo in the
           // tree and re-renders every mounted row — hundreds of them, mid-scroll.
           setDetail((current) => (sameDetail(current, result) ? current : result));
+          setEntriesPending(false);
         })
         .catch((e) => {
           if (seq === detailSeq.current) {
+            // A failed read over a painted shell must not leave the masthead up
+            // with an empty timeline under it — that reads as "no rows".
             setDetail(null);
+            setEntriesPending(false);
             setError(String(e));
           }
         });
@@ -368,6 +446,7 @@ export function ArtifactsPanel() {
     if (!open) {
       detailSeq.current += 1;
       setDetail(undefined);
+      setEntriesPending(false);
       return;
     }
     // A Session read once this browsing session paints from memory and refreshes
@@ -377,10 +456,29 @@ export function ArtifactsPanel() {
     const cached = readCachedDetail(open.projectPath, open.sessionId);
     if (cached) {
       setDetail(cached);
+      setEntriesPending(false);
       readDetail(false);
       return;
     }
+
+    // Nothing cached — but the board row this was opened from IS the summary,
+    // so the masthead can paint now and the timeline can arrive after it. That
+    // matters most for a Session held on the server, where the read is a paged
+    // network walk rather than a local SQLite hit and the whole pane would
+    // otherwise sit on "Reading the session…" for seconds.
+    const row = boardRowFor(sessions, open.sessionId);
+    if (row) {
+      setDetail(shellDetail(row));
+      setEntriesPending(true);
+      readDetail(false);
+      return;
+    }
+
+    setEntriesPending(false);
     readDetail(true);
+    // `sessions` is read for the opening frame only — re-running this effect on
+    // every board refresh would re-paint the shell over a loaded timeline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, readDetail]);
 
   // A live Session keeps growing while it is open — piggyback the detail
@@ -567,6 +665,7 @@ export function ArtifactsPanel() {
                   sessionId={open.sessionId}
                   title={detail?.summary.title ?? null}
                   projectPath={open.projectPath}
+                  remoteProjectId={open.remoteProjectId ?? null}
                   onBack={() => openSession(null)}
                 />
               </>
@@ -580,22 +679,31 @@ export function ArtifactsPanel() {
             <div className="ml-auto flex shrink-0 items-center">
               {/* One dock: act on the open Session, jump to a commit, scope
                   the board, re-read it. */}
+              {/* The dock belongs to whatever is on screen. Reading a Session,
+                  the only action about *it* is exporting it — a commit jumper,
+                  a board filter and a board reload are three controls for the
+                  list you just left, and they sat there implying otherwise. */}
               <HeaderDock>
-                {open && detail && <ExportButton detail={detail} />}
-                <CheckpointsPicker
-                  projects={projectFilter ? [projectFilter] : projectPaths}
-                  onOpen={(row) =>
-                    openSession({
-                      sessionId: row.sessionId,
-                      projectPath: row.projectPath,
-                      commitSha: row.commitSha,
-                    })
-                  }
-                />
-                {filterMenu}
-                <DockButton label="Reload timeline" onClick={() => void refresh()}>
-                  <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
-                </DockButton>
+                {open ? (
+                  detail && <ExportButton detail={detail} />
+                ) : (
+                  <>
+                    <CheckpointsPicker
+                      projects={projectFilter ? [projectFilter] : projectPaths}
+                      onOpen={(row) =>
+                        openSession({
+                          sessionId: row.sessionId,
+                          projectPath: row.projectPath,
+                          commitSha: row.commitSha,
+                        })
+                      }
+                    />
+                    {filterMenu}
+                    <DockButton label="Reload timeline" onClick={() => void refresh()}>
+                      <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
+                    </DockButton>
+                  </>
+                )}
               </HeaderDock>
             </div>
           </div>
@@ -658,6 +766,16 @@ export function ArtifactsPanel() {
                     <SessionDetail
                       detail={detail}
                       projectPath={open.projectPath}
+                      comments={comments}
+                      entriesPending={entriesPending}
+                      // Only when there is no local copy. A synced Session of
+                      // your own is on both sides, and the local blob read is
+                      // faster and works offline.
+                      remote={
+                        !open.projectPath && open.remoteProjectId
+                          ? { projectId: open.remoteProjectId, sessionId: open.sessionId }
+                          : null
+                      }
                       focusCommitSha={open.commitSha}
                       chatOpen={chatOpen}
                       onToggleChat={() => setChatOpen((v) => !v)}
@@ -775,11 +893,14 @@ function Breadcrumb({
   sessionId,
   title,
   projectPath,
+  remoteProjectId,
   onBack,
 }: {
   sessionId: string;
   title: string | null;
   projectPath: string;
+  /** Set when the Session is on the server, which is what makes it linkable. */
+  remoteProjectId: string | null;
   onBack: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -808,12 +929,24 @@ function Breadcrumb({
       <button
         type="button"
         onClick={() => {
-          void copyText(sessionId);
+          // A shared Session copies as a link a colleague can open; a local one
+          // has no address to give out, so it copies the id it always did. The
+          // id is useless to anyone else, which is exactly why it stops being
+          // the answer the moment there is a URL.
+          void (async () => {
+            const url = remoteProjectId
+              ? await invoke<string | null>("artifacts_cloud_session_url", {
+                  projectId: remoteProjectId,
+                  sessionId,
+                }).catch(() => null)
+              : null;
+            await copyText(url ?? sessionId);
+          })();
           setCopied(true);
           if (flash.current) clearTimeout(flash.current);
           flash.current = setTimeout(() => setCopied(false), 1200);
         }}
-        title={`Copy ${sessionId}`}
+        title={remoteProjectId ? "Copy a link to this Session" : `Copy ${sessionId}`}
         className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         {copied ? "copied" : label}

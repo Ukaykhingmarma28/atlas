@@ -278,6 +278,7 @@ pub fn run() {
                 // that broadcast is what points it at an Organisation, and a
                 // manager that is not yet managed would miss the first one.
                 commands::comms::install(app.handle());
+                commands::artifacts_cloud::install(app.handle());
                 commands::auth::restore_on_launch(app.handle());
 
                 // Seed the Organisation every event is attributed to, from the
@@ -542,6 +543,16 @@ pub fn run() {
             commands::capture::capture_enable,
             commands::capture::capture_disable,
             commands::capture::capture_git_init,
+            commands::capture::capture_git_available,
+            commands::artifacts_cloud::artifacts_cloud_retarget,
+            commands::artifacts_cloud::artifacts_cloud_watch,
+            commands::artifacts_cloud::artifacts_cloud_session,
+            commands::artifacts_cloud::artifacts_cloud_payload,
+            commands::artifacts_cloud::artifacts_cloud_session_url,
+            commands::artifacts_cloud::artifacts_cloud_comments,
+            commands::artifacts_cloud::artifacts_cloud_comment_create,
+            commands::artifacts_cloud::artifacts_cloud_comment_update,
+            commands::artifacts_cloud::artifacts_cloud_comment_delete,
             commands::capture::capture_health,
             commands::capture::capture_import_preview,
             commands::capture::capture_import_confirm,
