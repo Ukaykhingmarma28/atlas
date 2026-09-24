@@ -5,6 +5,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoardSession } from "../types";
 import { TimelineSidebar } from "./timeline-sidebar";
 
+// The sidebar's import graph reaches `settings-store`, which subscribes to
+// Tauri config events at module load. There is no Tauri bridge under happy-dom,
+// so without this the real `listen` rejects and vitest fails the run on an
+// unhandled rejection.
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+
 // vitest runs with `globals: false`, so RTL's auto-cleanup is not registered.
 beforeEach(cleanup);
 
