@@ -665,6 +665,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 // every subsequent bind failure for this tab+agent.
                 onDismissed: () => reportedBindFailures.delete(key),
               });
+            } else if (action === "silent") {
+              // The composer is already showing why (`AiGrantBar`, and "No
+              // models" in the picker). A toast would be a third copy of a
+              // setup problem, re-raised on every rebind.
             } else if (action === "signed-in-but-refused" && at) {
               // Signed in already and STILL refused. Say so, and surface the
               // agent's own words — it is the only thing that can explain what
