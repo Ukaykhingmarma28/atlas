@@ -214,4 +214,12 @@ export type SessionOrigin = "local" | "remote" | "both";
 export interface BoardPage {
   sessions: BoardSession[];
   cloudPending: boolean;
+  /**
+   * The remote half could not be read at all.
+   *
+   * The rows are this machine's, plus whatever an earlier refresh cached — a
+   * partial view that has to be labelled rather than presented as the whole
+   * board. Goes false again the moment any refresh succeeds.
+   */
+  cloudFailed: boolean;
 }

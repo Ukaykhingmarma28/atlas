@@ -5,6 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Filter, RefreshCw, Search, X } from "lucide-react";
 
+import { toast } from "sonner";
+
 import { copyText } from "@/lib/clipboard";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -286,6 +288,51 @@ export function ArtifactsPanel() {
    * case never had this, because its first read is the whole answer.
    */
   const [cloudPending, setCloudPending] = useState(false);
+  /**
+   * Which Organisation we have already told the user about.
+   *
+   * The board re-reads on every capture and git event and on a fifteen-second
+   * ticker, and all of them carry the failure flag — so without this the notice
+   * would reappear every few seconds for as long as the connection is down.
+   * Cleared on an org switch and on a successful read, so a later failure is
+   * reported again.
+   */
+  const cloudFailureToldFor = useRef<string | null>(null);
+
+  const retryCloud = useCallback(() => {
+    void invoke<boolean>("artifacts_cloud_refresh")
+      .then((ok) => {
+        if (ok) toast.success("Cloud sessions loaded.");
+        // A failed retry re-arms the notice rather than raising a second one
+        // on top of the first — `refresh` below will report it again.
+        else cloudFailureToldFor.current = null;
+      })
+      .catch(() => {
+        cloudFailureToldFor.current = null;
+      })
+      .finally(() => void refreshRef.current?.());
+  }, []);
+
+  const reportCloudFailure = useCallback(
+    (failed: boolean, orgId: string | null) => {
+      if (!failed) {
+        cloudFailureToldFor.current = null;
+        return;
+      }
+      if (cloudFailureToldFor.current === orgId) return;
+      cloudFailureToldFor.current = orgId;
+      toast.error("Couldn't load this Organisation's shared sessions.", {
+        id: "timeline-cloud-failed",
+        description: "Showing the sessions recorded on this machine.",
+        action: { label: "Retry", onClick: retryCloud },
+      });
+    },
+    [retryCloud],
+  );
+
+  /** `refresh` is defined below and the retry needs it; a ref keeps the two
+   *  from having to be declared in dependency order. */
+  const refreshRef = useRef<(() => void) | null>(null);
   /** Whether the grounded chat occupies the right half of the open Session.
    *  Local, and reset when the Session changes: a chat about the Session you
    *  just left is not a chat about the one you just opened. */
@@ -346,6 +393,9 @@ export function ArtifactsPanel() {
     setSessions([]);
     setLoaded(false);
     setCloudPending(true);
+    // A new tenant gets its own notice if it also fails.
+    cloudFailureToldFor.current = null;
+    toast.dismiss("timeline-cloud-failed");
   }, [activeOrganisationId, openSession]);
 
   // A filter naming a project that is no longer open would hide everything with
@@ -368,6 +418,7 @@ export function ArtifactsPanel() {
       if (seq !== listSeq.current) return; // a newer read owns the state now
       const rows = page.sessions;
       setCloudPending(page.cloudPending);
+      reportCloudFailure(page.cloudFailed, activeOrganisationId);
       // Same-data bailout, the list-side sibling of `sameDetail`: the poll and
       // the capture/git events re-read even when nothing changed, and an
       // unconditional setSessions handed a fresh array identity to the memo'd
@@ -383,7 +434,10 @@ export function ArtifactsPanel() {
     }
     // `projectsKey` stands in for `projectPaths`: same content, stable identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectsKey, projectFilter]);
+  }, [projectsKey, projectFilter, reportCloudFailure, activeOrganisationId]);
+
+  // The retry needs `refresh` and is declared above it — see `refreshRef`.
+  refreshRef.current = refresh;
 
   useEffect(() => {
     void refresh();
@@ -770,7 +824,12 @@ export function ArtifactsPanel() {
                 // there is nothing to show. Rows already on screen keep
                 // rendering through a refresh rather than flashing back to a
                 // skeleton.
-                loading={!loaded || (cloudPending && scoped.length === 0)}
+                // A synced Organisation waits for BOTH halves — the local rows
+                // alone are a partial board, and showing them first meant the
+                // list visibly rewrote itself a moment later. An Organisation
+                // with no cloud half is never pending, so it still paints as
+                // soon as the store answers.
+                loading={!loaded || cloudPending}
                 filtered={activeFacetCount(selection) > 0 || projectFilter !== null}
                 openId={open?.sessionId ?? null}
                 period={period}
@@ -837,7 +896,7 @@ export function ArtifactsPanel() {
                   </aside>
                 </div>
               )
-            ) : !loaded || (cloudPending && sessions.length === 0) ? (
+            ) : !loaded || cloudPending ? (
               // The first board read. Without this the pane falls through to
               // the "recent Sessions" inbox with nothing in it, which reads as
               // an Organisation with no work rather than one still loading.

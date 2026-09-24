@@ -416,6 +416,20 @@ fn parse_enum<T: serde::de::DeserializeOwned>(raw: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(raw.to_string())).ok()
 }
 
+/// Re-read the Organisation's board now.
+///
+/// The retry behind the "couldn't load" notice. Answers whether the board is
+/// still failing, so the caller can leave the notice up rather than guess —
+/// `refresh_board` swallows its own errors by design (a toast every fifteen
+/// seconds on a flaky connection is worse than a stale board).
+#[tauri::command]
+pub async fn artifacts_cloud_refresh(app: AppHandle) -> Result<bool, String> {
+    refresh_board(&app).await;
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(false) };
+    let Some(org_id) = state.org_id() else { return Ok(false) };
+    Ok(!state.board.has_failed(&org_id))
+}
+
 /// The web app's address for a shared Session, for copying or opening.
 ///
 /// `None` when the Session is not on the server, so a caller can offer the id

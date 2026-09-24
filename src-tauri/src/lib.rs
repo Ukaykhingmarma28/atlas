@@ -549,6 +549,7 @@ pub fn run() {
             commands::artifacts_cloud::artifacts_cloud_session,
             commands::artifacts_cloud::artifacts_cloud_payload,
             commands::artifacts_cloud::artifacts_cloud_session_url,
+            commands::artifacts_cloud::artifacts_cloud_refresh,
             commands::artifacts_cloud::artifacts_cloud_comments,
             commands::artifacts_cloud::artifacts_cloud_comment_create,
             commands::artifacts_cloud::artifacts_cloud_comment_update,

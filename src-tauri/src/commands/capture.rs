@@ -1633,7 +1633,9 @@ pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<Bo
     // leave it empty offline where the local Sessions are perfectly readable.
     // The cache is filled on a ticker and by the socket instead.
     let cloud = cloud_snapshot(&app);
-    let (remote, remote_names, cloud_pending) = (cloud.sessions, cloud.names, cloud.pending);
+    let cloud_pending = cloud.pending;
+    let cloud_failed = cloud.failed;
+    let (remote, remote_names) = (cloud.sessions, cloud.names);
 
     tauri::async_runtime::spawn_blocking(move || {
         // One project means the board is filtered, and the caller wants that
@@ -1743,7 +1745,7 @@ pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<Bo
         // and resumed today is today's work.
         out.sort_by(|a, b| b.session.last_activity_at.cmp(&a.session.last_activity_at));
         out.truncate(limit);
-        Ok(BoardPage { sessions: out, cloud_pending })
+        Ok(BoardPage { sessions: out, cloud_pending, cloud_failed })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1762,6 +1764,10 @@ pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<Bo
 pub struct BoardPage {
     pub sessions: Vec<BoardSession>,
     pub cloud_pending: bool,
+    /// The remote half could not be read at all. The rows below are this
+    /// machine's, plus whatever an earlier refresh had cached — a partial view
+    /// the viewer has to label rather than present as the whole board.
+    pub cloud_failed: bool,
 }
 
 /// The Organisation's remote Sessions as of the last refresh, keyed by id.
@@ -1778,6 +1784,8 @@ struct CloudSnapshot {
     /// The first refresh for this Organisation has not finished yet, so an
     /// empty board means "not looked" rather than "nothing here".
     pending: bool,
+    /// Every refresh so far failed: the board is local-only and says so.
+    failed: bool,
 }
 
 fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
@@ -1791,6 +1799,7 @@ fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
         return CloudSnapshot::default();
     };
     let pending = state.board.is_pending(&org_id);
+    let failed = state.board.has_failed(&org_id);
     let board = state.board.snapshot(&org_id);
     let names = board
         .projects
@@ -1805,7 +1814,7 @@ fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
                 .map(|label| (id.clone(), label))
         })
         .collect();
-    CloudSnapshot { sessions: board.sessions, names, pending }
+    CloudSnapshot { sessions: board.sessions, names, pending, failed }
 }
 
 /// One Checkpoint on the board, tagged with the project it came from.

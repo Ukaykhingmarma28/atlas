@@ -148,6 +148,20 @@ impl CloudBoard {
             .is_none_or(|attempted| !attempted)
     }
 
+    /// Has every refresh so far failed?
+    ///
+    /// A third state beyond pending and ready: the board is done waiting but is
+    /// showing a local-only view of an Organisation that has more in it. The
+    /// viewer needs to say so and offer a retry, rather than present a partial
+    /// board as the whole truth. Goes false the moment any refresh succeeds.
+    pub fn has_failed(&self, org_id: &str) -> bool {
+        self.orgs
+            .read()
+            .ok()
+            .and_then(|orgs| orgs.get(org_id).map(|board| board.attempted && !board.loaded))
+            .unwrap_or(false)
+    }
+
     /// Drop everything. Called on an Organisation switch, so the incoming
     /// tenant inherits nothing — not even for a frame.
     pub fn clear(&self) {
@@ -267,6 +281,21 @@ mod tests {
         let board = CloudBoard::new();
         board.upsert("org_1", session("live", "ws_1", "t1"));
         assert!(board.is_pending("org_1"));
+    }
+
+    #[test]
+    fn a_failed_refresh_is_distinguishable_from_an_empty_one() {
+        // Three states, not two: never looked, looked and found nothing, and
+        // could not look. The middle and the last render differently.
+        let board = CloudBoard::new();
+        assert!(!board.has_failed("org_1"), "never looked is not failed");
+
+        board.mark_attempted("org_1");
+        assert!(board.has_failed("org_1"));
+
+        // Any success clears it, even one that finds nothing.
+        board.replace("org_1", vec![], vec![], vec![]);
+        assert!(!board.has_failed("org_1"));
     }
 
     #[test]

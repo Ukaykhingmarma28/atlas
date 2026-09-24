@@ -1054,6 +1054,7 @@ export interface ArtifactsResponses {
   artifacts_session: SessionDetail | null;
   artifacts_cloud_retarget: Unit;
   artifacts_cloud_watch: Unit;
+  artifacts_cloud_refresh: boolean;
   artifacts_cloud_session: SessionDetail;
   artifacts_cloud_payload: ArtifactPayload;
   artifacts_cloud_session_url: string | null;
@@ -1181,6 +1182,8 @@ function threadsFor(sessionId: string): CommentThreads {
 export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
   // Targeting is a Rust-side concern with nothing to answer.
   artifacts_cloud_retarget: (): null => null,
+  // The harness never fails, so a retry always "succeeds".
+  artifacts_cloud_refresh: (): boolean => true,
   artifacts_cloud_watch: (): null => null,
 
   // A teammate's Session comes back in the SAME shape a local one does — the
@@ -1265,8 +1268,9 @@ export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
     const sessions = [...local, remoteBoardRow()].sort((a, b) =>
       b.lastActivityAt.localeCompare(a.lastActivityAt),
     );
-    // The fixture answers in one tick, so the remote half is never outstanding.
-    return { sessions, cloudPending: false };
+    // The fixture answers in one tick, so the remote half is never outstanding
+    // and never fails. Flip `cloudFailed` by hand to exercise the retry notice.
+    return { sessions, cloudPending: false, cloudFailed: false };
   },
   // `None` when the Session is not in that project's store — the panel renders
   // its "this Session is gone" state rather than erroring.
