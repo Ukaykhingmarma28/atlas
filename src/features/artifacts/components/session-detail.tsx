@@ -1,4 +1,5 @@
 import {
+  Children,
   createContext,
   memo,
   useCallback,
@@ -18,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsDown,
+  MessageSquare,
   Filter,
   Download,
   GitCommitHorizontal,
@@ -62,11 +64,14 @@ import {
 import { observeSize } from "../lib/shared-resize-observer";
 import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
-import { anchorKindFor, type Comment } from "../lib/comments-api";
+import { commentActivity } from "../lib/comment-activity";
+import { anchorKindFor, visibleCount, type Comment } from "../lib/comments-api";
 import { CodeBlock, CopyButton, prettyJson } from "./code-block";
+import { AccountAvatar } from "@/features/auth/components/account-avatar";
 import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
 
-import { CommentButton, type CommentActions } from "./comment-thread";
+import { avatarUser, CommentButton, type CommentActions } from "./comment-thread";
+import { filterKeyForKind } from "../lib/comment-threads";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
 
@@ -158,6 +163,9 @@ interface Props {
   /** Whether the grounded chat occupies the other half of the split. */
   chatOpen?: boolean;
   onToggleChat?: () => void;
+  /** Whether the comments panel does. The two share one slot. */
+  commentsOpen?: boolean;
+  onToggleComments?: () => void;
 }
 
 /**
@@ -186,6 +194,8 @@ export function SessionDetail({
   focusCommitSha,
   chatOpen,
   onToggleChat,
+  commentsOpen,
+  onToggleComments,
 }: Props) {
   const [filters, setFilters] = useState<TimelineFilters>(DEFAULT_FILTERS);
   /** Narrow tool calls to failed ones — the "which calls failed" question. */
@@ -231,6 +241,18 @@ export function SessionDetail({
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const s = detail.summary;
+
+  /**
+   * How many discussions the Session carries — the dock's badge.
+   *
+   * Threads, not comments: the button opens a list of conversations, and a
+   * count of individual replies would not match the number of rows behind it.
+   */
+  const threadCount = useMemo(
+    () =>
+      comments ? Object.keys(comments.byAnchor).length + (comments.session.length > 0 ? 1 : 0) : 0,
+    [comments],
+  );
 
   /**
    * Entries with identity carried across detail re-reads.
@@ -429,7 +451,31 @@ export function SessionDetail({
     if (!pendingJump) return;
     const index = groups.findIndex((g) => g.entries.some((e) => e.id === pendingJump));
     if (index === -1) {
-      setFilters((current) => (current.checkpoints ? current : { ...current, checkpoints: true }));
+      // Reveal whatever kind the TARGET is, not Checkpoints.
+      //
+      // This used to unconditionally enable `checkpoints`, which worked only
+      // because the sole jump sources were Checkpoints and chat citations. The
+      // comments panel can address any node, and `thinking` is off by default —
+      // so a comment on a thinking entry set `pendingJump`, found no index,
+      // wrote the same filter state back, and stalled silently with no retry
+      // and no error. A dead click, permanently.
+      const target = detail.entries.find((e) => e.id === pendingJump);
+      if (!target) {
+        setPendingJump(null);
+        return;
+      }
+      const key = filterKeyForKind(target.kind);
+      // The narrowing filters hide entries too, and clearing them is the only
+      // way a jump into a filtered-out tool call or a searched-away row lands.
+      setFailedOnly(false);
+      setTools((current) => (current.size === 0 ? current : new Set()));
+      setSearch("");
+      // `foldRuns` drops all but the last of a consecutive response run, so a
+      // comment on a folded-away response is missing from `groups` even with
+      // every filter on. Clearing all five is what guarantees this effect
+      // terminates instead of re-running against an unchanged state.
+      setFoldResponses(false);
+      setFilters((current) => (current[key] ? current : { ...current, [key]: true }));
       return;
     }
     if (index >= renderCount) {
@@ -614,14 +660,31 @@ export function SessionDetail({
             </div>
 
             <div className="pointer-events-auto flex items-center rounded-full border border-[var(--border)] bg-[var(--card)]/70 shadow-md backdrop-blur-xl">
-              <BarButton
-                label="Next prompt"
-                bare
-                disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
-                onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
-              >
-                <ChevronsDown size={14} strokeWidth={1.6} />
-              </BarButton>
+              {/* On a shared Session this slot finds discussions; on a local
+               *  one there are none to find, so it keeps the jump it always
+               *  had. Comments are the thing that is hard to locate in a long
+               *  record — the next prompt is only ever a scroll away. */}
+              {comments ? (
+                <BarButton
+                  label={commentsOpen ? "Close comments" : "Comments"}
+                  bare
+                  active={commentsOpen}
+                  badge={threadCount > 0 ? threadCount : undefined}
+                  disabled={!onToggleComments}
+                  onClick={onToggleComments}
+                >
+                  <MessageSquare size={14} strokeWidth={1.6} />
+                </BarButton>
+              ) : (
+                <BarButton
+                  label="Next prompt"
+                  bare
+                  disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
+                  onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
+                >
+                  <ChevronsDown size={14} strokeWidth={1.6} />
+                </BarButton>
+              )}
               <span aria-hidden className="h-4 w-px bg-[var(--border)]" />
               <BarButton
                 label={chatOpen ? "Close chat" : "Ask about this session"}
@@ -1137,36 +1200,38 @@ const Row = memo(function Row({
           )}
           {group.kind === "tool_call" && <CallStat calls={group.entries} />}
 
-          {/* Copy the entry, from the row's own meta line. A prompt and a
-           *  response are the two things anyone lifts out of a Session, and
-           *  hanging the control off the label keeps it out of the prose.
-           *
-           *  The spacer is unconditional now: a row with a comment button and
-           *  no copy button still needs its controls pushed right, and two
-           *  independent `flex-1`s would have split the gap between them. */}
+          {/* The row's controls, pushed right. The spacer is unconditional: a
+           *  row with a comment button and no copy button still needs them
+           *  over there, and two independent `flex-1`s would split the gap. */}
           <span className="flex-1" />
-          {/* Comment first, copy second. The comment button is the one that
-           *  grows — it carries faces and a count once a discussion exists —
-           *  so putting it outermost would make the copy button's position
-           *  depend on how many people had replied. Every kind can be
-           *  commented on, not just the two that can be copied: a tool call and
-           *  a Checkpoint are exactly the things worth asking about. */}
-          {comments && (
-            <CommentButton
-              anchorKind={anchorKindFor(group.kind)}
-              anchorId={head.id}
-              comments={comments.byAnchor[head.id]}
-              actions={comments.actions}
-              directory={comments.directory}
-              className="-my-1 self-center group-hover/row:opacity-100"
-            />
-          )}
-          {(group.kind === "prompt" || group.kind === "response") && head.text && (
-            <CopyButton
-              text={head.text}
-              className="-my-1 self-center group-hover/row:opacity-100"
-            />
-          )}
+          <ActionCluster
+            // A discussed row keeps its controls on screen. Hiding them behind
+            // hover was the bug: the comment pill was visible (it has to be —
+            // it is how a discussion announces itself) while the copy button
+            // beside it was not, so the row showed a lone pill with a hole
+            // next to it until the pointer arrived.
+            pinned={comments ? visibleCount(comments.byAnchor[head.id]) > 0 : false}
+          >
+            {/* Comment first, copy second. The comment button is the one that
+             *  grows — faces and a count once a discussion exists — so
+             *  outermost would make the copy button's position depend on how
+             *  many people had replied. Every kind can be commented on, not
+             *  just the two that can be copied: a tool call and a Checkpoint
+             *  are exactly the things worth asking about. */}
+            {comments && (
+              <CommentButton
+                bare
+                anchorKind={anchorKindFor(group.kind)}
+                anchorId={head.id}
+                comments={comments.byAnchor[head.id]}
+                actions={comments.actions}
+                directory={comments.directory}
+              />
+            )}
+            {(group.kind === "prompt" || group.kind === "response") && head.text && (
+              <CopyButton text={head.text} className="opacity-100" />
+            )}
+          </ActionCluster>
         </div>
 
         {group.kind === "tool_call" ? (
@@ -1182,7 +1247,69 @@ const Row = memo(function Row({
             </div>
           </Clamp>
         )}
+
+        {comments && (
+          <ActivityLog comments={comments.byAnchor[head.id]} directory={comments.directory} />
+        )}
       </div>
+    </div>
+  );
+});
+
+/**
+ * What was said about this node, under it.
+ *
+ * The record shows the work; these lines show the conversation about the work.
+ * A count on a button says a discussion exists — it does not say a colleague
+ * replied to you twenty minutes ago, which is the thing worth noticing while
+ * reading past.
+ *
+ * Deliberately not interactive: the thread lives one click away in the pill
+ * above, and a second way to open it would be a second place for the popover's
+ * state to live.
+ */
+const ActivityLog = memo(function ActivityLog({
+  comments,
+  directory,
+}: {
+  comments: Comment[] | undefined;
+  directory: OrgDirectory;
+}) {
+  const lines = useMemo(() => commentActivity(comments, directory), [comments, directory]);
+  if (lines.length === 0) return null;
+
+  return (
+    // The lines are 14px faces against 11px text, so they read as a dense block
+    // at a gap that would be fine for prose. Given room they read as a list.
+    <div className="mt-4 flex flex-col gap-2">
+      {lines.map((line) => {
+        const member = directory.byId.get(line.authorId) ?? null;
+        return (
+          <div key={line.id} className="flex min-w-0 items-center gap-1.5">
+            {member ? (
+              <AccountAvatar user={avatarUser(member)} size={14} />
+            ) : (
+              <span className="size-[14px] shrink-0 rounded-full bg-[var(--atlas-element-selected)]" />
+            )}
+            <span className="min-w-0 truncate text-xs text-[var(--muted-foreground)]">
+              <span className="text-[var(--secondary-foreground)]">{line.actorName}</span>{" "}
+              {!line.isReply
+                ? "commented on this"
+                : line.self
+                  ? "replied to their own comment"
+                  : line.targetName
+                    ? `replied to ${line.targetName}'s comment`
+                    : "replied to a comment"}
+              <span aria-hidden className="px-1 text-[var(--atlas-text-disabled)]">
+                ·
+              </span>
+              <span className="text-[var(--atlas-text-disabled)]">
+                {timeAgo(line.at, { suffix: true })}
+              </span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 });
@@ -2129,6 +2256,40 @@ function Meta({ label, value }: { label: string; value: string }) {
  * carries those, and a bordered button inside a bordered pill reads as a
  * double outline at this scale.
  */
+/**
+ * The row's controls as one pill.
+ *
+ * Grouped rather than free-floating because their visibility rules differ: a
+ * discussed row's comment button must always be on screen — that pill is how a
+ * discussion announces itself — while copy has always been hover-only. Side by
+ * side that read as a pill with a gap beside it, waiting for something to
+ * appear. One surround, one rule: if any control in the group is pinned, the
+ * whole group is.
+ *
+ * Renders nothing when it has no children, so an unsynced Checkpoint row does
+ * not carry an empty pill.
+ */
+function ActionCluster({ pinned, children }: { pinned: boolean; children: ReactNode }) {
+  const shown = Children.toArray(children).filter(Boolean);
+  if (shown.length === 0) return null;
+  return (
+    <span
+      className={cn(
+        "-my-1 flex shrink-0 items-center gap-0.5 self-center rounded-full border border-border bg-card px-0.5 py-0.5 transition-opacity duration-150",
+        pinned ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover/row:opacity-100",
+      )}
+    >
+      {shown.map((child, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <span key={i} className="flex items-center">
+          {i > 0 && <span aria-hidden className="mr-0.5 h-3 w-px bg-[var(--border)]" />}
+          {child}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function BarButton({
   label,
   active,

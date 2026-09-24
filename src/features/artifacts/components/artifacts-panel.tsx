@@ -38,6 +38,7 @@ import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock
 import { CheckpointsPicker } from "./checkpoints-picker";
 import { ExportButton } from "./export-button";
 import { SessionChatPanel } from "./session-chat-panel";
+import { SessionCommentsPanel } from "./session-comments-panel";
 import { SessionDetail } from "./session-detail";
 import { TimelineInbox } from "./timeline-inbox";
 import { TimelineResults } from "./timeline-results";
@@ -79,6 +80,15 @@ function sameBoard(a: BoardSession[], b: BoardSession[]): boolean {
 
 /** The chat half of the split. Wide enough for a code block in an answer. */
 const CHAT_WIDTH = 420;
+
+/**
+ * The comments half.
+ *
+ * Narrower than the chat by design rather than by symmetry: a chat answer
+ * carries code blocks and diagrams, a comment carries a sentence or two. At the
+ * chat's width the rows were mostly empty and the transcript paid for it.
+ */
+const COMMENTS_WIDTH = 294;
 
 /**
  * The card's inset from the tab's edges, in px.
@@ -336,7 +346,24 @@ export function ArtifactsPanel() {
   /** Whether the grounded chat occupies the right half of the open Session.
    *  Local, and reset when the Session changes: a chat about the Session you
    *  just left is not a chat about the one you just opened. */
-  const [chatOpen, setChatOpen] = useState(false);
+  /**
+   * Which side panel is open, if any.
+   *
+   * One slot, not two. The pane is ~420px and both panels are *about* the
+   * transcript — opening them together would leave the record narrower than the
+   * thing being discussed.
+   */
+  const [sidePanel, setSidePanel] = useState<"chat" | "comments" | null>(null);
+  /**
+   * The open panel's width, held through the close animation.
+   *
+   * Reading it from `sidePanel` directly would snap the aside to the other
+   * panel's width on the frame it closes, because `null` has no width of its
+   * own — the slide-out would jump before it moved.
+   */
+  const lastPanelWidth = useRef(CHAT_WIDTH);
+  if (sidePanel) lastPanelWidth.current = sidePanel === "chat" ? CHAT_WIDTH : COMMENTS_WIDTH;
+  const panelWidth = lastPanelWidth.current;
 
   /** True while the divider is being dragged — keeps it lit past the pointer. */
   const [resizing, setResizing] = useState(false);
@@ -525,7 +552,7 @@ export function ArtifactsPanel() {
   );
 
   useEffect(() => {
-    setChatOpen(false);
+    setSidePanel(null);
   }, [open?.sessionId]);
 
   useEffect(() => {
@@ -872,24 +899,39 @@ export function ArtifactsPanel() {
                           : null
                       }
                       focusCommitSha={open.commitSha}
-                      chatOpen={chatOpen}
-                      onToggleChat={() => setChatOpen((v) => !v)}
+                      chatOpen={sidePanel === "chat"}
+                      onToggleChat={() =>
+                        setSidePanel((current) => (current === "chat" ? null : "chat"))
+                      }
+                      commentsOpen={sidePanel === "comments"}
+                      onToggleComments={() =>
+                        setSidePanel((current) => (current === "comments" ? null : "comments"))
+                      }
                     />
                   </div>
                   <aside
                     className="atlas-split shrink-0 overflow-hidden border-l border-[var(--border)]"
-                    style={{ width: chatOpen ? CHAT_WIDTH : 0 }}
-                    aria-hidden={!chatOpen}
+                    style={{ width: sidePanel ? panelWidth : 0 }}
+                    aria-hidden={sidePanel === null}
                   >
                     {/* Fixed inner width so the content does not reflow through
-                     *  the animation — a chat that re-wraps every frame while
-                     *  opening reads as a glitch, not a transition. */}
-                    <div style={{ width: CHAT_WIDTH }} className="h-full">
-                      {chatOpen && (
+                     *  the animation — a panel that re-wraps every frame while
+                     *  opening reads as a glitch, not a transition. It tracks
+                     *  the *last* panel shown, so closing animates out at the
+                     *  width it opened at rather than snapping first. */}
+                    <div style={{ width: panelWidth }} className="h-full">
+                      {sidePanel === "chat" && (
                         <SessionChatPanel
                           detail={detail}
                           projectPath={open.projectPath}
-                          onClose={() => setChatOpen(false)}
+                          onClose={() => setSidePanel(null)}
+                        />
+                      )}
+                      {sidePanel === "comments" && comments && (
+                        <SessionCommentsPanel
+                          detail={detail}
+                          comments={comments}
+                          onClose={() => setSidePanel(null)}
                         />
                       )}
                     </div>

@@ -91,7 +91,7 @@ export const MAX_COUNT = 9;
  * is given, and the membership id would recolour the same person per
  * Organisation.
  */
-function avatarUser(member: OrgMember): AccountUser {
+export function avatarUser(member: OrgMember): AccountUser {
   return {
     id: member.userId,
     name: member.name,
@@ -120,10 +120,13 @@ export function facesOf(comments: Comment[], directory: OrgDirectory): AccountUs
 /**
  * The button that opens a thread, and the thread itself.
  *
- * Hidden until hover when the anchor has nothing on it. Once it does, it is
- * **permanently visible and shows who is talking** — a conversation you cannot
- * see without hovering every row is a conversation nobody reads, and a bare
- * count says a discussion happened without saying whose.
+ * Shows **who is talking** once a discussion exists — a bare count says one
+ * happened without saying whose, and a conversation you cannot see without
+ * hovering every row is a conversation nobody reads.
+ *
+ * `bare` drops the pill chrome for a caller that groups this with other
+ * controls and draws the surround itself (see `ActionCluster` in
+ * `session-detail.tsx`).
  */
 export const CommentButton = memo(function CommentButton({
   anchorKind,
@@ -132,6 +135,7 @@ export const CommentButton = memo(function CommentButton({
   actions,
   directory,
   className,
+  bare,
   label = "Comment",
 }: {
   anchorKind: AnchorKind;
@@ -140,6 +144,8 @@ export const CommentButton = memo(function CommentButton({
   actions: CommentActions;
   directory: OrgDirectory;
   className?: string;
+  /** Rendered inside a shared surround; draw no border or fill of my own. */
+  bare?: boolean;
   label?: string;
 }) {
   const count = visibleCount(comments);
@@ -153,13 +159,15 @@ export const CommentButton = memo(function CommentButton({
       <Popover.Trigger
         aria-label={count > 0 ? `${label} (${count})` : label}
         className={cn(
-          "flex h-5 shrink-0 cursor-pointer items-center rounded-full text-[var(--atlas-text-disabled)] transition-all duration-150 hover:text-[var(--foreground)] focus-visible:opacity-100",
-          count > 0
-            ? "gap-1 border border-border bg-card pr-1.5 pl-0.5 text-[var(--secondary-foreground)] opacity-100 hover:bg-[var(--atlas-element-hover)]"
-            : cn(
-                "gap-1 px-1 opacity-0 hover:bg-[var(--atlas-element-hover)]",
-                className ?? "group-hover/row:opacity-100",
-              ),
+          "flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-full text-[var(--atlas-text-disabled)] transition-all duration-150 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:opacity-100",
+          count > 0 && "text-[var(--secondary-foreground)]",
+          // Inside a cluster the surround belongs to the cluster, which also
+          // owns when the whole group is visible.
+          bare
+            ? cn(count > 0 ? "pl-0.5 pr-1.5" : "px-1", className)
+            : count > 0
+              ? "border border-border bg-card pl-0.5 pr-1.5 opacity-100"
+              : cn("px-1 opacity-0", className ?? "group-hover/row:opacity-100"),
         )}
       >
         {count > 0 ? (
