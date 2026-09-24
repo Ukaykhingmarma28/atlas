@@ -1500,7 +1500,7 @@ pub async fn capture_session_summary(
         // the on-disk JSONL import of the same session is deliberately a
         // separate row and is not what a live composer is asking about.
         let mut row_id = None;
-        for source in [Source::Acp, Source::Cersei] {
+        for source in [Source::Acp, Source::Native] {
             row_id = store
                 .session_id_for(&workspace_id, source, &session_id)
                 .map_err(|e| e.to_string())?;
@@ -2457,8 +2457,8 @@ fn open_reader_raw(project_path: &str) -> Result<Option<Store>, atlas_checkpoint
 /// input/output token split where ACP agents only surface a context gauge, and
 /// the importer needs to tell an in-app Session from one it read off disk.
 fn source_for(plugin_id: &str) -> Source {
-    if plugin_id == atlas_native_agent::CERSEI_AGENT_ID {
-        Source::Cersei
+    if plugin_id == atlas_native_agent::ATLAS_AGENT_ID {
+        Source::Native
     } else {
         Source::Acp
     }

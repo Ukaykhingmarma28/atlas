@@ -147,7 +147,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 
 ## Agent runtime
 
-Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritten. Two kinds of agent run behind one seam: the **native agent** — the Codex engine ported into Atlas (`crates/atlas-native-agent`, ADR-0003), running in-process — and any number of **external ACP agents** — subprocesses speaking Agent Client Protocol (JSON-RPC over stdio). Nothing above the seam knows which it is talking to.
+Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritten. Two kinds of agent run behind one seam: the **native agent** — Atlas's own engine, a hard fork vendored under `vendor/atlas-engine` and reached through `crates/atlas-native-agent` (ADR-0003, ADR-0011), running in-process — and any number of **external ACP agents** — subprocesses speaking Agent Client Protocol (JSON-RPC over stdio). Nothing above the seam knows which it is talking to.
 
 **A fresh install has no ACP agents at all.** Only the native agent is offered. An external agent exists exactly when the user installed it from the Marketplace, which writes the single entry in the installed-agents map; nothing else makes an agent runnable. Finding a binary on `PATH` is a *detection* — an offer the user can accept, never a spawn candidate. See [ADR-0002](docs/adr/0002-no-default-acp-agents.md).
 
@@ -158,7 +158,7 @@ Atlas's agent stack is a port of Zed's, taken as a mechanism rather than rewritt
 | Implementation | Crate | Drives |
 |---|---|---|
 | external ACP agent | `atlas-agent-servers` | a subprocess over JSON-RPC/stdio |
-| native agent | `atlas-native-agent` | the ported Codex engine, in-process |
+| native agent | `atlas-native-agent` | the vendored `atlas-engine`, in-process |
 
 Beyond `prompt` / `cancel` / `authenticate`, **every optional behaviour is capability-gated** — either a `supports_*` predicate (`supports_load_session`, `supports_resume_session`, `supports_close_session`, `supports_logout`, `supports_http_mcp`) or an `Option<Arc<dyn …>>` sub-trait the connection returns only when the agent advertised it (`model_selector`, `session_modes`, `session_config_options`, `session_list`, `truncate`, `retry`, `set_title`, `telemetry`). A caller asks the connection what it can do; it never asks who it is.
 
@@ -194,7 +194,7 @@ Deltas return over the single `atlas:agents` channel, payload-typed by `kind`.
 
 ## Crates (`crates/`)
 
-All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members of the **root `[workspace]`** bar one (`atlas-kb-server`, below). The repo went without one for a long time, for a real reason: the ported stack pins `agent-client-protocol` 2.0 with its schema crate pinned exactly, and no single Cargo resolution could hold that alongside the old stack's exact `=1.4.0` pin. That collision is why the port had to land as one change rather than gradually. With the old stack gone the collision is gone, and the workspace landed (issue #38) so the vendored Codex engine resolves against the same graph as the app. Consequences worth knowing: one `Cargo.lock` and one `target/` at the repo root, and `[patch.crates-io]` plus every `[profile.*]` live in the root `Cargo.toml` — cargo honors both only there. `crates/atlas-kb-server` is deliberately excluded (it is built on demand at runtime under its own profile).
+All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members of the **root `[workspace]`** bar one (`atlas-kb-server`, below). The repo went without one for a long time, for a real reason: the ported stack pins `agent-client-protocol` 2.0 with its schema crate pinned exactly, and no single Cargo resolution could hold that alongside the old stack's exact `=1.4.0` pin. That collision is why the port had to land as one change rather than gradually. With the old stack gone the collision is gone, and the workspace landed (issue #38) so the vendored engine resolves against the same graph as the app. Consequences worth knowing: one `Cargo.lock` and one `target/` at the repo root, and `[patch.crates-io]` plus every `[profile.*]` live in the root `Cargo.toml` — cargo honors both only there. `crates/atlas-kb-server` is deliberately excluded (it is built on demand at runtime under its own profile).
 
 ### The ported ACP stack
 
@@ -206,7 +206,7 @@ All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members
 | `atlas-agent-manager` | Who is connected, and which sessions are open on them. Ported from Zed's `AgentConnectionStore`, with the session ownership Zed spreads across its per-agent view folded in. |
 | `atlas-agent-delta` | Projects ported-thread events into the frozen `SessionDelta` wire. Reconciles the thread's one-entry-per-message model with the wire's one-message-per-contiguous-run model. |
 | `atlas-agent-wire` | The frozen session-delta wire shapes, enforced by `tests/contract.rs`. |
-| `atlas-native-agent` | The ported Codex engine on the `AgentConnection` seam — the native agent as just another connection. Its agent id is still the literal `"cersei"`: a storage key, not a live reference to the deleted SDK. Renaming it orphans every existing thread's history. |
+| `atlas-native-agent` | The vendored engine (`vendor/atlas-engine`) on the `AgentConnection` seam — the native agent as just another connection. Its agent id is the literal `"atlas-agent"`: a storage key every thread row resolves through, so renaming it is a data migration (ADR-0011). |
 | `atlas-agent-transcript` | Where an agent keeps its record of a conversation, and how to read Atlas's own text back out of one. The Claude JSONL replay it used to hold is gone. |
 | `atlas-thread-metadata` | The app-owned thread-metadata store (`threads.db`) — Atlas's only source for the sidebar and history. Metadata only, never transcript content. Ported from Zed's `ThreadMetadataStore`. See ADR-0001. |
 | `atlas-bus` | Event broadcaster + middleware pipeline seam: a `tokio::sync::broadcast`-backed fan-out (lagging subscribers drop rather than block the producer), plus `OutboundPipeline`. Generic — no dependency on any agent or ACP type. |
@@ -323,7 +323,7 @@ atlas/
 │   └── atlas-kb-server            self-contained KB static-server binary
 │
 ├── vendor/                        vendored source, workspace members
-│   └── codex                        the engine behind Atlas Agent (ADR-0004)
+│   └── atlas-engine                 the engine behind Atlas Agent (ADR-0004, ADR-0011)
 │
 ├── scripts/                       build/release helpers (with-posthog-env.mjs)
 ├── landing/                       marketing site source
@@ -344,7 +344,7 @@ atlas/
 
 ## Gotchas
 
-- **The Cersei patch table is gone (#54).** The `cersei-provider`/`cersei-agent` `[patch.crates-io]` overrides and their compile guards were deleted with the Cersei path itself. The two failure classes they fixed are still guarded, by tests against the engine that replaced them rather than by a patch table: a chunk-split fixture that splits an SSE frame at every byte position, and a cancel test that asserts on the filesystem — the killed command's marker file never appears. See the root `Cargo.toml`'s `[patch.crates-io]` comment.
+- **The old SDK's patch table is gone (#54).** The two vendored-fork `[patch.crates-io]` overrides and their compile guards were deleted with the previous native path itself. The two failure classes they fixed are still guarded, by tests against the engine that replaced them rather than by a patch table: a chunk-split fixture that splits an SSE frame at every byte position, and a cancel test that asserts on the filesystem — the killed command's marker file never appears. See the root `Cargo.toml`'s `[patch.crates-io]` comment.
 - **`vite.config.ts`'s `dedupe` is load-bearing.** Lazy-loaded language packages (`lang-json`, `lang-rust`, …) each transitively import `@codemirror/{state,view,language}` and `@lezer/*`; without `dedupe`, Rollup can ship two copies in the production bundle. `EditorView.theme(...)` then registers against one copy's `StyleModule` while the `EditorView` construction uses the other, and the theme silently no-ops — text renders unstyled. Same story for `pdfjs-dist`: two copies mismatch the worker against the main-thread API version and PDF rendering fails. Dev mode does not reproduce either failure (Vite serves a single pre-bundled instance) — this only shows up in production builds.
 - **Release-profile `panic = "unwind"` is required.** The local-LLM loader (`atlas-embed`, used by memory chat) `catch_unwind`s candle's Metal kernel-compile panic to fall back to CPU. `panic = "abort"` would crash the app outright instead of degrading gracefully; the cost is a small amount of extra binary size for unwind tables.
 - **The single-instance plugin is release-only.** Registered behind `#[cfg(not(debug_assertions))]` in `src-tauri/src/lib.rs`. Registering it in debug builds kills `tauri dev` the instant it starts whenever the installed `/Applications/Atlas.app` is already running — the dev process gets treated as the "second instance," forwards its argv, and exits.

@@ -27,8 +27,8 @@ use atlas_acp_thread::{AcpThreadEvent, AgentConnection, AgentId};
 use atlas_agent_servers::ThreadEventSink;
 use atlas_native_agent::engine::config::{EngineHome, EngineProvider, EngineSettings};
 use atlas_native_agent::engine::connection::EngineConnection;
-use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
-use codex_test_binary_support::{
+use atlas_engine_sandboxing::landlock::ATLAS_AGENT_LINUX_SANDBOX_ARG0;
+use atlas_engine_test_binary_support::{
     TestBinaryDispatchGuard, TestBinaryDispatchMode, configure_test_binary_dispatch,
 };
 use serde_json::json;
@@ -42,7 +42,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 //
 // On macOS the engine sandboxes a command with `/usr/bin/sandbox-exec`, which
 // is already on disk. Linux has no equivalent: `SandboxType::LinuxSeccomp`
-// re-execs a helper binary whose *arg0* is `codex-linux-sandbox`, and if the
+// re-execs a helper binary whose *arg0* is `atlas-engine-linux-sandbox`, and if the
 // embedder supplied no path for one the engine returns
 // `MissingLinuxSandboxExecutable` from the sandbox transform — before spawning
 // anything. The tool call fails, the turn ends normally, and the three tests
@@ -53,7 +53,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 // Atlas ships macOS and has no arg0 dispatch, so the app has no helper to
 // offer (see `EngineSettings::linux_sandbox_exe`). The tests do: upstream's own
 // suites make the *test binary* the helper, and this is that same construction
-// — `vendor/codex/core/tests/suite/mod.rs`. The `#[ctor]` runs before any test
+// — `vendor/atlas-engine/core/tests/suite/mod.rs`. The `#[ctor]` runs before any test
 // thread exists, which is what makes the `set_var`/PATH work inside it sound.
 // Re-entered under one of the helper identities it dispatches and never
 // returns; on the ordinary first entry it installs the arg0 aliases and hands
@@ -62,13 +62,13 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 static TEST_BINARY_DISPATCH: Option<TestBinaryDispatchGuard> = {
     configure_test_binary_dispatch("atlas-native-agent-tests", |exe_name, argv1| {
         #[cfg(unix)]
-        if argv1 == Some(codex_exec_server::CODEX_ARG0_EXEC_HELPER_ARG1) {
+        if argv1 == Some(atlas_engine_exec_server::ATLAS_AGENT_ARG0_EXEC_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if argv1 == Some(codex_exec_server::CODEX_FS_HELPER_ARG1) {
+        if argv1 == Some(atlas_engine_exec_server::ATLAS_AGENT_FS_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if exe_name == CODEX_LINUX_SANDBOX_ARG0 {
+        if exe_name == ATLAS_AGENT_LINUX_SANDBOX_ARG0 {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         TestBinaryDispatchMode::InstallAliases
@@ -78,13 +78,13 @@ static TEST_BINARY_DISPATCH: Option<TestBinaryDispatchGuard> = {
 /// The helper path the engine is handed on Linux, and nothing elsewhere.
 ///
 /// The alias the guard installed is preferred over `current_exe()` because its
-/// basename is `codex-linux-sandbox`, which is what re-triggers arg0 dispatch
+/// basename is `atlas-engine-linux-sandbox`, which is what re-triggers arg0 dispatch
 /// on bubblewrap builds that cannot pass `--argv0`.
 #[cfg(target_os = "linux")]
 fn test_linux_sandbox_exe() -> Option<PathBuf> {
     TEST_BINARY_DISPATCH
         .as_ref()
-        .and_then(|guard| guard.paths().codex_linux_sandbox_exe.clone())
+        .and_then(|guard| guard.paths().atlas_engine_linux_sandbox_exe.clone())
         .or_else(|| std::env::current_exe().ok())
 }
 
@@ -283,7 +283,7 @@ async fn harness_full(
             format!("{}/v1", server.uri()),
             Some(key_var.to_string()),
         ),
-        Some("gpt-5-codex".to_string()),
+        Some("test-model".to_string()),
         home.path().to_path_buf(),
     );
     // Production leaves this `None`. Without it every sandboxed command in this
@@ -312,7 +312,7 @@ async fn harness_full(
     });
 
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         None,
@@ -1241,7 +1241,7 @@ async fn the_engine_is_handed_the_memory_server_and_a_turn_calls_memory_search()
     let asked = offering.asked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     assert_eq!(asked.len(), 1, "one offer per session request");
     assert!(asked[0].http_mcp);
-    assert_eq!(asked[0].agent_id.as_str(), "cersei");
+    assert_eq!(asked[0].agent_id.as_str(), "atlas-agent");
     assert_eq!(asked[0].session_id, None, "a new thread has no id until the engine answers");
     assert_eq!(
         *offering.settled.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
@@ -1313,7 +1313,7 @@ async fn a_row_from_before_the_engine_changed_opens_instead_of_erroring() {
         .connection
         .clone()
         .resume_session(
-            acp::SessionId::new("a-cersei-era-session-id"),
+            acp::SessionId::new("a-pre-rename-session-id"),
             vec![PathBuf::from(".")],
             Some("An old conversation".into()),
         )
@@ -1359,12 +1359,12 @@ async fn the_engine_advertises_load_because_reopening_genuinely_replays() {
 }
 
 #[tokio::test]
-async fn the_native_agent_keeps_the_stored_agent_id_across_the_swap() {
-    // D7: the stored agent id is a storage key, not a display name. Both
-    // engines answer to "cersei" so every row written before the switch still
-    // resolves after it.
+async fn the_native_agent_answers_to_its_stored_agent_id() {
+    // The stored agent id is a storage key, not a display name: every thread
+    // row the store writes for the native agent resolves through this string
+    // (ADR-0011), so the connection must report exactly it.
     let h = harness(assistant_turn("ok")).await;
-    assert_eq!(h.connection.agent_id().as_str(), "cersei");
+    assert_eq!(h.connection.agent_id().as_str(), "atlas-agent");
 }
 
 #[tokio::test]

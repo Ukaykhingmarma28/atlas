@@ -70,7 +70,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   const queueLength = useChatStore((s) =>
     acpSessionId ? (s.pendingPermissions[acpSessionId]?.length ?? 0) : 0,
   );
-  const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "cersei");
+  const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "atlas-agent");
   const { popPermission, applyExitPlanSelection } = useChatStore.use.actions();
 
   const [draft, setDraft] = useState("");

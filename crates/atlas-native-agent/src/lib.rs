@@ -8,18 +8,18 @@
 //!
 //! # One engine, no switch
 //!
-//! The Cersei runtime that used to back this seam is gone (#54). The ported
-//! Codex engine in [`engine`] is the only implementation, and it is no longer
-//! behind a cargo feature — the development-time switch existed so the Cersei
-//! path could keep shipping while the port was proved, and there is no longer
-//! a second path for it to select.
+//! The previous native runtime that used to back this seam is gone (#54). The ported
+//! vendored engine in [`engine`] is the only implementation, and it is no longer
+//! behind a cargo feature — the development-time switch existed so the previous
+//! native path could keep shipping while the port was proved, and there is no
+//! longer a second path for it to select.
 //!
 //! What survived the deletion, deliberately:
 //!
-//! - **[`CERSEI_AGENT_ID`]** — the stored agent id, still the literal string
-//!   `"cersei"`. It is a **storage key**, not a name: every recorded thread
-//!   resolves through it, so changing it would orphan history that already
-//!   exists. It outlives the retirement of the name (D7).
+//! - **[`ATLAS_AGENT_ID`]** — the stored agent id, the literal string
+//!   `"atlas-agent"`. It is a **storage key**: every recorded thread resolves
+//!   through it, so it is the one string the app and the store must agree on
+//!   (ADR-0011).
 //! - **[`AgentSessionEffort`]** — the native-only control the app reaches for
 //!   through a downcast.
 //!
@@ -44,11 +44,12 @@ use anyhow::Result;
 
 /// The native agent's stored id.
 ///
-/// **Still `"cersei"`, and that is not an oversight.** The name is retired; the
-/// id is a storage key that every recorded thread resolves through, and it is
-/// deliberately stable across the engine swap so existing rows keep working
-/// (D7, CONTEXT.md). Renaming it is a data migration, not a rename.
-pub const CERSEI_AGENT_ID: &str = "cersei";
+/// A storage key every recorded thread resolves through, so it must match the
+/// frontend's `NATIVE_AGENT_ID` and the thread-metadata store's rows. It was
+/// renamed from the retired id in ADR-0011; rows under the old id were dropped
+/// by the store's V3 migration rather than aliased. Renaming it again is a data
+/// migration, not a rename.
+pub const ATLAS_AGENT_ID: &str = "atlas-agent";
 
 /// Per-session reasoning effort — a native-only control.
 ///

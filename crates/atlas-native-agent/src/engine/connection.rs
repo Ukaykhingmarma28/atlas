@@ -1,6 +1,6 @@
 //! The `AgentConnection` the app plugs into, over the ported engine.
 //!
-//! This was the counterpart of the Cersei connection, now deleted (#54), and it
+//! This was the counterpart of the previous native connection, now deleted (#54), and it
 //! implements the same trait, because that is the whole point of the seam: the
 //! app cannot tell which engine is behind it.
 //!
@@ -47,17 +47,17 @@ use atlas_acp_thread::{
 };
 use crate::AgentSessionEffort;
 use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers, ThreadEventSink};
-use codex_app_server_client::InProcessAppServerClient;
-use codex_app_server_client::InProcessAppServerRequestHandle;
+use atlas_engine_app_server_client::InProcessAppServerClient;
+use atlas_engine_app_server_client::InProcessAppServerRequestHandle;
 // The v2 protocol types are re-exported at the crate root
 // (`pub use protocol::v2::*`), so this alias is the whole vocabulary.
-use codex_app_server_protocol as v2;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server::in_process::InProcessServerEvent;
-use codex_login::auth::ExternalAuth;
-use codex_protocol::openai_models::ReasoningEffort;
+use atlas_engine_app_server_protocol as v2;
+use atlas_engine_app_server_protocol::ClientRequest;
+use atlas_engine_app_server_protocol::RequestId;
+use atlas_engine_app_server_protocol::ServerRequest;
+use atlas_engine_app_server::in_process::InProcessServerEvent;
+use atlas_engine_login::auth::ExternalAuth;
+use atlas_engine_protocol::openai_models::ReasoningEffort;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use tokio::sync::oneshot;
@@ -653,7 +653,7 @@ impl EngineConnection {
         }
     }
 
-    /// Reasoning effort for one session — native-only, like the Cersei path.
+    /// Reasoning effort for one session — native-only, like the previous native path.
     pub fn session_effort(
         &self,
         session_id: &acp::SessionId,
@@ -764,7 +764,7 @@ async fn pump_events(
                         if let Err(e) = client
                             .reject_server_request(
                                 answer.request_id,
-                                codex_app_server_protocol::JSONRPCErrorError {
+                                atlas_engine_app_server_protocol::JSONRPCErrorError {
                                     code: -32603,
                                     message,
                                     data: None,
@@ -833,7 +833,7 @@ async fn pump_events(
 /// deltas for one item, concatenation is exactly what the thread would have
 /// done one call at a time — minus the per-call fan-out.
 fn coalesce_message_deltas(events: Vec<InProcessServerEvent>) -> Vec<InProcessServerEvent> {
-    use codex_app_server_protocol::ServerNotification;
+    use atlas_engine_app_server_protocol::ServerNotification;
     let mut out: Vec<InProcessServerEvent> = Vec::with_capacity(events.len());
     for event in events {
         if let (
@@ -869,7 +869,7 @@ fn handle_server_request(
     request: ServerRequest,
     answers: &tokio::sync::mpsc::UnboundedSender<ServerAnswer>,
 ) {
-    use codex_app_server_protocol::ServerRequest as Req;
+    use atlas_engine_app_server_protocol::ServerRequest as Req;
 
     // `surface` and `item_id` exist only for the decision log below: an
     // approval that is answered and then goes nowhere leaves no other trace.
@@ -1735,7 +1735,7 @@ impl AgentConnection for EngineConnection {
         };
         let requests = self.requests.clone();
         let request_ids = self.request_ids.clone();
-        // Fire and forget, like the Cersei path: the caller is awaiting the
+        // Fire and forget, like the previous native path: the caller is awaiting the
         // turn's own completion, and the engine answers an interrupt by
         // finishing that turn as `Interrupted`.
         //
@@ -1825,7 +1825,7 @@ mod tests {
 
     fn message_delta(thread: &str, item: &str, delta: &str) -> InProcessServerEvent {
         InProcessServerEvent::ServerNotification(Box::new(
-            codex_app_server_protocol::ServerNotification::AgentMessageDelta(
+            atlas_engine_app_server_protocol::ServerNotification::AgentMessageDelta(
                 v2::AgentMessageDeltaNotification {
                     thread_id: thread.to_string(),
                     turn_id: "turn-1".to_string(),
@@ -1839,7 +1839,7 @@ mod tests {
     fn delta_text(event: &InProcessServerEvent) -> Option<&str> {
         match event {
             InProcessServerEvent::ServerNotification(n) => match n.as_ref() {
-                codex_app_server_protocol::ServerNotification::AgentMessageDelta(p) => {
+                atlas_engine_app_server_protocol::ServerNotification::AgentMessageDelta(p) => {
                     Some(p.delta.as_str())
                 }
                 _ => None,
@@ -1914,7 +1914,7 @@ mod tests {
         let mut failed = turn(v2::TurnStatus::Failed);
         failed.error = Some(v2::TurnError {
             message: "the model refused".to_string(),
-            codex_error_info: None,
+            atlas_engine_error_info: None,
             additional_details: None,
             retry_delay_ms: None,
         });
@@ -2399,7 +2399,7 @@ impl AgentSessionEffort for EngineSessionControls {
         let request_id = self.request_ids.next();
         let thread_id = self.session_id.to_string();
         // The trait is synchronous and the call is not, so this is fire-and-
-        // forget like the Cersei path's — on the engine's runtime, because
+        // forget like the previous native path's — on the engine's runtime, because
         // the caller's thread may have none. A rejected update is logged
         // rather than surfaced, because the caller has already moved on.
         self.runtime.spawn(async move {

@@ -23,7 +23,7 @@ use atlas_native_agent::engine::auth::{AtlasExternalAuth, AtlasTokenSource};
 use atlas_native_agent::engine::catalog_cache::{CatalogueFetcher, GatewayCatalogueFetcher};
 use atlas_native_agent::engine::config::{EngineHome, EngineProvider, EngineSettings};
 use atlas_native_agent::engine::connection::EngineConnection;
-use codex_login::auth::ExternalAuthFuture;
+use atlas_engine_login::auth::ExternalAuthFuture;
 use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -283,7 +283,7 @@ async fn harness_full(
 
     let external_auth = Arc::new(AtlasExternalAuth::new(token.clone()));
     let connection = match EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         Some(external_auth),
@@ -552,7 +552,7 @@ async fn an_unauthorized_token_is_not_retried_at_all() {
     // recovery runs before the classification sees the error, and it allows one
     // retry either way. The `token_expired` / `unauthorized` distinction is
     // asserted where it is actually decided — the classification table in
-    // `codex_api::atlas_gateway`, which is what the unary calls go through.
+    // `atlas_engine_api::atlas_gateway`, which is what the unary calls go through.
     // Here the claim is narrower and still worth holding: a dead credential
     // does not turn into a retry storm.
     let unauthorized = ResponseTemplate::new(401).set_body_raw(
@@ -758,7 +758,7 @@ async fn no_cache_and_an_unreachable_catalogue_fails_connect_honestly() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let result = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -797,7 +797,7 @@ async fn a_stale_cache_carries_the_connection_when_the_gateway_is_down() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -833,7 +833,7 @@ async fn a_fresh_cache_skips_the_fetch() {
     let (sink, _events) = event_sink();
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         gateway_settings(home.path(), &server),
         sink,
         Some(Arc::new(AtlasExternalAuth::new(token.clone()))),
@@ -1131,7 +1131,7 @@ async fn connection_at(
     let token: Arc<dyn AtlasTokenSource> = Arc::new(StaticToken);
     let external_auth = Arc::new(AtlasExternalAuth::new(token.clone()));
     let connection = EngineConnection::connect_full(
-        AgentId::new("cersei"),
+        AgentId::new("atlas-agent"),
         settings,
         sink,
         Some(external_auth),
@@ -1382,7 +1382,7 @@ async fn review_runs_inline_on_this_thread_and_this_model() {
 async fn a_repo_skill_joins_the_picker_and_runs_as_a_skill_turn() {
     let home = tempfile::tempdir().expect("tempdir");
     let cwd = tempfile::tempdir().expect("tempdir");
-    let skill_dir = cwd.path().join(".codex/skills/release-notes");
+    let skill_dir = cwd.path().join(".atlas-agent/skills/release-notes");
     std::fs::create_dir_all(&skill_dir).expect("skill dir");
     std::fs::write(
         skill_dir.join("SKILL.md"),

@@ -10,7 +10,7 @@ name = "atlas_artifacts"
 [dependencies]
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 # The workspace pin, for the same reason `atlas-comms` gives: it resolves to the
-# openai-oss-forks 0.28 fork already in the graph via the vendored Codex engine.
+# openai-oss-forks 0.28 fork already in the graph via the vendored engine.
 # Declaring a version inline would unify with axum's 0.29 instead.
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"

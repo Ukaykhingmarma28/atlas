@@ -189,8 +189,8 @@ describe("canSignIn", () => {
   });
 
   it("never offers it for the native in-process agent", () => {
-    catalog = { cersei: { kind: "native", login: null } };
-    expect(canSignIn("cersei")).toBe(false);
+    catalog = { "atlas-agent": { kind: "native", login: null } };
+    expect(canSignIn("atlas-agent")).toBe(false);
   });
 });
 
@@ -231,10 +231,10 @@ describe("bindFailureAction", () => {
   });
 
   it("reports plainly for agents Atlas cannot sign in", () => {
-    catalog = { cersei: { kind: "native", login: null } };
-    expect(bindFailureAction({ agentType: "cersei", err: authErr, alreadyAttempted: false })).toBe(
-      "report",
-    );
+    catalog = { "atlas-agent": { kind: "native", login: null } };
+    expect(
+      bindFailureAction({ agentType: "atlas-agent", err: authErr, alreadyAttempted: false }),
+    ).toBe("report");
     expect(bindFailureAction({ agentType: undefined, err: authErr, alreadyAttempted: false })).toBe(
       "report",
     );

@@ -8,7 +8,7 @@
 //! Config reaches the engine two ways, and the split is not arbitrary:
 //!
 //! - **`ConfigOverrides`** for the things that have no config-file spelling.
-//!   `codex_self_exe` is the load-bearing one — the engine's own docs say it
+//!   `atlas_engine_self_exe` is the load-bearing one — the engine's own docs say it
 //!   "cannot be set in the config file: it must be set in code via
 //!   `ConfigOverrides`". Sandbox and approval defaults ride along here too.
 //! - **TOML overrides** for everything that *is* a config key: the provider
@@ -22,12 +22,12 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::Result;
-use codex_core::config::Config;
-use codex_core::config::ConfigBuilder;
-use codex_core::config::ConfigOverrides;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::protocol::AskForApproval;
+use atlas_engine_core::config::Config;
+use atlas_engine_core::config::ConfigBuilder;
+use atlas_engine_core::config::ConfigOverrides;
+use atlas_engine_protocol::config_types::SandboxMode;
+use atlas_engine_protocol::openai_models::ModelsResponse;
+use atlas_engine_protocol::protocol::AskForApproval;
 use toml::Value as TomlValue;
 
 /// The engine's own `DEFAULT_STREAM_MAX_RETRIES`, restated so the seam can
@@ -41,8 +41,8 @@ pub const DEFAULT_STREAM_MAX_RETRIES: usize = 5;
 /// this path and creates a `0644` installation-id file inside it. So this must
 /// be a directory Atlas owns.
 ///
-/// It is emphatically **not** `~/.codex`. Pointing it there would have the app
-/// adopt, and write into, the user's real Codex CLI state.
+/// It is emphatically **not** `~/.atlas_engine`. Pointing it there would have the app
+/// adopt, and write into, the engine's default dot-directory under the user's home.
 ///
 /// Everything under here is engine-private working storage in D9's sense: the
 /// engine may keep rollouts and its own SQLite here, and no history or sidebar
@@ -54,7 +54,7 @@ pub struct EngineHome(PathBuf);
 impl EngineHome {
     /// The engine's home inside Atlas's own config directory.
     ///
-    /// `config_dir` is what the Cersei path is handed today, so both engines
+    /// `config_dir` is what the previous native path is handed today, so both engines
     /// keep their state under the same Atlas-owned root and a profile wipe
     /// takes both.
     pub fn under_config_dir(config_dir: &Path) -> Self {
@@ -184,12 +184,12 @@ pub struct EngineSettings {
     /// whole embedding, and it has an explicit code-level seam precisely so an
     /// embedder can satisfy it without adopting the engine's argv0 dispatch.
     pub self_exe: Option<PathBuf>,
-    /// The path to the `codex-linux-sandbox` helper, on Linux.
+    /// The path to the `atlas-engine-linux-sandbox` helper, on Linux.
     ///
     /// The seatbelt sandbox macOS uses is `/usr/bin/sandbox-exec`, already on
     /// disk, so `self_exe` above is the whole story there. Linux has no such
     /// binary: `SandboxType::LinuxSeccomp` re-execs a helper whose *arg0* is
-    /// `codex-linux-sandbox`, and with no path for it the engine refuses the
+    /// `atlas-engine-linux-sandbox`, and with no path for it the engine refuses the
     /// transform (`MissingLinuxSandboxExecutable`) before spawning anything.
     /// Under the default `WorkspaceWrite` policy that turns every sandboxed
     /// tool call into a no-op that still ends the turn normally.
@@ -202,7 +202,7 @@ pub struct EngineSettings {
     ///
     /// A real Linux build would have to earn this rather than set it: `main.rs`
     /// would need the engine's arg0 dispatch, so that Atlas re-entered as
-    /// `codex-linux-sandbox` runs the helper instead of the app, and only then
+    /// `atlas-engine-linux-sandbox` runs the helper instead of the app, and only then
     /// could this point at Atlas's own executable. That is deliberately not
     /// implemented here.
     pub linux_sandbox_exe: Option<PathBuf>,
@@ -259,8 +259,9 @@ impl EngineSettings {
     /// Phase 2's tracer bullet is carried by "a dev-configured provider … until
     /// the gateway dialect lands", so the provider is a developer's choice
     /// rather than a product decision, and the environment is where a developer
-    /// makes it. Every value has a working default so the switch does something
-    /// sensible with nothing set.
+    /// makes it. The provider values have working defaults; the model has none
+    /// (ADR-0007: no hardcoded model), so with `ATLAS_ENGINE_MODEL` unset the
+    /// engine falls back to its catalogue's first-priority row.
     ///
     /// This is deliberately **not** how the shipped agent will be configured.
     /// In Phase 3 the provider becomes the Atlas gateway and the credential
@@ -268,8 +269,7 @@ impl EngineSettings {
     pub fn from_env(config_dir: &Path, cwd: PathBuf) -> Self {
         let base_url = std::env::var("ATLAS_ENGINE_BASE_URL")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-        let model =
-            std::env::var("ATLAS_ENGINE_MODEL").unwrap_or_else(|_| "gpt-5-codex".to_string());
+        let model = std::env::var("ATLAS_ENGINE_MODEL").ok();
         // Named rather than read: the engine resolves the variable itself, so
         // the key never passes through Atlas.
         let env_key = std::env::var("ATLAS_ENGINE_API_KEY_ENV")
@@ -278,7 +278,7 @@ impl EngineSettings {
         Self::new(
             EngineHome::under_config_dir(config_dir),
             EngineProvider::dev("atlas-dev", base_url, Some(env_key)),
-            Some(model),
+            model,
             cwd,
         )
     }
@@ -294,7 +294,7 @@ impl EngineSettings {
             cwd: Some(self.cwd.clone()),
             approval_policy: Some(self.approval_policy),
             sandbox_mode: Some(self.sandbox_mode),
-            codex_self_exe: self.self_exe.clone(),
+            atlas_engine_self_exe: self.self_exe.clone(),
             ..Default::default()
         }
     }
@@ -433,7 +433,7 @@ impl EngineSettings {
         }
 
         ConfigBuilder::default()
-            .codex_home(self.home.path().to_path_buf())
+            .atlas_agent_home(self.home.path().to_path_buf())
             .cli_overrides(self.cli_overrides())
             .harness_overrides(self.config_overrides())
             .fallback_cwd(Some(self.cwd.clone()))
@@ -452,7 +452,7 @@ mod tests {
         EngineSettings::new(
             EngineHome::at(tmp.join("engine")),
             EngineProvider::dev("atlas-dev", "https://example.invalid/v1", None),
-            Some("gpt-5-codex".to_string()),
+            Some("test-model".to_string()),
             tmp.to_path_buf(),
         )
     }
@@ -481,13 +481,14 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_home_is_atlas_owned_and_never_the_users_codex_cli_state() {
+    fn the_engine_home_is_under_the_app_config_dir_never_a_dotdir_in_home() {
         // Starting the runtime writes an installation-id file into this
-        // directory. Pointing it at ~/.codex would make Atlas write into the
-        // user's real Codex CLI state.
+        // directory. It must be Atlas's own app-config tree, never the
+        // engine's default dot-directory under the user's home, which another
+        // program (or an older build) may own.
         let home = EngineHome::under_config_dir(Path::new("/Users/somebody/Library/atlas"));
         assert!(home.path().starts_with("/Users/somebody/Library/atlas"));
-        assert!(!home.path().to_string_lossy().contains(".codex"));
+        assert!(!home.path().to_string_lossy().contains("/."));
     }
 
     #[test]
@@ -565,7 +566,7 @@ mod tests {
         let keyed = EngineSettings::new(
             EngineHome::at(tmp.join("engine")),
             EngineProvider::dev("byok", "https://example.invalid/v1", Some("DEV_KEY".into())),
-            Some("gpt-5-codex".to_string()),
+            Some("test-model".to_string()),
             tmp.clone(),
         );
         assert!(
@@ -584,8 +585,8 @@ mod tests {
         // ConfigOverrides or not at all.
         let tmp = std::env::temp_dir();
         let overrides = settings(&tmp).config_overrides();
-        assert_eq!(overrides.codex_self_exe, std::env::current_exe().ok());
-        assert!(overrides.codex_self_exe.is_some(), "current_exe must resolve in a test binary");
+        assert_eq!(overrides.atlas_engine_self_exe, std::env::current_exe().ok());
+        assert!(overrides.atlas_engine_self_exe.is_some(), "current_exe must resolve in a test binary");
     }
 
     #[test]
@@ -625,7 +626,7 @@ mod tests {
         let config = s.build_config(None).await.expect("config should load");
 
         assert!(s.home.path().is_dir(), "the engine home must exist after build");
-        assert_eq!(config.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(config.model.as_deref(), Some("test-model"));
         assert_eq!(
             config.model_provider.base_url.as_deref(),
             Some("https://example.invalid/v1"),
@@ -641,10 +642,10 @@ mod tests {
         // `SandboxType::WindowsRestrictedToken` instead of `None`.
         #[cfg(target_os = "windows")]
         {
-            use codex_core::windows_sandbox::WindowsSandboxLevelExt;
+            use atlas_engine_core::windows_sandbox::WindowsSandboxLevelExt;
             assert_eq!(
-                codex_protocol::config_types::WindowsSandboxLevel::from_config(&config),
-                codex_protocol::config_types::WindowsSandboxLevel::RestrictedToken,
+                atlas_engine_protocol::config_types::WindowsSandboxLevel::from_config(&config),
+                atlas_engine_protocol::config_types::WindowsSandboxLevel::RestrictedToken,
             );
         }
     }

@@ -994,8 +994,8 @@ let registry: AcpRegistryEntry[] = [
 
 let catalog: AgentCatalogEntry[] = [
   {
-    id: "cersei",
-    agentType: "cersei",
+    id: "atlas-agent",
+    agentType: "atlas-agent",
     name: "Atlas Agent",
     description: "Atlas's own agent, running in-process — no subprocess, no install.",
     version: "0.0.0-mock",
@@ -1005,7 +1005,7 @@ let catalog: AgentCatalogEntry[] = [
     installed: false,
     supportsModes: true,
     supportsModels: true,
-    transcript: "cersei_json",
+    transcript: "native",
     login: null,
     authKinds: ["env_var"],
     supportsLogout: false,

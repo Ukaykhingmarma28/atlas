@@ -16,7 +16,7 @@
 //!   path, before memory prefixing and before any early return (#3), reading
 //!   cheap metadata from `snapshot_meta` (#3);
 //! - `turn_seq` stamped at send time (#6);
-//! - plugin-id semantics, native-vs-ACP by `CERSEI_AGENT_ID` (#4);
+//! - plugin-id semantics, native-vs-ACP by `ATLAS_AGENT_ID` (#4);
 //! - the `atlas:capture-changed` / `atlas:git-changed` event names, untouched
 //!   because nothing here emits them (#5, #9);
 //! - agents' own transcript locations, read through `atlas-agent-transcript`
@@ -133,7 +133,7 @@ struct AnalyticsMiddleware {
 
 impl AnalyticsMiddleware {
     /// The plugin this agent was spawned from (`claude-code-ts` / `codex` /
-    /// `cersei`). A single `DashMap` lookup, safe on the delta hot path.
+    /// `atlas-agent`). A single `DashMap` lookup, safe on the delta hot path.
     ///
     /// This replaces the old `agent_kind`, which was `agent_id.0` — a random
     /// UUID minted per registration that identified nothing outside the process
@@ -148,8 +148,8 @@ impl AnalyticsMiddleware {
 
     /// Coarse bucket for funnels that don't care which ACP agent it was.
     fn family(plugin_id: &str) -> &'static str {
-        if plugin_id == atlas_native_agent::CERSEI_AGENT_ID {
-            "cersei"
+        if plugin_id == atlas_native_agent::ATLAS_AGENT_ID {
+            "native"
         } else {
             "acp"
         }
@@ -432,14 +432,6 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
-            // A turn ended without the agent ever reading memory. Say so once,
-            // and only when saying it is honest: the session must actually
-            // have been given the tools, or the notice accuses an agent of
-            // ignoring something it was never offered. Nothing is called on
-            // the agent's behalf — ADR-0010's pull stays a pull; this only
-            // observes that the pull never happened.
-            self.note_if_memory_went_unconsulted(&envelope.session_id);
-
             // Site B — the extractor's turn-finished pass, for every agent
             // (`super::memory_extract`). The conversation is read now, off the
             // emit thread — by the time the queue reaches the job the session
@@ -483,49 +475,6 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             }
         }
     }
-}
-
-impl MemoryIngestMiddleware {
-    /// Tell the UI, once per session, that a turn finished without memory ever
-    /// being read.
-    ///
-    /// Whether an agent consults memory varies run to run, and until now
-    /// nothing recorded or showed that it had not — so a confident answer
-    /// derived from the code looked exactly like one informed by a recorded
-    /// fact. This does not change that behaviour, it makes it visible.
-    ///
-    /// Silent unless all three hold: the session was given the memory tools,
-    /// it never used one, and nothing has been said about it yet.
-    fn note_if_memory_went_unconsulted(&self, session_id: &str) {
-        let Some(server) = self.app.try_state::<Arc<super::memory_server::MemoryServerHost>>() else {
-            return;
-        };
-        if server.tokens().token_for(session_id).is_none() {
-            return;
-        }
-        if !server.reads().should_say_unread(session_id) {
-            return;
-        }
-        let _ = self.app.emit(
-            MEMORY_UNCONSULTED_EVENT,
-            MemoryUnconsulted {
-                session_id: session_id.to_string(),
-            },
-        );
-    }
-}
-
-/// A session finished a turn having never read shared memory.
-///
-/// A side channel rather than a `SessionDelta`, for the same reason
-/// `atlas:agent-elicitation` is one: the delta wire is frozen, and this is a
-/// host observation about a session rather than something the agent did.
-pub const MEMORY_UNCONSULTED_EVENT: &str = "atlas:memory-unconsulted";
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryUnconsulted {
-    pub session_id: String,
 }
 
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
@@ -654,8 +603,8 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
 /// sink, because their middleware resolves them on the first delta; the sink
 /// must exist before the host, because the host builds the projector around it.
 pub fn install_manager(app: &AppHandle) {
-    // App config dir holds the native agent's own state
-    // and `cersei-sessions/` (its persisted transcripts). Best-effort: fall
+    // App config dir holds the native agent's own state (the engine home
+    // lives under it). Best-effort: fall
     // back to a temp dir if the platform path is unavailable. Resolved up here
     // because `TranscriptState` needs it to re-seed a session's buffer from the
     // transcript already on disk.
@@ -1252,7 +1201,7 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
 }
 
 /// Session-history rows for agents Atlas records itself. Merged into the
-/// sidebar alongside the Claude / Codex / Cersei / Kilo listings; returns an
+/// sidebar alongside the Claude / Codex / native / Kilo listings; returns an
 /// empty vec for a project with no such sessions.
 #[tauri::command]
 pub async fn agent_transcripts_list(
@@ -1615,7 +1564,7 @@ pub fn agents_set_effort(
 }
 
 // `agents_set_compress` is gone (#54). Tool-output compression was a knob on
-// the Cersei runtime's RTK compressor and the engine has no counterpart — a
+// the old native runtime's RTK compressor and the engine has no counterpart — a
 // named casualty (D8). Removed rather than stubbed, so the toggle disappears
 // instead of sitting there doing nothing.
 

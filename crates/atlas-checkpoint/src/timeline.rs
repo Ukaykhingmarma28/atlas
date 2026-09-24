@@ -48,7 +48,7 @@ pub struct SessionSummary {
     pub title: Option<String>,
     pub agent: Option<String>,
     pub model: Option<String>,
-    /// `acp`, `cersei` or `external_jsonl` — where the record came from.
+    /// `acp`, `native` or `external_jsonl` — where the record came from.
     pub source: String,
     pub started_at: String,
     pub updated_at: String,

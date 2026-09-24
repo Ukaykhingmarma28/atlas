@@ -46,7 +46,7 @@ async fn concurrent_requests_for_one_agent_start_exactly_one_connection() {
 
     for round in 0..ROUNDS {
         let catalog = TestCatalog::new(&[]);
-        let server = TestServer::new("cersei");
+        let server = TestServer::new("atlas-agent");
         let manager = manager(catalog, server.clone());
         // The native agent, because `connect_to` resolves the server itself and
         // a custom one resolves to a `CustomAgentServer` that spawns a real
@@ -427,7 +427,7 @@ async fn a_gated_connect_that_is_left_alone_still_connects() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_superseded_turns_late_reply_does_not_close_the_turn_that_superseded_it() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("cersei");
+    let server = TestServer::new("atlas-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
@@ -487,7 +487,7 @@ async fn a_superseded_turns_late_reply_does_not_close_the_turn_that_superseded_i
 #[tokio::test(flavor = "multi_thread")]
 async fn a_superseded_turns_failure_does_not_mark_the_live_turn_as_errored() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("cersei");
+    let server = TestServer::new("atlas-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
@@ -545,7 +545,7 @@ async fn a_superseded_turns_failure_does_not_mark_the_live_turn_as_errored() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cancelled_turn_still_closes_itself() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("cersei");
+    let server = TestServer::new("atlas-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
@@ -637,7 +637,7 @@ async fn closing_an_ambiguous_session_id_is_an_error_not_a_silent_success() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unsuperseded_turn_closes_itself() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("cersei");
+    let server = TestServer::new("atlas-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
@@ -865,7 +865,7 @@ async fn closing_a_session_forgets_it_without_touching_the_connection() {
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_an_unknown_session_is_a_no_op() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("cersei");
+    let server = TestServer::new("atlas-agent");
     let manager = manager(catalog, server);
 
     // No panic, no error: the id simply names nothing.

@@ -23,8 +23,8 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 
 ## Adjacent subsystems
 
-- **Project** — a folder opened in Atlas, tagged to an organisation and shown in the sidebar. The unit almost everything else is scoped to: the editor state, the file index, the git watcher, the knowledge base, the capture store. *Avoid: workspace.* The stored names still say `workspace` — `state.json`'s `workspaces` / `activeWorkspaceId`, the `workspace_id` columns in `sessions.db`, the `workspaceId` argument of the fileindex / recent-files / git-watch / mention commands and the events that carry it, the `"workspace"` mention tag, and the `workspace.*` keybinding action ids. Those are **storage keys**, not the concept, kept for exactly the reason `"cersei"` is: renaming one is a data migration that breaks existing installs, not a rename. Every such site carries a comment saying so.
-- **Atlas Agent** — the native agent: the single first-party agent that ships with Atlas rather than being installed from the Marketplace. Its engine is a one-time port of Codex that lives in this repo and is maintained by us (ADR-0003). Exactly one native agent exists at a time; every other agent is an ACP agent. "Native agent" and "Atlas Agent" are synonyms from cutover onward. Its threads live in the same thread-metadata store as external agents', distinguished only by agent id — and that stored agent id remains the literal string `"cersei"`: it is a **storage key**, not a name. Every recorded thread resolves through it, so it was deliberately kept stable across the engine swap and outlived the retirement of the name it came from. Changing it is a data migration, not a rename.
+- **Project** — a folder opened in Atlas, tagged to an organisation and shown in the sidebar. The unit almost everything else is scoped to: the editor state, the file index, the git watcher, the knowledge base, the capture store. *Avoid: workspace.* The stored names still say `workspace` — `state.json`'s `workspaces` / `activeWorkspaceId`, the `workspace_id` columns in `sessions.db`, the `workspaceId` argument of the fileindex / recent-files / git-watch / mention commands and the events that carry it, the `"workspace"` mention tag, and the `workspace.*` keybinding action ids. Those are **storage keys**, not the concept: renaming one is a data migration that breaks existing installs, not a rename. Every such site carries a comment saying so.
+- **Atlas Agent** — the native agent: the single first-party agent that ships with Atlas rather than being installed from the Marketplace. Its engine is a one-time hard fork of an Apache-2.0 upstream that lives in this repo under `vendor/atlas-engine` and is maintained by us (ADR-0003, ADR-0011). Exactly one native agent exists at a time; every other agent is an ACP agent. "Native agent" and "Atlas Agent" are synonyms. Its threads live in the same thread-metadata store as external agents', distinguished only by agent id, and that stored agent id is the literal string `"atlas-agent"` (`ATLAS_AGENT_ID` in Rust, `NATIVE_AGENT_ID` in TypeScript): a **storage key** every recorded thread resolves through. It was renamed once (ADR-0011) and the rows under the retired id were dropped rather than aliased; changing it again is a data migration, not a rename.
 - **Timeline / checkpoint** — the per-project observational record (`atlas-checkpoint`). Separate from the thread-metadata store; its importer may read CLIs' transcript files under its own contract, which the history model explicitly preserves.
 - **Marketplace / registry** — where agents are installed from; the installed-agents map is what import enumerates.
 - **Installed-agents map** — the one record of which ACP agents exist. Installing writes an entry, uninstalling removes it, and nothing else makes an agent runnable. A fresh install has an empty map and offers only the native agent. See ADR-0002.
@@ -66,7 +66,7 @@ The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` —
   user's own key for a *non-native* agent and is untouched by any of this.
 - **Wire dialect** — the request-and-response grammar a provider speaks. The engine was forked
   speaking exactly one, the **Responses** dialect; the port authors a second, **Chat Completions**
-  against the gateway contract (`codex_api::atlas_chat`, spec D3). The two share the engine's
+  against the gateway contract (`atlas_engine_api::atlas_chat`, spec D3). The two share the engine's
   internal item and event vocabulary and nothing below it — different route, different body,
   different stream grammar, different error table. A green suite on one says nothing about the
   other.
@@ -74,21 +74,21 @@ The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` —
   reserved *before* the provider is called. A filled cap answers `402`, deliberately not `429`,
   because stock SDKs auto-retry `429` and a monthly ceiling cannot clear for weeks.
 - **Disposition** — what the client should do about a gateway error, as decided from its status
-  and `error.code` (`codex_api::atlas_gateway`, spec D13): stop, wait a stated interval, refresh
+  and `error.code` (`atlas_engine_api::atlas_gateway`, spec D13): stop, wait a stated interval, refresh
   the credential and try once, or retry cautiously. Deliberately not a boolean — "retryable"
   collapses three behaviours the gateway keeps apart.
 
 ## Vendored engine licensing (Apache-2.0)
 
-`vendor/codex/` is a hard fork of OpenAI Codex under **Apache-2.0** (ADR-0003). Atlas's own
-code is **MIT** (`LICENSE`). The two do not merge: Apache-2.0 code stays Apache-2.0 however it
-is bundled, so its obligations travel with every build rather than being absorbed by Atlas's
-licence. `tests/vendor-licensing.test.ts` enforces what follows; **D11 blocks all rename work
-until it is green**, because doing the attribution first makes every later rename commit
-trivially compliant.
+`vendor/atlas-engine/` is a hard fork of an upstream engine under **Apache-2.0** (ADR-0003;
+renamed in ADR-0011 — the upstream's name appears in this tree only where the licence
+requires it). Atlas's own code is **MIT** (`LICENSE`). The two do not merge: Apache-2.0 code
+stays Apache-2.0 however it is bundled, so its obligations travel with every build rather than
+being absorbed by Atlas's licence. `tests/vendor-licensing.test.ts` enforces what follows; the
+attribution work landed first (D11) so that the rename sweep was trivially compliant.
 
-- **Ship the licence and the notice (§4(a), §4(d)).** `vendor/codex/LICENSE` and
-  `vendor/codex/NOTICE` are bundled into the app at `Contents/Resources/licenses/`, alongside
+- **Ship the licence and the notice (§4(a), §4(d)).** `vendor/atlas-engine/LICENSE` and
+  `vendor/atlas-engine/NOTICE` are bundled into the app at `Contents/Resources/licenses/`, alongside
   Atlas's own. The obligation runs to *recipients*, so a file that only exists in the repo does
   not discharge it. The NOTICE keeps its Ratatui lines even though the TUI is dropped — §4(d)
   would permit removing them, simplicity favours leaving them — and travels **verbatim**,
@@ -102,18 +102,24 @@ trivially compliant.
   ```
 
   `<!-- … -->` in Markdown; a root `"$comment"` in JSON. Add it in the same commit as the edit —
-  the test computes the modified set from git, so it notices on the next run either way.
+  the test compares every file against the fork commit's tree by blob hash, so it notices on
+  the next run either way. Since the ADR-0011 sweep touched nearly every file, nearly every
+  file carries it. Files with no comment syntax (insta snapshots, the compressed schema blobs,
+  images, fixtures read verbatim) are listed in `vendor/atlas-engine/ATLAS-CHANGES.md` instead,
+  which is the tree-level notice for them; the test holds those to that list.
   *(Caveat: `core/config.schema.json` is generated by schemars, and regenerating it drops the
   `$comment`. Re-add it if that ever happens.)*
 
 - **Never strip attribution (§4(c)).** Copyright and attribution notices inside vendored sources
   are **not** touched by rename sweeps. The rule is: rename product branding, keep attribution.
-  The Phase 5 sweep is exactly the operation that would violate this, which is why the rule is
-  written down before that sweep runs.
+  The ADR-0011 sweep was exactly the operation that could have violated this, which is why the
+  rule was written down before it ran; it protected the LICENSE, the NOTICE, the §4(b) notice
+  line, every URL and every upstream model id.
 
 - **Trademarks are a removal, not a preference (§6).** Apache-2.0 grants no trademark licence, so
-  the rebrand *must* drop "Codex" and "OpenAI" as product-facing names — including the baked
-  system prompt and the catalog `instructions_template` strings that self-identify as Codex.
+  the rebrand *must* drop the upstream's product name and "OpenAI" as product-facing names —
+  including the baked system prompt and the catalog `instructions_template` strings that
+  self-identified as the upstream product.
   Required by the licence, not merely by taste. **Done (#55).** Two prompts reach a shipped
   turn — `models-manager/prompt.md` and `protocol/src/prompts/base_instructions/default.md` —
   and both now say Atlas Agent. Their §4(b) notices are HTML comments on line 1, **stripped when

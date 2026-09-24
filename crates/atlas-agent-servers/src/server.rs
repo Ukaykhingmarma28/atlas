@@ -262,7 +262,7 @@ pub fn env_quirks_from(
         // environment. The spawn inherits the host's today, so this is what
         // keeps them there if it ever stops doing so. These are the two names
         // codex's auth reads (`CODEX_API_KEY_ENV_VAR`, `OPENAI_API_KEY_ENV_VAR`
-        // in `vendor/codex/login/src/auth/manager.rs`); Zed's `custom.rs`
+        // in `vendor/atlas-engine/login/src/auth/manager.rs`); Zed's `custom.rs`
         // spells the second `OPEN_AI_API_KEY`, which nothing reads.
         CODEX_AGENT_ID => {
             for key in ["CODEX_API_KEY", "OPENAI_API_KEY"] {
