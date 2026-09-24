@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
+import { useOrgDirectory } from "@/features/organisations/lib/use-org-directory";
 import { safeUnlistenPromise } from "@/lib/safe-unlisten";
 
 import type { RowComments } from "../components/session-detail";
@@ -51,8 +52,11 @@ export function useSessionComments(
   /** The **server** Project id. `null` for a Session that is not shared. */
   remoteProjectId: string | null,
   sessionId: string | null,
-  currentUserId: string | null,
 ): RowComments | null {
+  // One roster for every byline, mention and avatar stack in the pane. Resolved
+  // here rather than per comment: the hook is stale-while-revalidate, so the
+  // cost is one request however many surfaces read it.
+  const directory = useOrgDirectory();
   const [threads, setThreads] = useState<CommentThreads>(EMPTY_THREADS);
 
   const shared = remoteProjectId !== null && sessionId !== null;
@@ -159,9 +163,9 @@ export function useSessionComments(
             byAnchor: threads.byAnchor,
             session: threads.session,
             actions,
-            currentUserId,
+            directory,
           }
         : null,
-    [shared, threads, actions, currentUserId],
+    [shared, threads, actions, directory],
   );
 }

@@ -16,8 +16,6 @@ import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 
-import { useAuthStore } from "@/features/auth/stores/auth-store";
-
 import { useSessionComments } from "../lib/use-session-comments";
 import { useArtifactsStore } from "../stores/artifacts-store";
 import type { BoardPage, BoardSession, SessionDetail as Detail } from "../types";
@@ -241,15 +239,10 @@ export function ArtifactsPanel() {
   const { openSession, setProjectFilter } = useArtifactsStore.use.actions();
 
   // Comments on the open Session, or `null` when it is not shared — which is
-  // what hides every comment affordance rather than showing empty threads.
-  const authSnapshot = useAuthStore.use.snapshot();
-  const currentUserId =
-    authSnapshot.status === "signed-in" ? (authSnapshot.user?.id ?? null) : null;
-  const comments = useSessionComments(
-    open?.remoteProjectId ?? null,
-    open?.sessionId ?? null,
-    currentUserId,
-  );
+  // what hides every comment affordance rather than showing empty threads. The
+  // hook resolves the Organisation's roster itself, so the account no longer
+  // has to be plumbed through here.
+  const comments = useSessionComments(open?.remoteProjectId ?? null, open?.sessionId ?? null);
   // Stable identity for the memo'd board rows — an inline arrow here would
   // re-render all ~500 of them on every panel render.
   const onOpenRow = useCallback(

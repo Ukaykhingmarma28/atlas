@@ -866,6 +866,23 @@
       rgba(255, 255, 255, 0) 180px
     );
   }
+  /* The vibrant panel's sheen, on its own.
+
+     `.atlas-vibrant-panel` sets `isolation: isolate` and stamps a grain layer,
+     both of which break a `backdrop-filter` on the same element — it is built
+     for opaque surfaces. A floating popover wants the lit-from-above gradient
+     WITH a live blur behind it, so the gradient is available separately.
+
+     Shorter falloff than the panel's 180px: a popover is a few hundred px tall,
+     and a gradient tuned for a full-height rail never resolves inside one. */
+  .atlas-panel-sheen {
+    background-image: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.04) 0,
+      rgba(255, 255, 255, 0) 160px
+    );
+  }
+
   .atlas-vibrant-panel::after {
     content: "";
     position: absolute;

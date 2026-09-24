@@ -64,6 +64,8 @@ import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
 import { anchorKindFor, type Comment } from "../lib/comments-api";
 import { CodeBlock, CopyButton, prettyJson } from "./code-block";
+import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
+
 import { CommentButton, type CommentActions } from "./comment-thread";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
@@ -129,8 +131,15 @@ export interface RowComments {
   /** Comments on the Session itself, shown from the masthead. */
   session: Comment[];
   actions: CommentActions;
-  /** Whose comments carry a delete affordance. */
-  currentUserId: string | null;
+  /**
+   * The Organisation's roster, for names and faces.
+   *
+   * Passed down rather than looked up per comment: one hook at the pane, and
+   * every byline, mention and avatar stack below resolves against the same map.
+   * It also carries `currentUserId`, which is what decides whose comments get a
+   * delete affordance.
+   */
+  directory: OrgDirectory;
 }
 
 interface Props {
@@ -720,7 +729,7 @@ function Masthead({ detail, comments }: { detail: Detail; comments: RowComments 
             anchorId={s.id}
             comments={comments.session}
             actions={comments.actions}
-            currentUserId={comments.currentUserId}
+            directory={comments.directory}
             label="Comment on this Session"
             className="mt-1 group-hover/row:opacity-100"
           />
@@ -1136,23 +1145,25 @@ const Row = memo(function Row({
            *  no copy button still needs its controls pushed right, and two
            *  independent `flex-1`s would have split the gap between them. */}
           <span className="flex-1" />
-          {(group.kind === "prompt" || group.kind === "response") && head.text && (
-            <CopyButton
-              text={head.text}
-              className="-my-1 self-center group-hover/row:opacity-100"
-            />
-          )}
-          {/* Every kind can be commented on, not just the two that can be
-           *  copied — a tool call and a Checkpoint are exactly the things worth
-           *  asking about, and leaving them out would make them commentable
-           *  from the web and not from here. */}
+          {/* Comment first, copy second. The comment button is the one that
+           *  grows — it carries faces and a count once a discussion exists —
+           *  so putting it outermost would make the copy button's position
+           *  depend on how many people had replied. Every kind can be
+           *  commented on, not just the two that can be copied: a tool call and
+           *  a Checkpoint are exactly the things worth asking about. */}
           {comments && (
             <CommentButton
               anchorKind={anchorKindFor(group.kind)}
               anchorId={head.id}
               comments={comments.byAnchor[head.id]}
               actions={comments.actions}
-              currentUserId={comments.currentUserId}
+              directory={comments.directory}
+              className="-my-1 self-center group-hover/row:opacity-100"
+            />
+          )}
+          {(group.kind === "prompt" || group.kind === "response") && head.text && (
+            <CopyButton
+              text={head.text}
               className="-my-1 self-center group-hover/row:opacity-100"
             />
           )}

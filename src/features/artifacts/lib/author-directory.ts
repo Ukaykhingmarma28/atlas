@@ -20,17 +20,22 @@
  */
 
 import type { AccountUser, OrgMember } from "@/features/auth/lib/auth-api";
+import {
+  EMPTY_ORG_DIRECTORY,
+  type OrgDirectory,
+} from "@/features/organisations/lib/use-org-directory";
 
-export interface AuthorDirectory {
-  /** Members of the active Organisation, by the id that identifies the human
-   *  (`userId`) — never the membership id, which is what a row's `authorId`
-   *  is not. */
-  byId: Map<string, OrgMember>;
-  /** The signed-in account, so their own work can be labelled "You". */
-  currentUserId: string | null;
-}
+/**
+ * The roster, as this feature names it.
+ *
+ * An alias rather than a second shape: `useOrgDirectory` owns fetching and the
+ * lookup key, and two structurally identical types would eventually disagree
+ * about which id they are keyed by — which is exactly how the comment thread
+ * ended up reading the chat roster and rendering raw ids.
+ */
+export type AuthorDirectory = OrgDirectory;
 
-export const EMPTY_DIRECTORY: AuthorDirectory = { byId: new Map(), currentUserId: null };
+export const EMPTY_DIRECTORY: AuthorDirectory = EMPTY_ORG_DIRECTORY;
 
 export interface Author {
   /** What to print: a first name, or "You", or a legible stand-in. */

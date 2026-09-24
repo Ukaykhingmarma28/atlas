@@ -29,10 +29,7 @@ import { ArrowUp, Check, ChevronDown, ChevronRight, Laptop } from "lucide-react"
 import { cn } from "@/lib/utils";
 
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import type { OrgMember } from "@/features/auth/lib/auth-api";
-import { useAuthStore } from "@/features/auth/stores/auth-store";
-import { useMembersStore } from "@/features/organisations/stores/members-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { useOrgDirectory } from "@/features/organisations/lib/use-org-directory";
 
 import { authorOf, type AuthorDirectory } from "../lib/author-directory";
 import { groupSessions, sessionState, sessionTitle, type GroupPeriod } from "../lib/board";
@@ -52,11 +49,6 @@ interface Props {
   /** The project is passed back because each one has its own store. */
   onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
 }
-
-/** One shared empty roster, so `directory` keeps its identity while none is
- *  loaded — a fresh `[]` every render would rebuild the map and defeat `memo`
- *  on all five hundred rows. */
-const EMPTY_MEMBERS: OrgMember[] = [];
 
 /** Fold a run of identical imported titles at this length or above. */
 const FOLD_AT = 3;
@@ -164,31 +156,9 @@ function dotY(row: Row): number {
 let scrollTopCache = 0;
 
 export function TimelineSidebar({ sessions, loading, filtered, openId, period, onOpen }: Props) {
-  // Built here rather than per row: five hundred rows each subscribing to the
-  // roster would re-render the whole nav every time it revalidated.
-  const authSnapshot = useAuthStore.use.snapshot();
-  const currentUserId =
-    authSnapshot.status === "signed-in" ? (authSnapshot.user?.id ?? null) : null;
-  const organisations = useOrgStore.use.organisations();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
-  // The **server** org id. A local-only Organisation has none and has no roster
-  // to fetch — every row in it is this account's anyway.
-  const remoteOrgId = organisations.find((o) => o.id === activeOrganisationId)?.remoteId ?? null;
-
-  const byOrg = useMembersStore.use.byOrg();
-  const { load: loadMembers } = useMembersStore.use.actions();
-  // Stale-while-revalidate with its own freshness window and an in-flight
-  // guard, so this is safe to fire on every mount and org switch.
-  useEffect(() => {
-    if (remoteOrgId) void loadMembers(remoteOrgId);
-  }, [remoteOrgId, loadMembers]);
-
-  const members = remoteOrgId ? (byOrg[remoteOrgId]?.members ?? EMPTY_MEMBERS) : EMPTY_MEMBERS;
-  const directory = useMemo<AuthorDirectory>(
-    // Keyed by `userId`, the human — a row's `authorId` is never a membership id.
-    () => ({ byId: new Map(members.map((m) => [m.userId, m])), currentUserId }),
-    [members, currentUserId],
-  );
+  // One subscription for the whole nav. Five hundred rows each resolving their
+  // own author would re-render the list every time the roster revalidated.
+  const directory = useOrgDirectory();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const days = useMemo(() => groupSessions(sessions, period), [sessions, period]);
   const parentRef = useRef<HTMLDivElement | null>(null);
