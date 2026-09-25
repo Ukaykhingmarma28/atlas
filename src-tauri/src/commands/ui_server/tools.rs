@@ -110,6 +110,12 @@ pub(super) fn tools() -> Vec<Tool> {
             "Close a tab (default: the active one). An editor with unsaved changes is refused; a busy chat asks the user.",
             json!({ "type": "object", "properties": { "tabId": { "type": "string" } } }),
         ),
+        tool(
+            "ui_command",
+            "Run a command by its keybinding id, as its shortcut would: e.g. panels.terminal, tabs.next, split.new, nav.search. \
+             An unknown id fails with the list of runnable ids.",
+            json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
+        ),
     ]
 }
 
