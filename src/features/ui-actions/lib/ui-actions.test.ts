@@ -1,5 +1,9 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// The settings store subscribes to config events when it loads.
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
+
 import { useLogStore } from "@/features/log/stores/log-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { DEFAULT_SETTINGS } from "@/features/settings/lib/app-settings";

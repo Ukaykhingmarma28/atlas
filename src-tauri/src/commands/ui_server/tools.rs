@@ -53,11 +53,64 @@ fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
 
 /// The tools, reads first.
 pub(super) fn tools() -> Vec<Tool> {
-    vec![tool(
-        "ui_state",
-        "What the Atlas window shows now: project, tabs, active file and cursor, panels, focused group.",
-        json!({ "type": "object", "properties": {} }),
-    )]
+    vec![
+        tool(
+            "ui_state",
+            "What the Atlas window shows now: project (and whether it is yours), tabs, active file and cursor, panels, focused group.",
+            json!({ "type": "object", "properties": {} }),
+        ),
+        tool(
+            "ui_open",
+            "Open something in the active project and make it the active tab. file: optional 1-based line/column/endLine/endColumn. \
+             diff: git diff of `path`. tab: a plain tab type. thread: a chat by session id. Paths may be relative to your cwd.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "target": { "type": "string", "enum": ["file", "diff", "settings", "tab", "thread", "new_chat", "timeline", "url", "knowledge"] },
+                    "path": { "type": "string" },
+                    "line": { "type": "integer" },
+                    "column": { "type": "integer" },
+                    "endLine": { "type": "integer" },
+                    "endColumn": { "type": "integer" },
+                    "repoPath": { "type": "string" },
+                    "staged": { "type": "boolean" },
+                    "commit": { "type": "string" },
+                    "section": { "type": "string", "enum": ["general", "appearance", "icons", "layouts", "providers", "skills", "agents", "models", "updates", "keybindings", "about"] },
+                    "type": { "type": "string", "enum": ["canvas", "browser", "tasks", "knowledge", "knowledge-graph", "memory", "settings", "log", "usage", "artifacts"] },
+                    "sessionId": { "type": "string" },
+                    "agent": { "type": "string" },
+                    "url": { "type": "string" },
+                    "noteId": { "type": "string" }
+                },
+                "required": ["target"]
+            }),
+        ),
+        tool(
+            "ui_focus",
+            "Activate a tab, show/hide a panel (omit visible to toggle), pick a side panel section or the right panel's mode, \
+             focus a split column by its index in ui_state.groups, or reveal a path in the explorer.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "target": { "type": "string", "enum": ["tab", "panel", "section", "right_mode", "group", "explorer"] },
+                    "id": { "type": "string" },
+                    "name": { "type": "string", "enum": ["left", "right", "chat_sidebar", "terminal", "timeline_sidebar", "tab_bar"] },
+                    "visible": { "type": "boolean" },
+                    "side": { "type": "string", "enum": ["left", "right"] },
+                    "section": { "type": "string", "enum": ["files", "knowledge", "changes", "github", "git-graph"] },
+                    "mode": { "type": "string", "enum": ["source-control", "chat"] },
+                    "index": { "type": "integer" },
+                    "path": { "type": "string" }
+                },
+                "required": ["target"]
+            }),
+        ),
+        tool(
+            "ui_close",
+            "Close a tab (default: the active one). An editor with unsaved changes is refused; a busy chat asks the user.",
+            json!({ "type": "object", "properties": { "tabId": { "type": "string" } } }),
+        ),
+    ]
 }
 
 pub(super) fn tool_names() -> Vec<String> {

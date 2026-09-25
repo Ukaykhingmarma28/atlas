@@ -8,10 +8,14 @@
 import { logEvent } from "@/features/log/lib/log";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { buildUiState } from "./ui-state";
+import { performOpen } from "./ui-open";
+import { performFocus } from "./ui-focus";
+import { performClose } from "./ui-close";
+import { UiRefusal } from "./args";
 import { fail, ok, type UiActionReply, type UiActionRequest } from "./types";
 
 export async function performUiAction(request: UiActionRequest): Promise<UiActionReply> {
-  const reply = dispatch(request);
+  const reply = await dispatch(request);
   logEvent({
     source: "agent",
     kind: "agent-ui-action",
@@ -30,13 +34,24 @@ export async function performUiAction(request: UiActionRequest): Promise<UiActio
 const SWITCHED_OFF =
   "Atlas Agent navigation is switched off in Settings → General; ask the user to turn it on.";
 
-function dispatch(request: UiActionRequest): UiActionReply {
+async function dispatch(request: UiActionRequest): Promise<UiActionReply> {
   // Rust refuses first; this catches a request that raced the switch.
   if (!useSettingsStore.getState().settings.agentUiNavigation) return fail(SWITCHED_OFF);
-  switch (request.tool) {
-    case "ui_state":
-      return ok(buildUiState(request));
-    default:
-      return fail(`unknown UI action "${request.tool}"`);
+  try {
+    switch (request.tool) {
+      case "ui_state":
+        return ok(buildUiState(request));
+      case "ui_open":
+        return ok(await performOpen(request));
+      case "ui_focus":
+        return ok(await performFocus(request));
+      case "ui_close":
+        return ok(await performClose(request));
+      default:
+        return fail(`unknown UI action "${request.tool}"`);
+    }
+  } catch (e) {
+    if (e instanceof UiRefusal) return fail(e.message);
+    return fail(`${request.tool} failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
