@@ -40,6 +40,12 @@ import { StreamingMarkdown } from "./streaming-markdown";
 import { openDetail } from "../stores/detail-panel-store";
 import { openTurnDiff } from "../lib/open-turn-diff";
 import { UserRowActions } from "./user-row-actions";
+import {
+  ProseHeaderActions,
+  RowCommentPill,
+  TurnCommentPill,
+  useRowHasComments,
+} from "./chat-comment-pills";
 import type {
   UserRow,
   ProseRow,
@@ -284,10 +290,12 @@ function clampable(row: UserRow): boolean {
 
 export const ProseRowView = memo(function ProseRowView({
   row,
+  tabId,
   agentLabel,
   priority,
 }: {
   row: ProseRow;
+  tabId: string;
   agentLabel: string;
   /** Position in the thread — newest parses first. See `CachedMarkdown`. */
   priority: number;
@@ -321,6 +329,10 @@ export const ProseRowView = memo(function ProseRowView({
               minute: "2-digit",
             })}
           </span>
+          {/* Comment + copy at the right end, only on a shared session; the
+              row is `p:<messageId>`. Renders nothing otherwise, so the line
+              stays the one left-aligned group described above. */}
+          <ProseHeaderActions tabId={tabId} messageId={row.id.slice(2)} text={row.text} />
         </div>
       )}
       {/* Settled prose goes through the plain cached renderer: its root IS
@@ -347,11 +359,42 @@ export const ProseRowView = memo(function ProseRowView({
 
 export const ThinkingRowView = memo(function ThinkingRowView({
   row,
+  tabId,
   onToggleExpand,
 }: {
   row: ThinkingRow;
+  tabId: string;
   onToggleExpand: (id: string) => void;
 }) {
+  // `th:<messageId>`. A discussed thought wears its pill; the wrapper exists
+  // only then, so an undiscussed row's DOM is exactly what it was.
+  const messageId = row.id.slice(3);
+  const discussed = useRowHasComments(tabId, messageId);
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => onToggleExpand(row.id)}
+      className={cn(
+        "flex h-[26px] items-center gap-2 text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors",
+        discussed ? "min-w-0 flex-1" : "w-full",
+      )}
+    >
+      {/* Same slot, size and stroke as the tool rows around it. */}
+      <span className="flex w-4 shrink-0 justify-center">
+        <Brain
+          size={ICON_PX}
+          strokeWidth={ICON_STROKE}
+          className={cn(row.streaming && "atlas-marker-running")}
+        />
+      </span>
+      <span>{row.streaming ? "Thinking…" : "Thought process"}</span>
+      <ChevronRight
+        size={ICON_PX}
+        strokeWidth={ICON_STROKE}
+        className={cn("transition-transform", row.expanded && "rotate-90")}
+      />
+    </button>
+  );
   return (
     // A turn often emits several thinking blocks in a row, and at the bare
     // 26px button height they stacked into one undifferentiated block — three
@@ -359,26 +402,14 @@ export const ThinkingRowView = memo(function ThinkingRowView({
     // takes the pitch to 32px (the row plus a quarter) which is enough to tell
     // them apart without turning them into paragraphs.
     <Column className="py-[3px]">
-      <button
-        type="button"
-        onClick={() => onToggleExpand(row.id)}
-        className="flex h-[26px] w-full items-center gap-2 text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors"
-      >
-        {/* Same slot, size and stroke as the tool rows around it. */}
-        <span className="flex w-4 shrink-0 justify-center">
-          <Brain
-            size={ICON_PX}
-            strokeWidth={ICON_STROKE}
-            className={cn(row.streaming && "atlas-marker-running")}
-          />
-        </span>
-        <span>{row.streaming ? "Thinking…" : "Thought process"}</span>
-        <ChevronRight
-          size={ICON_PX}
-          strokeWidth={ICON_STROKE}
-          className={cn("transition-transform", row.expanded && "rotate-90")}
-        />
-      </button>
+      {discussed ? (
+        <div className="flex items-center gap-2">
+          {toggle}
+          <RowCommentPill tabId={tabId} chatKey={messageId} />
+        </div>
+      ) : (
+        toggle
+      )}
       {row.expanded && (
         <div className="pb-3 pl-6">
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[19px] text-[var(--muted-foreground)] select-text">
@@ -465,6 +496,7 @@ export const MarkerRowView = memo(function MarkerRowView({
     }
   }, [row.opens, row.path, row.toolCallId, tabId]);
   const fileLink = clickable && FILE_DETAIL.has(row.tool);
+  const discussed = useRowHasComments(tabId, row.toolCallId);
 
   const line = (
     <button
@@ -472,7 +504,8 @@ export const MarkerRowView = memo(function MarkerRowView({
       disabled={!clickable}
       onClick={clickable ? onClick : undefined}
       className={cn(
-        "atlas-marker group/marker w-full min-w-0 text-left text-base text-[var(--muted-foreground)]",
+        "atlas-marker group/marker min-w-0 text-left text-base text-[var(--muted-foreground)]",
+        discussed ? "flex-1" : "w-full",
         clickable && "cursor-pointer hover:text-[var(--secondary-foreground)]",
         row.state === "running" && "atlas-marker-running",
       )}
@@ -514,7 +547,17 @@ export const MarkerRowView = memo(function MarkerRowView({
       )}
     </button>
   );
-  return embedded ? line : <Column>{line}</Column>;
+  // A discussed call wears its pill beside the line; the wrapper exists only
+  // then, so every other marker row's DOM is exactly what it was.
+  const body = discussed ? (
+    <div className="flex items-center gap-2">
+      {line}
+      <RowCommentPill tabId={tabId} chatKey={row.toolCallId} />
+    </div>
+  ) : (
+    line
+  );
+  return embedded ? body : <Column>{body}</Column>;
 });
 
 /**
@@ -661,9 +704,11 @@ function LiveElapsed({ startedAt, minMs = 0 }: { startedAt: number; minMs?: numb
  */
 export const WorkHeaderRowView = memo(function WorkHeaderRowView({
   row,
+  tabId,
   onToggle,
 }: {
   row: WorkHeaderRow;
+  tabId: string;
   onToggle: (id: string) => void;
 }) {
   const label = row.live ? (
@@ -683,7 +728,7 @@ export const WorkHeaderRowView = memo(function WorkHeaderRowView({
   );
   return (
     <Column className="pt-2 pb-2">
-      <div className="border-b border-[var(--atlas-border-subtle)] pb-2">
+      <div className="flex items-center border-b border-[var(--atlas-border-subtle)] pb-2">
         {row.foldable ? (
           <button
             type="button"
@@ -705,6 +750,15 @@ export const WorkHeaderRowView = memo(function WorkHeaderRowView({
             <span>{label}</span>
           </div>
         )}
+        {/* Every thread inside the fold, summed. Opens the fold, where the
+            rows carry their own pills. Nothing at zero. */}
+        <TurnCommentPill
+          tabId={tabId}
+          turnId={row.turnId}
+          onOpen={() => {
+            if (row.foldable && !row.open) onToggle(row.id);
+          }}
+        />
       </div>
     </Column>
   );

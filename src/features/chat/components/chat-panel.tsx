@@ -111,6 +111,8 @@ import { collectTurnEdits } from "../lib/turn-edits";
  *  this much so the first row clears the bar. Must match `ChatHeader`'s bar. */
 const HEADER_INSET = 46;
 import { PermissionModal } from "./permission-modal";
+import { ChatCommentsController } from "./chat-comments-controller";
+import { useCommentCount } from "../stores/chat-comments-store";
 import { SessionElicitation } from "./session-elicitation";
 
 // Both panels are modal-style and never visible on first paint. Lazy so
@@ -119,6 +121,9 @@ const BashHistoryPanel = lazy(() =>
   import("./bash-history-panel").then((m) => ({ default: m.BashHistoryPanel })),
 );
 const PlansPanel = lazy(() => import("./plans-panel").then((m) => ({ default: m.PlansPanel })));
+const ChatCommentsPanel = lazy(() =>
+  import("./chat-comments-panel").then((m) => ({ default: m.ChatCommentsPanel })),
+);
 const ChatSearchPalette = lazy(() =>
   import("./chat-search-palette").then((m) => ({
     default: m.ChatSearchPalette,
@@ -233,6 +238,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "assistant">("all");
   const [bashPanelOpen, setBashPanelOpen] = useState(false);
   const [plansPanelOpen, setPlansPanelOpen] = useState(false);
+  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+  // A number or null; changes only when a comment lands or the session's
+  // cloud identity resolves.
+  const commentCount = useCommentCount(tabId);
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
 
@@ -958,11 +967,19 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const onToggleBashStable = useCallback(() => {
     setBashPanelOpen((v) => !v);
     setPlansPanelOpen(false);
+    setCommentsPanelOpen(false);
   }, []);
   const onTogglePlansStable = useCallback(() => {
     setPlansPanelOpen((v) => !v);
     setBashPanelOpen(false);
+    setCommentsPanelOpen(false);
   }, []);
+  const onToggleCommentsStable = useCallback(() => {
+    setCommentsPanelOpen((v) => !v);
+    setBashPanelOpen(false);
+    setPlansPanelOpen(false);
+  }, []);
+  const onCloseCommentsStable = useCallback(() => setCommentsPanelOpen(false), []);
   const onNewSessionStable = useCallback(() => openNewAgentChat(), []);
   useEffect(() => {
     const cur = session?.status ?? "idle";
@@ -1367,6 +1384,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 onToggleBash={onToggleBashStable}
                 plansPanelOpen={plansPanelOpen}
                 onTogglePlans={onTogglePlansStable}
+                commentCount={commentCount}
+                commentsPanelOpen={commentsPanelOpen}
+                onToggleComments={onToggleCommentsStable}
                 // Zero-arg wrapper, NOT a bare reference: React would call
                 // openNewAgentChat(SyntheticMouseEvent) and the event object
                 // sailed through `agent?` into the store as agentType —
@@ -1425,6 +1445,15 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       {plansPanelOpen && (
         <Suspense fallback={null}>
           <PlansPanel onClose={() => setPlansPanelOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* Cloud comments: the resolver runs for the pane's lifetime (it is what
+          decides whether the header button exists); the panel only on demand. */}
+      <ChatCommentsController tabId={tabId} />
+      {commentsPanelOpen && (
+        <Suspense fallback={null}>
+          <ChatCommentsPanel tabId={tabId} onClose={onCloseCommentsStable} />
         </Suspense>
       )}
 

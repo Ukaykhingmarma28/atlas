@@ -46,10 +46,15 @@ pub struct ArtifactsCloudState {
     /// The Organisation currently being refreshed, by **server** id. `None`
     /// when signed out or in a local-only Organisation.
     pub org: std::sync::Mutex<Option<String>>,
+    /// The last `(org_id, project_paths)` the renderer targeted, replayed by
+    /// [`resync_targets`] when a binding changes on the Rust side — the
+    /// renderer's effect keys on auth, Organisation and the set of project
+    /// paths, none of which move when a Project is connected or promoted.
+    pub targets: std::sync::Mutex<(Option<String>, Vec<String>)>,
 }
 
 impl ArtifactsCloudState {
-    fn org_id(&self) -> Option<String> {
+    pub(crate) fn org_id(&self) -> Option<String> {
         self.org.lock().ok().and_then(|org| org.clone())
     }
 }
@@ -112,6 +117,7 @@ pub fn install(app: &AppHandle) {
         board,
         client,
         org: std::sync::Mutex::new(None),
+        targets: std::sync::Mutex::new((None, Vec::new())),
     });
 
     // Forward the crate's broadcast onto the one window channel.
@@ -149,8 +155,13 @@ pub fn install(app: &AppHandle) {
 ///
 /// Flat and `kind`-tagged, matching `atlas:agents` — one channel, payload-typed,
 /// rather than a channel per shape.
+///
+/// `rename_all` on an enum renames the **variants** only; the fields inside
+/// need `rename_all_fields`, or `session_id` goes out as written and the
+/// renderer's `payload.sessionId` filter drops every frame. That was the whole
+/// of the "comments aren't live" bug — see the test below.
 #[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum WireEvent {
     BoardChanged,
     EntryUpsert {
@@ -243,6 +254,53 @@ pub async fn artifacts_cloud_retarget(
     let Some(state) = app.try_state::<ArtifactsCloudState>() else {
         return Err("artifacts cloud is not ready".into());
     };
+    if let Ok(mut targets) = state.targets.lock() {
+        *targets = (org_id.clone(), project_paths.clone());
+    }
+    apply_targets(&app, org_id, project_paths).await
+}
+
+/// Re-run targeting after a binding changed on this side.
+///
+/// `capture_connect`, `capture_promote`, `capture_register_cloud` and
+/// `capture_disable` all change which Projects should hold a socket, and none
+/// of them changes anything the renderer's retarget effect watches. Replays the
+/// renderer's last inputs plus `touched`, so a Project bound before the
+/// renderer ever listed it is still reached. Spawned, never awaited: the
+/// callers hold nothing this needs, and a binding write must not wait on a
+/// board refresh.
+pub fn resync_targets(app: &AppHandle, touched: Option<&str>) {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return };
+    let (org_id, mut project_paths) =
+        state.targets.lock().map(|t| t.clone()).unwrap_or_default();
+    if let Some(path) = touched {
+        if !project_paths.iter().any(|p| p == path) {
+            project_paths.push(path.to_string());
+        }
+    }
+    tracing::info!(
+        target: "atlas_artifacts",
+        "resync targets after a binding change ({} paths, touched={touched:?})",
+        project_paths.len()
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = apply_targets(&app, org_id, project_paths).await {
+            tracing::warn!(target: "atlas_artifacts", "resync targets failed: {e}");
+        }
+    });
+}
+
+/// The body of a retarget: reconcile the manager against the bindings that
+/// are Cloud in this Organisation, then paint from the network once.
+async fn apply_targets(
+    app: &AppHandle,
+    org_id: Option<String>,
+    project_paths: Vec<String>,
+) -> Result<(), String> {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else {
+        return Err("artifacts cloud is not ready".into());
+    };
 
     let changed = {
         let Ok(mut current) = state.org.lock() else {
@@ -276,7 +334,7 @@ pub async fn artifacts_cloud_retarget(
     // Paint from the network once immediately rather than waiting a whole tick
     // — a switch that shows an empty remote half for fifteen seconds reads as
     // "this Organisation has no work".
-    refresh_board(&app).await;
+    refresh_board(app).await;
     Ok(())
 }
 
@@ -296,19 +354,91 @@ fn connected_projects(project_paths: &[String], org_id: &str) -> Vec<String> {
             continue;
         };
         let Ok(Some(binding)) = store.binding() else { continue };
-        if binding.mode != atlas_checkpoint::ProjectMode::Cloud {
+        if !is_cloud_bound(&binding, org_id) {
             continue;
         }
-        if binding.org_id.as_deref() != Some(org_id) {
-            continue;
-        }
-        if let Some(id) = binding.remote_workspace_id {
-            out.push(id);
+        match binding.remote_workspace_id {
+            Some(id) => out.push(id),
+            // A binding from before the column existed drains by slug but has
+            // no id to open a socket against. Worth one line, because such a
+            // Project looks synced on the board and silently never goes live.
+            None => tracing::debug!(
+                target: "atlas_artifacts",
+                "{path}: cloud binding has no remote workspace id; no socket"
+            ),
         }
     }
     out.sort();
     out.dedup();
     out
+}
+
+/// Is this binding one this Organisation's sockets and comments apply to?
+///
+/// Cloud mode, still enabled, and bound to *this* tenant. The remote id is
+/// checked by the caller because a missing one is worth a log line here and a
+/// plain `None` elsewhere.
+pub(crate) fn is_cloud_bound(binding: &atlas_checkpoint::Binding, org_id: &str) -> bool {
+    binding.mode == atlas_checkpoint::ProjectMode::Cloud
+        && binding.enabled
+        && binding.org_id.as_deref() == Some(org_id)
+}
+
+/// The cloud identity of a live chat session, or `None` when comments do not
+/// apply to it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentTarget {
+    /// The server Project id — what every `artifacts_cloud_*` call wants.
+    pub remote_project_id: String,
+    /// The captured Session row id, which is also its id on the server.
+    pub session_id: String,
+    pub entries: Vec<atlas_checkpoint::AnchorEntry>,
+}
+
+/// What a live chat session is called in the cloud, and which of its rows can
+/// carry a comment.
+///
+/// `None` unless all three hold: a synced Organisation is targeted, the
+/// Project is bound to Cloud for it, and the session has been captured (its
+/// first prompt creates the row). The renderer asks again after each turn —
+/// the read is two indexed selects.
+#[tauri::command]
+pub async fn chat_comment_target(
+    project_path: String,
+    native_session_id: String,
+    app: AppHandle,
+) -> Result<Option<CommentTarget>, String> {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(None) };
+    let Some(org_id) = state.org_id() else { return Ok(None) };
+    tauri::async_runtime::spawn_blocking(move || {
+        use atlas_checkpoint::Source;
+        let Some(store) = crate::commands::capture::open_reader(&project_path)? else {
+            return Ok(None);
+        };
+        let Ok(Some(binding)) = store.binding() else { return Ok(None) };
+        if !is_cloud_bound(&binding, &org_id) {
+            return Ok(None);
+        }
+        let Some(remote_project_id) = binding.remote_workspace_id else { return Ok(None) };
+        let workspace_id =
+            crate::commands::capture::project_id_for(std::path::Path::new(&project_path));
+        let mut row_id = None;
+        for source in [Source::Acp, Source::Native] {
+            row_id = store
+                .session_id_for(&workspace_id, source, &native_session_id)
+                .map_err(|e| e.to_string())?;
+            if row_id.is_some() {
+                break;
+            }
+        }
+        let Some(session_id) = row_id else { return Ok(None) };
+        let entries =
+            atlas_checkpoint::session_anchors(&store, &session_id).map_err(|e| e.to_string())?;
+        Ok(Some(CommentTarget { remote_project_id, session_id, entries }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Follow one Session's entries and comments in realtime.
@@ -322,7 +452,13 @@ pub async fn artifacts_cloud_watch(
     app: AppHandle,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(()) };
-    let Some(org_id) = state.org_id() else { return Ok(()) };
+    let Some(org_id) = state.org_id() else {
+        tracing::debug!(
+            target: "atlas_artifacts",
+            "watch {project_id}/{session_id:?} ignored: no organisation targeted yet"
+        );
+        return Ok(());
+    };
     let key = (org_id, project_id);
     match session_id {
         Some(session_id) => state.manager.subscribe_session(&key, &session_id),
@@ -623,6 +759,46 @@ mod tests {
             resolved_at: None,
             resolved_by: None,
         }
+    }
+
+    #[test]
+    fn wire_events_carry_camel_case_fields() {
+        // The renderer filters on `payload.sessionId` / `payload.projectId`.
+        // A snake_case key here is not a type error anywhere — it is a frame
+        // that arrives, matches on `kind`, and is then dropped by the id
+        // comparison, which is exactly how comments stopped being live.
+        let frames = [
+            WireEvent::CommentUpsert {
+                session_id: "ses_1".into(),
+                comment: comment("c1", AnchorKind::Message, "msg_1", None),
+            },
+            WireEvent::EntryUpsert {
+                session_id: "ses_1".into(),
+                change: "updated".into(),
+                entry: serde_json::json!({ "id": "msg_1" }),
+            },
+            WireEvent::Presence { project_id: "ws_1".into(), online: vec!["user_ada".into()] },
+            WireEvent::Revoked { project_id: "ws_1".into() },
+        ];
+        for frame in frames {
+            let json = serde_json::to_value(&frame).unwrap();
+            let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+            assert!(!keys.contains(&"session_id"), "{json}");
+            assert!(!keys.contains(&"project_id"), "{json}");
+            assert!(
+                keys.contains(&"sessionId") || keys.contains(&"projectId"),
+                "{json}"
+            );
+        }
+        // The kind tag itself is what the renderer switches on.
+        let json = serde_json::to_value(WireEvent::CommentUpsert {
+            session_id: "ses_1".into(),
+            comment: comment("c1", AnchorKind::Message, "msg_1", None),
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "commentUpsert");
+        assert_eq!(json["sessionId"], "ses_1");
+        assert_eq!(json["comment"]["anchorId"], "msg_1");
     }
 
     #[test]

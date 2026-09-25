@@ -65,7 +65,19 @@ pub struct ArtifactsClient {
     http: reqwest::Client,
     base: String,
     tokens: Arc<dyn TokenSource>,
+    /// The last token minted, and when. Every request used to mint its own —
+    /// a `GET /token` round trip per board page, per detail page and per
+    /// comment — and a Timeline refreshing a Cloud Project every 15 s drove
+    /// the auth server into `429`, after which the agent could not mint
+    /// either and its turn died on "Missing bearer token". Dropped on any
+    /// `401`, so a rejected token is never offered twice.
+    cached: std::sync::Mutex<Option<(String, std::time::Instant)>>,
 }
+
+/// How long a minted token is reused. Access JWTs live about ten minutes;
+/// reusing one for four leaves a wide margin for clock skew and slow requests
+/// without parsing `exp`.
+const TOKEN_REUSE: std::time::Duration = std::time::Duration::from_secs(240);
 
 impl ArtifactsClient {
     pub fn new(tokens: Arc<dyn TokenSource>) -> Result<Self> {
@@ -73,7 +85,7 @@ impl ArtifactsClient {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| Error::Transport(format!("building http client: {e}")))?;
-        Ok(Self { http, base: ingest_base(), tokens })
+        Ok(Self { http, base: ingest_base(), tokens, cached: std::sync::Mutex::new(None) })
     }
 
     /// Recent Sessions across the Organisation, or one Project of it.
@@ -316,7 +328,22 @@ impl ArtifactsClient {
     }
 
     async fn token(&self) -> Result<String> {
-        self.tokens.mint().await
+        {
+            let cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((token, minted)) = cached.as_ref() {
+                if minted.elapsed() < TOKEN_REUSE {
+                    return Ok(token.clone());
+                }
+            }
+        }
+        let token = self.tokens.mint().await?;
+        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((token.clone(), std::time::Instant::now()));
+        Ok(token)
+    }
+
+    fn forget_token(&self) {
+        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// Send, classify the status, then decode.
@@ -335,6 +362,9 @@ impl ArtifactsClient {
             .map_err(|e| Error::Transport(format!("{what}: {e}")))?;
 
         let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            self.forget_token();
+        }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::RateLimited { retry_after: retry_after(&response) });
         }

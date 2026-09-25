@@ -27,9 +27,12 @@
 //! the board gets realtime for free; entry and comment frames only reach
 //! sockets that have subscribed to that Session.
 
+use std::time::Duration;
+
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -39,6 +42,39 @@ use crate::model::{Comment, RemoteSession};
 
 /// The close code the server uses when membership was revoked.
 const WS_CLOSE_REVOKED: u16 = 1008;
+
+/// How a connection proves it is still a connection.
+///
+/// Neither side of this protocol pings on its own: the server's Durable Object
+/// hibernates and never calls `setWebSocketAutoResponse`, and tungstenite only
+/// *answers* pings. So a socket cut without a FIN — a laptop lid, a Wi-Fi
+/// switch, a NAT table expiring — used to sit half-open forever: the read
+/// never returned, the subscription was gone server-side, and every comment
+/// posted after that was lost until the Session was reopened.
+///
+/// The client pings every `ping`; going `idle` without a single incoming
+/// message (a frame, a ping or a pong) ends the attempt as a transport failure
+/// and the manager redials. A dial that produces no `101` within `dial` is cut
+/// the same way, because `connect_async` has no deadline of its own.
+#[derive(Debug, Clone, Copy)]
+pub struct Keepalive {
+    pub ping: Duration,
+    pub idle: Duration,
+    pub dial: Duration,
+}
+
+impl Default for Keepalive {
+    fn default() -> Self {
+        Self {
+            ping: Duration::from_secs(25),
+            idle: Duration::from_secs(80),
+            dial: Duration::from_secs(20),
+        }
+    }
+}
+
+/// The exit reason for a socket that went quiet past [`Keepalive::idle`].
+pub const IDLE_EXIT: &str = "idle";
 
 /// What this client says.
 #[derive(Debug, Clone, Serialize)]
@@ -156,15 +192,26 @@ pub async fn run(
     token: String,
     mut outbound: mpsc::UnboundedReceiver<ClientFrame>,
     events: mpsc::UnboundedSender<ConnEvent>,
+    keepalive: Keepalive,
 ) -> Result<()> {
     let request = ticket_request(url, &token)?;
 
-    let (stream, _response) = match tokio_tungstenite::connect_async(request).await {
-        Ok(ok) => ok,
-        Err(err) => {
+    let dialed = tokio::time::timeout(keepalive.dial, tokio_tungstenite::connect_async(request)).await;
+    let (stream, _response) = match dialed {
+        Ok(Ok(ok)) => ok,
+        Ok(Err(err)) => {
             let reason = classify_handshake(&err);
             tracing::warn!(target: "atlas_artifacts::socket", "handshake failed: {reason:?}");
             let _ = events.send(ConnEvent::Closed(reason));
+            return Ok(());
+        }
+        Err(_elapsed) => {
+            tracing::warn!(
+                target: "atlas_artifacts::socket",
+                "handshake produced no answer in {:?}",
+                keepalive.dial
+            );
+            let _ = events.send(ConnEvent::Closed(ExitReason::Transport("dial timeout".into())));
             return Ok(());
         }
     };
@@ -172,10 +219,15 @@ pub async fn run(
     tracing::info!(target: "atlas_artifacts::socket", "socket open");
     let (mut write, mut read) = stream.split();
 
+    let mut last_seen = Instant::now();
+    let mut ping = tokio::time::interval_at(Instant::now() + keepalive.ping, keepalive.ping);
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     let exit = loop {
         tokio::select! {
             incoming = read.next() => match incoming {
                 Some(Ok(WsMessage::Text(text))) => {
+                    last_seen = Instant::now();
                     match serde_json::from_str::<ServerFrame>(&text) {
                         Ok(frame) => {
                             if events.send(ConnEvent::Frame(Box::new(frame))).is_err() {
@@ -195,12 +247,27 @@ pub async fn run(
                         .is_some_and(|f| u16::from(f.code) == WS_CLOSE_REVOKED);
                     break if revoked { ExitReason::Revoked } else { ExitReason::Closed };
                 }
-                // ping/pong are handled by the library; binary is refused by
-                // the server anyway — blobs go over `PUT /blobs`.
-                Some(Ok(_)) => {}
+                // A ping is auto-answered by the library and a pong is the
+                // answer to ours; either proves the peer is there. Binary is
+                // refused by the server anyway — blobs go over `PUT /blobs`.
+                Some(Ok(_)) => last_seen = Instant::now(),
                 Some(Err(e)) => break ExitReason::Transport(e.to_string()),
                 None => break ExitReason::Closed,
             },
+
+            _ = ping.tick() => {
+                if last_seen.elapsed() >= keepalive.idle {
+                    tracing::warn!(
+                        target: "atlas_artifacts::socket",
+                        "no frame or pong in {:?}; treating the socket as dead",
+                        last_seen.elapsed()
+                    );
+                    break ExitReason::Transport(IDLE_EXIT.into());
+                }
+                if let Err(e) = write.send(WsMessage::Ping(b"atlas".to_vec().into())).await {
+                    break ExitReason::Transport(format!("ping: {e}"));
+                }
+            }
 
             to_send = outbound.recv() => match to_send {
                 Some(frame) => {
@@ -234,13 +301,18 @@ pub async fn run(
 ///
 /// Distinguishable only by status: `401` is worth one re-mint, `403` is worth
 /// nothing at all, everything else is worth a backoff.
+///
+/// `404` is deliberately **not** terminal. The server answers it for "no such
+/// Workspace" *and* "one you may not read" (anti-enumeration), but also during
+/// a deploy, a Durable Object cold start and the seconds between a Project
+/// being registered and its object being reachable. Retiring the Project on
+/// it — as this once did — silently ended realtime until the next retarget.
 fn classify_handshake(err: &tokio_tungstenite::tungstenite::Error) -> ExitReason {
     use tokio_tungstenite::tungstenite::Error as WsError;
     match err {
         WsError::Http(response) => match response.status().as_u16() {
             401 => ExitReason::Unauthorized,
             403 => ExitReason::Forbidden,
-            404 => ExitReason::Forbidden,
             other => ExitReason::Transport(format!("HTTP {other}")),
         },
         // Deliberately not formatting the error itself: it can carry the
@@ -266,6 +338,25 @@ mod tests {
         assert!(ExitReason::Transport("io".into()).should_retry());
         // One re-mint, then the backoff — a JWT can expire between mint and dial.
         assert!(ExitReason::Unauthorized.should_retry());
+    }
+
+    #[test]
+    fn a_missing_workspace_is_retried_rather_than_retired() {
+        // 404 covers "not yours" but also "not yet" — a Project registered a
+        // second ago, a worker mid-deploy. Only 403 is a verdict worth stopping
+        // on; a 404 that persists is bounded by the backoff cap and cleared by
+        // the next retarget.
+        use tokio_tungstenite::tungstenite::http::Response;
+        let http = |status: u16| {
+            tokio_tungstenite::tungstenite::Error::Http(Box::new(
+                Response::builder().status(status).body(None).unwrap(),
+            ))
+        };
+        assert!(matches!(classify_handshake(&http(404)), ExitReason::Transport(_)));
+        assert!(classify_handshake(&http(404)).should_retry());
+        assert_eq!(classify_handshake(&http(403)), ExitReason::Forbidden);
+        assert_eq!(classify_handshake(&http(401)), ExitReason::Unauthorized);
+        assert!(matches!(classify_handshake(&http(503)), ExitReason::Transport(_)));
     }
 
     #[test]

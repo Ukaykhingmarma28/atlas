@@ -39,12 +39,12 @@ mod socket;
 pub use board::{CloudBoard, OrgBoard, ProjectKey};
 pub use client::{ArtifactsClient, CommentTarget, NewComment};
 pub use error::{Error, Result};
-pub use manager::{ArtifactsEvent, ArtifactsManager};
+pub use manager::{ArtifactsEvent, ArtifactsManager, ManagerConfig};
 pub use model::{
     AnchorKind, Comment, EntryPayload, RemoteEntry, RemoteEntryCounts, RemoteProject,
     RemoteSession, RemoteToolTally, SessionBoardPage, SessionDetailPage,
 };
-pub use socket::{ClientFrame, ExitReason, ServerFrame};
+pub use socket::{ClientFrame, ExitReason, Keepalive, ServerFrame};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -90,7 +90,12 @@ fn ws_base() -> String {
 
 /// The socket URL for one Project.
 pub fn socket_url(org_id: &str, project_id: &str) -> String {
-    format!("{}/ws?org={org_id}&workspace={project_id}", ws_base())
+    socket_url_at(&ws_base(), org_id, project_id)
+}
+
+/// The same, against an explicit base — what the manager's tests dial.
+pub fn socket_url_at(ws_base: &str, org_id: &str, project_id: &str) -> String {
+    format!("{}/ws?org={org_id}&workspace={project_id}", ws_base.trim_end_matches('/'))
 }
 
 /// Where the web app lives.

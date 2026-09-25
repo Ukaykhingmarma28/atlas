@@ -67,7 +67,8 @@ export const DEFAULT_THREAD_FILTERS: ThreadFilters = {
 export function buildThreads(
   byAnchor: Record<string, Comment[]>,
   session: Comment[],
-  entries: TimelineEntry[],
+  /** The rows in transcript order; only their ids are read. */
+  entries: ReadonlyArray<Pick<TimelineEntry, "id">>,
 ): CommentThread[] {
   const indexOf = new Map(entries.map((entry, i) => [entry.id, i] as const));
   const out: CommentThread[] = [];
@@ -176,6 +177,26 @@ export function threadAuthors(threads: CommentThread[]): string[] {
 /** How many comments the thread actually shows — deleted rows are tombstones. */
 export function threadSize(thread: CommentThread): number {
   return [thread.root, ...thread.replies].filter((c) => !c.deletedAt).length;
+}
+
+/**
+ * Top-level comments and replies, counted apart.
+ *
+ * One anchor can carry several top-level comments (two people each opening a
+ * thread on the same response), and `replies` holds everything that is not
+ * THE root — so "N replies" over-counted: a second top-level comment is not a
+ * reply to the first. The panel says "2 comments · 1 reply", which is what the
+ * popover shows.
+ */
+export function threadTally(thread: CommentThread): { comments: number; replies: number } {
+  let comments = 0;
+  let replies = 0;
+  for (const c of [thread.root, ...thread.replies]) {
+    if (c.deletedAt) continue;
+    if (c.parentId) replies += 1;
+    else comments += 1;
+  }
+  return { comments, replies };
 }
 
 /**

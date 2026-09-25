@@ -1,5 +1,4 @@
 import {
-  Children,
   createContext,
   memo,
   useCallback,
@@ -32,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { AtlasIcon } from "@/components/atlas-icon";
+import { ActionCluster } from "./action-cluster";
 import { extractInjectedContext, type InjectedBlock } from "@/features/chat/lib/atlas-context";
 import { CachedMarkdown } from "@/lib/markdown-cache";
 import { fmtCost } from "@/features/monitor/lib/usage-format";
@@ -243,16 +243,18 @@ export function SessionDetail({
   const s = detail.summary;
 
   /**
-   * How many discussions the Session carries — the dock's badge.
+   * How many comments the Session carries — the dock's badge.
    *
-   * Threads, not comments: the button opens a list of conversations, and a
-   * count of individual replies would not match the number of rows behind it.
+   * Comments, not commented nodes: two people each opening a thread on the
+   * same response are two comments, and a reply is one more. The badge says
+   * how much has been said; the panel's rows say where.
    */
-  const threadCount = useMemo(
-    () =>
-      comments ? Object.keys(comments.byAnchor).length + (comments.session.length > 0 ? 1 : 0) : 0,
-    [comments],
-  );
+  const commentCount = useMemo(() => {
+    if (!comments) return 0;
+    let n = visibleCount(comments.session);
+    for (const rowId in comments.byAnchor) n += visibleCount(comments.byAnchor[rowId]);
+    return n;
+  }, [comments]);
 
   /**
    * Entries with identity carried across detail re-reads.
@@ -669,7 +671,7 @@ export function SessionDetail({
                   label={commentsOpen ? "Close comments" : "Comments"}
                   bare
                   active={commentsOpen}
-                  badge={threadCount > 0 ? threadCount : undefined}
+                  badge={commentCount > 0 ? commentCount : undefined}
                   disabled={!onToggleComments}
                   onClick={onToggleComments}
                 >
@@ -2256,40 +2258,6 @@ function Meta({ label, value }: { label: string; value: string }) {
  * carries those, and a bordered button inside a bordered pill reads as a
  * double outline at this scale.
  */
-/**
- * The row's controls as one pill.
- *
- * Grouped rather than free-floating because their visibility rules differ: a
- * discussed row's comment button must always be on screen — that pill is how a
- * discussion announces itself — while copy has always been hover-only. Side by
- * side that read as a pill with a gap beside it, waiting for something to
- * appear. One surround, one rule: if any control in the group is pinned, the
- * whole group is.
- *
- * Renders nothing when it has no children, so an unsynced Checkpoint row does
- * not carry an empty pill.
- */
-function ActionCluster({ pinned, children }: { pinned: boolean; children: ReactNode }) {
-  const shown = Children.toArray(children).filter(Boolean);
-  if (shown.length === 0) return null;
-  return (
-    <span
-      className={cn(
-        "-my-1 flex shrink-0 items-center gap-0.5 self-center rounded-full border border-border bg-card px-0.5 py-0.5 transition-opacity duration-150",
-        pinned ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover/row:opacity-100",
-      )}
-    >
-      {shown.map((child, i) => (
-        // eslint-disable-next-line react/no-array-index-key
-        <span key={i} className="flex items-center">
-          {i > 0 && <span aria-hidden className="mr-0.5 h-3 w-px bg-[var(--border)]" />}
-          {child}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 function BarButton({
   label,
   active,
@@ -2327,8 +2295,8 @@ function BarButton({
       >
         {children}
         {badge !== undefined && (
-          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--primary)] font-mono text-3xs font-semibold text-[var(--primary-foreground)]">
-            {badge}
+          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--primary)] px-0.5 font-mono text-3xs font-semibold text-[var(--primary-foreground)] tabular-nums">
+            {badge > 9 ? "9+" : badge}
           </span>
         )}
       </button>

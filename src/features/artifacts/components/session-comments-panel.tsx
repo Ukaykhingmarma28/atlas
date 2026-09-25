@@ -45,11 +45,11 @@ import {
   DEFAULT_THREAD_FILTERS,
   filterThreads,
   threadAuthors,
-  threadSize,
+  threadTally,
   type CommentThread,
   type ThreadFilters,
 } from "../lib/comment-threads";
-import type { SessionDetail as Detail } from "../types";
+import type { EntryKind, SessionDetail as Detail } from "../types";
 import { avatarUser } from "./comment-thread";
 import type { RowComments } from "./session-detail";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
@@ -59,6 +59,15 @@ function jumpToAnchor(entryId: string): void {
   window.dispatchEvent(new CustomEvent<JumpDetail>(JUMP_EVENT, { detail: { entryId } }));
 }
 
+/** What the panel needs to know about a commentable row: its place in the
+ *  transcript (array order) and what to call it. */
+export interface PanelAnchor {
+  id: string;
+  kind: EntryKind;
+  toolName: string | null;
+}
+
+/** The Timeline's panel: anchors are the open Session's entries. */
 export function SessionCommentsPanel({
   detail,
   comments,
@@ -68,12 +77,41 @@ export function SessionCommentsPanel({
   comments: RowComments;
   onClose: () => void;
 }) {
+  const anchors = useMemo<PanelAnchor[]>(
+    () => detail.entries.map((e) => ({ id: e.id, kind: e.kind, toolName: e.toolName ?? null })),
+    [detail.entries],
+  );
+  return (
+    <CommentsPanelBase
+      anchors={anchors}
+      comments={comments}
+      onJump={jumpToAnchor}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * The panel itself, over any transcript that can name its rows. The live chat
+ * feeds it the captured rows it has matched and its own jump.
+ */
+export function CommentsPanelBase({
+  anchors,
+  comments,
+  onJump,
+  onClose,
+}: {
+  anchors: PanelAnchor[];
+  comments: RowComments;
+  onJump: (anchorId: string) => void;
+  onClose: () => void;
+}) {
   const [filters, setFilters] = useState<ThreadFilters>(DEFAULT_THREAD_FILTERS);
   const { directory } = comments;
 
   const threads = useMemo(
-    () => buildThreads(comments.byAnchor, comments.session, detail.entries),
-    [comments.byAnchor, comments.session, detail.entries],
+    () => buildThreads(comments.byAnchor, comments.session, anchors),
+    [comments.byAnchor, comments.session, anchors],
   );
   const shown = useMemo(
     () => filterThreads(threads, filters, directory),
@@ -84,8 +122,8 @@ export function SessionCommentsPanel({
   // What a node is, for the row's label. Built once rather than searched per
   // row: a Session can carry hundreds of entries and dozens of threads.
   const entryById = useMemo(
-    () => new Map(detail.entries.map((entry) => [entry.id, entry] as const)),
-    [detail.entries],
+    () => new Map(anchors.map((anchor) => [anchor.id, anchor] as const)),
+    [anchors],
   );
 
   const narrowed = filters.query.trim() !== "" || filters.authorId !== null || filters.showResolved;
@@ -158,6 +196,7 @@ export function SessionCommentsPanel({
               thread={thread}
               directory={directory}
               label={nodeLabel(thread, entryById)}
+              onJump={onJump}
             />
           ))
         )}
@@ -167,10 +206,7 @@ export function SessionCommentsPanel({
 }
 
 /** What the thread is attached to, in the transcript's own words. */
-function nodeLabel(
-  thread: CommentThread,
-  entryById: Map<string, Detail["entries"][number]>,
-): string {
+function nodeLabel(thread: CommentThread, entryById: Map<string, PanelAnchor>): string {
   if (thread.anchorKind === "session") return "This session";
   const entry = entryById.get(thread.anchorId);
   if (!entry) return "A step";
@@ -192,12 +228,14 @@ const ThreadRow = memo(function ThreadRow({
   thread,
   directory,
   label,
+  onJump,
 }: {
   thread: CommentThread;
   directory: OrgDirectory;
   label: string;
+  onJump: (anchorId: string) => void;
 }) {
-  const size = threadSize(thread);
+  const tally = threadTally(thread);
   const author = directory.byId.get(thread.root.authorId) ?? null;
   const name = thread.root.guestName ?? author?.name ?? "A member";
   // The faces of everyone in the thread, not just the opener — the row is a
@@ -209,7 +247,7 @@ const ThreadRow = memo(function ThreadRow({
   return (
     <button
       type="button"
-      onClick={() => jumpToAnchor(thread.anchorId)}
+      onClick={() => onJump(thread.anchorId)}
       className={cn(
         "flex w-full cursor-pointer flex-col items-start gap-1 border-b border-[var(--border)] px-3 py-2.5 text-left transition-colors hover:bg-[var(--atlas-element-hover)]",
         // Resolved is done, not gone: still listed when asked for, but it
@@ -261,9 +299,17 @@ const ThreadRow = memo(function ThreadRow({
           <CornerDownRight size={10} className="shrink-0 text-[var(--atlas-text-disabled)]" />
           <span className="min-w-0 truncate">{label}</span>
         </span>
-        {size > 1 && (
+        {/* Top-level comments and replies apart: a second comment on the same
+         *  node is not a reply to the first. Silent for a lone comment. */}
+        {(tally.comments > 1 || tally.replies > 0) && (
           <span className="ml-auto shrink-0 tabular-nums">
-            {size - 1} {size === 2 ? "reply" : "replies"}
+            {tally.comments} {tally.comments === 1 ? "comment" : "comments"}
+            {tally.replies > 0 && (
+              <>
+                {" · "}
+                {tally.replies} {tally.replies === 1 ? "reply" : "replies"}
+              </>
+            )}
           </span>
         )}
       </span>

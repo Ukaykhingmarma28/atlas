@@ -21,6 +21,8 @@ pub struct RestClient {
     http: reqwest::Client,
     base: String,
     tokens: Arc<dyn TokenSource>,
+    /// The last token minted and when; see [`RestClient::token`].
+    cached: std::sync::Mutex<Option<(String, std::time::Instant)>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,13 +94,43 @@ pub struct ConversationPatch {
     pub workspace_ref_ids: Option<Vec<String>>,
 }
 
+/// How long a minted token is reused. Access JWTs live about ten minutes;
+/// reusing one for four leaves a wide margin for clock skew and slow requests
+/// without parsing `exp`.
+const TOKEN_REUSE: std::time::Duration = std::time::Duration::from_secs(240);
+
 impl RestClient {
     pub fn new(base: String, tokens: Arc<dyn TokenSource>) -> Self {
         Self {
             http: reqwest::Client::new(),
             base,
             tokens,
+            cached: std::sync::Mutex::new(None),
         }
+    }
+
+    /// A token for one request, reused across requests rather than minted per
+    /// call — each mint is a `GET /token` against the auth server, which
+    /// rate-limits it, and a busy chat panel alongside a Cloud Timeline was
+    /// enough to exhaust the limit for every other caller too.
+    async fn token(&self) -> Result<String> {
+        {
+            let cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((token, minted)) = cached.as_ref() {
+                if minted.elapsed() < TOKEN_REUSE {
+                    return Ok(token.clone());
+                }
+            }
+        }
+        let token = self.tokens.mint().await?;
+        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((token.clone(), std::time::Instant::now()));
+        Ok(token)
+    }
+
+    /// Drop the cached token — on a `401`, so a rejected one is never reused.
+    fn forget_token(&self) {
+        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     async fn request(
@@ -108,7 +140,7 @@ impl RestClient {
         org: &str,
         body: Option<serde_json::Value>,
     ) -> Result<reqwest::Response> {
-        let token = self.tokens.mint().await?;
+        let token = self.token().await?;
         let sep = if path.contains('?') { '&' } else { '?' };
         let url = format!("{}{path}{sep}org={org}", self.base);
         let mut req = self
@@ -120,6 +152,9 @@ impl RestClient {
             req = req.json(&json);
         }
         let res = req.send().await?;
+        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+            self.forget_token();
+        }
         Ok(res)
     }
 

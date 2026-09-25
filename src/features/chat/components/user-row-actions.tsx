@@ -74,6 +74,14 @@ import { copyText } from "@/lib/clipboard";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { retryLastTurn } from "../lib/retry-turn";
 import { useChatPinsStore } from "../stores/chat-pins-store";
+import { CommentButton } from "@/features/artifacts/components/comment-thread";
+import { visibleCount } from "@/features/artifacts/lib/comments-api";
+import {
+  useAnchorHit,
+  useCommentActions,
+  useCommentBucket,
+  useCommentDirectory,
+} from "../stores/chat-comments-store";
 
 function ActionButton({
   label,
@@ -147,6 +155,14 @@ export function UserRowActions({
   const pinned = useChatPinsStore((s) =>
     (s.pins[pinScopeKey] ?? []).some((p) => p.messageId === messageId),
   );
+  // The other permitted subscription: the comments store, written only when a
+  // comment arrives or the session's cloud identity resolves — never on a
+  // streaming frame. Every selector answers a reference or a primitive.
+  const anchor = useAnchorHit(tabId, messageId);
+  const comments = useCommentBucket(tabId, messageId);
+  const commentActions = useCommentActions(tabId);
+  const directory = useCommentDirectory(tabId);
+  const discussed = visibleCount(comments) > 0;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A row can unmount while the "copied" tick is still pending — a history
@@ -220,7 +236,9 @@ export function UserRowActions({
           // because an `opacity-0` bar is still hit-testable: it could be
           // clicked while invisible. `focus-within` is not decoration either —
           // without it, keyboard users would tab into controls they cannot see.
-          "invisible group-hover:visible focus-within:visible",
+          // A discussed prompt keeps its bar: the pill is how the discussion
+          // announces itself, and it must not vanish with the pointer.
+          discussed ? "visible" : "invisible group-hover:visible focus-within:visible",
         )}
       >
         {canRetry && (
@@ -237,6 +255,17 @@ export function UserRowActions({
         <ActionButton label="Edit and send as new message" onClick={onEdit}>
           <CornerUpRight size={12} />
         </ActionButton>
+        {anchor && commentActions && directory && (
+          <CommentButton
+            bare
+            className="transition-none"
+            anchorKind={anchor.anchorKind}
+            anchorId={anchor.rowId}
+            comments={comments}
+            actions={commentActions}
+            directory={directory}
+          />
+        )}
         <ActionButton label="Copy message" onClick={onCopy}>
           <CopyGlyph copied={copied} size="sm" />
         </ActionButton>

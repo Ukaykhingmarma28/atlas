@@ -89,8 +89,8 @@ pub use sync::{
     RemoteWorkspace, SlugAvailability, SyncConfig, Visibility,
 };
 pub use timeline::{
-    detail as session_detail, recent_checkpoints, session_summary, sessions as session_summaries,
-    CheckpointRow,
+    anchors as session_anchors, detail as session_detail, recent_checkpoints, session_summary,
+    sessions as session_summaries, AnchorEntry, CheckpointRow,
     EntryCounts, EntryKind, SessionDetail, SessionSummary, TimelineEntry, ToolTally,
 };
 pub use tools::{canonical_name, ResolvedPath, ToolName};

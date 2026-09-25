@@ -132,11 +132,7 @@ describe("no-models token parity with Rust", () => {
 
     catalog = { "atlas-agent": { kind: "native", login: null } };
     expect(
-      bindFailureAction({
-        agentType: "atlas-agent",
-        err: sentence![1],
-        alreadyAttempted: false,
-      }),
+      bindFailureAction({ agentType: "atlas-agent", err: sentence![1], alreadyAttempted: false }),
     ).toBe("silent");
   });
 });
@@ -181,14 +177,7 @@ describe("canSignIn", () => {
     // Found on PATH but not installed: the backend refuses to spawn it
     // (ADR-0002), so sign-in is a dead end. Installing is the action that is
     // actually available.
-    catalog = {
-      cursor: {
-        kind: "external",
-        login: null,
-        installed: false,
-        source: "detected",
-      },
-    };
+    catalog = { cursor: { kind: "external", login: null, installed: false, source: "detected" } };
     expect(canSignIn("cursor")).toBe(false);
   });
 
@@ -214,11 +203,7 @@ describe("bindFailureAction", () => {
 
   it("offers sign-in on the FIRST auth failure", () => {
     expect(
-      bindFailureAction({
-        agentType: "autohand",
-        err: authErr,
-        alreadyAttempted: false,
-      }),
+      bindFailureAction({ agentType: "autohand", err: authErr, alreadyAttempted: false }),
     ).toBe("sign-in");
   });
 
@@ -228,13 +213,9 @@ describe("bindFailureAction", () => {
     // re-opens the dialog, completing it retries, and round it goes forever.
     // `autohand` reaches this for real: its only method is
     // `npm install -g autohand-cli`, which never actually logs it in.
-    expect(
-      bindFailureAction({
-        agentType: "autohand",
-        err: authErr,
-        alreadyAttempted: true,
-      }),
-    ).toBe("signed-in-but-refused");
+    expect(bindFailureAction({ agentType: "autohand", err: authErr, alreadyAttempted: true })).toBe(
+      "signed-in-but-refused",
+    );
   });
 
   it("reports plainly when the failure is not about auth", () => {
@@ -252,19 +233,11 @@ describe("bindFailureAction", () => {
   it("reports plainly for agents Atlas cannot sign in", () => {
     catalog = { "atlas-agent": { kind: "native", login: null } };
     expect(
-      bindFailureAction({
-        agentType: "atlas-agent",
-        err: authErr,
-        alreadyAttempted: false,
-      }),
+      bindFailureAction({ agentType: "atlas-agent", err: authErr, alreadyAttempted: false }),
     ).toBe("report");
-    expect(
-      bindFailureAction({
-        agentType: undefined,
-        err: authErr,
-        alreadyAttempted: false,
-      }),
-    ).toBe("report");
+    expect(bindFailureAction({ agentType: undefined, err: authErr, alreadyAttempted: false })).toBe(
+      "report",
+    );
   });
 
   describe("the native agent with no entitled models", () => {
@@ -319,15 +292,9 @@ describe("bindFailureAction", () => {
     it("does not silence the same message from an agent that is not the native one", () => {
       // The sentence names Atlas Agent, so this should never happen — but the
       // guard is on the agent, not on the prose, and that is worth pinning.
-      catalog = {
-        autohand: { kind: "external", login: null, installed: true },
-      };
+      catalog = { autohand: { kind: "external", login: null, installed: true } };
       expect(
-        bindFailureAction({
-          agentType: "autohand",
-          err: NO_MODELS,
-          alreadyAttempted: false,
-        }),
+        bindFailureAction({ agentType: "autohand", err: NO_MODELS, alreadyAttempted: false }),
       ).toBe("report");
     });
   });

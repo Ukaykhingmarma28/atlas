@@ -135,6 +135,7 @@ enum Job {
         role: Role,
         mode: Mode,
         body: String,
+        created_at: chrono::DateTime<chrono::Utc>,
     },
     ToolCall {
         binding: SessionBinding,
@@ -246,8 +247,50 @@ struct ShellWindow {
     before: std::collections::BTreeSet<String>,
     /// Where HEAD stood. A command that COMMITS its own writes leaves the tree
     /// clean again, so a moved HEAD is the only evidence the window keeps.
-    head: Option<String>,
+    head: Option<HeadMark>,
     started: Instant,
+}
+
+/// Where HEAD stood when a shell window or a turn opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HeadMark {
+    At(String),
+    /// No commit yet — a fresh `git init`, or not a repository at all. Every
+    /// commit that appears afterwards is new, which is the one fact the first
+    /// commit of a Project needs: without it the root commit had no "before"
+    /// and was never linked.
+    Unborn,
+}
+
+impl HeadMark {
+    /// `None` when HEAD could not be read for some other reason — a failed git
+    /// call is not evidence that history is empty.
+    fn read(project_root: &Path) -> Option<Self> {
+        if let Some(head) = atlas_checkpoint::git::head_commit(project_root) {
+            return Some(Self::At(head));
+        }
+        let unborn = !project_root.join(".git").exists()
+            || atlas_checkpoint::git::is_unborn(project_root);
+        unborn.then_some(Self::Unborn)
+    }
+}
+
+/// What moved between `before` and `after`: the paths changed and the commits
+/// crossed, oldest first. `None` when HEAD did not move or git could not say.
+fn head_moved(
+    project_root: &Path,
+    before: &HeadMark,
+    after: &str,
+) -> Option<(Vec<atlas_checkpoint::git::ChangedPath>, Vec<String>)> {
+    let (from, since) = match before {
+        HeadMark::At(sha) if sha == after => return None,
+        HeadMark::At(sha) => (sha.as_str(), Some(sha.as_str())),
+        HeadMark::Unborn => (atlas_checkpoint::git::EMPTY_TREE, None),
+    };
+    let changes = atlas_checkpoint::git::changed_between(project_root, from, after)?;
+    let commits =
+        atlas_checkpoint::git::commits_between(project_root, since, after).unwrap_or_default();
+    Some((changes, commits))
 }
 
 /// The sampling state for one tool call's writes.
@@ -265,6 +308,10 @@ struct PendingMessage {
     role: Role,
     mode: Mode,
     body: String,
+    /// When the message's first chunk arrived. The row is written at turn end,
+    /// so without this every response in a turn would carry the turn's end
+    /// time — and the timeline, and active time, would read them as one burst.
+    started_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Everything a turn has streamed so far, plus the session binding as it stood
@@ -290,7 +337,7 @@ pub struct CaptureState {
     /// window at; the turn is then the tightest boundary that provably
     /// predates the command. Advanced after each use, so two calls in one
     /// turn cannot claim the same commits twice.
-    turn_heads: Mutex<HashMap<String, String>>,
+    turn_heads: Mutex<HashMap<String, HeadMark>>,
     /// Commits a closed shell window saw HEAD move across, keyed by tool-call
     /// id, parked until the worker takes them with the call's job. They ride
     /// separately because the ordinary walk's cursor has already consumed
@@ -458,6 +505,30 @@ impl CaptureState {
         *lock_ok(&self.notify) = Some(app);
     }
 
+    /// Arm the git watcher for a Project that became a repository after it was
+    /// opened.
+    ///
+    /// The watcher is started when the frontend activates a Project, and
+    /// `git_watch_start` skips a folder that is not a repository yet — so an
+    /// agent that runs `git init` in a fresh folder left the Project unwatched
+    /// for the rest of the app session: no commit walk, no cursor, and every
+    /// Checkpoint depending on the per-call path alone. A shell call finishing
+    /// is when a new `.git/` can have appeared. The registry check is a map
+    /// read; the restart only happens once.
+    fn ensure_git_watcher(&self, project_root: &Path) {
+        if !project_root.join(".git").exists() {
+            return;
+        }
+        let Some(app) = lock_ok(&self.notify).clone() else { return };
+        if app.state::<super::git_watcher::GitWatcherState>().is_watching_root(project_root) {
+            return;
+        }
+        let root = project_root.to_string_lossy().into_owned();
+        tauri::async_runtime::spawn(async move {
+            heal_git_watcher(&app, &root, None).await;
+        });
+    }
+
     /// Record the user's prompt and bind the session, from the send path.
     ///
     /// `prompt` must be the text the user typed, not the memory-prefixed version
@@ -487,7 +558,7 @@ impl CaptureState {
         let source = source_for(plugin_id);
         // The coarse shell anchor: where HEAD stands as this turn begins. Read
         // BEFORE any lock — it spawns git once per prompt.
-        if let Some(head) = atlas_checkpoint::git::head_commit(Path::new(cwd)) {
+        if let Some(head) = HeadMark::read(Path::new(cwd)) {
             lock_ok(&self.turn_heads).insert(session_id.to_string(), head);
         }
         let needs_seed = !lock_ok(&self.sessions).contains_key(session_id);
@@ -516,6 +587,12 @@ impl CaptureState {
             entry.turn_seq += 1;
             if model.is_some() {
                 entry.model = model.map(str::to_string);
+            }
+            // A Session that began before `git init` had no branch to record.
+            // Ask again on each send until it has one — one `git` call per
+            // send, only while unknown — so a later prompt fills it in.
+            if entry.branch.is_none() {
+                entry.branch = atlas_checkpoint::git::current_branch(Path::new(cwd));
             }
             entry.clone()
         };
@@ -599,7 +676,13 @@ impl CaptureState {
                 existing.mode = mode;
                 existing.body = body;
             }
-            None => turn.messages.push(PendingMessage { id, role, mode, body }),
+            None => turn.messages.push(PendingMessage {
+                id,
+                role,
+                mode,
+                body,
+                started_at: chrono::Utc::now(),
+            }),
         }
     }
 
@@ -675,6 +758,7 @@ impl CaptureState {
                 role: message.role,
                 mode: message.mode,
                 body: message.body.clone(),
+                created_at: message.started_at,
             });
         }
     }
@@ -793,6 +877,9 @@ impl CaptureState {
         project_root: &std::path::Path,
         terminal: bool,
     ) -> Vec<PendingWrite> {
+        if terminal {
+            self.ensure_git_watcher(project_root);
+        }
         if !terminal {
             // Registered under the session so an open window is evicted when the
             // session ends. Taken and released BEFORE `shell_windows`, matching
@@ -813,7 +900,7 @@ impl CaptureState {
                         call_id.to_string(),
                         ShellWindow {
                             before,
-                            head: atlas_checkpoint::git::head_commit(project_root),
+                            head: HeadMark::read(project_root),
                             started: Instant::now(),
                         },
                     );
@@ -837,25 +924,13 @@ impl CaptureState {
             else {
                 return Vec::new();
             };
-            if before_head == after_head {
-                return Vec::new();
-            }
-            let Some(changes) = atlas_checkpoint::git::changed_between(
-                project_root,
-                &before_head,
-                &after_head,
-            ) else {
+            let Some((changes, commits)) = head_moved(project_root, &before_head, &after_head)
+            else {
                 return Vec::new();
             };
-            lock_ok(&self.turn_heads).insert(session_id.to_string(), after_head.clone());
-            if let Ok(commits) = atlas_checkpoint::git::commits_between(
-                project_root,
-                Some(&before_head),
-                &after_head,
-            ) {
-                if !commits.is_empty() {
-                    lock_ok(&self.settled_commits).insert(call_id.to_string(), commits);
-                }
+            lock_ok(&self.turn_heads).insert(session_id.to_string(), HeadMark::At(after_head));
+            if !commits.is_empty() {
+                lock_ok(&self.settled_commits).insert(call_id.to_string(), commits);
             }
             return changes
                 .into_iter()
@@ -908,37 +983,24 @@ impl CaptureState {
         // state the agent left is the honest summary of one call.
         let after_head = atlas_checkpoint::git::head_commit(project_root);
         if let (Some(before_head), Some(after_head)) = (&window.head, &after_head) {
-            if before_head != after_head {
-                if let Some(changes) = atlas_checkpoint::git::changed_between(
-                    project_root,
-                    before_head,
-                    after_head,
-                ) {
-                    for change in changes {
-                        let path = resolve_path(&change.path, project_root);
-                        if writes.iter().any(|w| w.path.path == path.path) {
-                            continue;
-                        }
-                        writes.push(PendingWrite {
-                            path,
-                            existed_before: change.kind.existed_in_parent(),
-                        });
+            if let Some((changes, commits)) = head_moved(project_root, before_head, after_head) {
+                for change in changes {
+                    let path = resolve_path(&change.path, project_root);
+                    if writes.iter().any(|w| w.path.path == path.path) {
+                        continue;
                     }
-                    if let Ok(commits) = atlas_checkpoint::git::commits_between(
-                        project_root,
-                        Some(before_head),
-                        after_head,
-                    ) {
-                        if !commits.is_empty() {
-                            lock_ok(&self.settled_commits)
-                                .insert(call_id.to_string(), commits);
-                        }
-                    }
-                    // The turn anchor moves with us, so the coarse fallback
-                    // can never re-claim commits a per-call window settled.
-                    lock_ok(&self.turn_heads)
-                        .insert(session_id.to_string(), after_head.clone());
+                    writes.push(PendingWrite {
+                        path,
+                        existed_before: change.kind.existed_in_parent(),
+                    });
                 }
+                if !commits.is_empty() {
+                    lock_ok(&self.settled_commits).insert(call_id.to_string(), commits);
+                }
+                // The turn anchor moves with us, so the coarse fallback
+                // can never re-claim commits a per-call window settled.
+                lock_ok(&self.turn_heads)
+                    .insert(session_id.to_string(), HeadMark::At(after_head.clone()));
             }
         }
 
@@ -1202,6 +1264,8 @@ fn refresh_inner(
 /// queued keep draining — pausing is about *new* records.
 #[tauri::command]
 pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(), String> {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let handle = app
             .state::<CaptureState>()
@@ -1210,7 +1274,10 @@ pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(),
         atlas_checkpoint::disable(&store).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    // A disabled Project must leave the socket set, not keep a subscription.
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(())
 }
 
 /// Initialise a repository in a non-git Project, then re-detect.
@@ -2054,7 +2121,9 @@ pub async fn capture_register_cloud(
     git_url: Option<String>,
     app: AppHandle,
 ) -> Result<atlas_checkpoint::Binding, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let binding = tauri::async_runtime::spawn_blocking(move || -> Result<atlas_checkpoint::Binding, String> {
         let state = app.state::<CaptureState>();
         let root = std::path::Path::new(&project_path);
 
@@ -2108,7 +2177,11 @@ pub async fn capture_register_cloud(
         store.binding().map_err(|e| e.to_string())?.ok_or_else(|| "binding vanished".into())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    // The binding now names a server Project; open its socket without waiting
+    // for something unrelated to re-run the renderer's retarget.
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(binding)
 }
 
 /// The Organisation's Projects, with the one this repository most likely
@@ -2199,7 +2272,9 @@ pub async fn capture_connect(
     workspace_id: String,
     app: AppHandle,
 ) -> Result<ConnectResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<ConnectResult, String> {
         let root = std::path::Path::new(&project_path);
         let state = app.state::<CaptureState>();
 
@@ -2239,6 +2314,7 @@ pub async fn capture_connect(
             store
                 .set_cloud_binding(&org_id, &remote_slug, Some(&remote_id))
                 .map_err(|e| e.to_string())?;
+            approve_import_if_nothing_to_disclose(&store, root);
             store
                 .binding()
                 .map_err(|e| e.to_string())?
@@ -2248,7 +2324,11 @@ pub async fn capture_connect(
         Ok(ConnectResult { binding: Some(binding), candidates: Vec::new(), matched: true })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    if result.matched {
+        crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    }
+    Ok(result)
 }
 
 /// The answer to a connect attempt.
@@ -2346,7 +2426,9 @@ pub async fn capture_promote(
     visibility: Option<String>,
     app: AppHandle,
 ) -> Result<i64, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let moved = tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
         let state = app.state::<CaptureState>();
         let root = std::path::Path::new(&project_path);
 
@@ -2383,16 +2465,20 @@ pub async fn capture_promote(
         let moved = {
             let handle = state.writer(root)?;
             let store = lock_ok(&handle);
-            store
+            let moved = store
                 .promote_to_cloud(&project_path, &org_id, &slug, Some(&remote_workspace_id))
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            approve_import_if_nothing_to_disclose(&store, root);
+            moved
         };
 
         state.note_drain(root);
         Ok(moved)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(moved)
 }
 
 /// A closure the drain can call to mint or refresh an access token.
@@ -2406,7 +2492,15 @@ fn token_provider(app: &AppHandle) -> impl Fn() -> Option<String> {
         // Blocking on the async mint is fine here: every caller runs on a
         // `spawn_blocking` thread or the capture worker, never a runtime core
         // thread and never the UI thread.
-        tauri::async_runtime::block_on(core.mint_access_token()).ok()
+        match tauri::async_runtime::block_on(core.mint_access_token()) {
+            Ok(token) => Some(token),
+            // `None` parks the caller as "not signed in"; without this line a
+            // mint failure is indistinguishable from an unreachable registry.
+            Err(e) => {
+                tracing::warn!(target: "atlas::capture", "access token mint failed: {e:?}");
+                None
+            }
+        }
     }
 }
 
@@ -2604,16 +2698,18 @@ fn worker(
             // process. The job is lost (and logged); the mutexes it may have
             // poisoned are recovered by `lock_ok` everywhere.
             //
-            // Every job except a drain changes something a reader can see —
-            // a drain only moves outbox state, which no view renders.
-            let visible = !matches!(job, Job::Drain { .. });
+            // Every job changes something a reader can see — a drain included:
+            // it moves outbox state, which the capture popover's queue row
+            // renders ("N pending — sends when online"). Explicit drains are
+            // user actions (promote, connect, retry), so announcing them costs
+            // nothing measurable.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 process_job(job, &mut session_ids, &drain_token, &stores, &backoff);
             }));
             if result.is_err() {
                 tracing::error!(target: "atlas::capture", "capture job panicked; job dropped");
             }
-            dirty |= visible;
+            dirty = true;
         }
 
         if last_scan.elapsed() >= IMPORT_SCAN_INTERVAL {
@@ -2836,6 +2932,7 @@ fn process_job(
             role,
             mode,
             body,
+            created_at,
             ..
         } => match session_ids.get(&binding.native_session_id) {
             Some(session_id) => capture
@@ -2847,7 +2944,7 @@ fn process_job(
                         role,
                         mode,
                         body,
-                        created_at: None,
+                        created_at: Some(created_at),
                     },
                 )
                 .map(|_| ()),
@@ -3138,6 +3235,36 @@ fn warn_once_unregistered(root: &std::path::Path) {
 /// This is the checkpoint importer, whose contract (research §C9 touchpoint
 /// #11) explicitly survives the history port: Atlas stopped *reading* CLI
 /// storage for its UI, and never touches these files.
+/// After Promote or Connect: approve the transcript import when it would
+/// disclose nothing.
+///
+/// Binding to Cloud clears the import gate, and the gate exists so a bulk
+/// publish of on-disk transcripts is always shown first. Create → Cloud shows
+/// that preview and confirming it — even an empty one, "new sessions sync from
+/// now on" — approves the gate. Promote and Connect never show it, so they left
+/// the gate closed with nothing behind it: a "History import is waiting for
+/// your review" banner leading to an empty dialog, and future transcripts that
+/// would not sync until someone clicked through it. With nothing to import
+/// there is nothing to disclose, so approve exactly as Create's empty confirm
+/// does. Anything to import keeps the gate and the banner — that review is the
+/// point. Best-effort: a failure leaves the gate closed, the safe side.
+fn approve_import_if_nothing_to_disclose(store: &Store, root: &std::path::Path) {
+    let nothing_to_import = match transcript_source_for(root) {
+        None => true,
+        Some(source) => {
+            let path = root.to_string_lossy();
+            atlas_checkpoint::import::preview_with_store(store, &path, &source, ProjectMode::Cloud)
+                .new_session_count
+                == 0
+        }
+    };
+    if nothing_to_import {
+        if let Err(e) = store.set_import_approved(true) {
+            tracing::warn!(target: "atlas::capture", "could not approve an empty import: {e}");
+        }
+    }
+}
+
 fn transcript_source_for(root: &std::path::Path) -> Option<atlas_checkpoint::TranscriptSource> {
     let projects = dirs::home_dir()?.join(".claude").join("projects");
     let encoded = atlas_agent_transcript::encode_cwd(&root.to_string_lossy());

@@ -22,7 +22,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 
 import { useOrgDirectory } from "@/features/organisations/lib/use-org-directory";
 import { safeUnlistenPromise } from "@/lib/safe-unlisten";
@@ -36,6 +35,7 @@ import {
   type Comment,
   type CommentThreads,
 } from "./comments-api";
+import { queueWatch } from "./watch-queue";
 
 /** The window channel the cloud bridge emits on. */
 const ARTIFACTS_EVENT = "atlas:artifacts-cloud";
@@ -65,17 +65,16 @@ export function useSessionComments(
   // per socket server-side, so it has to be re-announced whenever the Session
   // changes — and released when the pane closes, or a Session nobody is looking
   // at keeps pushing frames.
+  //
+  // Through one queue, so the unsubscribe of a cleanup can never overtake the
+  // subscribe of the next mount — see `watch-queue.ts`. Rust records the
+  // desired Session whether or not the socket exists yet, so a Project that
+  // gets its socket later still ends up following this Session.
   useEffect(() => {
     if (!shared) return;
-    void invoke("artifacts_cloud_watch", { projectId: remoteProjectId, sessionId }).catch(() => {
-      // Nothing to follow if the Project has no socket. The load below still
-      // renders every comment that exists; only live updates are lost.
-    });
+    void queueWatch(remoteProjectId, sessionId);
     return () => {
-      void invoke("artifacts_cloud_watch", {
-        projectId: remoteProjectId,
-        sessionId: null,
-      }).catch(() => {});
+      void queueWatch(remoteProjectId, null);
     };
   }, [shared, remoteProjectId, sessionId]);
 

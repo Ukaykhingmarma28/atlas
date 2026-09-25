@@ -124,10 +124,15 @@ function modifiedVendoredFiles(): string[] {
     forkBlobs.set(rel, meta.split(" ")[2]);
   }
   const files = walk(VENDOR);
+  // Repo-relative with `/`: git matches `.gitattributes` against the path it
+  // is given, and a Windows absolute path (`C:\...`) matches no pattern — so
+  // the CRLF fixtures' nested `-text` rule was skipped, their bytes were
+  // normalised to LF before hashing, and they read as "modified".
+  const relative = files.map((abs) => path.relative(REPO_ROOT, abs).split(path.sep).join("/"));
   const hashes = execFileSync("git", ["hash-object", "--stdin-paths"], {
     cwd: REPO_ROOT,
     encoding: "utf8",
-    input: files.join("\n") + "\n",
+    input: relative.join("\n") + "\n",
     maxBuffer: 64 * 1024 * 1024,
   })
     .trim()

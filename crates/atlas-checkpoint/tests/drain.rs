@@ -21,9 +21,9 @@ use std::time::Duration;
 use atlas_checkpoint::artifacts::AtlasArtifact;
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::{
-    bind, drain, register_workspace, Capture, DrainStatus, Registration, Role, SessionKey, Source,
-    Store,
-    SyncConfig, TurnContent, SPILL_THRESHOLD_BYTES,
+    bind, connect_workspace, drain, register_workspace, Capture, ConnectOutcome, ConnectRequest,
+    DrainStatus, Registration, Role, SessionKey, Source, Store, SyncConfig, TurnContent,
+    SPILL_THRESHOLD_BYTES,
 };
 
 const WORKSPACE: &str = "ws-atlas";
@@ -58,6 +58,9 @@ struct Stub {
     ingest_calls: Arc<AtomicUsize>,
     blob_calls: Arc<AtomicUsize>,
     blob_tokens: Arc<Mutex<Vec<String>>>,
+    /// Raw bodies of every `POST /workspaces` and `POST /workspaces/connect`,
+    /// so a test can assert what the registry was actually sent.
+    registry_bodies: Arc<Mutex<Vec<String>>>,
 }
 
 impl Stub {
@@ -75,6 +78,7 @@ impl Stub {
         let ingest_calls = Arc::new(AtomicUsize::new(0));
         let blob_calls = Arc::new(AtomicUsize::new(0));
         let blob_tokens = Arc::new(Mutex::new(Vec::new()));
+        let registry_bodies = Arc::new(Mutex::new(Vec::new()));
 
         let stub = Self {
             base_url,
@@ -83,6 +87,7 @@ impl Stub {
             ingest_calls: ingest_calls.clone(),
             blob_calls: blob_calls.clone(),
             blob_tokens: blob_tokens.clone(),
+            registry_bodies: registry_bodies.clone(),
         };
 
         std::thread::spawn(move || {
@@ -99,6 +104,7 @@ impl Stub {
                     &ingest_calls,
                     &blob_calls,
                     &blob_tokens,
+                    &registry_bodies,
                     &mut seen_tokens,
                 );
             }
@@ -125,6 +131,15 @@ impl Stub {
     fn blob_tokens(&self) -> Vec<String> {
         self.blob_tokens.lock().unwrap().clone()
     }
+
+    fn registry_bodies(&self) -> Vec<serde_json::Value> {
+        self.registry_bodies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|b| serde_json::from_str(b).expect("registry body is JSON"))
+            .collect()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -138,6 +153,7 @@ fn handle(
     ingest_calls: &Arc<AtomicUsize>,
     blob_calls: &Arc<AtomicUsize>,
     blob_tokens: &Arc<Mutex<Vec<String>>>,
+    registry_bodies: &Arc<Mutex<Vec<String>>>,
     seen_tokens: &mut Vec<String>,
 ) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
@@ -200,10 +216,31 @@ fn handle(
         return;
     }
 
+    // Connecting — the stub does no matching; it records the body and answers
+    // "nothing matched", which is enough to assert the wire shape.
+    if request_line.starts_with("POST /workspaces/connect") {
+        registry_bodies
+            .lock()
+            .unwrap()
+            .push(String::from_utf8_lossy(&body).into_owned());
+        respond(&mut stream, 200, "{\"status\":\"no_match\",\"candidates\":[]}");
+        return;
+    }
+
     // Project registration.
     if request_line.starts_with("POST /workspaces ") {
-        if String::from_utf8_lossy(&body).contains("\"slug\":\"taken\"") {
+        let text = String::from_utf8_lossy(&body).into_owned();
+        registry_bodies.lock().unwrap().push(text.clone());
+        if text.contains("\"slug\":\"taken\"") {
             respond(&mut stream, 409, "{}");
+        } else if text.contains("null") {
+            // What the real registry does with a `null` optional: a schema
+            // refusal whose message names the field.
+            respond(
+                &mut stream,
+                422,
+                "{\"error\":{\"code\":\"bad_request\",\"message\":\"Expected string, received null\"}}",
+            );
         } else {
             // `workspaceId` is the SERVER's key for the new id, and the one
             // `register_workspace` reads (`sync.rs`). The Project/Workspace
@@ -427,6 +464,71 @@ fn registering_a_project_returns_the_server_assigned_id() {
     )
     .expect("registers");
     assert_eq!(id, "ws-remote-1");
+}
+
+#[test]
+fn registering_without_a_name_omits_the_field_rather_than_sending_null() {
+    // The registry's schema takes `name` as optional-but-not-nullable, and the
+    // popover sends no name. `json!` would write `null` and earn a 422 — the
+    // "Promote to Cloud" failure of 2026-09-25. Absent must mean absent.
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    register_workspace(
+        &config(&stub.base_url, &token),
+        Registration { slug: "atlas", ..Registration::default() },
+    )
+    .expect("registers without a name or fingerprints");
+
+    let bodies = stub.registry_bodies();
+    let body = bodies[0].as_object().expect("object body");
+    let mut keys: Vec<&str> = body.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["orgId", "slug", "visibility"], "{body:?}");
+    assert!(body.values().all(|v| !v.is_null()), "{body:?}");
+    assert_eq!(body["visibility"], "org");
+}
+
+#[test]
+fn a_schema_refusal_reports_the_server_message_not_the_store() {
+    // Force the stub's 422 with a literal null in the body. What the caller
+    // sees must name the server and its reason — "session store is not
+    // writable" was the old wording, and nothing about the store was wrong.
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let err = register_workspace(
+        &config(&stub.base_url, &token),
+        Registration { slug: "null", ..Registration::default() },
+    )
+    .expect_err("a 422 is an error");
+    let text = err.to_string();
+    assert!(text.contains("422"), "{text}");
+    assert!(text.contains("Expected string, received null"), "{text}");
+    assert!(!text.contains("session store"), "{text}");
+}
+
+#[test]
+fn connecting_on_fingerprints_alone_sends_no_null_keys() {
+    // The common connect: no picked id, no slug — match on what git says.
+    let stub = Stub::start(vec![], 200);
+    let token = always_token();
+    let outcome = connect_workspace(
+        &config(&stub.base_url, &token),
+        ConnectRequest {
+            root_commit_sha: Some("abc123"),
+            git_url: Some("git@github.com:tryatlas/atlas.git"),
+            ..ConnectRequest::default()
+        },
+    )
+    .expect("connect answers");
+    assert_eq!(outcome, ConnectOutcome::NoMatch);
+
+    let bodies = stub.registry_bodies();
+    let body = bodies[0].as_object().expect("object body");
+    let mut keys: Vec<&str> = body.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["create", "gitUrl", "orgId", "rootCommitSha"], "{body:?}");
+    assert!(body.values().all(|v| !v.is_null()), "{body:?}");
+    assert_eq!(body["create"], false);
 }
 
 #[test]

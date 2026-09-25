@@ -10,6 +10,7 @@ import {
   filterThreads,
   threadAuthors,
   threadSize,
+  threadTally,
   type ThreadFilters,
 } from "./comment-threads";
 import type { Comment } from "./comments-api";
@@ -317,5 +318,35 @@ describe("threadAuthors / threadSize", () => {
       ENTRIES,
     );
     expect(threadSize(thread)).toBe(2);
+  });
+});
+
+describe("threadTally", () => {
+  it("counts top-level comments and replies apart, skipping tombstones", () => {
+    const base = {
+      sessionId: "s",
+      anchorKind: "message" as const,
+      anchorId: "a",
+      authorId: "u",
+      guestName: null,
+      mentions: [],
+      editedAt: null,
+      deletedAt: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+    const threads = buildThreads(
+      {
+        a: [
+          { ...base, id: "c1", parentId: null, body: "one", createdAt: "1" },
+          { ...base, id: "c2", parentId: null, body: "two", createdAt: "2" },
+          { ...base, id: "c3", parentId: "c2", body: "ok", createdAt: "3" },
+          { ...base, id: "c4", parentId: "c1", body: null, createdAt: "4", deletedAt: "5" },
+        ],
+      },
+      [],
+      [{ id: "a" }],
+    );
+    expect(threadTally(threads[0])).toEqual({ comments: 2, replies: 1 });
   });
 });
