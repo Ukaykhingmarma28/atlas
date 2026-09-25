@@ -1202,6 +1202,8 @@ fn refresh_inner(
 /// queued keep draining — pausing is about *new* records.
 #[tauri::command]
 pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(), String> {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let handle = app
             .state::<CaptureState>()
@@ -1210,7 +1212,10 @@ pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(),
         atlas_checkpoint::disable(&store).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    // A disabled Project must leave the socket set, not keep a subscription.
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(())
 }
 
 /// Initialise a repository in a non-git Project, then re-detect.
@@ -2054,7 +2059,9 @@ pub async fn capture_register_cloud(
     git_url: Option<String>,
     app: AppHandle,
 ) -> Result<atlas_checkpoint::Binding, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let binding = tauri::async_runtime::spawn_blocking(move || -> Result<atlas_checkpoint::Binding, String> {
         let state = app.state::<CaptureState>();
         let root = std::path::Path::new(&project_path);
 
@@ -2108,7 +2115,11 @@ pub async fn capture_register_cloud(
         store.binding().map_err(|e| e.to_string())?.ok_or_else(|| "binding vanished".into())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    // The binding now names a server Project; open its socket without waiting
+    // for something unrelated to re-run the renderer's retarget.
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(binding)
 }
 
 /// The Organisation's Projects, with the one this repository most likely
@@ -2199,7 +2210,9 @@ pub async fn capture_connect(
     workspace_id: String,
     app: AppHandle,
 ) -> Result<ConnectResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<ConnectResult, String> {
         let root = std::path::Path::new(&project_path);
         let state = app.state::<CaptureState>();
 
@@ -2248,7 +2261,11 @@ pub async fn capture_connect(
         Ok(ConnectResult { binding: Some(binding), candidates: Vec::new(), matched: true })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    if result.matched {
+        crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    }
+    Ok(result)
 }
 
 /// The answer to a connect attempt.
@@ -2346,7 +2363,9 @@ pub async fn capture_promote(
     visibility: Option<String>,
     app: AppHandle,
 ) -> Result<i64, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let hook_app = app.clone();
+    let hook_path = project_path.clone();
+    let moved = tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
         let state = app.state::<CaptureState>();
         let root = std::path::Path::new(&project_path);
 
@@ -2392,7 +2411,9 @@ pub async fn capture_promote(
         Ok(moved)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
+    Ok(moved)
 }
 
 /// A closure the drain can call to mint or refresh an access token.

@@ -46,6 +46,11 @@ pub struct ArtifactsCloudState {
     /// The Organisation currently being refreshed, by **server** id. `None`
     /// when signed out or in a local-only Organisation.
     pub org: std::sync::Mutex<Option<String>>,
+    /// The last `(org_id, project_paths)` the renderer targeted, replayed by
+    /// [`resync_targets`] when a binding changes on the Rust side — the
+    /// renderer's effect keys on auth, Organisation and the set of project
+    /// paths, none of which move when a Project is connected or promoted.
+    pub targets: std::sync::Mutex<(Option<String>, Vec<String>)>,
 }
 
 impl ArtifactsCloudState {
@@ -112,6 +117,7 @@ pub fn install(app: &AppHandle) {
         board,
         client,
         org: std::sync::Mutex::new(None),
+        targets: std::sync::Mutex::new((None, Vec::new())),
     });
 
     // Forward the crate's broadcast onto the one window channel.
@@ -248,6 +254,53 @@ pub async fn artifacts_cloud_retarget(
     let Some(state) = app.try_state::<ArtifactsCloudState>() else {
         return Err("artifacts cloud is not ready".into());
     };
+    if let Ok(mut targets) = state.targets.lock() {
+        *targets = (org_id.clone(), project_paths.clone());
+    }
+    apply_targets(&app, org_id, project_paths).await
+}
+
+/// Re-run targeting after a binding changed on this side.
+///
+/// `capture_connect`, `capture_promote`, `capture_register_cloud` and
+/// `capture_disable` all change which Projects should hold a socket, and none
+/// of them changes anything the renderer's retarget effect watches. Replays the
+/// renderer's last inputs plus `touched`, so a Project bound before the
+/// renderer ever listed it is still reached. Spawned, never awaited: the
+/// callers hold nothing this needs, and a binding write must not wait on a
+/// board refresh.
+pub fn resync_targets(app: &AppHandle, touched: Option<&str>) {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return };
+    let (org_id, mut project_paths) =
+        state.targets.lock().map(|t| t.clone()).unwrap_or_default();
+    if let Some(path) = touched {
+        if !project_paths.iter().any(|p| p == path) {
+            project_paths.push(path.to_string());
+        }
+    }
+    tracing::info!(
+        target: "atlas_artifacts",
+        "resync targets after a binding change ({} paths, touched={touched:?})",
+        project_paths.len()
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = apply_targets(&app, org_id, project_paths).await {
+            tracing::warn!(target: "atlas_artifacts", "resync targets failed: {e}");
+        }
+    });
+}
+
+/// The body of a retarget: reconcile the manager against the bindings that
+/// are Cloud in this Organisation, then paint from the network once.
+async fn apply_targets(
+    app: &AppHandle,
+    org_id: Option<String>,
+    project_paths: Vec<String>,
+) -> Result<(), String> {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else {
+        return Err("artifacts cloud is not ready".into());
+    };
 
     let changed = {
         let Ok(mut current) = state.org.lock() else {
@@ -281,7 +334,7 @@ pub async fn artifacts_cloud_retarget(
     // Paint from the network once immediately rather than waiting a whole tick
     // — a switch that shows an empty remote half for fifteen seconds reads as
     // "this Organisation has no work".
-    refresh_board(&app).await;
+    refresh_board(app).await;
     Ok(())
 }
 
