@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { TitlebarDock, type DockItem } from "./titlebar-dock";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
@@ -320,6 +321,18 @@ function ProjectLabel({
   }, [path]);
 
   useEffect(() => readCapture(), [readCapture]);
+
+  // Fresh numbers whenever the popover is looked at. Health was otherwise read
+  // on project switch and after a popover action only — so right after Promote
+  // it captured the instant every row had just been queued, and "93 pending —
+  // sends when online" stayed on screen long after the drain had sent them
+  // all. While open, capture writes (sends included) re-read it too.
+  useEffect(() => {
+    if (!captureOpen || !isTauri()) return;
+    readCapture();
+    const unlisten = listen("atlas:capture-changed", () => readCapture());
+    return () => void unlisten.then((stop) => stop());
+  }, [captureOpen, readCapture]);
 
   // Command palette + ⌘⌥C both open this popover from outside the component
   // tree, since `captureOpen` is local state — see `atlas:open-capture`.

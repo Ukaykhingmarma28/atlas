@@ -1977,8 +1977,15 @@ impl Store {
     /// Set the Session's starting branch, keeping any value already there.
     pub fn set_branch_if_absent(&self, session_id: &str, branch: &str) -> Result<()> {
         self.require_writer()?;
+        // Only a row that actually gains its branch is touched, so the resync
+        // below never re-queues a Session for a no-op. A branch learned after
+        // the first push (the prompt predates `git init`) must reach the
+        // Organisation's copy, which is what the header chip there reads.
         self.conn.execute(
-            "UPDATE agent_session SET branch = COALESCE(branch, ?2) WHERE id = ?1",
+            &format!(
+                "UPDATE agent_session SET branch = ?2{RESYNC_SESSION}
+                  WHERE id = ?1 AND branch IS NULL"
+            ),
             rusqlite::params![session_id, branch],
         )?;
         Ok(())

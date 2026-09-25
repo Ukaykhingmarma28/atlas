@@ -343,16 +343,15 @@ fn summarize(
     tool_call_count: i64,
     active_seconds: i64,
 ) -> SessionSummary {
-    // Starting branch first, then the Checkpoint branches — so a row that shows
-    // one branch shows the one the work began on rather than whichever sorted
-    // first.
+    // Starting branch first, then the Checkpoint branches in the order they
+    // were first committed to — so a row that shows one branch shows the one
+    // the work began on. `checkpoints` arrive oldest first; sorting them
+    // alphabetically instead put `feature/dark-mode` ahead of `master` for a
+    // Session that began before `git init` and so has no starting branch.
     let mut branches: Vec<String> = session.branch.iter().cloned().collect();
-    let mut landed: Vec<String> = checkpoints.iter().filter_map(|c| c.branch.clone()).collect();
-    landed.sort();
-    landed.dedup();
-    for branch in landed {
-        if !branches.contains(&branch) {
-            branches.push(branch);
+    for branch in checkpoints.iter().filter_map(|c| c.branch.as_ref()) {
+        if !branches.contains(branch) {
+            branches.push(branch.clone());
         }
     }
 

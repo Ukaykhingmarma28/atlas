@@ -588,6 +588,12 @@ impl CaptureState {
             if model.is_some() {
                 entry.model = model.map(str::to_string);
             }
+            // A Session that began before `git init` had no branch to record.
+            // Ask again on each send until it has one — one `git` call per
+            // send, only while unknown — so a later prompt fills it in.
+            if entry.branch.is_none() {
+                entry.branch = atlas_checkpoint::git::current_branch(Path::new(cwd));
+            }
             entry.clone()
         };
 
@@ -2308,6 +2314,7 @@ pub async fn capture_connect(
             store
                 .set_cloud_binding(&org_id, &remote_slug, Some(&remote_id))
                 .map_err(|e| e.to_string())?;
+            approve_import_if_nothing_to_disclose(&store, root);
             store
                 .binding()
                 .map_err(|e| e.to_string())?
@@ -2458,9 +2465,11 @@ pub async fn capture_promote(
         let moved = {
             let handle = state.writer(root)?;
             let store = lock_ok(&handle);
-            store
+            let moved = store
                 .promote_to_cloud(&project_path, &org_id, &slug, Some(&remote_workspace_id))
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            approve_import_if_nothing_to_disclose(&store, root);
+            moved
         };
 
         state.note_drain(root);
@@ -2689,16 +2698,18 @@ fn worker(
             // process. The job is lost (and logged); the mutexes it may have
             // poisoned are recovered by `lock_ok` everywhere.
             //
-            // Every job except a drain changes something a reader can see —
-            // a drain only moves outbox state, which no view renders.
-            let visible = !matches!(job, Job::Drain { .. });
+            // Every job changes something a reader can see — a drain included:
+            // it moves outbox state, which the capture popover's queue row
+            // renders ("N pending — sends when online"). Explicit drains are
+            // user actions (promote, connect, retry), so announcing them costs
+            // nothing measurable.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 process_job(job, &mut session_ids, &drain_token, &stores, &backoff);
             }));
             if result.is_err() {
                 tracing::error!(target: "atlas::capture", "capture job panicked; job dropped");
             }
-            dirty |= visible;
+            dirty = true;
         }
 
         if last_scan.elapsed() >= IMPORT_SCAN_INTERVAL {
@@ -3224,6 +3235,36 @@ fn warn_once_unregistered(root: &std::path::Path) {
 /// This is the checkpoint importer, whose contract (research §C9 touchpoint
 /// #11) explicitly survives the history port: Atlas stopped *reading* CLI
 /// storage for its UI, and never touches these files.
+/// After Promote or Connect: approve the transcript import when it would
+/// disclose nothing.
+///
+/// Binding to Cloud clears the import gate, and the gate exists so a bulk
+/// publish of on-disk transcripts is always shown first. Create → Cloud shows
+/// that preview and confirming it — even an empty one, "new sessions sync from
+/// now on" — approves the gate. Promote and Connect never show it, so they left
+/// the gate closed with nothing behind it: a "History import is waiting for
+/// your review" banner leading to an empty dialog, and future transcripts that
+/// would not sync until someone clicked through it. With nothing to import
+/// there is nothing to disclose, so approve exactly as Create's empty confirm
+/// does. Anything to import keeps the gate and the banner — that review is the
+/// point. Best-effort: a failure leaves the gate closed, the safe side.
+fn approve_import_if_nothing_to_disclose(store: &Store, root: &std::path::Path) {
+    let nothing_to_import = match transcript_source_for(root) {
+        None => true,
+        Some(source) => {
+            let path = root.to_string_lossy();
+            atlas_checkpoint::import::preview_with_store(store, &path, &source, ProjectMode::Cloud)
+                .new_session_count
+                == 0
+        }
+    };
+    if nothing_to_import {
+        if let Err(e) = store.set_import_approved(true) {
+            tracing::warn!(target: "atlas::capture", "could not approve an empty import: {e}");
+        }
+    }
+}
+
 fn transcript_source_for(root: &std::path::Path) -> Option<atlas_checkpoint::TranscriptSource> {
     let projects = dirs::home_dir()?.join(".claude").join("projects");
     let encoded = atlas_agent_transcript::encode_cwd(&root.to_string_lossy());

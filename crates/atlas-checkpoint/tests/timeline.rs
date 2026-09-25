@@ -487,6 +487,44 @@ fn a_session_carries_its_starting_branch_without_any_checkpoint() {
     assert_eq!(row.checkpoint_count, 0, "no commit, and still a branch");
 }
 
+/// A Session with no starting branch (its first prompt predates `git init`)
+/// leads with the branch committed to first, not the alphabetically first.
+#[test]
+fn without_a_starting_branch_the_first_committed_branch_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, session_id) = seeded(dir.path());
+    for (sha, branch) in [
+        ("1111111111111111111111111111111111111111", "master"),
+        (
+            "2222222222222222222222222222222222222222",
+            "feature/dark-mode",
+        ),
+        ("3333333333333333333333333333333333333333", "master"),
+    ] {
+        store
+            .upsert_checkpoint(CheckpointInput {
+                session_id: &session_id,
+                commit_sha: sha,
+                patch_id: None,
+                branch: Some(branch),
+                git_author_name: None,
+                git_author_email: None,
+                files_touched: &["app.js".into()],
+                insertions: 1,
+                deletions: 0,
+                sync_state: atlas_checkpoint::SyncState::Local,
+            })
+            .expect("checkpoint recorded");
+    }
+
+    let rows = timeline::sessions(&store, WORKSPACE).expect("read");
+    let row = rows.iter().find(|r| r.id == session_id).expect("row");
+    assert_eq!(
+        row.branches,
+        vec!["master".to_string(), "feature/dark-mode".to_string()]
+    );
+}
+
 /// An agent that reports only context occupancy is not reported as token spend.
 ///
 /// ACP agents (Claude Code, Codex) emit no input/output split, so `totalTokens`
