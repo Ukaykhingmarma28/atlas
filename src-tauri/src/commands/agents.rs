@@ -668,13 +668,33 @@ pub fn install_manager(app: &AppHandle) {
         let gate_app = app.clone();
         let gate: super::memory_server::SharingGate =
             Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
+        // The UI tool server (ADR-0012): each call is one UI action, emitted
+        // to the window and answered through `ui_action_respond`.
+        let emit_app = app.clone();
+        let ui_bridge = Arc::new(super::ui_server::UiBridge::new(Arc::new(
+            move |request: &super::ui_server::UiRequest| {
+                emit_app.emit(super::ui_server::UI_ACTION_EVENT, request).map_err(|e| e.to_string())
+            },
+        )));
+        app.manage(ui_bridge.clone());
+        // The user's "Let Atlas Agent navigate the app" setting, read on every
+        // offer and every call so switching it off stops the agent at once.
+        let nav_app = app.clone();
+        let navigation: super::ui_server::NavigationGate = Arc::new(move || {
+            nav_app
+                .try_state::<crate::state::AtlasConfigHandle>()
+                .is_some_and(|config| config.lock().effective().agent_ui_navigation)
+        });
+        let ui_router = super::ui_server::router(super::ui_server::UiTools::new(ui_bridge, navigation.clone()));
         // Every agent that can take the server is handed it on each session
         // request, with a token of its own. It is the only way memory reaches
-        // an agent (ADR-0010): nothing is prepended to a prompt.
-        host.set_session_mcp(Arc::new(super::memory_server::MemorySessionOffers::new(
-            server.clone(),
-            gate.clone(),
-        )));
+        // an agent (ADR-0010): nothing is prepended to a prompt. A connection
+        // that carries UI control is also handed the UI tool server, on the
+        // same token.
+        host.set_session_mcp(Arc::new(
+            super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
+                .with_ui(super::ui_server::UiOffer::new(navigation)),
+        ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
         let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {
@@ -719,6 +739,7 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
+            vec![ui_router],
         );
     }
 

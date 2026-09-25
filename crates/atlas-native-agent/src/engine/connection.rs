@@ -680,6 +680,9 @@ impl EngineConnection {
             &SessionMcpRequest {
                 agent_id: self.id.clone(),
                 http_mcp: true,
+                // In-process: the one connection Atlas vouches for, so it may
+                // be handed the UI tool server (ADR-0012).
+                ui_control: true,
                 cwd: cwd.to_path_buf(),
                 session_id: session_id.cloned(),
             },

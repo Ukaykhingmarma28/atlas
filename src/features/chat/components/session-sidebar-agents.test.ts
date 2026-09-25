@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
-const { sidebarAgentOf, AGENT_TYPE_BY_SIDEBAR } = await import("./session-sidebar");
+const { sidebarAgentOf, AGENT_TYPE_BY_SIDEBAR } = await import("../lib/sidebar-agents");
 
 describe("sidebarAgentOf (agent id → transcript-store band)", () => {
   it("folds canonical registry ids into the store band their transcripts land in", () => {

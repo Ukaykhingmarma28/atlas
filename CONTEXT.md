@@ -78,6 +78,34 @@ The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` —
   the credential and try once, or retry cautiously. Deliberately not a boolean — "retryable"
   collapses three behaviours the gateway keeps apart.
 
+## UI actions (Atlas Agent)
+
+- **UI action** — one request from Atlas Agent to do one thing in the Atlas window: open a file at a
+  line, open a diff or a settings section, show a panel, activate or close a tab, run a keybinding
+  action, steer a chat composer, type a line into a terminal, or report what the window shows. Each
+  is performed by the app and answered with a result the agent reads; an action the window never
+  answers fails after a bound rather than hanging the turn. *Avoid*: navigation, when the whole
+  surface is meant — "navigate" is the user-facing label of the setting, not the term. Not a UI
+  action: anything the agent does to files or shells through its own tools.
+- **UI tool server** — the second in-process tool server Atlas hands a session that carries UI
+  control, beside the memory tool server (ADR-0010). Its tools are the only way an agent acts on the
+  window. Auto-approved because Atlas itself offers it; switched off for everyone by the user's
+  "Let Atlas Agent navigate the app" setting.
+- **UI control** — what a *connection* carries to be offered the UI tool server: that its agent runs
+  inside the Atlas process, so Atlas vouches for what its tool calls may do. Today only the native
+  connection carries it. Like every other per-agent behaviour it is never decided by agent identity;
+  letting an ACP agent act on the window would mean that connection carrying UI control, not a
+  check on who it is. See ADR-0012.
+- **Project-scoped** — a UI action acts on the view of whichever project is active in the window,
+  and never switches projects: there is no "open project" action, and an action aimed at a tab that
+  belongs to another project is refused and says which project owns it. The calling session's own
+  project need not be the active one; what the user is looking at is what the agent acts on, and
+  the window's state report says whether the two differ.
+- **Own-session refusal** — a UI action may not send a message into, or switch the agent of, the
+  chat the calling session runs in; it may only prefill or insert text for the user to send. Closing
+  an editor with unsaved changes is refused the same way. These are refusals, not prompts: there is
+  no override.
+
 ## Vendored engine licensing (Apache-2.0)
 
 `vendor/atlas-engine/` is a hard fork of an upstream engine under **Apache-2.0** (ADR-0003;

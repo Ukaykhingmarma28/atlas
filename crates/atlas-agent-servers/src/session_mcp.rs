@@ -27,6 +27,12 @@ pub struct SessionMcpRequest {
     pub agent_id: AgentId,
     /// Whether the agent advertised `mcpCapabilities.http` at `initialize`.
     pub http_mcp: bool,
+    /// Whether this connection carries **UI control**: its agent runs inside
+    /// the Atlas process, so Atlas vouches for what its tool calls may do and
+    /// may hand it the UI tool server (ADR-0012). A property of the
+    /// connection, like `http_mcp`, never of which agent it is. ACP has no
+    /// capability for it, so an ACP connection never sets it.
+    pub ui_control: bool,
     /// The directory the session runs in.
     pub cwd: PathBuf,
     /// The session being loaded or resumed; `None` for a new session, whose

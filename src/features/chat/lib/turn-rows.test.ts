@@ -238,6 +238,18 @@ describe("the icon a marker leads with", () => {
     expect(markers(turn(toolCall({ kind: null, toolName: "fetch_url" })))[0].tool).toBe("fetch");
   });
 
+  /// The native agent reports MCP calls as kind "other" (Atlas's own servers
+  /// are not fetches), so the name decides: a UI action is the generic tool,
+  /// a memory search is a search.
+  it("gives Atlas's own tool servers the icon their names earn", () => {
+    const ui = markers(turn(toolCall({ kind: "other", toolName: "atlas_ui.ui_focus" })))[0];
+    expect(ui.tool).toBe("tool");
+    const memory = markers(
+      turn(toolCall({ kind: "other", toolName: "atlas_memory.memory_search" })),
+    )[0];
+    expect(memory.tool).toBe("search");
+  });
+
   it("does not sniff substrings out of unrelated names", () => {
     // The guard on the sniff list: "confirm" contains "rm", "webhook" contains
     // "web". A wrong icon is worse than the generic one.

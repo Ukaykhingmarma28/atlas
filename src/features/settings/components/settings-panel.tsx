@@ -514,6 +514,15 @@ function GeneralSettings() {
         />
       </SettingRow>
       <SettingRow
+        label="Let Atlas Agent navigate the app"
+        description="Atlas Agent can open files at a line, switch tabs and panels, fill in a chat message and type a command into a terminal for you to run. It never switches projects, sends a message for you or presses Enter. Each action shows in the chat and the Logs panel."
+      >
+        <Toggle
+          checked={settings.agentUiNavigation}
+          onChange={(next) => updateSettings({ agentUiNavigation: next })}
+        />
+      </SettingRow>
+      <SettingRow
         label="Atlas CLI"
         description={`Adds an \`atlas\` command to your shell — type \`atlas .\` in any terminal to open the current folder as a project. Refreshed automatically on every launch so an older copy never lingers. ${cliInstalledLine}.`}
       >
