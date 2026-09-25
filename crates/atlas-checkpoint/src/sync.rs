@@ -148,7 +148,7 @@ impl SyncConfig<'_> {
         reqwest::blocking::Client::builder()
             .timeout(self.timeout)
             .build()
-            .map_err(|e| Error::Storage(format!("http client: {e}")))
+            .map_err(|e| Error::Remote(format!("http client: {e}")))
     }
 }
 
@@ -584,9 +584,22 @@ pub fn check_slug(config: &SyncConfig<'_>, slug: &str) -> SlugAvailability {
                     SlugAvailability::Taken
                 }
             })
-            .unwrap_or(SlugAvailability::Unknown),
+            .unwrap_or_else(|| {
+                tracing::warn!(target: "atlas_checkpoint::sync", "slug check: 2xx without an `available` field");
+                SlugAvailability::Unknown
+            }),
         Ok(response) if response.status() == 409 => SlugAvailability::Taken,
-        _ => SlugAvailability::Unknown,
+        // `Unknown` is the right answer to the developer, but the reason must
+        // land somewhere: the popover renders every refusal as "couldn't check".
+        Ok(response) => {
+            let err = server_refusal("slug check", response);
+            tracing::warn!(target: "atlas_checkpoint::sync", "{err}");
+            SlugAvailability::Unknown
+        }
+        Err(e) => {
+            tracing::warn!(target: "atlas_checkpoint::sync", "slug check: {e}");
+            SlugAvailability::Unknown
+        }
     }
 }
 
@@ -643,34 +656,37 @@ pub struct Registration<'a> {
 /// travel as advisory data: the server must accept a registration with neither.
 pub fn register_workspace(config: &SyncConfig<'_>, reg: Registration<'_>) -> Result<String> {
     let token = (config.token)()
-        .ok_or_else(|| Error::Storage("not signed in".into()))?;
+        .ok_or_else(|| Error::Remote("not signed in".into()))?;
     let client = config.client()?;
     let slug = reg.slug;
+
+    // Absent fields are **omitted**, never sent as `null`: the server's schema
+    // marks `name` optional-but-not-nullable, and a literal `null` there is a
+    // `422` for a registration that is otherwise fine. The fingerprints are
+    // nullable server-side, but omitting them is right by the same rule.
+    let mut body = serde_json::Map::new();
+    body.insert("orgId".into(), config.org_id.clone().into());
+    body.insert("slug".into(), slug.into());
+    body.insert("visibility".into(), reg.visibility.as_str().into());
+    insert_present(&mut body, "name", reg.name);
+    insert_present(&mut body, "rootCommitSha", reg.root_commit_sha);
+    insert_present(&mut body, "gitUrl", reg.git_url);
 
     let response = client
         .post(format!("{}/workspaces", config.base_url))
         .bearer_auth(token)
-        .json(&serde_json::json!({
-            "orgId": config.org_id,
-            "slug": slug,
-            "name": reg.name,
-            "rootCommitSha": reg.root_commit_sha,
-            "gitUrl": reg.git_url,
-            "visibility": reg.visibility.as_str(),
-        }))
+        .json(&body)
         .send()
-        .map_err(|e| Error::Storage(format!("register project: {e}")))?;
+        .map_err(|e| Error::Remote(format!("register project: {e}")))?;
 
     let status = response.status();
     if status == 409 {
         // Taken between the check and the confirm. Told plainly, and nothing
         // local has changed.
-        return Err(Error::Storage(format!("the slug \"{slug}\" is already taken")));
+        return Err(Error::Remote(format!("the slug \"{slug}\" is already taken")));
     }
     if !status.is_success() {
-        return Err(Error::Storage(format!(
-            "register project: server returned {status}"
-        )));
+        return Err(server_refusal("register project", response));
     }
 
     response
@@ -682,7 +698,7 @@ pub fn register_workspace(config: &SyncConfig<'_>, reg: Registration<'_>) -> Res
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
         })
-        .ok_or_else(|| Error::Storage("register project: no id in response".into()))
+        .ok_or_else(|| Error::Remote("register project: no id in response".into()))
 }
 
 /// A Project as the Organisation knows it.
@@ -783,7 +799,7 @@ pub fn preselect(
 
 /// Every Project in the Organisation the developer can reach.
 pub fn list_workspaces(config: &SyncConfig<'_>) -> Result<Vec<RemoteWorkspace>> {
-    let token = (config.token)().ok_or_else(|| Error::Storage("not signed in".into()))?;
+    let token = (config.token)().ok_or_else(|| Error::Remote("not signed in".into()))?;
     let client = config.client()?;
 
     let response = client
@@ -791,23 +807,27 @@ pub fn list_workspaces(config: &SyncConfig<'_>) -> Result<Vec<RemoteWorkspace>> 
         .bearer_auth(token)
         .query(&[("orgId", config.org_id.as_str())])
         .send()
-        .map_err(|e| Error::Storage(format!("list workspaces: {e}")))?;
+        .map_err(|e| Error::Remote(format!("list workspaces: {e}")))?;
 
     if !response.status().is_success() {
-        return Err(Error::Storage(format!(
-            "list workspaces: server returned {}",
-            response.status()
-        )));
+        let err = server_refusal("list workspaces", response);
+        tracing::warn!(target: "atlas_checkpoint::sync", "{err}");
+        return Err(err);
     }
-    response
-        .json::<serde_json::Value>()
-        .ok()
-        .and_then(|v| {
-            v.get("workspaces")
-                .cloned()
-                .and_then(|w| serde_json::from_value(w).ok())
-        })
-        .ok_or_else(|| Error::Storage("list workspaces: unreadable response".into()))
+    let body: serde_json::Value = response
+        .json()
+        .map_err(|e| Error::Remote(format!("list workspaces: unreadable response: {e}")))?;
+    let rows = body
+        .get("workspaces")
+        .cloned()
+        .ok_or_else(|| Error::Remote("list workspaces: response carries no `workspaces`".into()))?;
+    serde_json::from_value(rows).map_err(|e| {
+        // A row this build cannot read is worth naming: the alternative was a
+        // bare "unreadable response" that looked like a network fault.
+        let err = Error::Remote(format!("list workspaces: a workspace row did not parse: {e}"));
+        tracing::warn!(target: "atlas_checkpoint::sync", "{err}");
+        err
+    })
 }
 
 /// What the developer is asking to connect to.
@@ -855,39 +875,82 @@ pub fn connect_workspace(
     config: &SyncConfig<'_>,
     req: ConnectRequest<'_>,
 ) -> Result<ConnectOutcome> {
-    let token = (config.token)().ok_or_else(|| Error::Storage("not signed in".into()))?;
+    let token = (config.token)().ok_or_else(|| Error::Remote("not signed in".into()))?;
     let client = config.client()?;
+
+    // Same rule as `register_workspace`: `workspaceId` and `slug` are optional
+    // server-side but not nullable, and the common path — match on the
+    // fingerprints alone — sets neither.
+    let mut body = serde_json::Map::new();
+    body.insert("orgId".into(), config.org_id.clone().into());
+    body.insert("create".into(), req.create.into());
+    insert_present(&mut body, "workspaceId", req.workspace_id);
+    insert_present(&mut body, "slug", req.slug);
+    insert_present(&mut body, "rootCommitSha", req.root_commit_sha);
+    insert_present(&mut body, "gitUrl", req.git_url);
 
     let response = client
         .post(format!("{}/workspaces/connect", config.base_url))
         .bearer_auth(token)
-        .json(&serde_json::json!({
-            "orgId": config.org_id,
-            "workspaceId": req.workspace_id,
-            "slug": req.slug,
-            "rootCommitSha": req.root_commit_sha,
-            "gitUrl": req.git_url,
-            "create": req.create,
-        }))
+        .json(&body)
         .send()
-        .map_err(|e| Error::Storage(format!("connect project: {e}")))?;
+        .map_err(|e| Error::Remote(format!("connect project: {e}")))?;
 
     let status = response.status();
     if status == 409 {
         let slug = req.slug.unwrap_or("that slug");
-        return Err(Error::Storage(format!("the slug \"{slug}\" is already taken")));
+        return Err(Error::Remote(format!("the slug \"{slug}\" is already taken")));
     }
     if !status.is_success() {
-        return Err(Error::Storage(format!(
-            "connect project: server returned {status}"
-        )));
+        return Err(server_refusal("connect project", response));
     }
 
     let body: serde_json::Value = response
         .json()
-        .map_err(|e| Error::Storage(format!("connect project: unreadable response: {e}")))?;
+        .map_err(|e| Error::Remote(format!("connect project: unreadable response: {e}")))?;
 
     Ok(read_connect_outcome(&body))
+}
+
+/// Put `value` on the body only when there is one.
+///
+/// `serde_json::json!` writes an `Option::None` as `null`, and the registry's
+/// schemas accept an *absent* optional but refuse a `null` one.
+fn insert_present(body: &mut serde_json::Map<String, serde_json::Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        body.insert(key.to_string(), value.into());
+    }
+}
+
+/// Turn a refused response into an error that says what the server said.
+///
+/// The registry answers `{"error":{"code","message"}}` and the message is the
+/// first schema issue — "Expected string, received null" — which is the one
+/// fact a person debugging a `422` needs and the status alone withholds.
+fn server_refusal(what: &str, response: reqwest::blocking::Response) -> Error {
+    let status = response.status();
+    let reason = response
+        .json::<serde_json::Value>()
+        .ok()
+        .and_then(|v| server_error_message(&v));
+    match reason {
+        Some(reason) => Error::Remote(format!("{what}: server returned {status} ({reason})")),
+        None => Error::Remote(format!("{what}: server returned {status}")),
+    }
+}
+
+/// The `error.message` (and `error.code` when it adds something) of a
+/// registry refusal, or `None` when the body is not that shape.
+fn server_error_message(body: &serde_json::Value) -> Option<String> {
+    let error = body.get("error")?;
+    let message = error.get("message").and_then(serde_json::Value::as_str);
+    let code = error.get("code").and_then(serde_json::Value::as_str);
+    match (code, message) {
+        (Some(code), Some(message)) if message != code => Some(format!("{code}: {message}")),
+        (_, Some(message)) => Some(message.to_string()),
+        (Some(code), None) => Some(code.to_string()),
+        (None, None) => None,
+    }
 }
 
 /// Split out from the request so the response shapes are testable without a

@@ -1404,6 +1404,10 @@ function ConnectTab({
   const [selected, setSelected] = useState<string | null>(null);
   /** The server's reason for binding nothing, if it declined. */
   const [refused, setRefused] = useState<string | null>(null);
+  /** Why the listing failed, as Rust reported it — a 403 and a dead network
+   *  need different fixes, and one sentence for both sent people checking
+   *  Wi-Fi for a permission problem. */
+  const [listError, setListError] = useState<string | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
@@ -1416,14 +1420,17 @@ function ConnectTab({
     setOptions(undefined);
     setSelected(null);
     setRefused(null);
+    setListError(null);
     invoke<ConnectOptions>("capture_connect_options", { projectPath, orgId })
       .then((result) => {
         if (mine !== seq.current) return;
         setOptions(result);
         setSelected(result.preselected);
       })
-      .catch(() => {
-        if (mine === seq.current) setOptions(null);
+      .catch((e: unknown) => {
+        if (mine !== seq.current) return;
+        setOptions(null);
+        setListError(String(e));
       });
   }, [projectPath, orgId, cloudReason]);
 
@@ -1447,7 +1454,9 @@ function ConnectTab({
         </p>
       ) : options === null ? (
         <p className="rounded-lg bg-[var(--atlas-status-warning-background)] px-2.5 py-1.5 text-xs text-[var(--atlas-status-warning-foreground)]">
-          Could not reach the server. Check the connection and reopen this tab.
+          {listError
+            ? `Could not list this Organisation's Projects: ${listError}`
+            : "Could not reach the server. Check the connection and reopen this tab."}
         </p>
       ) : options.workspaces.length === 0 ? (
         <p className={cn(GROUP, "text-xs text-[var(--muted-foreground)]")}>

@@ -151,7 +151,17 @@ impl ArtifactsManager {
     /// Follow one Session's entries and comments on an already-open socket.
     pub fn subscribe_session(&self, key: &ProjectKey, session_id: &str) {
         let Ok(mut connections) = self.connections.lock() else { return };
-        let Some(conn) = connections.get_mut(key) else { return };
+        let Some(conn) = connections.get_mut(key) else {
+            // Not an error — the Project simply has no socket on this machine —
+            // but the one line that says why a Session never went live.
+            tracing::debug!(
+                target: "atlas_artifacts",
+                "subscribe {session_id} ignored: no socket for {}/{}",
+                key.0,
+                key.1
+            );
+            return;
+        };
         if conn.subscribed.as_deref() == Some(session_id) {
             return;
         }

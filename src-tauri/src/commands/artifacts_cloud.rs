@@ -149,8 +149,13 @@ pub fn install(app: &AppHandle) {
 ///
 /// Flat and `kind`-tagged, matching `atlas:agents` — one channel, payload-typed,
 /// rather than a channel per shape.
+///
+/// `rename_all` on an enum renames the **variants** only; the fields inside
+/// need `rename_all_fields`, or `session_id` goes out as written and the
+/// renderer's `payload.sessionId` filter drops every frame. That was the whole
+/// of the "comments aren't live" bug — see the test below.
 #[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum WireEvent {
     BoardChanged,
     EntryUpsert {
@@ -302,8 +307,15 @@ fn connected_projects(project_paths: &[String], org_id: &str) -> Vec<String> {
         if binding.org_id.as_deref() != Some(org_id) {
             continue;
         }
-        if let Some(id) = binding.remote_workspace_id {
-            out.push(id);
+        match binding.remote_workspace_id {
+            Some(id) => out.push(id),
+            // A binding from before the column existed drains by slug but has
+            // no id to open a socket against. Worth one line, because such a
+            // Project looks synced on the board and silently never goes live.
+            None => tracing::debug!(
+                target: "atlas_artifacts",
+                "{path}: cloud binding has no remote workspace id; no socket"
+            ),
         }
     }
     out.sort();
@@ -322,7 +334,13 @@ pub async fn artifacts_cloud_watch(
     app: AppHandle,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(()) };
-    let Some(org_id) = state.org_id() else { return Ok(()) };
+    let Some(org_id) = state.org_id() else {
+        tracing::debug!(
+            target: "atlas_artifacts",
+            "watch {project_id}/{session_id:?} ignored: no organisation targeted yet"
+        );
+        return Ok(());
+    };
     let key = (org_id, project_id);
     match session_id {
         Some(session_id) => state.manager.subscribe_session(&key, &session_id),
@@ -623,6 +641,46 @@ mod tests {
             resolved_at: None,
             resolved_by: None,
         }
+    }
+
+    #[test]
+    fn wire_events_carry_camel_case_fields() {
+        // The renderer filters on `payload.sessionId` / `payload.projectId`.
+        // A snake_case key here is not a type error anywhere — it is a frame
+        // that arrives, matches on `kind`, and is then dropped by the id
+        // comparison, which is exactly how comments stopped being live.
+        let frames = [
+            WireEvent::CommentUpsert {
+                session_id: "ses_1".into(),
+                comment: comment("c1", AnchorKind::Message, "msg_1", None),
+            },
+            WireEvent::EntryUpsert {
+                session_id: "ses_1".into(),
+                change: "updated".into(),
+                entry: serde_json::json!({ "id": "msg_1" }),
+            },
+            WireEvent::Presence { project_id: "ws_1".into(), online: vec!["user_ada".into()] },
+            WireEvent::Revoked { project_id: "ws_1".into() },
+        ];
+        for frame in frames {
+            let json = serde_json::to_value(&frame).unwrap();
+            let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+            assert!(!keys.contains(&"session_id"), "{json}");
+            assert!(!keys.contains(&"project_id"), "{json}");
+            assert!(
+                keys.contains(&"sessionId") || keys.contains(&"projectId"),
+                "{json}"
+            );
+        }
+        // The kind tag itself is what the renderer switches on.
+        let json = serde_json::to_value(WireEvent::CommentUpsert {
+            session_id: "ses_1".into(),
+            comment: comment("c1", AnchorKind::Message, "msg_1", None),
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "commentUpsert");
+        assert_eq!(json["sessionId"], "ses_1");
+        assert_eq!(json["comment"]["anchorId"], "msg_1");
     }
 
     #[test]

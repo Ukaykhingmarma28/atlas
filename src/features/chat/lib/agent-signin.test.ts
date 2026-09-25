@@ -130,9 +130,9 @@ describe("no-models token parity with Rust", () => {
     const sentence = rust.match(/"(Atlas Agent has no models to offer[^"]*)"/);
     expect(sentence, "no-entitled-models sentence not found in catalog_cache.rs").toBeTruthy();
 
-    catalog = { cersei: { kind: "native", login: null } };
+    catalog = { "atlas-agent": { kind: "native", login: null } };
     expect(
-      bindFailureAction({ agentType: "cersei", err: sentence![1], alreadyAttempted: false }),
+      bindFailureAction({ agentType: "atlas-agent", err: sentence![1], alreadyAttempted: false }),
     ).toBe("silent");
   });
 });
@@ -249,7 +249,7 @@ describe("bindFailureAction", () => {
       "Atlas Agent has no models to offer: the gateway lists none this organisation may use.";
 
     beforeEach(() => {
-      catalog = { cersei: { kind: "native", login: null } };
+      catalog = { "atlas-agent": { kind: "native", login: null } };
     });
 
     it("says nothing — the composer is already explaining it", () => {
@@ -258,7 +258,11 @@ describe("bindFailureAction", () => {
       // rebind: opening a tab, switching organisation, refocusing.
       for (const attempted of [false, true]) {
         expect(
-          bindFailureAction({ agentType: "cersei", err: NO_MODELS, alreadyAttempted: attempted }),
+          bindFailureAction({
+            agentType: "atlas-agent",
+            err: NO_MODELS,
+            alreadyAttempted: attempted,
+          }),
         ).toBe("silent");
       }
     });
@@ -266,7 +270,7 @@ describe("bindFailureAction", () => {
     it("stays silent when the failure arrives structured rather than as a string", () => {
       expect(
         bindFailureAction({
-          agentType: "cersei",
+          agentType: "atlas-agent",
           err: { message: NO_MODELS, kind: "fatal" },
           alreadyAttempted: false,
         }),
@@ -278,7 +282,7 @@ describe("bindFailureAction", () => {
       // leave a dead composer with no reason given.
       expect(
         bindFailureAction({
-          agentType: "cersei",
+          agentType: "atlas-agent",
           err: "Atlas Agent can't load its model list (timeout). Check your connection and try again.",
           alreadyAttempted: false,
         }),

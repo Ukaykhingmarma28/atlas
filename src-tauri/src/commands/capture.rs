@@ -2406,7 +2406,15 @@ fn token_provider(app: &AppHandle) -> impl Fn() -> Option<String> {
         // Blocking on the async mint is fine here: every caller runs on a
         // `spawn_blocking` thread or the capture worker, never a runtime core
         // thread and never the UI thread.
-        tauri::async_runtime::block_on(core.mint_access_token()).ok()
+        match tauri::async_runtime::block_on(core.mint_access_token()) {
+            Ok(token) => Some(token),
+            // `None` parks the caller as "not signed in"; without this line a
+            // mint failure is indistinguishable from an unreachable registry.
+            Err(e) => {
+                tracing::warn!(target: "atlas::capture", "access token mint failed: {e:?}");
+                None
+            }
+        }
     }
 }
 

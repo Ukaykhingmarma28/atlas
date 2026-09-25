@@ -34,6 +34,7 @@ import {
   type GroupPeriod,
 } from "../lib/board";
 import { clearDetailCache, readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
+import { readSessionDetail } from "../lib/read-session-detail";
 import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock";
 import { CheckpointsPicker } from "./checkpoints-picker";
 import { ExportButton } from "./export-button";
@@ -195,26 +196,6 @@ function shellDetail(row: BoardSession): Detail {
     counts: { prompts: 0, responses: 0, thinking: 0, toolCalls: 0, checkpoints: 0 },
     tools: [],
   };
-}
-
-/**
- * A Session that exists only on the server, read whole.
- *
- * Rust pages the entries and hands back the same `SessionDetail` a local read
- * produces, so nothing downstream knows the difference. Two fields are
- * legitimately empty on a remote row and the viewer already handles both: a
- * Checkpoint has no commit subject (only the machine with the checkout can run
- * `git show`), and nothing carries a blob key.
- */
-async function remoteDetail(
-  remoteProjectId: string | null,
-  sessionId: string,
-): Promise<Detail | null> {
-  if (!remoteProjectId) return null;
-  return invoke<Detail>("artifacts_cloud_session", {
-    projectId: remoteProjectId,
-    sessionId,
-  });
 }
 
 export function ArtifactsPanel() {
@@ -510,17 +491,11 @@ export function ArtifactsPanel() {
       if (!open) return;
       const seq = ++detailSeq.current;
       if (showLoading) setDetail(undefined);
-      // A Session from a Project this machine has no checkout of has no local
-      // store to read, so it comes back over the network. Preferring the local
-      // read whenever there *is* one keeps the common case instant and offline
-      // — a synced Session of your own is on both sides.
-      const read = open.projectPath
-        ? invoke<Detail | null>("artifacts_session", {
-            projectPath: open.projectPath,
-            sessionId: open.sessionId,
-          })
-        : remoteDetail(open.remoteProjectId ?? null, open.sessionId);
-      read
+      // Local store first, the server second — see `readSessionDetail` for
+      // why the second step is not optional: a teammate's Session in a Project
+      // this machine has bound carries a local `projectPath` and is not in the
+      // local store.
+      readSessionDetail(open)
         .then((result) => {
           if (result) writeCachedDetail(open.projectPath, open.sessionId, result);
           if (seq !== detailSeq.current) return;
