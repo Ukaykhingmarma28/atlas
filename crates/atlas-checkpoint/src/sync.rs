@@ -175,6 +175,13 @@ pub fn drain(store: &Store, config: &SyncConfig<'_>) -> Result<DrainOutcome> {
     outcome.failed +=
         store.mark_exhausted_rows_failed(&config.workspace_id, MAX_ATTEMPTS)? as usize;
 
+    // Nothing queued, nothing to send — and no token to mint. The worker ticks
+    // every 30 s per Cloud Project, and minting first cost a `GET /token` per
+    // tick on an idle Project, which is load the auth server rate-limits.
+    if store.row_count_in_state(&config.workspace_id, SyncState::Pending)? == 0 {
+        return Ok(outcome);
+    }
+
     let Some(mut token) = (config.token)() else {
         outcome.status = DrainStatus::NoCredential;
         outcome.still_pending = store.row_count_in_state(&config.workspace_id, SyncState::Pending)?;
