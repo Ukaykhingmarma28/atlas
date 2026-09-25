@@ -99,6 +99,7 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 | Domain group | Modules |
 |---|---|
 | Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_analytics, agent_memory, catalog, registry, capture, artifacts_cloud |
+| Agent tool servers | memory_server (ADR-0010), ui_server (ADR-0012) |
 | Terminal / browser / fs | terminal, browser, fs |
 | Git | git, git_graph, git_watcher, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops |
 | GitHub | github |
@@ -130,6 +131,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 | `atlas:capture-changed` | Timeline / checkpoint record updated — local capture **and** a remote board refresh |
 | `atlas:artifacts-cloud` | Timeline cloud deltas: entry upsert, comment upsert, presence, membership revoked, resync |
 | `atlas:agent-elicitation`, `atlas:agent-elicitation-resolved` | agent-initiated prompts to the user |
+| `atlas:ui-action` | one UI action from Atlas Agent's UI tool server, for the window to perform and answer through `ui_action_respond` (ADR-0012) |
 | `atlas:agent-catalog:changed`, `atlas:registry-install:progress` | Marketplace catalog and install progress |
 | `atlas:auth-run:progress` / `:done` | interactive agent sign-in run |
 | `atlas:modelchat` | model-chat streaming |
@@ -177,6 +179,10 @@ Three layers sit between the connection and the IPC surface:
 Every delta travels an ordered `OutboundPipeline` (`atlas-bus`) of independent middleware: `BroadcastMiddleware` (the `atlas:agents` window event), `CaptureMiddleware` (Timeline + the permanent checkpoint record), `AnalyticsMiddleware`, `TranscriptMiddleware`, `MemoryIngestMiddleware`.
 
 The `SessionDelta` shapes those consumers pattern-match live in **`crates/atlas-agent-wire`** and are **frozen**. `crates/atlas-agent-wire/tests/contract.rs` is the enforcement: it spells the contract out itself and fails if the enum drifts from it. (It also cross-checks `docs/agents/delta-wire-contract.md` when that file is present — the prose contract is a working note and is git-ignored, which is exactly why the test does not rely on it.) The thread model and the wire disagree about what a "message" is — the thread keeps one entry per assistant message with interleaved text and thought chunks; the wire emits one message per contiguous run of a kind — and reconciling that gap is precisely `atlas-agent-delta`'s job.
+
+### Atlas's tool servers
+
+Atlas hands agents two in-process MCP services on one loopback listener, behind one bearer token per session: the **memory tool server** (`memory_server/`, `/mcp`, ADR-0010), offered to every agent that advertises HTTP MCP, and the **UI tool server** (`ui_server/`, `/ui`, ADR-0012), offered only to a connection that carries **UI control** — today the in-process native connection. One offer (`MemorySessionOffers`) decides both, because the token table holds one token per session. A UI tool call crosses to the window as `atlas:ui-action`; the frontend performs it through the app's own openers (`src/features/ui-actions/`) and answers through `ui_action_respond`, so Rust mirrors no layout or focus state. `tests/ui-actions-contract.test.ts` keeps the tool list and the window's dispatcher in step.
 
 ### `commands/agents.rs`
 

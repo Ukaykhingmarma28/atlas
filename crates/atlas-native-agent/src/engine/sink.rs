@@ -376,8 +376,11 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
                 S::Completed => acp::ToolCallStatus::Completed,
                 S::Failed => acp::ToolCallStatus::Failed,
             };
+            // `Other`: an MCP tool is whatever its server says it is, and
+            // Atlas's own (memory, UI actions) are not fetches. The row's icon
+            // then comes from the tool's name.
             let mut call = acp::ToolCall::new(id.clone(), format!("{server}.{tool}"))
-                .kind(acp::ToolKind::Fetch)
+                .kind(acp::ToolKind::Other)
                 .status(status)
                 .raw_input(arguments.clone());
             let body = error
