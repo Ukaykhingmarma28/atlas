@@ -484,18 +484,27 @@ pub fn detail(
         entries.push(tool_call_entry(store, &call, &touches)?);
     }
 
-    // A Checkpoint carries no turn of its own. Attributing it to the last turn
-    // that touched one of its files is what puts a commit *after* the work that
-    // produced it rather than at the bottom of the Session.
+    // A Checkpoint carries no turn of its own. Attributing it to the turn whose
+    // work it holds is what puts a commit *after* that work rather than at the
+    // bottom of the Session. The touches the commit consumed name that turn
+    // exactly; any touch of the same path would not — a later turn editing the
+    // file again would drag every earlier commit of it down to that turn.
+    let consuming = store.consuming_turns(session_id)?;
     let checkpoints = store.checkpoints_for_session(session_id)?;
     for checkpoint in &checkpoints {
         counts.checkpoints += 1;
-        let turn = touches
-            .iter()
-            .filter(|t| checkpoint.files_touched.contains(&t.path))
-            .map(|t| t.turn_seq)
-            .max()
-            .unwrap_or(-1);
+        let turn = consuming.get(&checkpoint.commit_sha).copied().unwrap_or_else(|| {
+            // Nothing consumed (a permissive link, or rows from before
+            // consumption was tracked): the last turn that touched one of its
+            // files before the commit was seen.
+            touches
+                .iter()
+                .filter(|t| t.created_at <= checkpoint.created_at)
+                .filter(|t| checkpoint.files_touched.contains(&t.path))
+                .map(|t| t.turn_seq)
+                .max()
+                .unwrap_or(-1)
+        });
         entries.push(checkpoint_entry(checkpoint, turn, &subject_for));
     }
 

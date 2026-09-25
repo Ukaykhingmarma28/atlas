@@ -9,8 +9,10 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 
 use atlas_checkpoint::model::ProjectMode;
 use atlas_checkpoint::timeline::{self, EntryKind};
+use atlas_checkpoint::tools::{resolve_path, ToolName};
 use atlas_checkpoint::{
-    Capture, CheckpointInput, Mode, Role, SessionKey, Source, Store, TokenTotals, TurnContent,
+    Capture, CheckpointInput, FileWrite, Mode, Role, SessionKey, Source, Store, TokenTotals,
+    ToolCallContent, ToolStatus, TurnContent,
 };
 
 const WORKSPACE: &str = "ws-atlas";
@@ -216,6 +218,87 @@ fn a_checkpoint_closes_the_turn_whose_files_it_carries() {
     // The subject comes from git at display time, not from a stale copy.
     assert_eq!(checkpoint.commit_subject.as_deref(), Some("Add rate limiting (0f1e2d3)"));
     assert_eq!(detail.counts.checkpoints, 1);
+}
+
+/// A turn's edit of `path`, recorded the way capture records one.
+fn touch(store: &mut Store, session_id: &str, turn_seq: i64, path: &str) {
+    let mut capture = Capture::new(store, ProjectMode::Local);
+    let call = capture
+        .record_tool_call(
+            session_id,
+            ToolCallContent {
+                turn_seq,
+                native_call_id: Some(&format!("call-{turn_seq}-{path}")),
+                tool_name: ToolName::Edit,
+                title: None,
+                kind: Some("edit"),
+                status: ToolStatus::Completed,
+                locations: &serde_json::json!([]),
+                arguments: None,
+                result: None,
+            },
+        )
+        .expect("tool call");
+    let resolved = resolve_path(path, std::path::Path::new("/tmp/atlas"));
+    capture
+        .record_file_write(
+            session_id,
+            &call,
+            turn_seq,
+            FileWrite {
+                path: &resolved,
+                sha256_after: None,
+                sketch_after: None,
+                existed_before: true,
+                deleted: false,
+            },
+        )
+        .expect("file touch");
+}
+
+fn commit(store: &Store, session_id: &str, sha: &str, files: &[String]) {
+    store.consume_touches(session_id, sha, files, Utc::now()).expect("touches consumed");
+    store
+        .upsert_checkpoint(CheckpointInput {
+            session_id,
+            commit_sha: sha,
+            patch_id: None,
+            branch: Some("main"),
+            git_author_name: None,
+            git_author_email: None,
+            files_touched: files,
+            insertions: 1,
+            deletions: 0,
+            sync_state: atlas_checkpoint::SyncState::Local,
+        })
+        .expect("checkpoint recorded");
+}
+
+#[test]
+fn a_later_turn_editing_the_same_file_does_not_pull_earlier_checkpoints_into_it() {
+    // Turn 1 edits app.js and commits; turn 2 edits app.js again and commits.
+    // Attributing by "the last turn that touched any of its files" filed BOTH
+    // commits under turn 2, burying turn 1's commit below turn 2's replies.
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, session_id) = seeded(dir.path());
+    let files = vec!["app.js".to_string()];
+
+    touch(&mut store, &session_id, 1, "app.js");
+    commit(&store, &session_id, "1111111111111111111111111111111111111111", &files);
+    touch(&mut store, &session_id, 2, "app.js");
+    commit(&store, &session_id, "2222222222222222222222222222222222222222", &files);
+
+    let detail = timeline::detail(&store, &session_id, no_subjects).unwrap().unwrap();
+    let turn_of = |sha: &str| {
+        detail
+            .entries
+            .iter()
+            .find(|e| e.kind == EntryKind::Checkpoint && e.commit_sha.as_deref() == Some(sha))
+            .map(|e| e.turn_seq)
+            .expect("checkpoint entry")
+    };
+    assert_eq!(turn_of("1111111111111111111111111111111111111111"), 1);
+    assert_eq!(turn_of("2222222222222222222222222222222222222222"), 2);
 }
 
 #[test]

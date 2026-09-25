@@ -1230,6 +1230,18 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// For each commit that consumed touches in this Session, the latest turn
+    /// among the touches it consumed — the turn whose work the commit holds.
+    pub fn consuming_turns(&self, session_id: &str) -> Result<HashMap<String, i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT consumed_by_commit, MAX(turn_seq) FROM file_touch
+              WHERE session_id = ?1 AND consumed_by_commit IS NOT NULL
+              GROUP BY consumed_by_commit",
+        )?;
+        let rows = stmt.query_map([session_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<HashMap<_, _>>>()?)
+    }
+
     /// The last touch of each path in a turn — what the turn left behind, and
     /// therefore what the link rule compares against a commit.
     pub fn latest_file_touches(&self, session_id: &str) -> Result<Vec<FileTouch>> {
