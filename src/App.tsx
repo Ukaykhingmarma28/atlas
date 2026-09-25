@@ -65,6 +65,7 @@ import {
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
 import { watchRemovedAgents } from "@/features/chat/lib/removed-agents";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
+import { UiActionBridge } from "@/features/ui-actions/components/ui-action-bridge";
 import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
 import { primeNativeNotificationPermission, sendNativeNotification } from "@/lib/native-notify";
 import { logEvent } from "@/features/log/lib/log";
@@ -1541,6 +1542,7 @@ export function App() {
       {/* Sign-in asks questions of its own (device codes, login URLs), and they
           arrive before the agent has any session to route them by. */}
       <AgentElicitationHost />
+      <UiActionBridge />
       <NotificationPanel />
       <FeedbackPanel />
       <UpdateAvailableModal />

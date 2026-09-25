@@ -737,6 +737,7 @@ fn request(http_mcp: bool, cwd: &str, session: Option<&str>) -> SessionMcpReques
     SessionMcpRequest {
         agent_id: atlas_acp_thread::AgentId::new("claude-code"),
         http_mcp,
+        ui_control: false,
         cwd: std::path::PathBuf::from(cwd),
         session_id: session.map(acp::SessionId::new),
     }

@@ -49,7 +49,7 @@ export function openFileAs(path: string, kind: FileKind, opts?: OpenFileOptions)
   const title = path.split("/").pop() ?? path;
   // `id` is stable per path + tabType so reopening the same file restores
   // its existing tab instead of stacking duplicates.
-  const id = `${tabType}:${path}`;
+  const id = tabType === "editor" ? editorTabId(path) : `${tabType}:${path}`;
   // Before the tab exists, so a panel that mounts on this very call finds it.
   if (opts?.reveal && tabType === "editor") {
     useEditorStore.getState().actions.requestReveal(path, opts.reveal);

@@ -612,7 +612,8 @@ interface ChatActions {
   };
 }
 
-function findTabByAcpSession(
+/** The chat tab running `acpSessionId`, or null. */
+export function findTabByAcpSession(
   sessions: Record<string, ChatSession>,
   acpSessionId: string,
 ): string | null {

@@ -79,6 +79,11 @@ export interface AppSettings {
    *  Cmd/Ctrl+Enter sends, bare Enter always inserts a newline (the old
    *  default). Cmd/Ctrl+Enter always sends regardless of this setting. */
   enterToSend: boolean;
+  /** Let Atlas Agent act on this window through its UI tool server — open
+   *  files, switch tabs and panels, steer a chat composer, type into a
+   *  terminal (ADR-0012). Off: new sessions are not offered the tools and
+   *  every UI action in a running one is refused. Default ON. */
+  agentUiNavigation: boolean;
   /** Terminal notifications master switch: a command finishing (failed, or
    *  longer than `terminalNotifyMinDurationMs`) or wanting input raises an
    *  in-app notification, a toast when the terminal is off screen, and a
@@ -137,6 +142,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   curatedPluginSync: false,
   updaterIgnoredVersion: null,
   enterToSend: true,
+  agentUiNavigation: true,
   terminalNotifications: true,
   terminalNotifyMinDurationMs: 10_000,
   terminalNotifyOnFailure: true,

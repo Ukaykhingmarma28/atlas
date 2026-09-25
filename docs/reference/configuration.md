@@ -111,6 +111,12 @@ adaptiveSuggestions = "agent"
 # sends either way. (default: true)
 enterToSend = true
 
+# Let Atlas Agent act on the window: open files at a line, switch tabs
+# and panels, fill in a chat message, type a command for you to run.
+# It never switches projects, sends for you or presses Enter. Off: its
+# UI tools are withdrawn and every call is refused. (default: true)
+agentUiNavigation = true
+
 # Terminal notifications: a command that fails, runs longer than
 # terminalNotifyMinDurationMs, or asks for input raises an in-app
 # notification, a toast when its terminal is off screen and a macOS
@@ -166,6 +172,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `curatedPluginSync` | boolean | `false` | — |
 | `updaterIgnoredVersion` | string, or absent | absent | — |
 | `enterToSend` | boolean | `true` | — |
+| `agentUiNavigation` | boolean | `true` | — |
 | `terminalNotifications` | boolean | `true` | — |
 | `terminalNotifyMinDurationMs` | integer | `10000` | 0 ≤ n ≤ 3600000 |
 | `terminalNotifyOnFailure` | boolean | `true` | — |

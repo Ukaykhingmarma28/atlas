@@ -15,6 +15,7 @@ use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers}
 
 use super::host::{MemoryServerHost, SharingGate};
 use super::MEMORY_SERVER_NAME;
+use crate::commands::ui_server::{UiOffer, UiOfferDecision, UI_PATH, UI_SERVER_NAME};
 
 /// Whether one session request is handed the memory tool server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,15 +54,26 @@ impl OfferDecision {
 }
 
 /// Offers each session the memory tool server with a token of its own
-/// ([`SessionMcpServers`], installed on every agent connection).
+/// ([`SessionMcpServers`], installed on every agent connection), and — with
+/// [`with_ui`](Self::with_ui) — the UI tool server beside it on the same
+/// token (ADR-0012). One offer decides both because both ride one token: the
+/// token table holds one token per session, so two offers minting two tokens
+/// would revoke each other.
 pub struct MemorySessionOffers {
     host: Arc<MemoryServerHost>,
     gate: SharingGate,
+    ui: Option<UiOffer>,
 }
 
 impl MemorySessionOffers {
     pub fn new(host: Arc<MemoryServerHost>, gate: SharingGate) -> Self {
-        Self { host, gate }
+        Self { host, gate, ui: None }
+    }
+
+    /// Also offer the UI tool server, mounted on this host at `/ui`.
+    pub fn with_ui(mut self, ui: UiOffer) -> Self {
+        self.ui = Some(ui);
+        self
     }
 }
 
@@ -79,16 +91,41 @@ impl SessionMcpServers for MemorySessionOffers {
             "{}",
             decision.log_line(&agent, request.http_mcp),
         );
-        let (OfferDecision::Included, Some(url)) = (decision, url) else {
+        let ui_url = self.host.url_at(UI_PATH);
+        let ui = self.ui.as_ref().map(|ui| {
+            let decision = ui.decide(request.http_mcp, request.ui_control, ui_url.is_some());
+            tracing::info!(
+                target: "atlas::ui_server",
+                session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
+                "{}",
+                decision.log_line(&agent, request.http_mcp, request.ui_control),
+            );
+            decision
+        });
+
+        let mut entries: Vec<(&str, String)> = Vec::new();
+        if let (OfferDecision::Included, Some(url)) = (decision, url) {
+            entries.push((MEMORY_SERVER_NAME, url));
+        }
+        if let (Some(UiOfferDecision::Included), Some(url)) = (ui, ui_url) {
+            entries.push((UI_SERVER_NAME, url));
+        }
+        if entries.is_empty() {
             return SessionMcpOffer::none();
-        };
+        }
+        // Minted once, after every decision, for every entry.
         let tokens = self.host.tokens().clone();
         let token = tokens.mint_unbound(&agent, &cwd);
-        let server = acp::McpServer::Http(
-            acp::McpServerHttp::new(MEMORY_SERVER_NAME, url)
-                .headers(vec![acp::HttpHeader::new("Authorization", format!("Bearer {token}"))]),
-        );
-        SessionMcpOffer::new(vec![server], move |session| match session {
+        let servers = entries
+            .into_iter()
+            .map(|(name, url)| {
+                acp::McpServer::Http(
+                    acp::McpServerHttp::new(name, url)
+                        .headers(vec![acp::HttpHeader::new("Authorization", format!("Bearer {token}"))]),
+                )
+            })
+            .collect();
+        SessionMcpOffer::new(servers, move |session| match session {
             Some(id) => tokens.bind(&token, &id.to_string()),
             None => tokens.revoke_token(&token),
         })
