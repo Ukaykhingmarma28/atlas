@@ -669,7 +669,10 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const landedRef = useRef<{ node: HTMLElement; timer: ReturnType<typeof setTimeout> } | null>(
     null,
   );
-  const markLanded = useCallback((node: HTMLElement) => {
+  const markLanded = useCallback((row: HTMLElement) => {
+    // The ring goes on the row's content column, not the full-width wrapper
+    // — the same footprint the Timeline's landed entry has.
+    const node = (row.firstElementChild as HTMLElement | null) ?? row;
     const prev = landedRef.current;
     if (prev) {
       clearTimeout(prev.timer);
@@ -1055,7 +1058,15 @@ function RowView({
         />
       );
     case RowKind.Prose:
-      return <ProseRowView row={row} tabId={tabId} agentLabel={agentLabel} priority={priority} />;
+      return (
+        <ProseRowView
+          row={row}
+          tabId={tabId}
+          agentLabel={agentLabel}
+          priority={priority}
+          pinScopeKey={pinScopeKey}
+        />
+      );
     case RowKind.Thinking:
       return <ThinkingRowView row={row} tabId={tabId} onToggleExpand={onToggleExpand} />;
     case RowKind.Marker:

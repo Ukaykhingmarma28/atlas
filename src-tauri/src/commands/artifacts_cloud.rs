@@ -24,7 +24,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use atlas_artifacts::{
-    AnchorKind, ArtifactsClient, ArtifactsEvent, ArtifactsManager, CloudBoard, Comment, ProjectKey,
+    AnchorKind, ArtifactsClient, ArtifactsEvent, ArtifactsManager, CloudBoard, Comment,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -325,11 +325,7 @@ async fn apply_targets(
             .await
             .map_err(|e| e.to_string())?
     };
-    let keys: Vec<ProjectKey> = project_ids
-        .into_iter()
-        .map(|project_id| (org_id.clone(), project_id))
-        .collect();
-    state.manager.retarget(keys);
+    state.manager.retarget(&org_id, project_ids);
 
     // Paint from the network once immediately rather than waiting a whole tick
     // — a switch that shows an empty remote half for fifteen seconds reads as
@@ -443,27 +439,29 @@ pub async fn chat_comment_target(
 
 /// Follow one Session's entries and comments in realtime.
 ///
-/// A no-op for a Project with no socket, which is the honest answer: nothing
-/// can be followed on a Project this machine is not connected to.
+/// Opens (or shares) a socket subscribed to that Session — for any Project in
+/// the Organisation, bound on this machine or not. Recorded even before an
+/// Organisation is targeted; the manager dials it when one is.
 #[tauri::command]
-pub async fn artifacts_cloud_watch(
+pub async fn artifacts_cloud_follow(
     project_id: String,
-    session_id: Option<String>,
+    session_id: String,
     app: AppHandle,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(()) };
-    let Some(org_id) = state.org_id() else {
-        tracing::debug!(
-            target: "atlas_artifacts",
-            "watch {project_id}/{session_id:?} ignored: no organisation targeted yet"
-        );
-        return Ok(());
-    };
-    let key = (org_id, project_id);
-    match session_id {
-        Some(session_id) => state.manager.subscribe_session(&key, &session_id),
-        None => state.manager.unsubscribe_session(&key),
-    }
+    state.manager.follow(&project_id, &session_id);
+    Ok(())
+}
+
+/// Stop following a Session. The socket closes once nobody else follows it.
+#[tauri::command]
+pub async fn artifacts_cloud_unfollow(
+    project_id: String,
+    session_id: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(()) };
+    state.manager.unfollow(&project_id, &session_id);
     Ok(())
 }
 

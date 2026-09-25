@@ -10,6 +10,7 @@ import {
   requestPermissionQuestion,
   requestPermissionQuestionMulti,
 } from "../fake-agent";
+import { chatComments } from "./chat-comments";
 import { chatLongPrompt } from "./chat-long-prompt";
 import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
@@ -39,6 +40,7 @@ const all: Scenario[] = [
     actions: { commsIncomingMessage, ...permissionActions },
   },
   chatTools,
+  chatComments,
   chatLongPrompt,
   chatMarkdown,
   gitConflict,

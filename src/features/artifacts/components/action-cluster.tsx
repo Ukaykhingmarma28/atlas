@@ -21,10 +21,12 @@ import { cn } from "@/lib/utils";
 export function ActionCluster({
   pinned,
   reveal = "fade",
+  className,
   children,
 }: {
   pinned: boolean;
   reveal?: "fade" | "snap";
+  className?: string;
   children: ReactNode;
 }) {
   const shown = Children.toArray(children).filter(Boolean);
@@ -41,6 +43,7 @@ export function ActionCluster({
           : reveal === "fade"
             ? "opacity-0 focus-within:opacity-100 group-hover/row:opacity-100"
             : "invisible focus-within:visible group-hover/row:visible",
+        className,
       )}
     >
       {shown.map((child, i) => (

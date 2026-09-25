@@ -35,7 +35,7 @@ import {
   type Comment,
   type CommentThreads,
 } from "./comments-api";
-import { queueWatch } from "./watch-queue";
+import { queueFollow, queueUnfollow } from "./watch-queue";
 
 /** The window channel the cloud bridge emits on. */
 const ARTIFACTS_EVENT = "atlas:artifacts-cloud";
@@ -61,20 +61,18 @@ export function useSessionComments(
 
   const shared = remoteProjectId !== null && sessionId !== null;
 
-  // Follow this Session on the already-open socket. The subscription is held
-  // per socket server-side, so it has to be re-announced whenever the Session
-  // changes — and released when the pane closes, or a Session nobody is looking
-  // at keeps pushing frames.
+  // Follow this Session. Rust opens a socket subscribed to exactly it (or
+  // shares the one another surface already holds — the Timeline and a chat
+  // tab on one Session are one socket), and closes it when the last watcher
+  // lets go. Dialled for any Project in the Organisation, bound here or not.
   //
-  // Through one queue, so the unsubscribe of a cleanup can never overtake the
-  // subscribe of the next mount — see `watch-queue.ts`. Rust records the
-  // desired Session whether or not the socket exists yet, so a Project that
-  // gets its socket later still ends up following this Session.
+  // Through one queue, so the unfollow of a cleanup can never overtake the
+  // follow of the next mount — see `watch-queue.ts`.
   useEffect(() => {
     if (!shared) return;
-    void queueWatch(remoteProjectId, sessionId);
+    void queueFollow(remoteProjectId, sessionId);
     return () => {
-      void queueWatch(remoteProjectId, null);
+      void queueUnfollow(remoteProjectId, sessionId);
     };
   }, [shared, remoteProjectId, sessionId]);
 

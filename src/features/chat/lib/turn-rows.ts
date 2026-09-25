@@ -713,6 +713,12 @@ export function userMessageText(m: ChatMessage): string {
   return derivedUser(m).text;
 }
 
+/** The prose a response row SHOWS — the assistant half of a pin's durable
+ *  key, the same way `userMessageText` is the prompt half. */
+export function assistantMessageText(m: ChatMessage): string {
+  return derivedProse(m);
+}
+
 function derivedProse(m: ChatMessage): string {
   const hit = proseCache.get(m);
   if (hit !== undefined) return hit;

@@ -329,7 +329,7 @@ impl ArtifactsClient {
 
     async fn token(&self) -> Result<String> {
         {
-            let cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+            let cached = self.cached.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some((token, minted)) = cached.as_ref() {
                 if minted.elapsed() < TOKEN_REUSE {
                     return Ok(token.clone());
@@ -337,13 +337,13 @@ impl ArtifactsClient {
             }
         }
         let token = self.tokens.mint().await?;
-        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) =
+        *self.cached.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
             Some((token.clone(), std::time::Instant::now()));
         Ok(token)
     }
 
     fn forget_token(&self) {
-        *self.cached.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.cached.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     /// Send, classify the status, then decode.

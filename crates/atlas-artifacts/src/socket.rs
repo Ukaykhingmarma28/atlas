@@ -22,10 +22,11 @@
 //!
 //! ## Scope
 //!
-//! One socket per **Project**, not per Organisation: the server has no
+//! Sockets are per **Project**, never per Organisation: the server has no
 //! org-wide socket. `session.summary` reaches every socket on the Project, so
-//! the board gets realtime for free; entry and comment frames only reach
-//! sockets that have subscribed to that Session.
+//! the board gets realtime for free; entry and comment frames only reach the
+//! socket that subscribed to that Session — one Session per socket, which is
+//! why the manager opens a follower socket per watched Session.
 
 use std::time::Duration;
 

@@ -40,12 +40,8 @@ import { StreamingMarkdown } from "./streaming-markdown";
 import { openDetail } from "../stores/detail-panel-store";
 import { openTurnDiff } from "../lib/open-turn-diff";
 import { UserRowActions } from "./user-row-actions";
-import {
-  ProseHeaderActions,
-  RowCommentPill,
-  TurnCommentPill,
-  useRowHasComments,
-} from "./chat-comment-pills";
+import { RowCommentPill, TurnCommentPill, useRowHasComments } from "./chat-comment-pills";
+import { ProseRowActions } from "./prose-row-actions";
 import type {
   UserRow,
   ProseRow,
@@ -293,15 +289,21 @@ export const ProseRowView = memo(function ProseRowView({
   tabId,
   agentLabel,
   priority,
+  pinScopeKey,
 }: {
   row: ProseRow;
   tabId: string;
   agentLabel: string;
   /** Position in the thread — newest parses first. See `CachedMarkdown`. */
   priority: number;
+  pinScopeKey: string;
 }) {
   return (
-    <Column className="py-2">
+    // A settled response reserves the gap its action bar sits in (see
+    // `prose-row-actions.tsx`); the streaming tail does not — nothing here
+    // works on a response that is still arriving, and the one reflow happens
+    // when the turn ends, deliberately.
+    <Column className={cn("py-2", !row.streaming && "relative pb-7")}>
       {/* One left-aligned group: model, dot, time. The timestamp used to be
           pushed to the far right with `ml-auto`, which left a long empty span
           across a 760px column and read as two unrelated headers rather than
@@ -329,10 +331,6 @@ export const ProseRowView = memo(function ProseRowView({
               minute: "2-digit",
             })}
           </span>
-          {/* Comment + copy at the right end, only on a shared session; the
-              row is `p:<messageId>`. Renders nothing otherwise, so the line
-              stays the one left-aligned group described above. */}
-          <ProseHeaderActions tabId={tabId} messageId={row.id.slice(2)} text={row.text} />
         </div>
       )}
       {/* Settled prose goes through the plain cached renderer: its root IS
@@ -350,6 +348,15 @@ export const ProseRowView = memo(function ProseRowView({
         />
       ) : (
         <CachedMarkdown source={row.text} unstyled priority={priority} className="atlas-prose" />
+      )}
+      {!row.streaming && (
+        <ProseRowActions
+          tabId={tabId}
+          messageId={row.id.slice(2)}
+          timestamp={row.timestamp}
+          text={row.text}
+          pinScopeKey={pinScopeKey}
+        />
       )}
     </Column>
   );

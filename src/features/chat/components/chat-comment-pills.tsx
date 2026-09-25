@@ -1,5 +1,7 @@
 /**
- * The comment affordances a transcript row wears, when its session is shared.
+ * The comment affordances inside a turn's fold, when its session is shared.
+ * (Prompts and responses carry theirs in their action bars — see
+ * `user-row-actions.tsx` and `prose-row-actions.tsx`.)
  *
  * Every component here reads `chat-comments-store` through a narrow selector
  * and renders NOTHING when the tab has no cloud target or the row was never
@@ -10,17 +12,12 @@
  * `user-row-actions.tsx`); `transition-none` overrides the button's own.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { memo, useMemo } from "react";
 
 import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import { ActionCluster } from "@/features/artifacts/components/action-cluster";
 import { CommentButton, facesOf } from "@/features/artifacts/components/comment-thread";
 import { visibleCount, type Comment } from "@/features/artifacts/lib/comments-api";
-import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
-import { CopyGlyph } from "@/ui/animated-icon";
-import { Hint } from "@/ui/tooltip";
 
 import {
   tabCommentsFor,
@@ -31,69 +28,6 @@ import {
   useCommentDirectory,
   useTurnCommentCount,
 } from "../stores/chat-comments-store";
-
-/** Comment + copy, at the right end of a response's provenance line. */
-export const ProseHeaderActions = memo(function ProseHeaderActions({
-  tabId,
-  messageId,
-  text,
-}: {
-  tabId: string;
-  messageId: string;
-  text: string;
-}) {
-  const hit = useAnchorHit(tabId, messageId);
-  const bucket = useCommentBucket(tabId, messageId);
-  const actions = useCommentActions(tabId);
-  const directory = useCommentDirectory(tabId);
-  if (!hit || !actions || !directory) return null;
-  return (
-    <>
-      <span className="flex-1" />
-      <ActionCluster reveal="snap" pinned={visibleCount(bucket) > 0}>
-        <CommentButton
-          bare
-          className="transition-none"
-          anchorKind={hit.anchorKind}
-          anchorId={hit.rowId}
-          comments={bucket}
-          actions={actions}
-          directory={directory}
-        />
-        {text ? <CopyAction text={text} /> : null}
-      </ActionCluster>
-    </>
-  );
-});
-
-function CopyAction({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
-  const onCopy = useCallback(() => {
-    void copyText(text).then((ok) => {
-      if (!ok) {
-        toast.error("Could not copy to the clipboard");
-        return;
-      }
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1_200);
-    });
-  }, [text]);
-  return (
-    <Hint label="Copy response">
-      <button
-        type="button"
-        onClick={onCopy}
-        aria-label="Copy response"
-        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-[var(--atlas-text-disabled)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
-      >
-        <CopyGlyph copied={copied} size="sm" />
-      </button>
-    </Hint>
-  );
-}
 
 /** Does this thinking or tool row carry a discussion? A boolean, so the row
  *  only re-renders when the answer flips. */

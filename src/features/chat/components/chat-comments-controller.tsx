@@ -31,7 +31,7 @@ import { projectPathForTab } from "../lib/tab-project";
 import { useChatCommentsStore, type CommentTargetIds } from "../stores/chat-comments-store";
 import { useChatStore } from "../stores/chat-store";
 
-interface CommentTarget extends CommentTargetIds {
+export interface CommentTarget extends CommentTargetIds {
   entries: AnchorEntry[];
 }
 
@@ -143,8 +143,13 @@ export function ChatCommentsController({ tabId }: { tabId: string }) {
     setAnchors(tabId, buildAnchorMap(messages, target?.entries ?? []));
   }, [tabId, shape, target, setAnchors]);
 
-  // The comments themselves.
-  const comments = useSessionComments(target?.remoteProjectId ?? null, target?.sessionId ?? null);
+  // The comments themselves. Followed only while the pane is showing: a chat
+  // pane stays mounted when hidden, and every follow is a socket. The hook
+  // re-lists on show, so nothing said in between is missed.
+  const comments = useSessionComments(
+    visible ? (target?.remoteProjectId ?? null) : null,
+    visible ? (target?.sessionId ?? null) : null,
+  );
   useEffect(() => {
     setComments(tabId, comments);
     if (!comments || !target) return;

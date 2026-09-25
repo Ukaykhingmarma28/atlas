@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-const { queueWatch } = await import("./watch-queue");
+const { queueFollow, queueUnfollow } = await import("./watch-queue");
 
 function deferred() {
   let resolve!: () => void;
@@ -20,10 +20,11 @@ beforeEach(() => {
   invoke.mockReset();
 });
 
-describe("queueWatch", () => {
-  it("runs subscribe, unsubscribe, subscribe strictly in call order", async () => {
-    // StrictMode's double mount. If the second subscribe ever overtook the
-    // unsubscribe, the Session ended unsubscribed with nothing left to fix it.
+describe("watch queue", () => {
+  it("runs follow, unfollow, follow strictly in call order", async () => {
+    // StrictMode's double mount. If the second follow ever overtook the
+    // unfollow, the refcount ended one short and the socket closed under the
+    // watcher that was still mounted.
     const first = deferred();
     const second = deferred();
     const third = deferred();
@@ -32,9 +33,9 @@ describe("queueWatch", () => {
       .mockReturnValueOnce(second.promise)
       .mockReturnValueOnce(third.promise);
 
-    void queueWatch("ws_1", "ses_1");
-    void queueWatch("ws_1", null);
-    const last = queueWatch("ws_1", "ses_1");
+    void queueFollow("ws_1", "ses_1");
+    void queueUnfollow("ws_1", "ses_1");
+    const last = queueFollow("ws_1", "ses_1");
 
     await flush();
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -47,17 +48,17 @@ describe("queueWatch", () => {
     third.resolve();
     await last;
 
-    expect(invoke.mock.calls.map((c) => c[1])).toEqual([
-      { projectId: "ws_1", sessionId: "ses_1" },
-      { projectId: "ws_1", sessionId: null },
-      { projectId: "ws_1", sessionId: "ses_1" },
+    expect(invoke.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      ["artifacts_cloud_follow", { projectId: "ws_1", sessionId: "ses_1" }],
+      ["artifacts_cloud_unfollow", { projectId: "ws_1", sessionId: "ses_1" }],
+      ["artifacts_cloud_follow", { projectId: "ws_1", sessionId: "ses_1" }],
     ]);
   });
 
-  it("keeps going after a failed watch", async () => {
+  it("keeps going after a failed call", async () => {
     invoke.mockRejectedValueOnce(new Error("no socket")).mockResolvedValueOnce(undefined);
-    await queueWatch("ws_1", "ses_1");
-    await queueWatch("ws_1", "ses_2");
+    await queueFollow("ws_1", "ses_1");
+    await queueFollow("ws_1", "ses_2");
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(invoke.mock.calls[1]?.[1]).toEqual({ projectId: "ws_1", sessionId: "ses_2" });
   });

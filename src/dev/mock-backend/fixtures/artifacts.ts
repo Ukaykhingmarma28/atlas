@@ -33,6 +33,7 @@ import type {
   BoardPage,
 } from "@/features/artifacts/types";
 import type { Comment, CommentThreads } from "@/features/artifacts/lib/comments-api";
+import type { CommentTarget } from "@/features/chat/components/chat-comments-controller";
 import type {
   RetrieveResult,
   SessionChatThreadWire,
@@ -1053,7 +1054,10 @@ export interface ArtifactsResponses {
   artifacts_board: BoardPage;
   artifacts_session: SessionDetail | null;
   artifacts_cloud_retarget: Unit;
-  artifacts_cloud_watch: Unit;
+  artifacts_cloud_follow: Unit;
+  artifacts_cloud_unfollow: Unit;
+  /** The live chat's cloud identity; `null` = not a shared session. */
+  chat_comment_target: CommentTarget | null;
   artifacts_cloud_refresh: boolean;
   artifacts_cloud_session: SessionDetail;
   artifacts_cloud_payload: ArtifactPayload;
@@ -1131,7 +1135,7 @@ function seedComments() {
   COMMENTS.set(LIVE_ID, rows);
 }
 
-function mockComment(over: Partial<Comment> & { id: string }): Comment {
+export function mockComment(over: Partial<Comment> & { id: string }): Comment {
   return {
     sessionId: LIVE_ID,
     anchorKind: "message",
@@ -1184,7 +1188,10 @@ export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
   artifacts_cloud_retarget: (): null => null,
   // The harness never fails, so a retry always "succeeds".
   artifacts_cloud_refresh: (): boolean => true,
-  artifacts_cloud_watch: (): null => null,
+  artifacts_cloud_follow: (): null => null,
+  artifacts_cloud_unfollow: (): null => null,
+  // A chat is only in the cloud in the scenarios that say so.
+  chat_comment_target: (): null => null,
 
   // A teammate's Session comes back in the SAME shape a local one does — the
   // real command maps the wire entries in Rust, so nothing downstream learns
