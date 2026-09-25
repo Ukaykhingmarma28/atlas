@@ -54,7 +54,7 @@ pub struct ArtifactsCloudState {
 }
 
 impl ArtifactsCloudState {
-    fn org_id(&self) -> Option<String> {
+    pub(crate) fn org_id(&self) -> Option<String> {
         self.org.lock().ok().and_then(|org| org.clone())
     }
 }
@@ -354,10 +354,7 @@ fn connected_projects(project_paths: &[String], org_id: &str) -> Vec<String> {
             continue;
         };
         let Ok(Some(binding)) = store.binding() else { continue };
-        if binding.mode != atlas_checkpoint::ProjectMode::Cloud {
-            continue;
-        }
-        if binding.org_id.as_deref() != Some(org_id) {
+        if !is_cloud_bound(&binding, org_id) {
             continue;
         }
         match binding.remote_workspace_id {
@@ -374,6 +371,74 @@ fn connected_projects(project_paths: &[String], org_id: &str) -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+/// Is this binding one this Organisation's sockets and comments apply to?
+///
+/// Cloud mode, still enabled, and bound to *this* tenant. The remote id is
+/// checked by the caller because a missing one is worth a log line here and a
+/// plain `None` elsewhere.
+pub(crate) fn is_cloud_bound(binding: &atlas_checkpoint::Binding, org_id: &str) -> bool {
+    binding.mode == atlas_checkpoint::ProjectMode::Cloud
+        && binding.enabled
+        && binding.org_id.as_deref() == Some(org_id)
+}
+
+/// The cloud identity of a live chat session, or `None` when comments do not
+/// apply to it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentTarget {
+    /// The server Project id — what every `artifacts_cloud_*` call wants.
+    pub remote_project_id: String,
+    /// The captured Session row id, which is also its id on the server.
+    pub session_id: String,
+    pub entries: Vec<atlas_checkpoint::AnchorEntry>,
+}
+
+/// What a live chat session is called in the cloud, and which of its rows can
+/// carry a comment.
+///
+/// `None` unless all three hold: a synced Organisation is targeted, the
+/// Project is bound to Cloud for it, and the session has been captured (its
+/// first prompt creates the row). The renderer asks again after each turn —
+/// the read is two indexed selects.
+#[tauri::command]
+pub async fn chat_comment_target(
+    project_path: String,
+    native_session_id: String,
+    app: AppHandle,
+) -> Result<Option<CommentTarget>, String> {
+    let Some(state) = app.try_state::<ArtifactsCloudState>() else { return Ok(None) };
+    let Some(org_id) = state.org_id() else { return Ok(None) };
+    tauri::async_runtime::spawn_blocking(move || {
+        use atlas_checkpoint::Source;
+        let Some(store) = crate::commands::capture::open_reader(&project_path)? else {
+            return Ok(None);
+        };
+        let Ok(Some(binding)) = store.binding() else { return Ok(None) };
+        if !is_cloud_bound(&binding, &org_id) {
+            return Ok(None);
+        }
+        let Some(remote_project_id) = binding.remote_workspace_id else { return Ok(None) };
+        let workspace_id =
+            crate::commands::capture::project_id_for(std::path::Path::new(&project_path));
+        let mut row_id = None;
+        for source in [Source::Acp, Source::Native] {
+            row_id = store
+                .session_id_for(&workspace_id, source, &native_session_id)
+                .map_err(|e| e.to_string())?;
+            if row_id.is_some() {
+                break;
+            }
+        }
+        let Some(session_id) = row_id else { return Ok(None) };
+        let entries =
+            atlas_checkpoint::session_anchors(&store, &session_id).map_err(|e| e.to_string())?;
+        Ok(Some(CommentTarget { remote_project_id, session_id, entries }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Follow one Session's entries and comments in realtime.

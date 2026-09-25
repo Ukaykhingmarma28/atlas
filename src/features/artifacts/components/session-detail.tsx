@@ -1,5 +1,4 @@
 import {
-  Children,
   createContext,
   memo,
   useCallback,
@@ -32,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { AtlasIcon } from "@/components/atlas-icon";
+import { ActionCluster } from "./action-cluster";
 import { extractInjectedContext, type InjectedBlock } from "@/features/chat/lib/atlas-context";
 import { CachedMarkdown } from "@/lib/markdown-cache";
 import { fmtCost } from "@/features/monitor/lib/usage-format";
@@ -2256,40 +2256,6 @@ function Meta({ label, value }: { label: string; value: string }) {
  * carries those, and a bordered button inside a bordered pill reads as a
  * double outline at this scale.
  */
-/**
- * The row's controls as one pill.
- *
- * Grouped rather than free-floating because their visibility rules differ: a
- * discussed row's comment button must always be on screen — that pill is how a
- * discussion announces itself — while copy has always been hover-only. Side by
- * side that read as a pill with a gap beside it, waiting for something to
- * appear. One surround, one rule: if any control in the group is pinned, the
- * whole group is.
- *
- * Renders nothing when it has no children, so an unsynced Checkpoint row does
- * not carry an empty pill.
- */
-function ActionCluster({ pinned, children }: { pinned: boolean; children: ReactNode }) {
-  const shown = Children.toArray(children).filter(Boolean);
-  if (shown.length === 0) return null;
-  return (
-    <span
-      className={cn(
-        "-my-1 flex shrink-0 items-center gap-0.5 self-center rounded-full border border-border bg-card px-0.5 py-0.5 transition-opacity duration-150",
-        pinned ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover/row:opacity-100",
-      )}
-    >
-      {shown.map((child, i) => (
-        // eslint-disable-next-line react/no-array-index-key
-        <span key={i} className="flex items-center">
-          {i > 0 && <span aria-hidden className="mr-0.5 h-3 w-px bg-[var(--border)]" />}
-          {child}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 function BarButton({
   label,
   active,

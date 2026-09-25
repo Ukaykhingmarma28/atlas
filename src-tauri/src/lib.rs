@@ -546,6 +546,7 @@ pub fn run() {
             commands::capture::capture_git_available,
             commands::artifacts_cloud::artifacts_cloud_retarget,
             commands::artifacts_cloud::artifacts_cloud_watch,
+            commands::artifacts_cloud::chat_comment_target,
             commands::artifacts_cloud::artifacts_cloud_session,
             commands::artifacts_cloud::artifacts_cloud_payload,
             commands::artifacts_cloud::artifacts_cloud_session_url,

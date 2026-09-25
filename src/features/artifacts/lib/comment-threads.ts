@@ -67,7 +67,8 @@ export const DEFAULT_THREAD_FILTERS: ThreadFilters = {
 export function buildThreads(
   byAnchor: Record<string, Comment[]>,
   session: Comment[],
-  entries: TimelineEntry[],
+  /** The rows in transcript order; only their ids are read. */
+  entries: ReadonlyArray<Pick<TimelineEntry, "id">>,
 ): CommentThread[] {
   const indexOf = new Map(entries.map((entry, i) => [entry.id, i] as const));
   const out: CommentThread[] = [];
