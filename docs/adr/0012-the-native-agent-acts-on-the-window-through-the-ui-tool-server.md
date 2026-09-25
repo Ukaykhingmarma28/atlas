@@ -51,6 +51,19 @@ insert text for the user to send. It may not close an editor with unsaved change
 action types a line and leaves Enter to the user. These keep the whole surface non-destructive,
 which is what makes auto-approval reasonable.
 
+Three consequences of those rules, decided while building them (2026-09-25):
+
+- **Running a keybinding command by id refuses the four global commands that would slip past a
+  rule:** adding a project (it switches to it), closing the active tab (no unsaved-changes check —
+  use the close action), cycling a chat's agent (use the chat action, which protects the caller's
+  own chat), and cycling a chat's permission mode — an agent may never change the approval policy
+  it runs under.
+- **A typed terminal line must be one line.** A line break would run everything before it, which
+  is Enter by another name.
+- **A typed line goes into a fresh shell** in the target terminal tab, never into a shell the user
+  is already using: typing into a running command would interleave with it, and the user could
+  press Enter on a line they did not see arrive.
+
 ## Consequences
 
 - The dynamic-tools seam stays unused for this; nothing under `vendor/atlas-engine` changes.

@@ -60,6 +60,11 @@ describe("ui_command", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("refuses a global command nobody registered, saying so", async () => {
+    const reply = await performUiAction(uiRequest("ui_command", { id: "split.new" }));
+    expect(!reply.ok && reply.error).toMatch(/not available right now/);
+  });
+
   it("requires an id", async () => {
     const reply = await performUiAction(uiRequest("ui_command", {}));
     expect(!reply.ok && reply.error).toMatch(/id/);

@@ -8,6 +8,7 @@ import { useLayoutStore, type Tab } from "@/features/layout/stores/layout-store"
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { projectIdForTab } from "@/features/chat/lib/tab-project";
 import { useAppStore } from "@/features/app/stores/app-store";
+import { invoke } from "@tauri-apps/api/core";
 import { refuse } from "./args";
 
 /** The tab `tabId` in the active project's view, or a refusal saying why not. */
@@ -31,12 +32,23 @@ export function activeProject(): { name: string; path: string } {
   return useAppStore.getState().currentProject ?? refuse("no project is open in Atlas");
 }
 
-/** `path` made absolute: relative paths resolve against the calling session's
- *  working directory when it is inside the active project, else the project. */
-export function resolvePath(path: string, cwd: string): string {
+const join = (base: string, rel: string) =>
+  `${base.replace(/\/$/, "")}/${rel.replace(/^\.\//, "")}`;
+
+/** `path` made absolute. A relative path resolves against the calling
+ *  session's working directory when that is inside the active project and
+ *  the path exists there, else against the project root. */
+export async function resolvePath(path: string, cwd: string): Promise<string> {
   if (path.startsWith("/")) return path;
   const project = activeProject().path;
-  const base = cwd === project || cwd.startsWith(`${project}/`) ? cwd : project;
-  const clean = path.replace(/^\.\//, "");
-  return `${base.replace(/\/$/, "")}/${clean}`;
+  const cwdInProject = cwd !== project && cwd.startsWith(`${project}/`);
+  if (cwdInProject) {
+    const underCwd = join(cwd, path);
+    const exists = await invoke("file_mtime_ms", { path: underCwd }).then(
+      () => true,
+      () => false,
+    );
+    if (exists) return underCwd;
+  }
+  return join(project, path);
 }

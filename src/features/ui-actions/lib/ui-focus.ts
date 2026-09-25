@@ -117,7 +117,7 @@ export async function performFocus(request: UiActionRequest): Promise<unknown> {
       return { group, index };
     }
     case "explorer":
-      return revealInExplorer(resolvePath(a.str("path"), request.cwd));
+      return revealInExplorer(await resolvePath(a.str("path"), request.cwd));
   }
 }
 

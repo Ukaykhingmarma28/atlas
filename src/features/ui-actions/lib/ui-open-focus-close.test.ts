@@ -27,6 +27,13 @@ const invokeMock = vi.hoisted(() =>
           ],
         },
       ];
+    if (
+      cmd === "file_mtime_ms" &&
+      String((_args as { path?: string })?.path).includes("only-at-root")
+    ) {
+      if (String((_args as { path: string }).path).startsWith("/p/pkg/"))
+        throw new Error("not found");
+    }
     return false;
   }),
 );
@@ -90,6 +97,29 @@ describe("ui_open", () => {
       cwd: "/p/pkg",
     });
     expect(result(reply).tabId).toBe("editor:/p/pkg/a.ts");
+  });
+
+  it("falls back to the project when the file is not under the session's cwd", async () => {
+    const reply = await performUiAction({
+      ...uiRequest("ui_open", { target: "file", path: "src/only-at-root.ts" }),
+      cwd: "/p/pkg",
+    });
+    expect(result(reply).tabId).toBe("editor:/p/src/only-at-root.ts");
+  });
+
+  it("opens a git diff of a file relative to the session's cwd", async () => {
+    const reply = await performUiAction({
+      ...uiRequest("ui_open", { target: "diff", path: "a.ts" }),
+      cwd: "/p/pkg",
+    });
+    expect(result(reply)).toMatchObject({ repoPath: "/p", file: "pkg/a.ts" });
+  });
+
+  it("opens a new chat", async () => {
+    const before = layout().tabs.filter((t) => t.type === "chat").length;
+    const r = result(await act("ui_open", { target: "new_chat" }));
+    expect(layout().tabs.find((t) => t.id === r.tabId)?.type).toBe("chat");
+    expect(layout().tabs.filter((t) => t.type === "chat").length).toBeGreaterThanOrEqual(before);
   });
 
   it("opens a git diff of a file", async () => {
@@ -219,6 +249,31 @@ describe("ui_focus", () => {
     expect(layout().rightPanel.visible).toBe(true);
   });
 
+  it("reveals a path in the explorer, opening the Files panel", async () => {
+    useLayoutStore.setState({
+      leftPanel: { ...layout().leftPanel, visible: false, activeSection: "knowledge" },
+    });
+    const { useExplorerStore } = await import("@/features/explorer/stores/explorer-store");
+    result(await act("ui_focus", { target: "explorer", path: "src/App.tsx" }));
+    expect(layout().leftPanel).toMatchObject({ visible: true, activeSection: "files" });
+    expect(useExplorerStore.getState().selectedPaths).toEqual(["/p/src/App.tsx"]);
+    expect(error(await act("ui_focus", { target: "explorer", path: "/etc/hosts" }))).toMatch(
+      /outside/,
+    );
+  });
+
+  it("toggles the terminal through the app's own terminal command", async () => {
+    const { registerActionHandlers } = await import("@/features/keybindings/lib/action-registry");
+    const toggle = vi.fn();
+    const drop = registerActionHandlers(() => ({ "panels.terminal": toggle }));
+    // The seeded window already shows a terminal in its second column.
+    result(await act("ui_focus", { target: "panel", name: "terminal", visible: true }));
+    expect(toggle).not.toHaveBeenCalled();
+    result(await act("ui_focus", { target: "panel", name: "terminal", visible: false }));
+    expect(toggle).toHaveBeenCalledOnce();
+    drop();
+  });
+
   it("focuses a split column by its index in ui_state's groups", async () => {
     result(await act("ui_focus", { target: "group", index: 1 }));
     expect(layout().focusedGroupId).toBe("g2");
@@ -247,6 +302,18 @@ describe("ui_close", () => {
 
   it("refuses a tab another project owns", async () => {
     expect(error(await act("ui_close", { tabId: "chat-w" }))).toMatch(/website/);
+  });
+
+  it("leaves a busy chat to the user's confirmation", async () => {
+    const { useChatStore } = await import("@/features/chat/stores/chat-store");
+    useChatStore.setState({
+      sessions: { "chat-1": { acpSessionId: "sess-1", status: "running" } } as never,
+    });
+    expect(result(await act("ui_close", { tabId: "chat-1" }))).toEqual({
+      tabId: "chat-1",
+      closed: false,
+      awaitingUserConfirm: true,
+    });
   });
 
   it("refuses a tab that does not exist", async () => {

@@ -25,8 +25,7 @@ export function performChat(request: UiActionRequest): unknown {
   const tabId =
     a.optStr("tabId") ??
     own ??
-    useChatStore.getState().activeSessionId ??
-    refuse("no chat tab to act on");
+    refuse("ui_chat: you have no chat tab of your own here; pass tabId (ui_state lists tabs)");
   const tab = tabInScope(tabId);
   if (tab.type !== "chat") return refuse(`tab ${tabId} is not a chat`);
   const isOwn = tabId === own;

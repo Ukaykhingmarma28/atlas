@@ -121,6 +121,13 @@ describe("ui_chat", () => {
     expect(error(await act("ui_chat", { op: "focus", tabId: "chat-w" }))).toMatch(/website/);
   });
 
+  /// "Your own chat" means yours: with none, the agent must name a tab
+  /// rather than act on whichever chat the user happens to have focused.
+  it("refuses to guess a chat when the caller has none of its own", async () => {
+    const stranger = uiRequest("ui_chat", { op: "prefill", text: "hi" }, "sess-elsewhere");
+    expect(error(await performUiAction(stranger))).toMatch(/tabId/);
+  });
+
   it("refuses a tab that is not a chat", async () => {
     expect(error(await act("ui_chat", { op: "focus", tabId: "terminal-1" }))).toMatch(/not a chat/);
   });

@@ -70,7 +70,7 @@ export async function performOpen(request: UiActionRequest): Promise<unknown> {
     return refuse(`ui_open: target is required; one of ${TARGETS.join(", ")}`);
   switch (target) {
     case "file": {
-      const path = resolvePath(a.str("path"), request.cwd);
+      const path = await resolvePath(a.str("path"), request.cwd);
       const line = a.optInt("line");
       const reveal: RevealTarget | undefined = line
         ? {
@@ -84,8 +84,10 @@ export async function performOpen(request: UiActionRequest): Promise<unknown> {
     }
     case "diff": {
       const repoPath = a.optStr("repoPath") ?? activeProject().path;
-      const raw = a.str("path");
-      const file = raw.startsWith(`${repoPath}/`) ? raw.slice(repoPath.length + 1) : raw;
+      const abs = await resolvePath(a.str("path"), request.cwd);
+      if (!abs.startsWith(`${repoPath}/`))
+        return refuse(`${abs} is outside the repository ${repoPath}`);
+      const file = abs.slice(repoPath.length + 1);
       openGitDiff(repoPath, file, a.optBool("staged") ?? false, a.optStr("commit"));
       return { tabId: layout().activeTabId, repoPath, file };
     }
