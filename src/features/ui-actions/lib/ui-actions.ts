@@ -12,6 +12,8 @@ import { performOpen } from "./ui-open";
 import { performFocus } from "./ui-focus";
 import { performClose } from "./ui-close";
 import { performCommand } from "./ui-command";
+import { performChat } from "./ui-chat";
+import { performTerminal } from "./ui-terminal";
 import { UiRefusal } from "./args";
 import { fail, ok, type UiActionReply, type UiActionRequest } from "./types";
 
@@ -50,6 +52,10 @@ async function dispatch(request: UiActionRequest): Promise<UiActionReply> {
         return ok(await performClose(request));
       case "ui_command":
         return ok(performCommand(request));
+      case "ui_chat":
+        return ok(performChat(request));
+      case "ui_terminal":
+        return ok(performTerminal(request));
       default:
         return fail(`unknown UI action "${request.tool}"`);
     }

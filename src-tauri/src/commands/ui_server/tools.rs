@@ -116,6 +116,35 @@ pub(super) fn tools() -> Vec<Tool> {
              An unknown id fails with the list of runnable ids.",
             json!({ "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }),
         ),
+        tool(
+            "ui_chat",
+            "Steer a chat tab (default: your own): focus, prefill (replaces the draft) or insert (appends) text for the user to send, \
+             jump to message index, send into ANOTHER chat, or switch another chat's agent. Never sends or switches in your own chat.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "op": { "type": "string", "enum": ["focus", "prefill", "insert", "send", "jump", "switch_agent"] },
+                    "tabId": { "type": "string" },
+                    "text": { "type": "string" },
+                    "index": { "type": "integer" },
+                    "agent": { "type": "string" }
+                },
+                "required": ["op"]
+            }),
+        ),
+        tool(
+            "ui_terminal",
+            "open: a terminal tab. type: put one line at a new terminal's prompt WITHOUT pressing Enter; the user runs it.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "op": { "type": "string", "enum": ["open", "type"] },
+                    "tabId": { "type": "string" },
+                    "text": { "type": "string" }
+                },
+                "required": ["op"]
+            }),
+        ),
     ]
 }
 
