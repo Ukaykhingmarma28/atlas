@@ -60,7 +60,7 @@ describe("chat-comments-store", () => {
   it("answers undefined for a tab with no target", () => {
     const s = useChatCommentsStore.getState();
     expect(s.byTab.tab?.byChatKey.a1).toBeUndefined();
-    expect(tabCommentsFor(s, "tab").threadCount).toBe(0);
+    expect(tabCommentsFor(s, "tab").commentCount).toBe(0);
   });
 
   it("re-keys buckets by chat id and keeps bucket identity", () => {
@@ -77,7 +77,7 @@ describe("chat-comments-store", () => {
     const tab = tabCommentsFor(useChatCommentsStore.getState(), "tab");
     expect(tab.byChatKey.a1).toBe(bucket);
     expect(tab.byChatKey.u1).toBeUndefined();
-    expect(tab.threadCount).toBe(1);
+    expect(tab.commentCount).toBe(1);
   });
 
   it("a frame on one anchor leaves the other bucket's reference alone", () => {
@@ -101,7 +101,7 @@ describe("chat-comments-store", () => {
     const after = tabCommentsFor(useChatCommentsStore.getState(), "tab");
     expect(after.byChatKey.u1).toBe(before);
     expect(after.byChatKey.a1).toHaveLength(2);
-    expect(after.threadCount).toBe(2);
+    expect(after.commentCount).toBe(3);
   });
 
   it("counts the session thread once and clears on null", () => {
@@ -114,9 +114,9 @@ describe("chat-comments-store", () => {
       actions,
       directory: EMPTY_ORG_DIRECTORY,
     });
-    expect(tabCommentsFor(useChatCommentsStore.getState(), "tab").threadCount).toBe(1);
+    expect(tabCommentsFor(useChatCommentsStore.getState(), "tab").commentCount).toBe(1);
     setComments("tab", null);
-    expect(tabCommentsFor(useChatCommentsStore.getState(), "tab").threadCount).toBe(0);
+    expect(tabCommentsFor(useChatCommentsStore.getState(), "tab").commentCount).toBe(0);
     clear("tab");
     expect(useChatCommentsStore.getState().byTab.tab).toBeUndefined();
   });

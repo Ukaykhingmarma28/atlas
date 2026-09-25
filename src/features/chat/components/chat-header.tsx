@@ -87,7 +87,7 @@ interface ChatHeaderProps {
   onToggleBash: () => void;
   plansPanelOpen: boolean;
   onTogglePlans: () => void;
-  /** Threads on this session in the shared Timeline, or `null` when the
+  /** Comments on this session in the shared Timeline, or `null` when the
    *  session is not in the cloud — then there is no button at all. */
   commentCount: number | null;
   commentsPanelOpen: boolean;
@@ -207,7 +207,7 @@ function ChatHeaderImpl({
           />
 
           {/* Only on a session the Organisation can see. The badge counts
-              threads, as the Timeline's dock does. */}
+              comments, capped where the circle runs out of room. */}
           {commentCount !== null && (
             <HeaderCircleButton
               title={commentsPanelOpen ? "Close comments" : "Comments"}
@@ -221,7 +221,7 @@ function ChatHeaderImpl({
               <MessageSquare size={13} />
               {commentCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--primary)] px-1 font-mono text-3xs leading-none text-[var(--primary-foreground)] tabular-nums">
-                  {commentCount > 99 ? "99+" : commentCount}
+                  {commentCount > 9 ? "9+" : commentCount}
                 </span>
               )}
             </HeaderCircleButton>

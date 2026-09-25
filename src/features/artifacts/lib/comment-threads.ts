@@ -180,6 +180,26 @@ export function threadSize(thread: CommentThread): number {
 }
 
 /**
+ * Top-level comments and replies, counted apart.
+ *
+ * One anchor can carry several top-level comments (two people each opening a
+ * thread on the same response), and `replies` holds everything that is not
+ * THE root — so "N replies" over-counted: a second top-level comment is not a
+ * reply to the first. The panel says "2 comments · 1 reply", which is what the
+ * popover shows.
+ */
+export function threadTally(thread: CommentThread): { comments: number; replies: number } {
+  let comments = 0;
+  let replies = 0;
+  for (const c of [thread.root, ...thread.replies]) {
+    if (c.deletedAt) continue;
+    if (c.parentId) replies += 1;
+    else comments += 1;
+  }
+  return { comments, replies };
+}
+
+/**
  * Which filter has to be on for an entry of this kind to be rendered.
  *
  * Used by the jump resolver: a jump to an entry the filters are hiding has to

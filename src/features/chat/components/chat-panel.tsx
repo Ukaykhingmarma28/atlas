@@ -112,7 +112,7 @@ import { collectTurnEdits } from "../lib/turn-edits";
 const HEADER_INSET = 46;
 import { PermissionModal } from "./permission-modal";
 import { ChatCommentsController } from "./chat-comments-controller";
-import { useCommentThreadCount } from "../stores/chat-comments-store";
+import { useCommentCount } from "../stores/chat-comments-store";
 import { SessionElicitation } from "./session-elicitation";
 
 // Both panels are modal-style and never visible on first paint. Lazy so
@@ -241,7 +241,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
   // A number or null; changes only when a comment lands or the session's
   // cloud identity resolves.
-  const commentCount = useCommentThreadCount(tabId);
+  const commentCount = useCommentCount(tabId);
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
 

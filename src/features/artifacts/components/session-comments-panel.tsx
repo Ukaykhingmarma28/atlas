@@ -45,7 +45,7 @@ import {
   DEFAULT_THREAD_FILTERS,
   filterThreads,
   threadAuthors,
-  threadSize,
+  threadTally,
   type CommentThread,
   type ThreadFilters,
 } from "../lib/comment-threads";
@@ -235,7 +235,7 @@ const ThreadRow = memo(function ThreadRow({
   label: string;
   onJump: (anchorId: string) => void;
 }) {
-  const size = threadSize(thread);
+  const tally = threadTally(thread);
   const author = directory.byId.get(thread.root.authorId) ?? null;
   const name = thread.root.guestName ?? author?.name ?? "A member";
   // The faces of everyone in the thread, not just the opener — the row is a
@@ -299,9 +299,17 @@ const ThreadRow = memo(function ThreadRow({
           <CornerDownRight size={10} className="shrink-0 text-[var(--atlas-text-disabled)]" />
           <span className="min-w-0 truncate">{label}</span>
         </span>
-        {size > 1 && (
+        {/* Top-level comments and replies apart: a second comment on the same
+         *  node is not a reply to the first. Silent for a lone comment. */}
+        {(tally.comments > 1 || tally.replies > 0) && (
           <span className="ml-auto shrink-0 tabular-nums">
-            {size - 1} {size === 2 ? "reply" : "replies"}
+            {tally.comments} {tally.comments === 1 ? "comment" : "comments"}
+            {tally.replies > 0 && (
+              <>
+                {" · "}
+                {tally.replies} {tally.replies === 1 ? "reply" : "replies"}
+              </>
+            )}
           </span>
         )}
       </span>

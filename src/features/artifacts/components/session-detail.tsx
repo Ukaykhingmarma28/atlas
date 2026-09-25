@@ -243,16 +243,18 @@ export function SessionDetail({
   const s = detail.summary;
 
   /**
-   * How many discussions the Session carries — the dock's badge.
+   * How many comments the Session carries — the dock's badge.
    *
-   * Threads, not comments: the button opens a list of conversations, and a
-   * count of individual replies would not match the number of rows behind it.
+   * Comments, not commented nodes: two people each opening a thread on the
+   * same response are two comments, and a reply is one more. The badge says
+   * how much has been said; the panel's rows say where.
    */
-  const threadCount = useMemo(
-    () =>
-      comments ? Object.keys(comments.byAnchor).length + (comments.session.length > 0 ? 1 : 0) : 0,
-    [comments],
-  );
+  const commentCount = useMemo(() => {
+    if (!comments) return 0;
+    let n = visibleCount(comments.session);
+    for (const rowId in comments.byAnchor) n += visibleCount(comments.byAnchor[rowId]);
+    return n;
+  }, [comments]);
 
   /**
    * Entries with identity carried across detail re-reads.
@@ -669,7 +671,7 @@ export function SessionDetail({
                   label={commentsOpen ? "Close comments" : "Comments"}
                   bare
                   active={commentsOpen}
-                  badge={threadCount > 0 ? threadCount : undefined}
+                  badge={commentCount > 0 ? commentCount : undefined}
                   disabled={!onToggleComments}
                   onClick={onToggleComments}
                 >
@@ -2293,8 +2295,8 @@ function BarButton({
       >
         {children}
         {badge !== undefined && (
-          <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[var(--primary)] font-mono text-3xs font-semibold text-[var(--primary-foreground)]">
-            {badge}
+          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--primary)] px-0.5 font-mono text-3xs font-semibold text-[var(--primary-foreground)] tabular-nums">
+            {badge > 9 ? "9+" : badge}
           </span>
         )}
       </button>

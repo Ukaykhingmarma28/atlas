@@ -47,8 +47,8 @@ export interface TabComments {
   /** Chat key → thread. What a row reads. */
   byChatKey: Record<string, Comment[]>;
   session: Comment[];
-  /** Threads, not comments — the Timeline dock's rule. */
-  threadCount: number;
+  /** Visible comments across every node and the session, for the badge. */
+  commentCount: number;
   actions: CommentActions | null;
   directory: OrgDirectory | null;
 }
@@ -60,7 +60,7 @@ const EMPTY_TAB: TabComments = {
   byAnchor: {},
   byChatKey: {},
   session: [],
-  threadCount: 0,
+  commentCount: 0,
   actions: null,
   directory: null,
 };
@@ -88,8 +88,10 @@ function translate(
   return out;
 }
 
-function threadCountOf(byAnchor: Record<string, Comment[]>, session: Comment[]): number {
-  return Object.keys(byAnchor).length + (session.length > 0 ? 1 : 0);
+function commentCountOf(byAnchor: Record<string, Comment[]>, session: Comment[]): number {
+  let n = visibleCount(session);
+  for (const rowId in byAnchor) n += visibleCount(byAnchor[rowId]);
+  return n;
 }
 
 export const useChatCommentsStore = createSelectors(
@@ -123,7 +125,7 @@ export const useChatCommentsStore = createSelectors(
                   byAnchor: {},
                   byChatKey: {},
                   session: [],
-                  threadCount: 0,
+                  commentCount: 0,
                   actions: null,
                   directory: null,
                 },
@@ -138,7 +140,7 @@ export const useChatCommentsStore = createSelectors(
                 byAnchor: comments.byAnchor,
                 byChatKey: translate(comments.byAnchor, tab.anchors),
                 session: comments.session,
-                threadCount: threadCountOf(comments.byAnchor, comments.session),
+                commentCount: commentCountOf(comments.byAnchor, comments.session),
                 actions: comments.actions,
                 directory: comments.directory,
               },
@@ -185,11 +187,11 @@ export function useTurnCommentCount(tabId: string, turnId: string): number {
   });
 }
 
-/** Thread count for the header badge; `null` when comments do not apply. */
-export function useCommentThreadCount(tabId: string): number | null {
+/** Comment count for the header badge; `null` when comments do not apply. */
+export function useCommentCount(tabId: string): number | null {
   return useChatCommentsStore((s) => {
     const tab = s.byTab[tabId];
-    return tab?.target && tab.actions ? tab.threadCount : null;
+    return tab?.target && tab.actions ? tab.commentCount : null;
   });
 }
 
