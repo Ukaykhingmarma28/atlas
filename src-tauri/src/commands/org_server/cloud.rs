@@ -25,7 +25,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use atlas_artifacts::Comment;
+use atlas_artifacts::{Comment, InboxPage};
 use atlas_comms::wire::ConversationKind;
 use atlas_comms::CommsError;
 
@@ -187,7 +187,22 @@ pub struct OrgConversation {
     pub caller_is_member: bool,
 }
 
+/// Which page of the caller's inbox to read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InboxQuery<'a> {
+    /// Only the entries the user has not read.
+    pub unread_only: bool,
+    /// Where the previous page's `next_cursor` left off.
+    pub cursor: Option<&'a str>,
+    /// At most this many entries; the server's default when `None`.
+    pub limit: Option<u32>,
+}
+
 /// Everything the organisation tools do remotely.
+///
+/// **Nothing here marks the inbox read**, and nothing may be added that
+/// does: the unread state is the user's (ADR-0014), so the tools have no
+/// call path to the server's mark-read route at all.
 pub trait OrganisationCloud: Send + Sync {
     /// The signed-in user as a member of `org_id`.
     fn caller<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Caller>;
@@ -208,4 +223,8 @@ pub trait OrganisationCloud: Send + Sync {
     /// Every comment on a recorded session, roots and replies, oldest first.
     fn comments<'a>(&'a self, org_id: &'a str, workspace_id: &'a str, session_id: &'a str)
         -> CloudFuture<'a, Vec<Comment>>;
+
+    /// One page of the caller's inbox in `org_id` — mentions, replies and
+    /// comments on their recorded sessions — with the unread total. Read-only.
+    fn inbox<'a>(&'a self, org_id: &'a str, query: InboxQuery<'a>) -> CloudFuture<'a, InboxPage>;
 }

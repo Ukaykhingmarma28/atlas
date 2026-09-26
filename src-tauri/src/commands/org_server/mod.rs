@@ -32,7 +32,7 @@
 //!   made in the tool dispatch and emitted to the window as
 //!   [`ORG_ACTION_EVENT`] for its Logs panel — refusals and failures too.
 //!
-//! `org_whoami`, `org_members` and `org_conversations` exist so far; the rest
+//! `org_whoami`, `org_members`, `org_conversations` and `org_inbox` exist so far; the rest
 //! of the thirteen tools the spec names are added on this skeleton.
 
 mod adapter;
@@ -52,7 +52,8 @@ pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
-    Caller, CloudError, CloudFuture, CurrentSessionQuery, Member, OrgConversation, OrganisationCloud, RecordedSession,
+    Caller, CloudError, CloudFuture, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
+    RecordedSession,
 };
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};

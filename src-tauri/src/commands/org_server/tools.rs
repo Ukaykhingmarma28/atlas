@@ -22,10 +22,11 @@ use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ErrorData as McpError;
+use atlas_artifacts::{InboxEntry, InboxKind};
 use serde_json::{json, Value};
 
 use super::audit::{unaudited, OrgActionRecord, OrgAudit};
-use super::cloud::{CurrentSessionQuery, Member, OrgConversation, OrganisationCloud};
+use super::cloud::{CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud};
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
@@ -99,6 +100,19 @@ pub(super) fn tools() -> Vec<Tool> {
                 }
             }),
         ),
+        tool(
+            "org_inbox",
+            "Your inbox, newest first: mentions, replies and comments on your recorded sessions, with unread \
+             state, the session and comment, and the unread total. Read-only.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "unread_only": { "type": "boolean", "description": "Only entries not yet read." },
+                    "cursor": { "type": "string", "description": "A previous answer's next_cursor, for more." },
+                    "limit": { "type": "integer", "description": "At most this many entries (up to 100)." }
+                }
+            }),
+        ),
     ]
 }
 
@@ -132,6 +146,53 @@ fn string_arg<'a>(request: &'a CallToolRequestParams, name: &str) -> Option<&'a 
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())
+}
+
+/// An optional boolean argument, absent read as `false`.
+fn bool_arg(request: &CallToolRequestParams, name: &str) -> bool {
+    request.arguments.as_ref().and_then(|args| args.get(name)).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// An optional positive integer argument.
+fn u32_arg(request: &CallToolRequestParams, name: &str) -> Option<u32> {
+    let value = request.arguments.as_ref()?.get(name)?.as_u64()?;
+    u32::try_from(value).ok().filter(|n| *n > 0)
+}
+
+/// Why an inbox entry concerns the user, in the words the model relays.
+fn inbox_kind(kind: InboxKind) -> &'static str {
+    match kind {
+        InboxKind::Mention => "mention",
+        InboxKind::Reply => "reply",
+        InboxKind::SessionComment => "comment_on_your_session",
+    }
+}
+
+/// An inbox entry as the model reads it: why it is there, whether the user
+/// has read it, who wrote it (a guest by the name on the entry, a member by
+/// the roster when it could be read), and the recorded session and comment
+/// it points at, so a follow-up call can name them.
+fn inbox_entry_json(entry: &InboxEntry, roster: Option<&[Member]>) -> Value {
+    let guest = entry.actor_name.is_some();
+    let name = entry.actor_name.clone().or_else(|| {
+        roster.and_then(|r| r.iter().find(|m| m.user_id == entry.actor_id)).map(|m| m.name.clone())
+    });
+    json!({
+        "id": entry.id,
+        "kind": inbox_kind(entry.kind),
+        "unread": entry.is_unread(),
+        "created_at": entry.created_at,
+        "author": { "user_id": entry.actor_id, "name": name, "guest": guest },
+        "session": { "id": entry.session_id, "title": entry.session_title, "workspace_id": entry.workspace_id },
+        "comment": {
+            "id": entry.comment_id,
+            "anchor_kind": entry.anchor_kind,
+            // The session anchor addresses the session itself and has no row.
+            "anchor_id": Some(&entry.anchor_id).filter(|id| !id.is_empty()),
+            "excerpt": entry.excerpt,
+        },
+        "link": entry.path,
+    })
 }
 
 fn member_json(member: &Member) -> Value {
@@ -249,6 +310,14 @@ impl OrgTools {
             "org_whoami" => self.whoami(grant, &scope).await,
             "org_members" => self.members(&scope, string_arg(request, "name")).await,
             "org_conversations" => self.conversations(&scope, string_arg(request, "name")).await,
+            "org_inbox" => {
+                let query = InboxQuery {
+                    unread_only: bool_arg(request, "unread_only"),
+                    cursor: string_arg(request, "cursor"),
+                    limit: u32_arg(request, "limit"),
+                };
+                self.inbox(&scope, query).await
+            }
             other => tool_error(format!("unknown tool `{other}`")),
         }
     }
@@ -352,6 +421,35 @@ impl OrgTools {
             None => tool_json(json!({ "conversations": listed })),
             Some(_) => tool_json(json!({ "conversation": listed[0] })),
         }
+    }
+}
+
+impl OrgTools {
+    /// `org_inbox`: one page of the caller's inbox in the grant's
+    /// organisation, newest first, with the unread total. Read-only: there is
+    /// no call path from here to the server's mark-read route, because the
+    /// organisation cloud has none. The roster is read only to name member
+    /// authors; when it cannot be, they keep their ids and the inbox still
+    /// answers.
+    async fn inbox(&self, scope: &OrgScope, query: InboxQuery<'_>) -> CallToolResult {
+        let page = match self.cloud.inbox(&scope.org_id, query).await {
+            Ok(page) => page,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let mut entries = page.entries;
+        // The server already answers newest first; sorting again keeps that
+        // promise whatever order a page arrives in. ISO stamps sort as text.
+        entries.sort_by(|a, b| (&b.created_at, &b.id).cmp(&(&a.created_at, &a.id)));
+        let roster = if entries.iter().any(|e| e.actor_name.is_none()) {
+            self.cloud.members(&scope.org_id).await.ok()
+        } else {
+            None
+        };
+        tool_json(json!({
+            "unread": page.unread,
+            "entries": entries.iter().map(|e| inbox_entry_json(e, roster.as_deref())).collect::<Vec<_>>(),
+            "next_cursor": page.next_cursor,
+        }))
     }
 }
 

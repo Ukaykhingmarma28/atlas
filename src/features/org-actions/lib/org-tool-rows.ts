@@ -62,6 +62,14 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
     lookup(str(obj(answer?.member)?.name) ?? str(args.name), "Listed members"),
   org_conversations: (args, answer) =>
     lookup(conversationName(obj(answer?.conversation)) ?? str(args.name), "Listed conversations"),
+  // Read-only: the row says the inbox was read, never that anything in it was.
+  org_inbox: (args, answer) => {
+    const verb = args.unread_only === true ? "Read unread inbox" : "Read inbox";
+    const unread = typeof answer?.unread === "number" ? answer.unread : null;
+    return unread === null
+      ? { verb, detail: "" }
+      : { verb: `${verb}:`, detail: `${unread} unread` };
+  },
 };
 
 /**

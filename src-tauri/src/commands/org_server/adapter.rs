@@ -17,7 +17,8 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    Caller, CloudError, CloudFuture, CurrentSessionQuery, Member, OrgConversation, OrganisationCloud, RecordedSession,
+    Caller, CloudError, CloudFuture, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
+    RecordedSession,
 };
 use super::offers::SessionOrgs;
 use super::OrgScope;
@@ -177,6 +178,15 @@ impl OrganisationCloud for AppOrganisationCloud {
         Box::pin(async move {
             let artifacts = self.artifacts()?;
             Ok(artifacts.client.comments(org_id, workspace_id, session_id).await?)
+        })
+    }
+
+    /// The inbox route's read half through the Timeline's artifacts client.
+    /// The client has no mark-read call, so this cannot reach one.
+    fn inbox<'a>(&'a self, org_id: &'a str, query: InboxQuery<'a>) -> CloudFuture<'a, atlas_artifacts::InboxPage> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            Ok(artifacts.client.inbox(org_id, query.unread_only, query.cursor, query.limit).await?)
         })
     }
 }

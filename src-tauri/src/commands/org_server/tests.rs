@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use agent_client_protocol::schema::v1 as acp;
 use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
-use atlas_artifacts::{AnchorKind, Comment};
+use atlas_artifacts::{AnchorKind, Comment, InboxEntry, InboxKind, InboxPage};
 use atlas_comms::wire::ConversationKind;
 use parking_lot::Mutex;
 use rmcp::model::CallToolRequestParams;
@@ -50,6 +50,13 @@ struct FakeOrganisation {
     /// Recorded session id → its comments.
     comments: Mutex<HashMap<String, Vec<Comment>>>,
     comments_fail: AtomicBool,
+    /// The caller's inbox, in the order it was written (oldest first), each
+    /// entry's read state as the user left it. There is no way to mark one
+    /// read: the organisation cloud has no such method, so neither does this.
+    inbox: Mutex<Vec<InboxEntry>>,
+    /// The cursor the next inbox page continues from, when there is one.
+    inbox_next: Mutex<Option<String>>,
+    inbox_fail: AtomicBool,
     /// Every `(org, what)` asked, in order.
     asked: Mutex<Vec<(String, String)>>,
 }
@@ -87,6 +94,11 @@ impl FakeOrganisation {
 
     fn asked(&self) -> Vec<(String, String)> {
         self.asked.lock().clone()
+    }
+
+    fn with_inbox(self: Arc<Self>, inbox: Vec<InboxEntry>) -> Arc<Self> {
+        *self.inbox.lock() = inbox;
+        self
     }
 }
 
@@ -142,6 +154,36 @@ impl OrganisationCloud for FakeOrganisation {
             }
             Ok(self.comments.lock().get(session_id).cloned().unwrap_or_default())
         })
+    }
+
+    fn inbox<'a>(&'a self, org_id: &'a str, query: InboxQuery<'a>) -> CloudFuture<'a, InboxPage> {
+        Box::pin(async move {
+            self.asked.lock().push((
+                org_id.into(),
+                format!("inbox unread_only={} cursor={:?} limit={:?}", query.unread_only, query.cursor, query.limit),
+            ));
+            if self.inbox_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            Ok(self.inbox_page(org_id, query.unread_only, query.limit))
+        })
+    }
+}
+
+impl FakeOrganisation {
+    /// The inbox as the server answers it: the organisation's entries, unread
+    /// only when asked, the newest `limit` of them, with the unread **total**
+    /// — but in the order they were written, because the tool, not the fake,
+    /// is what puts the newest first.
+    fn inbox_page(&self, org_id: &str, unread_only: bool, limit: Option<u32>) -> InboxPage {
+        let all = self.inbox.lock().clone();
+        let mine: Vec<InboxEntry> = all.into_iter().filter(|e| e.org_id == org_id).collect();
+        let unread = mine.iter().filter(|e| e.is_unread()).count() as u64;
+        let mut entries: Vec<InboxEntry> = mine.into_iter().filter(|e| !unread_only || e.is_unread()).collect();
+        if let Some(limit) = limit {
+            entries.drain(..entries.len().saturating_sub(limit as usize));
+        }
+        InboxPage { entries, unread, next_cursor: self.inbox_next.lock().clone() }
     }
 }
 
@@ -636,6 +678,183 @@ async fn org_conversations_refuses_while_chat_is_on_another_organisation_and_nam
     client.cancel().await.ok();
 }
 
+// ── org_inbox ────────────────────────────────────────────────────────────────
+
+/// An inbox entry in the grant's organisation, on recorded session `rs-1`.
+fn inbox_entry(id: &str, kind: InboxKind, actor: &str, at: &str, read: bool) -> InboxEntry {
+    InboxEntry {
+        id: id.into(),
+        kind,
+        org_id: "org-acme".into(),
+        workspace_id: "ws-atlas".into(),
+        workspace_slug: "atlas".into(),
+        session_id: "rs-1".into(),
+        session_title: Some("Fix the theme importer".into()),
+        comment_id: format!("c-{id}"),
+        anchor_kind: AnchorKind::Session,
+        anchor_id: String::new(),
+        actor_id: actor.into(),
+        actor_name: None,
+        excerpt: format!("remark {id}"),
+        created_at: at.into(),
+        read_at: read.then(|| "2026-09-26T12:00:00.000Z".to_string()),
+        path: format!("/timeline?org=org-acme&workspace=ws-atlas&session=rs-1&comment=c-{id}"),
+    }
+}
+
+/// Written oldest first, the way the fake keeps them: a read reply from Sam,
+/// an unread mention from Grace on a checkpoint, and an unread comment on the
+/// user's session from a guest reviewer; plus one entry in another
+/// organisation that must never be read here.
+fn acme_inbox() -> Vec<InboxEntry> {
+    let reply = inbox_entry("n1", InboxKind::Reply, "u-sam1", "2026-09-24T09:00:00.000Z", true);
+    let mut mention = inbox_entry("n2", InboxKind::Mention, "u-grace", "2026-09-25T09:00:00.000Z", false);
+    mention.anchor_kind = AnchorKind::Checkpoint;
+    mention.anchor_id = "cp-7".into();
+    let mut guest = inbox_entry("n3", InboxKind::SessionComment, "g-rev", "2026-09-26T09:00:00.000Z", false);
+    guest.actor_name = Some("Outside Reviewer".into());
+    let mut elsewhere = inbox_entry("n9", InboxKind::Mention, "u-x", "2026-09-26T10:00:00.000Z", false);
+    elsewhere.org_id = "org-globex".into();
+    vec![reply, mention, guest, elsewhere]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_inbox_lists_entries_newest_first_with_kind_unread_author_session_and_comment() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster()).with_inbox(acme_inbox());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_inbox", json!({})).await;
+    assert!(!err, "{answer}");
+    let session = json!({ "id": "rs-1", "title": "Fix the theme importer", "workspace_id": "ws-atlas" });
+    assert_eq!(
+        answer,
+        json!({
+            "unread": 2,
+            "entries": [
+                {
+                    "id": "n3",
+                    "kind": "comment_on_your_session",
+                    "unread": true,
+                    "created_at": "2026-09-26T09:00:00.000Z",
+                    "author": { "user_id": "g-rev", "name": "Outside Reviewer", "guest": true },
+                    "session": session,
+                    "comment": { "id": "c-n3", "anchor_kind": "session", "anchor_id": null, "excerpt": "remark n3" },
+                    "link": "/timeline?org=org-acme&workspace=ws-atlas&session=rs-1&comment=c-n3",
+                },
+                {
+                    "id": "n2",
+                    "kind": "mention",
+                    "unread": true,
+                    "created_at": "2026-09-25T09:00:00.000Z",
+                    "author": { "user_id": "u-grace", "name": "Grace Hopper", "guest": false },
+                    "session": session,
+                    "comment": {
+                        "id": "c-n2", "anchor_kind": "checkpoint", "anchor_id": "cp-7", "excerpt": "remark n2"
+                    },
+                    "link": "/timeline?org=org-acme&workspace=ws-atlas&session=rs-1&comment=c-n2",
+                },
+                {
+                    "id": "n1",
+                    "kind": "reply",
+                    "unread": false,
+                    "created_at": "2026-09-24T09:00:00.000Z",
+                    "author": { "user_id": "u-sam1", "name": "Sam Lee", "guest": false },
+                    "session": session,
+                    "comment": { "id": "c-n1", "anchor_kind": "session", "anchor_id": null, "excerpt": "remark n1" },
+                    "link": "/timeline?org=org-acme&workspace=ws-atlas&session=rs-1&comment=c-n1",
+                },
+            ],
+            "next_cursor": null,
+        }),
+    );
+    assert_eq!(
+        org.asked(),
+        [
+            ("org-acme".to_string(), "inbox unread_only=false cursor=None limit=None".to_string()),
+            ("org-acme".to_string(), "members".to_string()),
+        ],
+        "the grant's organisation's inbox, and its roster to name the authors"
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unread_only_leaves_out_what_the_user_has_read_but_the_count_is_still_the_total() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster()).with_inbox(acme_inbox());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_inbox", json!({ "unread_only": true, "limit": 1 })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["unread"], json!(2), "the total, not the page's share");
+    let ids: Vec<&str> = answer["entries"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["n3"]);
+    assert_eq!(org.asked()[0].1, "inbox unread_only=true cursor=None limit=Some(1)");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_next_page_continues_from_the_cursor_the_last_one_answered() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster()).with_inbox(acme_inbox());
+    *org.inbox_next.lock() = Some("1758790800000:n1".into());
+    let (_server, client) = org_client(org.clone()).await;
+    let (_, first) = call_json(&client, "org_inbox", json!({})).await;
+    assert_eq!(first["next_cursor"], json!("1758790800000:n1"));
+    let (err, _) = call_json(&client, "org_inbox", json!({ "cursor": "1758790800000:n1" })).await;
+    assert!(!err);
+    let inbox_asks: Vec<String> =
+        org.asked().into_iter().map(|(_, what)| what).filter(|w| w.starts_with("inbox")).collect();
+    assert_eq!(inbox_asks[1], "inbox unread_only=false cursor=Some(\"1758790800000:n1\") limit=None");
+    client.cancel().await.ok();
+}
+
+/// A member the roster cannot name — it failed, or they have left — keeps
+/// their id; the inbox still answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_author_the_roster_cannot_name_keeps_their_id_and_the_inbox_still_answers() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster()).with_inbox(acme_inbox());
+    org.roster_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_inbox", json!({})).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["entries"][1]["author"], json!({ "user_id": "u-grace", "name": null, "guest": false }));
+    assert_eq!(answer["entries"][0]["author"]["name"], json!("Outside Reviewer"), "a guest's name is on the entry");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_inbox_that_cannot_be_read_is_a_tool_error() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_inbox(acme_inbox());
+    org.inbox_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, text) = call(&client, "org_inbox", json!({})).await;
+    assert!(err);
+    assert!(text.contains("could not be reached"), "{text}");
+    client.cancel().await.ok();
+}
+
+/// Reading the inbox leaves it exactly as the user left it. The organisation
+/// cloud has no way to mark an entry read (and so neither has the fake), no
+/// tool is offered that could, and the inbox answers the same the second
+/// time as the first.
+#[tokio::test(flavor = "multi_thread")]
+async fn reading_the_inbox_never_marks_anything_read() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster()).with_inbox(acme_inbox());
+    let (_server, client) = org_client(org.clone()).await;
+    let (_, first) = call_json(&client, "org_inbox", json!({})).await;
+    let (_, again) = call_json(&client, "org_inbox", json!({})).await;
+    assert_eq!(first, again);
+    assert_eq!(org.inbox.lock().clone(), acme_inbox(), "every entry's read state is as the user left it");
+    assert!(
+        org.asked().iter().all(|(_, what)| what.starts_with("inbox unread_only=") || what == "members"),
+        "nothing but inbox reads and the roster: {:?}",
+        org.asked()
+    );
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(
+        tools.iter().all(|t| !t.name.contains("mark") && !t.name.ends_with("_read")),
+        "no tool can mark the inbox read"
+    );
+    client.cancel().await.ok();
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -695,7 +914,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
         .unwrap();
     let names: Vec<String> = client.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
     assert_eq!(names, tool_names());
-    assert_eq!(names, ["org_whoami", "org_members", "org_conversations"]);
+    assert_eq!(names, ["org_whoami", "org_members", "org_conversations", "org_inbox"]);
     client.cancel().await.ok();
 }
 

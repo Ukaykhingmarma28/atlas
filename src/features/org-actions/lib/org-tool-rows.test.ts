@@ -111,6 +111,16 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Looked up DM with Ada, Grace");
   });
 
+  it("org_inbox says the inbox was read, and how much of it is unread once answered", () => {
+    expect(subject("org_inbox", {}, undefined)).toBe("Read inbox");
+    expect(subject("org_inbox", {}, { unread: 3, entries: [], next_cursor: null })).toBe(
+      "Read inbox: 3 unread",
+    );
+    expect(subject("org_inbox", { unread_only: true }, { unread: 0, entries: [] })).toBe(
+      "Read unread inbox: 0 unread",
+    );
+  });
+
   it("a tool with no line of its own still gets a row, named by the tool", () => {
     expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
   });

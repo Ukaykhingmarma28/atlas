@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::model::{Comment, EntryPayload, SessionBoardPage, SessionDetailPage};
+use crate::model::{Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
 use crate::{ingest_base, AnchorKind, TokenSource};
 
 /// The board read's page size. The server clamps at 100 and silently falls back
@@ -34,6 +34,11 @@ const ENTRY_PAGE: u32 = 500;
 /// and far past what a person reads. The ceiling exists so a pathological
 /// Session cannot turn one click into an unbounded crawl.
 const MAX_ENTRY_PAGES: usize = 40;
+
+/// The most an inbox page may hold. The server clamps at 100 and silently
+/// falls back to its default of 50 past it, so a larger ask is clamped here
+/// rather than quietly answered with fewer.
+pub const INBOX_PAGE_MAX: u32 = 100;
 
 /// Which Session, in which Project, in which Organisation.
 ///
@@ -86,6 +91,17 @@ impl ArtifactsClient {
             .build()
             .map_err(|e| Error::Transport(format!("building http client: {e}")))?;
         Ok(Self { http, base: ingest_base(), tokens, cached: std::sync::Mutex::new(None) })
+    }
+
+    /// A client against another base, for tests that answer on loopback.
+    #[cfg(test)]
+    fn at(base: &str, tokens: Arc<dyn TokenSource>) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base: base.trim_end_matches('/').to_string(),
+            tokens,
+            cached: std::sync::Mutex::new(None),
+        }
     }
 
     /// Recent Sessions across the Organisation, or one Project of it.
@@ -327,6 +343,41 @@ impl ArtifactsClient {
         Ok(wrapper.comment)
     }
 
+    /// One page of the signed-in person's inbox in `org_id`, newest first:
+    /// mentions, replies and comments on their Sessions.
+    ///
+    /// **Read-only, and the only inbox call here.** The server's mark-read
+    /// route (`POST /inbox/read`) has no caller in this crate on purpose: the
+    /// unread state is the person's, and the agent tools this backs must never
+    /// be able to clear it. There is no `user` parameter either — the server
+    /// scopes both routes to the token's subject.
+    ///
+    /// One page rather than a walk: `cursor` continues where `next_cursor`
+    /// left off, and `limit` is clamped to [`INBOX_PAGE_MAX`].
+    pub async fn inbox(
+        &self,
+        org_id: &str,
+        unread_only: bool,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<InboxPage> {
+        let mut req = self
+            .http
+            .get(format!("{}/inbox", self.base))
+            .bearer_auth(self.token().await?)
+            .query(&[("org", org_id)]);
+        if unread_only {
+            req = req.query(&[("unread", "true")]);
+        }
+        if let Some(cursor) = cursor {
+            req = req.query(&[("cursor", cursor)]);
+        }
+        if let Some(limit) = limit {
+            req = req.query(&[("limit", limit.clamp(1, INBOX_PAGE_MAX).to_string())]);
+        }
+        self.send(req, "inbox").await
+    }
+
     async fn token(&self) -> Result<String> {
         {
             let cached = self.cached.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -404,6 +455,94 @@ mod tests {
         // reading the request.
         assert_eq!(AnchorKind::Session.as_str(), "session");
         assert_ne!(AnchorKind::Session, AnchorKind::Message);
+    }
+
+    // ── The inbox, against an HTTP server on loopback ───────────────────────
+
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    struct Tok;
+    impl TokenSource for Tok {
+        fn mint(&self) -> Pin<Box<dyn Future<Output = Result<String>> + Send + '_>> {
+            Box::pin(async { Ok("tok".to_string()) })
+        }
+    }
+
+    /// Answers every request with `body` and keeps each request's head (the
+    /// request line and headers), so a test asserts what reached the wire.
+    async fn loopback(body: &'static str) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    let mut buf = [0u8; 1024];
+                    while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                        let Ok(n) = stream.read(&mut buf).await else { return };
+                        if n == 0 {
+                            return;
+                        }
+                        head.extend_from_slice(&buf[..n]);
+                    }
+                    log.lock().unwrap().push(String::from_utf8_lossy(&head).into_owned());
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+        (base, seen)
+    }
+
+    const ONE_UNREAD: &str = concat!(
+        r#"{"entries":[{"id":"n1","kind":"artifact_mention","orgId":"org_1","workspaceId":"ws_1","#,
+        r#""workspaceSlug":"atlas","sessionId":"ses_1","sessionTitle":"Theme","commentId":"c1","#,
+        r#""anchorKind":"session","anchorId":"","actorId":"user_ada","actorName":null,"#,
+        r#""excerpt":"<@me> look","createdAt":"2026-09-20T10:04:11.000Z","readAt":null,"path":"/timeline"}],"#,
+        r#""unread":7,"nextCursor":null}"#,
+    );
+
+    #[tokio::test]
+    async fn the_inbox_is_one_get_on_the_inbox_route_with_the_org_unread_cursor_and_limit() {
+        let (base, seen) = loopback(ONE_UNREAD).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        let page = client.inbox("org_1", true, Some("1758362651000:n0"), Some(500)).await.unwrap();
+
+        assert_eq!(page.unread, 7);
+        assert_eq!(page.entries[0].kind, crate::InboxKind::Mention);
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1, "one request, and never a second to mark anything read: {seen:?}");
+        let request_line = seen[0].lines().next().unwrap();
+        assert_eq!(
+            request_line,
+            "GET /inbox?org=org_1&unread=true&cursor=1758362651000%3An0&limit=100 HTTP/1.1",
+            "the read route, the grant's organisation, and the limit clamped to the server's maximum"
+        );
+        assert!(seen[0].to_ascii_lowercase().contains("authorization: bearer tok"));
+    }
+
+    #[tokio::test]
+    async fn the_whole_inbox_omits_the_unread_filter() {
+        let (base, seen) = loopback(ONE_UNREAD).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        client.inbox("org_1", false, None, None).await.unwrap();
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].lines().next().unwrap(), "GET /inbox?org=org_1 HTTP/1.1");
     }
 
     #[test]

@@ -41,7 +41,7 @@ pub use client::{ArtifactsClient, CommentTarget, NewComment};
 pub use error::{Error, Result};
 pub use manager::{ArtifactsEvent, ArtifactsManager, ManagerConfig};
 pub use model::{
-    AnchorKind, Comment, EntryPayload, RemoteEntry, RemoteEntryCounts, RemoteProject,
+    AnchorKind, Comment, EntryPayload, InboxEntry, InboxKind, InboxPage, RemoteEntry, RemoteEntryCounts, RemoteProject,
     RemoteSession, RemoteToolTally, SessionBoardPage, SessionDetailPage,
 };
 pub use socket::{ClientFrame, ExitReason, Keepalive, ServerFrame};
