@@ -185,10 +185,43 @@ impl std::fmt::Debug for OutwardConsent {
 /// opened with that id, `None` when it never did.
 type Settle = Box<dyn FnOnce(Option<&acp::SessionId>) + Send>;
 
-/// The servers for one session request, and what to do once it is known
-/// whether that session opened.
+/// Per offered server, the tools that must ask the user before they run —
+/// its **outward actions** (ADR-0014). The host owns its servers, so the host
+/// declares which of their tools reach another person; a connection that runs
+/// its agent's tool approvals itself (the native one) projects exactly these
+/// as asking, and every other tool on the server keeps running unasked. A
+/// connection that cannot ask per tool (ACP) is never offered a server with
+/// any.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AskFirst {
+    /// `(server, tool)`, in the order they were declared.
+    tools: Vec<(String, String)>,
+}
+
+impl AskFirst {
+    /// Nothing asks.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// `tools` on the offered server named `server` ask first.
+    #[must_use]
+    pub fn on(mut self, server: &str, tools: &[&str]) -> Self {
+        self.tools.extend(tools.iter().map(|tool| (server.to_string(), (*tool).to_string())));
+        self
+    }
+
+    /// The tools on `server` that ask first.
+    pub fn tools_on<'a>(&'a self, server: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.tools.iter().filter(move |(s, _)| s == server).map(|(_, tool)| tool.as_str())
+    }
+}
+
+/// The servers for one session request, which of their tools ask first, and
+/// what to do once it is known whether that session opened.
 pub struct SessionMcpOffer {
     servers: Vec<acp::McpServer>,
+    ask_first: AskFirst,
     settle: Option<Settle>,
 }
 
@@ -197,6 +230,7 @@ impl SessionMcpOffer {
     pub fn none() -> Self {
         Self {
             servers: Vec::new(),
+            ask_first: AskFirst::none(),
             settle: None,
         }
     }
@@ -209,12 +243,25 @@ impl SessionMcpOffer {
     ) -> Self {
         Self {
             servers,
+            ask_first: AskFirst::none(),
             settle: Some(Box::new(settle)),
         }
     }
 
+    /// Declares the offered servers' tools that must ask first ([`AskFirst`]).
+    #[must_use]
+    pub fn asking_first(mut self, ask_first: AskFirst) -> Self {
+        self.ask_first = ask_first;
+        self
+    }
+
     pub fn servers(&self) -> &[acp::McpServer] {
         &self.servers
+    }
+
+    /// The offered servers' tools that must ask first.
+    pub fn ask_first(&self) -> &AskFirst {
+        &self.ask_first
     }
 
     /// The session this offer was made for opened as `session_id`.
@@ -330,6 +377,15 @@ mod tests {
         let session = acp::SessionId::new("s-1");
         consent.record(approval(&session, &serde_json::Value::Null));
         assert!(consent.take("s-1", "atlas_org", "org_comment_reply", &serde_json::json!({})), "none is empty");
+    }
+
+    #[test]
+    fn an_offer_carries_the_tools_its_host_declared_ask_first_per_server() {
+        let offer = SessionMcpOffer::new(vec![http("a"), http("b")], |_| {})
+            .asking_first(AskFirst::none().on("b", &["send", "reply"]));
+        assert_eq!(offer.ask_first().tools_on("b").collect::<Vec<_>>(), ["send", "reply"]);
+        assert_eq!(offer.ask_first().tools_on("a").count(), 0);
+        assert_eq!(SessionMcpOffer::none().ask_first(), &AskFirst::none());
     }
 
     #[test]

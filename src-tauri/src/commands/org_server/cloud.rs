@@ -270,6 +270,29 @@ pub struct NewPage<'a> {
     pub name: &'a str,
 }
 
+/// A chat message about to be sent into a conversation, as the caller. The
+/// body is exactly what will be posted — mentions already written as
+/// `<@user-id>`, within the contract's byte cap — and nothing is added to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewMessage<'a> {
+    pub org_id: &'a str,
+    /// The conversation it goes into — one the caller is in.
+    pub conversation_id: &'a str,
+    pub body: &'a str,
+}
+
+/// A chat message handed to chat's socket: the id this client gave it, and
+/// the server's id for it once the server acknowledged it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentMessage {
+    /// The id the send was written under; the server answers with it.
+    pub client_msg_id: String,
+    /// The server's id for the stored message, from its `ack`; `None` when no
+    /// `ack` arrived in time — the message is then still queued on chat's
+    /// socket, which resends it until the server takes it.
+    pub message_id: Option<String>,
+}
+
 /// Everything the organisation tools do remotely.
 ///
 /// **Nothing here marks the inbox read**, and nothing may be added that
@@ -331,4 +354,16 @@ pub trait OrganisationCloud: Send + Sync {
     /// the call is audited. Like every chat call, refused with
     /// [`CloudError::ChatElsewhere`] while chat is not connected to `org_id`.
     fn create_page<'a>(&'a self, page: NewPage<'a>) -> CloudFuture<'a, String>;
+
+    /// The caller's DM with `user_id`, created when there is none, and
+    /// whether it was just created (the server answers an existing DM rather
+    /// than a second one). Refused with [`CloudError::ChatElsewhere`] while
+    /// chat is not connected to `org_id`.
+    fn dm_with<'a>(&'a self, org_id: &'a str, user_id: &'a str) -> CloudFuture<'a, (OrgConversation, bool)>;
+
+    /// Sends a chat message as the caller. An **outward action** (ADR-0014):
+    /// everyone in the conversation sees it and everyone it mentions is told,
+    /// so the tool that calls this is projected to ask first. Refused with
+    /// [`CloudError::ChatElsewhere`] while chat is not connected to `org_id`.
+    fn send<'a>(&'a self, message: NewMessage<'a>) -> CloudFuture<'a, SentMessage>;
 }

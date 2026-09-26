@@ -35,7 +35,8 @@
 //!   [`ORG_ACTION_EVENT`] for its Logs panel — refusals and failures too.
 //!
 //! - **Outward actions ask first** (ADR-0014): a tool that reaches another
-//!   person — `org_comment_reply` so far — is projected by the native seam
+//!   person — `org_comment_reply` and `org_send` ([`OUTWARD_TOOLS`]) — is
+//!   declared on the offer as asking first, projected by the native seam
 //!   with a per-tool `prompt`, and the offer describes the waiting call for
 //!   the approval card ([`OrgTools::describe`]): whom it reaches, and the
 //!   full body. The seam reports each call the user approves through the host
@@ -44,8 +45,8 @@
 //!   without asking (bypass mode) is refused and nothing is sent.
 //!
 //! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
-//! `org_comment_resolve`, `org_comment_reply`, `org_sessions`, `org_session` and
-//! `org_page_create` exist so far; the rest of the thirteen tools the spec names are
+//! `org_comment_resolve`, `org_comment_reply`, `org_sessions`, `org_session`,
+//! `org_page_create` and `org_send` exist so far; the rest of the thirteen tools the spec names are
 //! added on this skeleton.
 
 mod adapter;
@@ -65,13 +66,13 @@ pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
-    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewPage, NewReply,
-    OrgConversation, OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewMessage, NewPage,
+    NewReply, OrgConversation, OrganisationCloud, PayloadRef, RecordedSession, SentMessage, TimelineQuery,
 };
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
 #[allow(unused_imports)]
-pub use tools::{router, OrgTools, INSTRUCTIONS};
+pub use tools::{router, OrgTools, INSTRUCTIONS, OUTWARD_TOOLS};
 
 /// The name the server goes by in the agent's MCP configuration; its tools
 /// reach the model as `mcp__atlas_org__<tool>`.

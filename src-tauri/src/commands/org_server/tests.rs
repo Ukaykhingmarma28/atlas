@@ -87,6 +87,13 @@ struct FakeOrganisation {
     pages: Mutex<Vec<(String, String, String, String)>>,
     /// The Space refuses the page (a full Space, an archived conversation).
     page_fail: AtomicBool,
+    /// Every chat message sent, as `(org, conversation, body)`, in order —
+    /// the body exactly as it went out.
+    sent: Mutex<Vec<(String, String, String)>>,
+    /// Chat refuses the message.
+    send_fail: AtomicBool,
+    /// The server's `ack` never arrives in time.
+    unacked: AtomicBool,
     /// Every `(org, what)` asked, in order.
     asked: Mutex<Vec<(String, String)>>,
 }
@@ -390,6 +397,49 @@ impl OrganisationCloud for FakeOrganisation {
         })
     }
 
+    /// As `POST /conversations {kind: "dm"}` does: the DM with `user_id` when
+    /// there is one, else a new one holding the caller and them — reached,
+    /// like every chat call, only while chat is on the organisation asked.
+    fn dm_with<'a>(&'a self, org_id: &'a str, user_id: &'a str) -> CloudFuture<'a, (OrgConversation, bool)> {
+        Box::pin(async move {
+            self.asked.lock().push((org_id.into(), format!("dm {user_id}")));
+            let chat_org = self.chat_org.lock().clone();
+            if chat_org.as_deref() != Some(org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: org_id.into(), chat_org });
+            }
+            let mut conversations = self.conversations.lock();
+            let existing = conversations.iter().find(|c| {
+                c.kind == ConversationKind::Dm && c.member_ids.as_ref().is_some_and(|ids| ids.iter().any(|id| id == user_id))
+            });
+            if let Some(dm) = existing {
+                return Ok((dm.clone(), false));
+            }
+            let dm = conversation(&format!("c-dm-{user_id}"), ConversationKind::Dm, None, Some(&["u-1", user_id]), true);
+            conversations.push(dm.clone());
+            Ok((dm, true))
+        })
+    }
+
+    /// As chat's socket does: the message stored as sent, acknowledged with
+    /// the server's id — unless the test holds the ack back.
+    fn send<'a>(&'a self, message: NewMessage<'a>) -> CloudFuture<'a, SentMessage> {
+        Box::pin(async move {
+            self.asked.lock().push((message.org_id.into(), format!("send {}", message.conversation_id)));
+            let chat_org = self.chat_org.lock().clone();
+            if chat_org.as_deref() != Some(message.org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: message.org_id.into(), chat_org });
+            }
+            if self.send_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Forbidden("not_member: You are not a member of this conversation.".into()));
+            }
+            let mut sent = self.sent.lock();
+            sent.push((message.org_id.into(), message.conversation_id.into(), message.body.into()));
+            let n = sent.len();
+            let message_id = (!self.unacked.load(Ordering::SeqCst)).then(|| format!("m-{n}"));
+            Ok(SentMessage { client_msg_id: format!("cm-{n}"), message_id })
+        })
+    }
+
     fn entry_payload<'a>(&'a self, entry: PayloadRef<'a>) -> CloudFuture<'a, EntryPayload> {
         Box::pin(async move {
             self.asked.lock().push((
@@ -547,11 +597,16 @@ fn bound_to_acme() -> Arc<FakeSessionOrgs> {
 /// this session"): the record the native seam leaves through the host for
 /// chat `s1`. Returns the arguments, for the call to send.
 fn approved(consent: &atlas_agent_servers::OutwardConsent, arguments: Value) -> Value {
+    approved_for(consent, "org_comment_reply", arguments)
+}
+
+/// [`approved`], for the outward `tool`.
+fn approved_for(consent: &atlas_agent_servers::OutwardConsent, tool: &str, arguments: Value) -> Value {
     let session = acp::SessionId::new("s1");
     consent.record(atlas_agent_servers::CallToApprove {
         session_id: &session,
         server: ORG_SERVER_NAME,
-        tool: "org_comment_reply",
+        tool,
         arguments: &arguments,
     });
     arguments
@@ -1923,6 +1978,290 @@ async fn only_an_outward_call_on_the_org_server_is_described() {
     assert!(describe(&offers, "atlas_ui", "org_comment_reply", json!({ "comment": "k1", "body": "x" })).await.is_none());
 }
 
+// ── org_send ─────────────────────────────────────────────────────────────────
+
+/// Acme's roster and conversations, chat on Acme: #general, a DM with Grace,
+/// a group DM, and a #design the caller is not in. Sam Lee (slee@acme.dev)
+/// has no DM with the caller yet.
+fn chatting() -> Arc<FakeOrganisation> {
+    FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer))
+        .with_roster(acme_roster())
+        .with_conversations(acme_conversations())
+}
+
+/// Every message sent, as `(conversation, body)`.
+fn sent(org: &FakeOrganisation) -> Vec<(String, String)> {
+    org.sent.lock().iter().map(|(_, conversation, body)| (conversation.clone(), body.clone())).collect()
+}
+
+/// Nothing was sent and no DM was opened.
+fn nothing_sent(org: &FakeOrganisation) -> bool {
+    !org.asked().iter().any(|(_, what)| what.starts_with("send") || what.starts_with("dm"))
+}
+
+/// An approved `org_send`, and its JSON answer.
+async fn send(
+    client: &RunningService<RoleClient, ()>,
+    consent: &atlas_agent_servers::OutwardConsent,
+    args: Value,
+) -> (bool, Value) {
+    call_json(client, "org_send", approved_for(consent, "org_send", args)).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_send_posts_to_a_channel_the_caller_is_in_exactly_as_written_and_answers_the_acked_message() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "#general", "body": "Deployed the importer fix." })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-general".to_string(), "Deployed the importer fix.".to_string())], "no suffix, nothing added");
+    assert_eq!(org.sent.lock()[0].0, "org-acme", "in the grant's organisation");
+    assert_eq!(answer["conversation"]["id"], json!("c-general"));
+    assert_eq!(answer["conversation"]["name"], json!("general"));
+    assert_eq!(answer["message_id"], json!("m-1"), "the server's id, from its ack");
+    assert_eq!(answer["client_msg_id"], json!("cm-1"));
+    assert_eq!(answer["created_dm"], json!(false));
+    assert_eq!(answer["body"], json!("Deployed the importer fix."));
+    assert!(answer.get("note").is_none());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_with_a_dm_is_messaged_in_that_dm_and_none_is_created() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "Grace Hopper", "body": "Your review is in." })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-dm-grace".to_string(), "Your review is in.".to_string())]);
+    assert_eq!(answer["created_dm"], json!(false));
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("dm")), "the DM that exists is used");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_with_no_dm_gets_one_created_first_then_the_message() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "slee@acme.dev", "body": "Welcome aboard." })).await;
+    assert!(!err, "{answer}");
+    let writes: Vec<String> = org
+        .asked()
+        .into_iter()
+        .map(|(_, what)| what)
+        .filter(|what| what.starts_with("dm") || what.starts_with("send"))
+        .collect();
+    assert_eq!(writes, ["dm u-sam2", "send c-dm-u-sam2"], "the DM is created first, then the message goes into it");
+    assert_eq!(answer["created_dm"], json!(true));
+    assert_eq!(answer["conversation"]["id"], json!("c-dm-u-sam2"));
+    assert_eq!(
+        answer["conversation"]["members"],
+        json!([{ "user_id": "u-1", "name": "Ada Lovelace" }, { "user_id": "u-sam2", "name": "Sam Lee" }]),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_group_dm_named_by_id_gets_the_message() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "c-group", "body": "Standup moved to 10." })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-group".to_string(), "Standup moved to 10.".to_string())]);
+    assert_eq!(answer["conversation"]["kind"], json!("group_dm"));
+    assert_eq!(answer["created_dm"], json!(false));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mentions_in_a_message_are_written_as_user_ids_where_the_body_names_them_or_lead_it() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(
+        &client,
+        &consent,
+        json!({ "to": "general", "body": "@Grace Hopper can you look?", "mention": ["Grace Hopper", "sam.lee@acme.dev"] }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org)[0].1, "<@u-sam1> <@u-grace> can you look?", "the named one in place, the other leading");
+    assert_eq!(answer["body"], json!("@Sam Lee @Grace Hopper can you look?"), "read back by name");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_mention_matching_nobody_or_several_is_refused_before_anything_is_sent_or_opened() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) =
+        send(&client, &consent, json!({ "to": "slee@acme.dev", "body": "hi", "mention": ["Nobody Here"] })).await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("no member matches \"Nobody Here\"")), "{answer}");
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "hi", "mention": ["Sam Lee"] })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().map(Vec::len), Some(2), "{answer}");
+    assert!(nothing_sent(&org), "no message, and no DM opened for one");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_body_over_chats_cap_is_refused_naming_the_cap_and_the_size_and_nothing_is_sent() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let over = "é".repeat(8 * 1024) + "!";
+    let (err, answer) = send(&client, &consent, json!({ "to": "slee@acme.dev", "body": over })).await;
+    assert!(err);
+    let text = answer.as_str().unwrap_or_default();
+    assert!(text.contains("16385 bytes") && text.contains("16384 bytes"), "UTF-8 bytes, not characters: {text}");
+    assert!(nothing_sent(&org), "not truncated, not split, and no DM opened");
+
+    let at_cap = "x".repeat(16 * 1024);
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": at_cap.clone() })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-general".to_string(), at_cap)], "exactly the cap goes out whole");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_channel_the_caller_is_not_in_is_refused_and_nothing_is_sent() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "c-design-web", "body": "hello" })).await;
+    assert!(err);
+    let text = answer.as_str().unwrap_or_default();
+    assert!(text.contains("not a member of #design") && text.contains("Nothing was sent"), "{text}");
+    assert!(nothing_sent(&org));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recipient_matching_nothing_or_several_is_refused_and_nothing_is_sent() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "Nobody Here", "body": "hi" })).await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("nothing matches \"Nobody Here\"")), "{answer}");
+    let (err, answer) = send(&client, &consent, json!({ "to": "Sam Lee", "body": "hi" })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().map(Vec::len), Some(2), "two members are called Sam Lee: {answer}");
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "  " })).await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("`body`")), "{answer}");
+    assert!(nothing_sent(&org));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_send_refuses_while_chat_is_on_another_organisation_and_nothing_is_sent() {
+    let org = chatting();
+    *org.chat_org.lock() = Some("org-other".into());
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "hi" })).await;
+    assert!(err);
+    let text = answer.as_str().unwrap_or_default();
+    assert!(text.contains("chat is connected to organisation org-other") && text.contains("org-acme"), "{text}");
+    assert!(nothing_sent(&org));
+    client.cancel().await.ok();
+}
+
+/// ADR-0014: a message is posted only once the user approved that exact
+/// call; bypass runs it unasked, and it is refused with nothing sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_the_user_did_not_approve_is_refused_and_nothing_is_sent() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, text) = call(&client, "org_send", json!({ "to": "general", "body": "unasked" })).await;
+    assert!(err);
+    assert!(text.contains("only after you approve them") && text.contains("bypass"), "{text}");
+    // A reply's approval is not a message's.
+    approved(&consent, json!({ "to": "general", "body": "unasked" }));
+    assert!(call(&client, "org_send", json!({ "to": "general", "body": "unasked" })).await.0);
+    assert!(nothing_sent(&org));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_approval_sends_one_message() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let args = approved_for(&consent, "org_send", json!({ "to": "general", "body": "once" }));
+    assert!(!call(&client, "org_send", args.clone()).await.0);
+    assert!(call(&client, "org_send", args).await.0, "the approval was spent");
+    assert_eq!(sent(&org).len(), 1);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_chat_has_not_acked_yet_answers_its_client_id_and_says_it_is_queued() {
+    let org = chatting();
+    org.unacked.store(true, Ordering::SeqCst);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "hi" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["message_id"], Value::Null);
+    assert_eq!(answer["client_msg_id"], json!("cm-1"));
+    assert!(answer["note"].as_str().is_some_and(|n| n.contains("queued")), "{answer}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_chat_refuses_is_a_tool_error_with_its_reason() {
+    let org = chatting();
+    org.send_fail.store(true, Ordering::SeqCst);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "hi" })).await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("not_member")), "{answer}");
+    assert!(org.sent.lock().is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_card_for_a_message_names_the_channel_the_dm_the_group_or_the_new_dm() {
+    let offers = describing_offer(chatting()).await;
+    let card = |to: &str| describe(&offers, ORG_SERVER_NAME, "org_send", json!({ "to": to, "body": "hi" }));
+    let said = card("#general").await.expect("described");
+    assert_eq!((said.title.as_str(), said.recipient.as_str()), ("Send to #general", "Everyone in #general"));
+    let said = card("Grace Hopper").await.expect("described");
+    assert_eq!((said.title.as_str(), said.recipient.as_str()), ("Message Grace Hopper", "Grace Hopper, in your DM"));
+    let said = card("slee@acme.dev").await.expect("described");
+    assert_eq!(
+        (said.title.as_str(), said.recipient.as_str()),
+        ("Message Sam Lee", "Sam Lee (slee@acme.dev), in a new DM with them"),
+    );
+    let said = card("c-group").await.expect("described");
+    assert_eq!(
+        (said.title.as_str(), said.recipient.as_str()),
+        ("Message the group with Sam Lee and u-ghost", "Everyone in your group DM with Sam Lee and u-ghost"),
+    );
+    let said = card("Nobody Here").await.expect("still described");
+    assert_eq!((said.title.as_str(), said.recipient.as_str(), said.body.as_str()), ("Send to Nobody Here", "Nobody Here", "hi"));
+}
+
+/// The card and the call read the arguments through one parser and rewrite
+/// mentions one way, so the card's body is exactly the message sent — whole,
+/// trimmed, mentions shown by name — and describing it sends nothing, opens
+/// no DM.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_cards_body_is_the_sent_body() {
+    let org = chatting();
+    let offers = describing_offer(org.clone()).await;
+    let args = json!({
+        "to": "slee@acme.dev",
+        "body": format!("  @Grace Hopper {}\n", "the importer is fixed.\n".repeat(400)),
+        "mention": ["Grace Hopper", " "],
+    });
+    let said = describe(&offers, ORG_SERVER_NAME, "org_send", args.clone()).await.expect("described");
+    assert!(nothing_sent(&org), "describing sends nothing and opens no DM");
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, args).await;
+    assert!(!err, "{answer}");
+    assert_eq!(json!(said.body), answer["body"]);
+    let posted = &sent(&org)[0].1;
+    assert_eq!(said.body, tools::named_mentions(posted, Some(&acme_roster())), "the card is the sent message, by name");
+    assert_eq!(posted.replace("<@u-grace>", "@Grace Hopper"), said.body);
+    client.cancel().await.ok();
+}
+
 // ── org_sessions ─────────────────────────────────────────────────────────────
 
 /// `minutes` ago, as the server stamps it.
@@ -2537,6 +2876,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
             "org_comments",
             "org_comment_resolve",
             "org_comment_reply",
+            "org_send",
             "org_sessions",
             "org_session",
             "org_page_create"
@@ -2813,6 +3153,21 @@ async fn a_native_session_on_a_cloud_bound_project_is_offered_all_three_on_one_t
     assert_eq!(answer["organisation"]["id"], json!("org-acme"));
     assert_eq!(answer["current_session"]["id"], json!("rs-1"));
     client.cancel().await.ok();
+}
+
+/// ADR-0014: the host declares which of its tools ask first, and the offer
+/// carries the declaration for the connection to project — the organisation
+/// server's outward actions, and only while that server is offered.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_offer_declares_the_org_servers_outward_actions_as_asking_first() {
+    let host = running_host(chatting()).await;
+    let offer = offers(host.clone(), true, FakeSessionOrgs::new(true, Some(acme()))).offer(&session_request(true));
+    assert_eq!(offer.ask_first().tools_on(ORG_SERVER_NAME).collect::<Vec<_>>(), ["org_comment_reply", "org_send"]);
+    assert_eq!(offer.ask_first().tools_on("atlas_memory").count(), 0);
+    assert_eq!(offer.ask_first().tools_on(UI_SERVER_NAME).count(), 0);
+
+    let offer = offers(host, false, FakeSessionOrgs::new(true, Some(acme()))).offer(&session_request(true));
+    assert_eq!(offer.ask_first(), &atlas_agent_servers::AskFirst::none(), "no org server, nothing asks");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -5,8 +5,8 @@
 //! go through the artifacts client the Timeline uses (with its 240-second
 //! token reuse, so the organisation tools add no pressure on the rate-limited
 //! token route), the roster through the auth core the Members modal reads,
-//! chat through the one comms manager the chat pane uses (its REST client, no
-//! second socket), a Space page through the Spaces manager the canvas uses
+//! chat through the one comms manager the chat pane uses (its REST client, and
+//! its one socket for a message — no second socket), a Space page through the Spaces manager the canvas uses
 //! (its token source and dial, on a short-lived socket of its own), and who
 //! the user is comes from the auth core's snapshot.
 //! Both are resolved per call rather than held, because this is built during
@@ -19,9 +19,8 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewPage, NewReply,
-    OrgConversation,
-    OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewMessage, NewPage,
+    NewReply, OrgConversation, OrganisationCloud, PayloadRef, RecordedSession, SentMessage, TimelineQuery,
 };
 use super::offers::SessionOrgs;
 use super::OrgScope;
@@ -292,6 +291,93 @@ impl OrganisationCloud for AppOrganisationCloud {
             let spaces = spaces.0.clone();
             let frame = atlas_comms::spaces::PageCreate::root_page(page.name);
             Ok(spaces.create_page(page.org_id, page.conversation_id, &frame).await?)
+        })
+    }
+
+    fn dm_with<'a>(&'a self, org_id: &'a str, user_id: &'a str) -> CloudFuture<'a, (OrgConversation, bool)> {
+        self.open_dm(org_id, user_id)
+    }
+
+    fn send<'a>(&'a self, message: NewMessage<'a>) -> CloudFuture<'a, SentMessage> {
+        self.post(message)
+    }
+}
+
+/// How long a send waits for the server's `ack` before answering with the
+/// client's id alone. The socket keeps the message and resends it until the
+/// server takes it, so a slow `ack` is not a failed send.
+const ACK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+impl AppOrganisationCloud {
+    /// Chat's one manager, when it is connected to `org_id` — the
+    /// organisation the user has chat open in — and why not otherwise.
+    fn chat_in(&self, org_id: &str) -> Result<atlas_comms::CommsManager, CloudError> {
+        let comms = crate::commands::comms::manager(&self.app).map_err(CloudError::Unavailable)?;
+        let chat_org = comms.org_id();
+        if chat_org.as_deref() != Some(org_id) {
+            return Err(CloudError::ChatElsewhere { grant_org: org_id.to_string(), chat_org });
+        }
+        Ok(comms)
+    }
+
+    /// `POST /conversations {kind: "dm", user_id}` through chat's REST client,
+    /// as the chat pane's "Message" does (`comms_create_dm`): the server
+    /// answers the DM that exists (200) or the one it just made (201).
+    fn open_dm<'a>(&'a self, org_id: &'a str, user_id: &'a str) -> CloudFuture<'a, (OrgConversation, bool)> {
+        Box::pin(async move {
+            let comms = self.chat_in(org_id)?;
+            let dm = comms.rest().create_dm(org_id, user_id).await?;
+            let c = dm.conversation;
+            let conversation = OrgConversation {
+                id: c.id,
+                kind: c.kind,
+                name: c.name,
+                member_ids: c.member_ids,
+                caller_is_member: true,
+            };
+            Ok((conversation, dm.created))
+        })
+    }
+
+    /// One `send` frame on chat's own socket, through the manager the chat
+    /// pane sends with (`comms_send`), so the message shows in the window as
+    /// the user's own and is resent across a reconnect like theirs — never a
+    /// second socket. There is no REST send. The `ack` names only the
+    /// client's id, the server's id and the sequence; the manager turns it
+    /// into the optimistic row's update, which is what this waits for, at
+    /// most [`ACK_WAIT`].
+    fn post<'a>(&'a self, message: NewMessage<'a>) -> CloudFuture<'a, SentMessage> {
+        Box::pin(async move {
+            let comms = self.chat_in(message.org_id)?;
+            // Subscribed before the frame is written, so the ack cannot be
+            // missed between the two.
+            let mut events = comms.subscribe();
+            let client_msg_id = comms.send(message.conversation_id, message.body.to_string(), None, Vec::new())?;
+            let optimistic = atlas_comms::state::optimistic_id(&client_msg_id);
+            let acked = tokio::time::timeout(ACK_WAIT, async {
+                loop {
+                    match events.recv().await {
+                        Ok(envelope) => {
+                            if let atlas_comms::CommsEvent::MessageUpdated {
+                                replaced_id: Some(replaced),
+                                message,
+                                ..
+                            } = envelope.ev
+                            {
+                                if replaced == optimistic {
+                                    return Some(message.id);
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                    }
+                }
+            })
+            .await
+            .ok()
+            .flatten();
+            Ok(SentMessage { client_msg_id, message_id: acked })
         })
     }
 }

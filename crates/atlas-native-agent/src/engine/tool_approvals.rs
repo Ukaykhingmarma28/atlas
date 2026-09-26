@@ -1,7 +1,8 @@
 //! Outward actions: the engine's ask before a prompted tool on one of Atlas's
 //! own servers, through the approval card (ADR-0014).
 //!
-//! A tool projected with a per-tool `prompt` (`engine::mcp::ASK_FIRST`) stops
+//! A tool projected with a per-tool `prompt` (the offer's
+//! [`atlas_agent_servers::AskFirst`], projected by `engine::mcp`) stops
 //! the engine before the call. The engine does not ask with one of the three
 //! approval requests the seam already serves; it asks with an **MCP
 //! elicitation** it originates itself — `mcpServer/elicitation/request`, a

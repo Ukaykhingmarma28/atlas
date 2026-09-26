@@ -694,7 +694,7 @@ impl EngineConnection {
                 session_id: session_id.cloned(),
             },
         );
-        let config = mcp::thread_config(offer.servers());
+        let config = mcp::thread_config(offer.servers(), offer.ask_first());
         (offer, config)
     }
 

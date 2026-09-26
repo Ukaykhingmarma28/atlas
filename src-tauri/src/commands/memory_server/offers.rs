@@ -11,11 +11,11 @@
 use std::sync::Arc;
 
 use agent_client_protocol::schema::v1 as acp;
-use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
+use atlas_agent_servers::{AskFirst, SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
 
 use super::host::{MemoryServerHost, SharingGate};
 use super::MEMORY_SERVER_NAME;
-use crate::commands::org_server::{OrgOffer, OrgOfferDecision, ORG_PATH, ORG_SERVER_NAME};
+use crate::commands::org_server::{OrgOffer, OrgOfferDecision, ORG_PATH, ORG_SERVER_NAME, OUTWARD_TOOLS};
 use crate::commands::ui_server::{UiOffer, UiOfferDecision, UI_PATH, UI_SERVER_NAME};
 
 /// Whether one session request is handed the memory tool server.
@@ -164,8 +164,10 @@ impl SessionMcpServers for MemorySessionOffers {
         if let (Some(UiOfferDecision::Included), Some(url)) = (ui, ui_url) {
             entries.push((UI_SERVER_NAME, url));
         }
+        let mut org_included = false;
         if let (Some(OrgOfferDecision::Included), Some(url)) = (org, org_url) {
             entries.push((ORG_SERVER_NAME, url));
+            org_included = true;
         }
         if entries.is_empty() {
             return SessionMcpOffer::none();
@@ -184,9 +186,17 @@ impl SessionMcpServers for MemorySessionOffers {
                 )
             })
             .collect();
+        // The organisation server's outward actions ask first (ADR-0014);
+        // the host declares them, the connection projects them.
+        let ask_first = if org_included {
+            AskFirst::none().on(ORG_SERVER_NAME, OUTWARD_TOOLS)
+        } else {
+            AskFirst::none()
+        };
         SessionMcpOffer::new(servers, move |session| match session {
             Some(id) => tokens.bind(&token, &id.to_string()),
             None => tokens.revoke_token(&token),
         })
+        .asking_first(ask_first)
     }
 }

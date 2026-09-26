@@ -93,6 +93,17 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
       ? { verb: "Replied on comment", detail: posted }
       : { verb: "Reply to", detail: str(args.comment) ?? "" };
   },
+  // An outward action (ADR-0014): once sent, the conversation it went into
+  // (a DM opened for it says so); where it was aimed until then (asked,
+  // refused or failed).
+  org_send: (args, answer) => {
+    const sentTo =
+      answer && (str(answer.message_id) ?? str(answer.client_msg_id))
+        ? conversationName(obj(answer.conversation))
+        : null;
+    if (!sentTo) return { verb: "Send to", detail: str(args.to) ?? "" };
+    return { verb: "Sent to", detail: answer?.created_dm === true ? `new ${sentTo}` : sentTo };
+  },
   // The board read: whose sessions and which keywords, the author by the
   // name the answer resolved (an email or id reads as the member's name).
   org_sessions: (args, answer) => {

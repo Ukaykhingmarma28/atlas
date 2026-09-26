@@ -174,6 +174,36 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Replied on comment k1");
   });
 
+  it("org_send names the conversation it went into, or where it was aimed", () => {
+    expect(
+      subject(
+        "org_send",
+        { to: "general", body: "Deployed." },
+        {
+          conversation: { id: "c-general", kind: "channel", name: "general" },
+          message_id: "m-1",
+          client_msg_id: "cm-1",
+          created_dm: false,
+        },
+      ),
+    ).toBe("Sent to #general");
+    expect(
+      subject(
+        "org_send",
+        { to: "slee@acme.dev", body: "Welcome." },
+        {
+          conversation: { id: "c-dm-2", kind: "dm", name: null, members: [{ name: "Sam Lee" }] },
+          message_id: null,
+          client_msg_id: "cm-2",
+          created_dm: true,
+        },
+      ),
+    ).toBe("Sent to new DM with Sam Lee");
+    expect(subject("org_send", { to: "Grace Hopper", body: "hi" }, undefined)).toBe(
+      "Send to Grace Hopper",
+    );
+  });
+
   it("org_sessions says whose recorded sessions it listed and what it searched for", () => {
     expect(subject("org_sessions", {}, undefined)).toBe("Listed recorded sessions");
     expect(subject("org_sessions", { author: "me", limit: 1 }, undefined)).toBe(

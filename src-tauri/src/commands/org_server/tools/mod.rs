@@ -18,13 +18,14 @@
 //! per-call checks and dispatch, the argument readers, and the shapes and
 //! resolvers more than one area shares. Each area's tools live beside it:
 //! [`roster`] (who you are, members, conversations), [`inbox`],
-//! [`comments`] (threads, resolving, replying), [`sessions`] (the recorded
-//! work), [`spaces`] (pages in a conversation's Space) and [`describe`] (the
-//! approval card for an outward call).
+//! [`comments`] (threads, resolving, replying), [`messages`] (sending),
+//! [`sessions`] (the recorded work), [`spaces`] (pages in a conversation's
+//! Space) and [`describe`] (the approval card for an outward call).
 
 mod comments;
 mod describe;
 mod inbox;
+mod messages;
 mod roster;
 mod sessions;
 mod spaces;
@@ -51,6 +52,7 @@ use super::{OrgAccessGate, OrgScope, ORG_PATH, ORG_SERVER_NAME};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
 use atlas_agent_servers::OutwardConsent;
 use comments::ReplyArgs;
+use messages::SendArgs;
 #[cfg(test)]
 pub(super) use comments::{named_mentions, with_mentions};
 pub(super) use sessions::SESSIONS_DEFAULT_LIMIT;
@@ -72,6 +74,14 @@ by id, name or email that matches several comes back as candidates to ask about.
 read. Anything that reaches another person (a message, a reply) is an outward action and asks the \
 user first; say what you will send. Results are JSON; an error says what was refused or not found.";
 
+/// The server's **outward actions** (ADR-0014): the tools that reach another
+/// person in the user's name. The one declaration both halves read — the
+/// offer names them as asking first ([`atlas_agent_servers::AskFirst`]), so
+/// the native seam projects each with a per-tool `prompt`, and
+/// [`OrgTools::answer`] refuses any of them without the user's recorded
+/// approval of that exact call. A new outward tool is one more name here.
+pub const OUTWARD_TOOLS: &[&str] = &["org_comment_reply", "org_send"];
+
 /// What a tool answers while the user has switched organisation access off.
 const OFF_NOTE: &str =
     "Atlas Agent's organisation access is switched off in Settings → General; ask the user to turn it on.";
@@ -91,7 +101,8 @@ const UNBOUND_NOTE: &str = "This session's project is no longer bound to the clo
 
 /// What an outward action answers when the user did not approve that call on
 /// its card — above all in bypass mode, where the engine runs it unasked.
-const UNAPPROVED_NOTE: &str = "Replies are sent in your name only after you approve them; bypass mode cannot      approve outward actions — switch the chat out of bypass to send. Nothing was posted.";
+const UNAPPROVED_NOTE: &str = "Replies and messages are sent in your name only after you approve them; bypass mode \
+     cannot approve outward actions — switch the chat out of bypass to send. Nothing was posted.";
 
 /// What `org_whoami` says in place of a current session the Workspace does
 /// not hold yet.
@@ -193,6 +204,24 @@ pub(super) fn tools() -> Vec<Tool> {
                     "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
                 },
                 "required": ["comment", "body"]
+            }),
+        ),
+        tool(
+            "org_send",
+            "Send a chat message as the user (asks the user first) to a conversation, or to a member's DM (opened if \
+             none); answers the sent message.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "to": { "type": "string", "description": "A conversation's id or channel name, or a member's id, name or email for their DM." },
+                    "body": { "type": "string", "description": "The message's text (up to 16 KiB of UTF-8)." },
+                    "mention": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Members to mention, by id, name or email; `@Name` in the body becomes the mention, else it leads."
+                    }
+                },
+                "required": ["to", "body"]
             }),
         ),
         tool(
@@ -447,6 +476,15 @@ impl OrgTools {
         if self.orgs.bound_to(&grant.cwd).as_ref() != Some(&scope) {
             return tool_error(UNBOUND_NOTE);
         }
+        // An outward action posts only the call the user approved — on its
+        // card, or under "Allow for this session" — never one the engine ran
+        // unasked (bypass).
+        if OUTWARD_TOOLS.contains(&request.name.as_ref()) {
+            let arguments = request.arguments.clone().map_or(Value::Null, Value::Object);
+            if !self.consent.take(&grant.session_id, ORG_SERVER_NAME, &request.name, &arguments) {
+                return tool_error(UNAPPROVED_NOTE);
+            }
+        }
         match request.name.as_ref() {
             "org_whoami" => self.whoami(grant, &scope).await,
             "org_members" => self.members(&scope, string_arg(request, "name")).await,
@@ -471,13 +509,6 @@ impl OrgTools {
                 self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
             }
             "org_comment_reply" => {
-                // An outward action posts only the call the user approved —
-                // on its card, or under "Allow for this session" — never one
-                // the engine ran unasked (bypass).
-                let arguments = request.arguments.clone().map_or(Value::Null, Value::Object);
-                if !self.consent.take(&grant.session_id, ORG_SERVER_NAME, "org_comment_reply", &arguments) {
-                    return tool_error(UNAPPROVED_NOTE);
-                }
                 let args = ReplyArgs::of(request.arguments.as_ref());
                 let Some(comment) = args.comment else {
                     return tool_error("name the comment to reply to: `comment` is its id (see org_comments)");
@@ -487,6 +518,7 @@ impl OrgTools {
                 };
                 self.reply_comment(grant, &scope, args.session, comment, body, &args.mentions).await
             }
+            "org_send" => self.send(&scope, &SendArgs::of(request.arguments.as_ref())).await,
             "org_sessions" => {
                 let filters = SessionFilters {
                     workspace: string_arg(request, "workspace"),

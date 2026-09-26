@@ -1275,16 +1275,22 @@ async fn the_engine_is_handed_the_memory_server_and_a_turn_calls_memory_search()
 
 /// A turn that calls `atlas_org`'s `org_comment_reply`, then answers.
 fn reply_turn() -> String {
+    outward_turn("org_comment_reply", json!({ "comment": "k1", "body": "Renamed it." }))
+}
+
+/// A turn that calls `atlas_org`'s outward `tool` with `arguments`, then
+/// answers.
+fn outward_turn(tool: &str, arguments: serde_json::Value) -> String {
     sse(vec![
         json!({"type": "response.created", "response": {"id": "resp-1"}}),
         json!({
             "type": "response.output_item.done",
             "item": {
                 "type": "function_call",
-                "call_id": "call-reply",
+                "call_id": "call-outward",
                 "namespace": "mcp__atlas_org",
-                "name": "org_comment_reply",
-                "arguments": json!({ "comment": "k1", "body": "Renamed it." }).to_string()
+                "name": tool,
+                "arguments": arguments.to_string()
             }
         }),
         json!({
@@ -1320,6 +1326,8 @@ impl atlas_agent_servers::SessionMcpServers for OfferingOrg {
         atlas_agent_servers::SessionMcpOffer::new(vec![server], move |id| {
             *session.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = id.map(ToString::to_string);
         })
+        // As the app's offer declares them: the host names its outward tools.
+        .asking_first(atlas_agent_servers::AskFirst::none().on("atlas_org", &["org_comment_reply", "org_send"]))
     }
 
     fn approved_call(&self, call: atlas_agent_servers::CallToApprove<'_>) {
@@ -1331,16 +1339,23 @@ impl atlas_agent_servers::SessionMcpServers for OfferingOrg {
 /// exact call — the organisation tool server's own check — and the offer
 /// that hands it to a session.
 async fn consenting_org() -> (Arc<dyn atlas_agent_servers::SessionMcpServers>, memory_server::Calls) {
+    consenting_org_for("org_comment_reply").await
+}
+
+/// [`consenting_org`], standing in for the outward `tool`.
+async fn consenting_org_for(
+    tool: &'static str,
+) -> (Arc<dyn atlas_agent_servers::SessionMcpServers>, memory_server::Calls) {
     let consent = Arc::new(atlas_agent_servers::OutwardConsent::new());
     let session: Arc<std::sync::Mutex<Option<String>>> = Arc::default();
     let gate: memory_server::Gate = {
         let (consent, session) = (consent.clone(), session.clone());
         Arc::new(move |arguments| {
             let session = session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
-            session.is_some_and(|id| consent.take(&id, "atlas_org", "org_comment_reply", arguments))
+            session.is_some_and(|id| consent.take(&id, "atlas_org", tool, arguments))
         })
     };
-    let (url, calls) = memory_server::start_gated("org_comment_reply", gate).await;
+    let (url, calls) = memory_server::start_gated(tool, gate).await;
     (Arc::new(OfferingOrg { url, consent, session }), calls)
 }
 
@@ -1349,9 +1364,20 @@ async fn consenting_org() -> (Arc<dyn atlas_agent_servers::SessionMcpServers>, m
 async fn reply_answered_with(
     pick: acp::PermissionOptionKind,
 ) -> (Vec<(String, serde_json::Value)>, Vec<String>) {
-    let (org, calls) = consenting_org().await;
+    outward_answered_with("org_comment_reply", json!({ "comment": "k1", "body": "Renamed it." }), pick).await
+}
+
+/// A turn calling the outward `tool` with `arguments` against a stand-in
+/// `atlas_org`, answered with `pick`. Returns the tool server's calls and
+/// every request the model was sent.
+async fn outward_answered_with(
+    tool: &'static str,
+    arguments: serde_json::Value,
+    pick: acp::PermissionOptionKind,
+) -> (Vec<(String, serde_json::Value)>, Vec<String>) {
+    let (org, calls) = consenting_org_for(tool).await;
     let h = harness_full(
-        vec![(Some(1), sse_ok(reply_turn())), (None, sse_ok(assistant_turn("ok")))],
+        vec![(Some(1), sse_ok(outward_turn(tool, arguments))), (None, sse_ok(assistant_turn("ok")))],
         |s| s,
         Some(org),
     )
@@ -1401,6 +1427,19 @@ async fn an_allowed_reply_is_posted_once() {
     let (calls, _) = reply_answered_with(acp::PermissionOptionKind::AllowOnce).await;
     assert_eq!(calls.len(), 1, "{calls:?}");
     assert_eq!(calls[0].1, json!({ "comment": "k1", "body": "Renamed it." }));
+}
+
+/// #120: a message is the same kind of outward action, declared by the host
+/// beside the reply — it asks, and only an allowed send reaches the server.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_allowed_send_is_posted_once_and_a_declined_one_never() {
+    let args = json!({ "to": "general", "body": "The importer is fixed." });
+    let (calls, _) = outward_answered_with("org_send", args.clone(), acp::PermissionOptionKind::AllowOnce).await;
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert_eq!(calls[0].1, args);
+    let (calls, sent) = outward_answered_with("org_send", args, acp::PermissionOptionKind::RejectOnce).await;
+    assert!(calls.is_empty(), "a declined send never reaches the server: {calls:?}");
+    assert!(sent.last().is_some_and(|body| body.contains("user rejected MCP tool call")));
 }
 
 #[tokio::test(flavor = "multi_thread")]
