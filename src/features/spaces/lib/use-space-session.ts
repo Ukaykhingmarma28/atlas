@@ -11,6 +11,7 @@ import {
   type SpaceReadOnlyReason,
 } from "./spaces-api";
 import { subscribeSpaceBus } from "./spaces-bus";
+import { acquireSpaceSocket, registerOpenPage, releaseSpaceSocket } from "./live-spaces";
 import {
   applyAwareness,
   decodeSpaceFrame,
@@ -71,6 +72,9 @@ export function useSpaceSession(convId: string) {
   const connRef = useRef<SpaceConnState>("disconnected");
   const readOnlyRef = useRef<SpaceReadOnlyReason | null>(null);
   const actorsRef = useRef<ReadonlyMap<string, SpaceActor>>(new Map());
+  /** Unregisters the open page from `live-spaces`, so a write from outside
+   *  the canvas (Atlas Agent drawing on it) goes into this doc. */
+  const unregisterPageRef = useRef<(() => void) | null>(null);
 
   // ---- awareness publisher: 50ms trailing, patch-merged -------------------
   const mineRef = useRef<SpaceAwarenessState>({});
@@ -205,6 +209,8 @@ export function useSpaceSession(convId: string) {
       if (pageIdRef.current === id) return;
       // The tail of an edit must go out on the OLD page's slot.
       flushOutbound();
+      unregisterPageRef.current?.();
+      unregisterPageRef.current = null;
       pageIdRef.current = id;
       slotRef.current = null;
       heldRef.current = [];
@@ -277,6 +283,8 @@ export function useSpaceSession(convId: string) {
             const doc = docRef.current;
             if (doc) {
               applyPageContent(doc, msg);
+              unregisterPageRef.current?.();
+              unregisterPageRef.current = registerOpenPage(convId, msg.page_id, doc, msg.read_only);
               // The reconnect catch-up: held edits go AFTER the server's,
               // so its log stays replayable.
               if (heldRef.current.length > 0 && msg.read_only === null) {
@@ -377,15 +385,19 @@ export function useSpaceSession(convId: string) {
       .catch((e) => {
         patch(convId, { error: typeof e === "string" ? e : "This Space could not be opened." });
       });
-    spacesApi.connect(convId).catch((e) => {
+    // Held, not owned: a write from outside the canvas may share the socket.
+    acquireSpaceSocket(convId).catch((e) => {
       console.error("spaces: connect failed:", convId, e);
     });
     return () => {
       // A mid-drag edit must not die with the unmount.
       flushOutbound();
       if (outboundTimer.current !== undefined) window.clearTimeout(outboundTimer.current);
-      // Cursor off the canvas for everyone else, then the socket down.
-      void spacesApi.disconnect(convId).catch(() => {});
+      // Cursor off the canvas for everyone else, then the socket down —
+      // unless something else still holds it.
+      unregisterPageRef.current?.();
+      unregisterPageRef.current = null;
+      releaseSpaceSocket(convId);
       docRef.current?.destroy();
       undoRef.current?.destroy();
       docRef.current = null;

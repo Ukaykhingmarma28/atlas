@@ -144,6 +144,14 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
     const detail = where ? `${name} in ${where}` : name;
     return { verb: created ? "Created page" : "Create page", detail };
   },
+  // Auto-approved and audited (ADR-0014): once drawn, how much and on which
+  // page (by the name the window answered); the page asked for until then.
+  org_page_write: (args, answer) => {
+    const placed = typeof answer?.nodes_placed === "number" ? answer.nodes_placed : null;
+    const page = str(answer?.name) ?? str(answer?.page_id) ?? str(args.page) ?? "";
+    if (placed === null) return { verb: "Draw on page", detail: str(args.page) ?? "" };
+    return { verb: `Drew ${placed} ${placed === 1 ? "node" : "nodes"} on`, detail: page };
+  },
 };
 
 /** The recorded session a session or comment tool acted on, as a person

@@ -46,9 +46,17 @@
 //!   and the tool posts only a call found there — so a call the engine runs
 //!   without asking (bypass mode) is refused and nothing is sent.
 //!
+//! - **Some tools cross to the window** ([`WINDOW_TOOLS`]): drawing on a
+//!   Space page is done by the frontend, where the page's codec lives, through
+//!   the UI tool server's bridge (ADR-0012) — emitted as
+//!   [`ORG_WINDOW_ACTION_EVENT`], answered through `ui_action_respond`. The
+//!   arguments are checked here first, so the window is only asked to draw a
+//!   document that can be drawn; a window that does not answer in time is a
+//!   tool error, never a hung turn.
+//!
 //! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
 //! `org_comment_resolve`, `org_comment_reply`, `org_sessions`, `org_session`,
-//! `org_page_create`, `org_send` and (admins only, [`ADMIN_TOOLS`])
+//! `org_page_create`, `org_page_write`, `org_send` and (admins only, [`ADMIN_TOOLS`])
 //! `org_member_activity` exist so far; the rest of the thirteen tools the spec names are
 //! added on this skeleton.
 
@@ -76,7 +84,7 @@ pub use cloud::{
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
 pub use resolve::OrgLink;
 #[allow(unused_imports)]
-pub use tools::{router, OrgTools, ADMIN_TOOLS, INSTRUCTIONS, OUTWARD_TOOLS};
+pub use tools::{router, OrgTools, ADMIN_TOOLS, INSTRUCTIONS, OUTWARD_TOOLS, WINDOW_TOOLS};
 
 /// The name the server goes by in the agent's MCP configuration; its tools
 /// reach the model as `mcp__atlas_org__<tool>`.
@@ -84,6 +92,11 @@ pub const ORG_SERVER_NAME: &str = "atlas_org";
 
 /// Where the service is mounted on the tool-server listener.
 pub const ORG_PATH: &str = "/org";
+
+/// Rust → window: one organisation call for the frontend to perform
+/// ([`WINDOW_TOOLS`]). The UI action's wire, under its own name so the UI
+/// action dispatcher never sees it; answered by `ui_action_respond`.
+pub const ORG_WINDOW_ACTION_EVENT: &str = "atlas:org-window-action";
 
 /// Whether the user lets Atlas Agent act in the organisation (Settings →
 /// General → "Let Atlas Agent act in your organisation"). Checked when a

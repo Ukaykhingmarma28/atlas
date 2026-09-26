@@ -1168,6 +1168,300 @@ async fn a_created_page_is_one_audit_record_naming_the_conversation_and_the_page
     client.cancel().await.ok();
 }
 
+// ── org_page_write ───────────────────────────────────────────────────────────
+
+/// The window the page-write tests draw through: every request it is sent is
+/// recorded, and answered from another task by `answer` — as the webview
+/// answers through `ui_action_respond`.
+fn drawing_window(
+    answer: impl Fn(&ui_server::UiRequest) -> ui_server::UiReply + Send + Sync + 'static,
+) -> (Arc<UiBridge>, Arc<Mutex<Vec<ui_server::UiRequest>>>) {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let slot: Arc<std::sync::OnceLock<Arc<UiBridge>>> = Arc::new(std::sync::OnceLock::new());
+    let (log, window) = (asked.clone(), slot.clone());
+    let answer = Arc::new(answer);
+    let bridge = Arc::new(UiBridge::new(Arc::new(move |request: &ui_server::UiRequest| {
+        log.lock().push(request.clone());
+        let (window, answer, request) = (window.clone(), answer.clone(), request.clone());
+        tokio::spawn(async move {
+            let bridge = window.get().expect("bridge installed").clone();
+            bridge.respond(request.request_id, answer(&request));
+        });
+        Ok(())
+    })));
+    let _ = slot.set(bridge.clone());
+    (bridge, asked)
+}
+
+/// A window that draws whatever it is sent and says so, as the frontend does.
+fn obliging_window() -> (Arc<UiBridge>, Arc<Mutex<Vec<ui_server::UiRequest>>>) {
+    drawing_window(|request| {
+        let document = &request.args["document"];
+        ui_server::UiReply {
+            ok: true,
+            result: Some(json!({
+                "page_id": request.args["page_id"],
+                "name": "Architecture",
+                "nodes_placed": document["nodes"].as_array().map_or(0, Vec::len),
+                "edges_placed": document["edges"].as_array().map_or(0, Vec::len),
+            })),
+            error: None,
+        }
+    })
+}
+
+/// A connected client whose organisation tools draw through `window`.
+async fn drawing_client(
+    org: Arc<FakeOrganisation>,
+    window: Option<Arc<UiBridge>>,
+) -> (MemoryServer, RunningService<RoleClient, ()>) {
+    let tokens = Arc::new(MemoryTokens::default());
+    let mut tools = OrgTools::new(org, setting(true), bound_to_acme());
+    if let Some(window) = window {
+        tools = tools.with_window(window);
+    }
+    let server = serve_tools(tokens.clone(), tools).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    (server, client)
+}
+
+/// Three boxes in a row, the middle one a diamond inside a group.
+fn pipeline() -> Value {
+    json!({
+        "nodes": [
+            { "id": "ingest", "kind": "shape", "text": "Ingest" },
+            { "id": "core", "kind": "group", "text": "Core" },
+            { "id": "check", "kind": "shape", "shape": "Diamond", "text": "Valid?", "parent": "core" },
+            { "id": "store", "kind": "note", "text": "Store\nPostgres", "x": 800, "y": 40, "w": 240, "h": 160 }
+        ],
+        "edges": [
+            { "from": "ingest", "to": "check", "label": "events" },
+            { "from": "check", "to": "store", "from_anchor": "E", "to_anchor": "w" }
+        ]
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_write_sends_the_checked_document_to_the_window_and_answers_what_it_placed() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (window, asked) = obliging_window();
+    let (_server, client) = drawing_client(org.clone(), Some(window)).await;
+    let (err, answer) = call_json(
+        &client,
+        "org_page_write",
+        json!({ "page": "page-1", "conversation": "#general", "document": pipeline() }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({ "page_id": "page-1", "name": "Architecture", "nodes_placed": 4, "edges_placed": 2 }),
+        "the window's answer, verbatim",
+    );
+    let request = {
+        let asked = asked.lock();
+        assert_eq!(asked.len(), 1, "one crossing");
+        asked[0].clone()
+    };
+    let request = &request;
+    assert_eq!((request.tool.as_str(), request.session_id.as_str(), request.cwd.as_str()), ("org_page_write", "s1", "/p"));
+    assert_eq!(
+        request.args,
+        json!({
+            "org_id": "org-acme",
+            "conversation_id": "c-general",
+            "page_id": "page-1",
+            "document": {
+                "nodes": [
+                    { "id": "ingest", "kind": "shape", "text": "Ingest", "shape": "rectangle" },
+                    { "id": "core", "kind": "group", "text": "Core" },
+                    { "id": "check", "kind": "shape", "text": "Valid?", "shape": "diamond", "parent": "core" },
+                    { "id": "store", "kind": "note", "text": "Store\nPostgres", "x": 800.0, "y": 40.0, "w": 240.0, "h": 160.0 }
+                ],
+                "edges": [
+                    { "from": "ingest", "to": "check", "label": "events" },
+                    { "from": "check", "to": "store", "from_anchor": "e", "to_anchor": "w" }
+                ]
+            }
+        }),
+        "the conversation resolved to its id in the grant's organisation, a shape's default and the casing settled",
+    );
+    assert_eq!(ui_server::action_event(request), ORG_WINDOW_ACTION_EVENT, "on the organisation's window event");
+    assert!(pages_created(&org).is_empty(), "a write creates nothing");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_document_the_page_cannot_hold_is_refused_in_words_before_the_window_or_the_organisation_is_asked() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (window, asked) = obliging_window();
+    let (_server, client) = drawing_client(org.clone(), Some(window)).await;
+    let node = |id: &str, kind: &str| json!({ "id": id, "kind": kind });
+    let too_many: Vec<Value> = (0..201).map(|i| node(&format!("n{i}"), "note")).collect();
+    let cases = [
+        (json!(null), "give the `document`"),
+        (json!({ "nodes": [] }), "no nodes"),
+        (json!({ "nodes": [node("a", "box")] }), "`kind` \"box\" is not one of note, text, shape, group"),
+        (json!({ "nodes": [node("a", "media")] }), "media nodes cannot be drawn"),
+        (json!({ "nodes": [{ "kind": "note" }] }), "node 1 has no `id`"),
+        (json!({ "nodes": [node("a", "note"), node("a", "text")] }), "two nodes have the id `a`"),
+        (json!({ "nodes": [node("a", "note")], "edges": [{ "from": "a", "to": "ghost" }] }), "`to` names node `ghost`, which the document does not have"),
+        (json!({ "nodes": [node("a", "note")], "edges": [{ "from": "a", "to": "a" }] }), "joins a node to itself"),
+        (json!({ "nodes": [node("a", "note"), node("b", "note")], "edges": [{ "from": "a", "to": "b", "to_anchor": "up" }] }), "`to_anchor` \"up\" is not one of n, e, s, w"),
+        (json!({ "nodes": [node("a", "note"), { "id": "b", "kind": "text", "parent": "a" }] }), "`parent` names `a`, a note; only a group can hold other nodes"),
+        (json!({ "nodes": [{ "id": "b", "kind": "text", "parent": "g" }] }), "`parent` names `g`, which the document does not have"),
+        (json!({ "nodes": [{ "id": "g1", "kind": "group", "parent": "g2" }, { "id": "g2", "kind": "group", "parent": "g1" }] }), "inside itself"),
+        (json!({ "nodes": [{ "id": "a", "kind": "note", "shape": "ellipse" }] }), "`shape` is only for kind shape"),
+        (json!({ "nodes": [{ "id": "a", "kind": "note", "x": 10 }] }), "give both `x` and `y`"),
+        (json!({ "nodes": [{ "id": "a", "kind": "note", "w": 5 }] }), "`w` is between 40 and 10000"),
+        (json!({ "nodes": [{ "id": "a", "kind": "note", "text": "x".repeat(2_001) }] }), "at most 2000 characters, and is 2001"),
+        (json!({ "nodes": too_many }), "201 nodes; at most 200"),
+    ];
+    for (document, says) in cases {
+        let (err, text) = call(
+            &client,
+            "org_page_write",
+            json!({ "page": "page-1", "conversation": "#general", "document": document.clone() }),
+        )
+        .await;
+        assert!(err, "{document} is refused");
+        assert!(text.contains(says), "{document}: {text}");
+        assert!(text.contains("Nothing was drawn"), "{text}");
+    }
+    let (err, text) = call(
+        &client,
+        "org_page_write",
+        json!({ "page": "atlas-org://conversation/c-general", "conversation": "#general", "document": pipeline() }),
+    )
+    .await;
+    assert!(err && text.contains("is not a page id"), "{text}");
+    assert!(asked.lock().is_empty(), "the window was never asked");
+    assert!(org.asked().is_empty(), "nor the organisation");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_the_caller_is_not_in_is_refused_and_the_window_is_not_asked() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (window, asked) = obliging_window();
+    let (_server, client) = drawing_client(org, Some(window)).await;
+    let (err, text) = call(
+        &client,
+        "org_page_write",
+        json!({ "page": "page-1", "conversation": "c-design-web", "document": pipeline() }),
+    )
+    .await;
+    assert!(err, "{text}");
+    assert!(text.contains("not a member of #design") && text.contains("Nothing was drawn"), "{text}");
+    assert!(asked.lock().is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_write_the_window_refuses_is_a_tool_error_in_the_windows_words() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (window, _) = drawing_window(|_| ui_server::UiReply {
+        ok: false,
+        result: None,
+        error: Some("the page is read-only: its conversation is archived. Nothing was drawn.".into()),
+    });
+    let (_server, client) = drawing_client(org, Some(window)).await;
+    let (err, text) = call(
+        &client,
+        "org_page_write",
+        json!({ "page": "page-1", "conversation": "#general", "document": pipeline() }),
+    )
+    .await;
+    assert!(err);
+    assert_eq!(text, "the page is read-only: its conversation is archived. Nothing was drawn.");
+    client.cancel().await.ok();
+}
+
+/// A window that never answers ends the call with an error once the bridge's
+/// timeout passes — never a hung turn.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_window_that_never_answers_is_a_tool_error_not_a_hung_turn() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let silent = Arc::new(UiBridge::with_timeout(Arc::new(|_| Ok(())), std::time::Duration::from_millis(100)));
+    let (_server, client) = drawing_client(org, Some(silent)).await;
+    let started = std::time::Instant::now();
+    let (err, text) = call(
+        &client,
+        "org_page_write",
+        json!({ "page": "page-1", "conversation": "#general", "document": pipeline() }),
+    )
+    .await;
+    assert!(err, "{text}");
+    assert!(text.contains("did not answer"), "{text}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "bounded by the bridge's timeout");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_window_the_write_is_refused_in_words() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = drawing_client(org, None).await;
+    let (err, text) = call(
+        &client,
+        "org_page_write",
+        json!({ "page": "page-1", "conversation": "#general", "document": pipeline() }),
+    )
+    .await;
+    assert!(err && text.contains("window is not available"), "{text}");
+    client.cancel().await.ok();
+}
+
+/// Auto-approved (ADR-0014): drawing on a page reaches no one, so it runs
+/// with no approval recorded, and is audited as one record like any call.
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_write_is_auto_approved_and_is_one_audit_record() {
+    assert!(!OUTWARD_TOOLS.contains(&"org_page_write"));
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (window, _) = obliging_window();
+    let tokens = Arc::new(MemoryTokens::default());
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let sink = records.clone();
+    let tools = OrgTools::new(org, setting(true), bound_to_acme())
+        .with_window(window)
+        .with_audit(Arc::new(move |record: &OrgActionRecord| sink.lock().push(record.clone())));
+    let server = serve_tools(tokens.clone(), tools).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    let args = json!({ "page": "page-1", "conversation": "#general", "document": pipeline() });
+    let (err, answer) = call(&client, "org_page_write", args.clone()).await;
+    assert!(!err, "{answer}");
+    {
+        let records = records.lock();
+        assert_eq!(records.len(), 1);
+        assert_eq!((records[0].tool.as_str(), records[0].ok), ("org_page_write", true));
+        assert_eq!(records[0].arguments, args);
+        assert_eq!(records[0].text, answer);
+    }
+    client.cancel().await.ok();
+}
+
+#[test]
+fn every_window_tool_is_offered_and_crosses_on_the_organisations_event_while_ui_actions_keep_theirs() {
+    let request = |tool: &str| ui_server::UiRequest {
+        request_id: uuid::Uuid::new_v4(),
+        session_id: "s1".into(),
+        agent: "atlas-agent".into(),
+        cwd: "/p".into(),
+        tool: tool.into(),
+        args: json!({}),
+    };
+    let offered: Vec<String> = tools().into_iter().map(|t| t.name.to_string()).collect();
+    for tool in WINDOW_TOOLS {
+        assert!(offered.contains(&tool.to_string()), "{tool} is a tool");
+        assert_eq!(ui_server::action_event(&request(tool)), ORG_WINDOW_ACTION_EVENT);
+    }
+    assert_eq!(ui_server::action_event(&request("ui_state")), ui_server::UI_ACTION_EVENT);
+    assert_eq!(ui_server::action_event(&request("org_page_create")), ui_server::UI_ACTION_EVENT, "never emitted anyway");
+}
+
 // ── org_inbox ────────────────────────────────────────────────────────────────
 
 /// An inbox entry in the grant's organisation, on recorded session `rs-1`.
@@ -3058,7 +3352,8 @@ async fn the_tool_list_is_what_the_model_is_offered() {
             "org_send",
             "org_sessions",
             "org_session",
-            "org_page_create"
+            "org_page_create",
+            "org_page_write"
         ]
     );
     client.cancel().await.ok();

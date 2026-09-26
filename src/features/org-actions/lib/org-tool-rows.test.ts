@@ -292,6 +292,23 @@ describe("the one-line subject of each organisation call", () => {
     );
   });
 
+  it("org_page_write says how many nodes it drew on which page", () => {
+    const args = { page: "p-1", conversation: "#general", document: { nodes: [], edges: [] } };
+    expect(
+      subject("org_page_write", args, {
+        page_id: "p-1",
+        name: "Architecture",
+        nodes_placed: 7,
+        edges_placed: 6,
+      }),
+    ).toBe("Drew 7 nodes on Architecture");
+    expect(
+      subject("org_page_write", args, { page_id: "p-1", nodes_placed: 1, edges_placed: 0 }),
+    ).toBe("Drew 1 node on p-1");
+    // Asked, refused or failed: the page asked for.
+    expect(subject("org_page_write", args, undefined)).toBe("Draw on page p-1");
+  });
+
   it("a tool with no line of its own still gets a row, named by the tool", () => {
     expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
   });

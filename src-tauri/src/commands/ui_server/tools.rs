@@ -192,12 +192,8 @@ impl UiTools {
             tool: name,
             args,
         };
-        match self.bridge.request(asked).await {
-            Ok(reply) if reply.ok => {
-                let result = reply.result.unwrap_or_else(|| json!({}));
-                CallToolResult::success(vec![Content::text(result.to_string())])
-            }
-            Ok(reply) => tool_error(reply.error.unwrap_or_else(|| "the Atlas window refused the action".to_string())),
+        match self.bridge.perform(asked).await {
+            Ok(result) => CallToolResult::success(vec![Content::text(result.to_string())]),
             Err(e) => tool_error(e),
         }
     }

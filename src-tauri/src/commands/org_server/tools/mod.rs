@@ -21,11 +21,13 @@
 //! [`comments`] (threads, resolving, replying), [`messages`] (sending),
 //! [`sessions`] (the recorded work), [`activity`] (a member's recorded
 //! activity, for admins), [`spaces`] (pages in a conversation's
-//! Space) and [`describe`] (the approval card for an outward call).
+//! Space, and drawing on one), [`diagram`] (the document a drawing is checked
+//! as) and [`describe`] (the approval card for an outward call).
 
 mod activity;
 mod comments;
 mod describe;
+mod diagram;
 mod inbox;
 mod messages;
 mod roster;
@@ -53,6 +55,7 @@ use super::resolve::{self, OrgLink, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH, ORG_SERVER_NAME};
 use crate::auth::Role;
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
+use crate::commands::ui_server::UiBridge;
 use atlas_agent_servers::OutwardConsent;
 use activity::ActivityArgs;
 use comments::ReplyArgs;
@@ -97,6 +100,14 @@ pub const OUTWARD_TOOLS: &[&str] = &["org_comment_reply", "org_send"];
 /// The role is a mirror — the server is the authority, and its 403 is still
 /// answered in words.
 pub const ADMIN_TOOLS: &[&str] = &["org_member_activity"];
+
+/// The tools the **window** performs: their work needs something only the
+/// frontend holds — a Space page's codec — so the call is checked here and
+/// then crosses to the window on the UI tool server's bridge (ADR-0012),
+/// emitted as [`ORG_WINDOW_ACTION_EVENT`](super::ORG_WINDOW_ACTION_EVENT).
+/// The one declaration the event choice and the frontend's dispatcher are
+/// held to (`tests/org-window-actions-contract.test.ts`).
+pub const WINDOW_TOOLS: &[&str] = &["org_page_write"];
 
 /// What a tool answers while the user has switched organisation access off.
 const OFF_NOTE: &str =
@@ -302,6 +313,57 @@ pub(super) fn tools() -> Vec<Tool> {
                 "required": ["conversation", "name"]
             }),
         ),
+        tool(
+            "org_page_write",
+            "Draw a diagram on a Space page, replacing its content: nodes (x/y optional; unplaced ones are laid out \
+             left to right along the edges, groups sized around their children) and edges between them.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "page": { "type": "string", "description": "The page's id, from org_page_create." },
+                    "conversation": { "type": "string", "description": "The conversation whose Space holds the page: its id or channel name." },
+                    "document": {
+                        "type": "object",
+                        "properties": {
+                            "nodes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "kind": { "type": "string", "enum": ["note", "text", "shape", "group"] },
+                                        "text": { "type": "string" },
+                                        "shape": { "type": "string", "enum": ["rectangle", "ellipse", "diamond", "triangle"] },
+                                        "parent": { "type": "string", "description": "A group's id." },
+                                        "x": { "type": "number" },
+                                        "y": { "type": "number" },
+                                        "w": { "type": "number" },
+                                        "h": { "type": "number" }
+                                    },
+                                    "required": ["id", "kind"]
+                                }
+                            },
+                            "edges": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": { "type": "string" },
+                                        "to": { "type": "string" },
+                                        "from_anchor": { "type": "string", "enum": ["n", "e", "s", "w"] },
+                                        "to_anchor": { "type": "string", "enum": ["n", "e", "s", "w"] },
+                                        "label": { "type": "string" }
+                                    },
+                                    "required": ["from", "to"]
+                                }
+                            }
+                        },
+                        "required": ["nodes"]
+                    }
+                },
+                "required": ["page", "conversation", "document"]
+            }),
+        ),
     ]
 }
 
@@ -470,11 +532,23 @@ pub struct OrgTools {
     /// through the host and spent here (ADR-0014).
     consent: Arc<OutwardConsent>,
     audit: OrgAudit,
+    /// The way to the window, for [`WINDOW_TOOLS`]: the UI tool server's
+    /// bridge. `None` until the app hands it over; a window tool then answers
+    /// that the window is unavailable.
+    window: Option<Arc<UiBridge>>,
 }
 
 impl OrgTools {
     pub fn new(cloud: Arc<dyn OrganisationCloud>, gate: OrgAccessGate, orgs: Arc<dyn SessionOrgs>) -> Self {
-        Self { cloud, gate, orgs, consent: Arc::new(OutwardConsent::new()), audit: unaudited() }
+        Self { cloud, gate, orgs, consent: Arc::new(OutwardConsent::new()), audit: unaudited(), window: None }
+    }
+
+    /// Hands [`WINDOW_TOOLS`] their way to the window: the bridge the UI tool
+    /// server's actions cross on, so a window call is parked, timed out and
+    /// answered exactly as a UI action is.
+    pub fn with_window(mut self, bridge: Arc<UiBridge>) -> Self {
+        self.window = Some(bridge);
+        self
     }
 
     /// Where the user's approvals of outward calls are recorded for these
@@ -604,6 +678,18 @@ impl OrgTools {
                     return tool_error("name the page: `name` is what it will be called");
                 };
                 self.create_page(&scope, conversation, name).await
+            }
+            "org_page_write" => {
+                let Some(page) = string_arg(request, "page") else {
+                    return tool_error("name the page: `page` is its id, as org_page_create answered it");
+                };
+                let Some(conversation) = string_arg(request, "conversation") else {
+                    return tool_error(
+                        "name the conversation whose Space holds the page: `conversation` is its id or channel name",
+                    );
+                };
+                let document = request.arguments.as_ref().and_then(|args| args.get("document"));
+                self.write_page(grant, &scope, conversation, page, document).await
             }
             other => tool_error(format!("unknown tool `{other}`")),
         }
