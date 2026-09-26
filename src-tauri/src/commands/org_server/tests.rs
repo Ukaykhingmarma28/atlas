@@ -12,7 +12,7 @@ use atlas_artifacts::{
     AnchorKind, Comment, EntryPayload, InboxEntry, InboxKind, InboxPage, RemoteEntry, RemoteEntryCounts, RemoteSession,
     SessionBoardPage, SessionDetailPage,
 };
-use atlas_comms::wire::ConversationKind;
+use atlas_comms::wire::{ArtifactRef, ConversationKind, SessionRef};
 use parking_lot::Mutex;
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
@@ -92,6 +92,11 @@ struct FakeOrganisation {
     /// Every chat message sent, as `(org, conversation, body)`, in order —
     /// the body exactly as it went out.
     sent: Mutex<Vec<(String, String, String)>>,
+    /// The Session References each sent message carried, in the order sent.
+    sent_refs: Mutex<Vec<Vec<ArtifactRef>>>,
+    /// The Workspaces chat lets a message reference: visible to the whole
+    /// organisation and not archived. A restricted Workspace is not here.
+    referenceable: Mutex<Vec<String>>,
     /// Chat refuses the message.
     send_fail: AtomicBool,
     /// The server's `ack` never arrives in time.
@@ -437,11 +442,29 @@ impl OrganisationCloud for FakeOrganisation {
             if self.send_fail.load(Ordering::SeqCst) {
                 return Err(CloudError::Forbidden("not_member: You are not a member of this conversation.".into()));
             }
+            // As chat does: one reference to a Workspace it will not let a
+            // message reference refuses the whole message.
+            let referenceable = self.referenceable.lock().clone();
+            if let Some(bad) = message.artifact_refs.iter().find(|r| !referenceable.iter().any(|w| w == r.workspace_ref_id())) {
+                return Err(CloudError::Forbidden(format!("forbidden: reference refused ({})", bad.workspace_ref_id())));
+            }
+            self.sent_refs.lock().push(message.artifact_refs.to_vec());
             let mut sent = self.sent.lock();
             sent.push((message.org_id.into(), message.conversation_id.into(), message.body.into()));
             let n = sent.len();
             let message_id = (!self.unacked.load(Ordering::SeqCst)).then(|| format!("m-{n}"));
             Ok(SentMessage { client_msg_id: format!("cm-{n}"), message_id })
+        })
+    }
+
+    fn referenceable_workspaces<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            self.asked.lock().push((org_id.into(), "workspaces".into()));
+            let chat_org = self.chat_org.lock().clone();
+            if chat_org.as_deref() != Some(org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: org_id.into(), chat_org });
+            }
+            Ok(self.referenceable.lock().clone())
         })
     }
 
@@ -2559,6 +2582,185 @@ async fn the_cards_body_is_the_sent_body() {
     assert_eq!(said.body, tools::named_mentions(posted, Some(&acme_roster())), "the card is the sent message, by name");
     assert_eq!(posted.replace("<@u-grace>", "@Grace Hopper"), said.body);
     client.cancel().await.ok();
+}
+
+// ── org_send with a Session Reference ────────────────────────────────────────
+
+/// [`chatting`], with a board: the chat `s1` is written into `rs-1` ("Fix the
+/// theme importer"), and `rs-2` is another recorded session in the grant's
+/// Workspace. `restricted` makes the Workspace one chat will not let a
+/// message reference.
+fn reporting(restricted: bool) -> Arc<FakeOrganisation> {
+    let org = chatting().with_board(vec![
+        board_row("rs-1", "u-1", 120, 5, false, "Fix the theme importer"),
+        board_row("rs-2", "u-grace", 3 * DAY, 2 * DAY, false, "Theme tokens"),
+    ]);
+    org.record("s1", current(false));
+    if !restricted {
+        *org.referenceable.lock() = vec!["ws-other".into(), "ws-atlas".into()];
+    }
+    org
+}
+
+/// The references each message sent carried.
+fn sent_refs(org: &FakeOrganisation) -> Vec<Vec<ArtifactRef>> {
+    org.sent_refs.lock().clone()
+}
+
+/// The one Session Reference the only message sent carried.
+fn the_reference(org: &FakeOrganisation) -> SessionRef {
+    match sent_refs(org).as_slice() {
+        [refs] => match refs.as_slice() {
+            [ArtifactRef::Session(r)] => r.clone(),
+            other => panic!("expected one session reference, got {other:?}"),
+        },
+        other => panic!("expected one message, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_send_with_a_session_attaches_its_reference_from_the_recorded_summary() {
+    let org = reporting(false);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "Grace Hopper", "body": "Report: tokens done.", "session": "rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-dm-grace".to_string(), "Report: tokens done.".to_string())], "the body as written");
+    let r = the_reference(&org);
+    assert_eq!((r.workspace_ref_id.as_str(), r.session_id.as_str()), ("ws-atlas", "rs-2"), "the grant's Workspace");
+    assert_eq!(r.session_title.as_deref(), Some("Theme tokens"));
+    assert_eq!(r.agent.as_deref(), Some("atlas-agent"));
+    assert_eq!((r.messages, r.tool_calls, r.checkpoints), (12, 7, 2), "the summary's figures");
+    let started = chrono::DateTime::parse_from_rfc3339(&ago(3 * DAY)).unwrap().timestamp_millis();
+    assert!(r.started_at.is_some_and(|at| (at - started).abs() < 120_000), "epoch milliseconds: {:?}", r.started_at);
+    assert_eq!(answer["session_reference"]["attached"], json!(true), "{answer}");
+    assert_eq!(answer["session_reference"]["title"], json!("Theme tokens"));
+    assert_eq!(answer["body"], json!("Report: tokens done."));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_current_sentinel_references_the_session_this_chat_is_recorded_in() {
+    let org = reporting(false);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "#general", "body": "Where I got to.", "session": "current" })).await;
+    assert!(!err, "{answer}");
+    let r = the_reference(&org);
+    assert_eq!((r.session_id.as_str(), r.session_title.as_deref()), ("rs-1", Some("Fix the theme importer")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recorded_session_link_is_referenced_as_the_session_it_carries() {
+    let org = reporting(false);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(
+        &client,
+        &consent,
+        json!({ "to": "general", "body": "See this.", "session": "atlas-org://recorded-session/ws-atlas/rs-2" }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(the_reference(&org).session_id, "rs-2");
+    // Another Workspace's link is refused before anything is sent.
+    let (err, answer) = send(
+        &client,
+        &consent,
+        json!({ "to": "general", "body": "See this.", "session": "atlas-org://recorded-session/ws-other/rs-9" }),
+    )
+    .await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("not this chat's Workspace")), "{answer}");
+    assert_eq!(sent(&org).len(), 1);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_session_a_message_carries_no_reference_and_reads_no_session() {
+    let org = reporting(false);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "plain" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent_refs(&org), [Vec::<ArtifactRef>::new()]);
+    assert!(answer.get("session_reference").is_none());
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("timeline") || what == "workspaces"));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restricted_workspace_drops_the_reference_appends_the_timeline_link_and_says_so() {
+    let org = reporting(true);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "Report.", "session": "current" })).await;
+    assert!(!err, "{answer}");
+    let link = atlas_artifacts::session_web_url("org-acme", "ws-atlas", "rs-1");
+    assert_eq!(sent(&org), [("c-general".to_string(), format!("Report.\n\n{link}"))], "the link on its own last line");
+    assert_eq!(sent_refs(&org), [Vec::<ArtifactRef>::new()], "no reference chat would refuse");
+    let said = &answer["session_reference"];
+    assert_eq!(said["attached"], json!(false), "{answer}");
+    assert_eq!(said["link"], json!(link));
+    assert!(said["note"].as_str().is_some_and(|n| n.contains("not visible to the whole organisation")), "{answer}");
+    assert_eq!(answer["body"], json!(format!("Report.\n\n{link}")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_report_over_the_cap_only_once_its_link_is_appended_is_refused_not_truncated() {
+    let org = reporting(true);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    // At the cap as written; over it with the link.
+    let body = "x".repeat(16 * 1024);
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": body.clone(), "session": "rs-2" })).await;
+    assert!(err, "{answer}");
+    let text = answer.as_str().unwrap_or_default();
+    assert!(text.contains("over chat's cap of 16384 bytes") && text.contains("Nothing was sent"), "{text}");
+    assert!(nothing_sent(&org));
+    // The same body with the reference attached is exactly the cap, and goes.
+    *org.referenceable.lock() = vec!["ws-atlas".into()];
+    let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": body.clone(), "session": "rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-general".to_string(), body)]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_that_cannot_be_read_refuses_the_send_and_nothing_is_sent() {
+    let org = reporting(false);
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": "slee@acme.dev", "body": "hi", "session": "rs-missing" })).await;
+    assert!(err);
+    assert!(answer.as_str().is_some_and(|t| t.contains("not found")), "{answer}");
+    assert!(nothing_sent(&org), "no message, and no DM opened for one");
+    client.cancel().await.ok();
+}
+
+/// The card shows the reference, and its body is the body sent — with the
+/// link appended when the Workspace is restricted.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_card_shows_the_session_reference_and_its_body_is_the_sent_body() {
+    for restricted in [false, true] {
+        let org = reporting(restricted);
+        let offers = describing_offer(org.clone()).await;
+        let args = json!({ "to": "#general", "body": "@Grace Hopper the report.", "mention": ["Grace Hopper"], "session": "current" });
+        let said = describe(&offers, ORG_SERVER_NAME, "org_send", args.clone()).await.expect("described");
+        assert!(nothing_sent(&org), "describing sends nothing");
+        if restricted {
+            assert_eq!(
+                said.recipient,
+                "Everyone in #general\nNo Session Reference: Fix the theme importer is in a restricted Workspace, so its \
+                 timeline link is added to the message"
+            );
+            assert!(said.body.ends_with(&atlas_artifacts::session_web_url("org-acme", "ws-atlas", "rs-1")), "{}", said.body);
+        } else {
+            assert_eq!(said.recipient, "Everyone in #general\nSession Reference: Fix the theme importer");
+        }
+        let (_server, client, consent) = consenting_client(org.clone()).await;
+        let (err, answer) = send(&client, &consent, args).await;
+        assert!(!err, "{answer}");
+        assert_eq!(json!(said.body), answer["body"]);
+        let posted = &sent(&org)[0].1;
+        assert_eq!(posted.replace("<@u-grace>", "@Grace Hopper"), said.body, "the card is the sent message");
+        client.cancel().await.ok();
+    }
 }
 
 // ── org_sessions ─────────────────────────────────────────────────────────────

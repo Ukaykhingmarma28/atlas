@@ -298,6 +298,14 @@ impl OrganisationCloud for AppOrganisationCloud {
         self.open_dm(org_id, user_id)
     }
 
+    fn referenceable_workspaces<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            let comms = self.chat_in(org_id)?;
+            let list = comms.rest().workspaces(org_id).await?;
+            Ok(list.workspaces.into_iter().map(|w| w.id).collect())
+        })
+    }
+
     fn send<'a>(&'a self, message: NewMessage<'a>) -> CloudFuture<'a, SentMessage> {
         self.post(message)
     }
@@ -352,7 +360,13 @@ impl AppOrganisationCloud {
             // Subscribed before the frame is written, so the ack cannot be
             // missed between the two.
             let mut events = comms.subscribe();
-            let client_msg_id = comms.send(message.conversation_id, message.body.to_string(), None, Vec::new())?;
+            let client_msg_id = comms.send(
+                message.conversation_id,
+                message.body.to_string(),
+                None,
+                Vec::new(),
+                message.artifact_refs.to_vec(),
+            )?;
             let optimistic = atlas_comms::state::optimistic_id(&client_msg_id);
             let acked = tokio::time::timeout(ACK_WAIT, async {
                 loop {

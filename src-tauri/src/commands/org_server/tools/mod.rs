@@ -247,7 +247,8 @@ pub(super) fn tools() -> Vec<Tool> {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Members to mention, by id, name or email; `@Name` in the body becomes the mention, else it leads."
-                    }
+                    },
+                    "session": { "type": "string", "description": "A recorded session to attach as a Session Reference: its id, link, or \"current\"." }
                 },
                 "required": ["to", "body"]
             }),
@@ -632,7 +633,7 @@ impl OrgTools {
                 };
                 self.reply_comment(grant, &scope, args.session, comment, body, &args.mentions).await
             }
-            "org_send" => self.send(&scope, &SendArgs::of(request.arguments.as_ref())).await,
+            "org_send" => self.send(grant, &scope, &SendArgs::of(request.arguments.as_ref())).await,
             "org_sessions" => {
                 let filters = SessionFilters {
                     workspace: string_arg(request, "workspace"),

@@ -85,7 +85,9 @@ impl OrgTools {
 
 impl OrgTools {
     /// The card for `org_send`: where the message goes, found the way the
-    /// call finds it ([`OrgTools::recipient`]), and the message.
+    /// call finds it ([`OrgTools::recipient`]), the Session Reference it
+    /// carries on the recipient's next line, and the message as it will be
+    /// sent — with the recorded session's link when the reference cannot ride.
     async fn describe_send(&self, grant: &Grant, arguments: &Value) -> Option<CallDescription> {
         let args = SendArgs::of(arguments.as_object());
         let to = args.to.unwrap_or_default();
@@ -113,9 +115,34 @@ impl OrgTools {
             Some(roster) => with_mentions(body, &args.mentions, roster).unwrap_or_else(|_| body.to_string()),
             None => body.to_string(),
         };
+        // The Session Reference, found as the call finds it: the card says
+        // whether the message carries one, and its body carries the link the
+        // call appends when it cannot. One the call would refuse leaves the
+        // body as written, and the card says it could not be read.
+        let reference = match (args.session, &scope) {
+            (Some(session), Some(scope)) => Some((session, self.session_reference(grant, scope, session).await.ok())),
+            (Some(session), None) => Some((session, None)),
+            _ => None,
+        };
+        let posted = match &reference {
+            Some((_, Some(reference))) => reference.body(&posted),
+            _ => posted,
+        };
+        let reference_line = reference.map(|(session, found)| match found {
+            Some(reference) => reference.card_line(),
+            None => format!("Session Reference: {session} (could not be read)"),
+        });
+        let with_reference = |recipient: String| match &reference_line {
+            Some(line) => format!("{recipient}\n{line}"),
+            None => recipient,
+        };
         let body = named_mentions(&posted, roster);
         let Some(recipient) = recipient else {
-            return Some(CallDescription { title: format!("Send to {to}"), recipient: to.to_string(), body });
+            return Some(CallDescription {
+                title: format!("Send to {to}"),
+                recipient: with_reference(to.to_string()),
+                body,
+            });
         };
         // A DM is named by who else is in it, so the card needs to know who
         // the caller is; a channel and a new DM do not.
@@ -126,7 +153,7 @@ impl OrgTools {
             _ => None,
         };
         let (title, recipient) = OrgTools::send_card(&recipient, caller.as_deref(), roster);
-        Some(CallDescription { title, recipient, body })
+        Some(CallDescription { title, recipient: with_reference(recipient), body })
     }
 }
 

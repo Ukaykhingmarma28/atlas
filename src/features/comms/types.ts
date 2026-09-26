@@ -52,6 +52,45 @@ export interface ChatCodeRef {
   sha?: string;
 }
 
+/**
+ * A recorded session, or one checkpoint inside it, carried by a message
+ * (the contract's `ChatArtifactRef`, ATL-329) — its own list beside
+ * `code_refs`, at most three. A snapshot of what the sender saw when it was
+ * drawn; the card links to the recorded session on the Timeline.
+ * `workspace_ref_id` is the Workspace's registry id — the Timeline's
+ * `remoteProjectId`.
+ */
+interface ChatArtifactRefCommon {
+  workspace_ref_id: string;
+  session_id: string;
+  /** `null` for an untitled run. */
+  session_title: string | null;
+}
+
+export interface ChatSessionRef extends ChatArtifactRefCommon {
+  kind: "session";
+  agent: string | null;
+  /** Epoch milliseconds, or `null` when the sender had no figure. */
+  started_at: number | null;
+  messages: number;
+  tool_calls: number;
+  checkpoints: number;
+}
+
+export interface ChatCheckpointRef extends ChatArtifactRefCommon {
+  kind: "checkpoint";
+  /** The checkpoint's own row id. */
+  row_id: string;
+  commit_sha: string;
+  branch: string | null;
+  insertions: number;
+  deletions: number;
+  /** How many distinct paths the commit touched. */
+  files: number;
+}
+
+export type ChatArtifactRef = ChatSessionRef | ChatCheckpointRef;
+
 export interface ChatMessage {
   id: string;
   conv_id: string;
@@ -63,6 +102,8 @@ export interface ChatMessage {
   created_at: number;
   attachments: ChatAttachment[];
   code_refs: ChatCodeRef[];
+  /** Absent on a row written before references existed. */
+  artifact_refs?: ChatArtifactRef[];
   draft_id: string | null;
 }
 

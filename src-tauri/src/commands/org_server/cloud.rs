@@ -26,7 +26,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use atlas_artifacts::{AnchorKind, Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
-use atlas_comms::wire::ConversationKind;
+use atlas_comms::wire::{ArtifactRef, ConversationKind};
 use atlas_comms::CommsError;
 
 use super::OrgScope;
@@ -272,13 +272,20 @@ pub struct NewPage<'a> {
 
 /// A chat message about to be sent into a conversation, as the caller. The
 /// body is exactly what will be posted — mentions already written as
-/// `<@user-id>`, within the contract's byte cap — and nothing is added to it.
+/// `<@user-id>`, a recorded session's link already appended where its
+/// reference could not ride, within the contract's byte cap — and nothing is
+/// added to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NewMessage<'a> {
     pub org_id: &'a str,
     /// The conversation it goes into — one the caller is in.
     pub conversation_id: &'a str,
     pub body: &'a str,
+    /// The **Session References** it carries: recorded sessions in
+    /// Workspaces chat said a message may reference
+    /// ([`OrganisationCloud::referenceable_workspaces`]). Empty for a plain
+    /// message.
+    pub artifact_refs: &'a [ArtifactRef],
 }
 
 /// A chat message handed to chat's socket: the id this client gave it, and
@@ -360,6 +367,16 @@ pub trait OrganisationCloud: Send + Sync {
     /// than a second one). Refused with [`CloudError::ChatElsewhere`] while
     /// chat is not connected to `org_id`.
     fn dm_with<'a>(&'a self, org_id: &'a str, user_id: &'a str) -> CloudFuture<'a, (OrgConversation, bool)>;
+
+    /// The Workspaces a chat message in `org_id` may reference, by id: the
+    /// ones the organisation owns that are visible to all of it and not
+    /// archived (chat's `GET /workspaces`). Chat refuses a message whose
+    /// reference names any other — a restricted Workspace even to its own
+    /// members, since a channel is readable organisation-wide — and one such
+    /// reference refuses the whole message, so a sender asks this first.
+    /// Refused with [`CloudError::ChatElsewhere`] while chat is not connected
+    /// to `org_id`.
+    fn referenceable_workspaces<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<String>>;
 
     /// Sends a chat message as the caller. An **outward action** (ADR-0014):
     /// everyone in the conversation sees it and everyone it mentions is told,

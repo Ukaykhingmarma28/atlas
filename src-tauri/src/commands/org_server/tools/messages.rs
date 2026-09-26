@@ -1,14 +1,17 @@
-//! Chat messages: the outward `org_send`.
+//! Chat messages: the outward `org_send`, and the **Session Reference** a
+//! message can carry.
 
-use atlas_comms::wire::{ConversationKind, CHAT_BODY_MAX_BYTES};
+use atlas_comms::wire::{ArtifactRef, ConversationKind, SessionRef, CHAT_ARTIFACT_REF_TITLE_MAX, CHAT_BODY_MAX_BYTES};
+use chrono::DateTime;
 use rmcp::model::{CallToolResult, JsonObject};
-use serde_json::json;
+use serde_json::{json, Value};
 
-use super::super::cloud::{Member, NewMessage, OrgConversation};
+use super::super::cloud::{Member, NewMessage, OrgConversation, TimelineQuery};
 use super::super::resolve::{self, Resolution};
 use super::super::OrgScope;
 use super::comments::{named_mentions, with_mentions};
 use super::{ambiguous, conversation_json, member_json, roster_name, string_in, strings_in, tool_error, tool_json, OrgTools};
+use crate::commands::memory_server::Grant;
 
 /// `org_send`'s arguments, read once for the call and for its approval card
 /// alike, so the card's body is the body that is sent: strings trimmed,
@@ -17,6 +20,10 @@ pub(super) struct SendArgs<'a> {
     pub(super) to: Option<&'a str>,
     pub(super) body: Option<&'a str>,
     pub(super) mentions: Vec<String>,
+    /// The recorded session the message references: an id, `"current"`, or
+    /// a recorded-session link. Absent for a plain message — unlike the
+    /// session tools, `org_send` never references the current session unasked.
+    pub(super) session: Option<&'a str>,
 }
 
 impl<'a> SendArgs<'a> {
@@ -25,8 +32,114 @@ impl<'a> SendArgs<'a> {
             to: string_in(arguments, "to"),
             body: string_in(arguments, "body"),
             mentions: strings_in(arguments, "mention"),
+            session: string_in(arguments, "session"),
         }
     }
+}
+
+/// What `org_send`'s `session` comes to: a **Session Reference** the message
+/// carries — the card the reader clicks to open the recorded session on the
+/// Timeline — or, when chat will not take one, the recorded session's
+/// timeline link written into the body instead.
+///
+/// Chat takes a reference only to a Workspace visible to the whole
+/// organisation: a channel is readable organisation-wide, so a card drawn from
+/// a restricted Workspace would launder the restriction, and the server
+/// refuses it — even to the Workspace's own members, and one such reference
+/// refuses the whole message. So the sender asks first
+/// ([`OrganisationCloud::referenceable_workspaces`]) rather than learning it
+/// from a refusal chat's socket cannot tie back to this send.
+///
+/// Built once per call by [`OrgTools::session_reference`], for the call and
+/// for its approval card alike, so the card shows the reference and the body
+/// the call sends.
+///
+/// [`OrganisationCloud::referenceable_workspaces`]: super::super::cloud::OrganisationCloud::referenceable_workspaces
+pub(super) enum SessionReference {
+    /// Carried on the message as its reference card.
+    Attached(SessionRef),
+    /// The Workspace is not one a message may reference: no card, and the
+    /// recorded session's timeline link is appended to the body.
+    Linked { session_id: String, title: Option<String>, link: String },
+}
+
+impl SessionReference {
+    /// The recorded session as a person names it: its title, else its id.
+    fn name(&self) -> String {
+        let (id, title) = match self {
+            Self::Attached(r) => (&r.session_id, &r.session_title),
+            Self::Linked { session_id, title, .. } => (session_id, title),
+        };
+        title.clone().unwrap_or_else(|| format!("recorded session {id}"))
+    }
+
+    /// The body as it goes out: as written for a reference card; with the
+    /// timeline link after it, on its own line, where there is no card.
+    pub(super) fn body(&self, written: &str) -> String {
+        match self {
+            Self::Attached(_) => written.to_string(),
+            Self::Linked { link, .. } => format!("{written}\n\n{link}"),
+        }
+    }
+
+    /// The references the message carries.
+    fn refs(&self) -> Vec<ArtifactRef> {
+        match self {
+            Self::Attached(r) => vec![ArtifactRef::Session(r.clone())],
+            Self::Linked { .. } => Vec::new(),
+        }
+    }
+
+    /// The approval card's line about it.
+    pub(super) fn card_line(&self) -> String {
+        match self {
+            Self::Attached(_) => format!("Session Reference: {}", self.name()),
+            Self::Linked { .. } => format!(
+                "No Session Reference: {} is in a restricted Workspace, so its timeline link is added to the message",
+                self.name()
+            ),
+        }
+    }
+
+    /// What the tool's answer says about it.
+    fn json(&self) -> Value {
+        match self {
+            Self::Attached(r) => json!({
+                "attached": true,
+                "session_id": r.session_id,
+                "title": r.session_title,
+            }),
+            Self::Linked { session_id, title, link } => json!({
+                "attached": false,
+                "session_id": session_id,
+                "title": title,
+                "link": link,
+                "note": "The recorded session's Workspace is not visible to the whole organisation, so chat would \
+                         refuse a Session Reference to it; the message was sent without one, with the recorded \
+                         session's timeline link appended to the body instead. Tell the user.",
+            }),
+        }
+    }
+}
+
+/// A title as a reference carries it: within the contract's bound, which
+/// counts UTF-16 units, cut with an ellipsis when it is longer. A card's
+/// label, not the message — the body is never cut.
+fn reference_title(title: Option<&str>) -> Option<String> {
+    let title = title.map(str::trim).filter(|t| !t.is_empty())?;
+    if title.encode_utf16().count() <= CHAT_ARTIFACT_REF_TITLE_MAX {
+        return Some(title.to_string());
+    }
+    let mut cut = String::new();
+    let mut units = 0;
+    for c in title.chars() {
+        units += c.len_utf16();
+        if units > CHAT_ARTIFACT_REF_TITLE_MAX - 1 {
+            break;
+        }
+        cut.push(c);
+    }
+    Some(format!("{}…", cut.trim_end()))
 }
 
 /// Where a message goes, found without writing anything: a conversation the
@@ -128,12 +241,17 @@ impl OrgTools {
     /// checked in [`answer`](Self::answer) for the user's approval of this
     /// exact call, so a call the engine ran unasked (bypass) never gets here.
     ///
+    /// With `session`, the message carries that recorded session's **Session
+    /// Reference** ([`SessionReference`]) — or, where chat will not take one,
+    /// its timeline link on the body's last line, and the answer says so.
+    ///
     /// Everything that can refuse does so before anything is written — the
-    /// recipient, a mention nobody or several members answer to, a body over
-    /// chat's cap — so a refused send creates no DM either. The body goes out
-    /// exactly as the card showed it: never truncated, never split, nothing
-    /// added.
-    pub(super) async fn send(&self, scope: &OrgScope, args: &SendArgs<'_>) -> CallToolResult {
+    /// recipient, a mention nobody or several members answer to, a recorded
+    /// session that cannot be read, a body over chat's cap (counted with any
+    /// appended link) — so a refused send creates no DM either. The body goes
+    /// out exactly as the card showed it: never truncated, never split, nothing
+    /// added but the link the card showed.
+    pub(super) async fn send(&self, grant: &Grant, scope: &OrgScope, args: &SendArgs<'_>) -> CallToolResult {
         let Some(to) = args.to else {
             return tool_error(
                 "say where to send it: `to` is a conversation's id or channel name, or a member's id, name or email",
@@ -158,6 +276,15 @@ impl OrgTools {
             Ok(body) => body,
             Err(answer) => return answer,
         };
+        let reference = match args.session {
+            Some(session) => match self.session_reference(grant, scope, session).await {
+                Ok(reference) => Some(reference),
+                Err(answer) => return answer,
+            },
+            None => None,
+        };
+        let body = reference.as_ref().map_or(body.clone(), |r| r.body(&body));
+        let artifact_refs = reference.as_ref().map(SessionReference::refs).unwrap_or_default();
         // Chat's cap is UTF-8 bytes (the contract's `CHAT_BODY_MAX_BYTES`),
         // counted on the body as it will be posted.
         if body.len() > CHAT_BODY_MAX_BYTES {
@@ -174,7 +301,12 @@ impl OrgTools {
                 Err(e) => return tool_error(e.to_string()),
             },
         };
-        let message = NewMessage { org_id: &scope.org_id, conversation_id: &conversation.id, body: &body };
+        let message = NewMessage {
+            org_id: &scope.org_id,
+            conversation_id: &conversation.id,
+            body: &body,
+            artifact_refs: &artifact_refs,
+        };
         let sent = match self.cloud.send(message).await {
             Ok(sent) => sent,
             Err(e) => return tool_error(e.to_string()),
@@ -193,12 +325,57 @@ impl OrgTools {
             "created_dm": created_dm,
             "body": named_mentions(&body, roster.as_deref()),
         });
+        if let Some(reference) = &reference {
+            answer["session_reference"] = reference.json();
+        }
         if sent.message_id.is_none() {
             answer["note"] = json!(
                 "chat has not confirmed it yet; it is queued on chat's connection and resent until the server takes it"
             );
         }
         tool_json(answer)
+    }
+
+    /// The Session Reference `session` names ([`SessionReference`]): the
+    /// recorded session [`session_target`](Self::session_target) finds — the
+    /// current one, an id or a recorded-session link, in the grant's
+    /// Workspace — with its summary read for the card's figures, attached
+    /// when chat lets a message reference its Workspace and linked otherwise.
+    /// Reads only.
+    pub(super) async fn session_reference(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: &str,
+    ) -> Result<SessionReference, CallToolResult> {
+        let target = self.session_target(grant, scope, Some(session)).await?;
+        // One entry is the least page there is; the summary is what is read.
+        let query = TimelineQuery {
+            org_id: &scope.org_id,
+            workspace_id: &target.workspace_id,
+            session_id: &target.id,
+            cursor: None,
+            limit: Some(1),
+        };
+        let summary = self.cloud.timeline(query).await.map_err(|e| tool_error(e.to_string()))?.summary;
+        let title = reference_title(summary.title.as_deref().or(target.title.as_deref()));
+        let referenceable =
+            self.cloud.referenceable_workspaces(&scope.org_id).await.map_err(|e| tool_error(e.to_string()))?;
+        if !referenceable.contains(&target.workspace_id) {
+            let link = atlas_artifacts::session_web_url(&scope.org_id, &target.workspace_id, &target.id);
+            return Ok(SessionReference::Linked { session_id: target.id, title, link });
+        }
+        let count = |n: i64| u64::try_from(n).unwrap_or(0);
+        Ok(SessionReference::Attached(SessionRef {
+            workspace_ref_id: target.workspace_id,
+            session_id: target.id,
+            session_title: title,
+            agent: summary.agent.filter(|a| !a.is_empty()).map(|a| a.chars().take(64).collect()),
+            started_at: DateTime::parse_from_rfc3339(&summary.started_at).ok().map(|at| at.timestamp_millis()),
+            messages: count(summary.message_count),
+            tool_calls: count(summary.tool_call_count),
+            checkpoints: count(summary.checkpoint_count),
+        }))
     }
 
     /// The approval card's title and recipient line for a send to
