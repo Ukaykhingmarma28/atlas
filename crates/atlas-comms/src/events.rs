@@ -17,7 +17,7 @@
 
 use serde::Serialize;
 
-use crate::wire::{ArtifactRef, Attachment, Call, CodeRef, Conversation, ReactionRow, ReadState};
+use crate::wire::{SessionReference, Attachment, Call, CodeRef, Conversation, ReactionRow, ReadState};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CommsEnvelope {
@@ -63,7 +63,7 @@ pub struct WireMessage {
     pub code_refs: Vec<CodeRef>,
     /// Recorded sessions and checkpoints the message points at, drawn as
     /// reference cards.
-    pub artifact_refs: Vec<ArtifactRef>,
+    pub artifact_refs: Vec<SessionReference>,
     pub draft_id: Option<String>,
     pub client_msg_id: Option<String>,
     /// `"sending" | "sent" | "failed"`. Two rungs plus a failure — nothing on

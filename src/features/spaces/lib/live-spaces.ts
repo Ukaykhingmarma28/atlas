@@ -19,24 +19,47 @@ import type { SpacePageTransport } from "./space-page-write";
 
 const holders = new Map<string, number>();
 
-/** Take a hold on the conversation's socket, dialling it if nobody holds it.
- *  Resolves once the bus is listening, so its first events are heard. */
-export async function acquireSpaceSocket(convId: string): Promise<void> {
-  holders.set(convId, (holders.get(convId) ?? 0) + 1);
-  await spaceBusReady();
-  // Idempotent in Rust: a socket already open for this conversation is kept.
-  await spacesApi.connect(convId);
+/** Each conversation's socket steps — a hold, a release — run one after
+ *  another, so a release's disconnect has finished before the next hold
+ *  dials, and never closes a socket a new holder has just taken. */
+const queues = new Map<string, Promise<void>>();
+
+function serially(convId: string, step: () => Promise<void>): Promise<void> {
+  const run = (queues.get(convId) ?? Promise.resolve()).then(step);
+  const tail = run.catch(() => {});
+  queues.set(convId, tail);
+  void tail.then(() => {
+    if (queues.get(convId) === tail) queues.delete(convId);
+  });
+  return run;
 }
 
-/** Give a hold back; the last one out closes the socket. */
+/** Take a hold on the conversation's socket, dialling it if nobody holds it.
+ *  Resolves once the bus is listening, so its first events are heard. The
+ *  hold is taken only once the connect has succeeded: a failed one rejects
+ *  and holds nothing, so there is nothing to give back. */
+export function acquireSpaceSocket(convId: string): Promise<void> {
+  return serially(convId, async () => {
+    await spaceBusReady();
+    // Idempotent in Rust: a socket already open for this conversation is kept.
+    await spacesApi.connect(convId);
+    holders.set(convId, (holders.get(convId) ?? 0) + 1);
+  });
+}
+
+/** Give a hold back; the last one out closes the socket. With nothing held —
+ *  a canvas whose connect failed, unmounting — it closes it too, so a
+ *  half-dialled socket is not left behind. */
 export function releaseSpaceSocket(convId: string): void {
-  const left = (holders.get(convId) ?? 1) - 1;
-  if (left > 0) {
-    holders.set(convId, left);
-    return;
-  }
-  holders.delete(convId);
-  void spacesApi.disconnect(convId).catch(() => {});
+  void serially(convId, async () => {
+    const left = (holders.get(convId) ?? 0) - 1;
+    if (left > 0) {
+      holders.set(convId, left);
+      return;
+    }
+    holders.delete(convId);
+    await spacesApi.disconnect(convId).catch(() => {});
+  });
 }
 
 interface OpenPage {

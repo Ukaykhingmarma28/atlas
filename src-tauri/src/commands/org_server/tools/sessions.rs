@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use super::super::cloud::{BoardQuery, CloudError, PayloadRef, TimelineQuery};
 use super::super::OrgScope;
-use super::{resolve_member, tool_error, tool_json, OrgTools};
+use super::{checked_id, resolve_member, tool_error, tool_json, NamedSession, OrgTools};
 use crate::commands::memory_server::Grant;
 /// How far back `org_sessions` looks when it is given neither `since` nor
 /// `until`: "what happened lately" without walking the whole board.
@@ -78,6 +78,8 @@ fn iso(at: DateTime<Utc>) -> String {
 fn recorded_session_json(session: &RemoteSession) -> Value {
     json!({
         "id": session.id,
+        // Where to open it: a session tool takes it as `workspace` beside the id.
+        "workspace_id": session.workspace_id,
         "title": session.title,
         "author": { "user_id": session.author_id, "name": session.author_name },
         "agent": session.agent,
@@ -227,6 +229,9 @@ pub(super) struct Walked {
 /// The Workspace a board fold reads: the one the model named, in the grant's
 /// organisation, else the grant's own.
 pub(super) fn workspace_of<'a>(asked: Option<&'a str>, scope: &'a OrgScope) -> Result<&'a str, CallToolResult> {
+    if let Some(asked) = asked {
+        return checked_id("a Workspace", asked);
+    }
     asked.or(scope.workspace_id.as_deref()).ok_or_else(|| {
         tool_error(
             "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
@@ -405,7 +410,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         (cursor, limit): (Option<&str>, Option<u32>),
     ) -> CallToolResult {
         let target = match self.session_target(grant, scope, session).await {
@@ -451,7 +456,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         row_id: &str,
         part: &str,
     ) -> CallToolResult {

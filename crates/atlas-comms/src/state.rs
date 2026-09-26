@@ -27,7 +27,7 @@ pub struct PendingSend {
     pub reply_to_id: Option<String>,
     pub attachments: Vec<String>,
     /// Sent whole on every resend, like the body.
-    pub artifact_refs: Vec<crate::wire::ArtifactRef>,
+    pub artifact_refs: Vec<crate::wire::SessionReference>,
     /// When it was written, for the no-ack timeout.
     pub sent_at: i64,
 }

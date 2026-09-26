@@ -3,7 +3,8 @@
 
 use serde_json::Value;
 
-use super::comments::{named_mentions, with_mentions, ReplyArgs};
+use super::comments::ReplyArgs;
+use super::mentions::named_mentions;
 use super::messages::{Recipient, SendArgs};
 use super::{roster_name, OrgTools};
 use crate::commands::memory_server::Grant;
@@ -18,7 +19,7 @@ impl OrgTools {
     ///
     /// The body is read from the arguments by the same parser the call uses
     /// ([`ReplyArgs`], [`SendArgs`]) and rewritten the same way
-    /// ([`with_mentions`]), then read back as a person reads it — exactly what
+    /// ([`OrgTools::post_body`]), then read back as a person reads it — exactly what
     /// the posted comment or message will say. When what it goes to cannot be
     /// read the card still shows what the call named and that body; when the
     /// roster cannot be read either, mentions keep their `<@id>`. `None` for
@@ -41,21 +42,23 @@ impl OrgTools {
         let body = args.body.unwrap_or_default();
         let scope = grant.org.clone();
         let thread = match &scope {
-            Some(scope) => self.reply_thread(grant, scope, args.session, comment_id).await.ok(),
+            Some(scope) => self.reply_thread(grant, scope, (args.session, args.workspace), comment_id).await.ok(),
             None => None,
         };
-        let roster = match &scope {
-            Some(scope) if thread.is_some() || !args.mentions.is_empty() => self.cloud.members(&scope.org_id).await.ok(),
+        // The thread's first author is named from the roster, so it is read
+        // for a found thread whether or not the reply mentions anyone.
+        let mut roster = match &scope {
+            Some(scope) if thread.is_some() => self.cloud.members(&scope.org_id).await.ok(),
             _ => None,
         };
-        let roster = roster.as_deref();
         // As it will be posted — a mention the call would refuse leaves the
         // body as written, since nothing is posted then — then read back.
-        let posted = match roster {
-            Some(roster) => with_mentions(body, &args.mentions, roster).unwrap_or_else(|_| body.to_string()),
-            None => body.to_string(),
+        let posted = match &scope {
+            Some(scope) => self.post_body(&scope.org_id, body, &args.mentions, &mut roster).await.ok(),
+            None => None,
         };
-        let body = named_mentions(&posted, roster);
+        let roster = roster.as_deref();
+        let body = named_mentions(posted.as_deref().unwrap_or(body), roster);
         let Some((target, root)) = thread else {
             return Some(CallDescription {
                 title: format!("Reply to comment {comment_id}"),
@@ -101,26 +104,29 @@ impl OrgTools {
             Some((recipient, roster)) => (Some(recipient), roster),
             None => (None, None),
         };
-        let roster = match (roster, &scope) {
+        // A DM's people are named from the roster, so it is read for a found
+        // recipient whether or not the message mentions anyone.
+        let mut roster = match (roster, &scope) {
             (Some(roster), _) => Some(roster),
-            (None, Some(scope)) if recipient.is_some() || !args.mentions.is_empty() => {
-                self.cloud.members(&scope.org_id).await.ok()
-            }
+            (None, Some(scope)) if recipient.is_some() => self.cloud.members(&scope.org_id).await.ok(),
             _ => None,
         };
-        let roster = roster.as_deref();
         // As it will be sent — a mention the call would refuse leaves the body
         // as written, since nothing is sent then — then read back.
-        let posted = match roster {
-            Some(roster) => with_mentions(body, &args.mentions, roster).unwrap_or_else(|_| body.to_string()),
-            None => body.to_string(),
-        };
+        let posted = match &scope {
+            Some(scope) => self.post_body(&scope.org_id, body, &args.mentions, &mut roster).await.ok(),
+            None => None,
+        }
+        .unwrap_or_else(|| body.to_string());
+        let roster = roster.as_deref();
         // The Session Reference, found as the call finds it: the card says
         // whether the message carries one, and its body carries the link the
         // call appends when it cannot. One the call would refuse leaves the
         // body as written, and the card says it could not be read.
         let reference = match (args.session, &scope) {
-            (Some(session), Some(scope)) => Some((session, self.session_reference(grant, scope, session).await.ok())),
+            (Some(session), Some(scope)) => {
+                Some((session, self.session_reference(grant, scope, (Some(session), args.workspace)).await.ok()))
+            }
             (Some(session), None) => Some((session, None)),
             _ => None,
         };

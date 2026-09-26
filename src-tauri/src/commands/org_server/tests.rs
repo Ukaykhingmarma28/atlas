@@ -12,7 +12,7 @@ use atlas_artifacts::{
     AnchorKind, Comment, EntryPayload, InboxEntry, InboxKind, InboxPage, RemoteEntry, RemoteEntryCounts, RemoteSession,
     SessionBoardPage, SessionDetailPage,
 };
-use atlas_comms::wire::{ArtifactRef, ConversationKind, SessionRef};
+use atlas_comms::wire::{SessionReference, ConversationKind, ReferencedSession};
 use parking_lot::Mutex;
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
@@ -93,7 +93,7 @@ struct FakeOrganisation {
     /// the body exactly as it went out.
     sent: Mutex<Vec<(String, String, String)>>,
     /// The Session References each sent message carried, in the order sent.
-    sent_refs: Mutex<Vec<Vec<ArtifactRef>>>,
+    sent_refs: Mutex<Vec<Vec<SessionReference>>>,
     /// The Workspaces chat lets a message reference: visible to the whole
     /// organisation and not archived. A restricted Workspace is not here.
     referenceable: Mutex<Vec<String>>,
@@ -2603,15 +2603,15 @@ fn reporting(restricted: bool) -> Arc<FakeOrganisation> {
 }
 
 /// The references each message sent carried.
-fn sent_refs(org: &FakeOrganisation) -> Vec<Vec<ArtifactRef>> {
+fn sent_refs(org: &FakeOrganisation) -> Vec<Vec<SessionReference>> {
     org.sent_refs.lock().clone()
 }
 
 /// The one Session Reference the only message sent carried.
-fn the_reference(org: &FakeOrganisation) -> SessionRef {
+fn the_reference(org: &FakeOrganisation) -> ReferencedSession {
     match sent_refs(org).as_slice() {
         [refs] => match refs.as_slice() {
-            [ArtifactRef::Session(r)] => r.clone(),
+            [SessionReference::Session(r)] => r.clone(),
             other => panic!("expected one session reference, got {other:?}"),
         },
         other => panic!("expected one message, got {other:?}"),
@@ -2661,16 +2661,29 @@ async fn a_recorded_session_link_is_referenced_as_the_session_it_carries() {
     .await;
     assert!(!err, "{answer}");
     assert_eq!(the_reference(&org).session_id, "rs-2");
-    // Another Workspace's link is refused before anything is sent.
-    let (err, answer) = send(
-        &client,
-        &consent,
-        json!({ "to": "general", "body": "See this.", "session": "atlas-org://recorded-session/ws-other/rs-9" }),
-    )
-    .await;
-    assert!(err);
-    assert!(answer.as_str().is_some_and(|t| t.contains("not this chat's Workspace")), "{answer}");
-    assert_eq!(sent(&org).len(), 1);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recorded_session_in_another_workspace_of_the_organisation_is_referenced_there() {
+    let org = reporting(false);
+    org.board.lock().push(RemoteSession { workspace_id: "ws-other".into(), ..board_row("rs-9", "u-grace", 90, 30, false, "Elsewhere") });
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    for session in [
+        json!({ "session": "atlas-org://recorded-session/ws-other/rs-9" }),
+        json!({ "session": "rs-9", "workspace": "ws-other" }),
+    ] {
+        let mut args = json!({ "to": "general", "body": "See this." });
+        args.as_object_mut().unwrap().extend(session.as_object().unwrap().clone());
+        let (err, answer) = send(&client, &consent, args).await;
+        assert!(!err, "{session}: {answer}");
+        let r = sent_refs(&org).last().cloned().unwrap();
+        assert!(
+            matches!(r.as_slice(), [SessionReference::Session(r)] if r.workspace_ref_id == "ws-other" && r.session_id == "rs-9"),
+            "{session}: {r:?}"
+        );
+    }
+    assert!(org.asked().contains(&("org-acme".to_string(), "timeline ws-other/rs-9 cursor=None limit=Some(1)".to_string())));
     client.cancel().await.ok();
 }
 
@@ -2680,7 +2693,7 @@ async fn without_session_a_message_carries_no_reference_and_reads_no_session() {
     let (_server, client, consent) = consenting_client(org.clone()).await;
     let (err, answer) = send(&client, &consent, json!({ "to": "general", "body": "plain" })).await;
     assert!(!err, "{answer}");
-    assert_eq!(sent_refs(&org), [Vec::<ArtifactRef>::new()]);
+    assert_eq!(sent_refs(&org), [Vec::<SessionReference>::new()]);
     assert!(answer.get("session_reference").is_none());
     assert!(!org.asked().iter().any(|(_, what)| what.starts_with("timeline") || what == "workspaces"));
     client.cancel().await.ok();
@@ -2694,7 +2707,7 @@ async fn a_restricted_workspace_drops_the_reference_appends_the_timeline_link_an
     assert!(!err, "{answer}");
     let link = atlas_artifacts::session_web_url("org-acme", "ws-atlas", "rs-1");
     assert_eq!(sent(&org), [("c-general".to_string(), format!("Report.\n\n{link}"))], "the link on its own last line");
-    assert_eq!(sent_refs(&org), [Vec::<ArtifactRef>::new()], "no reference chat would refuse");
+    assert_eq!(sent_refs(&org), [Vec::<SessionReference>::new()], "no reference chat would refuse");
     let said = &answer["session_reference"];
     assert_eq!(said["attached"], json!(false), "{answer}");
     assert_eq!(said["link"], json!(link));
@@ -2848,6 +2861,7 @@ async fn org_sessions_lists_the_workspaces_sessions_of_the_last_fourteen_days_ne
         first,
         &json!({
             "id": "rs-ada-live",
+            "workspace_id": "ws-atlas",
             "title": "Wire the org tools",
             "author": { "user_id": "u-1", "name": "Ada Lovelace" },
             "agent": "atlas-agent",
@@ -3040,6 +3054,7 @@ async fn the_workspace_argument_reads_another_workspace_in_the_organisation_and_
     assert!(!err, "{answer}");
     assert_eq!(answer["workspace"], json!({ "id": "ws-other" }));
     assert_eq!(session_ids(&answer), ["rs-elsewhere"]);
+    assert_eq!(answer["sessions"][0]["workspace_id"], json!("ws-other"), "each row says where to open it");
     assert!(
         org.asked().iter().any(|(o, what)| o == "org-acme" && what.starts_with("board ws-other")),
         "asked in the grant's organisation",
@@ -3116,8 +3131,7 @@ async fn a_non_admin_calling_org_member_activity_anyway_is_refused_and_nothing_i
 fn org_member_activity_is_described_as_recorded_activity_not_performance() {
     let tool = tools().into_iter().find(|t| t.name == "org_member_activity").unwrap();
     let description = tool.description.unwrap();
-    assert!(description.contains("recorded through Atlas (not a measure of performance)"), "{description}");
-    assert!(description.contains("last 14 days"), "{description}");
+    assert!(description.contains("recorded through Atlas, not a measure of performance"), "{description}");
     assert!(RECORDED_NOTE.contains("recorded through Atlas, not a measure of performance"));
 }
 
@@ -3483,6 +3497,7 @@ async fn unbinding_the_project_refuses_the_next_call_of_a_running_session() {
     let (err, text) = call(&client, "org_whoami", json!({})).await;
     assert!(err);
     assert!(text.contains("no longer bound"), "{text}");
+    assert!(text.contains("this chat was given access to."), "one sentence, no stray run of spaces: {text}");
     assert_eq!(org.asked().len(), asked, "nothing reached the organisation");
     client.cancel().await.ok();
 }
@@ -3569,14 +3584,30 @@ fn the_tool_list_carries_the_cache_fields_the_2026_07_28_spec_requires() {
 }
 
 #[test]
-fn the_instructions_state_the_protocol() {
+fn the_instructions_state_the_protocol_in_three_sentences_or_fewer() {
     assert!(INSTRUCTIONS.contains("Call org_whoami first"));
-    assert!(INSTRUCTIONS.contains("Prefer the current session"));
     assert!(INSTRUCTIONS.contains("ask the user which one"));
-    assert!(INSTRUCTIONS.contains("comes back as candidates"));
-    assert!(INSTRUCTIONS.contains("Never mark the user's inbox read"));
-    assert!(INSTRUCTIONS.contains("asks the user first"));
-    assert!(INSTRUCTIONS.contains("An atlas-org:// link"), "the composer's mentions, in one clause");
+    assert!(INSTRUCTIONS.matches(". ").count() + 1 <= 3, "{INSTRUCTIONS}");
+}
+
+/// The Chat Completions wire drops a server's instructions (`reshape_tools`
+/// sends only its tools), so every rule that must reach the model is in a
+/// tool's or a property's description too.
+#[test]
+fn the_rules_the_model_must_see_ride_in_the_tool_descriptions() {
+    let all = tools();
+    let tool = |name: &str| all.iter().find(|t| t.name == name).unwrap();
+    let described = |name: &str| tool(name).description.as_deref().unwrap_or_default().to_string();
+    let property = |name: &str, key: &str| tool(name).input_schema["properties"][key]["description"].clone();
+    assert!(described("org_whoami").contains("call first"));
+    for outward in OUTWARD_TOOLS {
+        assert!(described(outward).contains("the user approves first"), "{outward}");
+    }
+    assert!(described("org_inbox").contains("read-only"));
+    assert!(property("org_send", "to").as_str().is_some_and(|d| d.contains("atlas-org:// link")));
+    for session_tool in ["org_comments", "org_session", "org_send"] {
+        assert!(property(session_tool, "session").as_str().is_some_and(|d| d.contains("current")), "{session_tool}");
+    }
 }
 
 /// The **fixed-prefix cost** the server adds to every native turn, measured
@@ -3617,12 +3648,19 @@ fn org_server_prefix_bytes_are_measured() {
     for (b, name) in &per_tool {
         println!("  {b:>5} B  {name}");
     }
+    if std::env::var_os("ORG_PREFIX_DUMP").is_some() {
+        for t in tools() {
+            println!("{}", wire(&t));
+        }
+    }
 
     assert_eq!(per_tool.len(), tool_names(true).len(), "every tool measured");
     assert!(admin_list > member_list && admin_wire > member_wire, "an admin is offered one tool more");
-    // The ceiling the research note records; a description that grows past it
+    // The budget the research note records (the spec's ~3 KB): a member's tools
+    // on the Chat wire stay within 3.5 KB, so a description that grows past it
     // is a prefix cost to decide on, not to drift into.
-    assert!(admin_wire + INSTRUCTIONS.len() < 10_000, "the org prefix stays under 10 KB ({admin_wire} + instructions)");
+    assert!(member_wire <= 3_500, "a member's org tools on the Chat wire stay within 3.5 KB ({member_wire} B)");
+    assert!(admin_wire + INSTRUCTIONS.len() < 4_500, "an admin's, with the instructions, within 4.5 KB");
 }
 
 // ── The audit trail ──────────────────────────────────────────────────────────
@@ -4193,18 +4231,136 @@ async fn org_session_takes_a_recorded_session_link() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_session_link_to_another_workspace_or_a_link_of_another_kind_is_refused_before_anything_is_read() {
+async fn a_session_link_to_another_workspace_of_the_organisation_is_read_there() {
     let org = commented();
     let (_server, client) = org_client(org.clone()).await;
-    let (err, text) =
-        call(&client, "org_comments", json!({ "session": "atlas-org://recorded-session/ws-other/rs-2" })).await;
-    assert!(err);
-    assert!(text.contains("Workspace ws-other") && text.contains("only this chat's Workspace"), "{text}");
+    let (err, answer) =
+        call_json(&client, "org_comments", json!({ "session": "atlas-org://recorded-session/ws-other/rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(thread_ids(&answer), ["z1"]);
+    assert_eq!(
+        org.asked(),
+        [("org-acme".to_string(), "comments ws-other/rs-2".to_string()), ("org-acme".to_string(), "members".to_string())],
+        "asked in the grant's organisation, whose server decides whether this account may read it",
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bare_session_id_with_a_workspace_is_read_in_that_workspace() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comments", json!({ "session": "rs-2", "workspace": "ws-other" })).await;
+    assert!(!err, "{answer}");
+    let (err, answer) =
+        call_json(&client, "org_comment_resolve", json!({ "comment": "z1", "session": "rs-2", "workspace": "ws-other" })).await;
+    assert!(!err, "{answer}");
+    assert!(org.asked().contains(&("org-acme".to_string(), "comments ws-other/rs-2".to_string())));
+    assert!(org.asked().contains(&("org-acme".to_string(), "resolve ws-other/rs-2/z1 resolved=true".to_string())));
+
+    let org = timelined();
+    org.board.lock().push(RemoteSession { workspace_id: "ws-other".into(), ..board_row("rs-9", "u-grace", 90, 30, false, "Elsewhere") });
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_session", json!({ "session": "rs-9", "workspace": "ws-other" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["workspace_id"], json!("ws-other"));
+    assert!(org.asked().iter().any(|(_, what)| what.starts_with("timeline ws-other/rs-9")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_workspace_without_a_session_id_or_that_its_link_contradicts_is_refused_before_anything_is_read() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    for args in [
+        json!({ "workspace": "ws-other" }),
+        json!({ "session": "current", "workspace": "ws-other" }),
+        json!({ "session": RS_TWO, "workspace": "ws-other" }),
+    ] {
+        let (err, text) = call(&client, "org_comments", args.clone()).await;
+        assert!(err && text.contains("workspace"), "{args}: {text}");
+    }
+    assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_of_another_kind_as_a_session_is_refused_before_anything_is_read() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
     let (err, text) = call(&client, "org_session", json!({ "session": GRACE })).await;
     assert!(err);
     assert!(text.contains("is not a recorded session"), "{text}");
     assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
     client.cancel().await.ok();
+}
+
+// ── An id is an id, never a path ─────────────────────────────────────────────
+
+/// What a model could pass, or a crafted link could decode to, to climb out of
+/// the grant's Workspace in a route: a traversal, an encoded slash, a stray
+/// percent sign, whitespace, a dot segment.
+const NOT_IDS: &[&str] = &["../ws-other/rs-9", "rs-1/../../ws-other/rs-9", "rs%2F1", "rs 1", "..", ".", "rs-1\\x"];
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_id_that_is_not_an_id_is_refused_before_anything_is_read() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    for bad in NOT_IDS {
+        for tool in ["org_session", "org_comments"] {
+            let (err, text) = call(&client, tool, json!({ "session": bad })).await;
+            assert!(err && text.contains("is not a recorded session id"), "{tool} {bad}: {text}");
+        }
+    }
+    assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recorded_session_link_whose_ids_decode_to_a_path_is_refused_before_anything_is_read() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    for link in [
+        "atlas-org://recorded-session/ws-atlas/..%2Fws-other%2Frs-9",
+        "atlas-org://recorded-session/ws-atlas/%2E%2E",
+        "atlas-org://recorded-session/..%2Fws-other/rs-9",
+        "atlas-org://recorded-session/ws-atlas/rs%252F1",
+    ] {
+        let (err, text) = call(&client, "org_session", json!({ "session": link })).await;
+        assert!(err && text.contains("is not a"), "{link}: {text}");
+    }
+    assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_entry_comment_or_workspace_id_that_is_not_an_id_is_refused_before_anything_is_read() {
+    let org = commented();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    for bad in NOT_IDS {
+        let (err, text) = call(&client, "org_session", json!({ "entry": bad })).await;
+        assert!(err && text.contains("is not an entry id"), "entry {bad}: {text}");
+        let (err, text) = call(&client, "org_comment_resolve", json!({ "comment": bad })).await;
+        assert!(err && text.contains("is not a comment id"), "resolve {bad}: {text}");
+        let reply = json!({ "comment": bad, "body": "hi" });
+        let (err, text) = call(&client, "org_comment_reply", approved(&consent, reply)).await;
+        assert!(err && text.contains("is not a comment id"), "reply {bad}: {text}");
+        let (err, text) = call(&client, "org_sessions", json!({ "workspace": bad })).await;
+        assert!(err && text.contains("is not a Workspace id"), "workspace {bad}: {text}");
+    }
+    assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
+    assert!(nothing_posted(&org));
+    client.cancel().await.ok();
+}
+
+#[test]
+fn an_id_is_a_short_run_of_letters_digits_and_a_few_marks() {
+    for id in ["rs-1", "am-6f1c2a0e-9b1d-4c1e-8a7b-0d2f4e6a8c10", "01J8Z3K4M5N6P7Q8R9S0T1V2W3", "ws_atlas", "a.b", "tc:1"] {
+        assert!(tools::is_id(id), "{id}");
+    }
+    for id in NOT_IDS.iter().copied().chain(["", "a/b", "a?b", "a#b", "a%b", "a\tb", "...", &"x".repeat(129)]) {
+        assert!(!tools::is_id(id), "{id:?}");
+    }
 }
 
 // ── No tool server talks to the user (ADR-0013) ──────────────────────────────

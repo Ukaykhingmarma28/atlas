@@ -8,7 +8,8 @@
 //! server names none, and is refused), that someone is still signed in, and
 //! that the grant's Project is still bound to the grant's organisation and
 //! Workspace. What a tool then asks the cloud, it asks in the grant's
-//! organisation and Workspace, never in the window's. An outward action is
+//! organisation — in the grant's Workspace unless the tool names another of
+//! the organisation's — never in the window's. An outward action is
 //! also checked for the user's approval of that exact call
 //! ([`OutwardConsent`]).
 //! Schemas are kept flat, with one-clause descriptions, because every native
@@ -19,6 +20,7 @@
 //! resolvers more than one area shares. Each area's tools live beside it:
 //! [`roster`] (who you are, members, conversations), [`inbox`],
 //! [`comments`] (threads, resolving, replying), [`messages`] (sending),
+//! [`mentions`] (members named in what is posted, and read back),
 //! [`sessions`] (the recorded work), [`activity`] (a member's recorded
 //! activity, for admins), [`spaces`] (pages in a conversation's
 //! Space, and drawing on one), [`diagram`] (the document a drawing is checked
@@ -29,6 +31,7 @@ mod comments;
 mod describe;
 mod diagram;
 mod inbox;
+mod mentions;
 mod messages;
 mod roster;
 mod sessions;
@@ -61,7 +64,7 @@ use activity::ActivityArgs;
 use comments::ReplyArgs;
 use messages::SendArgs;
 #[cfg(test)]
-pub(super) use comments::{named_mentions, with_mentions};
+pub(super) use mentions::{named_mentions, with_mentions};
 #[cfg(test)]
 pub(super) use activity::{ACTIVITY_ROWS, RECORDED_NOTE};
 pub(super) use sessions::SESSIONS_DEFAULT_LIMIT;
@@ -69,21 +72,18 @@ use sessions::{SessionFilters, SESSIONS_MAX_LIMIT};
 #[cfg(test)]
 pub(super) use sessions::{SESSIONS_DEFAULT_WINDOW_DAYS, SESSIONS_SCAN_CAP, TIMELINE_DEFAULT_LIMIT};
 
-/// What the server tells the agent about itself. The engine shows it as the
-/// description of the `atlas_org` tool namespace. It states the protocol,
-/// because nothing else will: the tools only answer what they are asked.
+/// What the server tells the agent about itself. The engine keeps it as the
+/// description of the `atlas_org` tool namespace — but the Chat Completions
+/// dialect sends only a namespace's tools (`reshape_tools`), so nothing here
+/// may be the only place a rule reaches the model: each rule that must is
+/// also in a tool's or a property's description, and every rule the model
+/// could break is enforced in code (a name that matches several is answered
+/// with candidates to ask about; the inbox cannot be marked read; an outward
+/// action is posted only once the user approved that exact call).
 pub const INSTRUCTIONS: &str = "\
-Atlas organisation. These tools read the organisation this chat's project is bound to (its members, \
-recorded sessions, comments and conversations) and act in it as the signed-in user. Call org_whoami \
-first whenever the organisation matters: it says who you act as, your role, the Workspace, and the \
-current recorded session (the one this chat is written into). Prefer the current session when the \
-user says \"this session\" or names none. When a request matches more than one person, session, \
-comment or conversation, ask the user which one instead of guessing; a member or conversation named \
-by id, name or email that matches several comes back as candidates to ask about. An atlas-org:// link \
-in the prompt is the user's mention of a member, conversation or recorded session: pass it as is \
-wherever the tools take one. Never mark the user's inbox \
-read. Anything that reaches another person (a message, a reply) is an outward action and asks the \
-user first; say what you will send. Results are JSON; an error says what was refused or not found.";
+Atlas organisation: read and act in the organisation this chat's project is bound to, as the signed-in \
+user. Call org_whoami first when the organisation matters. When a name matches several, ask the user which \
+one.";
 
 /// The server's **outward actions** (ADR-0014): the tools that reach another
 /// person in the user's name. The one declaration both halves read — the
@@ -124,7 +124,7 @@ const SIGNED_OUT_NOTE: &str = "Nobody is signed in to Atlas on this machine any 
 /// What a tool answers once the session's Project is no longer bound to the
 /// organisation and Workspace it was offered in — unbound, local-only, moved
 /// to another Workspace, or capture switched off.
-const UNBOUND_NOTE: &str = "This session's project is no longer bound to the cloud Workspace this chat was given      access to. Ask the user to bind the project again and start a new chat.";
+const UNBOUND_NOTE: &str = "This session's project is no longer bound to the cloud Workspace this chat was given access to. Ask the user to bind the project again and start a new chat.";
 
 /// What an outward action answers when the user did not approve that call on
 /// its card — above all in bypass mode, where the engine runs it unasked.
@@ -146,223 +146,149 @@ fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
     Tool::new(Cow::Borrowed(name), Cow::Borrowed(description), schema(input))
 }
 
+/// How a member or a conversation is named, said once where it matters most:
+/// every such argument also takes the `atlas-org://` link a composer mention
+/// carries (and an email for a member, `#name` for a channel — resolution
+/// tries them all, [`resolve`]).
+const NAMED: &str = "Name, id or atlas-org:// link";
+/// How a recorded session is named: an id, its link, or the `"current"`
+/// sentinel (also the default).
+const SESSION: &str = "Id, link or current";
+
+fn described(kind: &str, description: &str) -> Value {
+    json!({ "type": kind, "description": description })
+}
+
 /// Every tool, reads first — [`ADMIN_TOOLS`] included; [`tools_for`] is
-/// what a session is offered.
+/// what a session is offered. Descriptions are one clause and a property is
+/// described only where its name does not say it; defaults, caps and limits
+/// are left to the answers, which report them.
 pub(super) fn tools() -> Vec<Tool> {
+    let s = json!({ "type": "string" });
+    let int = json!({ "type": "integer" });
+    let flag = json!({ "type": "boolean" });
+    let named = described("string", NAMED);
+    let session = described("string", SESSION);
+    let mention = json!({ "type": "array", "items": s });
     vec![
         tool(
             "org_whoami",
-            "Who you act as (name, role), the organisation, the Workspace, and the current recorded session \
-             (id, title, live, unresolved comments) or why there is none.",
+            "You, your role, Workspace and current session; call first.",
             json!({ "type": "object", "properties": {} }),
         ),
         tool(
             "org_members",
-            "The organisation's members with user ids, names, emails and roles, or the one member `name` \
-             resolves to.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string", "description": "A member's id, name or email to resolve." }
-                }
-            }),
+            "Members, or one by name.",
+            json!({ "type": "object", "properties": { "name": s } }),
         ),
         tool(
             "org_conversations",
-            "Channels, DMs and group DMs with ids, names, kinds and whether you are a member, or the one \
-             conversation `name` resolves to.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string", "description": "A conversation's id or channel name to resolve." }
-                }
-            }),
+            "Channels and DMs, or one by name.",
+            json!({ "type": "object", "properties": { "name": s } }),
         ),
         tool(
             "org_inbox",
-            "Your inbox, newest first: mentions, replies and comments on your recorded sessions, with unread \
-             state, the session and comment, and the unread total. Read-only.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "unread_only": { "type": "boolean", "description": "Only entries not yet read." },
-                    "cursor": { "type": "string", "description": "A previous answer's next_cursor, for more." },
-                    "limit": { "type": "integer", "description": "At most this many entries (up to 100)." }
-                }
-            }),
+            "Your inbox; read-only.",
+            json!({ "type": "object", "properties": { "unread_only": flag, "cursor": s } }),
         ),
         tool(
             "org_comments",
-            "The comment threads on a recorded session (default: the current one): each root with its replies, \
-             authors, anchor, body and resolved state.",
+            "A recorded session's comments.",
             json!({
                 "type": "object",
-                "properties": {
-                    "session": { "type": "string", "description": "A recorded session id, or \"current\" (the default)." },
-                    "unresolved_only": { "type": "boolean", "description": "Only threads not yet resolved." }
-                }
+                "properties": { "session": session, "workspace": s, "unresolved_only": flag }
             }),
         ),
         tool(
             "org_comment_resolve",
-            "Resolve, or with `resolved: false` unresolve, a thread by its first comment's id.",
+            "Resolve or reopen a comment thread.",
             json!({
                 "type": "object",
-                "properties": {
-                    "comment": { "type": "string", "description": "The thread's first comment's id." },
-                    "resolved": { "type": "boolean", "description": "false to unresolve; true by default." },
-                    "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
-                },
-                "required": ["comment"]
+                "properties": { "comment": s, "resolved": flag, "session": s, "workspace": s }
             }),
         ),
         tool(
             "org_comment_reply",
-            "Reply on a comment's thread as the user (asks the user first); answers the posted comment.",
+            "Reply to a comment; the user approves first.",
             json!({
                 "type": "object",
-                "properties": {
-                    "comment": { "type": "string", "description": "A comment's id; the reply goes under its thread's first comment." },
-                    "body": { "type": "string", "description": "The reply's text." },
-                    "mention": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Members to mention, by id, name or email; `@Name` in the body becomes the mention, else it leads."
-                    },
-                    "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
-                },
-                "required": ["comment", "body"]
+                "properties": { "comment": s, "body": s, "mention": mention, "session": s, "workspace": s }
             }),
         ),
         tool(
             "org_send",
-            "Send a chat message as the user (asks the user first) to a conversation, or to a member's DM (opened if \
-             none); answers the sent message.",
+            "Send a chat message; the user approves first.",
             json!({
                 "type": "object",
                 "properties": {
-                    "to": { "type": "string", "description": "A conversation's id or channel name, or a member's id, name or email for their DM." },
-                    "body": { "type": "string", "description": "The message's text (up to 16 KiB of UTF-8)." },
-                    "mention": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Members to mention, by id, name or email; `@Name` in the body becomes the mention, else it leads."
-                    },
-                    "session": { "type": "string", "description": "A recorded session to attach as a Session Reference: its id, link, or \"current\"." }
-                },
-                "required": ["to", "body"]
+                    "to": named,
+                    "body": s,
+                    "mention": mention,
+                    "session": session,
+                    "workspace": s
+                }
             }),
         ),
         tool(
             "org_sessions",
-            "Recorded sessions in the Workspace, most recently active first, with author, agent, model, activity, \
-             liveness and size; your last session is `author: \"me\"` with `limit: 1`. Searches the last 14 days \
-             unless since/until say otherwise, scanning at most 500 sessions.",
+            "Recorded sessions, latest first.",
             json!({
                 "type": "object",
                 "properties": {
-                    "workspace": { "type": "string", "description": "A Workspace id in this organisation (default: this project's)." },
-                    "author": { "type": "string", "description": "A member's id, name or email, or \"me\"." },
-                    "since": { "type": "string", "description": "Active at or after this ISO date or datetime (UTC)." },
-                    "until": { "type": "string", "description": "Started at or before this ISO date or datetime (UTC)." },
-                    "live": { "type": "boolean", "description": "Only sessions whose agent is (true) or is not (false) still writing." },
-                    "q": { "type": "string", "description": "Keywords the server searches titles, messages, tools and checkpoints for." },
-                    "limit": { "type": "integer", "description": "At most this many sessions (default 20, up to 100)." }
+                    "workspace": s,
+                    "author": described("string", "me, name, id or link"),
+                    "since": s,
+                    "until": s,
+                    "q": s,
+                    "limit": int
                 }
             }),
         ),
         tool(
             "org_session",
-            "One recorded session (default: the current one): its summary and a page of its entries in order, or \
-             with `entry` that entry's full text.",
+            "A recorded session's entries, or one in full.",
             json!({
                 "type": "object",
                 "properties": {
-                    "session": { "type": "string", "description": "A recorded session id, or \"current\" (the default)." },
-                    "cursor": { "type": "string", "description": "A previous answer's next_cursor, for more entries." },
-                    "limit": { "type": "integer", "description": "At most this many entries (default 50, up to 500)." },
-                    "entry": { "type": "string", "description": "An entry's id, to read its full text instead." },
-                    "part": { "type": "string", "description": "With entry: body (default), arguments or result." }
+                    "session": session,
+                    "workspace": s,
+                    "cursor": s,
+                    "entry": s,
+                    "part": { "type": "string", "enum": ["body", "arguments", "result"] }
                 }
             }),
         ),
         tool(
             "org_member_activity",
-            "A member's activity recorded through Atlas (not a measure of performance): recorded sessions, \
-             checkpoints, insertions, deletions and tokens over the last 14 days unless since/until say otherwise, \
-             as org_sessions scans. Admins only.",
+            "A member's activity recorded through Atlas, not a measure of performance; admins only.",
             json!({
                 "type": "object",
                 "properties": {
-                    "member": { "type": "string", "description": "A member's id, name or email." },
-                    "since": { "type": "string", "description": "Active at or after this ISO date or datetime (UTC)." },
-                    "until": { "type": "string", "description": "Started at or before this ISO date or datetime (UTC)." },
-                    "workspace": { "type": "string", "description": "A Workspace id in this organisation (default: this project's)." }
-                },
-                "required": ["member"]
+                    "member": named,
+                    "since": s,
+                    "until": s,
+                    "workspace": s
+                }
             }),
         ),
         tool(
             "org_page_create",
-            "Create a page at the root of a conversation's Space, as the user; answers its page_id.",
+            "Create a page in a conversation's Space.",
             json!({
                 "type": "object",
-                "properties": {
-                    "conversation": { "type": "string", "description": "A conversation's id or channel name, one you are in." },
-                    "name": { "type": "string", "description": "The page's name (up to 200 characters)." }
-                },
-                "required": ["conversation", "name"]
+                "properties": { "conversation": s, "name": s }
             }),
         ),
         tool(
             "org_page_write",
-            "Draw a diagram on a Space page, replacing its content: nodes (x/y optional; unplaced ones are laid out \
-             left to right along the edges, groups sized around their children) and edges between them.",
+            "Draw a diagram on a Space page, replacing it.",
             json!({
                 "type": "object",
                 "properties": {
-                    "page": { "type": "string", "description": "The page's id, from org_page_create." },
-                    "conversation": { "type": "string", "description": "The conversation whose Space holds the page: its id or channel name." },
-                    "document": {
-                        "type": "object",
-                        "properties": {
-                            "nodes": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": { "type": "string" },
-                                        "kind": { "type": "string", "enum": ["note", "text", "shape", "group"] },
-                                        "text": { "type": "string" },
-                                        "shape": { "type": "string", "enum": ["rectangle", "ellipse", "diamond", "triangle"] },
-                                        "parent": { "type": "string", "description": "A group's id." },
-                                        "x": { "type": "number" },
-                                        "y": { "type": "number" },
-                                        "w": { "type": "number" },
-                                        "h": { "type": "number" }
-                                    },
-                                    "required": ["id", "kind"]
-                                }
-                            },
-                            "edges": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "from": { "type": "string" },
-                                        "to": { "type": "string" },
-                                        "from_anchor": { "type": "string", "enum": ["n", "e", "s", "w"] },
-                                        "to_anchor": { "type": "string", "enum": ["n", "e", "s", "w"] },
-                                        "label": { "type": "string" }
-                                    },
-                                    "required": ["from", "to"]
-                                }
-                            }
-                        },
-                        "required": ["nodes"]
-                    }
-                },
-                "required": ["page", "conversation", "document"]
+                    "page": s,
+                    "conversation": s,
+                    "document": described("object", diagram::DOCUMENT_SHAPE.as_str())
+                }
             }),
         ),
     ]
@@ -405,6 +331,39 @@ fn string_arg<'a>(request: &'a CallToolRequestParams, name: &str) -> Option<&'a 
 /// or on the approval card's description of one.
 fn string_in<'a>(arguments: Option<&'a JsonObject>, name: &str) -> Option<&'a str> {
     arguments.and_then(|args| args.get(name)).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// The longest id a tool takes. The organisation's ids are UUID-, ULID- or
+/// prefixed tokens far shorter than this.
+const ID_MAX: usize = 128;
+
+/// Whether `text` has the shape of an organisation id — a recorded session,
+/// a Workspace, a comment, an entry or a page: ASCII letters, digits, `-`,
+/// `_`, `.` and `:`, not dots alone, at most [`ID_MAX`] long. Ids reach the
+/// artifacts routes as path segments, so nothing that could end, climb out
+/// of or re-scope one — a `/`, a `%`, whitespace, `.` or `..` — is ever
+/// taken as one, however it arrived: as an argument, or decoded out of an
+/// organisation link. (The artifacts client encodes each id as one segment
+/// too; this refuses in words, before anything is read.)
+pub(crate) fn is_id(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= ID_MAX
+        && !text.bytes().all(|b| b == b'.')
+        && text.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+}
+
+/// `id` when it is one ([`is_id`]); else the tool's answer refusing it —
+/// `what` names the kind ("a comment", "an entry").
+fn checked_id<'a>(what: &str, id: &'a str) -> Result<&'a str, CallToolResult> {
+    if is_id(id) {
+        Ok(id)
+    } else {
+        Err(not_an_id(what, id))
+    }
+}
+
+fn not_an_id(what: &str, text: &str) -> CallToolResult {
+    tool_error(format!("\"{text}\" is not {what} id. Nothing was read."))
 }
 
 /// An optional boolean argument, absent read as `false`.
@@ -613,25 +572,32 @@ impl OrgTools {
                 self.inbox(&scope, query).await
             }
             "org_comments" => {
-                self.comments(grant, &scope, string_arg(request, "session"), bool_arg(request, "unresolved_only"))
-                    .await
+                let session = (string_arg(request, "session"), string_arg(request, "workspace"));
+                self.comments(grant, &scope, session, bool_arg(request, "unresolved_only")).await
             }
             "org_comment_resolve" => {
                 let Some(comment) = string_arg(request, "comment") else {
                     return tool_error("name the comment to resolve: `comment` is its id (see org_comments)");
                 };
+                if let Err(answer) = checked_id("a comment", comment) {
+                    return answer;
+                }
                 let resolved = bool_arg_or(request, "resolved", true);
-                self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
+                let session = (string_arg(request, "session"), string_arg(request, "workspace"));
+                self.resolve_comment(grant, &scope, session, comment, resolved).await
             }
             "org_comment_reply" => {
                 let args = ReplyArgs::of(request.arguments.as_ref());
                 let Some(comment) = args.comment else {
                     return tool_error("name the comment to reply to: `comment` is its id (see org_comments)");
                 };
+                if let Err(answer) = checked_id("a comment", comment) {
+                    return answer;
+                }
                 let Some(body) = args.body else {
                     return tool_error("say what to reply: `body` is the reply's text");
                 };
-                self.reply_comment(grant, &scope, args.session, comment, body, &args.mentions).await
+                self.reply_comment(grant, &scope, (args.session, args.workspace), comment, body, &args.mentions).await
             }
             "org_send" => self.send(grant, &scope, &SendArgs::of(request.arguments.as_ref())).await,
             "org_sessions" => {
@@ -648,9 +614,12 @@ impl OrgTools {
                 self.sessions(&scope, filters).await
             }
             "org_session" => {
-                let session = string_arg(request, "session");
+                let session = (string_arg(request, "session"), string_arg(request, "workspace"));
                 match string_arg(request, "entry") {
                     Some(entry) => {
+                        if let Err(answer) = checked_id("an entry", entry) {
+                            return answer;
+                        }
                         let part = string_arg(request, "part").unwrap_or("body");
                         self.session_entry(grant, &scope, session, entry, part).await
                     }
@@ -701,8 +670,14 @@ impl OrgTools {
 /// session.
 const CURRENT: &str = "current";
 
-/// A recorded session a session or comment tool acts on, in the grant's
-/// Workspace.
+/// How a tool names a recorded session: its `session` argument (an id, a
+/// recorded-session link, `"current"`, or absent for the current one) and
+/// its `workspace` argument (the Workspace a bare id is in).
+type NamedSession<'a> = (Option<&'a str>, Option<&'a str>);
+
+/// A recorded session a session or comment tool acts on: the current one, in
+/// the grant's Workspace, or any the tool names in a Workspace of the grant's
+/// organisation.
 struct SessionTarget {
     id: String,
     workspace_id: String,
@@ -713,35 +688,43 @@ struct SessionTarget {
 }
 
 impl OrgTools {
-    /// The recorded session a tool names: the current one when it
-    /// names none or says `"current"`, else the id it gives, or the id its
-    /// recorded-session link ([`OrgLink`]) carries — any recorded
-    /// session in the grant's Workspace, which the server confirms by
-    /// answering (a 404 otherwise). Never another Workspace's.
+    /// The recorded session a tool names: the current one when it names none
+    /// or says `"current"`; else the id it gives — in `workspace` when it
+    /// names one, the grant's Workspace otherwise — or the Workspace and id
+    /// its recorded-session link ([`OrgLink`]) carries.
+    ///
+    /// **One Workspace policy**: a recorded session in any Workspace of the
+    /// grant's organisation may be read, as `org_sessions` lists them — every
+    /// read is asked in the grant's organisation, and the server, which knows
+    /// which Workspaces this account can see, answers or refuses (403/404). A
+    /// link carries no organisation, so one to another organisation's
+    /// Workspace is refused there, not here. The current session is always the
+    /// grant's Workspace's, so a `workspace` beside it — or beside a link that
+    /// names another — is refused as a contradiction. Every id is checked
+    /// ([`is_id`]) before anything is read.
     async fn session_target(
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        (session, workspace): NamedSession<'_>,
     ) -> Result<SessionTarget, CallToolResult> {
-        let Some(workspace_id) = scope.workspace_id.clone() else {
+        let Some(grant_workspace) = scope.workspace_id.clone() else {
             return Err(tool_error(
                 "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
                  ask the user to reopen the project's cloud settings and start a new chat",
             ));
         };
-        // A recorded-session link (a composer mention) is read first, as the
-        // id it carries — and only in this Workspace.
         let named = match session {
+            // A recorded-session link (a composer mention) is read first, as
+            // the Workspace and id it carries.
             Some(text) if OrgLink::looks_like(text) => match OrgLink::parse(text) {
-                Some(OrgLink::RecordedSession { workspace_id: linked, session_id }) if linked == workspace_id => {
-                    Some(session_id)
-                }
                 Some(OrgLink::RecordedSession { workspace_id: linked, session_id }) => {
-                    return Err(tool_error(format!(
-                        "recorded session {session_id} is in Workspace {linked}, not this chat's Workspace \
-                         {workspace_id}; these tools read only this chat's Workspace"
-                    )))
+                    if let Some(asked) = workspace.filter(|asked| *asked != linked) {
+                        return Err(tool_error(format!(
+                            "the link names Workspace {linked} but `workspace` says {asked}; pass the link alone"
+                        )));
+                    }
+                    Some((linked, session_id))
                 }
                 _ => {
                     return Err(tool_error(format!(
@@ -750,26 +733,34 @@ impl OrgTools {
                     )))
                 }
             },
-            other => other.map(str::to_string),
-        };
-        match named.filter(|s| !s.eq_ignore_ascii_case(CURRENT)) {
-            Some(id) => Ok(SessionTarget { id, workspace_id, title: None, current: false }),
-            None => {
-                let query = CurrentSessionQuery { scope, native_session_id: &grant.session_id, cwd: &grant.cwd };
-                match self.cloud.current_session(query).await {
-                    Ok(Some(session)) => Ok(SessionTarget {
-                        id: session.id,
-                        workspace_id: session.workspace_id,
-                        title: session.title,
-                        current: true,
-                    }),
-                    Ok(None) => Err(tool_error(format!(
-                        "the current chat is {NOT_RECORDED_YET} in the Workspace; name a recorded session id \
-                         instead (org_sessions lists them)"
-                    ))),
-                    Err(e) => Err(tool_error(e.to_string())),
-                }
+            Some(id) if !id.eq_ignore_ascii_case(CURRENT) => {
+                Some((workspace.unwrap_or(&grant_workspace).to_string(), id.to_string()))
             }
+            _ => None,
+        };
+        if let Some((workspace_id, id)) = named {
+            checked_id("a Workspace", &workspace_id)?;
+            checked_id("a recorded session", &id)?;
+            return Ok(SessionTarget { id, workspace_id, title: None, current: false });
+        }
+        if workspace.is_some() {
+            return Err(tool_error(
+                "`workspace` goes with a recorded session id; the current session is this chat's own Workspace's",
+            ));
+        }
+        let query = CurrentSessionQuery { scope, native_session_id: &grant.session_id, cwd: &grant.cwd };
+        match self.cloud.current_session(query).await {
+            Ok(Some(session)) => Ok(SessionTarget {
+                id: session.id,
+                workspace_id: session.workspace_id,
+                title: session.title,
+                current: true,
+            }),
+            Ok(None) => Err(tool_error(format!(
+                "the current chat is {NOT_RECORDED_YET} in the Workspace; name a recorded session id \
+                 instead (org_sessions lists them)"
+            ))),
+            Err(e) => Err(tool_error(e.to_string())),
         }
     }
 }

@@ -26,7 +26,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use atlas_artifacts::{AnchorKind, Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
-use atlas_comms::wire::{ArtifactRef, ConversationKind};
+use atlas_comms::wire::{SessionReference, ConversationKind};
 use atlas_comms::CommsError;
 
 use super::OrgScope;
@@ -285,7 +285,7 @@ pub struct NewMessage<'a> {
     /// Workspaces chat said a message may reference
     /// ([`OrganisationCloud::referenceable_workspaces`]). Empty for a plain
     /// message.
-    pub artifact_refs: &'a [ArtifactRef],
+    pub artifact_refs: &'a [SessionReference],
 }
 
 /// A chat message handed to chat's socket: the id this client gave it, and

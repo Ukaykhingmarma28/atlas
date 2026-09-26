@@ -72,8 +72,9 @@ pub struct CodeRef {
     pub snippet: String,
 }
 
-/// A recorded session, or one checkpoint inside it, carried by a message
-/// (the contract's `ChatArtifactRef`, ATL-329): its own list beside
+/// A **Session Reference**: a recorded session, or one checkpoint inside it,
+/// carried by a message (the contract's `ChatArtifactRef`, ATL-329; the wire
+/// keeps its field name, `artifact_refs`): its own list beside
 /// `code_refs`, at most [`CHAT_MESSAGE_ARTIFACT_REF_MAX`] on a message.
 ///
 /// A snapshot, like a code reference's snippet: the figures are what the
@@ -85,15 +86,15 @@ pub struct CodeRef {
 /// refuses the whole message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ArtifactRef {
+pub enum SessionReference {
     /// The whole recorded session: what it was, when it began, how much of it
     /// there is.
-    Session(SessionRef),
+    Session(ReferencedSession),
     /// One checkpoint (commit) inside a recorded session.
-    Checkpoint(CheckpointRef),
+    Checkpoint(ReferencedCheckpoint),
 }
 
-impl ArtifactRef {
+impl SessionReference {
     /// The Workspace the referenced recorded session lives in — the id the
     /// server checks.
     pub fn workspace_ref_id(&self) -> &str {
@@ -106,7 +107,7 @@ impl ArtifactRef {
 
 /// `{kind: "session", …}`: a recorded session as a reference card draws it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SessionRef {
+pub struct ReferencedSession {
     /// The Workspace (its `workspace_refs` id — the Workspace registry id).
     pub workspace_ref_id: String,
     /// The recorded session; what the card links to.
@@ -130,7 +131,7 @@ pub struct SessionRef {
 
 /// `{kind: "checkpoint", …}`: one commit inside a recorded session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CheckpointRef {
+pub struct ReferencedCheckpoint {
     pub workspace_ref_id: String,
     pub session_id: String,
     #[serde(default)]
@@ -168,7 +169,7 @@ pub struct Message {
     pub code_refs: Vec<CodeRef>,
     /// Recorded sessions and checkpoints this message points at.
     #[serde(default)]
-    pub artifact_refs: Vec<ArtifactRef>,
+    pub artifact_refs: Vec<SessionReference>,
     #[serde(default)]
     pub draft_id: Option<String>,
 }
@@ -508,7 +509,7 @@ pub struct MessageNew {
     #[serde(default)]
     pub code_refs: Vec<CodeRef>,
     #[serde(default)]
-    pub artifact_refs: Vec<ArtifactRef>,
+    pub artifact_refs: Vec<SessionReference>,
     #[serde(default)]
     pub draft_id: Option<String>,
     /// Echoed back so a client can recognise its own send arriving on another
@@ -625,7 +626,7 @@ pub enum ClientFrame {
         code_refs: Vec<CodeRef>,
         /// At most [`CHAT_MESSAGE_ARTIFACT_REF_MAX`], sent whole.
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        artifact_refs: Vec<ArtifactRef>,
+        artifact_refs: Vec<SessionReference>,
     },
 
     #[serde(rename = "edit")]
@@ -676,7 +677,7 @@ pub enum ClientFrame {
     DraftSend {
         draft_id: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        artifact_refs: Vec<ArtifactRef>,
+        artifact_refs: Vec<SessionReference>,
     },
 }
 
@@ -725,8 +726,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn session_ref() -> ArtifactRef {
-        ArtifactRef::Session(SessionRef {
+    fn session_ref() -> SessionReference {
+        SessionReference::Session(ReferencedSession {
             workspace_ref_id: "ws_1".into(),
             session_id: "s_1".into(),
             session_title: Some("Fix the flaky login test".into()),
@@ -738,8 +739,8 @@ mod tests {
         })
     }
 
-    fn checkpoint_ref() -> ArtifactRef {
-        ArtifactRef::Checkpoint(CheckpointRef {
+    fn checkpoint_ref() -> SessionReference {
+        SessionReference::Checkpoint(ReferencedCheckpoint {
             workspace_ref_id: "ws_1".into(),
             session_id: "s_1".into(),
             session_title: None,
@@ -855,7 +856,7 @@ mod tests {
         assert_eq!(
             message.artifact_refs,
             vec![
-                ArtifactRef::Session(SessionRef {
+                SessionReference::Session(ReferencedSession {
                     workspace_ref_id: "ws_1".into(),
                     session_id: "s_1".into(),
                     session_title: None,

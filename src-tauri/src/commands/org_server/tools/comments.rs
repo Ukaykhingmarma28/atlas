@@ -7,42 +7,11 @@ use serde_json::{json, Value};
 
 use super::super::cloud::{CommentRef, Member, NewReply};
 use super::super::OrgScope;
+use super::mentions::named_mentions;
 use super::{
-    author_json, resolve_member, roster_name, string_in, strings_in, tool_error, tool_json, OrgTools, SessionTarget,
+    author_json, roster_name, string_in, strings_in, tool_error, tool_json, NamedSession, OrgTools, SessionTarget,
 };
 use crate::commands::memory_server::Grant;
-/// A comment body as a person reads it: every `<@user-id>` mention the
-/// server parses written as `@Name` from the roster. A mention the roster
-/// cannot name — it failed, or they have left — keeps its `<@id>`, so the
-/// model still holds the id.
-pub(in crate::commands::org_server) fn named_mentions(body: &str, roster: Option<&[Member]>) -> String {
-    let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    while let Some(start) = rest.find("<@") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 2..];
-        let named = after.find('>').and_then(|end| {
-            let id = &after[..end];
-            if id.is_empty() || id.contains(char::is_whitespace) || id.contains('<') {
-                return None;
-            }
-            roster_name(roster, id).map(|name| (name, end))
-        });
-        match named {
-            Some((name, end)) => {
-                out.push('@');
-                out.push_str(&name);
-                rest = &after[end + 1..];
-            }
-            None => {
-                out.push_str("<@");
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
 
 /// One comment as the model reads it: who wrote it (a guest by the name on
 /// the comment, never as a member; a member by the roster), where it is
@@ -112,7 +81,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         unresolved_only: bool,
     ) -> CallToolResult {
         let target = match self.session_target(grant, scope, session).await {
@@ -159,7 +128,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         comment_id: &str,
         resolved: bool,
     ) -> CallToolResult {
@@ -205,7 +174,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         comment_id: &str,
     ) -> Result<(SessionTarget, Comment), CallToolResult> {
         let target = self.session_target(grant, scope, session).await?;
@@ -248,7 +217,7 @@ impl OrgTools {
         &self,
         grant: &Grant,
         scope: &OrgScope,
-        session: Option<&str>,
+        session: NamedSession<'_>,
         comment_id: &str,
         body: &str,
         mentions: &[String],
@@ -257,15 +226,8 @@ impl OrgTools {
             Ok(found) => found,
             Err(answer) => return answer,
         };
-        let roster = if mentions.is_empty() {
-            None
-        } else {
-            match self.cloud.members(&scope.org_id).await {
-                Ok(roster) => Some(roster),
-                Err(e) => return tool_error(e.to_string()),
-            }
-        };
-        let body = match with_mentions(body, mentions, roster.as_deref().unwrap_or_default()) {
+        let mut roster = None;
+        let body = match self.post_body(&scope.org_id, body, mentions, &mut roster).await {
             Ok(body) => body,
             Err(answer) => return answer,
         };
@@ -309,6 +271,8 @@ pub(super) struct ReplyArgs<'a> {
     pub(super) body: Option<&'a str>,
     pub(super) mentions: Vec<String>,
     pub(super) session: Option<&'a str>,
+    /// The Workspace a bare `session` id is in.
+    pub(super) workspace: Option<&'a str>,
 }
 
 impl<'a> ReplyArgs<'a> {
@@ -318,39 +282,7 @@ impl<'a> ReplyArgs<'a> {
             body: string_in(arguments, "body"),
             mentions: strings_in(arguments, "mention"),
             session: string_in(arguments, "session"),
+            workspace: string_in(arguments, "workspace"),
         }
-    }
-}
-
-/// `body` with each member `mentions` names written as the server's
-/// `<@user-id>`: every `@<what the model named>` and `@<member's name>` in the
-/// body becomes the mention, and a member the body does not `@` leads it. A
-/// name that matches nobody, or several members, is the answer instead —
-/// before anything is posted.
-pub(in crate::commands::org_server) fn with_mentions(body: &str, mentions: &[String], roster: &[Member]) -> Result<String, CallToolResult> {
-    let mut out = body.to_string();
-    let mut leading = Vec::new();
-    for named in mentions {
-        let member = resolve_member(roster, named)?;
-        let token = format!("<@{}>", member.user_id);
-        let mut found = false;
-        // Longest first, so "@Sam Lee" is not taken as "@Sam".
-        let mut spellings = vec![named.trim_start_matches('@').to_string(), member.name.clone(), member.email.clone()];
-        spellings.sort_by_key(|s| std::cmp::Reverse(s.len()));
-        for spelling in spellings.iter().filter(|s| !s.is_empty()) {
-            let at = format!("@{spelling}");
-            if out.contains(&at) {
-                out = out.replace(&at, &token);
-                found = true;
-            }
-        }
-        if !found && !out.contains(&token) {
-            leading.push(token);
-        }
-    }
-    if leading.is_empty() {
-        Ok(out)
-    } else {
-        Ok(format!("{} {out}", leading.join(" ")))
     }
 }

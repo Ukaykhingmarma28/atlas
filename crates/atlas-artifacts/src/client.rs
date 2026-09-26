@@ -133,6 +133,25 @@ impl ArtifactsClient {
         }
     }
 
+    /// The route `segments` name under the base: each one percent-encoded as
+    /// exactly one path segment, so an id can never add a segment, climb out
+    /// of its place, or start a query — `../other/x` is one odd id the server
+    /// cannot find, not another Workspace's Session. A blank id, `.` or `..`
+    /// is refused before anything is sent: a URL parser drops or resolves
+    /// those rather than encoding them.
+    fn url(&self, segments: &[&str]) -> Result<reqwest::Url> {
+        if let Some(bad) = segments.iter().find(|s| s.is_empty() || **s == "." || **s == "..") {
+            return Err(Error::Protocol(format!("\"{bad}\" is not an id")));
+        }
+        let mut url = reqwest::Url::parse(&self.base)
+            .map_err(|e| Error::Transport(format!("the artifacts base {}: {e}", self.base)))?;
+        url.path_segments_mut()
+            .map_err(|()| Error::Transport(format!("the artifacts base {} takes no path", self.base)))?
+            .pop_if_empty()
+            .extend(segments);
+        Ok(url)
+    }
+
     /// Recent Sessions across the Organisation, or one Project of it.
     ///
     /// Walks up to [`MAX_BOARD_PAGES`]. `notes` from every page are kept: a
@@ -220,7 +239,7 @@ impl ArtifactsClient {
         let limit = limit.unwrap_or(ENTRY_PAGE).clamp(1, ENTRY_PAGE_MAX);
         let mut req = self
             .http
-            .get(format!("{}/sessions/{project_id}/{session_id}", self.base))
+            .get(self.url(&["sessions", project_id, session_id])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", org_id), ("limit", &limit.to_string())]);
         if let Some(cursor) = cursor {
@@ -251,7 +270,7 @@ impl ArtifactsClient {
         for page_no in 0..MAX_ENTRY_PAGES {
             let mut req = self
                 .http
-                .get(format!("{}/sessions/{project_id}/{session_id}", self.base))
+                .get(self.url(&["sessions", project_id, session_id])?)
                 .bearer_auth(self.token().await?)
                 .query(&[("org", org_id), ("limit", &ENTRY_PAGE.to_string())]);
             if let Some(ref c) = cursor {
@@ -296,10 +315,7 @@ impl ArtifactsClient {
     ) -> Result<EntryPayload> {
         let req = self
             .http
-            .get(format!(
-                "{}/sessions/{project_id}/{session_id}/entries/{row_id}/payload",
-                self.base
-            ))
+            .get(self.url(&["sessions", project_id, session_id, "entries", row_id, "payload"])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", org_id), ("part", part)]);
         self.send(req, "entry payload").await
@@ -322,7 +338,7 @@ impl ArtifactsClient {
         }
         let req = self
             .http
-            .get(format!("{}/sessions/{project_id}/{session_id}/comments", self.base))
+            .get(self.url(&["sessions", project_id, session_id, "comments"])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", org_id)]);
         let wrapper: Wrapper = self.send(req, "comments").await?;
@@ -348,10 +364,7 @@ impl ArtifactsClient {
 
         let req = self
             .http
-            .post(format!(
-                "{}/sessions/{}/{}/comments",
-                self.base, at.project_id, at.session_id
-            ))
+            .post(self.url(&["sessions", at.project_id, at.session_id, "comments"])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", at.org_id)])
             .json(&payload);
@@ -386,10 +399,7 @@ impl ArtifactsClient {
 
         let req = self
             .http
-            .patch(format!(
-                "{}/sessions/{project_id}/{session_id}/comments/{comment_id}",
-                self.base
-            ))
+            .patch(self.url(&["sessions", project_id, session_id, "comments", comment_id])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", org_id)])
             .json(&serde_json::Value::Object(payload));
@@ -413,10 +423,7 @@ impl ArtifactsClient {
         }
         let req = self
             .http
-            .delete(format!(
-                "{}/sessions/{project_id}/{session_id}/comments/{comment_id}",
-                self.base
-            ))
+            .delete(self.url(&["sessions", project_id, session_id, "comments", comment_id])?)
             .bearer_auth(self.token().await?)
             .query(&[("org", org_id)]);
         let wrapper: Wrapper = self.send(req, "delete comment").await?;
@@ -682,6 +689,46 @@ mod tests {
             seen[0].lines().next().unwrap(),
             "GET /sessions/ws_1/ses_1?org=org_1&limit=500&cursor=t9 HTTP/1.1"
         );
+    }
+
+    // ── Ids are path segments, never paths ──────────────────────────────────
+
+    #[tokio::test]
+    async fn an_id_is_one_path_segment_so_a_slash_or_a_traversal_in_it_cannot_leave_its_place() {
+        let (base, seen) = loopback(r#"{"comments":[]}"#).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        client.comments("org_1", "ws_1", "../ws_other/ses_9").await.unwrap();
+        client.comments("org_1", "ws_1", "ses_1%2F..%2Fx").await.unwrap();
+        client.comments("org_1", "ws_1", "ses_1?org=org_2#x").await.unwrap();
+        client.comments("org_1", "ws_1", "ses_1").await.unwrap();
+
+        let seen = seen.lock().unwrap().clone();
+        let lines: Vec<&str> = seen.iter().map(|h| h.lines().next().unwrap()).collect();
+        assert_eq!(
+            lines,
+            [
+                "GET /sessions/ws_1/..%2Fws_other%2Fses_9/comments?org=org_1 HTTP/1.1",
+                "GET /sessions/ws_1/ses_1%252F..%252Fx/comments?org=org_1 HTTP/1.1",
+                "GET /sessions/ws_1/ses_1%3Forg=org_2%23x/comments?org=org_1 HTTP/1.1",
+                "GET /sessions/ws_1/ses_1/comments?org=org_1 HTTP/1.1",
+            ],
+            "a slash, a percent sign, a query or a fragment in an id is encoded into its one segment"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dot_segment_or_a_blank_id_is_refused_before_anything_is_sent() {
+        let (base, seen) = loopback(r#"{"comments":[]}"#).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        for id in ["..", ".", ""] {
+            let refused = client.entry_payload("org_1", "ws_1", "ses_1", id, "body").await;
+            assert!(matches!(refused, Err(Error::Protocol(_))), "{id:?}: {refused:?}");
+            let refused = client.comments("org_1", id, "ses_1").await;
+            assert!(matches!(refused, Err(Error::Protocol(_))), "{id:?}: {refused:?}");
+        }
+        assert!(seen.lock().unwrap().is_empty(), "nothing reached the wire");
     }
 
     #[test]

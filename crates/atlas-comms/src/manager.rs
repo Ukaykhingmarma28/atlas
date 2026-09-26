@@ -26,7 +26,7 @@ use crate::state::{
     SendStatus, StateDelta,
 };
 use crate::store::CommsStore;
-use crate::wire::{ArtifactRef, ClientFrame, Message, ReactionRow, ServerFrame, CHAT_TYPING_INTERVAL_MS};
+use crate::wire::{SessionReference, ClientFrame, Message, ReactionRow, ServerFrame, CHAT_TYPING_INTERVAL_MS};
 use crate::{chat_base, socket_url, OrgTarget, TokenSource};
 
 const RECONNECT_BASE_MS: u64 = 1_000;
@@ -777,7 +777,7 @@ impl CommsManager {
         body: String,
         reply_to_id: Option<String>,
         attachments: Vec<String>,
-        artifact_refs: Vec<ArtifactRef>,
+        artifact_refs: Vec<SessionReference>,
     ) -> Result<String> {
         if self.session().is_none() {
             return Err(CommsError::Protocol("no organisation is connected".into()));

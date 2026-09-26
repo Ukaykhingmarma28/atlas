@@ -53,21 +53,22 @@ export interface ChatCodeRef {
 }
 
 /**
- * A recorded session, or one checkpoint inside it, carried by a message
- * (the contract's `ChatArtifactRef`, ATL-329) — its own list beside
+ * A **Session Reference**: a recorded session, or one checkpoint inside it,
+ * carried by a message (the contract's `ChatArtifactRef`, ATL-329; the wire
+ * keeps its field name, `artifact_refs`) — its own list beside
  * `code_refs`, at most three. A snapshot of what the sender saw when it was
  * drawn; the card links to the recorded session on the Timeline.
  * `workspace_ref_id` is the Workspace's registry id — the Timeline's
  * `remoteProjectId`.
  */
-interface ChatArtifactRefCommon {
+interface ChatSessionReferenceCommon {
   workspace_ref_id: string;
   session_id: string;
   /** `null` for an untitled run. */
   session_title: string | null;
 }
 
-export interface ChatSessionRef extends ChatArtifactRefCommon {
+export interface ChatReferencedSession extends ChatSessionReferenceCommon {
   kind: "session";
   agent: string | null;
   /** Epoch milliseconds, or `null` when the sender had no figure. */
@@ -77,7 +78,7 @@ export interface ChatSessionRef extends ChatArtifactRefCommon {
   checkpoints: number;
 }
 
-export interface ChatCheckpointRef extends ChatArtifactRefCommon {
+export interface ChatReferencedCheckpoint extends ChatSessionReferenceCommon {
   kind: "checkpoint";
   /** The checkpoint's own row id. */
   row_id: string;
@@ -89,7 +90,7 @@ export interface ChatCheckpointRef extends ChatArtifactRefCommon {
   files: number;
 }
 
-export type ChatArtifactRef = ChatSessionRef | ChatCheckpointRef;
+export type ChatSessionReference = ChatReferencedSession | ChatReferencedCheckpoint;
 
 export interface ChatMessage {
   id: string;
@@ -103,7 +104,7 @@ export interface ChatMessage {
   attachments: ChatAttachment[];
   code_refs: ChatCodeRef[];
   /** Absent on a row written before references existed. */
-  artifact_refs?: ChatArtifactRef[];
+  artifact_refs?: ChatSessionReference[];
   draft_id: string | null;
 }
 

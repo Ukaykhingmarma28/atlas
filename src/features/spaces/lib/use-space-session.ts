@@ -12,6 +12,7 @@ import {
 } from "./spaces-api";
 import { subscribeSpaceBus } from "./spaces-bus";
 import { acquireSpaceSocket, registerOpenPage, releaseSpaceSocket } from "./live-spaces";
+import { landingPage } from "./open-space";
 import {
   applyAwareness,
   decodeSpaceFrame,
@@ -258,18 +259,14 @@ export function useSpaceSession(convId: string) {
               error: null,
             });
             // Reconnect: re-open the page we were on (fresh slot). First
-            // hello: land on the remembered page, else the first real page.
+            // hello: land on the page asked for from outside the canvas,
+            // else the remembered page, else the first real page.
             const current = pageIdRef.current;
             if (current !== null && msg.pages.some((p) => p.id === current)) {
               requestPage(current);
             } else {
-              const landing =
-                (msg.active_page_id !== null &&
-                msg.pages.some((p) => p.id === msg.active_page_id && p.kind === "page")
-                  ? msg.active_page_id
-                  : null) ??
-                msg.pages.find((p) => p.kind === "page")?.id ??
-                null;
+              const asked = useSpacesStore.getState().actions.takeRequestedPage(convId);
+              const landing = landingPage(msg.pages, msg.active_page_id, asked);
               if (landing !== null) openPage(landing);
             }
             break;
@@ -372,6 +369,18 @@ export function useSpaceSession(convId: string) {
     });
     return off;
   }, [convId, openPage, patch, publishAwareness, requestPage]);
+
+  // A page asked for from outside the canvas (`openSpaceOnPage`) while it is
+  // already showing this Space: switch to it at once. Before the first
+  // hello has landed on a page, the hello takes the request instead.
+  const requested = useSpacesStore((s) => s.requestedPages[convId] ?? null);
+  useEffect(() => {
+    if (requested === null || pageIdRef.current === null) return;
+    const store = useSpacesStore.getState();
+    const asked = store.actions.takeRequestedPage(convId);
+    const pages = store.byConv[convId]?.pages ?? [];
+    if (asked !== null && landingPage(pages, null, asked) === asked) openPage(asked);
+  }, [convId, openPage, requested]);
 
   // ---- lifecycle ----------------------------------------------------------
   useEffect(() => {

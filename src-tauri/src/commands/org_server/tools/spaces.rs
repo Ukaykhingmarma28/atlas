@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::super::cloud::{OrgConversation, NewPage};
 use super::super::OrgScope;
 use super::diagram::diagram;
-use super::{conversation_json, resolve_conversation, tool_error, tool_json, OrgTools};
+use super::{conversation_json, is_id, resolve_conversation, tool_error, tool_json, OrgTools};
 use crate::commands::memory_server::Grant;
 use crate::commands::ui_server::UiRequest;
 
@@ -52,13 +52,6 @@ impl OrgTools {
             "name": name,
         }))
     }
-}
-
-/// The shape of a page id: the Space's ids are ULID- or UUID-like tokens.
-/// Checked before the window is asked, so a name or a link passed as a page
-/// id is refused in words rather than by a Space that cannot find it.
-fn is_page_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 impl OrgTools {
@@ -110,7 +103,9 @@ impl OrgTools {
         page: &str,
         document: Option<&Value>,
     ) -> CallToolResult {
-        if !is_page_id(page) {
+        // The shape every id is checked for ([`is_id`]), before the window is
+        // asked, so a name or a link passed as a page id is refused in words.
+        if !is_id(page) {
             return tool_error(format!(
                 "\"{page}\" is not a page id; pass the `page_id` org_page_create answered. Nothing was drawn."
             ));

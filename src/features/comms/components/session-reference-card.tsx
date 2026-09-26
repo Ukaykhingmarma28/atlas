@@ -1,8 +1,8 @@
-import { GitCommitHorizontal, History } from "lucide-react";
+import { GitCommitHorizontal, Layers } from "lucide-react";
 
 import { useArtifactsStore } from "@/features/artifacts/stores/artifacts-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import type { ChatArtifactRef } from "../types";
+import type { ChatSessionReference } from "../types";
 
 /**
  * Open the recorded session a reference points at on the Timeline, the way
@@ -12,7 +12,7 @@ import type { ChatArtifactRef } from "../types";
  * the server — a teammate's run may never have existed on this machine. A
  * checkpoint reference lands on its commit.
  */
-export function openRecordedSession(ref: ChatArtifactRef): void {
+export function openRecordedSession(ref: ChatSessionReference): void {
   useArtifactsStore.getState().actions.openSession({
     sessionId: ref.session_id,
     projectPath: "",
@@ -34,7 +34,7 @@ function plural(n: number, one: string): string {
 }
 
 /** The card's second line: what the snapshot says about the run or commit. */
-function detailOf(ref: ChatArtifactRef): string {
+function detailOf(ref: ChatSessionReference): string {
   if (ref.kind === "checkpoint") {
     return [
       `Checkpoint ${ref.commit_sha.slice(0, 7)}`,
@@ -62,22 +62,22 @@ function detailOf(ref: ChatArtifactRef): string {
  * is drawn, and opening that recorded session on the Timeline when clicked.
  * The figures are the sender's snapshot; the Timeline has the current truth.
  */
-export function ArtifactRefCard({ artifactRef }: { artifactRef: ChatArtifactRef }) {
-  const title = artifactRef.session_title ?? "Untitled session";
-  const Icon = artifactRef.kind === "checkpoint" ? GitCommitHorizontal : History;
+export function SessionReferenceCard({ reference }: { reference: ChatSessionReference }) {
+  const title = reference.session_title ?? "Untitled session";
+  const Icon = reference.kind === "checkpoint" ? GitCommitHorizontal : Layers;
   return (
     <button
       type="button"
-      data-artifact-ref={artifactRef.kind}
+      data-session-reference={reference.kind}
       aria-label={`Session Reference: ${title}. Open it on the Timeline`}
-      onClick={() => openRecordedSession(artifactRef)}
+      onClick={() => openRecordedSession(reference)}
       className="flex w-full max-w-[420px] cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:border-border-strong hover:bg-element-hover"
     >
       <Icon size={15} className="shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm text-secondary-foreground">{title}</span>
         <span className="block truncate text-2xs tabular-nums text-disabled">
-          {detailOf(artifactRef)}
+          {detailOf(reference)}
         </span>
       </span>
     </button>

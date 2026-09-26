@@ -85,6 +85,9 @@ pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
 pub use resolve::OrgLink;
 #[allow(unused_imports)]
 pub use tools::{router, OrgTools, ADMIN_TOOLS, INSTRUCTIONS, OUTWARD_TOOLS, WINDOW_TOOLS};
+/// The shape every organisation id is checked for before it is used — also
+/// by the UI tool server, for the ids that open a Space page.
+pub(crate) use tools::is_id as is_org_id;
 
 /// The name the server goes by in the agent's MCP configuration; its tools
 /// reach the model as `mcp__atlas_org__<tool>`.

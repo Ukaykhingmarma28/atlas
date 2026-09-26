@@ -169,6 +169,20 @@ describe("drawing on a page no canvas here has open", () => {
     expect(log.released).toBe(1);
   });
 
+  it("refuses in words when the socket cannot be dialled, and gives back no hold it never took", async () => {
+    const { transport, log } = fakeSpace();
+    transport.acquire = async () => {
+      throw "the Space is unreachable";
+    };
+    const write = writeSpacePage(transport, { convId: "c-1", pageId: "p-1" }, diagram);
+    await expect(write).rejects.toBeInstanceOf(PageWriteRefusal);
+    await expect(
+      writeSpacePage(transport, { convId: "c-1", pageId: "p-1" }, diagram),
+    ).rejects.toThrow(/could not be reached: the Space is unreachable.*Nothing was drawn/);
+    expect(log.released).toBe(0);
+    expect(log.binary).toHaveLength(0);
+  });
+
   it("refuses when the page never opens, in time, and gives the socket back", async () => {
     const { transport, log } = fakeSpace();
     transport.sendControl = async () => {};

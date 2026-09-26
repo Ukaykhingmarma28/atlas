@@ -41,6 +41,27 @@ So the organisation tool server adds about **7.5 KB, ~2.1k Sonnet tokens (~2.8k 
 
 The two largest, `org_page_write` and `org_sessions`, are 2.4 KB, a third of the total. Repeated parameter descriptions are the other visible cost: `session` ("A recorded session id, or \"current\" (the default).") appears on four tools, `since`/`until`/`workspace` on two, and the ~100-byte `mention` description on two.
 
+## After the trim (review follow-up)
+
+The prefix was cut toward the ~3 KB target, and the test now fails when a member's tools on the Chat wire exceed **3.5 KB** (and an admin's, with the instructions, 4.5 KB).
+
+| What | Member (12 tools) | Admin (13 tools) |
+|---|---|---|
+| `tools/list` JSON | 3,089 B (~860 tok) | 3,425 B (~950 tok) |
+| **Chat wire tools** | **3,495 B (~970 tok)** | **3,871 B (~1,080 tok)** |
+| `INSTRUCTIONS` (not on the Chat wire) | 214 B | 214 B |
+
+From 7,902 B (the figure after the `workspace` arguments of the one-Workspace policy were added) to 3,495 B for a member, by:
+
+- `org_page_write`'s `document` is one object whose description gives the item shape of `nodes` and `edges` in one line, derived from `diagram.rs`'s `NODE_KINDS`, `SHAPES` and `ANCHORS`; the checking stays in Rust.
+- One-clause tool descriptions; defaults, caps, windows and limits are left to the answers, which report them.
+- Properties are described only where the name does not say it: `session` ("Id, link or current") on `org_comments`, `org_session` and `org_send`; `to` and an admin's `member` ("Name, id or atlas-org:// link"); `author` ("me, name, id or link"); `part` is an enum.
+- No `required` arrays: every missing argument is refused in words by the code, which is where the rule is enforced.
+- `limit` on `org_inbox` and `org_session`, and `live` on `org_sessions`, are no longer advertised; the code still honours them when passed.
+- `INSTRUCTIONS` is three sentences. Because the Chat wire drops them, every rule that must reach the model is also in a description (`org_whoami`: "call first"; the outward tools: "the user approves first"; `org_inbox`: "read-only"), and each rule the model could break is enforced in code. `the_rules_the_model_must_see_ride_in_the_tool_descriptions` pins this.
+
+Set `ORG_PREFIX_DUMP=1` to print every tool as it goes on the wire.
+
 ## How to reproduce
 
 ```sh
@@ -48,4 +69,4 @@ cd src-tauri
 cargo test -p atlas --lib org_server_prefix -- --nocapture
 ```
 
-The test is `org_server_prefix_bytes_are_measured` in `src-tauri/src/commands/org_server/tests.rs`. It prints the three figures and the per-tool table, and fails if the admin wire tools plus the instructions reach 10 KB, so a growing description is a decision rather than drift. Run `bun run clean:rust` afterwards.
+The test is `org_server_prefix_bytes_are_measured` in `src-tauri/src/commands/org_server/tests.rs`. It prints the three figures and the per-tool table, and fails past the budgets above, so a growing description is a decision rather than drift. Run `bun run clean:rust` afterwards.

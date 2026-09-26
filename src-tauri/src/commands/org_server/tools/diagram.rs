@@ -16,6 +16,7 @@
 //! not draw costs no round trip and leaves the page untouched.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -29,6 +30,20 @@ pub(super) const SHAPES: &[&str] = &["rectangle", "ellipse", "diamond", "triangl
 
 /// The contract's `SpaceAnchor`: the four compass points an edge attaches at.
 pub(super) const ANCHORS: &[&str] = &["n", "e", "s", "w"];
+
+/// The shape of `org_page_write`'s `document`, as its schema says it: two
+/// arrays, each item's fields in one line, derived from [`NODE_KINDS`],
+/// [`SHAPES`] and [`ANCHORS`] so the schema offers exactly what [`diagram`]
+/// accepts. One line rather than nested objects — every native turn carries
+/// it — and the checking stays here.
+pub(super) static DOCUMENT_SHAPE: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{{nodes:[{{id,kind:{},text?,shape?:{},parent?,x?,y?,w?,h?}}],edges:[{{from,to,label?,from_anchor?,to_anchor?:{}}}]}}",
+        NODE_KINDS.join("|"),
+        SHAPES.join("|"),
+        ANCHORS.join("|")
+    )
+});
 
 /// The most nodes one document may hold. A page's whole replacement goes out
 /// as one CRDT update, and the Space bounds an update at 128 KiB; two hundred
@@ -289,4 +304,33 @@ pub(super) fn diagram(document: Option<&Value>) -> Result<Diagram, String> {
 
     let edges = edges.iter().enumerate().map(|(i, e)| read_edge(i, e, &seen)).collect::<Result<Vec<_>, _>>()?;
     Ok(Diagram { nodes, edges })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// The schema's one-line shape is written from the same constants the
+    /// check holds a document to, so every kind, shape and anchor it offers
+    /// is one the check accepts, and nothing the check accepts is left out.
+    #[test]
+    fn the_schema_offers_exactly_the_kinds_shapes_and_anchors_the_check_accepts() {
+        for (values, key) in [(NODE_KINDS, "kind"), (SHAPES, "shape"), (ANCHORS, "to_anchor")] {
+            assert!(DOCUMENT_SHAPE.contains(&format!("{key}:{}", values.join("|")))
+                || DOCUMENT_SHAPE.contains(&format!("{key}?:{}", values.join("|"))), "{key}: {}", *DOCUMENT_SHAPE);
+        }
+        for kind in NODE_KINDS {
+            let node = if *kind == "shape" {
+                json!({ "id": "a", "kind": kind, "shape": SHAPES[0] })
+            } else {
+                json!({ "id": "a", "kind": kind })
+            };
+            let document = json!({ "nodes": [node, { "id": "b", "kind": "note" }], "edges": [
+                { "from": "a", "to": "b", "from_anchor": ANCHORS[0], "to_anchor": ANCHORS[3] }
+            ] });
+            assert!(diagram(Some(&document)).is_ok(), "{kind}");
+        }
+    }
 }

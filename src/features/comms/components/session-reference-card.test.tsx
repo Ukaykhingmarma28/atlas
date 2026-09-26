@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resol
 import { MessageGroup } from "./message-group";
 import { useArtifactsStore } from "@/features/artifacts/stores/artifacts-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import type { ChatArtifactRef, CommsMessage, OrgMemberProfile } from "../types";
+import type { ChatSessionReference, CommsMessage, OrgMemberProfile } from "../types";
 
 const ada: OrgMemberProfile = {
   id: "u_ada",
@@ -17,7 +17,7 @@ const ada: OrgMemberProfile = {
 };
 const members = new Map([[ada.id, ada]]);
 
-const sessionRef: ChatArtifactRef = {
+const sessionRef: ChatSessionReference = {
   kind: "session",
   workspace_ref_id: "ws_atlas",
   session_id: "rs_1",
@@ -29,7 +29,7 @@ const sessionRef: ChatArtifactRef = {
   checkpoints: 2,
 };
 
-const checkpointRef: ChatArtifactRef = {
+const checkpointRef: ChatSessionReference = {
   kind: "checkpoint",
   workspace_ref_id: "ws_atlas",
   session_id: "rs_1",
@@ -42,7 +42,7 @@ const checkpointRef: ChatArtifactRef = {
   files: 2,
 };
 
-function message(id: string, body: string, refs: ChatArtifactRef[] | undefined): CommsMessage {
+function message(id: string, body: string, refs: ChatSessionReference[] | undefined): CommsMessage {
   return {
     id,
     conv_id: "c1",
@@ -93,8 +93,8 @@ describe("Session Reference card", () => {
   it("draws a card for each reference a message carries, with the sender's snapshot", () => {
     // As the web sends it: a body, a session and one of its checkpoints.
     const { container } = show([message("m1", "look at this run", [sessionRef, checkpointRef])]);
-    const cards = container.querySelectorAll("[data-artifact-ref]");
-    expect([...cards].map((c) => c.getAttribute("data-artifact-ref"))).toEqual([
+    const cards = container.querySelectorAll("[data-session-reference]");
+    expect([...cards].map((c) => c.getAttribute("data-session-reference"))).toEqual([
       "session",
       "checkpoint",
     ]);
@@ -109,6 +109,18 @@ describe("Session Reference card", () => {
     expect(screen.getByText("Checkpoint abc1234 · main · +4 −1 · 2 files")).toBeTruthy();
   });
 
+  it("draws a recorded session with the Timeline's icon, as the mention picker and chip do", () => {
+    const { container } = show([message("m1", "look", [sessionRef, checkpointRef])]);
+    expect(
+      container.querySelector('[data-session-reference="session"] svg.lucide-layers'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector(
+        '[data-session-reference="checkpoint"] svg.lucide-git-commit-horizontal',
+      ),
+    ).toBeTruthy();
+  });
+
   it("draws the card on the agent's report, and none on a message without references", () => {
     // As `org_send` sends it: the prose summary and one Session Reference.
     const { container } = show([
@@ -116,7 +128,7 @@ describe("Session Reference card", () => {
       message("m2", "an ordinary message", undefined),
       message("m3", "another", []),
     ]);
-    expect(container.querySelectorAll("[data-artifact-ref]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-session-reference]")).toHaveLength(1);
     expect(
       screen.getByRole("button", {
         name: "Session Reference: Fix the theme importer. Open it on the Timeline",

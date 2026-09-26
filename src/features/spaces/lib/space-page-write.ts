@@ -50,7 +50,7 @@ export interface SpacePageTransport {
   /** The page's doc as a canvas here holds it, caught up; else `null`. */
   openPage(convId: string, pageId: string): { doc: Y.Doc; readOnly: string | null } | null;
   /** Hold the conversation's socket (dialling it if nobody does), and give
-   *  it back. */
+   *  it back. A rejected hold holds nothing, and is not given back. */
   acquire(convId: string): Promise<void>;
   release(convId: string): void;
   connection(convId: string): SpaceConnState;
@@ -203,24 +203,30 @@ export async function writeSpacePage(
 
   const events = new EventQueue();
   const unsubscribe = transport.subscribe(convId, events.push);
+  // A hold is given back only once taken: a connect that fails takes none.
+  let held = false;
   try {
-    await transport.acquire(convId);
     try {
-      const opened = await openOnSocket(transport, convId, pageId, events, deadline);
-      if (opened.read_only !== null) refuse(`the page is read-only (${opened.read_only}).`);
-      const scratch = new Y.Doc();
-      applyPageContent(scratch, opened);
-      const update = drawingUpdate(scratch, placed);
-      scratch.destroy();
-      checkSize(update);
-      inTime();
-      await transport.sendBinary(convId, toBase64(frameUpdate(opened.slot, update)));
-      return answer;
-    } finally {
-      // Queued frames still go out: the socket drains before it closes.
-      transport.release(convId);
+      await transport.acquire(convId);
+    } catch (e) {
+      return refuse(
+        `the conversation's Space could not be reached: ${typeof e === "string" ? e : String(e)}.`,
+      );
     }
+    held = true;
+    const opened = await openOnSocket(transport, convId, pageId, events, deadline);
+    if (opened.read_only !== null) refuse(`the page is read-only (${opened.read_only}).`);
+    const scratch = new Y.Doc();
+    applyPageContent(scratch, opened);
+    const update = drawingUpdate(scratch, placed);
+    scratch.destroy();
+    checkSize(update);
+    inTime();
+    await transport.sendBinary(convId, toBase64(frameUpdate(opened.slot, update)));
+    return answer;
   } finally {
+    // Queued frames still go out: the socket drains before it closes.
+    if (held) transport.release(convId);
     unsubscribe();
   }
 }
