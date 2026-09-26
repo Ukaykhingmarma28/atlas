@@ -67,6 +67,48 @@ pub struct EngineSession {
     /// engine-side thread setting the selection had written: the picker
     /// changed nothing about the next turn. The turn path reads this instead.
     selected_model: Option<String>,
+    /// The last card to join this session's line, as the signal it sends when
+    /// it is answered. See [`PromptPlace`].
+    prompt_tail: Option<tokio::sync::oneshot::Receiver<()>>,
+}
+
+/// A card's place in its session's line: one card at a time (ADR-0013).
+///
+/// A tool permission and a clarifying question both pin a card above the
+/// composer, and both block the turn on the user. The engine can ask for two
+/// at once — parallel tool calls can each want approval while the model's own
+/// question is open — and the chat would stack them, the second covering the
+/// first. So the engine's requests queue per session in the order they reached
+/// the pump, and each card is raised only once the one ahead of it is
+/// answered.
+///
+/// A chain rather than a lock, deliberately: a place is taken *synchronously*,
+/// on the pump, which is what fixes the order to arrival order. Awaiting a
+/// fair lock from a spawned task would order the cards by whichever task the
+/// runtime happened to poll first.
+///
+/// Dropping the place is what lets the next card up, so an answer, a failure
+/// to raise and a panic all release the line alike.
+pub struct PromptPlace {
+    /// The signal from the card ahead; `None` when nothing is waiting ahead.
+    ahead: Option<tokio::sync::oneshot::Receiver<()>>,
+    /// Held until this card is answered; dropped, it releases the next one.
+    _answered: tokio::sync::oneshot::Sender<()>,
+}
+
+impl PromptPlace {
+    /// Whether another card was still open when this one joined the line.
+    pub fn is_queued(&self) -> bool {
+        self.ahead.is_some()
+    }
+
+    /// Waits until every card ahead has been answered.
+    pub async fn wait(&mut self) {
+        if let Some(ahead) = self.ahead.take() {
+            // `Err` is the normal release: the place ahead was dropped.
+            let _ = ahead.await;
+        }
+    }
 }
 
 #[derive(Default)]
@@ -110,8 +152,28 @@ impl EngineSessions {
                 skills: Vec::new(),
                 command_output: HashMap::new(),
                 selected_model: None,
+                prompt_tail: None,
             },
         );
+    }
+
+    /// Takes the next place in `session_id`'s line of cards. Called on the
+    /// pump, in arrival order — see [`PromptPlace`].
+    pub fn join_prompt_line(&self, session_id: &acp::SessionId) -> PromptPlace {
+        let (answered, signal) = tokio::sync::oneshot::channel();
+        let ahead = self
+            .lock()
+            .get_mut(session_id)
+            .and_then(|session| session.prompt_tail.replace(signal))
+            // A card ahead that has already been answered is not in the way.
+            .and_then(|mut ahead| match ahead.try_recv() {
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => Some(ahead),
+                _ => None,
+            });
+        PromptPlace {
+            ahead,
+            _answered: answered,
+        }
     }
 
     pub fn thread(&self, session_id: &acp::SessionId) -> Option<AcpThreadHandle> {
