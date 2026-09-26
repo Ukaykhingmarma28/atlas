@@ -93,6 +93,7 @@ import type {
 } from "../lib/mentions";
 import { toast } from "sonner";
 import { useComposerFileDrop } from "../hooks/use-composer-file-drop";
+import { scratchPathForFile } from "@/lib/scratch-file";
 import { useAppStore } from "@/features/app/stores/app-store";
 import type { MentionTrigger } from "../lib/cm-mention-extension";
 import type { SlashTrigger } from "../lib/cm-slash-extension";
@@ -1151,9 +1152,11 @@ export function MessageInput({
     // the caret; the plugin will fire the null transition for us.
   }, []);
 
-  // ── Drag-and-drop OS files onto the composer → attach as mention chips ──
+  // ── File chips ──────────────────────────────────────────────────────────
+  // A path the agent reads off disk. `attachPaths` (below) decides between
+  // this and an inline image; only that and the screenshot fallback call it.
   const composerRef = useRef<HTMLDivElement>(null);
-  const handleDropFiles = useCallback(
+  const insertFileChips = useCallback(
     (paths: string[]) => {
       const root = projectPath && !projectPath.endsWith("/") ? `${projectPath}/` : projectPath;
       for (const abs of paths) {
@@ -1173,12 +1176,6 @@ export function MessageInput({
     },
     [projectPath],
   );
-  const { isDropTarget } = useComposerFileDrop({
-    targetRef: composerRef,
-    enabled: !disabled,
-    onDropFiles: handleDropFiles,
-  });
-
   // ── Image attachments (multimodal input) ─────────────────────────────────
   // Images staged for the next send, shown as thumbnails above the input.
   // Only populated when the bound agent advertised promptCapabilities.image;
@@ -1240,22 +1237,17 @@ export function MessageInput({
     if (!stagedOverAggregateBudget) warnedAggregateRef.current = false;
   }, [stagedOverAggregateBudget]);
 
-  // "+" menu → "Add files or photos". The Tauri dialog hands back real
-  // paths (a browser file input wouldn't), which is what makes the routing
-  // possible: images become inline base64 attachments when the agent
-  // supports them; everything else — and any unreadable image — becomes a
-  // path mention chip via the same handler the drag-drop path uses.
-  const pickFilesOrPhotos = useCallback(async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const picked = await open({
-        multiple: true,
-        title: "Attach files or photos",
-      });
-      if (!picked) return;
-      const paths = (Array.isArray(picked) ? picked : [picked]) as string[];
+  // ── Attaching files by path ──────────────────────────────────────────────
+  // The one routing rule for every way a file with a path arrives — dropped
+  // from Finder, picked in the "+" menu, copied in Finder and pasted: images
+  // become inline base64 attachments when the agent supports them; everything
+  // else — and any image that won't read — becomes a path chip. A drop used to
+  // skip the image branch, so a dropped screenshot reached the agent as a path
+  // it might never open, while the same image pasted arrived inline.
+  const attachPaths = useCallback(
+    async (paths: string[]) => {
       const images: ImageAttachment[] = [];
-      const mentionPaths: string[] = [];
+      const chipPaths: string[] = [];
       for (const p of paths) {
         const mime = imageSupported ? imageMimeFromPath(p) : null;
         if (mime) {
@@ -1264,28 +1256,50 @@ export function MessageInput({
             images.push(await downscaleAttachment({ mimeType: mime, dataBase64: data }));
             continue;
           } catch {
-            // Unreadable as base64 → fall through to a path mention.
+            // Unreadable as base64 → fall through to a path chip.
           }
         }
-        mentionPaths.push(p);
+        chipPaths.push(p);
       }
       if (images.length) setStagedImages((prev) => [...prev, ...images]);
-      if (mentionPaths.length) handleDropFiles(mentionPaths);
+      if (chipPaths.length) insertFileChips(chipPaths);
       requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [imageSupported, insertFileChips],
+  );
+
+  // Drag-and-drop OS files onto the composer — the same routing as the picker.
+  const onDropFiles = useCallback((paths: string[]) => void attachPaths(paths), [attachPaths]);
+  const { isDropTarget } = useComposerFileDrop({
+    targetRef: composerRef,
+    enabled: !disabled,
+    onDropFiles,
+  });
+
+  // "+" menu → "Add files or photos". The Tauri dialog hands back real
+  // paths (a browser file input wouldn't), which is what makes the
+  // `attachPaths` routing possible.
+  const pickFilesOrPhotos = useCallback(async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        multiple: true,
+        title: "Attach files or photos",
+      });
+      if (!picked) return;
+      await attachPaths((Array.isArray(picked) ? picked : [picked]) as string[]);
     } catch (err) {
       console.warn("attach picker failed:", err);
     }
-  }, [imageSupported, handleDropFiles]);
+  }, [attachPaths]);
 
   const handlePickProject = useCallback((project: MentionProject) => {
     inputRef.current?.insertMention(project);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  // "+" menu → "Attach media". Same routing as the files picker, but the OS
-  // dialog is filtered to image/video extensions. Images ride along as inline
-  // base64 (when the agent supports it); video and anything unreadable become
-  // path mention chips the agent reads off disk.
+  // "+" menu → "Attach media". The files picker, with the OS dialog filtered
+  // to image/video extensions; video becomes a path chip via `attachPaths`.
   const pickMedia = useCallback(async () => {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
@@ -1315,29 +1329,11 @@ export function MessageInput({
         ],
       });
       if (!picked) return;
-      const paths = (Array.isArray(picked) ? picked : [picked]) as string[];
-      const images: ImageAttachment[] = [];
-      const mentionPaths: string[] = [];
-      for (const p of paths) {
-        const mime = imageSupported ? imageMimeFromPath(p) : null;
-        if (mime) {
-          try {
-            const data = await invoke<string>("read_file_base64", { path: p });
-            images.push(await downscaleAttachment({ mimeType: mime, dataBase64: data }));
-            continue;
-          } catch {
-            // Unreadable as base64 → fall through to a path mention.
-          }
-        }
-        mentionPaths.push(p);
-      }
-      if (images.length) setStagedImages((prev) => [...prev, ...images]);
-      if (mentionPaths.length) handleDropFiles(mentionPaths);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      await attachPaths((Array.isArray(picked) ? picked : [picked]) as string[]);
     } catch (err) {
       console.warn("media picker failed:", err);
     }
-  }, [imageSupported, handleDropFiles]);
+  }, [attachPaths]);
 
   // "+" menu → "Take a screenshot". Shells out to the native macOS
   // `screencapture` CLI (region selection or whole desktop), then attaches the
@@ -1365,14 +1361,14 @@ export function MessageInput({
           });
           setStagedImages((prev) => [...prev, shrunk]);
         } else {
-          handleDropFiles([res.path]);
+          insertFileChips([res.path]);
         }
         requestAnimationFrame(() => inputRef.current?.focus());
       } catch (err) {
         toast.error(`Screenshot failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [imageSupported, handleDropFiles],
+    [imageSupported, insertFileChips],
   );
 
   // "+" menu → "Add from GitHub". Shorthand for the GitHub panel's search+clone:
@@ -1441,16 +1437,28 @@ export function MessageInput({
   // Clipboard images (screenshots) → staged attachments. Returning false
   // lets chat-input's default file-paste (native pasteboard → quoted paths)
   // handle everything else.
+  // A pasted screenshot is bytes with no path. Inline when the agent takes
+  // images; otherwise spooled to a scratch file and attached as a path chip,
+  // like the screenshot tool does — declining it left the paste to a handler
+  // that only knows Finder paths, and the image vanished without a word.
   const handlePasteImages = useCallback(
     (files: File[]) => {
-      if (!imageSupported) return false;
-      void Promise.all(files.map(fileToImageAttachment)).then((atts) => {
-        const ok = atts.filter((a): a is ImageAttachment => a !== null);
-        if (ok.length) setStagedImages((prev) => [...prev, ...ok]);
-      });
+      if (imageSupported) {
+        void Promise.all(files.map(fileToImageAttachment)).then((atts) => {
+          const ok = atts.filter((a): a is ImageAttachment => a !== null);
+          if (ok.length) setStagedImages((prev) => [...prev, ...ok]);
+        });
+        return true;
+      }
+      void Promise.all(files.map(scratchPathForFile))
+        .then(insertFileChips)
+        .catch((err) => {
+          console.warn("image paste failed:", err);
+          toast.error("Could not attach the pasted image.");
+        });
       return true;
     },
-    [imageSupported],
+    [imageSupported, insertFileChips],
   );
 
   // `submit` (below) is defined after `handleSlashSelect` but the latter
@@ -1989,6 +1997,7 @@ export function MessageInput({
                   onMentionTrigger={setTrigger}
                   onSlashTrigger={setSlashTrigger}
                   onPasteImages={handlePasteImages}
+                  onPastePaths={attachPaths}
                   keyInterceptor={keyInterceptor}
                 />
               ) : (
