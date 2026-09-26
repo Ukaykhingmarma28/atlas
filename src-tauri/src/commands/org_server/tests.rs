@@ -716,6 +716,137 @@ fn the_instructions_state_the_protocol() {
     assert!(INSTRUCTIONS.contains("asks the user first"));
 }
 
+// ── The audit trail ──────────────────────────────────────────────────────────
+
+/// The server with an audit sink that keeps every record it is handed, as the
+/// app's sink emits each one to the window for its Logs panel.
+async fn serve_audited(
+    tokens: Arc<MemoryTokens>,
+    cloud: Arc<dyn OrganisationCloud>,
+    gate: OrgAccessGate,
+) -> (MemoryServer, Arc<Mutex<Vec<OrgActionRecord>>>) {
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let sink = records.clone();
+    let audit: OrgAudit = Arc::new(move |record: &OrgActionRecord| sink.lock().push(record.clone()));
+    let server = MemoryServer::start_with(
+        memory(),
+        tokens,
+        Arc::new(SessionClocks::default()),
+        Arc::new(SessionReads::default()),
+        sharing(true),
+        Sources::default(),
+        vec![quiet_ui(), router(OrgTools::new(cloud, gate).with_audit(audit))],
+    )
+    .await
+    .unwrap();
+    (server, records)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_org_call_writes_one_audit_record_naming_the_session_the_tool_its_arguments_and_the_answer() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster());
+    let tokens = Arc::new(MemoryTokens::default());
+    let (server, records) = serve_audited(tokens.clone(), org, setting(true)).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+
+    let (_, answer) = call(&client, "org_whoami", json!({})).await;
+    {
+        let records = records.lock();
+        assert_eq!(records.len(), 1, "one call, one record");
+        let record = &records[0];
+        assert_eq!(record.session_id, "s1");
+        assert_eq!(record.agent, "atlas-agent");
+        assert_eq!(record.tool, "org_whoami");
+        assert_eq!(record.arguments, json!({}));
+        assert!(record.ok);
+        assert_eq!(record.text, answer, "the record carries what the model was answered");
+    }
+
+    let (_, answer) = call(&client, "org_members", json!({ "name": "Grace Hopper" })).await;
+    let records = records.lock();
+    assert_eq!(records.len(), 2, "each call adds exactly one record");
+    assert_eq!(records[1].tool, "org_members");
+    assert_eq!(records[1].arguments, json!({ "name": "Grace Hopper" }));
+    assert!(records[1].ok);
+    assert_eq!(records[1].text, answer);
+    drop(records);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_call_that_fails_is_one_audit_record_that_says_why() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster());
+    let tokens = Arc::new(MemoryTokens::default());
+    let (server, records) = serve_audited(tokens.clone(), org, setting(true)).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+
+    let (err, answer) = call(&client, "org_members", json!({ "name": "Sam Lee" })).await;
+    assert!(err);
+    let records = records.lock();
+    assert_eq!(records.len(), 1);
+    assert!(!records[0].ok);
+    assert_eq!(records[0].text, answer);
+    assert!(records[0].text.contains("ask the user which one"), "{}", records[0].text);
+    drop(records);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_call_is_one_audit_record_that_says_why() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer));
+    let (gate, on) = switchable(false);
+    let tokens = Arc::new(MemoryTokens::default());
+    let (server, records) = serve_audited(tokens.clone(), org, gate).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    assert!(call(&client, "org_whoami", json!({})).await.0);
+    on.store(true, Ordering::SeqCst);
+    let no_org = connect(&server.url_at(ORG_PATH), &tokens.mint("s2", "atlas-agent", "/q")).await.unwrap();
+    assert!(call(&no_org, "org_conversations", json!({})).await.0);
+
+    let records = records.lock();
+    assert_eq!(records.len(), 2, "one record per refused call");
+    assert_eq!(records[0].tool, "org_whoami");
+    assert!(!records[0].ok);
+    assert!(records[0].text.contains("switched off"), "{}", records[0].text);
+    assert_eq!(records[1].session_id, "s2");
+    assert_eq!(records[1].tool, "org_conversations");
+    assert!(!records[1].ok);
+    assert!(records[1].text.contains("not given access to an organisation"), "{}", records[1].text);
+    drop(records);
+    client.cancel().await.ok();
+    no_org.cancel().await.ok();
+}
+
+#[test]
+fn an_audit_record_reaches_the_window_in_its_wire_shape() {
+    let record = OrgActionRecord {
+        session_id: "s1".into(),
+        agent: "atlas-agent".into(),
+        tool: "org_members".into(),
+        arguments: json!({ "name": "Grace" }),
+        ok: false,
+        text: "no member matches".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&record).unwrap(),
+        json!({
+            "sessionId": "s1",
+            "agent": "atlas-agent",
+            "tool": "org_members",
+            "arguments": { "name": "Grace" },
+            "ok": false,
+            "text": "no member matches",
+        }),
+    );
+    assert_eq!(ORG_ACTION_EVENT, "atlas:org-action");
+}
+
 // ── Handing the server to sessions ───────────────────────────────────────────
 
 /// The account and the Project's binding as the offer sees them, counting

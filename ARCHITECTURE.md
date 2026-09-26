@@ -132,6 +132,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 | `atlas:artifacts-cloud` | Timeline cloud deltas: entry upsert, comment upsert, presence, membership revoked, resync |
 | `atlas:agent-elicitation`, `atlas:agent-elicitation-resolved` | agent-initiated prompts to the user |
 | `atlas:ui-action` | one UI action from Atlas Agent's UI tool server, for the window to perform and answer through `ui_action_respond` (ADR-0012) |
+| `atlas:org-action` | the audit record of one organisation tool call (refusals and failures too), for the window that shows the session to write its Logs row (ADR-0014) |
 | `atlas:agent-catalog:changed`, `atlas:registry-install:progress` | Marketplace catalog and install progress |
 | `atlas:auth-run:progress` / `:done` | interactive agent sign-in run |
 | `atlas:modelchat` | model-chat streaming |

@@ -15,6 +15,7 @@
 
 import type { ChatMessage, ToolCallDisplay, TurnFile } from "@/types/agent";
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
+import { orgToolOf, orgToolRow } from "@/features/org-actions/lib/org-tool-rows";
 import { parseShellCommand } from "./parse-shell-command";
 import {
   getFilePathFromInput,
@@ -112,6 +113,7 @@ export type MarkerTool =
   | "delete"
   | "move"
   | "file"
+  | "org"
   | "tool";
 
 export interface MarkerRow extends RowBase {
@@ -423,6 +425,7 @@ const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
   tool: "tool",
   fetch: "tool",
   think: "tool",
+  org: "tool",
 };
 
 /** Fixed order — note 2 above. `edit`'s slot is the one we chose. */
@@ -506,6 +509,9 @@ function liveMarkerLabel(marker: MarkerRow): string {
       return target ? `Fetching ${target}` : "Fetching content";
     case "think":
       return "Thinking…";
+    // An organisation call's line is already a phrase ("Looked up Grace").
+    case "org":
+      return target ? `${marker.verb} ${target}` : marker.verb;
     default:
       return target ? `Running ${marker.verb} ${target}` : "Using a tool";
   }
@@ -557,7 +563,17 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
   // the diff blocks did. It is what the diff viewer lands on.
   const path = argsPath ?? edit?.path ?? null;
 
-  if (isBashToolCall(tc)) {
+  const orgTool = orgToolOf(tc.toolName);
+  if (orgTool) {
+    // An organisation call (ADR-0014): the organisation icon, and the line
+    // that names what it was about — the member, conversation or recorded
+    // session — from the table the Logs row reads too. A failed call's text
+    // is its reason, so only a settled success's answer improves the name.
+    const row = orgToolRow(orgTool, args, tc.status === "completed" ? tc.result : null);
+    tool = "org";
+    verb = row.verb;
+    detail = row.detail;
+  } else if (isBashToolCall(tc)) {
     // Every one of these is the same tool. What separates `cat file` from
     // `cargo test` is the command itself, so that is what gets read — see
     // `parse-shell-command.ts` for why this is a port and not a wire field.

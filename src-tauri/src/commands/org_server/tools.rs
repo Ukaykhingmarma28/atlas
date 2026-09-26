@@ -24,6 +24,7 @@ use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ErrorData as McpError;
 use serde_json::{json, Value};
 
+use super::audit::{unaudited, OrgActionRecord, OrgAudit};
 use super::cloud::{CurrentSessionQuery, Member, OrgConversation, OrganisationCloud};
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH};
@@ -213,14 +214,31 @@ pub(super) fn resolve_conversation(
 pub struct OrgTools {
     cloud: Arc<dyn OrganisationCloud>,
     gate: OrgAccessGate,
+    audit: OrgAudit,
 }
 
 impl OrgTools {
     pub fn new(cloud: Arc<dyn OrganisationCloud>, gate: OrgAccessGate) -> Self {
-        Self { cloud, gate }
+        Self { cloud, gate, audit: unaudited() }
     }
 
+    /// Hands every call's [`OrgActionRecord`] to `audit`.
+    pub fn with_audit(mut self, audit: OrgAudit) -> Self {
+        self.audit = audit;
+        self
+    }
+
+    /// One call, answered and then audited: exactly one record whatever the
+    /// answer, so a refusal and a failure are rows as much as a success is.
+    /// The one place a call is recorded — a new tool is audited by being
+    /// answered here.
     async fn dispatch(&self, grant: Grant, request: CallToolRequestParams) -> CallToolResult {
+        let answer = self.answer(&grant, &request).await;
+        (self.audit)(&OrgActionRecord::of(&grant, &request, &answer));
+        answer
+    }
+
+    async fn answer(&self, grant: &Grant, request: &CallToolRequestParams) -> CallToolResult {
         if !(self.gate)() {
             return tool_error(OFF_NOTE);
         }
@@ -228,9 +246,9 @@ impl OrgTools {
             return tool_error(NO_ORG_NOTE);
         };
         match request.name.as_ref() {
-            "org_whoami" => self.whoami(&grant, &scope).await,
-            "org_members" => self.members(&scope, string_arg(&request, "name")).await,
-            "org_conversations" => self.conversations(&scope, string_arg(&request, "name")).await,
+            "org_whoami" => self.whoami(grant, &scope).await,
+            "org_members" => self.members(&scope, string_arg(request, "name")).await,
+            "org_conversations" => self.conversations(&scope, string_arg(request, "name")).await,
             other => tool_error(format!("unknown tool `{other}`")),
         }
     }

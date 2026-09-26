@@ -28,10 +28,15 @@
 //!   conversation list, and more than one match comes back as candidates for
 //!   the model to ask about, never a guess.
 //!
+//! - **Every call is audited** ([`audit`]): one [`OrgActionRecord`] per call,
+//!   made in the tool dispatch and emitted to the window as
+//!   [`ORG_ACTION_EVENT`] for its Logs panel — refusals and failures too.
+//!
 //! `org_whoami`, `org_members` and `org_conversations` exist so far; the rest
 //! of the thirteen tools the spec names are added on this skeleton.
 
 mod adapter;
+mod audit;
 mod cloud;
 mod offers;
 mod resolve;
@@ -43,6 +48,8 @@ use std::sync::Arc;
 
 #[allow(unused_imports)]
 pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
+#[allow(unused_imports)]
+pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
     Caller, CloudError, CloudFuture, CurrentSessionQuery, Member, OrgConversation, OrganisationCloud, RecordedSession,

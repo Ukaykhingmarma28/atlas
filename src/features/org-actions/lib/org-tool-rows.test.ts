@@ -1,0 +1,117 @@
+import { describe, expect, it } from "vitest";
+import { orgAnswerOf, orgFailureOf, orgToolOf, orgToolRow, orgRowSubject } from "./org-tool-rows";
+
+/** The text an organisation tool answers with, as the model reads it. */
+const text = (value: unknown) => JSON.stringify(value);
+
+/** The same answer as the native seam puts it on a chat tool call: the whole
+ *  MCP result, pretty-printed, with the tool's text inside `content`. */
+const mcpResult = (value: unknown) =>
+  JSON.stringify(
+    { content: [{ type: "text", text: text(value) }], structuredContent: null, _meta: null },
+    null,
+    2,
+  );
+
+describe("which calls are organisation calls", () => {
+  it("recognises the organisation server's tools however the agent names them", () => {
+    expect(orgToolOf("atlas_org.org_whoami")).toBe("org_whoami");
+    expect(orgToolOf("mcp__atlas_org__org_members")).toBe("org_members");
+  });
+
+  it("leaves every other server's tools alone", () => {
+    expect(orgToolOf("atlas_ui.ui_focus")).toBeNull();
+    expect(orgToolOf("atlas_memory.memory_search")).toBeNull();
+    expect(orgToolOf("write_file")).toBeNull();
+    expect(orgToolOf("other.org_whoami")).toBeNull();
+    expect(orgToolOf("org_whoami")).toBeNull();
+  });
+});
+
+describe("reading an organisation answer", () => {
+  it("reads the tool's JSON out of a chat tool call's MCP result", () => {
+    expect(orgAnswerOf(mcpResult({ member: { name: "Grace" } }))).toEqual({
+      member: { name: "Grace" },
+    });
+  });
+
+  it("reads the tool's JSON as the audit record carries it", () => {
+    expect(orgAnswerOf(text({ members: [] }))).toEqual({ members: [] });
+  });
+
+  it("has no answer for nothing, or for text that is not JSON", () => {
+    expect(orgAnswerOf(null)).toBeNull();
+    expect(orgAnswerOf("no member matches")).toBeNull();
+  });
+
+  it("says why a call failed, in the words the model was told", () => {
+    expect(orgFailureOf("Atlas Agent's organisation access is switched off")).toBe(
+      "Atlas Agent's organisation access is switched off",
+    );
+    expect(
+      orgFailureOf(
+        text({ error: '"Sam Lee" matches 2 members; ask the user which one', candidates: [] }),
+      ),
+    ).toBe('"Sam Lee" matches 2 members; ask the user which one');
+    const refused = JSON.stringify({ content: [{ type: "text", text: "not found" }] });
+    expect(orgFailureOf(refused)).toBe("not found");
+  });
+});
+
+describe("the one-line subject of each organisation call", () => {
+  const subject = (tool: string, args: Record<string, unknown>, answer: unknown) =>
+    orgRowSubject(orgToolRow(tool, args, answer === undefined ? null : text(answer)));
+
+  it("org_whoami names the organisation once it has answered", () => {
+    expect(subject("org_whoami", {}, { organisation: { id: "org-acme", name: "Acme" } })).toBe(
+      "Who am I in Acme",
+    );
+    expect(subject("org_whoami", {}, undefined)).toBe("Who am I");
+    expect(subject("org_whoami", {}, { organisation: { id: "org-acme", name: null } })).toBe(
+      "Who am I",
+    );
+  });
+
+  it("org_members is the roster, or the member looked up", () => {
+    expect(subject("org_members", {}, { members: [] })).toBe("Listed members");
+    expect(subject("org_members", { name: "grace@acme.dev" }, undefined)).toBe(
+      "Looked up grace@acme.dev",
+    );
+    expect(
+      subject("org_members", { name: "grace@acme.dev" }, { member: { name: "Grace Hopper" } }),
+    ).toBe("Looked up Grace Hopper");
+  });
+
+  it("org_conversations is the list, or the conversation looked up", () => {
+    expect(subject("org_conversations", {}, { conversations: [] })).toBe("Listed conversations");
+    expect(subject("org_conversations", { name: "#General" }, undefined)).toBe(
+      "Looked up #General",
+    );
+    expect(
+      subject("org_conversations", { name: "#General" }, { conversation: { name: "general" } }),
+    ).toBe("Looked up #general");
+  });
+
+  it("a DM looked up is named by who is in it", () => {
+    expect(
+      subject(
+        "org_conversations",
+        { name: "c-dm" },
+        {
+          conversation: {
+            kind: "dm",
+            name: null,
+            members: [
+              { user_id: "u-1", name: "Ada" },
+              { user_id: "u-2", name: "Grace" },
+            ],
+          },
+        },
+      ),
+    ).toBe("Looked up DM with Ada, Grace");
+  });
+
+  it("a tool with no line of its own still gets a row, named by the tool", () => {
+    expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
+  });
+});
