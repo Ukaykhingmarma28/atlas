@@ -15,6 +15,7 @@ use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers}
 
 use super::host::{MemoryServerHost, SharingGate};
 use super::MEMORY_SERVER_NAME;
+use crate::commands::org_server::{OrgOffer, OrgOfferDecision, ORG_PATH, ORG_SERVER_NAME};
 use crate::commands::ui_server::{UiOffer, UiOfferDecision, UI_PATH, UI_SERVER_NAME};
 
 /// Whether one session request is handed the memory tool server.
@@ -56,23 +57,33 @@ impl OfferDecision {
 /// Offers each session the memory tool server with a token of its own
 /// ([`SessionMcpServers`], installed on every agent connection), and — with
 /// [`with_ui`](Self::with_ui) — the UI tool server beside it on the same
-/// token (ADR-0012). One offer decides both because both ride one token: the
-/// token table holds one token per session, so two offers minting two tokens
-/// would revoke each other.
+/// token (ADR-0012), and — with [`with_org`](Self::with_org) — the
+/// organisation tool server as the third (ADR-0014). One offer decides all
+/// three because all three ride one token: the token table holds one token
+/// per session, so two offers minting two tokens would revoke each other.
 pub struct MemorySessionOffers {
     host: Arc<MemoryServerHost>,
     gate: SharingGate,
     ui: Option<UiOffer>,
+    org: Option<OrgOffer>,
 }
 
 impl MemorySessionOffers {
     pub fn new(host: Arc<MemoryServerHost>, gate: SharingGate) -> Self {
-        Self { host, gate, ui: None }
+        Self { host, gate, ui: None, org: None }
     }
 
     /// Also offer the UI tool server, mounted on this host at `/ui`.
     pub fn with_ui(mut self, ui: UiOffer) -> Self {
         self.ui = Some(ui);
+        self
+    }
+
+    /// Also offer the organisation tool server, mounted on this host at
+    /// `/org`. When it is included, the token carries the organisation and
+    /// Workspace the session's Project is bound to.
+    pub fn with_org(mut self, org: OrgOffer) -> Self {
+        self.org = Some(org);
         self
     }
 }
@@ -103,6 +114,21 @@ impl SessionMcpServers for MemorySessionOffers {
             decision
         });
 
+        let org_url = self.host.url_at(ORG_PATH);
+        let (org, scope) = match self.org.as_ref() {
+            Some(org) => {
+                let (decision, scope) = org.decide(request.http_mcp, request.org_access, &cwd, org_url.is_some());
+                tracing::info!(
+                    target: "atlas::org_server",
+                    session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
+                    "{}",
+                    decision.log_line(&agent, request.http_mcp, request.org_access),
+                );
+                (Some(decision), scope)
+            }
+            None => (None, None),
+        };
+
         let mut entries: Vec<(&str, String)> = Vec::new();
         if let (OfferDecision::Included, Some(url)) = (decision, url) {
             entries.push((MEMORY_SERVER_NAME, url));
@@ -110,12 +136,17 @@ impl SessionMcpServers for MemorySessionOffers {
         if let (Some(UiOfferDecision::Included), Some(url)) = (ui, ui_url) {
             entries.push((UI_SERVER_NAME, url));
         }
+        if let (Some(OrgOfferDecision::Included), Some(url)) = (org, org_url) {
+            entries.push((ORG_SERVER_NAME, url));
+        }
         if entries.is_empty() {
             return SessionMcpOffer::none();
         }
-        // Minted once, after every decision, for every entry.
+        // Minted once, after every decision, for every entry — carrying the
+        // organisation only when the organisation server is among them (the
+        // org decision names none otherwise).
         let tokens = self.host.tokens().clone();
-        let token = tokens.mint_unbound(&agent, &cwd);
+        let token = tokens.mint_unbound(&agent, &cwd, scope);
         let servers = entries
             .into_iter()
             .map(|(name, url)| {

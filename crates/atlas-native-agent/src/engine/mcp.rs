@@ -9,7 +9,8 @@
 //!
 //! Only HTTP servers are projected: the engine speaks StreamableHttp natively,
 //! and the host offers nothing else today. Atlas's tool servers — memory
-//! (ADR-0010) and UI (ADR-0012) — are the host's own, so their tools run
+//! (ADR-0010), UI (ADR-0012) and organisation (ADR-0014) — are the host's
+//! own, so their tools run
 //! without an approval prompt — the same standing the
 //! dynamic `search_memory` tool it replaced had — and they are kept out of the
 //! **deferred** surface, which puts them in the model's initial tool list
@@ -157,6 +158,28 @@ mod tests {
             assert_eq!(config[&format!("mcp_servers.{name}.omit_tools_from")], json!(["deferred"]));
         }
         assert_eq!(server_names(&servers), ["atlas_memory", "atlas_ui"]);
+    }
+
+    /// ADR-0014: the organisation tool server is the third entry, on the same
+    /// token, with the same standings. Its outward actions will ask through
+    /// per-tool overrides; the server itself stays approved.
+    #[test]
+    fn three_atlas_servers_become_three_entries_each_approved_and_non_deferred() {
+        let names = ["atlas_memory", "atlas_ui", "atlas_org"];
+        let servers = names.map(|name| {
+            acp::McpServer::Http(
+                acp::McpServerHttp::new(name, format!("http://127.0.0.1:9/{name}"))
+                    .headers(vec![acp::HttpHeader::new("Authorization", "Bearer t")]),
+            )
+        });
+        let config = thread_config(&servers).expect("three entries");
+        for name in names {
+            assert_eq!(config[&format!("mcp_servers.{name}.url")], json!(format!("http://127.0.0.1:9/{name}")));
+            assert_eq!(config[&format!("mcp_servers.{name}.http_headers")], json!({ "Authorization": "Bearer t" }));
+            assert_eq!(config[&format!("mcp_servers.{name}.default_tools_approval_mode")], json!("approve"));
+            assert_eq!(config[&format!("mcp_servers.{name}.omit_tools_from")], json!(["deferred"]));
+        }
+        assert_eq!(server_names(&servers), names);
     }
 
     #[test]

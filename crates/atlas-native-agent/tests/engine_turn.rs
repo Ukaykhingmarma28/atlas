@@ -1242,6 +1242,7 @@ async fn the_engine_is_handed_the_memory_server_and_a_turn_calls_memory_search()
     assert_eq!(asked.len(), 1, "one offer per session request");
     assert!(asked[0].http_mcp);
     assert!(asked[0].ui_control, "the in-process engine carries UI control (ADR-0012)");
+    assert!(asked[0].org_access, "the in-process engine carries organisation access (ADR-0014)");
     assert_eq!(asked[0].agent_id.as_str(), "atlas-agent");
     assert_eq!(asked[0].session_id, None, "a new thread has no id until the engine answers");
     assert_eq!(

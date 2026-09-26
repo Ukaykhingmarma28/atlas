@@ -268,6 +268,7 @@ fn session_request(ui_control: bool) -> SessionMcpRequest {
         agent_id: atlas_acp_thread::AgentId::new("atlas-agent"),
         http_mcp: true,
         ui_control,
+        org_access: false,
         cwd: std::path::PathBuf::from("/p"),
         session_id: None,
     }

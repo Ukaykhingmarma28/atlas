@@ -683,6 +683,9 @@ impl EngineConnection {
                 // In-process: the one connection Atlas vouches for, so it may
                 // be handed the UI tool server (ADR-0012).
                 ui_control: true,
+                // And, for the same reason, organisation access: it may be
+                // handed the organisation tool server (ADR-0014).
+                org_access: true,
                 cwd: cwd.to_path_buf(),
                 session_id: session_id.cloned(),
             },

@@ -33,6 +33,15 @@ pub struct SessionMcpRequest {
     /// connection, like `http_mcp`, never of which agent it is. ACP has no
     /// capability for it, so an ACP connection never sets it.
     pub ui_control: bool,
+    /// Whether this connection carries **organisation access**: Atlas may hand
+    /// it the organisation tool server, through which it reads the
+    /// organisation the session's Project is bound to and acts in it as the
+    /// signed-in user (ADR-0014). The same kind of property as `ui_control`,
+    /// and for the same reason: only a connection whose agent runs inside the
+    /// Atlas process sets it. An ACP connection never does, so a third-party
+    /// binary is never handed the user's organisation — decided by the
+    /// connection, never by which agent it is.
+    pub org_access: bool,
     /// The directory the session runs in.
     pub cwd: PathBuf,
     /// The session being loaded or resumed; `None` for a new session, whose

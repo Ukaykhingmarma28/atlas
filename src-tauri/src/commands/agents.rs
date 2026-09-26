@@ -686,14 +686,34 @@ pub fn install_manager(app: &AppHandle) {
                 .is_some_and(|config| config.lock().effective().agent_ui_navigation)
         });
         let ui_router = super::ui_server::router(super::ui_server::UiTools::new(ui_bridge, navigation.clone()));
+        // The organisation tool server (ADR-0014): calls act in the
+        // organisation the session's Project is bound to, through the clients
+        // the app already holds. Its setting, "Let Atlas Agent act in your
+        // organisation", is read on every offer and every call, like the
+        // navigation one.
+        let org_app = app.clone();
+        let org_access: super::org_server::OrgAccessGate = Arc::new(move || {
+            org_app
+                .try_state::<crate::state::AtlasConfigHandle>()
+                .is_some_and(|config| config.lock().effective().agent_org_access)
+        });
+        let org_router = super::org_server::router(super::org_server::OrgTools::new(
+            Arc::new(super::org_server::AppOrganisationCloud::new(app.clone())),
+            org_access.clone(),
+        ));
         // Every agent that can take the server is handed it on each session
         // request, with a token of its own. It is the only way memory reaches
         // an agent (ADR-0010): nothing is prepended to a prompt. A connection
-        // that carries UI control is also handed the UI tool server, on the
-        // same token.
+        // that carries UI control is also handed the UI tool server, and one
+        // that carries organisation access the organisation tool server, all
+        // on the same token.
         host.set_session_mcp(Arc::new(
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
-                .with_ui(super::ui_server::UiOffer::new(navigation)),
+                .with_ui(super::ui_server::UiOffer::new(navigation))
+                .with_org(super::org_server::OrgOffer::new(
+                    org_access,
+                    Arc::new(super::org_server::AppSessionOrgs::new(app.clone())),
+                )),
         ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
@@ -739,7 +759,7 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
-            vec![ui_router],
+            vec![ui_router, org_router],
         );
     }
 
