@@ -60,7 +60,16 @@ export interface SessionMessage {
   /** Model that produced this assistant message (stamped live or recovered
    *  from the transcript on replay). Absent for user messages / old records. */
   model?: string | null;
+  /** Images a user message carried. Absent when there are none — the Rust
+   *  side omits the key rather than sending an empty list. */
+  images?: MessageImage[];
   timestamp: string;
+}
+
+/** An image on a snapshot `SessionMessage` (`atlas_agent_wire::MessageImage`). */
+export interface MessageImage {
+  mime_type: string;
+  data: string;
 }
 
 /** One rolling quota window from the native engine's account report. */
