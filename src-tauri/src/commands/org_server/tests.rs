@@ -3079,6 +3079,7 @@ fn the_instructions_state_the_protocol() {
     assert!(INSTRUCTIONS.contains("comes back as candidates"));
     assert!(INSTRUCTIONS.contains("Never mark the user's inbox read"));
     assert!(INSTRUCTIONS.contains("asks the user first"));
+    assert!(INSTRUCTIONS.contains("An atlas-org:// link"), "the composer's mentions, in one clause");
 }
 
 // ── The audit trail ──────────────────────────────────────────────────────────
@@ -3491,6 +3492,176 @@ fn a_cloud_binding_places_the_project_in_its_own_organisation_and_workspace() {
     assert_eq!(scope_of(&binding(Local, true, None, None)), None, "a local Project has no organisation");
     assert_eq!(scope_of(&binding(Cloud, false, Some("org-acme"), Some("ws-atlas"))), None, "capture switched off");
     assert_eq!(scope_of(&binding(Cloud, true, None, Some("ws-atlas"))), None);
+}
+
+// ── Composer mentions arrive as organisation links (#122) ─────────────────────
+
+const GRACE: &str = "atlas-org://member/u-grace";
+/// The second of the two members called Sam Lee — ambiguous by name, not by link.
+const SAM_TWO: &str = "atlas-org://member/u-sam2";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_sessions_takes_a_member_link_as_its_author() {
+    let org = boarded();
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": GRACE, "since": "2000-01-01" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-grace", "rs-grace-old"]);
+    assert_eq!(answer["author"], json!({ "user_id": "u-grace", "name": "Grace Hopper" }));
+
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "atlas-org://member/u-sam1", "since": "2000-01-01" })).await;
+    assert!(!err, "a link names one Sam Lee, never both: {answer}");
+    assert_eq!(session_ids(&answer), ["rs-sam"]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_of_another_kind_as_an_author_matches_nobody_and_the_board_is_not_read() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_sessions", json!({ "author": "atlas-org://conversation/u-grace" })).await;
+    assert!(err);
+    assert!(text.contains("no member matches"), "{text}");
+    assert_eq!(org.board_reads(), 0);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_member_activity_takes_a_member_link() {
+    let org = boarded_as(Some(Role::Admin));
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_member_activity", json!({ "member": GRACE })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["member"], json!({ "user_id": "u-grace", "name": "Grace Hopper" }));
+    assert_eq!(answer["totals"]["recorded_sessions"], json!(1));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_send_takes_a_member_link_or_a_conversation_link_as_to() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(&client, &consent, json!({ "to": GRACE, "body": "Your review is in." })).await;
+    assert!(!err, "{answer}");
+    let (err, answer2) =
+        send(&client, &consent, json!({ "to": "atlas-org://conversation/c-group", "body": "Standup moved to 10." })).await;
+    assert!(!err, "{answer2}");
+    let (err, answer3) = send(&client, &consent, json!({ "to": SAM_TWO, "body": "Welcome aboard." })).await;
+    assert!(!err, "{answer3}");
+    assert_eq!(
+        sent(&org),
+        [
+            ("c-dm-grace".to_string(), "Your review is in.".to_string()),
+            ("c-group".to_string(), "Standup moved to 10.".to_string()),
+            ("c-dm-u-sam2".to_string(), "Welcome aboard.".to_string()),
+        ],
+        "the member's DM, the conversation itself, and a new DM with the one Sam Lee the link names",
+    );
+    assert_eq!(answer["created_dm"], json!(false));
+    assert_eq!(answer3["created_dm"], json!(true));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_send_takes_member_links_as_mentions() {
+    let org = chatting();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = send(
+        &client,
+        &consent,
+        json!({ "to": "#general", "body": "@Grace Hopper shipped it", "mention": [GRACE, SAM_TWO] }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(sent(&org), [("c-general".to_string(), "<@u-sam2> <@u-grace> shipped it".to_string())]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_card_for_a_message_to_a_link_names_who_it_reaches() {
+    let offers = describing_offer(chatting()).await;
+    let said = describe(&offers, ORG_SERVER_NAME, "org_send", json!({ "to": GRACE, "body": "hi" }))
+        .await
+        .expect("described");
+    assert_eq!((said.title.as_str(), said.recipient.as_str()), ("Message Grace Hopper", "Grace Hopper, in your DM"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_create_takes_a_conversation_link() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(
+        &client,
+        "org_page_create",
+        json!({ "conversation": "atlas-org://conversation/c-dm-grace", "name": "Notes" }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(pages_created(&org), [("c-dm-grace".to_string(), "Notes".to_string())]);
+    client.cancel().await.ok();
+}
+
+const RS_TWO: &str = "atlas-org://recorded-session/ws-atlas/rs-2";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comments_and_org_comment_resolve_take_a_recorded_session_link() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comments", json!({ "session": RS_TWO })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"], json!({ "id": "rs-2", "title": null, "current": false }));
+    assert_eq!(thread_ids(&answer), ["z1"]);
+
+    let (err, answer) = call_json(&client, "org_comment_resolve", json!({ "comment": "z1", "session": RS_TWO })).await;
+    assert!(!err, "{answer}");
+    assert!(org.asked().contains(&("org-acme".to_string(), "resolve ws-atlas/rs-2/z1 resolved=true".to_string())));
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("current")), "a linked session needs no join");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comment_reply_takes_a_recorded_session_link_and_member_links_as_mentions() {
+    let org = commented();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = call_json(
+        &client,
+        "org_comment_reply",
+        approved(&consent, json!({ "comment": "z1", "session": RS_TWO, "body": "Still true?", "mention": [GRACE] })),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["id"], json!("rs-2"));
+    assert!(org.asked().contains(&("org-acme".to_string(), "reply ws-atlas/rs-2/z1".to_string())));
+    let posted: Vec<Comment> = org.comments.lock()["rs-2"].iter().filter(|c| c.id != "z1").cloned().collect();
+    assert_eq!(posted[0].body.as_deref(), Some("<@u-grace> Still true?"));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_takes_a_recorded_session_link() {
+    let org = timelined();
+    let (_server, client) = org_client(org).await;
+    let (err, answer) =
+        call_json(&client, "org_session", json!({ "session": "atlas-org://recorded-session/ws-atlas/rs-grace" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["id"], json!("rs-grace"));
+    assert_eq!(answer["session"]["current"], json!(false));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_link_to_another_workspace_or_a_link_of_another_kind_is_refused_before_anything_is_read() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) =
+        call(&client, "org_comments", json!({ "session": "atlas-org://recorded-session/ws-other/rs-2" })).await;
+    assert!(err);
+    assert!(text.contains("Workspace ws-other") && text.contains("only this chat's Workspace"), "{text}");
+    let (err, text) = call(&client, "org_session", json!({ "session": GRACE })).await;
+    assert!(err);
+    assert!(text.contains("is not a recorded session"), "{text}");
+    assert!(org.asked().is_empty(), "nothing asked of the organisation: {:?}", org.asked());
+    client.cancel().await.ok();
 }
 
 // ── No tool server talks to the user (ADR-0013) ──────────────────────────────

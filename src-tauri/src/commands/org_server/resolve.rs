@@ -13,6 +13,11 @@
 //! 3. **The email** (members only), ignoring case, as email does.
 //! 4. **The name ignoring case.**
 //!
+//! Before any tier, an **organisation link** ([`OrgLink`]) — what a composer
+//! mention of a member, a conversation or a recorded session puts in the
+//! prompt — is read as the id it carries, and as nothing else: a member link
+//! matches that member's id only, and a link of another kind matches nothing.
+//!
 //! A leading `@` on a member or `#` on a channel is how people write them,
 //! not part of the name, and is dropped. Nothing looser than case is matched
 //! — no prefixes, no first names — because a loose match that finds one
@@ -23,6 +28,106 @@
 //! Pure: no cloud, no clock, no I/O.
 
 use super::cloud::{Member, OrgConversation};
+
+/// The scheme every organisation link is written in.
+pub const ORG_LINK_SCHEME: &str = "atlas-org://";
+
+/// An **organisation link**: how a composer mention of a member, a
+/// conversation or a recorded session reaches the model — a resource link
+/// carrying the id, so "send it to @Grace" or "the comments on @Session" need
+/// no name resolution. The one definition of the form: `compose_prompt`
+/// writes it ([`OrgLink::uri`]), and the tools read it ([`OrgLink::parse`])
+/// through [`member`], [`conversation`] and the session tools' target, so every
+/// argument that takes a member, a conversation or a session takes its link.
+///
+/// - `atlas-org://member/<user id>`
+/// - `atlas-org://conversation/<conversation id>`
+/// - `atlas-org://recorded-session/<Workspace id>/<session id>`
+///
+/// A recorded session is not a local past session: that one is a transcript on
+/// this disk, inlined into the prompt, and never becomes a link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrgLink {
+    Member { user_id: String },
+    Conversation { id: String },
+    RecordedSession { workspace_id: String, session_id: String },
+}
+
+/// One id as a path segment: the characters that would end or re-scope it
+/// are percent-encoded, and nothing else — ids are opaque, and short.
+fn segment(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        match ch {
+            '%' => out.push_str("%25"),
+            '/' => out.push_str("%2F"),
+            '?' => out.push_str("%3F"),
+            '#' => out.push_str("%23"),
+            ' ' => out.push_str("%20"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A path segment back to its id, or `None` for a blank or badly encoded one.
+fn unsegment(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = text.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    let id = String::from_utf8(out).ok()?;
+    (!id.trim().is_empty()).then_some(id)
+}
+
+impl OrgLink {
+    /// The link as the prompt carries it.
+    pub fn uri(&self) -> String {
+        match self {
+            OrgLink::Member { user_id } => format!("{ORG_LINK_SCHEME}member/{}", segment(user_id)),
+            OrgLink::Conversation { id } => format!("{ORG_LINK_SCHEME}conversation/{}", segment(id)),
+            OrgLink::RecordedSession { workspace_id, session_id } => {
+                format!("{ORG_LINK_SCHEME}recorded-session/{}/{}", segment(workspace_id), segment(session_id))
+            }
+        }
+    }
+
+    /// The link `text` is, or `None` when it is not one — a name, an email,
+    /// a bare id, or a malformed link, which then matches nothing.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        let scheme = text.get(..ORG_LINK_SCHEME.len())?;
+        if !scheme.eq_ignore_ascii_case(ORG_LINK_SCHEME) {
+            return None;
+        }
+        let rest = text[ORG_LINK_SCHEME.len()..].trim_end_matches('/');
+        let parts: Vec<&str> = rest.split('/').collect();
+        match parts.as_slice() {
+            ["member", id] => Some(OrgLink::Member { user_id: unsegment(id)? }),
+            ["conversation", id] => Some(OrgLink::Conversation { id: unsegment(id)? }),
+            ["recorded-session", workspace, session] => Some(OrgLink::RecordedSession {
+                workspace_id: unsegment(workspace)?,
+                session_id: unsegment(session)?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Whether `text` is written as an organisation link at all, well formed
+    /// or not.
+    pub fn looks_like(text: &str) -> bool {
+        text.trim().get(..ORG_LINK_SCHEME.len()).is_some_and(|s| s.eq_ignore_ascii_case(ORG_LINK_SCHEME))
+    }
+}
 
 /// What a name came to.
 #[derive(Debug, PartialEq, Eq)]
@@ -51,6 +156,12 @@ fn first_tier<'a, T>(items: &'a [T], tiers: &[&dyn Fn(&T) -> bool]) -> Resolutio
 
 /// A member by id, name or email.
 pub fn member<'a>(roster: &'a [Member], query: &str) -> Resolution<'a, Member> {
+    if OrgLink::looks_like(query) {
+        return match OrgLink::parse(query) {
+            Some(OrgLink::Member { user_id }) => first_tier(roster, &[&|m: &Member| m.user_id == user_id]),
+            _ => Resolution::None,
+        };
+    }
     let query = query.trim();
     let name = query.strip_prefix('@').unwrap_or(query).trim();
     if name.is_empty() {
@@ -76,6 +187,12 @@ fn named(conversation: &OrgConversation) -> Option<&str> {
 /// A conversation by id or name. Only channels have names; a DM is reached
 /// through its member, not its conversation.
 pub fn conversation<'a>(conversations: &'a [OrgConversation], query: &str) -> Resolution<'a, OrgConversation> {
+    if OrgLink::looks_like(query) {
+        return match OrgLink::parse(query) {
+            Some(OrgLink::Conversation { id }) => first_tier(conversations, &[&|c: &OrgConversation| c.id == id]),
+            _ => Resolution::None,
+        };
+    }
     let query = query.trim();
     let name = query.strip_prefix('#').unwrap_or(query).trim();
     if name.is_empty() {
@@ -204,6 +321,59 @@ mod tests {
     #[test]
     fn a_conversation_resolves_by_its_id() {
         assert_eq!(which("c-dm"), Ok("c-dm".into()));
+    }
+
+    #[test]
+    fn a_member_link_resolves_to_the_member_it_carries_and_to_nothing_else() {
+        assert_eq!(who("atlas-org://member/u-sam2"), Ok("u-sam2".into()), "one of two Sam Lees, by id");
+        assert_eq!(who("  ATLAS-ORG://member/u-ada "), Ok("u-ada".into()));
+        assert_eq!(who("atlas-org://member/u-nobody"), Err(vec![]));
+        assert_eq!(who("atlas-org://conversation/u-ada"), Err(vec![]), "a conversation link is not a member");
+        assert_eq!(who("atlas-org://recorded-session/ws/u-ada"), Err(vec![]));
+        assert_eq!(who("atlas-org://member/"), Err(vec![]), "a malformed link is not a name either");
+    }
+
+    #[test]
+    fn a_conversation_link_resolves_to_the_conversation_it_carries_and_to_nothing_else() {
+        assert_eq!(which("atlas-org://conversation/c-dm"), Ok("c-dm".into()), "a DM, which has no name");
+        assert_eq!(which("atlas-org://conversation/c-design"), Ok("c-design".into()));
+        assert_eq!(which("atlas-org://member/c-general"), Err(vec![]), "a member link is not a conversation");
+        assert_eq!(which("atlas-org://conversation/general"), Err(vec![]), "a link carries an id, never a name");
+    }
+
+    #[test]
+    fn every_link_reads_back_as_itself() {
+        for link in [
+            OrgLink::Member { user_id: "u-1".into() },
+            OrgLink::Conversation { id: "c-general".into() },
+            OrgLink::RecordedSession { workspace_id: "ws-atlas".into(), session_id: "rs-1".into() },
+            OrgLink::Member { user_id: "odd/id?#with space%".into() },
+        ] {
+            assert_eq!(OrgLink::parse(&link.uri()), Some(link.clone()), "{}", link.uri());
+        }
+        assert_eq!(OrgLink::Member { user_id: "u-1".into() }.uri(), "atlas-org://member/u-1");
+        assert_eq!(OrgLink::Conversation { id: "c-1".into() }.uri(), "atlas-org://conversation/c-1");
+        assert_eq!(
+            OrgLink::RecordedSession { workspace_id: "ws".into(), session_id: "rs".into() }.uri(),
+            "atlas-org://recorded-session/ws/rs",
+        );
+    }
+
+    #[test]
+    fn names_ids_and_malformed_links_are_not_links() {
+        for text in [
+            "Ada Lovelace",
+            "u-1",
+            "file:///tmp/a.rs",
+            "atlas-org://",
+            "atlas-org://member",
+            "atlas-org://member/a/b",
+            "atlas-org://recorded-session/ws",
+            "atlas-org://session/rs-1",
+            "atlas-org://member/%zz",
+        ] {
+            assert_eq!(OrgLink::parse(text), None, "{text}");
+        }
     }
 
     #[test]

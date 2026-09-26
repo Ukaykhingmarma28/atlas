@@ -49,7 +49,7 @@ use serde_json::{json, Value};
 use super::audit::{unaudited, OrgActionRecord, OrgAudit};
 use super::cloud::{CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud};
 use super::offers::SessionOrgs;
-use super::resolve::{self, Resolution};
+use super::resolve::{self, OrgLink, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH, ORG_SERVER_NAME};
 use crate::auth::Role;
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
@@ -76,7 +76,9 @@ first whenever the organisation matters: it says who you act as, your role, the 
 current recorded session (the one this chat is written into). Prefer the current session when the \
 user says \"this session\" or names none. When a request matches more than one person, session, \
 comment or conversation, ask the user which one instead of guessing; a member or conversation named \
-by id, name or email that matches several comes back as candidates to ask about. Never mark the user's inbox \
+by id, name or email that matches several comes back as candidates to ask about. An atlas-org:// link \
+in the prompt is the user's mention of a member, conversation or recorded session: pass it as is \
+wherever the tools take one. Never mark the user's inbox \
 read. Anything that reaches another person (a message, a reply) is an outward action and asks the \
 user first; say what you will send. Results are JSON; an error says what was refused or not found.";
 
@@ -625,7 +627,8 @@ struct SessionTarget {
 
 impl OrgTools {
     /// The recorded session a tool names: the current one when it
-    /// names none or says `"current"`, else the id it gives — any recorded
+    /// names none or says `"current"`, else the id it gives, or the id its
+    /// recorded-session link ([`OrgLink`]) carries — any recorded
     /// session in the grant's Workspace, which the server confirms by
     /// answering (a 404 otherwise). Never another Workspace's.
     async fn session_target(
@@ -640,8 +643,30 @@ impl OrgTools {
                  ask the user to reopen the project's cloud settings and start a new chat",
             ));
         };
-        match session.filter(|s| !s.eq_ignore_ascii_case(CURRENT)) {
-            Some(id) => Ok(SessionTarget { id: id.to_string(), workspace_id, title: None, current: false }),
+        // A recorded-session link (a composer mention) is read first, as the
+        // id it carries — and only in this Workspace.
+        let named = match session {
+            Some(text) if OrgLink::looks_like(text) => match OrgLink::parse(text) {
+                Some(OrgLink::RecordedSession { workspace_id: linked, session_id }) if linked == workspace_id => {
+                    Some(session_id)
+                }
+                Some(OrgLink::RecordedSession { workspace_id: linked, session_id }) => {
+                    return Err(tool_error(format!(
+                        "recorded session {session_id} is in Workspace {linked}, not this chat's Workspace \
+                         {workspace_id}; these tools read only this chat's Workspace"
+                    )))
+                }
+                _ => {
+                    return Err(tool_error(format!(
+                        "\"{text}\" is not a recorded session; name one by its id or its atlas-org://recorded-session \
+                         link (org_sessions lists them)"
+                    )))
+                }
+            },
+            other => other.map(str::to_string),
+        };
+        match named.filter(|s| !s.eq_ignore_ascii_case(CURRENT)) {
+            Some(id) => Ok(SessionTarget { id, workspace_id, title: None, current: false }),
             None => {
                 let query = CurrentSessionQuery { scope, native_session_id: &grant.session_id, cwd: &grant.cwd };
                 match self.cloud.current_session(query).await {

@@ -28,7 +28,9 @@
 //! - **Names become ids in one place** ([`resolve`]): a member or a
 //!   conversation the model names is resolved against the roster or the
 //!   conversation list, and more than one match comes back as candidates for
-//!   the model to ask about, never a guess.
+//!   the model to ask about, never a guess. A composer mention arrives as an
+//!   organisation link ([`OrgLink`]) carrying the id, which every tool that
+//!   takes a member, a conversation or a recorded session reads first.
 //!
 //! - **Every call is audited** ([`audit`]): one [`OrgActionRecord`] per call,
 //!   made in the tool dispatch and emitted to the window as
@@ -72,6 +74,7 @@ pub use cloud::{
 };
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
+pub use resolve::OrgLink;
 #[allow(unused_imports)]
 pub use tools::{router, OrgTools, ADMIN_TOOLS, INSTRUCTIONS, OUTWARD_TOOLS};
 
