@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
@@ -16,6 +17,7 @@ import {
   Search,
   Plus,
   RotateCw,
+  Paperclip,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chat-store";
@@ -1268,10 +1270,22 @@ export function MessageInput({
     [imageSupported, insertFileChips],
   );
 
-  // Drag-and-drop OS files onto the composer — the same routing as the picker.
+  // Drag-and-drop from the OS. The zone is the whole conversation column
+  // (`data-chat-drop-zone` in chat-panel.tsx), not this composer: a thin
+  // target under a drag image that hangs off the cursor lit up and went dark
+  // seemingly at random. Each split pane has its own column, so a drop still
+  // lands in the pane under the cursor. Outside a chat panel, the composer.
+  const dropZoneRef = useRef<HTMLElement | null>(null);
+  const [dropZoneEl, setDropZoneEl] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const composer = composerRef.current;
+    const zone = composer?.closest<HTMLElement>("[data-chat-drop-zone]") ?? composer ?? null;
+    dropZoneRef.current = zone;
+    setDropZoneEl(zone);
+  }, []);
   const onDropFiles = useCallback((paths: string[]) => void attachPaths(paths), [attachPaths]);
   const { isDropTarget } = useComposerFileDrop({
-    targetRef: composerRef,
+    targetRef: dropZoneRef,
     enabled: !disabled,
     onDropFiles,
   });
@@ -1889,8 +1903,6 @@ export function MessageInput({
             // field" is the input surface, not the toolbar).
             "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--card)]",
             "shadow-md",
-            // Drag-over highlight: a clear accent ring while OS files hover.
-            isDropTarget && "border-[var(--primary)] ring-2 ring-[var(--primary)]/40",
             // NOTE: the disabled dim is NOT applied here. It used to be
             // (`disabled && "opacity-60"` on this shell), and it faded the
             // whole composer — footer pills, the agent switcher, and every
@@ -1911,13 +1923,40 @@ export function MessageInput({
               </span>
             </div>
           )}
-          {isDropTarget && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--primary)]/8 backdrop-blur-[1px]">
-              <span className="rounded-full bg-[var(--card)] px-3 py-1 text-xs font-medium text-[var(--secondary-foreground)] shadow">
-                Drop files to attach
-              </span>
-            </div>
-          )}
+          {dropZoneEl &&
+            createPortal(
+              // In with no transition: this is direct feedback to the pointer
+              // crossing into the zone, and any fade reads as lag behind the
+              // hand. Out over `duration-instant`, so it doesn't vanish in the
+              // same frame the dropped attachment appears. Always mounted
+              // (toggled by `data-active`) so the exit can transition at all.
+              // Opacity only; nothing travels, so reduced motion needs no variant.
+              // `z-40` clears the composer's own `z-30` in the same stacking
+              // context; a named layer would escape the column and cover toasts.
+              <div
+                aria-hidden="true"
+                data-active={isDropTarget}
+                className={cn(
+                  "pointer-events-none absolute inset-2 z-40 flex items-center justify-center",
+                  // The scrim dims the thread behind: the label must read as the one
+                  // live layer, not float among the welcome tiles.
+                  "rounded-xl border border-dashed border-[var(--primary)] bg-[var(--background)]/80",
+                  "opacity-0 transition-opacity duration-instant ease-out-strong",
+                  "data-[active=true]:opacity-100 data-[active=true]:duration-0",
+                )}
+              >
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 shadow-md">
+                  <Paperclip size={16} className="text-[var(--primary)]" />
+                  <span className="text-sm font-medium text-[var(--foreground)]">
+                    Drop to attach
+                  </span>
+                  <span className="text-xs text-[var(--muted-foreground)]">
+                    {imageSupported ? "Images are sent inline" : "Files are attached by path"}
+                  </span>
+                </div>
+              </div>,
+              dropZoneEl,
+            )}
           {/* Inner input surface — nested card with its own border + focus
               glow, sitting proud of the muted shell (reference: the Skiper
               double-layer composer). The send button lives INSIDE it. */}
