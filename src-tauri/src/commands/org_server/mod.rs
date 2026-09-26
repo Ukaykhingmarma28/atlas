@@ -23,12 +23,18 @@
 //!   ([`OrgAccessGate`]), at offer time and on every call, so switching it off
 //!   stops a running session at its next call.
 //!
-//! Only `org_whoami` exists yet; the rest of the thirteen tools the spec names
-//! are added on this skeleton.
+//! - **Names become ids in one place** ([`resolve`]): a member or a
+//!   conversation the model names is resolved against the roster or the
+//!   conversation list, and more than one match comes back as candidates for
+//!   the model to ask about, never a guess.
+//!
+//! `org_whoami`, `org_members` and `org_conversations` exist so far; the rest
+//! of the thirteen tools the spec names are added on this skeleton.
 
 mod adapter;
 mod cloud;
 mod offers;
+mod resolve;
 #[cfg(test)]
 mod tests;
 mod tools;
@@ -38,7 +44,9 @@ use std::sync::Arc;
 #[allow(unused_imports)]
 pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 #[allow(unused_imports)]
-pub use cloud::{Caller, CloudError, CloudFuture, CurrentSessionQuery, OrganisationCloud, RecordedSession};
+pub use cloud::{
+    Caller, CloudError, CloudFuture, CurrentSessionQuery, Member, OrgConversation, OrganisationCloud, RecordedSession,
+};
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
 #[allow(unused_imports)]

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use agent_client_protocol::schema::v1 as acp;
 use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
 use atlas_artifacts::{AnchorKind, Comment};
+use atlas_comms::wire::ConversationKind;
 use parking_lot::Mutex;
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
@@ -30,13 +31,20 @@ use crate::commands::ui_server::{self, UiBridge, UiOffer, UI_SERVER_NAME};
 
 // ── An organisation in memory ────────────────────────────────────────────────
 
-/// The organisation cloud the tests run against: one caller, the recorded
+/// The organisation cloud the tests run against: one caller, the roster, the
+/// chat conversations and the organisation chat is connected to, the recorded
 /// sessions the Workspace holds keyed by the chat's session id, and each
 /// recorded session's comments. Records every organisation it was asked
 /// about, so a test can show a call acted in the grant's.
 #[derive(Default)]
 struct FakeOrganisation {
     caller: Mutex<Option<Caller>>,
+    roster: Mutex<Vec<Member>>,
+    roster_fail: AtomicBool,
+    conversations: Mutex<Vec<OrgConversation>>,
+    /// The organisation chat's socket is on; `None` while chat is not
+    /// connected.
+    chat_org: Mutex<Option<String>>,
     /// Chat session id → the recorded session it is written into.
     recorded: Mutex<HashMap<String, RecordedSession>>,
     /// Recorded session id → its comments.
@@ -55,7 +63,18 @@ impl FakeOrganisation {
             role,
             organisation_name: Some("Acme".into()),
         });
+        *org.chat_org.lock() = Some("org-acme".into());
         org
+    }
+
+    fn with_roster(self: Arc<Self>, roster: Vec<Member>) -> Arc<Self> {
+        *self.roster.lock() = roster;
+        self
+    }
+
+    fn with_conversations(self: Arc<Self>, conversations: Vec<OrgConversation>) -> Arc<Self> {
+        *self.conversations.lock() = conversations;
+        self
     }
 
     fn record(&self, chat_session: &str, session: RecordedSession) {
@@ -94,6 +113,27 @@ impl OrganisationCloud for FakeOrganisation {
         })
     }
 
+    fn members<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<Member>> {
+        Box::pin(async move {
+            self.asked.lock().push((org_id.into(), "members".into()));
+            if self.roster_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            Ok(self.roster.lock().clone())
+        })
+    }
+
+    fn conversations<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<OrgConversation>> {
+        Box::pin(async move {
+            self.asked.lock().push((org_id.into(), "conversations".into()));
+            let chat_org = self.chat_org.lock().clone();
+            if chat_org.as_deref() != Some(org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: org_id.into(), chat_org });
+            }
+            Ok(self.conversations.lock().clone())
+        })
+    }
+
     fn comments<'a>(&'a self, org_id: &'a str, workspace_id: &'a str, session_id: &'a str) -> CloudFuture<'a, Vec<Comment>> {
         Box::pin(async move {
             self.asked.lock().push((org_id.into(), format!("comments {workspace_id}/{session_id}")));
@@ -122,6 +162,43 @@ fn comment(id: &str, parent: Option<&str>) -> Comment {
         resolved_at: None,
         resolved_by: None,
     }
+}
+
+fn member(user_id: &str, name: &str, email: &str, role: Option<Role>) -> Member {
+    Member { user_id: user_id.into(), name: name.into(), email: email.into(), role }
+}
+
+/// Ada, two members both called Sam Lee, and Grace.
+fn acme_roster() -> Vec<Member> {
+    vec![
+        member("u-1", "Ada Lovelace", "ada@acme.dev", Some(Role::Developer)),
+        member("u-sam1", "Sam Lee", "sam.lee@acme.dev", Some(Role::Admin)),
+        member("u-sam2", "Sam Lee", "slee@acme.dev", Some(Role::ProductOwner)),
+        member("u-grace", "Grace Hopper", "grace@acme.dev", None),
+    ]
+}
+
+fn conversation(id: &str, kind: ConversationKind, name: Option<&str>, members: Option<&[&str]>, joined: bool) -> OrgConversation {
+    OrgConversation {
+        id: id.into(),
+        kind,
+        name: name.map(Into::into),
+        member_ids: members.map(|ids| ids.iter().map(|s| s.to_string()).collect()),
+        caller_is_member: joined,
+    }
+}
+
+/// #general (joined), a DM with Grace, a group DM, #Design and #design (the
+/// second not joined).
+fn acme_conversations() -> Vec<OrgConversation> {
+    use ConversationKind::*;
+    vec![
+        conversation("c-general", Channel, Some("general"), None, true),
+        conversation("c-dm-grace", Dm, None, Some(&["u-1", "u-grace"]), true),
+        conversation("c-group", GroupDm, None, Some(&["u-1", "u-sam1", "u-ghost"]), true),
+        conversation("c-design", Channel, Some("Design"), None, true),
+        conversation("c-design-web", Channel, Some("design"), None, false),
+    ]
 }
 
 fn acme() -> OrgScope {
@@ -206,6 +283,13 @@ async fn call(client: &RunningService<RoleClient, ()>, name: &'static str, args:
         .find_map(|c| c.as_text().map(|t| t.text.clone()))
         .unwrap_or_default();
     (result.is_error.unwrap_or(false), text)
+}
+
+/// A tool call's JSON answer, and whether it was an error.
+async fn call_json(client: &RunningService<RoleClient, ()>, name: &'static str, args: Value) -> (bool, Value) {
+    let (err, text) = call(client, name, args).await;
+    let value = serde_json::from_str(&text).unwrap_or(Value::String(text));
+    (err, value)
 }
 
 async fn whoami(client: &RunningService<RoleClient, ()>) -> Value {
@@ -330,6 +414,228 @@ async fn a_signed_out_user_is_a_tool_error_the_model_can_read() {
     client.cancel().await.ok();
 }
 
+// ── org_members ──────────────────────────────────────────────────────────────
+
+/// A connected client on an offered token, against `org`.
+async fn org_client(org: Arc<FakeOrganisation>) -> (MemoryServer, RunningService<RoleClient, ()>) {
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(tokens.clone(), org, setting(true)).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    (server, client)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_members_lists_the_roster_with_ids_names_emails_and_roles() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_members", json!({})).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({ "members": [
+            { "user_id": "u-1", "name": "Ada Lovelace", "email": "ada@acme.dev", "role": "developer" },
+            { "user_id": "u-sam1", "name": "Sam Lee", "email": "sam.lee@acme.dev", "role": "admin" },
+            { "user_id": "u-sam2", "name": "Sam Lee", "email": "slee@acme.dev", "role": "product_owner" },
+            { "user_id": "u-grace", "name": "Grace Hopper", "email": "grace@acme.dev", "role": null },
+        ]}),
+    );
+    assert_eq!(org.asked(), [("org-acme".to_string(), "members".to_string())], "the grant's organisation's roster");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_named_exactly_resolves_to_that_one_member() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_members", json!({ "name": "Grace Hopper" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({ "member": { "user_id": "u-grace", "name": "Grace Hopper", "email": "grace@acme.dev", "role": null } }),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_named_in_another_case_or_by_email_resolves_to_the_one_member() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    let (_server, client) = org_client(org).await;
+    for name in ["@grace hopper", "SLEE@acme.dev", "u-sam1"] {
+        let (err, answer) = call_json(&client, "org_members", json!({ "name": name })).await;
+        assert!(!err, "{name}: {answer}");
+        let expected = match name {
+            "@grace hopper" => "u-grace",
+            "SLEE@acme.dev" => "u-sam2",
+            _ => "u-sam1",
+        };
+        assert_eq!(answer["member"]["user_id"], json!(expected), "{name}");
+    }
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_name_matching_nobody_is_an_error_naming_what_was_looked_for() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_members", json!({ "name": "Ada" })).await;
+    assert!(err, "a first name is not a match");
+    let text = answer.as_str().unwrap();
+    assert!(text.contains("no member matches \"Ada\""), "{text}");
+    assert!(text.contains("org_members"), "{text}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_name_matching_several_returns_every_candidate_with_its_id_to_ask_about() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_members", json!({ "name": "sam lee" })).await;
+    assert!(err, "several matches are not an answer");
+    assert_eq!(
+        answer,
+        json!({
+            "error": "\"sam lee\" matches 2 members; ask the user which one",
+            "candidates": [
+                { "user_id": "u-sam1", "name": "Sam Lee", "email": "sam.lee@acme.dev", "role": "admin" },
+                { "user_id": "u-sam2", "name": "Sam Lee", "email": "slee@acme.dev", "role": "product_owner" },
+            ],
+        }),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_roster_that_cannot_be_read_is_a_tool_error() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    org.roster_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, text) = call(&client, "org_members", json!({})).await;
+    assert!(err);
+    assert!(text.contains("connection reset"), "{text}");
+    client.cancel().await.ok();
+}
+
+// ── org_conversations ────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_conversations_lists_channels_dms_and_group_dms_with_kinds_and_membership() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None)
+        .with_roster(acme_roster())
+        .with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_conversations", json!({})).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({ "conversations": [
+            { "id": "c-general", "kind": "channel", "name": "general", "caller_is_member": true },
+            { "id": "c-dm-grace", "kind": "dm", "name": null, "caller_is_member": true, "members": [
+                { "user_id": "u-1", "name": "Ada Lovelace" },
+                { "user_id": "u-grace", "name": "Grace Hopper" },
+            ]},
+            { "id": "c-group", "kind": "group_dm", "name": null, "caller_is_member": true, "members": [
+                { "user_id": "u-1", "name": "Ada Lovelace" },
+                { "user_id": "u-sam1", "name": "Sam Lee" },
+                { "user_id": "u-ghost", "name": null },
+            ]},
+            { "id": "c-design", "kind": "channel", "name": "Design", "caller_is_member": true },
+            { "id": "c-design-web", "kind": "channel", "name": "design", "caller_is_member": false },
+        ]}),
+    );
+    assert_eq!(
+        org.asked(),
+        [
+            ("org-acme".to_string(), "conversations".to_string()),
+            ("org-acme".to_string(), "members".to_string()),
+        ],
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dm_keeps_its_member_ids_when_the_roster_cannot_be_read() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    org.roster_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_conversations", json!({})).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer["conversations"][1]["members"],
+        json!([{ "user_id": "u-1", "name": null }, { "user_id": "u-grace", "name": null }]),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_channel_named_with_its_hash_or_in_another_case_resolves_to_the_one_conversation() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None)
+        .with_roster(acme_roster())
+        .with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    for (name, id) in [("#general", "c-general"), ("GENERAL", "c-general"), ("design", "c-design-web"), ("c-dm-grace", "c-dm-grace")] {
+        let (err, answer) = call_json(&client, "org_conversations", json!({ "name": name })).await;
+        assert!(!err, "{name}: {answer}");
+        assert_eq!(answer["conversation"]["id"], json!(id), "{name}");
+    }
+    let (_, answer) = call_json(&client, "org_conversations", json!({ "name": "#general" })).await;
+    assert_eq!(
+        answer,
+        json!({ "conversation": { "id": "c-general", "kind": "channel", "name": "general", "caller_is_member": true } }),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_name_matching_nothing_is_an_error() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_conversations", json!({ "name": "#random" })).await;
+    assert!(err);
+    let text = answer.as_str().unwrap();
+    assert!(text.contains("no conversation matches \"#random\""), "{text}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_name_matching_several_returns_every_candidate_with_its_id_to_ask_about() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_conversations", json!({ "name": "#DESIGN" })).await;
+    assert!(err);
+    assert_eq!(
+        answer,
+        json!({
+            "error": "\"#DESIGN\" matches 2 conversations; ask the user which one",
+            "candidates": [
+                { "id": "c-design", "kind": "channel", "name": "Design", "caller_is_member": true },
+                { "id": "c-design-web", "kind": "channel", "name": "design", "caller_is_member": false },
+            ],
+        }),
+    );
+    client.cancel().await.ok();
+}
+
+/// Chat has one socket, on the organisation the window chose for it. A
+/// session bound to another organisation does not read that one's chat as
+/// if it were its own, and is told which two differ.
+#[tokio::test(flavor = "multi_thread")]
+async fn org_conversations_refuses_while_chat_is_on_another_organisation_and_names_both() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    *org.chat_org.lock() = Some("org-globex".into());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_conversations", json!({})).await;
+    assert!(err);
+    assert!(text.contains("org-globex") && text.contains("org-acme"), "{text}");
+
+    *org.chat_org.lock() = None;
+    let (err, text) = call(&client, "org_conversations", json!({})).await;
+    assert!(err);
+    assert!(text.contains("not connected") && text.contains("org-acme"), "{text}");
+    client.cancel().await.ok();
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -389,7 +695,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
         .unwrap();
     let names: Vec<String> = client.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
     assert_eq!(names, tool_names());
-    assert_eq!(names, ["org_whoami"]);
+    assert_eq!(names, ["org_whoami", "org_members", "org_conversations"]);
     client.cancel().await.ok();
 }
 
@@ -405,6 +711,7 @@ fn the_instructions_state_the_protocol() {
     assert!(INSTRUCTIONS.contains("Call org_whoami first"));
     assert!(INSTRUCTIONS.contains("Prefer the current session"));
     assert!(INSTRUCTIONS.contains("ask the user which one"));
+    assert!(INSTRUCTIONS.contains("comes back as candidates"));
     assert!(INSTRUCTIONS.contains("Never mark the user's inbox read"));
     assert!(INSTRUCTIONS.contains("asks the user first"));
 }

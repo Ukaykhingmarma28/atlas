@@ -4,7 +4,9 @@
 //! Nothing here mints a token of its own or holds a new client: remote reads
 //! go through the artifacts client the Timeline uses (with its 240-second
 //! token reuse, so the organisation tools add no pressure on the rate-limited
-//! token route), and who the user is comes from the auth core's snapshot.
+//! token route), the roster through the auth core the Members modal reads,
+//! chat through the one comms manager the chat pane uses (its REST client, no
+//! second socket), and who the user is comes from the auth core's snapshot.
 //! Both are resolved per call rather than held, because this is built during
 //! `setup`, where registration order is not guaranteed — the same reason the
 //! artifacts module's token source resolves `AuthState` per call.
@@ -14,7 +16,9 @@
 
 use tauri::{AppHandle, Manager};
 
-use super::cloud::{Caller, CloudError, CloudFuture, CurrentSessionQuery, OrganisationCloud, RecordedSession};
+use super::cloud::{
+    Caller, CloudError, CloudFuture, CurrentSessionQuery, Member, OrgConversation, OrganisationCloud, RecordedSession,
+};
 use super::offers::SessionOrgs;
 use super::OrgScope;
 use crate::auth::{AccountOrg, AccountUser, AuthSnapshot};
@@ -120,6 +124,47 @@ impl OrganisationCloud for AppOrganisationCloud {
                 title: summary.title.filter(|t| !t.is_empty()).or(local_title),
                 live: summary.live,
             }))
+        })
+    }
+
+    fn members<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<Member>> {
+        Box::pin(async move {
+            let Some(auth) = self.app.try_state::<AuthState>() else {
+                return Err(CloudError::SignedOut("the account is not ready".into()));
+            };
+            let core = auth.core();
+            let roster = core.list_members(org_id).await?;
+            Ok(roster
+                .into_iter()
+                .map(|m| Member { user_id: m.user_id, name: m.name, email: m.email, role: m.role })
+                .collect())
+        })
+    }
+
+    fn conversations<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<OrgConversation>> {
+        Box::pin(async move {
+            let comms = crate::commands::comms::manager(&self.app).map_err(CloudError::Unavailable)?;
+            // Chat's one socket is on the organisation the window chose for
+            // it. A chat tool acts there only when that is the grant's.
+            let chat_org = comms.org_id();
+            if chat_org.as_deref() != Some(org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: org_id.to_string(), chat_org });
+            }
+            let list = comms.rest().conversations(org_id).await?;
+            let listed = |c: atlas_comms::wire::Conversation, caller_is_member: bool| OrgConversation {
+                id: c.id,
+                kind: c.kind,
+                name: c.name,
+                member_ids: c.member_ids,
+                caller_is_member,
+            };
+            Ok(list
+                .conversations
+                .into_iter()
+                .filter(|c| c.archived_at.is_none())
+                .map(|c| listed(c, true))
+                .chain(list.discoverable.into_iter().filter(|c| c.archived_at.is_none()).map(|c| listed(c, false)))
+                .collect())
         })
     }
 

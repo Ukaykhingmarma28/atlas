@@ -26,9 +26,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use atlas_artifacts::Comment;
+use atlas_comms::wire::ConversationKind;
+use atlas_comms::CommsError;
 
 use super::OrgScope;
-use crate::auth::Role;
+use crate::auth::{AuthFailure, Role};
 
 /// What every organisation cloud call returns: boxed, because the trait is
 /// used as `dyn` and the handlers are async.
@@ -50,6 +52,17 @@ pub enum CloudError {
     /// The organisation could not be reached, or answered something unreadable.
     /// Worth trying again later.
     Unavailable(String),
+    /// Chat is connected to another organisation than the one this session
+    /// acts in (or to none). Chat has one socket, on the organisation the
+    /// window chose for it; a chat tool never reaches past it into the grant's
+    /// organisation, and never acts in chat's instead. Named both ways, so the
+    /// model can tell the user which one to switch chat to.
+    ChatElsewhere {
+        /// The organisation on the session's grant.
+        grant_org: String,
+        /// The organisation chat is connected to, if any.
+        chat_org: Option<String>,
+    },
 }
 
 impl std::fmt::Display for CloudError {
@@ -59,6 +72,16 @@ impl std::fmt::Display for CloudError {
             Self::Forbidden(reason) => write!(f, "the organisation refused this ({reason})"),
             Self::NotFound(reason) => write!(f, "not found ({reason})"),
             Self::Unavailable(reason) => write!(f, "the organisation could not be reached ({reason}); try again later"),
+            Self::ChatElsewhere { grant_org, chat_org: Some(chat_org) } => write!(
+                f,
+                "chat is connected to organisation {chat_org}, but this session acts in organisation {grant_org} \
+                 (the one its project is bound to); ask the user to switch chat to {grant_org}"
+            ),
+            Self::ChatElsewhere { grant_org, chat_org: None } => write!(
+                f,
+                "chat is not connected to an organisation, and this session acts in organisation {grant_org}; \
+                 ask the user to open chat in {grant_org}"
+            ),
         }
     }
 }
@@ -72,6 +95,30 @@ impl From<atlas_artifacts::Error> for CloudError {
             E::Unauthorized(reason) => Self::SignedOut(reason),
             E::Forbidden(reason) => Self::Forbidden(reason),
             E::NotFound(reason) => Self::NotFound(reason),
+            other => Self::Unavailable(other.to_string()),
+        }
+    }
+}
+
+impl From<AuthFailure> for CloudError {
+    fn from(failure: AuthFailure) -> Self {
+        match failure {
+            AuthFailure::NoCredential => Self::SignedOut("no account is signed in".into()),
+            AuthFailure::Rejected => Self::SignedOut("the server no longer accepts the sign-in".into()),
+            AuthFailure::Denied => Self::Forbidden("this account may not read that".into()),
+            AuthFailure::Indeterminate { reason, .. } => Self::Unavailable(reason),
+        }
+    }
+}
+
+impl From<CommsError> for CloudError {
+    fn from(error: CommsError) -> Self {
+        match error {
+            CommsError::Token(reason) => Self::SignedOut(reason),
+            CommsError::Unauthorized => Self::SignedOut("chat refused the sign-in".into()),
+            CommsError::Forbidden => Self::Forbidden("not a member".into()),
+            CommsError::NotFound => Self::NotFound("chat has no such thing".into()),
+            CommsError::Refused { code, message, .. } => Self::Forbidden(format!("{code}: {message}")),
             other => Self::Unavailable(other.to_string()),
         }
     }
@@ -114,6 +161,32 @@ pub struct RecordedSession {
     pub live: bool,
 }
 
+/// A member of the organisation, as the roster lists them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Member {
+    pub user_id: String,
+    pub name: String,
+    pub email: String,
+    /// `None` when the server named a role this build does not know.
+    pub role: Option<Role>,
+}
+
+/// A chat conversation in the organisation, as the caller sees the list: the
+/// ones they are in, and the channels they could join.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrgConversation {
+    pub id: String,
+    pub kind: ConversationKind,
+    /// A channel's name; `None` for a DM or group DM.
+    pub name: Option<String>,
+    /// Who is in a DM or group DM; `None` for a channel, whose roster the
+    /// server does not broadcast.
+    pub member_ids: Option<Vec<String>>,
+    /// Whether the caller is in it. A channel they are not in is one they can
+    /// see and join, not one they can post to.
+    pub caller_is_member: bool,
+}
+
 /// Everything the organisation tools do remotely.
 pub trait OrganisationCloud: Send + Sync {
     /// The signed-in user as a member of `org_id`.
@@ -123,6 +196,14 @@ pub trait OrganisationCloud: Send + Sync {
     /// one — or `None` while it is not recorded in the Workspace yet (no
     /// prompt captured, or not synced to the server).
     fn current_session<'a>(&'a self, query: CurrentSessionQuery<'a>) -> CloudFuture<'a, Option<RecordedSession>>;
+
+    /// The organisation's roster.
+    fn members<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<Member>>;
+
+    /// The chat conversations the caller is in, then the channels they could
+    /// join. Refused with [`CloudError::ChatElsewhere`] while chat is not
+    /// connected to `org_id`.
+    fn conversations<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Vec<OrgConversation>>;
 
     /// Every comment on a recorded session, roots and replies, oldest first.
     fn comments<'a>(&'a self, org_id: &'a str, workspace_id: &'a str, session_id: &'a str)
