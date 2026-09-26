@@ -14,6 +14,10 @@
 // vocabulary of the transcript, not an ad-hoc branch in a render function.
 
 import type { ChatMessage, ToolCallDisplay, TurnFile } from "@/types/agent";
+import type { ImageAttachment } from "@/types/agents";
+
+// Shared so a row without images keeps a stable prop for the row's `memo`.
+const NO_ATTACHMENTS: readonly ImageAttachment[] = Object.freeze([]);
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
 import { parseShellCommand } from "./parse-shell-command";
 import {
@@ -61,7 +65,8 @@ export interface UserRow extends RowBase {
   /** Set once the user has expanded a clamped bubble. Expanding swaps the row
    *  for a taller one — a data change with a known new height, never a reflow. */
   expanded: boolean;
-  attachments: number;
+  /** The images sent with the prompt, shown as tiles above the bubble. */
+  attachments: readonly ImageAttachment[];
   timestamp: string;
 }
 
@@ -791,7 +796,7 @@ export function projectRows(
         text,
         contextBlocks: derived.contextBlocks,
         expanded: opts.expanded.has(`u:${m.id}`),
-        attachments: m.attachments?.length ?? 0,
+        attachments: m.attachments ?? NO_ATTACHMENTS,
         timestamp: m.timestamp,
       });
 

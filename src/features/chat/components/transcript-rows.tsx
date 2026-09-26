@@ -40,6 +40,7 @@ import { StreamingMarkdown } from "./streaming-markdown";
 import { openDetail } from "../stores/detail-panel-store";
 import { openTurnDiff } from "../lib/open-turn-diff";
 import { UserRowActions } from "./user-row-actions";
+import { ImageAttachmentStrip } from "./image-attachments";
 import { RowCommentPill, TurnCommentPill, useRowHasComments } from "./chat-comment-pills";
 import { ProseRowActions } from "./prose-row-actions";
 import type {
@@ -112,6 +113,9 @@ export const UserRowView = memo(function UserRowView({
           a long paste dragged the whole bubble past the viewport edge. With
           the chain capped, the fence scrolls horizontally INSIDE the bubble. */}
       <div className="relative flex min-w-0 max-w-[80%] flex-col items-end">
+        {/* Images above the bubble, right-aligned with it — the same tiles
+            the composer showed before send. */}
+        <ImageAttachmentStrip images={row.attachments} className="mb-2 justify-end" />
         {/* The prompt is markdown too. It is written in the same composer that
             accepts fences and lists, and rendering it as flat text collapsed
             every newline — a pasted snippet came back as one run-on paragraph.

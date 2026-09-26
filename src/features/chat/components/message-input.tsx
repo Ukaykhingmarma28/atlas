@@ -70,6 +70,7 @@ import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import { ComposerOptionsPill } from "./composer-options-pill";
 import { UsagePill } from "./usage-pill";
 import { composerPillLabelClass } from "./composer-dropup";
+import { ImageAttachmentStrip } from "./image-attachments";
 import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
 import { AiGrantBar } from "./ai-grant-bar";
@@ -1188,6 +1189,10 @@ export function MessageInput({
   // otherwise picked images degrade to path mention chips (any agent can
   // read those off disk).
   const [stagedImages, setStagedImages] = useState<ImageAttachment[]>([]);
+  const removeStagedImage = useCallback(
+    (index: number) => setStagedImages((prev) => prev.filter((_, j) => j !== index)),
+    [],
+  );
   // Non-null (the repo's full_name) while a GitHub repo is cloning into
   // `.atlas/repos`. The composer is locked for the duration so the user can't
   // send a prompt that references a half-synced repo.
@@ -1988,41 +1993,11 @@ export function MessageInput({
               disabled && "opacity-60",
             )}
           >
-            {stagedImages.length > 0 && (
-              <div className="flex flex-wrap gap-2 px-3 pt-3">
-                {stagedImages.map((img, i) => {
-                  const src = `data:${img.mimeType};base64,${img.dataBase64}`;
-                  return (
-                    <div key={i} className="relative group">
-                      <img
-                        src={src}
-                        alt="attachment"
-                        className="h-14 w-14 object-cover rounded-lg border border-[var(--border)]"
-                      />
-                      {/* Right, not top: the hover preview opens above the thumbnail. */}
-                      <Hint label="Remove image" side="right">
-                        <button
-                          onClick={() => setStagedImages((prev) => prev.filter((_, j) => j !== i))}
-                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--secondary-foreground)] hover:text-[var(--foreground)] cursor-pointer"
-                        >
-                          <X size={9} />
-                        </button>
-                      </Hint>
-                      {/* Zed-style hover preview — a larger floating image above the
-                        thumbnail. `pointer-events-none` so it never blocks the
-                        remove button; only shown on hover. */}
-                      <div className="pointer-events-none absolute bottom-full left-0 z-popover mb-2 hidden group-hover:block">
-                        <img
-                          src={src}
-                          alt=""
-                          className="max-h-[320px] max-w-[400px] rounded-lg border border-[var(--border)] object-contain bg-[var(--card)] shadow-md"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <ImageAttachmentStrip
+              images={stagedImages}
+              onRemove={removeStagedImage}
+              className="px-3 pt-3"
+            />
             {/* Only the text area is pointer-blocked while `disabled`:
               `pointer-events-none` stops click-to-focus/typing AND the focus
               event, so we never trigger the agent-bind listener against a CLI
