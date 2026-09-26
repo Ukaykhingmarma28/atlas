@@ -17,7 +17,7 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewReply, OrgConversation,
     OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
 };
 use super::offers::SessionOrgs;
@@ -198,6 +198,27 @@ impl OrganisationCloud for AppOrganisationCloud {
                     Some(resolved),
                 )
                 .await?)
+        })
+    }
+
+    /// The comment route's create half through the Timeline's artifacts
+    /// client: `parent_id` the thread's root, the root's anchor, the body as
+    /// given. The server derives the author and the mentions.
+    fn reply<'a>(&'a self, reply: NewReply<'a>) -> CloudFuture<'a, atlas_artifacts::Comment> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            let at = atlas_artifacts::CommentTarget {
+                org_id: reply.root.org_id,
+                project_id: reply.root.workspace_id,
+                session_id: reply.root.session_id,
+            };
+            let new = atlas_artifacts::NewComment {
+                anchor_kind: reply.anchor_kind,
+                anchor_id: reply.anchor_id,
+                parent_id: Some(reply.root.comment_id),
+                body: reply.body,
+            };
+            Ok(artifacts.client.create_comment(at, new).await?)
         })
     }
 

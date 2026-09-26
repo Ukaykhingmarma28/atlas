@@ -82,6 +82,17 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
     verb: args.resolved === false ? "Unresolved comment" : "Resolved comment",
     detail: str(obj(answer?.comment)?.id) ?? str(args.comment) ?? "",
   }),
+  // An outward action (ADR-0014): once posted, whose thread it answered; the
+  // comment it was aimed at until then (asked, refused or failed).
+  org_comment_reply: (args, answer) => {
+    const thread = obj(answer?.thread);
+    const author = str(obj(thread?.author)?.name);
+    if (author) return { verb: "Replied on", detail: `${author}'s comment` };
+    const posted = thread ? str(thread.id) : null;
+    return posted
+      ? { verb: "Replied on comment", detail: posted }
+      : { verb: "Reply to", detail: str(args.comment) ?? "" };
+  },
   // The board read: whose sessions and which keywords, the author by the
   // name the answer resolved (an email or id reads as the member's name).
   org_sessions: (args, answer) => {

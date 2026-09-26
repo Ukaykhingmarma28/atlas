@@ -52,5 +52,13 @@ server does not.
 - Space page content crosses to the webview as a node-and-edge JSON with optional positions; the
   frontend owns layout and the Yjs codec, and Rust stays a pipe (`crates/atlas-comms/src/spaces.rs`).
 - Twelve flat tools, roughly 3 KB of fixed prefix per native turn.
+- The engine asks for a prompted tool with an MCP elicitation of its own and keeps no session
+  approval for one, so the native seam serves that one elicitation (ADR-0013) and remembers "allow
+  for this session" per session and tool itself (`engine/tool_approvals.rs`).
+- Known gap: in bypass mode (`Never` over full access) the engine auto-approves every MCP
+  permission prompt, a per-tool `prompt` included, so an outward action is posted without a card
+  (pinned by `in_bypass_mode_the_engine_posts_an_outward_action_without_asking` in
+  `crates/atlas-native-agent/tests/engine_turn.rs`). Closing it needs either an engine change or a
+  consent ledger the tool server checks against the call id; neither is built.
 - Reversed the same way as ADR-0012: if per-session consent is ever needed, the flag moves onto
   the session request, still never onto agent identity.

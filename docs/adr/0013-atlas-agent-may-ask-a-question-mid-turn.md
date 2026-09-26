@@ -38,3 +38,10 @@ results and the model asks; no tool server talks to the user directly.
 - A question is a turn-blocking event with a card, so the chat's busy state and the permission
   card's precedence rules apply to it (one card at a time).
 - Reversed by dropping the feature flag from the thread config; the seam handler can stay.
+- One `mcpServer/elicitation/request` is served, and it is not a tool server talking: the engine
+  asks for approval of a prompted MCP tool (ADR-0014's outward actions) as an elicitation it
+  originates itself, a form with an empty schema marked `atlas_agent_approval_kind: mcp_tool_call`.
+  The seam serves that form only when it names a server Atlas offered the thread (Atlas's servers
+  never elicit, so it can only be the engine's), and puts it on the approval card, not the question
+  card (`crates/atlas-native-agent/src/engine/tool_approvals.rs`); every other elicitation is still
+  refused.

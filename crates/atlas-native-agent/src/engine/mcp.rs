@@ -28,11 +28,27 @@
 //! sentence above: everything projected here is a server Atlas itself offers.
 //! A user-configured HTTP server would inherit them, so that assumption is
 //! load-bearing rather than incidental.
+//!
+//! # Outward actions ask first (ADR-0014)
+//!
+//! One exception to "no approval prompt": a tool that reaches another person
+//! in the user's name — a reply on a comment thread, a message — is projected
+//! with a per-tool `prompt` over its server's `approve` ([`ASK_FIRST`]). The
+//! engine then stops before the call and asks, and the native seam puts that
+//! ask on the approval card with the recipient and the full body
+//! (`engine::tool_approvals`). Everything else on the server keeps running
+//! unasked. A later outward tool is one more line in the table.
 
 use std::collections::HashMap;
 
 use agent_client_protocol::schema::v1 as acp;
 use serde_json::{json, Value as JsonValue};
+
+/// The tools that ask before they run, as `(server, tool)`: the outward
+/// actions of the servers Atlas offers (ADR-0014). Each is projected as
+/// `mcp_servers.<server>.tools.<tool>.approval_mode = "prompt"`, over the
+/// server's `approve`.
+pub const ASK_FIRST: &[(&str, &str)] = &[("atlas_org", "org_comment_reply")];
 
 /// The per-thread config overrides for `servers`; `None` when there are none.
 pub fn thread_config(servers: &[acp::McpServer]) -> Option<HashMap<String, JsonValue>> {
@@ -52,6 +68,9 @@ pub fn thread_config(servers: &[acp::McpServer]) -> Option<HashMap<String, JsonV
             config.insert(key("http_headers"), JsonValue::Object(headers));
         }
         config.insert(key("default_tools_approval_mode"), json!("approve"));
+        for (_, tool) in ASK_FIRST.iter().filter(|(server, _)| *server == http.name) {
+            config.insert(key(&format!("tools.{tool}.approval_mode")), json!("prompt"));
+        }
         // Out of the deferred surface, so these tools are in the model's
         // initial list rather than behind a tool search. See the module doc.
         config.insert(key("omit_tools_from"), json!(["deferred"]));
@@ -219,6 +238,56 @@ mod tests {
                 "{tool} runs on the server's approve",
             );
         }
+    }
+
+    /// ADR-0014: an outward action asks first. Run the whole merge the engine
+    /// runs and read the standing off the engine's own config: the server is
+    /// still `approve`, and `org_comment_reply` alone is `prompt` over it.
+    #[test]
+    fn a_reply_on_a_comment_thread_asks_first_and_the_server_stays_approved() {
+        use atlas_engine_config::AppToolApproval;
+
+        let projected = thread_config(&[acp::McpServer::Http(
+            acp::McpServerHttp::new("atlas_org", "http://127.0.0.1:9/org")
+                .headers(vec![acp::HttpHeader::new("Authorization", "Bearer t")]),
+        )])
+        .expect("one entry");
+        assert_eq!(
+            projected["mcp_servers.atlas_org.tools.org_comment_reply.approval_mode"],
+            json!("prompt"),
+        );
+        let overrides: Vec<(String, toml::Value)> = projected
+            .into_iter()
+            .map(|(key, value)| (key, atlas_engine_utils_json_to_toml::json_to_toml(value)))
+            .collect();
+        let merged = atlas_engine_config::build_cli_overrides_layer(&overrides);
+        let server: atlas_engine_config::McpServerConfig = merged
+            .get("mcp_servers")
+            .and_then(|v| v.get("atlas_org"))
+            .expect("mcp_servers.atlas_org")
+            .clone()
+            .try_into()
+            .expect("the engine parses it");
+
+        assert_eq!(server.default_tools_approval_mode, Some(AppToolApproval::Approve));
+        assert_eq!(
+            server.tools.get("org_comment_reply").and_then(|t| t.approval_mode),
+            Some(AppToolApproval::Prompt),
+            "the reply asks before anything leaves the device",
+        );
+        assert_eq!(server.tools.len(), 1, "nothing else on the server asks");
+    }
+
+    /// The per-tool prompts are the organisation server's; memory and UI
+    /// carry none, and keep running unasked.
+    #[test]
+    fn only_the_organisation_servers_outward_tools_ask() {
+        let servers = ["atlas_memory", "atlas_ui", "atlas_org"].map(|name| {
+            acp::McpServer::Http(acp::McpServerHttp::new(name, format!("http://127.0.0.1:9/{name}")))
+        });
+        let config = thread_config(&servers).expect("three entries");
+        let prompted: Vec<&String> = config.keys().filter(|k| k.contains(".tools.")).collect();
+        assert_eq!(prompted, ["mcp_servers.atlas_org.tools.org_comment_reply.approval_mode"]);
     }
 
     #[test]

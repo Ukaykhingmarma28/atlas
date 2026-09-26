@@ -151,6 +151,29 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Resolved comment k1");
   });
 
+  it("org_comment_reply names whose thread it answered, or the comment it was aimed at", () => {
+    expect(
+      subject(
+        "org_comment_reply",
+        { comment: "k2", body: "Done." },
+        {
+          thread: { id: "k1", author: { user_id: "u-sam1", name: "Sam Lee" } },
+          comment: { id: "r6" },
+        },
+      ),
+    ).toBe("Replied on Sam Lee's comment");
+    expect(subject("org_comment_reply", { comment: "k2", body: "Done." }, undefined)).toBe(
+      "Reply to k2",
+    );
+    expect(
+      subject(
+        "org_comment_reply",
+        { comment: "k2" },
+        { thread: { id: "k1", author: { name: null } } },
+      ),
+    ).toBe("Replied on comment k1");
+  });
+
   it("org_sessions says whose recorded sessions it listed and what it searched for", () => {
     expect(subject("org_sessions", {}, undefined)).toBe("Listed recorded sessions");
     expect(subject("org_sessions", { author: "me", limit: 1 }, undefined)).toBe(

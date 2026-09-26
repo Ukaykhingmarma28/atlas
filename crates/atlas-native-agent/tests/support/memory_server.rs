@@ -22,7 +22,11 @@ use serde_json::json;
 pub type Calls = Arc<Mutex<Vec<(String, serde_json::Value)>>>;
 
 #[derive(Clone)]
-struct Tools(Calls);
+struct Tools {
+    calls: Calls,
+    /// The one tool it lists.
+    name: &'static str,
+}
 
 impl ServerHandler for Tools {
     fn get_info(&self) -> ServerInfo {
@@ -41,7 +45,7 @@ impl ServerHandler for Tools {
         });
         let serde_json::Value::Object(schema) = schema else { unreachable!() };
         Ok(ListToolsResult::with_all_items(vec![Tool::new(
-            "memory_search",
+            self.name,
             "Search shared memory.",
             Arc::new(schema),
         )]))
@@ -60,7 +64,7 @@ impl ServerHandler for Tools {
             .unwrap_or_default()
             .to_string();
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
-        self.0.lock().unwrap().push((auth, args));
+        self.calls.lock().unwrap().push((auth, args));
         Ok(CallToolResult::success(vec![ContentBlock::text(
             json!({ "entries": [{ "kind": "decision", "content": "Sign JWTs with RS256" }] }).to_string(),
         )])
@@ -70,8 +74,15 @@ impl ServerHandler for Tools {
 
 /// Serves until the test ends; returns the endpoint and the call log.
 pub async fn start() -> (String, Calls) {
+    start_listing("memory_search").await
+}
+
+/// The same stand-in listing one tool called `name` instead, for a test that
+/// needs a server shaped like another of Atlas's.
+#[allow(dead_code)]
+pub async fn start_listing(name: &'static str) -> (String, Calls) {
     let calls: Calls = Arc::default();
-    let tools = Tools(calls.clone());
+    let tools = Tools { calls: calls.clone(), name };
     let service = StreamableHttpService::new(
         move || Ok(tools.clone()),
         Arc::new(LocalSessionManager::default()),

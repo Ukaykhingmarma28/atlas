@@ -28,12 +28,13 @@ use serde_json::{json, Value};
 
 use super::audit::{unaudited, OrgActionRecord, OrgAudit};
 use super::cloud::{
-    BoardQuery, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud, PayloadRef,
-    TimelineQuery,
+    BoardQuery, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewReply, OrgConversation, OrganisationCloud,
+    PayloadRef, TimelineQuery,
 };
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
+use atlas_agent_servers::CallDescription;
 
 /// What the server tells the agent about itself. The engine shows it as the
 /// description of the `atlas_org` tool namespace. It states the protocol,
@@ -143,6 +144,24 @@ pub(super) fn tools() -> Vec<Tool> {
             }),
         ),
         tool(
+            "org_comment_reply",
+            "Reply on a comment's thread as the user (asks the user first); answers the posted comment.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "comment": { "type": "string", "description": "A comment's id; the reply goes under its thread's first comment." },
+                    "body": { "type": "string", "description": "The reply's text." },
+                    "mention": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Members to mention, by id, name or email; `@Name` in the body becomes the mention, else it leads."
+                    },
+                    "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
+                },
+                "required": ["comment", "body"]
+            }),
+        ),
+        tool(
             "org_sessions",
             "Recorded sessions in the Workspace, most recently active first, with author, agent, model, activity, \
              liveness and size; your last session is `author: \"me\"` with `limit: 1`. Searches the last 14 days \
@@ -223,6 +242,17 @@ fn bool_arg_or(request: &CallToolRequestParams, name: &str, default: bool) -> bo
 fn u32_arg(request: &CallToolRequestParams, name: &str) -> Option<u32> {
     let value = request.arguments.as_ref()?.get(name)?.as_u64()?;
     u32::try_from(value).ok().filter(|n| *n > 0)
+}
+
+/// An optional list of strings, blanks dropped; a lone string reads as a
+/// list of one.
+fn strings_arg(request: &CallToolRequestParams, name: &str) -> Vec<String> {
+    let strings = |value: &Value| value.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    match request.arguments.as_ref().and_then(|args| args.get(name)) {
+        Some(Value::Array(items)) => items.iter().filter_map(strings).collect(),
+        Some(value) => strings(value).into_iter().collect(),
+        None => Vec::new(),
+    }
 }
 
 /// Why an inbox entry concerns the user, in the words the model relays.
@@ -493,6 +523,16 @@ impl OrgTools {
                 };
                 let resolved = bool_arg_or(request, "resolved", true);
                 self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
+            }
+            "org_comment_reply" => {
+                let Some(comment) = string_arg(request, "comment") else {
+                    return tool_error("name the comment to reply to: `comment` is its id (see org_comments)");
+                };
+                let Some(body) = string_arg(request, "body") else {
+                    return tool_error("say what to reply: `body` is the reply's text");
+                };
+                let mentions = strings_arg(request, "mention");
+                self.reply_comment(grant, &scope, string_arg(request, "session"), comment, body, &mentions).await
             }
             "org_sessions" => {
                 let filters = SessionFilters {
@@ -798,6 +838,206 @@ impl OrgTools {
             "session": { "id": target.id, "title": target.title, "current": target.current },
             "comment": comment_json(&updated, roster.as_deref()),
         }))
+    }
+
+    /// The thread a reply to `comment_id` goes on: the recorded session, its
+    /// comments, and the thread's first comment — `comment_id` itself when it
+    /// is a root, else its parent (the server keeps replies one level deep, so
+    /// a reply to a reply belongs under the same root).
+    async fn reply_thread(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        comment_id: &str,
+    ) -> Result<(SessionTarget, Comment), CallToolResult> {
+        let target = self.session_target(grant, scope, session).await?;
+        let comments = self
+            .cloud
+            .comments(&scope.org_id, &target.workspace_id, &target.id)
+            .await
+            .map_err(|e| tool_error(e.to_string()))?;
+        let Some(found) = comments.iter().find(|c| c.id == comment_id) else {
+            return Err(tool_error(format!(
+                "no comment {comment_id} on recorded session {}; call org_comments for its threads",
+                target.id
+            )));
+        };
+        let root = match &found.parent_id {
+            None => found.clone(),
+            Some(parent) => match comments.iter().find(|c| &c.id == parent) {
+                Some(root) => root.clone(),
+                None => {
+                    return Err(tool_error(format!(
+                        "comment {comment_id} answers {parent}, which is not on recorded session {}",
+                        target.id
+                    )))
+                }
+            },
+        };
+        Ok((target, root))
+    }
+
+    /// `org_comment_reply`: posts a reply on a comment's thread as the caller.
+    /// An **outward action** (ADR-0014): the native seam projects it with a
+    /// per-tool `prompt`, so by the time it runs the user has seen the
+    /// recipient and this exact body on the approval card and allowed it; a
+    /// rejected card never reaches here. Mentions are resolved against the
+    /// roster before anything is posted — a name nobody or several members
+    /// answer to is refused with nothing sent.
+    async fn reply_comment(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        comment_id: &str,
+        body: &str,
+        mentions: &[String],
+    ) -> CallToolResult {
+        let (target, root) = match self.reply_thread(grant, scope, session, comment_id).await {
+            Ok(found) => found,
+            Err(answer) => return answer,
+        };
+        let roster = if mentions.is_empty() {
+            None
+        } else {
+            match self.cloud.members(&scope.org_id).await {
+                Ok(roster) => Some(roster),
+                Err(e) => return tool_error(e.to_string()),
+            }
+        };
+        let body = match with_mentions(body, mentions, roster.as_deref().unwrap_or_default()) {
+            Ok(body) => body,
+            Err(answer) => return answer,
+        };
+        let reply = NewReply {
+            root: CommentRef {
+                org_id: &scope.org_id,
+                workspace_id: &target.workspace_id,
+                session_id: &target.id,
+                comment_id: &root.id,
+            },
+            anchor_kind: root.anchor_kind,
+            anchor_id: &root.anchor_id,
+            body: &body,
+        };
+        let posted = match self.cloud.reply(reply).await {
+            Ok(posted) => posted,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let roster = match roster {
+            Some(roster) => Some(roster),
+            None => self.cloud.members(&scope.org_id).await.ok(),
+        };
+        // The thread by its first comment and whose it is: the person the
+        // server told, and the name the call's row reads by.
+        let author = root.guest_name.clone().or_else(|| roster_name(roster.as_deref(), &root.author_id));
+        tool_json(json!({
+            "session": { "id": target.id, "title": target.title, "current": target.current },
+            "thread": {
+                "id": root.id,
+                "author": { "user_id": root.author_id, "name": author, "guest": root.guest_name.is_some() },
+            },
+            "comment": comment_json(&posted, roster.as_deref()),
+        }))
+    }
+
+    /// What the approval card says about a waiting outward call, for the
+    /// offer to hand the native seam ([`SessionMcpServers::describe_call`]).
+    /// Reads what the call will act on — never writes — so the card names the
+    /// real recipient: the thread's first author and where the thread is, with
+    /// the body exactly as it will be posted, mentions shown by name. When the
+    /// organisation cannot be read the card still shows the comment id and the
+    /// full body. `None` for a tool that does not ask.
+    ///
+    /// [`SessionMcpServers::describe_call`]: atlas_agent_servers::SessionMcpServers::describe_call
+    pub async fn describe(&self, grant: &Grant, tool: &str, arguments: &Value) -> Option<CallDescription> {
+        if tool != "org_comment_reply" {
+            return None;
+        }
+        let arg = |name: &str| arguments.get(name).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
+        let comment_id = arg("comment").unwrap_or_default();
+        let body = arg("body").unwrap_or_default().to_string();
+        let plain = CallDescription {
+            title: format!("Reply to comment {comment_id}"),
+            recipient: format!("The thread of comment {comment_id}"),
+            body: body.clone(),
+        };
+        let Some(scope) = grant.org.clone() else {
+            return Some(plain);
+        };
+        let Ok((target, root)) = self.reply_thread(grant, &scope, arg("session"), comment_id).await else {
+            return Some(plain);
+        };
+        let roster = self.cloud.members(&scope.org_id).await.ok();
+        let roster = roster.as_deref();
+        let author = root
+            .guest_name
+            .clone()
+            .or_else(|| roster_name(roster, &root.author_id))
+            .unwrap_or_else(|| root.author_id.clone());
+        let mentions = match arguments.get("mention") {
+            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+            Some(Value::String(one)) => vec![one.clone()],
+            _ => Vec::new(),
+        };
+        // As it will be posted, then read back as a person reads it.
+        let posted = with_mentions(&body, &mentions, roster.unwrap_or_default()).unwrap_or(body);
+        let said = root
+            .body
+            .as_deref()
+            .filter(|_| !root.is_deleted())
+            .map(|b| format!(" \"{}\"", excerpt(&named_mentions(b, roster), 80)))
+            .unwrap_or_default();
+        let place = target.title.clone().unwrap_or_else(|| format!("recorded session {}", target.id));
+        Some(CallDescription {
+            title: format!("Reply on {author}'s comment"),
+            recipient: format!("{author}, on their comment{said} in {place}"),
+            body: named_mentions(&posted, roster),
+        })
+    }
+}
+
+/// `text` cut to at most `max` characters, with an ellipsis when it was.
+fn excerpt(text: &str, max: usize) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        return flat;
+    }
+    let cut: String = flat.chars().take(max.saturating_sub(1)).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// `body` with each member `mentions` names written as the server's
+/// `<@user-id>`: every `@<what the model named>` and `@<member's name>` in the
+/// body becomes the mention, and a member the body does not `@` leads it. A
+/// name that matches nobody, or several members, is the answer instead —
+/// before anything is posted.
+pub(super) fn with_mentions(body: &str, mentions: &[String], roster: &[Member]) -> Result<String, CallToolResult> {
+    let mut out = body.to_string();
+    let mut leading = Vec::new();
+    for named in mentions {
+        let member = resolve_member(roster, named)?;
+        let token = format!("<@{}>", member.user_id);
+        let mut found = false;
+        // Longest first, so "@Sam Lee" is not taken as "@Sam".
+        let mut spellings = vec![named.trim_start_matches('@').to_string(), member.name.clone(), member.email.clone()];
+        spellings.sort_by_key(|s| std::cmp::Reverse(s.len()));
+        for spelling in spellings.iter().filter(|s| !s.is_empty()) {
+            let at = format!("@{spelling}");
+            if out.contains(&at) {
+                out = out.replace(&at, &token);
+                found = true;
+            }
+        }
+        if !found && !out.contains(&token) {
+            leading.push(token);
+        }
+    }
+    if leading.is_empty() {
+        Ok(out)
+    } else {
+        Ok(format!("{} {out}", leading.join(" ")))
     }
 }
 

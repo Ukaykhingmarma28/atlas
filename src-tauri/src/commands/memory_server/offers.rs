@@ -89,6 +89,23 @@ impl MemorySessionOffers {
 }
 
 impl SessionMcpServers for MemorySessionOffers {
+    /// An outward call on the organisation server, described by the tools
+    /// that will answer it, under the grant the session's token carries — so
+    /// the card reads the same organisation and Workspace the call acts in.
+    fn describe_call(
+        &self,
+        call: atlas_agent_servers::CallToApprove<'_>,
+    ) -> futures::future::BoxFuture<'static, Option<atlas_agent_servers::CallDescription>> {
+        let tools = self.org.as_ref().and_then(OrgOffer::tools).filter(|_| call.server == ORG_SERVER_NAME).cloned();
+        let grant = self.host.tokens().grant_for_session(&call.session_id.to_string());
+        let tool = call.tool.to_string();
+        let arguments = call.arguments.clone();
+        Box::pin(async move {
+            let (tools, grant) = (tools?, grant?);
+            tools.describe(&grant, &tool, &arguments).await
+        })
+    }
+
     fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
         let cwd = request.cwd.to_string_lossy().into_owned();
         let agent = request.agent_id.as_str().to_string();

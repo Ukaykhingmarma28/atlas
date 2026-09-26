@@ -700,15 +700,14 @@ pub fn install_manager(app: &AppHandle) {
         // Every call is audited: its record goes to the window, which writes
         // the call's Logs row.
         let audit_app = app.clone();
-        let org_router = super::org_server::router(
-            super::org_server::OrgTools::new(
-                Arc::new(super::org_server::AppOrganisationCloud::new(app.clone())),
-                org_access.clone(),
-            )
-            .with_audit(Arc::new(move |record: &super::org_server::OrgActionRecord| {
-                let _ = audit_app.emit(super::org_server::ORG_ACTION_EVENT, record);
-            })),
-        );
+        let org_tools = super::org_server::OrgTools::new(
+            Arc::new(super::org_server::AppOrganisationCloud::new(app.clone())),
+            org_access.clone(),
+        )
+        .with_audit(Arc::new(move |record: &super::org_server::OrgActionRecord| {
+            let _ = audit_app.emit(super::org_server::ORG_ACTION_EVENT, record);
+        }));
+        let org_router = super::org_server::router(org_tools.clone());
         // Every agent that can take the server is handed it on each session
         // request, with a token of its own. It is the only way memory reaches
         // an agent (ADR-0010): nothing is prepended to a prompt. A connection
@@ -718,10 +717,15 @@ pub fn install_manager(app: &AppHandle) {
         host.set_session_mcp(Arc::new(
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
                 .with_ui(super::ui_server::UiOffer::new(navigation))
-                .with_org(super::org_server::OrgOffer::new(
-                    org_access,
-                    Arc::new(super::org_server::AppSessionOrgs::new(app.clone())),
-                )),
+                // The same tools describe an outward call on the approval
+                // card: whom it reaches, and the full body (ADR-0014).
+                .with_org(
+                    super::org_server::OrgOffer::new(
+                        org_access,
+                        Arc::new(super::org_server::AppSessionOrgs::new(app.clone())),
+                    )
+                    .describing_with(org_tools),
+                ),
         ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();

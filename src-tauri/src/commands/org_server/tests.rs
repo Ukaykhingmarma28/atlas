@@ -58,6 +58,14 @@ struct FakeOrganisation {
     comments_fail: AtomicBool,
     /// Resolving or unresolving a comment fails.
     resolve_fail: AtomicBool,
+    /// Posting a reply fails.
+    reply_fail: AtomicBool,
+    /// Who the server told about each posted comment, as `(user, kind,
+    /// comment)`, by its rule (`apps/ingest/src/workspace-do.ts`, `owedFor`):
+    /// everyone the body mentions, then the thread's first author for a reply
+    /// — one row per person, the first reason winning, and never the person
+    /// who posted it.
+    notified: Mutex<Vec<(String, &'static str, String)>>,
     /// The caller's inbox, in the order it was written (oldest first), each
     /// entry's read state as the user left it. There is no way to mark one
     /// read: the organisation cloud has no such method, so neither does this.
@@ -210,6 +218,69 @@ impl OrganisationCloud for FakeOrganisation {
             comment.resolved_at = resolved.then(|| "2026-09-26T12:00:00Z".to_string());
             comment.resolved_by = if resolved { by } else { None };
             Ok(comment.clone())
+        })
+    }
+
+    /// As the server does: a reply hangs off a root (a reply to a reply is
+    /// refused), is written as the caller with the mentions its body names,
+    /// and owes notifications by the server's rule (see `notified`).
+    fn reply<'a>(&'a self, reply: NewReply<'a>) -> CloudFuture<'a, Comment> {
+        Box::pin(async move {
+            let at = reply.root;
+            self.asked.lock().push((
+                at.org_id.into(),
+                format!("reply {}/{}/{}", at.workspace_id, at.session_id, at.comment_id),
+            ));
+            if self.reply_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            let caller = self.caller.lock().as_ref().map(|c| c.user_id.clone()).unwrap_or_default();
+            let mut sessions = self.comments.lock();
+            let list = sessions.get_mut(at.session_id).ok_or_else(|| CloudError::NotFound("session".into()))?;
+            let root = list
+                .iter()
+                .find(|c| c.id == at.comment_id)
+                .ok_or_else(|| CloudError::NotFound("comment".into()))?;
+            if !root.is_root() {
+                return Err(CloudError::Forbidden("a reply hangs off a root comment; replies are one level deep".into()));
+            }
+            let root_author = root.author_id.clone();
+            let mentions: Vec<String> = reply
+                .body
+                .split("<@")
+                .skip(1)
+                .filter_map(|rest| rest.split_once('>').map(|(id, _)| id.to_string()))
+                .filter(|id| *id != caller)
+                .collect();
+            let posted = Comment {
+                id: format!("r{}", list.len() + 1),
+                session_id: at.session_id.into(),
+                anchor_kind: reply.anchor_kind,
+                anchor_id: reply.anchor_id.into(),
+                parent_id: Some(at.comment_id.into()),
+                author_id: caller.clone(),
+                guest_name: None,
+                body: Some(reply.body.into()),
+                mentions: mentions.clone(),
+                created_at: "2026-09-26T12:30:00Z".into(),
+                edited_at: None,
+                deleted_at: None,
+                resolved_at: None,
+                resolved_by: None,
+            };
+            list.push(posted.clone());
+            let mut owed: Vec<(String, &'static str)> =
+                mentions.into_iter().map(|user| (user, "artifact_mention")).collect();
+            if root_author != caller {
+                owed.push((root_author, "artifact_reply"));
+            }
+            let mut notified = self.notified.lock();
+            for (user, kind) in owed {
+                if !notified.iter().any(|(u, _, c)| *u == user && *c == posted.id) {
+                    notified.push((user, kind, posted.id.clone()));
+                }
+            }
+            Ok(posted)
         })
     }
 
@@ -1304,6 +1375,228 @@ async fn a_resolve_the_organisation_cannot_take_is_a_tool_error() {
     client.cancel().await.ok();
 }
 
+// ── org_comment_reply ────────────────────────────────────────────────────────
+
+/// Everything posted on recorded session `rs-1` after the fixtures.
+fn replies(org: &FakeOrganisation) -> Vec<Comment> {
+    org.comments.lock()["rs-1"].iter().filter(|c| c.id.starts_with('r')).cloned().collect()
+}
+
+fn notified(org: &FakeOrganisation) -> Vec<(String, &'static str)> {
+    org.notified.lock().iter().map(|(user, kind, _)| (user.clone(), *kind)).collect()
+}
+
+fn nothing_posted(org: &FakeOrganisation) -> bool {
+    !org.asked().iter().any(|(_, what)| what.starts_with("reply"))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comment_reply_posts_under_the_thread_on_its_anchor_as_the_caller_and_tells_the_threads_author() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) =
+        call_json(&client, "org_comment_reply", json!({ "comment": "k1", "body": "Checked the path; it was stale." })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["id"], json!("rs-1"));
+    assert_eq!(
+        answer["thread"],
+        json!({ "id": "k1", "author": { "user_id": "u-sam1", "name": "Sam Lee", "guest": false } }),
+    );
+    assert_eq!(answer["comment"]["author"], json!({ "user_id": "u-1", "name": "Ada Lovelace", "guest": false }));
+    assert_eq!(answer["comment"]["body"], json!("Checked the path; it was stale."));
+    assert_eq!(answer["comment"]["anchor"], json!({ "kind": "checkpoint", "id": "cp-7" }), "where its thread is");
+    assert!(org.asked().contains(&("org-acme".to_string(), "reply ws-atlas/rs-1/k1".to_string())));
+
+    let posted = replies(&org);
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].parent_id.as_deref(), Some("k1"));
+    assert_eq!(answer["comment"]["id"], json!(posted[0].id), "the answer is the posted comment");
+    assert_eq!(notified(&org), [("u-sam1".to_string(), "artifact_reply")], "the thread's author is told");
+
+    // It is on the thread for everyone who reads it.
+    let (_, threads) = call_json(&client, "org_comments", json!({})).await;
+    let replies_on_k1: Vec<&str> =
+        threads["threads"][0]["replies"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert!(replies_on_k1.contains(&posted[0].id.as_str()));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_given_a_reply_id_goes_under_that_threads_first_comment() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comment_reply", json!({ "comment": "k2", "body": "Thanks Grace." })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["thread"]["id"], json!("k1"));
+    assert_eq!(replies(&org)[0].parent_id.as_deref(), Some("k1"), "replies are one level deep");
+    assert_eq!(notified(&org), [("u-sam1".to_string(), "artifact_reply")], "the root's author, not the reply's");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mentions_are_written_as_user_ids_where_the_body_names_them_or_lead_it() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(
+        &client,
+        "org_comment_reply",
+        json!({
+            "comment": "k1",
+            "body": "@Grace Hopper can you confirm?",
+            "mention": ["Grace Hopper", "sam.lee@acme.dev"],
+        }),
+    )
+    .await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        replies(&org)[0].body.as_deref(),
+        Some("<@u-sam1> <@u-grace> can you confirm?"),
+        "the named one in place, the other leading",
+    );
+    assert_eq!(answer["comment"]["body"], json!("@Sam Lee @Grace Hopper can you confirm?"), "read back by name");
+    assert_eq!(
+        notified(&org),
+        [("u-sam1".to_string(), "artifact_mention"), ("u-grace".to_string(), "artifact_mention")],
+        "one notification per person, the mention winning over the reply",
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_mention_matching_nobody_or_several_is_refused_before_anything_is_posted() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) =
+        call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi", "mention": ["Nobody Here"] })).await;
+    assert!(err);
+    assert!(text.contains("no member matches \"Nobody Here\""), "{text}");
+    let (err, answer) =
+        call_json(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi", "mention": ["Sam Lee"] })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().map(Vec::len), Some(2), "{answer}");
+    assert!(nothing_posted(&org));
+    assert!(org.notified.lock().is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn replying_on_your_own_thread_tells_nobody() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) =
+        call_json(&client, "org_comment_reply", json!({ "comment": "z1", "body": "fixed", "session": "rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"], json!({ "id": "rs-2", "title": null, "current": false }));
+    assert!(org.notified.lock().is_empty(), "the server never tells you about your own reply");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_comment_or_a_missing_body_is_an_error_and_nothing_is_posted() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k99", "body": "hi" })).await;
+    assert!(err);
+    assert!(text.contains("no comment k99 on recorded session rs-1"), "{text}");
+    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "  " })).await;
+    assert!(err);
+    assert!(text.contains("`body`"), "{text}");
+    assert!(nothing_posted(&org));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_the_organisation_cannot_take_is_a_tool_error() {
+    let org = commented();
+    org.reply_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi" })).await;
+    assert!(err);
+    assert!(text.contains("could not be reached"), "{text}");
+    assert!(replies(&org).is_empty(), "nothing was posted");
+    assert!(org.notified.lock().is_empty(), "and nobody was told");
+    client.cancel().await.ok();
+}
+
+#[test]
+fn mention_rewriting_takes_the_longest_spelling_and_never_doubles_a_mention() {
+    let roster = acme_roster();
+    assert_eq!(
+        tools::with_mentions("@Grace Hopper and @grace@acme.dev", &["grace@acme.dev".into()], &roster).ok(),
+        Some("<@u-grace> and <@u-grace>".to_string()),
+    );
+    assert_eq!(
+        tools::with_mentions("no names here", &[], &roster).ok(),
+        Some("no names here".to_string()),
+    );
+}
+
+// ── The approval card's words for an outward call ────────────────────────────
+
+/// The offer the native seam asks to describe a waiting call, bound to chat
+/// `s1` the way a real session's is.
+async fn describing_offer(org: Arc<FakeOrganisation>) -> MemorySessionOffers {
+    let host = running_host(org.clone()).await;
+    let offers = MemorySessionOffers::new(host, sharing(true)).with_org(
+        OrgOffer::new(setting(true), FakeSessionOrgs::new(true, Some(acme())))
+            .describing_with(OrgTools::new(org, setting(true))),
+    );
+    offers.offer(&session_request(true)).bind(&acp::SessionId::new("s1"));
+    offers
+}
+
+async fn describe(offers: &MemorySessionOffers, server: &str, tool: &str, arguments: Value) -> Option<atlas_agent_servers::CallDescription> {
+    let session = acp::SessionId::new("s1");
+    offers
+        .describe_call(atlas_agent_servers::CallToApprove { session_id: &session, server, tool, arguments: &arguments })
+        .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_card_names_the_threads_author_where_it_is_and_the_full_body_as_it_will_post() {
+    let org = commented();
+    let offers = describing_offer(org.clone()).await;
+    let body = "Checked it.\n".repeat(300);
+    let said = describe(
+        &offers,
+        ORG_SERVER_NAME,
+        "org_comment_reply",
+        json!({ "comment": "k2", "body": format!("@Grace Hopper {body}"), "mention": ["Grace Hopper"] }),
+    )
+    .await
+    .expect("a reply is described");
+    assert_eq!(said.title, "Reply on Sam Lee's comment", "the thread's first author, from a reply's id");
+    assert_eq!(
+        said.recipient,
+        "Sam Lee, on their comment \"@Grace Hopper can you check the <@u-ghost> path?\" in Fix the theme importer"
+    );
+    assert_eq!(
+        said.body,
+        format!("@Grace Hopper {}", body.trim_end()),
+        "the whole body as it will post (trimmed, as the call trims it), mentions by name",
+    );
+    assert!(nothing_posted(&org), "describing posts nothing");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_the_organisation_cannot_describe_still_shows_the_comment_and_the_body() {
+    let org = commented();
+    org.comments_fail.store(true, Ordering::SeqCst);
+    let offers = describing_offer(org).await;
+    let said = describe(&offers, ORG_SERVER_NAME, "org_comment_reply", json!({ "comment": "k1", "body": "hi" }))
+        .await
+        .expect("still described");
+    assert_eq!(said.title, "Reply to comment k1");
+    assert_eq!(said.body, "hi");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_an_outward_call_on_the_org_server_is_described() {
+    let offers = describing_offer(commented()).await;
+    assert!(describe(&offers, ORG_SERVER_NAME, "org_comment_resolve", json!({ "comment": "k1" })).await.is_none());
+    assert!(describe(&offers, "atlas_ui", "org_comment_reply", json!({ "comment": "k1", "body": "x" })).await.is_none());
+}
+
 // ── org_sessions ─────────────────────────────────────────────────────────────
 
 /// `minutes` ago, as the server stamps it.
@@ -1837,6 +2130,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
             "org_inbox",
             "org_comments",
             "org_comment_resolve",
+            "org_comment_reply",
             "org_sessions",
             "org_session"
         ]

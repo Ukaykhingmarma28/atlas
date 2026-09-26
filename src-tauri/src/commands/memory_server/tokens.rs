@@ -137,6 +137,16 @@ impl MemoryTokens {
         self.table.lock().by_session.get(session_id).cloned()
     }
 
+    /// What `session_id`'s live token grants, if it has one — the grant a
+    /// call from that session is answered under, read without its token: the
+    /// native seam asks about a waiting call by session (an outward action's
+    /// approval card, ADR-0014).
+    pub fn grant_for_session(&self, session_id: &str) -> Option<Grant> {
+        let table = self.table.lock();
+        let token = table.by_session.get(session_id)?;
+        table.by_token.get(token).cloned()
+    }
+
     /// Revoke `session_id`'s token. Idempotent.
     pub fn revoke(&self, session_id: &str) {
         let mut table = self.table.lock();

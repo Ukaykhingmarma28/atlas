@@ -49,10 +49,48 @@ pub struct SessionMcpRequest {
     pub session_id: Option<acp::SessionId>,
 }
 
+/// A call to one of the tools a host's server offered, stopped before it runs
+/// until the user approves it — an **outward action** (ADR-0014).
+#[derive(Debug, Clone, Copy)]
+pub struct CallToApprove<'a> {
+    /// The session the call was made in.
+    pub session_id: &'a acp::SessionId,
+    /// The server's name in the agent's MCP configuration (`atlas_org`).
+    pub server: &'a str,
+    /// The tool's bare name (`org_comment_reply`).
+    pub tool: &'a str,
+    /// The arguments exactly as the tool will receive them.
+    pub arguments: &'a serde_json::Value,
+}
+
+/// What the approval card says about a call: a title naming the act and whom
+/// it reaches, the recipient in full, and the exact words that will leave the
+/// device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallDescription {
+    /// One line: "Reply on Ada Lovelace's comment".
+    pub title: String,
+    /// Who and where it reaches: the thread and its author, a channel, a DM.
+    pub recipient: String,
+    /// The full text that will be posted, never shortened.
+    pub body: String,
+}
+
 /// Decides the MCP servers each session is handed. Supplied by the host
 /// through `ConnectOptions`.
 pub trait SessionMcpServers: Send + Sync {
     fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer;
+
+    /// Describes a call to one of the offered servers' tools that is waiting
+    /// on the user's approval, for the approval card. The host owns the
+    /// servers, so only the host can say who a call reaches (a comment id is
+    /// not a person). `None` — the default — leaves the card to the tool's own
+    /// name and arguments. Boxed, because the trait is used as `dyn` and a
+    /// description may have to ask the host's cloud.
+    fn describe_call(&self, call: CallToApprove<'_>) -> futures::future::BoxFuture<'static, Option<CallDescription>> {
+        let _ = call;
+        Box::pin(async { None })
+    }
 }
 
 /// Told how an offer ended: `Some(id)` when the session it was made for

@@ -70,6 +70,10 @@ pub struct EngineSession {
     /// The last card to join this session's line, as the signal it sends when
     /// it is answered. See [`PromptPlace`].
     prompt_tail: Option<tokio::sync::oneshot::Receiver<()>>,
+    /// The host tools the user allowed for the rest of this session, as
+    /// `(server, tool)` (`engine::tool_approvals`). The engine keeps no session
+    /// approval for a tool that always asks, so the seam does.
+    allowed_for_session: std::collections::HashSet<(String, String)>,
 }
 
 /// A card's place in its session's line: one card at a time (ADR-0013).
@@ -120,6 +124,11 @@ pub struct EngineSessions {
     /// `thread/start` has answered and the session exists.
     mcp_startup: Mutex<HashMap<String, HashMap<String, bool>>>,
     mcp_settled: tokio::sync::Notify,
+    /// The MCP servers the HOST offered each engine thread — Atlas's own,
+    /// which never elicit — as opposed to every server the engine reports.
+    /// What tells the engine's own approval for a call to one of them from a
+    /// tool server's elicitation (`engine::tool_approvals`).
+    host_servers: Mutex<HashMap<String, std::collections::HashSet<String>>>,
 }
 
 /// How long a turn waits for its thread's host MCP servers to finish starting.
@@ -153,6 +162,7 @@ impl EngineSessions {
                 command_output: HashMap::new(),
                 selected_model: None,
                 prompt_tail: None,
+                allowed_for_session: std::collections::HashSet::new(),
             },
         );
     }
@@ -191,11 +201,42 @@ impl EngineSessions {
     /// Records that `thread_id` was configured with these host MCP servers.
     /// A server the engine already reported keeps its settled state.
     pub fn expect_mcp_servers(&self, thread_id: &str, servers: impl IntoIterator<Item = String>) {
+        let servers: Vec<String> = servers.into_iter().collect();
+        self.host_servers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(thread_id.to_string())
+            .or_default()
+            .extend(servers.iter().cloned());
         let mut startup = self.mcp_startup_lock();
         let entry = startup.entry(thread_id.to_string()).or_default();
         for server in servers {
             entry.entry(server).or_insert(false);
         }
+    }
+
+    /// Whether `server` is one the host offered `thread_id`.
+    pub fn is_host_server(&self, thread_id: &str, server: &str) -> bool {
+        self.host_servers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(thread_id)
+            .is_some_and(|servers| servers.contains(server))
+    }
+
+    /// Remembers that the user allowed `server`'s `tool` for the rest of this
+    /// session.
+    pub fn allow_for_session(&self, session_id: &acp::SessionId, server: &str, tool: &str) {
+        if let Some(session) = self.lock().get_mut(session_id) {
+            session.allowed_for_session.insert((server.to_string(), tool.to_string()));
+        }
+    }
+
+    /// Whether the user allowed `server`'s `tool` for the rest of this session.
+    pub fn allowed_for_session(&self, session_id: &acp::SessionId, server: &str, tool: &str) -> bool {
+        self.lock()
+            .get(session_id)
+            .is_some_and(|s| s.allowed_for_session.contains(&(server.to_string(), tool.to_string())))
     }
 
     /// The engine's report on one MCP server's startup for one thread.

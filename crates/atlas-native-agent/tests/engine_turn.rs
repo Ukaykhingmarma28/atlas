@@ -1264,6 +1264,157 @@ async fn the_engine_is_handed_the_memory_server_and_a_turn_calls_memory_search()
     assert_eq!(calls[0].1, json!({"query": "how do we sign tokens"}));
 }
 
+// ---------------------------------------------------------------------------
+// #118 — outward actions ask first (ADR-0014), through the real engine.
+//
+// The projection makes `org_comment_reply` a `prompt` tool on `atlas_org`; the
+// engine then stops before the call and asks with an MCP elicitation of its
+// own, which the seam puts on the approval card. The witness is the tool
+// server's own call log: a declined reply never reaches it.
+// ---------------------------------------------------------------------------
+
+/// A turn that calls `atlas_org`'s `org_comment_reply`, then answers.
+fn reply_turn() -> String {
+    sse(vec![
+        json!({"type": "response.created", "response": {"id": "resp-1"}}),
+        json!({
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call",
+                "call_id": "call-reply",
+                "namespace": "mcp__atlas_org",
+                "name": "org_comment_reply",
+                "arguments": json!({ "comment": "k1", "body": "Renamed it." }).to_string()
+            }
+        }),
+        json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp-1",
+                "usage": {
+                    "input_tokens": 0, "input_tokens_details": null,
+                    "output_tokens": 0, "output_tokens_details": null,
+                    "total_tokens": 0
+                }
+            }
+        }),
+    ])
+}
+
+/// Offers one stand-in server as `atlas_org`.
+struct OfferingOrg(String);
+
+impl atlas_agent_servers::SessionMcpServers for OfferingOrg {
+    fn offer(&self, _request: &atlas_agent_servers::SessionMcpRequest) -> atlas_agent_servers::SessionMcpOffer {
+        let server = acp::McpServer::Http(
+            acp::McpServerHttp::new("atlas_org", self.0.clone())
+                .headers(vec![acp::HttpHeader::new("Authorization", "Bearer session-token")]),
+        );
+        atlas_agent_servers::SessionMcpOffer::new(vec![server], |_| {})
+    }
+}
+
+/// A reply turn against a stand-in `atlas_org`, answered with `pick`.
+/// Returns the tool server's calls and every request the model was sent.
+async fn reply_answered_with(
+    pick: acp::PermissionOptionKind,
+) -> (Vec<(String, serde_json::Value)>, Vec<String>) {
+    let (url, calls) = memory_server::start_listing("org_comment_reply").await;
+    let h = harness_full(
+        vec![(Some(1), sse_ok(reply_turn())), (None, sse_ok(assistant_turn("ok")))],
+        |s| s,
+        Some(Arc::new(OfferingOrg(url)) as Arc<dyn atlas_agent_servers::SessionMcpServers>),
+    )
+    .await;
+    let session_id = h.open_thread().await;
+    let connection = h.connection.clone();
+    let prompting = tokio::spawn(async move {
+        connection
+            .prompt(acp::PromptRequest::new(session_id, text("reply on the comment")))
+            .await
+    });
+
+    answer_first_authorization(&h, pick)
+        .await
+        .expect("the engine should have asked before the reply");
+    let response = tokio::time::timeout(Duration::from_secs(30), prompting)
+        .await
+        .expect("the turn should not hang once the card is answered")
+        .expect("the prompt task should not panic")
+        .expect("the turn should complete");
+    assert_eq!(response.stop_reason, acp::StopReason::EndTurn);
+
+    let calls = calls.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let sent = h
+        ._server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+        .collect();
+    (calls, sent)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_declined_reply_is_never_posted_and_the_model_is_told_it_was_rejected() {
+    let (calls, sent) = reply_answered_with(acp::PermissionOptionKind::RejectOnce).await;
+    assert!(calls.is_empty(), "the tool server was never called: {calls:?}");
+    assert!(
+        sent.last().is_some_and(|body| body.contains("user rejected MCP tool call")),
+        "the model reads the rejection as the call's error",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_allowed_reply_is_posted_once() {
+    let (calls, _) = reply_answered_with(acp::PermissionOptionKind::AllowOnce).await;
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert_eq!(calls[0].1, json!({ "comment": "k1", "body": "Renamed it." }));
+}
+
+/// **A known gap, pinned so it cannot change unnoticed.** Bypass is
+/// `AskForApproval::Never` over full access, and the engine auto-approves every
+/// MCP permission prompt under exactly that pair
+/// (`mcp_permission_prompt_is_auto_approved`) — a per-tool `prompt` included.
+/// So in bypass an outward action is posted with no card, against ADR-0014's
+/// "outward actions ask first". (Plan mode, `Never` over read-only, is not
+/// auto-approved there, and the engine's `Never` then declines the call —
+/// read from `request_mcp_tool_user_approval`, not tested here.) If this
+/// starts failing the engine began asking in bypass, and
+/// ADR-0014's consequence can be struck.
+#[tokio::test(flavor = "multi_thread")]
+async fn in_bypass_mode_the_engine_posts_an_outward_action_without_asking() {
+    let (url, calls) = memory_server::start_listing("org_comment_reply").await;
+    let h = harness_full(
+        vec![(Some(1), sse_ok(reply_turn())), (None, sse_ok(assistant_turn("ok")))],
+        |s| s,
+        Some(Arc::new(OfferingOrg(url)) as Arc<dyn atlas_agent_servers::SessionMcpServers>),
+    )
+    .await;
+    let session_id = h.open_thread().await;
+    h.connection
+        .session_modes(&session_id)
+        .expect("modes")
+        .set_mode(acp::SessionModeId::new("bypass"))
+        .await
+        .expect("bypass is a mode");
+    let response = tokio::time::timeout(
+        Duration::from_secs(30),
+        h.connection.prompt(acp::PromptRequest::new(session_id, text("reply on the comment"))),
+    )
+    .await
+    .expect("nothing waits on a card in bypass")
+    .expect("the turn should complete");
+    assert_eq!(response.stop_reason, acp::StopReason::EndTurn);
+    assert!(
+        !h.drained().iter().any(|e| matches!(e, AcpThreadEvent::ToolAuthorizationRequested { .. })),
+        "no card was raised",
+    );
+    let calls = calls.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    assert_eq!(calls.len(), 1, "posted unasked: {calls:?}");
+}
+
 #[tokio::test]
 async fn no_dynamic_memory_tool_is_declared_any_more() {
     // `search_memory` is gone; `memory_search` over MCP replaced it. A model

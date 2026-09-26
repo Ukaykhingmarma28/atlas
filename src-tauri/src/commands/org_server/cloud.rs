@@ -25,7 +25,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use atlas_artifacts::{Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
+use atlas_artifacts::{AnchorKind, Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
 use atlas_comms::wire::ConversationKind;
 use atlas_comms::CommsError;
 
@@ -245,6 +245,20 @@ pub struct CommentRef<'a> {
     pub comment_id: &'a str,
 }
 
+/// A reply about to be posted on a comment thread: under the thread's first
+/// comment (the server keeps replies one level deep), on that comment's
+/// anchor, as the caller. The body is exactly what will be stored, mentions
+/// already written as `<@user-id>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewReply<'a> {
+    /// The thread's first comment, which the reply hangs off.
+    pub root: CommentRef<'a>,
+    /// The root's anchor, copied: a reply sits where its thread does.
+    pub anchor_kind: AnchorKind,
+    pub anchor_id: &'a str,
+    pub body: &'a str,
+}
+
 /// Everything the organisation tools do remotely.
 ///
 /// **Nothing here marks the inbox read**, and nothing may be added that
@@ -277,6 +291,12 @@ pub trait OrganisationCloud: Send + Sync {
     /// lets anyone who can read the Workspace do this, on roots only; the tool
     /// refuses a reply before it gets here.
     fn set_resolved<'a>(&'a self, comment: CommentRef<'a>, resolved: bool) -> CloudFuture<'a, Comment>;
+
+    /// Posts a reply on a thread as the caller, and answers the comment as the
+    /// server stored it. An **outward action** (ADR-0014): the server tells
+    /// the thread's first author (unless that is the caller) and everyone the
+    /// body mentions, so the tool that calls this is projected to ask first.
+    fn reply<'a>(&'a self, reply: NewReply<'a>) -> CloudFuture<'a, Comment>;
 
     /// One page of the recorded sessions on `org_id`'s board, most recently
     /// active first, narrowed to one Workspace and, when asked, the server's

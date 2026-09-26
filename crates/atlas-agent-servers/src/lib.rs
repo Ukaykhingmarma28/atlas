@@ -85,4 +85,4 @@ pub use session::{
     SessionRegistry,
 };
 pub use session_list::AcpSessionList;
-pub use session_mcp::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
+pub use session_mcp::{CallDescription, CallToApprove, SessionMcpOffer, SessionMcpRequest, SessionMcpServers};

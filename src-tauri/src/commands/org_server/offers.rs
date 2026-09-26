@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use super::{OrgAccessGate, OrgScope};
+use super::{OrgAccessGate, OrgScope, OrgTools};
 
 /// Whether one session request is handed the organisation tool server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,11 +81,27 @@ pub trait SessionOrgs: Send + Sync {
 pub struct OrgOffer {
     gate: OrgAccessGate,
     orgs: Arc<dyn SessionOrgs>,
+    /// The tools the offered server answers with, for describing an outward
+    /// call on the approval card; `None` leaves the card to the call's own
+    /// arguments.
+    tools: Option<OrgTools>,
 }
 
 impl OrgOffer {
     pub fn new(gate: OrgAccessGate, orgs: Arc<dyn SessionOrgs>) -> Self {
-        Self { gate, orgs }
+        Self { gate, orgs, tools: None }
+    }
+
+    /// Describe outward calls with `tools` — the same tools the server
+    /// answers with, so the card names what the call will act on.
+    pub fn describing_with(mut self, tools: OrgTools) -> Self {
+        self.tools = Some(tools);
+        self
+    }
+
+    /// The tools that describe an outward call, when there are any.
+    pub fn tools(&self) -> Option<&OrgTools> {
+        self.tools.as_ref()
     }
 
     /// Decide for one request, and name the organisation it would act in.

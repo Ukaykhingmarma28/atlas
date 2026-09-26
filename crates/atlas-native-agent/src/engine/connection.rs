@@ -71,6 +71,7 @@ use crate::engine::approvals;
 use crate::engine::mcp;
 use crate::engine::modes;
 use crate::engine::questions;
+use crate::engine::tool_approvals;
 use crate::engine::runtime::start_engine;
 use crate::engine::runtime::EngineRuntime;
 use crate::engine::sink::EngineSessions;
@@ -467,6 +468,7 @@ impl EngineConnection {
             sessions.clone(),
             turns.clone(),
             max_retries,
+            session_mcp.clone(),
         ));
 
         Ok(Arc::new(Self {
@@ -743,6 +745,7 @@ async fn pump_events(
     sessions: Arc<EngineSessions>,
     turns: Arc<TurnWaiters>,
     max_retries: usize,
+    host: Option<Arc<dyn SessionMcpServers>>,
 ) {
     let (answers_tx, mut answers_rx) = tokio::sync::mpsc::unbounded_channel::<ServerAnswer>();
 
@@ -815,7 +818,7 @@ async fn pump_events(
                             apply_notification(&sessions, &turns, max_retries, *notification);
                         }
                         InProcessServerEvent::ServerRequest(request) => {
-                            handle_server_request(&sessions, *request, &answers_tx);
+                            handle_server_request(&sessions, host.as_ref(), *request, &answers_tx);
                         }
                         InProcessServerEvent::Lagged { skipped } => {
                             // Transport health, not an application event. Worth
@@ -873,12 +876,18 @@ fn coalesce_message_deltas(events: Vec<InProcessServerEvent>) -> Vec<InProcessSe
 /// and the pump has to keep draining events the whole time — the turn's own
 /// progress arrives on the same stream.
 ///
-/// Two kinds reach the user: the three tool approvals, and the model's own
+/// Two kinds reach the user: the tool approvals, and the model's own
 /// clarifying question (ADR-0013). Both pin a card above the composer, so both
 /// join the session's one-card-at-a-time line ([`PromptPlace`]) here, on the
 /// pump, where the order they join in is the order they arrived in.
+///
+/// The tool approvals are the three the engine asks as approval requests, and
+/// a fourth it asks as an MCP elicitation of its own: an outward action on one
+/// of Atlas's tool servers (ADR-0014, [`tool_approvals`]). `host` is what
+/// describes that one — who it reaches, and the full body.
 fn handle_server_request(
     sessions: &Arc<EngineSessions>,
+    host: Option<&Arc<dyn SessionMcpServers>>,
     request: ServerRequest,
     answers: &tokio::sync::mpsc::UnboundedSender<ServerAnswer>,
 ) {
@@ -887,6 +896,15 @@ fn handle_server_request(
     let request = match request {
         Req::ToolRequestUserInput { request_id, params } => {
             ask_question(sessions, request_id, params, answers);
+            return;
+        }
+        Req::McpServerElicitationRequest { request_id, params }
+            if tool_approvals::is_engine_tool_approval(
+                &params,
+                sessions.is_host_server(&params.thread_id, &params.server_name),
+            ) =>
+        {
+            ask_tool_approval(sessions, host.cloned(), request_id, params, answers);
             return;
         }
         other => other,
@@ -939,7 +957,9 @@ fn handle_server_request(
             // MCP elicitation stays refused on purpose, not for want of a
             // path (ADR-0013): a tool server Atlas offers returns its
             // candidates in its result and the MODEL asks, so no tool server
-            // ever talks to the user directly.
+            // ever talks to the user directly. The one elicitation served is
+            // the ENGINE's own ask before an outward action, recognised above
+            // (`tool_approvals`) and never one a server sent.
             tracing::warn!(
                 target: "atlas_native_agent::engine",
                 "refusing an engine server request Atlas does not serve yet: {other:?}",
@@ -1030,6 +1050,117 @@ fn handle_server_request(
         });
     });
 }
+
+/// Asks the user before an outward action on one of Atlas's tool servers
+/// (ADR-0014): the engine's own approval for a prompted tool, on the approval
+/// card, attached to the call's row and described by the host — who it
+/// reaches, and the full body ([`tool_approvals`]).
+///
+/// A tool the user allowed for the rest of this session is answered yes at
+/// once, with no card. Otherwise the card joins the session's line here, on
+/// the pump, and is raised once the host has described the call — at most
+/// [`DESCRIBE_WITHIN`] later, after which it shows the call's own arguments
+/// rather than hold the turn on the cloud.
+fn ask_tool_approval(
+    sessions: &Arc<EngineSessions>,
+    host: Option<Arc<dyn SessionMcpServers>>,
+    request_id: RequestId,
+    params: v2::McpServerElicitationRequestParams,
+    answers: &tokio::sync::mpsc::UnboundedSender<ServerAnswer>,
+) {
+    let session_id = acp::SessionId::new(params.thread_id.as_str());
+    let Some(thread) = sessions.thread(&session_id) else {
+        let _ = answers.send(ServerAnswer {
+            request_id,
+            result: Err("no open thread for this approval".to_string()),
+        });
+        return;
+    };
+    let server = params.server_name.clone();
+    let arguments = tool_approvals::arguments(&params);
+    let waiting = {
+        let thread = thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        tool_approvals::waiting_call(&thread, &server, &arguments)
+    };
+    // The call's own row when the thread has it; a card of its own otherwise,
+    // so the user is still asked rather than the turn left hanging.
+    let (item_id, tool) = waiting.unwrap_or_else(|| {
+        (acp::ToolCallId::new(format!("{server}-approval-{request_id:?}")), String::new())
+    });
+
+    if !tool.is_empty() && sessions.allowed_for_session(&session_id, &server, &tool) {
+        tracing::info!(
+            target: "atlas::approvals",
+            decision = "accept_for_session",
+            surface = "mcp_tool",
+            item_id = %item_id,
+            "approval answered from this session's allowance",
+        );
+        let _ = answers.send(ServerAnswer {
+            request_id,
+            result: Ok(tool_approvals::response(approvals::Decision::Accept)),
+        });
+        return;
+    }
+
+    let place = sessions.join_prompt_line(&session_id);
+    let sessions = sessions.clone();
+    let answers = answers.clone();
+    tokio::spawn(async move {
+        let description = match host.as_ref().filter(|_| !tool.is_empty()) {
+            Some(host) => {
+                let call = atlas_agent_servers::CallToApprove {
+                    session_id: &session_id,
+                    server: &server,
+                    tool: &tool,
+                    arguments: &arguments,
+                };
+                tokio::time::timeout(DESCRIBE_WITHIN, host.describe_call(call))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            None => None,
+        };
+        let update = tool_approvals::card(item_id.clone(), &server, &tool, description);
+        let answered = raise_in_turn(place, thread, |thread| {
+            thread.request_tool_call_authorization(
+                update,
+                approvals::options(),
+                AuthorizationKind::PermissionGrant,
+            )
+        });
+        let decision = match answered.await {
+            Ok(Some(outcome)) => approvals::decision_for(&outcome),
+            Ok(None) => approvals::Decision::Cancel,
+            Err(e) => {
+                let _ = answers.send(ServerAnswer {
+                    request_id,
+                    result: Err(format!("the approval could not be raised: {e}")),
+                });
+                return;
+            }
+        };
+        if decision == approvals::Decision::AcceptForSession && !tool.is_empty() {
+            sessions.allow_for_session(&session_id, &server, &tool);
+        }
+        tracing::info!(
+            target: "atlas::approvals",
+            decision = ?decision,
+            surface = "mcp_tool",
+            item_id = %item_id,
+            "approval answered"
+        );
+        let _ = answers.send(ServerAnswer {
+            request_id,
+            result: Ok(tool_approvals::response(decision)),
+        });
+    });
+}
+
+/// How long an outward action's card waits on the host to say whom the call
+/// reaches before it is raised with the call's own arguments instead.
+const DESCRIBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Puts the model's clarifying question to the user (ADR-0013).
 ///
@@ -2206,6 +2337,10 @@ mod tests {
             thread: AcpThreadHandle,
             answers_tx: UnboundedSender<ServerAnswer>,
             answers_rx: UnboundedReceiver<ServerAnswer>,
+            /// What describes an outward action's call, as the app's offers do.
+            host: Option<Arc<dyn SessionMcpServers>>,
+            /// How many calls the host was asked to describe.
+            described: Arc<std::sync::atomic::AtomicUsize>,
         }
 
         impl Seam {
@@ -2218,11 +2353,11 @@ mod tests {
                 sessions.insert(session_id, &thread, "/tmp".to_string());
                 lock(&thread).begin_turn();
                 let (answers_tx, answers_rx) = unbounded_channel();
-                Self { sessions, thread, answers_tx, answers_rx }
+                Self { sessions, thread, answers_tx, answers_rx, host: None, described: Arc::default() }
             }
 
             fn engine_asks(&self, request: ServerRequest) {
-                handle_server_request(&self.sessions, request, &self.answers_tx);
+                handle_server_request(&self.sessions, self.host.as_ref(), request, &self.answers_tx);
             }
 
             async fn engine_hears(&mut self) -> ServerAnswer {
@@ -2535,6 +2670,251 @@ mod tests {
             assert!(is_answer_to(&second, 2));
             assert!(second.result.is_err());
             assert!(seam.question_card().is_none(), "no card for a turn that is over");
+        }
+
+        // ── Outward actions ask first (ADR-0014) ───────────────────────────
+
+        /// Describes every call it is asked about as a reply on Sam Lee's
+        /// comment, as the app's organisation offer does for
+        /// `org_comment_reply`, and counts the asks.
+        struct DescribingHost(Arc<std::sync::atomic::AtomicUsize>);
+
+        impl SessionMcpServers for DescribingHost {
+            fn offer(&self, _request: &SessionMcpRequest) -> SessionMcpOffer {
+                SessionMcpOffer::none()
+            }
+
+            fn describe_call(
+                &self,
+                call: atlas_agent_servers::CallToApprove<'_>,
+            ) -> BoxFuture<'static, Option<atlas_agent_servers::CallDescription>> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let body = call.arguments["body"].as_str().unwrap_or_default().to_string();
+                async move {
+                    Some(atlas_agent_servers::CallDescription {
+                        title: "Reply on Sam Lee's comment".into(),
+                        recipient: "Sam Lee, on their comment \"can you check the path?\" in Fix the theme importer".into(),
+                        body,
+                    })
+                }
+                .boxed()
+            }
+        }
+
+        /// A reply long enough that shortening it anywhere would show.
+        fn long_body() -> String {
+            "Renamed the importer's theme keys and added the missing test.\n".repeat(200)
+        }
+
+        fn reply_args(body: &str) -> serde_json::Value {
+            json!({ "comment": "k1", "body": body })
+        }
+
+        impl Seam {
+            /// An open session offered `atlas_org`, whose host describes calls.
+            fn with_org() -> Self {
+                let mut seam = Self::open();
+                seam.sessions.expect_mcp_servers(THREAD, ["atlas_org".to_string()]);
+                seam.host = Some(Arc::new(DescribingHost(seam.described.clone())));
+                seam
+            }
+
+            fn describes(&self) -> usize {
+                self.described.load(std::sync::atomic::Ordering::SeqCst)
+            }
+
+            /// The engine announces the call, as `item/started` does before it
+            /// asks.
+            fn model_calls(&self, item: &str, tool: &str, arguments: serde_json::Value) {
+                lock(&self.thread)
+                    .handle_session_update(acp::SessionUpdate::ToolCall(
+                        acp::ToolCall::new(item.to_string(), format!("atlas_org.{tool}"))
+                            .kind(acp::ToolKind::Other)
+                            .status(acp::ToolCallStatus::InProgress)
+                            .raw_input(arguments),
+                    ))
+                    .expect("the call is announced");
+            }
+
+            fn answer(&self, item: &str, kind: acp::PermissionOptionKind, id: &str) {
+                lock(&self.thread).authorize_tool_call(
+                    acp::ToolCallId::new(item),
+                    SelectedPermissionOutcome::new(acp::PermissionOptionId::new(id), kind),
+                );
+            }
+
+            /// The row's title, its content as text, and its tool name.
+            fn row(&self, item: &str) -> (String, Vec<String>, Option<String>) {
+                let thread = lock(&self.thread);
+                let (_, call) = thread.tool_call(&acp::ToolCallId::new(item)).expect("the row");
+                let content = call
+                    .content
+                    .iter()
+                    .filter_map(|c| match c {
+                        atlas_acp_thread::ToolCallContent::ContentBlock(atlas_acp_thread::ContentBlock::Text(t)) => {
+                            Some(t.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                (call.label.clone(), content, call.tool_name.as_ref().map(std::string::ToString::to_string))
+            }
+        }
+
+        /// The engine's own ask before a prompted tool: an MCP elicitation
+        /// naming the server, marked as a tool-call approval, asking nothing.
+        fn tool_approval(id: i64, server: &str, arguments: serde_json::Value) -> ServerRequest {
+            request(
+                id,
+                "mcpServer/elicitation/request",
+                json!({
+                    "threadId": THREAD,
+                    "turnId": "turn-1",
+                    "serverName": server,
+                    "mode": "form",
+                    "_meta": {
+                        "atlas_agent_approval_kind": "mcp_tool_call",
+                        "tool_params": arguments,
+                    },
+                    "message": format!("Allow the {server} MCP server to run tool \"org_comment_reply\"?"),
+                    "requestedSchema": { "type": "object", "properties": {} },
+                }),
+            )
+        }
+
+        fn action(answer: ServerAnswer) -> String {
+            answer.result.expect("an elicitation response")["action"].as_str().unwrap().to_string()
+        }
+
+        #[tokio::test]
+        async fn an_outward_action_is_the_approval_card_on_its_row_with_the_recipient_and_the_full_body() {
+            let mut seam = Seam::with_org();
+            let body = long_body();
+            seam.model_calls("call-1", "org_comment_reply", reply_args(&body));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args(&body)));
+            settle().await;
+
+            assert!(seam.approval_card("call-1"), "the card is on the call's own row");
+            let (title, content, tool_name) = seam.row("call-1");
+            assert_eq!(title, "Reply on Sam Lee's comment");
+            assert_eq!(
+                content,
+                [
+                    "Sam Lee, on their comment \"can you check the path?\" in Fix the theme importer".to_string(),
+                    body,
+                ],
+                "the recipient, then the body in full",
+            );
+            assert_eq!(tool_name.as_deref(), Some("atlas_org.org_comment_reply"), "the row still reads as the call");
+            assert_eq!(seam.describes(), 1);
+            assert!(seam.engine_heard_nothing().await, "nothing is posted until the user answers");
+        }
+
+        #[tokio::test]
+        async fn allowing_once_lets_this_reply_through_and_the_next_one_asks_again() {
+            let mut seam = Seam::with_org();
+            seam.model_calls("call-1", "org_comment_reply", reply_args("first"));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args("first")));
+            settle().await;
+            seam.answer("call-1", acp::PermissionOptionKind::AllowOnce, "allow-once");
+            let answer = seam.engine_hears().await;
+            assert!(is_answer_to(&answer, 1));
+            assert_eq!(action(answer), "accept");
+
+            seam.model_calls("call-2", "org_comment_reply", reply_args("second"));
+            seam.engine_asks(tool_approval(2, "atlas_org", reply_args("second")));
+            settle().await;
+            assert!(seam.approval_card("call-2"), "allow once covers one reply");
+            assert!(seam.engine_heard_nothing().await);
+        }
+
+        #[tokio::test]
+        async fn allowing_for_the_session_covers_the_next_reply_with_no_card() {
+            let mut seam = Seam::with_org();
+            seam.model_calls("call-1", "org_comment_reply", reply_args("first"));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args("first")));
+            settle().await;
+            seam.answer("call-1", acp::PermissionOptionKind::AllowAlways, "allow-always");
+            assert_eq!(action(seam.engine_hears().await), "accept");
+
+            seam.model_calls("call-2", "org_comment_reply", reply_args("second"));
+            seam.engine_asks(tool_approval(2, "atlas_org", reply_args("second")));
+            let answer = seam.engine_hears().await;
+            assert!(is_answer_to(&answer, 2));
+            assert_eq!(action(answer), "accept", "answered from the session's allowance");
+            assert!(!seam.approval_card("call-2"), "no card the second time");
+            assert_eq!(seam.describes(), 1, "nothing to describe when nobody is asked");
+        }
+
+        #[tokio::test]
+        async fn declining_is_a_decline_the_engine_turns_into_an_error_without_calling_the_tool() {
+            // `action: decline` is what the engine reads as "user rejected MCP
+            // tool call": it skips the call and hands the model that error
+            // (`mcp_tool_call.rs`, `parse_mcp_tool_approval_elicitation_response`
+            // → `notify_mcp_tool_call_skip`). The end-to-end half — the tool
+            // really is never called — is `engine_turn.rs`.
+            let mut seam = Seam::with_org();
+            seam.model_calls("call-1", "org_comment_reply", reply_args("no"));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args("no")));
+            settle().await;
+            seam.answer("call-1", acp::PermissionOptionKind::RejectOnce, "reject");
+            assert_eq!(action(seam.engine_hears().await), "decline");
+
+            // A decline is not remembered: the next reply asks again.
+            seam.model_calls("call-2", "org_comment_reply", reply_args("again"));
+            seam.engine_asks(tool_approval(2, "atlas_org", reply_args("again")));
+            settle().await;
+            assert!(seam.approval_card("call-2"));
+        }
+
+        #[tokio::test]
+        async fn stopping_the_turn_under_an_outward_card_cancels_it() {
+            let mut seam = Seam::with_org();
+            seam.model_calls("call-1", "org_comment_reply", reply_args("x"));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args("x")));
+            settle().await;
+            lock(&seam.thread).cancel();
+            assert_eq!(action(seam.engine_hears().await), "cancel");
+        }
+
+        #[tokio::test]
+        async fn an_outward_card_waits_behind_the_card_already_showing() {
+            let mut seam = Seam::with_org();
+            seam.engine_asks(command_approval(1, "cmd-1"));
+            seam.model_calls("call-1", "org_comment_reply", reply_args("x"));
+            seam.engine_asks(tool_approval(2, "atlas_org", reply_args("x")));
+            settle().await;
+            assert!(seam.approval_card("cmd-1"));
+            assert!(!seam.approval_card("call-1"), "one card at a time");
+
+            seam.allow("cmd-1");
+            assert!(is_answer_to(&seam.engine_hears().await, 1));
+            settle().await;
+            assert!(seam.approval_card("call-1"), "the outward card is next in line");
+        }
+
+        #[tokio::test]
+        async fn with_nothing_to_describe_it_the_card_still_asks_on_the_rows_own_title() {
+            let seam = Seam::open();
+            seam.sessions.expect_mcp_servers(THREAD, ["atlas_org".to_string()]);
+            seam.model_calls("call-1", "org_comment_reply", reply_args("x"));
+            seam.engine_asks(tool_approval(1, "atlas_org", reply_args("x")));
+            settle().await;
+            assert!(seam.approval_card("call-1"));
+            assert_eq!(seam.row("call-1").0, "atlas_org.org_comment_reply");
+        }
+
+        #[tokio::test]
+        async fn the_same_form_from_a_server_atlas_did_not_offer_is_refused() {
+            // ADR-0013: a tool server never talks to the user, even wearing
+            // the engine's marker. Only a server the host offered — which
+            // never elicits — can be the subject of the engine's own ask.
+            let mut seam = Seam::with_org();
+            seam.model_calls("call-1", "org_comment_reply", reply_args("x"));
+            seam.engine_asks(tool_approval(1, "someone_elses", reply_args("x")));
+            let answer = seam.engine_hears().await;
+            assert!(answer.result.is_err());
+            assert!(!seam.approval_card("call-1"), "nothing reaches the user");
         }
 
         #[tokio::test]
