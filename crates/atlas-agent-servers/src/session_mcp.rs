@@ -91,6 +91,94 @@ pub trait SessionMcpServers: Send + Sync {
         let _ = call;
         Box::pin(async { None })
     }
+
+    /// The user approved this exact call — on its card, or through an "Allow
+    /// for this session" that covers it — and the connection is about to let
+    /// it run. The host records it ([`OutwardConsent`]) so the server that
+    /// answers the call can check the user really was asked: an engine that
+    /// runs a call without asking (bypass mode approves every prompted tool
+    /// unasked) leaves no record, and the server refuses. The default records
+    /// nothing, for a host whose servers take no outward action.
+    fn approved_call(&self, call: CallToApprove<'_>) {
+        let _ = call;
+    }
+}
+
+/// The user's approvals of outward calls, one per approved call, held by the
+/// host between the connection that asked and the tool server that answers
+/// (ADR-0014).
+///
+/// The connection records a call when the user approves it
+/// ([`SessionMcpServers::approved_call`]); the tool server
+/// [takes](Self::take) the record when the call arrives, and posts only if
+/// there was one. Keyed by session, server, tool and the arguments exactly as
+/// the tool receives them, so an approval of one reply cannot send another,
+/// and consumed on use, so one approval sends once. A record nobody takes —
+/// the call never reached the server — lapses after [`CONSENT_LIFETIME`].
+#[derive(Default)]
+pub struct OutwardConsent {
+    approved: std::sync::Mutex<Vec<ApprovedCall>>,
+}
+
+/// How long an approved call's record waits for the call to reach its server.
+/// The engine calls the tool as soon as it hears the answer, so this only
+/// bounds records for calls that never arrived.
+pub const CONSENT_LIFETIME: std::time::Duration = std::time::Duration::from_secs(300);
+
+struct ApprovedCall {
+    session_id: String,
+    server: String,
+    tool: String,
+    arguments: serde_json::Value,
+    at: std::time::Instant,
+}
+
+/// Arguments as compared: no arguments and an empty object are the same call.
+/// Object equality ignores key order, so the order a client wrote them in
+/// does not matter.
+fn canonical(arguments: &serde_json::Value) -> serde_json::Value {
+    match arguments {
+        serde_json::Value::Null => serde_json::Value::Object(serde_json::Map::new()),
+        other => other.clone(),
+    }
+}
+
+impl OutwardConsent {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records that the user approved `call`.
+    pub fn record(&self, call: CallToApprove<'_>) {
+        let mut approved = self.approved.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        approved.retain(|a| a.at.elapsed() < CONSENT_LIFETIME);
+        approved.push(ApprovedCall {
+            session_id: call.session_id.to_string(),
+            server: call.server.to_string(),
+            tool: call.tool.to_string(),
+            arguments: canonical(call.arguments),
+            at: std::time::Instant::now(),
+        });
+    }
+
+    /// Whether the user approved this call, spending the approval: `true`
+    /// once per recorded approval, `false` for a call nobody asked about.
+    pub fn take(&self, session_id: &str, server: &str, tool: &str, arguments: &serde_json::Value) -> bool {
+        let arguments = canonical(arguments);
+        let mut approved = self.approved.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        approved.retain(|a| a.at.elapsed() < CONSENT_LIFETIME);
+        let found = approved.iter().position(|a| {
+            a.session_id == session_id && a.server == server && a.tool == tool && a.arguments == arguments
+        });
+        found.map(|i| approved.remove(i)).is_some()
+    }
+}
+
+impl std::fmt::Debug for OutwardConsent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pending = self.approved.lock().map_or(0, |a| a.len());
+        f.debug_struct("OutwardConsent").field("pending", &pending).finish()
+    }
 }
 
 /// Told how an offer ended: `Some(id)` when the session it was made for
@@ -213,6 +301,35 @@ mod tests {
         let (log, settle) = recorded();
         drop(SessionMcpOffer::new(vec![http("m")], settle));
         assert_eq!(*log.lock().unwrap(), vec![None]);
+    }
+
+    fn approval<'a>(session: &'a acp::SessionId, arguments: &'a serde_json::Value) -> CallToApprove<'a> {
+        CallToApprove { session_id: session, server: "atlas_org", tool: "org_comment_reply", arguments }
+    }
+
+    #[test]
+    fn an_approved_call_is_consented_once_and_only_for_its_exact_arguments() {
+        let consent = OutwardConsent::new();
+        let session = acp::SessionId::new("s-1");
+        let args = serde_json::json!({ "comment": "k1", "body": "Done." });
+        consent.record(approval(&session, &args));
+
+        let other = serde_json::json!({ "comment": "k1", "body": "Something else." });
+        assert!(!consent.take("s-1", "atlas_org", "org_comment_reply", &other), "another body");
+        assert!(!consent.take("s-2", "atlas_org", "org_comment_reply", &args), "another session");
+        assert!(!consent.take("s-1", "atlas_org", "org_send", &args), "another tool");
+        let reordered = serde_json::json!({ "body": "Done.", "comment": "k1" });
+        assert!(consent.take("s-1", "atlas_org", "org_comment_reply", &reordered), "key order is not the call");
+        assert!(!consent.take("s-1", "atlas_org", "org_comment_reply", &args), "spent on use");
+    }
+
+    #[test]
+    fn a_call_nobody_approved_has_no_consent() {
+        let consent = OutwardConsent::new();
+        assert!(!consent.take("s-1", "atlas_org", "org_comment_reply", &serde_json::json!({})));
+        let session = acp::SessionId::new("s-1");
+        consent.record(approval(&session, &serde_json::Value::Null));
+        assert!(consent.take("s-1", "atlas_org", "org_comment_reply", &serde_json::json!({})), "none is empty");
     }
 
     #[test]

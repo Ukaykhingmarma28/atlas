@@ -1089,6 +1089,7 @@ fn ask_tool_approval(
     });
 
     if !tool.is_empty() && sessions.allowed_for_session(&session_id, &server, &tool) {
+        record_consent(host.as_ref(), &session_id, &server, &tool, &arguments);
         tracing::info!(
             target: "atlas::approvals",
             decision = "accept_for_session",
@@ -1144,6 +1145,9 @@ fn ask_tool_approval(
         if decision == approvals::Decision::AcceptForSession && !tool.is_empty() {
             sessions.allow_for_session(&session_id, &server, &tool);
         }
+        if matches!(decision, approvals::Decision::Accept | approvals::Decision::AcceptForSession) {
+            record_consent(host.as_ref(), &session_id, &server, &tool, &arguments);
+        }
         tracing::info!(
             target: "atlas::approvals",
             decision = ?decision,
@@ -1156,6 +1160,25 @@ fn ask_tool_approval(
             result: Ok(tool_approvals::response(decision)),
         });
     });
+}
+
+/// Tells the host the user approved this call
+/// ([`SessionMcpServers::approved_call`]), just before the engine hears yes.
+/// The server that answers an outward call posts only an approved one, so a
+/// call the engine runs without asking — bypass mode auto-approves every
+/// prompted tool — is refused there (ADR-0014). A call whose row was not
+/// found has no tool name to record, so it is refused too rather than
+/// approved blind.
+fn record_consent(
+    host: Option<&Arc<dyn SessionMcpServers>>,
+    session_id: &acp::SessionId,
+    server: &str,
+    tool: &str,
+    arguments: &serde_json::Value,
+) {
+    if let Some(host) = host.filter(|_| !tool.is_empty()) {
+        host.approved_call(atlas_agent_servers::CallToApprove { session_id, server, tool, arguments });
+    }
 }
 
 /// How long an outward action's card waits on the host to say whom the call
@@ -2341,6 +2364,9 @@ mod tests {
             host: Option<Arc<dyn SessionMcpServers>>,
             /// How many calls the host was asked to describe.
             described: Arc<std::sync::atomic::AtomicUsize>,
+            /// The approvals the host was told of, as the app's offers keep
+            /// them for the organisation tool server.
+            consent: Arc<atlas_agent_servers::OutwardConsent>,
         }
 
         impl Seam {
@@ -2353,7 +2379,15 @@ mod tests {
                 sessions.insert(session_id, &thread, "/tmp".to_string());
                 lock(&thread).begin_turn();
                 let (answers_tx, answers_rx) = unbounded_channel();
-                Self { sessions, thread, answers_tx, answers_rx, host: None, described: Arc::default() }
+                Self {
+                    sessions,
+                    thread,
+                    answers_tx,
+                    answers_rx,
+                    host: None,
+                    described: Arc::default(),
+                    consent: Arc::default(),
+                }
             }
 
             fn engine_asks(&self, request: ServerRequest) {
@@ -2676,8 +2710,9 @@ mod tests {
 
         /// Describes every call it is asked about as a reply on Sam Lee's
         /// comment, as the app's organisation offer does for
-        /// `org_comment_reply`, and counts the asks.
-        struct DescribingHost(Arc<std::sync::atomic::AtomicUsize>);
+        /// `org_comment_reply`, counts the asks, and keeps the approvals it
+        /// is told of.
+        struct DescribingHost(Arc<std::sync::atomic::AtomicUsize>, Arc<atlas_agent_servers::OutwardConsent>);
 
         impl SessionMcpServers for DescribingHost {
             fn offer(&self, _request: &SessionMcpRequest) -> SessionMcpOffer {
@@ -2699,6 +2734,10 @@ mod tests {
                 }
                 .boxed()
             }
+
+            fn approved_call(&self, call: atlas_agent_servers::CallToApprove<'_>) {
+                self.1.record(call);
+            }
         }
 
         /// A reply long enough that shortening it anywhere would show.
@@ -2715,12 +2754,19 @@ mod tests {
             fn with_org() -> Self {
                 let mut seam = Self::open();
                 seam.sessions.expect_mcp_servers(THREAD, ["atlas_org".to_string()]);
-                seam.host = Some(Arc::new(DescribingHost(seam.described.clone())));
+                seam.host = Some(Arc::new(DescribingHost(seam.described.clone(), seam.consent.clone())));
                 seam
             }
 
             fn describes(&self) -> usize {
                 self.described.load(std::sync::atomic::Ordering::SeqCst)
+            }
+
+            /// Whether the host holds the user's approval of this reply —
+            /// what the organisation tool server checks before posting —
+            /// spending it as the server does.
+            fn consented(&self, arguments: &serde_json::Value) -> bool {
+                self.consent.take(THREAD, "atlas_org", "org_comment_reply", arguments)
             }
 
             /// The engine announces the call, as `item/started` does before it
@@ -2801,13 +2847,14 @@ mod tests {
                 content,
                 [
                     "Sam Lee, on their comment \"can you check the path?\" in Fix the theme importer".to_string(),
-                    body,
+                    body.clone(),
                 ],
                 "the recipient, then the body in full",
             );
             assert_eq!(tool_name.as_deref(), Some("atlas_org.org_comment_reply"), "the row still reads as the call");
             assert_eq!(seam.describes(), 1);
             assert!(seam.engine_heard_nothing().await, "nothing is posted until the user answers");
+            assert!(!seam.consented(&reply_args(&body)), "and nothing is approved yet");
         }
 
         #[tokio::test]
@@ -2820,12 +2867,15 @@ mod tests {
             let answer = seam.engine_hears().await;
             assert!(is_answer_to(&answer, 1));
             assert_eq!(action(answer), "accept");
+            assert!(seam.consented(&reply_args("first")), "the host holds the approval of this reply");
+            assert!(!seam.consented(&reply_args("first")), "once");
 
             seam.model_calls("call-2", "org_comment_reply", reply_args("second"));
             seam.engine_asks(tool_approval(2, "atlas_org", reply_args("second")));
             settle().await;
             assert!(seam.approval_card("call-2"), "allow once covers one reply");
             assert!(seam.engine_heard_nothing().await);
+            assert!(!seam.consented(&reply_args("second")), "not approved until asked");
         }
 
         #[tokio::test]
@@ -2844,6 +2894,8 @@ mod tests {
             assert_eq!(action(answer), "accept", "answered from the session's allowance");
             assert!(!seam.approval_card("call-2"), "no card the second time");
             assert_eq!(seam.describes(), 1, "nothing to describe when nobody is asked");
+            assert!(seam.consented(&reply_args("first")));
+            assert!(seam.consented(&reply_args("second")), "the allowance approves each call it covers");
         }
 
         #[tokio::test]
@@ -2859,6 +2911,7 @@ mod tests {
             settle().await;
             seam.answer("call-1", acp::PermissionOptionKind::RejectOnce, "reject");
             assert_eq!(action(seam.engine_hears().await), "decline");
+            assert!(!seam.consented(&reply_args("no")), "a declined reply is never approved");
 
             // A decline is not remembered: the next reply asks again.
             seam.model_calls("call-2", "org_comment_reply", reply_args("again"));
@@ -2875,6 +2928,7 @@ mod tests {
             settle().await;
             lock(&seam.thread).cancel();
             assert_eq!(action(seam.engine_hears().await), "cancel");
+            assert!(!seam.consented(&reply_args("x")));
         }
 
         #[tokio::test]

@@ -106,6 +106,17 @@ impl SessionMcpServers for MemorySessionOffers {
         })
     }
 
+    /// An approved outward call on the organisation server, recorded where
+    /// the tools that answer it check for the user's approval (ADR-0014).
+    fn approved_call(&self, call: atlas_agent_servers::CallToApprove<'_>) {
+        if call.server != ORG_SERVER_NAME {
+            return;
+        }
+        if let Some(tools) = self.org.as_ref().and_then(OrgOffer::tools) {
+            tools.consent().record(call);
+        }
+    }
+
     fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
         let cwd = request.cwd.to_string_lossy().into_owned();
         let agent = request.agent_id.as_str().to_string();

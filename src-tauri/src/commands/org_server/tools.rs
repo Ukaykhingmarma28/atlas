@@ -2,11 +2,15 @@
 //! instructions, and the handler that answers each call through the
 //! organisation cloud.
 //!
-//! Every call is checked twice before anything remote happens: the user's
-//! organisation-access setting (off stops a running session at its next
-//! call), and the grant's organisation (a token that was not offered the
-//! server names none, and is refused). What a tool then asks the cloud, it
-//! asks in the grant's organisation and Workspace, never in the window's.
+//! Every call is checked before anything remote happens, as the offer was:
+//! the user's organisation-access setting (off stops a running session at its
+//! next call), the grant's organisation (a token that was not offered the
+//! server names none, and is refused), that someone is still signed in, and
+//! that the grant's Project is still bound to the grant's organisation and
+//! Workspace. What a tool then asks the cloud, it asks in the grant's
+//! organisation and Workspace, never in the window's. An outward action is
+//! also checked for the user's approval of that exact call
+//! ([`OutwardConsent`]).
 //! Schemas are kept flat, with one-clause descriptions, because every native
 //! turn carries them in its fixed prefix.
 
@@ -31,10 +35,11 @@ use super::cloud::{
     BoardQuery, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewReply, OrgConversation, OrganisationCloud,
     PayloadRef, TimelineQuery,
 };
+use super::offers::SessionOrgs;
 use super::resolve::{self, Resolution};
-use super::{OrgAccessGate, OrgScope, ORG_PATH};
+use super::{OrgAccessGate, OrgScope, ORG_PATH, ORG_SERVER_NAME};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
-use atlas_agent_servers::CallDescription;
+use atlas_agent_servers::{CallDescription, OutwardConsent};
 
 /// What the server tells the agent about itself. The engine shows it as the
 /// description of the `atlas_org` tool namespace. It states the protocol,
@@ -58,6 +63,18 @@ const OFF_NOTE: &str =
 /// token names no organisation.
 const NO_ORG_NOTE: &str = "This session was not given access to an organisation: its project is not bound to a \
      cloud Workspace, or it was opened before it was. Ask the user to bind the project and start a new chat.";
+
+/// What a tool answers once nobody is signed in on this machine any more.
+const SIGNED_OUT_NOTE: &str = "Nobody is signed in to Atlas on this machine any more; ask the user to sign in.";
+
+/// What a tool answers once the session's Project is no longer bound to the
+/// organisation and Workspace it was offered in — unbound, local-only, moved
+/// to another Workspace, or capture switched off.
+const UNBOUND_NOTE: &str = "This session's project is no longer bound to the cloud Workspace this chat was given      access to. Ask the user to bind the project again and start a new chat.";
+
+/// What an outward action answers when the user did not approve that call on
+/// its card — above all in bypass mode, where the engine runs it unasked.
+const UNAPPROVED_NOTE: &str = "Replies are sent in your name only after you approve them; bypass mode cannot      approve outward actions — switch the chat out of bypass to send. Nothing was posted.";
 
 /// What `org_whoami` says in place of a current session the Workspace does
 /// not hold yet.
@@ -169,6 +186,7 @@ pub(super) fn tools() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
+                    "workspace": { "type": "string", "description": "A Workspace id in this organisation (default: this project's)." },
                     "author": { "type": "string", "description": "A member's id, name or email, or \"me\"." },
                     "since": { "type": "string", "description": "Active at or after this ISO date or datetime (UTC)." },
                     "until": { "type": "string", "description": "Started at or before this ISO date or datetime (UTC)." },
@@ -219,13 +237,13 @@ fn tool_json(value: Value) -> CallToolResult {
 
 /// An optional string argument, blank read as absent.
 fn string_arg<'a>(request: &'a CallToolRequestParams, name: &str) -> Option<&'a str> {
-    request
-        .arguments
-        .as_ref()
-        .and_then(|args| args.get(name))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
+    string_in(request.arguments.as_ref(), name)
+}
+
+/// [`string_arg`] over a call's arguments however they arrived — on a call,
+/// or on the approval card's description of one.
+fn string_in<'a>(arguments: Option<&'a JsonObject>, name: &str) -> Option<&'a str> {
+    arguments.and_then(|args| args.get(name)).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
 }
 
 /// An optional boolean argument, absent read as `false`.
@@ -245,10 +263,11 @@ fn u32_arg(request: &CallToolRequestParams, name: &str) -> Option<u32> {
 }
 
 /// An optional list of strings, blanks dropped; a lone string reads as a
-/// list of one.
-fn strings_arg(request: &CallToolRequestParams, name: &str) -> Vec<String> {
+/// list of one. Over a call's arguments however they arrived, as
+/// [`string_in`].
+fn strings_in(arguments: Option<&JsonObject>, name: &str) -> Vec<String> {
     let strings = |value: &Value| value.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    match request.arguments.as_ref().and_then(|args| args.get(name)) {
+    match arguments.and_then(|args| args.get(name)) {
         Some(Value::Array(items)) => items.iter().filter_map(strings).collect(),
         Some(value) => strings(value).into_iter().collect(),
         None => Vec::new(),
@@ -264,21 +283,24 @@ fn inbox_kind(kind: InboxKind) -> &'static str {
     }
 }
 
+/// Who wrote something, as the model reads it: a guest by the name they
+/// signed it with, never as a member; a member by the roster when it could be
+/// read, else by id alone.
+fn author_json(user_id: &str, guest_name: Option<&str>, roster: Option<&[Member]>) -> Value {
+    let name = guest_name.map(str::to_string).or_else(|| roster_name(roster, user_id));
+    json!({ "user_id": user_id, "name": name, "guest": guest_name.is_some() })
+}
+
 /// An inbox entry as the model reads it: why it is there, whether the user
-/// has read it, who wrote it (a guest by the name on the entry, a member by
-/// the roster when it could be read), and the recorded session and comment
-/// it points at, so a follow-up call can name them.
+/// has read it, who wrote it ([`author_json`]), and the recorded session and
+/// comment it points at, so a follow-up call can name them.
 fn inbox_entry_json(entry: &InboxEntry, roster: Option<&[Member]>) -> Value {
-    let guest = entry.actor_name.is_some();
-    let name = entry.actor_name.clone().or_else(|| {
-        roster.and_then(|r| r.iter().find(|m| m.user_id == entry.actor_id)).map(|m| m.name.clone())
-    });
     json!({
         "id": entry.id,
         "kind": inbox_kind(entry.kind),
         "unread": entry.is_unread(),
         "created_at": entry.created_at,
-        "author": { "user_id": entry.actor_id, "name": name, "guest": guest },
+        "author": author_json(&entry.actor_id, entry.actor_name.as_deref(), roster),
         "session": { "id": entry.session_id, "title": entry.session_title, "workspace_id": entry.workspace_id },
         "comment": {
             "id": entry.comment_id,
@@ -334,11 +356,9 @@ pub(super) fn named_mentions(body: &str, roster: Option<&[Member]>) -> String {
 /// anchored, its body with mentions named, and when. A deleted comment keeps
 /// its place in the thread and says so, without a body.
 fn comment_json(comment: &Comment, roster: Option<&[Member]>) -> Value {
-    let guest = comment.guest_name.is_some();
-    let name = comment.guest_name.clone().or_else(|| roster_name(roster, &comment.author_id));
     let mut out = json!({
         "id": comment.id,
-        "author": { "user_id": comment.author_id, "name": name, "guest": guest },
+        "author": author_json(&comment.author_id, comment.guest_name.as_deref(), roster),
         "anchor": {
             "kind": comment.anchor_kind.as_str(),
             // The session anchor addresses the session itself and has no row.
@@ -411,10 +431,7 @@ fn conversation_json(conversation: &OrgConversation, roster: Option<&[Member]>) 
     if let Some(ids) = &conversation.member_ids {
         out["members"] = ids
             .iter()
-            .map(|id| {
-                let name = roster.and_then(|r| r.iter().find(|m| &m.user_id == id)).map(|m| m.name.clone());
-                json!({ "user_id": id, "name": name })
-            })
+            .map(|id| json!({ "user_id": id, "name": roster_name(roster, id) }))
             .collect();
     }
     out
@@ -470,12 +487,28 @@ pub(super) fn resolve_conversation(
 pub struct OrgTools {
     cloud: Arc<dyn OrganisationCloud>,
     gate: OrgAccessGate,
+    /// The account and the Project's binding, as the offer reads them: read
+    /// again on every call, so signing out or unbinding the Project stops a
+    /// running session at its next call.
+    orgs: Arc<dyn SessionOrgs>,
+    /// The user's approvals of outward calls, recorded by the native seam
+    /// through the host and spent here (ADR-0014).
+    consent: Arc<OutwardConsent>,
     audit: OrgAudit,
 }
 
 impl OrgTools {
-    pub fn new(cloud: Arc<dyn OrganisationCloud>, gate: OrgAccessGate) -> Self {
-        Self { cloud, gate, audit: unaudited() }
+    pub fn new(cloud: Arc<dyn OrganisationCloud>, gate: OrgAccessGate, orgs: Arc<dyn SessionOrgs>) -> Self {
+        Self { cloud, gate, orgs, consent: Arc::new(OutwardConsent::new()), audit: unaudited() }
+    }
+
+    /// Where the user's approvals of outward calls are recorded for these
+    /// tools to check: the host hands it every approval the native seam
+    /// reports ([`SessionMcpServers::approved_call`]).
+    ///
+    /// [`SessionMcpServers::approved_call`]: atlas_agent_servers::SessionMcpServers::approved_call
+    pub fn consent(&self) -> &Arc<OutwardConsent> {
+        &self.consent
     }
 
     /// Hands every call's [`OrgActionRecord`] to `audit`.
@@ -501,6 +534,13 @@ impl OrgTools {
         let Some(scope) = grant.org.clone() else {
             return tool_error(NO_ORG_NOTE);
         };
+        // What the offer checked, checked again: the grant outlives both.
+        if !self.orgs.signed_in() {
+            return tool_error(SIGNED_OUT_NOTE);
+        }
+        if self.orgs.bound_to(&grant.cwd).as_ref() != Some(&scope) {
+            return tool_error(UNBOUND_NOTE);
+        }
         match request.name.as_ref() {
             "org_whoami" => self.whoami(grant, &scope).await,
             "org_members" => self.members(&scope, string_arg(request, "name")).await,
@@ -525,17 +565,25 @@ impl OrgTools {
                 self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
             }
             "org_comment_reply" => {
-                let Some(comment) = string_arg(request, "comment") else {
+                // An outward action posts only the call the user approved —
+                // on its card, or under "Allow for this session" — never one
+                // the engine ran unasked (bypass).
+                let arguments = request.arguments.clone().map_or(Value::Null, Value::Object);
+                if !self.consent.take(&grant.session_id, ORG_SERVER_NAME, "org_comment_reply", &arguments) {
+                    return tool_error(UNAPPROVED_NOTE);
+                }
+                let args = ReplyArgs::of(request.arguments.as_ref());
+                let Some(comment) = args.comment else {
                     return tool_error("name the comment to reply to: `comment` is its id (see org_comments)");
                 };
-                let Some(body) = string_arg(request, "body") else {
+                let Some(body) = args.body else {
                     return tool_error("say what to reply: `body` is the reply's text");
                 };
-                let mentions = strings_arg(request, "mention");
-                self.reply_comment(grant, &scope, string_arg(request, "session"), comment, body, &mentions).await
+                self.reply_comment(grant, &scope, args.session, comment, body, &args.mentions).await
             }
             "org_sessions" => {
                 let filters = SessionFilters {
+                    workspace: string_arg(request, "workspace"),
                     author: string_arg(request, "author"),
                     since: string_arg(request, "since"),
                     until: string_arg(request, "until"),
@@ -880,9 +928,11 @@ impl OrgTools {
 
     /// `org_comment_reply`: posts a reply on a comment's thread as the caller.
     /// An **outward action** (ADR-0014): the native seam projects it with a
-    /// per-tool `prompt`, so by the time it runs the user has seen the
-    /// recipient and this exact body on the approval card and allowed it; a
-    /// rejected card never reaches here. Mentions are resolved against the
+    /// per-tool `prompt`, so the user sees the recipient and this exact body
+    /// on the approval card; a rejected card never reaches here. What does
+    /// reach here was checked in [`answer`](Self::answer) for the user's
+    /// approval of this exact call, so a call the engine ran unasked (bypass)
+    /// never gets this far. Mentions are resolved against the
     /// roster before anything is posted — a name nobody or several members
     /// answer to is refused with nothing sent.
     async fn reply_comment(
@@ -931,12 +981,11 @@ impl OrgTools {
         };
         // The thread by its first comment and whose it is: the person the
         // server told, and the name the call's row reads by.
-        let author = root.guest_name.clone().or_else(|| roster_name(roster.as_deref(), &root.author_id));
         tool_json(json!({
             "session": { "id": target.id, "title": target.title, "current": target.current },
             "thread": {
                 "id": root.id,
-                "author": { "user_id": root.author_id, "name": author, "guest": root.guest_name.is_some() },
+                "author": author_json(&root.author_id, root.guest_name.as_deref(), roster.as_deref()),
             },
             "comment": comment_json(&posted, roster.as_deref()),
         }))
@@ -945,44 +994,52 @@ impl OrgTools {
     /// What the approval card says about a waiting outward call, for the
     /// offer to hand the native seam ([`SessionMcpServers::describe_call`]).
     /// Reads what the call will act on — never writes — so the card names the
-    /// real recipient: the thread's first author and where the thread is, with
-    /// the body exactly as it will be posted, mentions shown by name. When the
-    /// organisation cannot be read the card still shows the comment id and the
-    /// full body. `None` for a tool that does not ask.
+    /// real recipient: the thread's first author and where the thread is.
+    ///
+    /// The body is read from the arguments by the same parser the call uses
+    /// ([`ReplyArgs`]) and rewritten the same way ([`with_mentions`]), then
+    /// read back as a person reads it — exactly what the posted comment will
+    /// say. When the thread cannot be read the card still shows the comment id
+    /// and that body; when the roster cannot be read either, mentions keep
+    /// their `<@id>`. `None` for a tool that does not ask.
     ///
     /// [`SessionMcpServers::describe_call`]: atlas_agent_servers::SessionMcpServers::describe_call
     pub async fn describe(&self, grant: &Grant, tool: &str, arguments: &Value) -> Option<CallDescription> {
         if tool != "org_comment_reply" {
             return None;
         }
-        let arg = |name: &str| arguments.get(name).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
-        let comment_id = arg("comment").unwrap_or_default();
-        let body = arg("body").unwrap_or_default().to_string();
-        let plain = CallDescription {
-            title: format!("Reply to comment {comment_id}"),
-            recipient: format!("The thread of comment {comment_id}"),
-            body: body.clone(),
+        let args = ReplyArgs::of(arguments.as_object());
+        let comment_id = args.comment.unwrap_or_default();
+        let body = args.body.unwrap_or_default();
+        let scope = grant.org.clone();
+        let thread = match &scope {
+            Some(scope) => self.reply_thread(grant, scope, args.session, comment_id).await.ok(),
+            None => None,
         };
-        let Some(scope) = grant.org.clone() else {
-            return Some(plain);
+        let roster = match &scope {
+            Some(scope) if thread.is_some() || !args.mentions.is_empty() => self.cloud.members(&scope.org_id).await.ok(),
+            _ => None,
         };
-        let Ok((target, root)) = self.reply_thread(grant, &scope, arg("session"), comment_id).await else {
-            return Some(plain);
-        };
-        let roster = self.cloud.members(&scope.org_id).await.ok();
         let roster = roster.as_deref();
+        // As it will be posted — a mention the call would refuse leaves the
+        // body as written, since nothing is posted then — then read back.
+        let posted = match roster {
+            Some(roster) => with_mentions(body, &args.mentions, roster).unwrap_or_else(|_| body.to_string()),
+            None => body.to_string(),
+        };
+        let body = named_mentions(&posted, roster);
+        let Some((target, root)) = thread else {
+            return Some(CallDescription {
+                title: format!("Reply to comment {comment_id}"),
+                recipient: format!("The thread of comment {comment_id}"),
+                body,
+            });
+        };
         let author = root
             .guest_name
             .clone()
             .or_else(|| roster_name(roster, &root.author_id))
             .unwrap_or_else(|| root.author_id.clone());
-        let mentions = match arguments.get("mention") {
-            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(str::to_string).collect(),
-            Some(Value::String(one)) => vec![one.clone()],
-            _ => Vec::new(),
-        };
-        // As it will be posted, then read back as a person reads it.
-        let posted = with_mentions(&body, &mentions, roster.unwrap_or_default()).unwrap_or(body);
         let said = root
             .body
             .as_deref()
@@ -993,8 +1050,29 @@ impl OrgTools {
         Some(CallDescription {
             title: format!("Reply on {author}'s comment"),
             recipient: format!("{author}, on their comment{said} in {place}"),
-            body: named_mentions(&posted, roster),
+            body,
         })
+    }
+}
+
+/// `org_comment_reply`'s arguments, read once for the call and for its
+/// approval card alike, so the card's body is the body that is posted:
+/// strings trimmed, blanks absent, blank mentions dropped.
+struct ReplyArgs<'a> {
+    comment: Option<&'a str>,
+    body: Option<&'a str>,
+    mentions: Vec<String>,
+    session: Option<&'a str>,
+}
+
+impl<'a> ReplyArgs<'a> {
+    fn of(arguments: Option<&'a JsonObject>) -> Self {
+        Self {
+            comment: string_in(arguments, "comment"),
+            body: string_in(arguments, "body"),
+            mentions: strings_in(arguments, "mention"),
+            session: string_in(arguments, "session"),
+        }
     }
 }
 
@@ -1068,6 +1146,8 @@ const PAYLOAD_PARTS: [&str; 3] = ["body", "arguments", "result"];
 
 /// What `org_sessions` was asked.
 pub(super) struct SessionFilters<'a> {
+    /// A Workspace id in the grant's organisation; the grant's when absent.
+    workspace: Option<&'a str>,
     /// A member's id, name or email, or `"me"`.
     author: Option<&'a str>,
     since: Option<&'a str>,
@@ -1207,8 +1287,12 @@ impl OrgTools {
     ///
     /// `author: "me"` is the caller, so "my last session" is the first match
     /// with `limit: 1`: the newest by last activity among their own.
+    ///
+    /// `workspace` reads another Workspace's board in the grant's
+    /// organisation — never another organisation's: the board is asked in the
+    /// grant's, and the server refuses a Workspace that is not in it.
     async fn sessions(&self, scope: &OrgScope, filters: SessionFilters<'_>) -> CallToolResult {
-        let Some(workspace_id) = scope.workspace_id.as_deref() else {
+        let Some(workspace_id) = filters.workspace.or(scope.workspace_id.as_deref()) else {
             return tool_error(
                 "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
                  ask the user to reopen the project's cloud settings and start a new chat",

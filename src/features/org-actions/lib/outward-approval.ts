@@ -6,7 +6,10 @@
  *
  * Only the organisation server's outward tools ever ask: every other tool on
  * it is auto-approved, so an organisation call that reaches the approval card
- * is an outward action by construction. The native seam titles the card with
+ * is an outward action by construction. And only the native agent's cards can
+ * match: `atlas_org` is offered only to a connection that carries
+ * organisation access (the in-process native connection, never an ACP one),
+ * so an ACP agent's card never names one of its tools. The native seam titles the card with
  * the act ("Reply on Ada Lovelace's comment") and gives the call two text
  * blocks, the recipient and then the full body
  * (`crates/atlas-native-agent/src/engine/tool_approvals.rs`); the wire keeps

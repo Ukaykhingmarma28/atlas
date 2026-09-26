@@ -21,11 +21,16 @@ use serde_json::json;
 /// `(authorization header, arguments)` per call.
 pub type Calls = Arc<Mutex<Vec<(String, serde_json::Value)>>>;
 
+/// Whether the stand-in answers a call with these arguments; a refused call
+/// is an error result and is not logged, as a server that posts nothing.
+pub type Gate = Arc<dyn Fn(&serde_json::Value) -> bool + Send + Sync>;
+
 #[derive(Clone)]
 struct Tools {
     calls: Calls,
     /// The one tool it lists.
     name: &'static str,
+    gate: Option<Gate>,
 }
 
 impl ServerHandler for Tools {
@@ -64,6 +69,9 @@ impl ServerHandler for Tools {
             .unwrap_or_default()
             .to_string();
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
+        if self.gate.as_ref().is_some_and(|gate| !gate(&args)) {
+            return Ok(CallToolResult::error(vec![ContentBlock::text("not approved by the user")]).into());
+        }
         self.calls.lock().unwrap().push((auth, args));
         Ok(CallToolResult::success(vec![ContentBlock::text(
             json!({ "entries": [{ "kind": "decision", "content": "Sign JWTs with RS256" }] }).to_string(),
@@ -81,8 +89,19 @@ pub async fn start() -> (String, Calls) {
 /// needs a server shaped like another of Atlas's.
 #[allow(dead_code)]
 pub async fn start_listing(name: &'static str) -> (String, Calls) {
+    serve(name, None).await
+}
+
+/// The same stand-in, answering only the calls `gate` lets through — as the
+/// organisation tool server posts only a call the user approved.
+#[allow(dead_code)]
+pub async fn start_gated(name: &'static str, gate: Gate) -> (String, Calls) {
+    serve(name, Some(gate)).await
+}
+
+async fn serve(name: &'static str, gate: Option<Gate>) -> (String, Calls) {
     let calls: Calls = Arc::default();
-    let tools = Tools { calls: calls.clone(), name };
+    let tools = Tools { calls: calls.clone(), name, gate };
     let service = StreamableHttpService::new(
         move || Ok(tools.clone()),
         Arc::new(LocalSessionManager::default()),

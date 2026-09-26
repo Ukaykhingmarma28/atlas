@@ -21,7 +21,9 @@
 //!   ([`tools`]) never touch a client.
 //! - **Gated by the user's organisation-access setting**
 //!   ([`OrgAccessGate`]), at offer time and on every call, so switching it off
-//!   stops a running session at its next call.
+//!   stops a running session at its next call — and likewise by the account
+//!   and the Project's binding ([`SessionOrgs`]): signing out, or the Project
+//!   leaving the grant's organisation or Workspace, refuses the next call.
 //!
 //! - **Names become ids in one place** ([`resolve`]): a member or a
 //!   conversation the model names is resolved against the roster or the
@@ -36,7 +38,10 @@
 //!   person — `org_comment_reply` so far — is projected by the native seam
 //!   with a per-tool `prompt`, and the offer describes the waiting call for
 //!   the approval card ([`OrgTools::describe`]): whom it reaches, and the
-//!   full body.
+//!   full body. The seam reports each call the user approves through the host
+//!   into the tools' [`OutwardConsent`](atlas_agent_servers::OutwardConsent),
+//!   and the tool posts only a call found there — so a call the engine runs
+//!   without asking (bypass mode) is refused and nothing is sent.
 //!
 //! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
 //! `org_comment_resolve`, `org_comment_reply`, `org_sessions` and `org_session` exist so

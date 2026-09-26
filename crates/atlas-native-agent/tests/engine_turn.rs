@@ -1301,17 +1301,47 @@ fn reply_turn() -> String {
     ])
 }
 
-/// Offers one stand-in server as `atlas_org`.
-struct OfferingOrg(String);
+/// Offers one stand-in server as `atlas_org`, and keeps the approvals the
+/// seam reports as the app's offers do ([`atlas_agent_servers::OutwardConsent`]),
+/// with the session its offer was bound to.
+struct OfferingOrg {
+    url: String,
+    consent: Arc<atlas_agent_servers::OutwardConsent>,
+    session: Arc<std::sync::Mutex<Option<String>>>,
+}
 
 impl atlas_agent_servers::SessionMcpServers for OfferingOrg {
     fn offer(&self, _request: &atlas_agent_servers::SessionMcpRequest) -> atlas_agent_servers::SessionMcpOffer {
         let server = acp::McpServer::Http(
-            acp::McpServerHttp::new("atlas_org", self.0.clone())
+            acp::McpServerHttp::new("atlas_org", self.url.clone())
                 .headers(vec![acp::HttpHeader::new("Authorization", "Bearer session-token")]),
         );
-        atlas_agent_servers::SessionMcpOffer::new(vec![server], |_| {})
+        let session = self.session.clone();
+        atlas_agent_servers::SessionMcpOffer::new(vec![server], move |id| {
+            *session.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = id.map(ToString::to_string);
+        })
     }
+
+    fn approved_call(&self, call: atlas_agent_servers::CallToApprove<'_>) {
+        self.consent.record(call);
+    }
+}
+
+/// A stand-in `atlas_org` that posts a reply only when the user approved that
+/// exact call — the organisation tool server's own check — and the offer
+/// that hands it to a session.
+async fn consenting_org() -> (Arc<dyn atlas_agent_servers::SessionMcpServers>, memory_server::Calls) {
+    let consent = Arc::new(atlas_agent_servers::OutwardConsent::new());
+    let session: Arc<std::sync::Mutex<Option<String>>> = Arc::default();
+    let gate: memory_server::Gate = {
+        let (consent, session) = (consent.clone(), session.clone());
+        Arc::new(move |arguments| {
+            let session = session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            session.is_some_and(|id| consent.take(&id, "atlas_org", "org_comment_reply", arguments))
+        })
+    };
+    let (url, calls) = memory_server::start_gated("org_comment_reply", gate).await;
+    (Arc::new(OfferingOrg { url, consent, session }), calls)
 }
 
 /// A reply turn against a stand-in `atlas_org`, answered with `pick`.
@@ -1319,11 +1349,11 @@ impl atlas_agent_servers::SessionMcpServers for OfferingOrg {
 async fn reply_answered_with(
     pick: acp::PermissionOptionKind,
 ) -> (Vec<(String, serde_json::Value)>, Vec<String>) {
-    let (url, calls) = memory_server::start_listing("org_comment_reply").await;
+    let (org, calls) = consenting_org().await;
     let h = harness_full(
         vec![(Some(1), sse_ok(reply_turn())), (None, sse_ok(assistant_turn("ok")))],
         |s| s,
-        Some(Arc::new(OfferingOrg(url)) as Arc<dyn atlas_agent_servers::SessionMcpServers>),
+        Some(org),
     )
     .await;
     let session_id = h.open_thread().await;
@@ -1373,23 +1403,26 @@ async fn an_allowed_reply_is_posted_once() {
     assert_eq!(calls[0].1, json!({ "comment": "k1", "body": "Renamed it." }));
 }
 
-/// **A known gap, pinned so it cannot change unnoticed.** Bypass is
-/// `AskForApproval::Never` over full access, and the engine auto-approves every
-/// MCP permission prompt under exactly that pair
-/// (`mcp_permission_prompt_is_auto_approved`) — a per-tool `prompt` included.
-/// So in bypass an outward action is posted with no card, against ADR-0014's
-/// "outward actions ask first". (Plan mode, `Never` over read-only, is not
-/// auto-approved there, and the engine's `Never` then declines the call —
-/// read from `request_mcp_tool_user_approval`, not tested here.) If this
-/// starts failing the engine began asking in bypass, and
-/// ADR-0014's consequence can be struck.
 #[tokio::test(flavor = "multi_thread")]
-async fn in_bypass_mode_the_engine_posts_an_outward_action_without_asking() {
-    let (url, calls) = memory_server::start_listing("org_comment_reply").await;
+async fn a_reply_allowed_for_the_session_is_posted() {
+    let (calls, _) = reply_answered_with(acp::PermissionOptionKind::AllowAlways).await;
+    assert_eq!(calls.len(), 1, "{calls:?}");
+}
+
+/// Bypass is `AskForApproval::Never` over full access, and the engine
+/// auto-approves every MCP permission prompt under exactly that pair
+/// (`mcp_permission_prompt_is_auto_approved`) — a per-tool `prompt` included —
+/// so it runs the reply with no card. The seam never asked, so it reported no
+/// approval, and the tool server refuses: nothing is posted, and the model
+/// reads why (ADR-0014). (Plan mode, `Never` over read-only, is not
+/// auto-approved there; the engine's `Never` declines the call itself.)
+#[tokio::test(flavor = "multi_thread")]
+async fn in_bypass_mode_an_outward_action_is_refused_and_nothing_is_posted() {
+    let (org, calls) = consenting_org().await;
     let h = harness_full(
         vec![(Some(1), sse_ok(reply_turn())), (None, sse_ok(assistant_turn("ok")))],
         |s| s,
-        Some(Arc::new(OfferingOrg(url)) as Arc<dyn atlas_agent_servers::SessionMcpServers>),
+        Some(org),
     )
     .await;
     let session_id = h.open_thread().await;
@@ -1412,7 +1445,19 @@ async fn in_bypass_mode_the_engine_posts_an_outward_action_without_asking() {
         "no card was raised",
     );
     let calls = calls.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
-    assert_eq!(calls.len(), 1, "posted unasked: {calls:?}");
+    assert!(calls.is_empty(), "nothing is posted unasked: {calls:?}");
+    let sent: Vec<String> = h
+        ._server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+        .collect();
+    assert!(
+        sent.last().is_some_and(|body| body.contains("not approved by the user")),
+        "the model reads the refusal as the call's result",
+    );
 }
 
 #[tokio::test]

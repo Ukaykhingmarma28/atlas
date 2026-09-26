@@ -700,9 +700,14 @@ pub fn install_manager(app: &AppHandle) {
         // Every call is audited: its record goes to the window, which writes
         // the call's Logs row.
         let audit_app = app.clone();
+        // The account and the Project's binding, read by the offer and again
+        // by every call, so signing out or unbinding stops a running session.
+        let session_orgs: Arc<dyn super::org_server::SessionOrgs> =
+            Arc::new(super::org_server::AppSessionOrgs::new(app.clone()));
         let org_tools = super::org_server::OrgTools::new(
             Arc::new(super::org_server::AppOrganisationCloud::new(app.clone())),
             org_access.clone(),
+            session_orgs.clone(),
         )
         .with_audit(Arc::new(move |record: &super::org_server::OrgActionRecord| {
             let _ = audit_app.emit(super::org_server::ORG_ACTION_EVENT, record);
@@ -718,13 +723,11 @@ pub fn install_manager(app: &AppHandle) {
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
                 .with_ui(super::ui_server::UiOffer::new(navigation))
                 // The same tools describe an outward call on the approval
-                // card: whom it reaches, and the full body (ADR-0014).
+                // card — whom it reaches, and the full body — and keep the
+                // user's approval of it, which the call checks (ADR-0014).
                 .with_org(
-                    super::org_server::OrgOffer::new(
-                        org_access,
-                        Arc::new(super::org_server::AppSessionOrgs::new(app.clone())),
-                    )
-                    .describing_with(org_tools),
+                    super::org_server::OrgOffer::new(org_access, session_orgs)
+                        .describing_with(org_tools),
                 ),
         ));
         // `memory_search` also answers from the project's indexed documents.

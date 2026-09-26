@@ -55,10 +55,10 @@ server does not.
 - The engine asks for a prompted tool with an MCP elicitation of its own and keeps no session
   approval for one, so the native seam serves that one elicitation (ADR-0013) and remembers "allow
   for this session" per session and tool itself (`engine/tool_approvals.rs`).
-- Known gap: in bypass mode (`Never` over full access) the engine auto-approves every MCP
-  permission prompt, a per-tool `prompt` included, so an outward action is posted without a card
-  (pinned by `in_bypass_mode_the_engine_posts_an_outward_action_without_asking` in
-  `crates/atlas-native-agent/tests/engine_turn.rs`). Closing it needs either an engine change or a
-  consent ledger the tool server checks against the call id; neither is built.
+- Consent is enforced by the tool server, not by the engine's ask alone: the native seam records
+  each call the user approves (on its card, or under "allow for this session") through the host in
+  a one-shot `OutwardConsent` keyed by session, tool and arguments, and `atlas_org` posts only a
+  call it finds there — so in bypass mode, where the engine runs a prompted tool unasked, an
+  outward action is refused and nothing is sent.
 - Reversed the same way as ADR-0012: if per-session consent is ever needed, the flag moves onto
   the session request, still never onto agent identity.

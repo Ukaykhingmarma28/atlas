@@ -46,6 +46,16 @@
 //! tool in the same session is answered yes with no card, and the engine still
 //! asked, so the audit row and the engine's own record are unchanged.
 //!
+//! # The approval is recorded for the tool server
+//!
+//! The engine's ask is not the only gate: in bypass mode it approves every
+//! prompted tool itself and never asks. So each call the user does approve —
+//! on its card, or covered by "Allow for this session" — is reported to the
+//! host ([`atlas_agent_servers::SessionMcpServers::approved_call`]) just before
+//! the engine hears yes, and the host's server posts only a call it finds
+//! approved ([`atlas_agent_servers::OutwardConsent`]). A call the engine ran
+//! unasked was never reported, and is refused there.
+//!
 //! # A rejection
 //!
 //! Decline is `action: decline`; the engine answers the model "user rejected

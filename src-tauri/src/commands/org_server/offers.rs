@@ -71,7 +71,9 @@ pub trait SessionOrgs: Send + Sync {
     fn signed_in(&self) -> bool;
     /// The organisation (and Workspace) the Project in `cwd` is bound to, or
     /// `None` when it is not bound to the cloud — local-only, never bound,
-    /// capture switched off, or its store unreadable.
+    /// capture switched off, or its store unreadable. A binding with no
+    /// Workspace still names its organisation here; the offer, not this,
+    /// decides that it is not enough.
     fn bound_to(&self, cwd: &str) -> Option<OrgScope>;
 }
 
@@ -117,7 +119,10 @@ impl OrgOffer {
     ) -> (OrgOfferDecision, Option<OrgScope>) {
         let setting_on = http_mcp && org_access && (self.gate)();
         let signed_in = setting_on && self.orgs.signed_in();
-        let scope = if signed_in { self.orgs.bound_to(cwd) } else { None };
+        // Bound means bound to a Workspace: a binding made before the server's
+        // Workspace id was recorded names an organisation but nothing to read.
+        let scope = if signed_in { self.orgs.bound_to(cwd) } else { None }
+            .filter(|scope| scope.workspace_id.is_some());
         let decision =
             OrgOfferDecision::decide(http_mcp, org_access, setting_on, signed_in, scope.is_some(), server_running);
         match decision {

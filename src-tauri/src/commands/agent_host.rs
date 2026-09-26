@@ -295,6 +295,12 @@ impl SessionMcpServers for SessionMcpSlot {
             None => Box::pin(async { None }),
         }
     }
+
+    fn approved_call(&self, call: atlas_agent_servers::CallToApprove<'_>) {
+        if let Some(servers) = lock(&self.0).as_ref() {
+            servers.approved_call(call);
+        }
+    }
 }
 
 pub struct AgentHost {

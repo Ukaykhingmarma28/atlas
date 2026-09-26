@@ -495,6 +495,10 @@ fn quiet_ui() -> axum::Router {
 }
 
 async fn serve(tokens: Arc<MemoryTokens>, cloud: Arc<dyn OrganisationCloud>, gate: OrgAccessGate) -> MemoryServer {
+    serve_tools(tokens, OrgTools::new(cloud, gate, bound_to_acme())).await
+}
+
+async fn serve_tools(tokens: Arc<MemoryTokens>, tools: OrgTools) -> MemoryServer {
     MemoryServer::start_with(
         memory(),
         tokens,
@@ -502,10 +506,30 @@ async fn serve(tokens: Arc<MemoryTokens>, cloud: Arc<dyn OrganisationCloud>, gat
         Arc::new(SessionReads::default()),
         sharing(true),
         Sources::default(),
-        vec![quiet_ui(), router(OrgTools::new(cloud, gate))],
+        vec![quiet_ui(), router(tools)],
     )
     .await
     .unwrap()
+}
+
+/// Signed in, with the Project bound to Acme's Workspace — what every grant
+/// the tests mint was offered under, read again on each call.
+fn bound_to_acme() -> Arc<FakeSessionOrgs> {
+    FakeSessionOrgs::new(true, Some(acme()))
+}
+
+/// The user approved this call on its card (or it is covered by "Allow for
+/// this session"): the record the native seam leaves through the host for
+/// chat `s1`. Returns the arguments, for the call to send.
+fn approved(consent: &atlas_agent_servers::OutwardConsent, arguments: Value) -> Value {
+    let session = acp::SessionId::new("s1");
+    consent.record(atlas_agent_servers::CallToApprove {
+        session_id: &session,
+        server: ORG_SERVER_NAME,
+        tool: "org_comment_reply",
+        arguments: &arguments,
+    });
+    arguments
 }
 
 /// A token as an offer mints one: carrying the organisation, bound to the
@@ -670,12 +694,23 @@ async fn a_signed_out_user_is_a_tool_error_the_model_can_read() {
 
 /// A connected client on an offered token, against `org`.
 async fn org_client(org: Arc<FakeOrganisation>) -> (MemoryServer, RunningService<RoleClient, ()>) {
+    let (server, client, _) = consenting_client(org).await;
+    (server, client)
+}
+
+/// [`org_client`], with the store the tools check for the user's approval of
+/// an outward call.
+async fn consenting_client(
+    org: Arc<FakeOrganisation>,
+) -> (MemoryServer, RunningService<RoleClient, ()>, Arc<atlas_agent_servers::OutwardConsent>) {
     let tokens = Arc::new(MemoryTokens::default());
-    let server = serve(tokens.clone(), org, setting(true)).await;
+    let tools = OrgTools::new(org, setting(true), bound_to_acme());
+    let consent = tools.consent().clone();
+    let server = serve_tools(tokens.clone(), tools).await;
     let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
         .await
         .unwrap();
-    (server, client)
+    (server, client, consent)
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1393,9 +1428,9 @@ fn nothing_posted(org: &FakeOrganisation) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn org_comment_reply_posts_under_the_thread_on_its_anchor_as_the_caller_and_tells_the_threads_author() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
     let (err, answer) =
-        call_json(&client, "org_comment_reply", json!({ "comment": "k1", "body": "Checked the path; it was stale." })).await;
+        call_json(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k1", "body": "Checked the path; it was stale." }))).await;
     assert!(!err, "{answer}");
     assert_eq!(answer["session"]["id"], json!("rs-1"));
     assert_eq!(
@@ -1424,8 +1459,8 @@ async fn org_comment_reply_posts_under_the_thread_on_its_anchor_as_the_caller_an
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reply_given_a_reply_id_goes_under_that_threads_first_comment() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
-    let (err, answer) = call_json(&client, "org_comment_reply", json!({ "comment": "k2", "body": "Thanks Grace." })).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k2", "body": "Thanks Grace." }))).await;
     assert!(!err, "{answer}");
     assert_eq!(answer["thread"]["id"], json!("k1"));
     assert_eq!(replies(&org)[0].parent_id.as_deref(), Some("k1"), "replies are one level deep");
@@ -1436,15 +1471,15 @@ async fn a_reply_given_a_reply_id_goes_under_that_threads_first_comment() {
 #[tokio::test(flavor = "multi_thread")]
 async fn mentions_are_written_as_user_ids_where_the_body_names_them_or_lead_it() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
     let (err, answer) = call_json(
         &client,
         "org_comment_reply",
-        json!({
+        approved(&consent, json!({
             "comment": "k1",
             "body": "@Grace Hopper can you confirm?",
             "mention": ["Grace Hopper", "sam.lee@acme.dev"],
-        }),
+        })),
     )
     .await;
     assert!(!err, "{answer}");
@@ -1465,13 +1500,13 @@ async fn mentions_are_written_as_user_ids_where_the_body_names_them_or_lead_it()
 #[tokio::test(flavor = "multi_thread")]
 async fn a_mention_matching_nobody_or_several_is_refused_before_anything_is_posted() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
     let (err, text) =
-        call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi", "mention": ["Nobody Here"] })).await;
+        call(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k1", "body": "hi", "mention": ["Nobody Here"] }))).await;
     assert!(err);
     assert!(text.contains("no member matches \"Nobody Here\""), "{text}");
     let (err, answer) =
-        call_json(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi", "mention": ["Sam Lee"] })).await;
+        call_json(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k1", "body": "hi", "mention": ["Sam Lee"] }))).await;
     assert!(err);
     assert_eq!(answer["candidates"].as_array().map(Vec::len), Some(2), "{answer}");
     assert!(nothing_posted(&org));
@@ -1482,9 +1517,9 @@ async fn a_mention_matching_nobody_or_several_is_refused_before_anything_is_post
 #[tokio::test(flavor = "multi_thread")]
 async fn replying_on_your_own_thread_tells_nobody() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
     let (err, answer) =
-        call_json(&client, "org_comment_reply", json!({ "comment": "z1", "body": "fixed", "session": "rs-2" })).await;
+        call_json(&client, "org_comment_reply", approved(&consent, json!({ "comment": "z1", "body": "fixed", "session": "rs-2" }))).await;
     assert!(!err, "{answer}");
     assert_eq!(answer["session"], json!({ "id": "rs-2", "title": null, "current": false }));
     assert!(org.notified.lock().is_empty(), "the server never tells you about your own reply");
@@ -1494,11 +1529,11 @@ async fn replying_on_your_own_thread_tells_nobody() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unknown_comment_or_a_missing_body_is_an_error_and_nothing_is_posted() {
     let org = commented();
-    let (_server, client) = org_client(org.clone()).await;
-    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k99", "body": "hi" })).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k99", "body": "hi" }))).await;
     assert!(err);
     assert!(text.contains("no comment k99 on recorded session rs-1"), "{text}");
-    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "  " })).await;
+    let (err, text) = call(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k1", "body": "  " }))).await;
     assert!(err);
     assert!(text.contains("`body`"), "{text}");
     assert!(nothing_posted(&org));
@@ -1509,13 +1544,69 @@ async fn an_unknown_comment_or_a_missing_body_is_an_error_and_nothing_is_posted(
 async fn a_reply_the_organisation_cannot_take_is_a_tool_error() {
     let org = commented();
     org.reply_fail.store(true, Ordering::SeqCst);
-    let (_server, client) = org_client(org.clone()).await;
-    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "hi" })).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_reply", approved(&consent, json!({ "comment": "k1", "body": "hi" }))).await;
     assert!(err);
     assert!(text.contains("could not be reached"), "{text}");
     assert!(replies(&org).is_empty(), "nothing was posted");
     assert!(org.notified.lock().is_empty(), "and nobody was told");
     client.cancel().await.ok();
+}
+
+/// ADR-0014: an outward action is posted only once the user approved that
+/// exact call. Bypass mode runs a prompted tool without asking, so it arrives
+/// here with no approval behind it — and is refused with nothing sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_the_user_did_not_approve_is_refused_and_nothing_is_posted() {
+    let org = commented();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "unasked" })).await;
+    assert!(err);
+    assert!(text.contains("only after you approve them") && text.contains("bypass"), "{text}");
+
+    // An approval covers the call it was given for, and no other.
+    approved(&consent, json!({ "comment": "k1", "body": "the approved words" }));
+    let (err, _) = call(&client, "org_comment_reply", json!({ "comment": "k1", "body": "other words" })).await;
+    assert!(err, "another body is another call");
+    assert!(nothing_posted(&org));
+    assert!(org.notified.lock().is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_approval_posts_one_reply() {
+    let org = commented();
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let args = approved(&consent, json!({ "comment": "k1", "body": "once" }));
+    assert!(!call(&client, "org_comment_reply", args.clone()).await.0);
+    let (err, text) = call(&client, "org_comment_reply", args).await;
+    assert!(err, "the approval was spent: {text}");
+    assert_eq!(replies(&org).len(), 1);
+    client.cancel().await.ok();
+}
+
+/// The native seam reports each approval through the host
+/// (`SessionMcpServers::approved_call`); the offer hands it to the tools that
+/// answer the call, and to nothing else.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_the_native_seam_reports_reaches_the_tools_that_check_it() {
+    let org = commented();
+    let host = running_host(org.clone()).await;
+    let tools = OrgTools::new(org, setting(true), bound_to_acme());
+    let offers = MemorySessionOffers::new(host, sharing(true))
+        .with_org(OrgOffer::new(setting(true), bound_to_acme()).describing_with(tools.clone()));
+    let session = acp::SessionId::new("s1");
+    let args = json!({ "comment": "k1", "body": "Done." });
+    let on = |server| atlas_agent_servers::CallToApprove {
+        session_id: &session,
+        server,
+        tool: "org_comment_reply",
+        arguments: &args,
+    };
+    offers.approved_call(on(UI_SERVER_NAME));
+    assert!(!tools.consent().take("s1", ORG_SERVER_NAME, "org_comment_reply", &args), "another server's call");
+    offers.approved_call(on(ORG_SERVER_NAME));
+    assert!(tools.consent().take("s1", ORG_SERVER_NAME, "org_comment_reply", &args));
 }
 
 #[test]
@@ -1539,7 +1630,7 @@ async fn describing_offer(org: Arc<FakeOrganisation>) -> MemorySessionOffers {
     let host = running_host(org.clone()).await;
     let offers = MemorySessionOffers::new(host, sharing(true)).with_org(
         OrgOffer::new(setting(true), FakeSessionOrgs::new(true, Some(acme())))
-            .describing_with(OrgTools::new(org, setting(true))),
+            .describing_with(OrgTools::new(org, setting(true), bound_to_acme())),
     );
     offers.offer(&session_request(true)).bind(&acp::SessionId::new("s1"));
     offers
@@ -1588,6 +1679,56 @@ async fn a_card_the_organisation_cannot_describe_still_shows_the_comment_and_the
         .expect("still described");
     assert_eq!(said.title, "Reply to comment k1");
     assert_eq!(said.body, "hi");
+}
+
+/// The card and the call read the arguments through one parser and rewrite
+/// mentions one way, so the card's body is exactly the posted comment's —
+/// trimmed, a blank mention dropped, mentions shown by name.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_cards_body_is_the_posted_body() {
+    let org = commented();
+    let offers = describing_offer(org.clone()).await;
+    let args = json!({
+        "comment": "k1",
+        "body": "  @Grace Hopper can you confirm?\n",
+        "mention": ["Grace Hopper", " ", "sam.lee@acme.dev"],
+    });
+    let said = describe(&offers, ORG_SERVER_NAME, "org_comment_reply", args.clone()).await.expect("described");
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comment_reply", approved(&consent, args)).await;
+    assert!(!err, "{answer}");
+    assert_eq!(json!(said.body), answer["comment"]["body"]);
+    assert_eq!(said.body, "@Sam Lee @Grace Hopper can you confirm?");
+    client.cancel().await.ok();
+}
+
+/// When the thread cannot be read for the card, it still shows the body as it
+/// will be posted, mentions rewritten; when the roster cannot be read either,
+/// a mention keeps its `<@id>` on both.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_the_organisation_cannot_describe_still_shows_the_posted_body() {
+    let org = commented();
+    let offers = describing_offer(org.clone()).await;
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+
+    let args = json!({ "comment": "k1", "body": " thanks ", "mention": ["Grace Hopper"] });
+    org.comments_fail.store(true, Ordering::SeqCst);
+    let said = describe(&offers, ORG_SERVER_NAME, "org_comment_reply", args.clone()).await.expect("described");
+    assert_eq!(said.title, "Reply to comment k1");
+    org.comments_fail.store(false, Ordering::SeqCst);
+    let (err, answer) = call_json(&client, "org_comment_reply", approved(&consent, args)).await;
+    assert!(!err, "{answer}");
+    assert_eq!(json!(said.body), answer["comment"]["body"]);
+    assert_eq!(said.body, "@Grace Hopper thanks");
+
+    let args = json!({ "comment": "k1", "body": "<@u-grace> see above" });
+    org.roster_fail.store(true, Ordering::SeqCst);
+    let said = describe(&offers, ORG_SERVER_NAME, "org_comment_reply", args.clone()).await.expect("described");
+    let (err, answer) = call_json(&client, "org_comment_reply", approved(&consent, args)).await;
+    assert!(!err, "{answer}");
+    assert_eq!(json!(said.body), answer["comment"]["body"]);
+    assert_eq!(said.body, "<@u-grace> see above", "no names to show");
+    client.cancel().await.ok();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1867,6 +2008,25 @@ async fn exactly_five_hundred_sessions_and_the_end_of_the_board_is_not_truncated
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_workspace_argument_reads_another_workspace_in_the_organisation_and_defaults_to_the_grants() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "workspace": "ws-other" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["workspace"], json!({ "id": "ws-other" }));
+    assert_eq!(session_ids(&answer), ["rs-elsewhere"]);
+    assert!(
+        org.asked().iter().any(|(o, what)| o == "org-acme" && what.starts_with("board ws-other")),
+        "asked in the grant's organisation",
+    );
+
+    let (_, answer) = call_json(&client, "org_sessions", json!({})).await;
+    assert_eq!(answer["workspace"], json!({ "id": "ws-atlas" }), "the grant's by default");
+    assert!(!session_ids(&answer).contains(&"rs-elsewhere".to_string()));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_board_that_cannot_be_read_is_a_tool_error() {
     let org = boarded();
     org.board_fail.store(true, Ordering::SeqCst);
@@ -2084,6 +2244,67 @@ async fn switching_organisation_access_off_refuses_the_next_call_of_a_running_se
     client.cancel().await.ok();
 }
 
+/// A client on a grant offered for Acme, with the account and the binding the
+/// test changes while the session runs.
+async fn rechecked_client(
+    org: Arc<FakeOrganisation>,
+) -> (MemoryServer, RunningService<RoleClient, ()>, Arc<FakeSessionOrgs>) {
+    let orgs = bound_to_acme();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve_tools(tokens.clone(), OrgTools::new(org, setting(true), orgs.clone())).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    (server, client, orgs)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signing_out_refuses_the_next_call_of_a_running_session() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer));
+    let (_server, client, orgs) = rechecked_client(org.clone()).await;
+    assert!(!call(&client, "org_whoami", json!({})).await.0);
+    let asked = org.asked().len();
+
+    orgs.sign_out();
+    let (err, text) = call(&client, "org_whoami", json!({})).await;
+    assert!(err);
+    assert!(text.contains("sign in"), "{text}");
+    assert_eq!(org.asked().len(), asked, "nothing reached the organisation");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unbinding_the_project_refuses_the_next_call_of_a_running_session() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer));
+    let (_server, client, orgs) = rechecked_client(org.clone()).await;
+    assert!(!call(&client, "org_whoami", json!({})).await.0);
+    let asked = org.asked().len();
+
+    orgs.rebind(None);
+    let (err, text) = call(&client, "org_whoami", json!({})).await;
+    assert!(err);
+    assert!(text.contains("no longer bound"), "{text}");
+    assert_eq!(org.asked().len(), asked, "nothing reached the organisation");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_project_bound_elsewhere_now_refuses_the_next_call_of_a_running_session() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer));
+    let (_server, client, orgs) = rechecked_client(org.clone()).await;
+    for elsewhere in [
+        OrgScope { org_id: "org-acme".into(), workspace_id: Some("ws-other".into()) },
+        OrgScope { org_id: "org-globex".into(), workspace_id: Some("ws-atlas".into()) },
+    ] {
+        orgs.rebind(Some(elsewhere.clone()));
+        let (err, text) = call(&client, "org_whoami", json!({})).await;
+        assert!(err, "{elsewhere:?}");
+        assert!(text.contains("no longer bound"), "{text}");
+    }
+    assert!(org.asked().is_empty(), "nothing reached either organisation");
+    client.cancel().await.ok();
+}
+
 /// A token minted without the organisation — a session the offer left it out
 /// of, or one the session lifecycle re-minted — names no organisation, and
 /// the tools do not pick one for it.
@@ -2174,7 +2395,7 @@ async fn serve_audited(
         Arc::new(SessionReads::default()),
         sharing(true),
         Sources::default(),
-        vec![quiet_ui(), router(OrgTools::new(cloud, gate).with_audit(audit))],
+        vec![quiet_ui(), router(OrgTools::new(cloud, gate, bound_to_acme()).with_audit(audit))],
     )
     .await
     .unwrap();
@@ -2291,26 +2512,36 @@ fn an_audit_record_reaches_the_window_in_its_wire_shape() {
 /// The account and the Project's binding as the offer sees them, counting
 /// how often each is read.
 struct FakeSessionOrgs {
-    signed_in: bool,
-    bound: Option<OrgScope>,
+    signed_in: AtomicBool,
+    bound: Mutex<Option<OrgScope>>,
     reads: AtomicUsize,
 }
 
 impl FakeSessionOrgs {
     fn new(signed_in: bool, bound: Option<OrgScope>) -> Arc<Self> {
-        Arc::new(Self { signed_in, bound, reads: AtomicUsize::new(0) })
+        Arc::new(Self { signed_in: AtomicBool::new(signed_in), bound: Mutex::new(bound), reads: AtomicUsize::new(0) })
+    }
+
+    /// The user signs out while a session runs.
+    fn sign_out(&self) {
+        self.signed_in.store(false, Ordering::SeqCst);
+    }
+
+    /// The Project's binding changes while a session runs.
+    fn rebind(&self, bound: Option<OrgScope>) {
+        *self.bound.lock() = bound;
     }
 }
 
 impl SessionOrgs for FakeSessionOrgs {
     fn signed_in(&self) -> bool {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        self.signed_in
+        self.signed_in.load(Ordering::SeqCst)
     }
 
     fn bound_to(&self, _cwd: &str) -> Option<OrgScope> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        self.bound.clone()
+        self.bound.lock().clone()
     }
 }
 
@@ -2323,7 +2554,7 @@ async fn running_host(org: Arc<dyn OrganisationCloud>) -> Arc<MemoryServerHost> 
         host.reads().clone(),
         sharing(true),
         Sources::default(),
-        vec![quiet_ui(), router(OrgTools::new(org, setting(true)))],
+        vec![quiet_ui(), router(OrgTools::new(org, setting(true), bound_to_acme()))],
     )
     .await
     .unwrap();
@@ -2420,6 +2651,18 @@ async fn with_the_setting_off_the_org_server_is_not_offered() {
 async fn a_session_on_an_unbound_project_is_not_offered_the_org_server() {
     let host = running_host(Arc::new(FakeOrganisation::default())).await;
     let offer = offers(host.clone(), true, FakeSessionOrgs::new(true, None)).offer(&session_request(true));
+    assert_eq!(names(&offer), ["atlas_memory", UI_SERVER_NAME]);
+    let token = entries(&offer)[0].2.clone();
+    assert_eq!(host.tokens().grant(&token).unwrap().org, None, "the token names no organisation");
+}
+
+/// A binding made before the server's Workspace id was recorded names its
+/// organisation but no Workspace: not bound, for the offer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_project_bound_without_a_workspace_is_not_offered_the_org_server() {
+    let host = running_host(Arc::new(FakeOrganisation::default())).await;
+    let no_workspace = OrgScope { org_id: "org-acme".into(), workspace_id: None };
+    let offer = offers(host.clone(), true, FakeSessionOrgs::new(true, Some(no_workspace))).offer(&session_request(true));
     assert_eq!(names(&offer), ["atlas_memory", UI_SERVER_NAME]);
     let token = entries(&offer)[0].2.clone();
     assert_eq!(host.tokens().grant(&token).unwrap().org, None, "the token names no organisation");
@@ -2528,4 +2771,38 @@ fn a_cloud_binding_places_the_project_in_its_own_organisation_and_workspace() {
     assert_eq!(scope_of(&binding(Local, true, None, None)), None, "a local Project has no organisation");
     assert_eq!(scope_of(&binding(Cloud, false, Some("org-acme"), Some("ws-atlas"))), None, "capture switched off");
     assert_eq!(scope_of(&binding(Cloud, true, None, Some("ws-atlas"))), None);
+}
+
+// ── No tool server talks to the user (ADR-0013) ──────────────────────────────
+
+/// The one MCP elicitation Atlas serves is the engine's own ask before an
+/// outward action, and the native seam tells it from a tool server's only
+/// because Atlas's own servers never elicit (`engine::tool_approvals`). So
+/// none of the three may: no handler in the memory, UI or organisation tool
+/// server sends `elicitation/create`, through the peer or otherwise.
+#[test]
+fn none_of_atlas_tool_servers_ever_sends_an_elicitation() {
+    let commands = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands");
+    let mut read = 0;
+    for server in ["memory_server", "ui_server", "org_server"] {
+        for entry in std::fs::read_dir(commands.join(server)).expect("the server's module") {
+            let path = entry.expect("an entry").path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if !name.ends_with(".rs") || name == "tests.rs" {
+                continue;
+            }
+            read += 1;
+            let source = std::fs::read_to_string(&path).expect("readable");
+            for (i, line) in source.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or_default().to_lowercase();
+                assert!(
+                    !code.contains("elicit"),
+                    "{}:{} reaches for an elicitation: {line}",
+                    path.display(),
+                    i + 1,
+                );
+            }
+        }
+    }
+    assert!(read >= 9, "the three servers' sources were read ({read})");
 }
