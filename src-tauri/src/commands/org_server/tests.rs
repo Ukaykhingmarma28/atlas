@@ -3579,6 +3579,52 @@ fn the_instructions_state_the_protocol() {
     assert!(INSTRUCTIONS.contains("An atlas-org:// link"), "the composer's mentions, in one clause");
 }
 
+/// The **fixed-prefix cost** the server adds to every native turn, measured
+/// the way `docs/research/native-agent-input-tokens-measured.md` measured the
+/// engine's own tools: the exact JSON bytes of the `tools/list` answer (for a
+/// member and for an admin, who is offered one tool more), the same tools as
+/// the Chat Completions dialect puts them on the wire (`atlas_chat::request`,
+/// `reshape_one`: one flat `function` per tool, named `atlas_org__<tool>`),
+/// and the instructions. Recorded in `docs/research/org-tool-server-prefix.md`;
+/// reproduce with
+/// `cargo test -p atlas --lib org_server_prefix -- --nocapture`.
+#[test]
+fn org_server_prefix_bytes_are_measured() {
+    fn wire(tool: &rmcp::model::Tool) -> Value {
+        json!({
+            "type": "function",
+            "function": {
+                "name": format!("{ORG_SERVER_NAME}__{}", tool.name),
+                "description": tool.description.as_deref().unwrap_or_default(),
+                "parameters": Value::Object((*tool.input_schema).clone()),
+            }
+        })
+    }
+    let bytes = |v: &Value| serde_json::to_vec(v).unwrap().len();
+
+    let member_list = bytes(&serde_json::to_value(tools_list(false)).unwrap());
+    let admin_list = bytes(&serde_json::to_value(tools_list(true)).unwrap());
+    let mut per_tool: Vec<(usize, String)> = tools().iter().map(|t| (bytes(&wire(t)), t.name.to_string())).collect();
+    let wire_total = |admin: bool| -> usize {
+        per_tool.iter().filter(|(_, n)| admin || !ADMIN_TOOLS.contains(&n.as_str())).map(|(b, _)| b).sum()
+    };
+    let (member_wire, admin_wire) = (wire_total(false), wire_total(true));
+    per_tool.sort_by(|a, b| b.0.cmp(&a.0));
+
+    println!("tools/list JSON: member {member_list} B, admin {admin_list} B");
+    println!("Chat wire tools: member {member_wire} B, admin {admin_wire} B");
+    println!("INSTRUCTIONS: {} B", INSTRUCTIONS.len());
+    for (b, name) in &per_tool {
+        println!("  {b:>5} B  {name}");
+    }
+
+    assert_eq!(per_tool.len(), tool_names(true).len(), "every tool measured");
+    assert!(admin_list > member_list && admin_wire > member_wire, "an admin is offered one tool more");
+    // The ceiling the research note records; a description that grows past it
+    // is a prefix cost to decide on, not to drift into.
+    assert!(admin_wire + INSTRUCTIONS.len() < 10_000, "the org prefix stays under 10 KB ({admin_wire} + instructions)");
+}
+
 // ── The audit trail ──────────────────────────────────────────────────────────
 
 /// The server with an audit sink that keeps every record it is handed, as the
