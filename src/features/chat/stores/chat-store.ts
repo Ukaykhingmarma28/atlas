@@ -480,6 +480,8 @@ interface ChatActions {
         /** Producing model recovered from the snapshot/transcript, so the
          *  per-message badge survives session reloads. */
         model?: string | null;
+        /** Images a user message carried, restored from the snapshot. */
+        attachments?: ImageAttachment[];
         toolCalls?: Array<{
           /** The agent's own tool call id, when the caller has it. Optional
            *  only because not every paint path carries one; a caller that has
@@ -1434,6 +1436,7 @@ export const useChatStore = createSelectors(
                 plan: null,
                 timestamp: m.timestamp ?? new Date().toISOString(),
                 ...(m.role === "assistant" && m.model ? { model: m.model } : {}),
+                ...(m.attachments?.length ? { attachments: m.attachments } : {}),
                 ...(split && split.context !== null
                   ? {
                       atlasProse: split.prose,

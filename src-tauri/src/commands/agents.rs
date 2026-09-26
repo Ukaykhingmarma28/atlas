@@ -1266,6 +1266,7 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
             tool_calls: Vec::new(),
             plan: None,
             model: m.model,
+            images: Vec::new(),
             timestamp: m
                 .timestamp
                 .parse::<chrono::DateTime<chrono::Utc>>()

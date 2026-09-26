@@ -1336,7 +1336,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     <div ref={rootRef} className="h-full flex relative">
       <SessionSidebar tabId={tabId} />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
+          column, not just the composer (see `attachPaths` in message-input). */}
+      <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
         {/* The header FLOATS over the transcript rather than sitting above it in
             the column. That is what lets the thread scroll underneath and be
             progressively blurred by the band the transcript draws at its top

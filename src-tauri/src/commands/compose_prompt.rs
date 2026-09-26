@@ -137,23 +137,40 @@ impl MentionSpec {
     }
 
     fn short_form(&self) -> String {
+        let v = short_form_value;
         match self {
-            MentionSpec::File { display_name, .. } => format!("@file:{display_name}"),
-            MentionSpec::Folder { display_name, .. } => format!("@folder:{display_name}"),
-            MentionSpec::Symbol { display_name, .. } => format!("@symbol:{display_name}"),
+            MentionSpec::File { display_name, .. } => format!("@file:{}", v(display_name)),
+            MentionSpec::Folder { display_name, .. } => format!("@folder:{}", v(display_name)),
+            MentionSpec::Symbol { display_name, .. } => format!("@symbol:{}", v(display_name)),
             MentionSpec::Knowledge { id, .. } => format!("@note:{id}"),
             MentionSpec::Component {
                 component_kind,
                 display_name,
                 ..
-            } => format!("#{component_kind}:{display_name}"),
-            MentionSpec::Repo { display_name, .. } => format!("@repo:{display_name}"),
-            MentionSpec::Workspace { display_name, .. } => format!("@workspace:{display_name}"),
-            MentionSpec::Paper { display_name, .. } => format!("@paper:{display_name}"),
-            MentionSpec::Branch { display_name, .. } => format!("@branch:{display_name}"),
+            } => format!("#{component_kind}:{}", v(display_name)),
+            MentionSpec::Repo { display_name, .. } => format!("@repo:{}", v(display_name)),
+            MentionSpec::Workspace { display_name, .. } => {
+                format!("@workspace:{}", v(display_name))
+            }
+            MentionSpec::Paper { display_name, .. } => format!("@paper:{}", v(display_name)),
+            MentionSpec::Branch { display_name, .. } => format!("@branch:{}", v(display_name)),
             MentionSpec::PastMessage { id, .. } => format!("@msg:{id}"),
-            MentionSpec::PastSession { display_name, .. } => format!("@session:{display_name}"),
+            MentionSpec::PastSession { display_name, .. } => {
+                format!("@session:{}", v(display_name))
+            }
         }
+    }
+}
+
+/// A short-form value, quoted when it holds whitespace: a bare value ends at the
+/// first space, so `@file:My Shot.png` would read back as `My`. Mirrors
+/// `shortFormValue` in `src/features/chat/lib/mentions.ts`, which writes the
+/// same token into the prose this function's output has to match.
+fn short_form_value(v: &str) -> std::borrow::Cow<'_, str> {
+    if v.chars().any(char::is_whitespace) {
+        std::borrow::Cow::Owned(format!("\"{v}\""))
+    } else {
+        std::borrow::Cow::Borrowed(v)
     }
 }
 
@@ -615,5 +632,26 @@ mod resource_link_tests {
         ] {
             assert_eq!(file_uri(path), format!("file://{path}"), "{path}");
         }
+    }
+}
+
+#[cfg(test)]
+mod short_form_tests {
+    use super::short_form_value;
+
+    /// A bare value ends at the first space, so a name with one must be quoted
+    /// or `@file:My Shot.png` reads back as a mention of `My`.
+    #[test]
+    fn a_value_with_whitespace_is_quoted() {
+        assert_eq!(
+            short_form_value("CleanShot 2026-09-15 at 10.04.08 PM@2x.png"),
+            "\"CleanShot 2026-09-15 at 10.04.08 PM@2x.png\""
+        );
+    }
+
+    #[test]
+    fn a_bare_value_is_left_alone() {
+        assert_eq!(short_form_value("src/main.rs"), "src/main.rs");
+        assert_eq!(short_form_value("Shot@2x.png"), "Shot@2x.png");
     }
 }
