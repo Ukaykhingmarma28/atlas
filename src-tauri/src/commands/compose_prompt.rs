@@ -180,28 +180,47 @@ impl MentionSpec {
     }
 
     fn short_form(&self) -> String {
+        let v = short_form_value;
         match self {
-            MentionSpec::File { display_name, .. } => format!("@file:{display_name}"),
-            MentionSpec::Folder { display_name, .. } => format!("@folder:{display_name}"),
-            MentionSpec::Symbol { display_name, .. } => format!("@symbol:{display_name}"),
+            MentionSpec::File { display_name, .. } => format!("@file:{}", v(display_name)),
+            MentionSpec::Folder { display_name, .. } => format!("@folder:{}", v(display_name)),
+            MentionSpec::Symbol { display_name, .. } => format!("@symbol:{}", v(display_name)),
             MentionSpec::Knowledge { id, .. } => format!("@note:{id}"),
             MentionSpec::Component {
                 component_kind,
                 display_name,
                 ..
-            } => format!("#{component_kind}:{display_name}"),
-            MentionSpec::Repo { display_name, .. } => format!("@repo:{display_name}"),
-            MentionSpec::Workspace { display_name, .. } => format!("@workspace:{display_name}"),
-            MentionSpec::Paper { display_name, .. } => format!("@paper:{display_name}"),
-            MentionSpec::Branch { display_name, .. } => format!("@branch:{display_name}"),
+            } => format!("#{component_kind}:{}", v(display_name)),
+            MentionSpec::Repo { display_name, .. } => format!("@repo:{}", v(display_name)),
+            MentionSpec::Workspace { display_name, .. } => {
+                format!("@workspace:{}", v(display_name))
+            }
+            MentionSpec::Paper { display_name, .. } => format!("@paper:{}", v(display_name)),
+            MentionSpec::Branch { display_name, .. } => format!("@branch:{}", v(display_name)),
             MentionSpec::PastMessage { id, .. } => format!("@msg:{id}"),
-            MentionSpec::PastSession { display_name, .. } => format!("@session:{display_name}"),
-            MentionSpec::Member { display_name, .. } => format!("@member:{display_name}"),
-            MentionSpec::Conversation { display_name, .. } => format!("@conversation:{display_name}"),
+            MentionSpec::PastSession { display_name, .. } => {
+                format!("@session:{}", v(display_name))
+            }
+            MentionSpec::Member { display_name, .. } => format!("@member:{}", v(display_name)),
+            MentionSpec::Conversation { display_name, .. } => {
+                format!("@conversation:{}", v(display_name))
+            }
             MentionSpec::RecordedSession { display_name, .. } => {
-                format!("@recorded-session:{display_name}")
+                format!("@recorded-session:{}", v(display_name))
             }
         }
+    }
+}
+
+/// A short-form value, quoted when it holds whitespace: a bare value ends at the
+/// first space, so `@file:My Shot.png` would read back as `My`. Mirrors
+/// `shortFormValue` in `src/features/chat/lib/mentions.ts`, which writes the
+/// same token into the prose this function's output has to match.
+fn short_form_value(v: &str) -> std::borrow::Cow<'_, str> {
+    if v.chars().any(char::is_whitespace) {
+        std::borrow::Cow::Owned(format!("\"{v}\""))
+    } else {
+        std::borrow::Cow::Borrowed(v)
     }
 }
 
@@ -736,11 +755,11 @@ mod org_mention_tests {
         assert_eq!(
             links(&composed),
             [
-                ("atlas-org://member/u-grace".to_string(), "@member:Grace Hopper".to_string()),
+                ("atlas-org://member/u-grace".to_string(), "@member:\"Grace Hopper\"".to_string()),
                 ("atlas-org://conversation/c-general".to_string(), "@conversation:general".to_string()),
                 (
                     "atlas-org://recorded-session/ws-atlas/rs-1".to_string(),
-                    "@recorded-session:Fix the theme importer".to_string(),
+                    "@recorded-session:\"Fix the theme importer\"".to_string(),
                 ),
             ],
         );
@@ -781,11 +800,11 @@ mod org_mention_tests {
             links(&composed),
             [(
                 "atlas-org://recorded-session/ws-atlas/rs-1".to_string(),
-                "@recorded-session:Fix the theme importer".to_string(),
+                "@recorded-session:\"Fix the theme importer\"".to_string(),
             )],
             "only the recorded session is a link",
         );
-        assert!(composed.prose.contains("## @session:Fix the theme importer"), "{}", composed.prose);
+        assert!(composed.prose.contains("## @session:\"Fix the theme importer\""), "{}", composed.prose);
         assert!(composed.prose.contains("fix it"), "the past session's transcript is still inlined");
         assert!(!composed.prose.contains("@recorded-session"), "the recorded session inlines nothing");
     }
@@ -794,5 +813,26 @@ mod org_mention_tests {
     async fn the_same_member_twice_is_one_link() {
         let composed = compose_prompt(String::new(), vec![spec(member()), spec(member())]).await.unwrap();
         assert_eq!(composed.resource_links.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod short_form_tests {
+    use super::short_form_value;
+
+    /// A bare value ends at the first space, so a name with one must be quoted
+    /// or `@file:My Shot.png` reads back as a mention of `My`.
+    #[test]
+    fn a_value_with_whitespace_is_quoted() {
+        assert_eq!(
+            short_form_value("CleanShot 2026-09-15 at 10.04.08 PM@2x.png"),
+            "\"CleanShot 2026-09-15 at 10.04.08 PM@2x.png\""
+        );
+    }
+
+    #[test]
+    fn a_bare_value_is_left_alone() {
+        assert_eq!(short_form_value("src/main.rs"), "src/main.rs");
+        assert_eq!(short_form_value("Shot@2x.png"), "Shot@2x.png");
     }
 }

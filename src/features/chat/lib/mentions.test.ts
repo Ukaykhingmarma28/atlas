@@ -288,8 +288,8 @@ describe("a recorded session is not a past session", () => {
   it("has its own category, label and short form", () => {
     expect(categoryForKind("recorded_session").label).toBe("Recorded Sessions");
     expect(categoryForKind("past_session").label).toBe("Past Sessions");
-    expect(toShortForm(recorded)).toBe("@recorded-session:Fix the theme importer");
-    expect(toShortForm(past)).toBe("@session:Fix the theme importer");
+    expect(toShortForm(recorded)).toBe('@recorded-session:"Fix the theme importer"');
+    expect(toShortForm(past)).toBe('@session:"Fix the theme importer"');
     const aliases = (k: string) => MENTION_CATEGORIES.find((c) => c.kind === k)!.aliases;
     expect(aliases("recorded_session").some((a) => aliases("past_session").includes(a))).toBe(
       false,
@@ -334,7 +334,7 @@ describe("inserting an organisation mention", () => {
     view.dispatch({ changes: { from: view.state.doc.length, insert: "in " } });
     insertMention(view, general, view.state.doc.length, view.state.doc.length);
     expect(view.state.doc.toString()).toBe(
-      "send it to @member:Grace Hopper in @conversation:general ",
+      'send it to @member:"Grace Hopper" in @conversation:general ',
     );
     expect(getMentions(view)).toEqual([grace, general]);
     const kinds = [...view.dom.querySelectorAll<HTMLElement>(".atlas-mention-chip")].map(
@@ -368,7 +368,7 @@ describe("sending", () => {
       { uri: "atlas-org://conversation/c-general", name: "@conversation:general" },
       {
         uri: "atlas-org://recorded-session/ws-atlas/rs-1",
-        name: "@recorded-session:Fix the theme importer",
+        name: '@recorded-session:"Fix the theme importer"',
       },
     ];
     invoke.mockImplementation(async (cmd: string) => {

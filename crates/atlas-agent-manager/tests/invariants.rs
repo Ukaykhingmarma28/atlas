@@ -202,7 +202,7 @@ async fn open_session(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_version_bump_forgets_the_sessions_it_orphans() {
+async fn a_version_bump_orphans_nothing_and_the_restart_releases_the_old_process() {
     let catalog = TestCatalog::new(&["claude-code"]);
     let server = TestServer::new("claude-code");
     let manager = manager(catalog.clone(), server.clone());
@@ -213,12 +213,14 @@ async fn a_version_bump_forgets_the_sessions_it_orphans() {
     assert_eq!(server.live_connections(), 1);
 
     catalog.announce_new_version("claude-code", "2.0.0");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The bump alone forgets nothing: a session the manager dropped while the
+    // host still held it failed its next send with "unknown session id".
+    assert_eq!(manager.sessions().len(), 1);
 
-    wait_for(|| manager.sessions().is_empty().then_some(()))
-        .await
-        .expect("a version bump forgets the sessions on the old connection");
-    // The point of forgetting them: the session was the last thing pinning the
-    // connection, and the old binary's process goes with it.
+    // The host's restart is what releases it — and with it the old binary.
+    manager.drop_connection(&key);
+    assert!(manager.sessions().is_empty());
     wait_for(|| (server.live_connections() == 0).then_some(()))
         .await
         .expect("the old connection is released");

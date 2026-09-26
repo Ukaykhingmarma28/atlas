@@ -720,7 +720,7 @@ mod tests {
         use crate::tools::ToolName;
 
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(&dir.path().join(".atlas")).unwrap();
+        let mut store = Store::open(dir.path().join(".atlas")).unwrap();
         let mut capture = Capture::new(&mut store, ProjectMode::Local);
         let key = SessionKey {
             workspace_id: "ws".into(),

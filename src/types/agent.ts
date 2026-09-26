@@ -189,6 +189,10 @@ export interface ChatSession {
    *  affordance) respawns the agent and load_session-resumes where the
    *  transcript kind supports it. Never auto-restarted silently. */
   disconnected?: boolean;
+  /** Set with `disconnected` when the process went away because its agent
+   *  was updated (`noteAgentUpdated`): the version it restarts on. The banner
+   *  says "updated" rather than "exited". Cleared with `disconnected`. */
+  updatedTo?: string;
   /** Why the last bind for this tab gave up, when it did so without a
    *  session (`failPendingBinds`): the manager's reason for the lost
    *  connection. Shown beside the Restart affordance; cleared on (re)bind. */

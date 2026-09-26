@@ -808,6 +808,56 @@ impl AgentHost {
         self.forget_sessions_of(agent);
     }
 
+    /// Whether any open session on `plugin_id` has a turn running. `false` for
+    /// an agent that is not installed.
+    pub fn agent_turn_running(&self, plugin_id: &str) -> bool {
+        let Ok(agent) = self.agent_for(plugin_id) else {
+            return false;
+        };
+        let sessions: Vec<String> = lock(&self.sessions)
+            .iter()
+            .filter(|(_, record)| record.agent == agent)
+            .map(|(id, _)| id.clone())
+            .collect();
+        sessions
+            .iter()
+            .any(|id| self.thread(id).is_ok_and(|handle| lock_thread(&handle).is_generating()))
+    }
+
+    /// Restart `plugin_id` so its next connect runs the version the registry
+    /// now lists. The caller has waited for [`Self::agent_turn_running`] to
+    /// clear — this never interrupts a reply.
+    ///
+    /// The same move as the native model refresh below: every open chat on
+    /// the agent is told it is disconnected first, which is what lets the tab
+    /// rebind (respawn + `session/load`) on its next send with its transcript
+    /// intact. Dropping the connection without that left each tab holding a
+    /// session nothing knew any more — its next message failed with "unknown
+    /// session id".
+    pub fn restart_for_update(&self, plugin_id: &str, version: &str) -> Result<()> {
+        let agent = self.agent_for(plugin_id)?;
+        let sessions: Vec<String> = lock(&self.sessions)
+            .iter()
+            .filter(|(_, record)| record.agent == agent)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &sessions {
+            let session_id = acp::SessionId::new(id.as_str());
+            self.projector.note_agent_disconnected(
+                &session_id,
+                format!("updated to v{version}; the next message reconnects"),
+            );
+            // The projection holds the session's only strong thread handle,
+            // and through it the connection: left in place, the old process
+            // outlives the restart until the tab closes — while the update
+            // rewrites the `node_modules` it loads from. Closing it is what
+            // lets the process go now. After the notice, which needs it.
+            self.projector.close_session(&session_id);
+        }
+        self.kill_agent(plugin_id, &agent);
+        Ok(())
+    }
+
     /// Drop the native agent's connection, if one is open.
     ///
     /// Sign-out calls this (#62): the engine's token cache lives on the

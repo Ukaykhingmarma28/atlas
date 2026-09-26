@@ -36,6 +36,26 @@ pub trait ExternalAgentServer: Send + Sync {
     fn version(&self) -> Option<Arc<str>> {
         None
     }
+
+    /// Bring a copy this agent already has on disk up to [`Self::version`],
+    /// without starting anything. `Ok(true)` when it installed something.
+    ///
+    /// For updates only: an agent never fetched stays lazy, so installing one
+    /// from the marketplace still costs nothing until its first chat. This is
+    /// what lets a registry bump download in the background, so the restart
+    /// that follows is instant instead of the next message waiting on npm.
+    /// The default has nothing on disk to update.
+    fn prefetch_update(&self) -> BoxFuture<'static, Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    /// Whether [`Self::prefetch_update`] would install something: a copy on
+    /// disk that is behind [`Self::version`]. Installs nothing itself — this is
+    /// how a running agent's staleness is found, since its update has to wait
+    /// for the restart. The default has nothing on disk to be behind.
+    fn update_pending(&self) -> BoxFuture<'static, bool> {
+        Box::pin(async { false })
+    }
 }
 
 /// What a connect attempt is given: the resolver for this agent, plus the

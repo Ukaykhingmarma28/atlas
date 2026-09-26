@@ -27,6 +27,8 @@ function listed(e: Partial<Entry> = {}): Entry {
     distributionKind: "binary",
     unverified: false,
     unsupportedReason: null,
+    installedVersion: null,
+    updateAvailable: false,
     ...e,
   } as Entry;
 }

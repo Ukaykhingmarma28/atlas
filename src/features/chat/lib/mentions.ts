@@ -367,35 +367,42 @@ export async function listMessagesInPastSession(
 
 // ── Serialization ────────────────────────────────────────────────────────────
 
+/** A short-form value, quoted when it holds whitespace — a bare value ends at
+ *  the first space, so `@file:My Shot.png` would read back as `My`. Mirrors
+ *  `short_form_value` in `compose_prompt.rs`; `markdown-render.ts` reads both. */
+export function shortFormValue(v: string): string {
+  return /\s/.test(v) ? `"${v}"` : v;
+}
+
 /** What the agent sees inline in the prose body. Stable, grep-friendly. */
 export function toShortForm(m: MentionData): string {
   switch (m.kind) {
     case "file":
-      return `@file:${m.displayName}`;
+      return `@file:${shortFormValue(m.displayName)}`;
     case "folder":
-      return `@folder:${m.displayName}`;
+      return `@folder:${shortFormValue(m.displayName)}`;
     case "symbol":
-      return `@symbol:${m.displayName}`;
+      return `@symbol:${shortFormValue(m.displayName)}`;
     case "knowledge":
       return `@note:${m.id}`;
     case "component":
-      return `#${m.componentKind}:${m.displayName}`;
+      return `#${m.componentKind}:${shortFormValue(m.displayName)}`;
     case "repo":
-      return `@repo:${m.displayName}`;
+      return `@repo:${shortFormValue(m.displayName)}`;
     case "workspace":
-      return `@workspace:${m.displayName}`;
+      return `@workspace:${shortFormValue(m.displayName)}`;
     case "branch":
-      return `@branch:${m.displayName}`;
+      return `@branch:${shortFormValue(m.displayName)}`;
     case "past_message":
       return `@msg:${m.timestamp ?? m.id}`;
     case "past_session":
-      return `@session:${m.displayName}`;
+      return `@session:${shortFormValue(m.displayName)}`;
     case "member":
-      return `@member:${m.displayName}`;
+      return `@member:${shortFormValue(m.displayName)}`;
     case "conversation":
-      return `@conversation:${m.displayName}`;
+      return `@conversation:${shortFormValue(m.displayName)}`;
     case "recorded_session":
-      return `@recorded-session:${m.displayName}`;
+      return `@recorded-session:${shortFormValue(m.displayName)}`;
   }
 }
 

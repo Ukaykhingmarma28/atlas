@@ -97,6 +97,7 @@ const signInAttempted = new Set<string>();
 import { composePrompt, type MentionData } from "../lib/mentions";
 import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
+import { AgentUpdateBar } from "./agent-update-bar";
 import { SessionSidebar } from "./session-sidebar";
 import { ChatHeader } from "./chat-header";
 import { openNewAgentChat } from "../lib/open-agent-session";
@@ -1335,7 +1336,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     <div ref={rootRef} className="h-full flex relative">
       <SessionSidebar tabId={tabId} />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
+          column, not just the composer (see `attachPaths` in message-input). */}
+      <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
         {/* The header FLOATS over the transcript rather than sitting above it in
             the column. That is what lets the thread scroll underneath and be
             progressively blurred by the band the transcript draws at its top
@@ -1511,6 +1514,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
 function DisconnectedBanner({ tabId }: { tabId: string }) {
   const disconnected = useChatStore((s) => !!s.sessions[tabId]?.disconnected);
   const bindError = useChatStore((s) => s.sessions[tabId]?.bindError);
+  const updatedTo = useChatStore((s) => s.sessions[tabId]?.updatedTo);
   const agentType = useChatStore((s) => s.sessions[tabId]?.agentType);
   // Re-render on install/uninstall: reinstalling the agent turns this back
   // into an ordinary restart.
@@ -1530,7 +1534,9 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
       <span className="select-text text-[var(--secondary-foreground)]">
         {bindError
           ? `The agent exited while starting (${bindError.slice(0, 160)}). Your message is back in the queue — restart to try again.`
-          : "The agent process exited. Your conversation is safe — restart to continue where you left off."}
+          : updatedTo
+            ? `${agentMeta(agentType).label} was updated to v${updatedTo}. Your conversation is safe — your next message continues it on the new version.`
+            : "The agent process exited. Your conversation is safe — restart to continue where you left off."}
       </span>
       <button
         disabled={restarting}
@@ -1602,6 +1608,7 @@ const ChatComposer = memo(function ChatComposer({
   return (
     <>
       <div className="relative">
+        <AgentUpdateBar tabId={tabId} />
         <DisconnectedBanner tabId={tabId} />
         <MessageInput
           tabId={tabId}

@@ -43,6 +43,7 @@ import { isLinux, isWindows } from "@/lib/platform";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
 
 const SECTIONS: Array<{
   id: SettingsSection;
@@ -77,6 +78,12 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       clearNav();
     }
   }, [navSection, clearNav]);
+  // Installed agents whose copy on disk is behind the registry. Background
+  // prefetch clears most of these on its own; what is left (offline, npm
+  // failing) is what needs the user's hand, so the nav says so.
+  const agentUpdates = useAgentRegistryStore(
+    (s) => s.registryEntries.filter((e) => e.installed && e.updateAvailable).length,
+  );
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
@@ -106,6 +113,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       >
         <div className="flex-1">
           {SECTIONS.map((s) => {
+            const badge = s.id === "agents" ? agentUpdates : 0;
             const item = (
               <button
                 key={s.id}
@@ -118,12 +126,24 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
                     : "text-secondary-foreground hover:bg-element-hover border-l-transparent",
                 )}
               >
-                <s.icon size={13} className="shrink-0" />
+                <span className="relative shrink-0 flex">
+                  <s.icon size={13} />
+                  {navCollapsed && badge > 0 && (
+                    <span className="pointer-events-none absolute -right-1 -top-1 size-1.5 rounded-full bg-[var(--primary)]" />
+                  )}
+                </span>
                 {!navCollapsed && s.label}
+                {!navCollapsed && badge > 0 && (
+                  <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-[var(--primary)] text-primary-foreground text-3xs leading-4 text-center tabular-nums">
+                    {badge}
+                  </span>
+                )}
               </button>
             );
+            const label =
+              badge > 0 ? `${s.label} — ${badge} update${badge === 1 ? "" : "s"} waiting` : s.label;
             return navCollapsed ? (
-              <Hint key={s.id} label={s.label} side="right">
+              <Hint key={s.id} label={label} side="right">
                 {item}
               </Hint>
             ) : (

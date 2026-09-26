@@ -480,6 +480,8 @@ interface ChatActions {
         /** Producing model recovered from the snapshot/transcript, so the
          *  per-message badge survives session reloads. */
         model?: string | null;
+        /** Images a user message carried, restored from the snapshot. */
+        attachments?: ImageAttachment[];
         toolCalls?: Array<{
           /** The agent's own tool call id, when the caller has it. Optional
            *  only because not every paint path carries one; a caller that has
@@ -609,6 +611,13 @@ interface ChatActions {
      * caller's to re-point (`removed-agents.ts`).
      */
     noteAgentRemoved: (pluginId: string, reason: string) => void;
+    /**
+     * `pluginId` was restarted onto `version`. Rust already sent each bound
+     * tab `agent_disconnected`; this records why, so the banner says the
+     * agent was updated instead of that it exited. Tabs not yet bound need
+     * nothing — their bind starts the new version.
+     */
+    noteAgentUpdated: (pluginId: string, version: string) => void;
   };
 }
 
@@ -849,6 +858,7 @@ export const useChatStore = createSelectors(
             // A dead or removed PREVIOUS agent is not this one's state: the
             // banner that offered "Switch agent" must not outlive the switch.
             sess.disconnected = undefined;
+            sess.updatedTo = undefined;
             sess.bindError = undefined;
             // The provider only applies to the native agent; clear it so the
             // composer re-defaults from BYOK keys if the native agent is chosen.
@@ -1021,7 +1031,9 @@ export const useChatStore = createSelectors(
         setDisconnected: (sessionId, on) =>
           set((s) => {
             const session = s.sessions[sessionId];
-            if (session) session.disconnected = on || undefined;
+            if (!session) return;
+            session.disconnected = on || undefined;
+            if (!on) session.updatedTo = undefined;
           }),
         setStopping: (sessionId, on) =>
           set((s) => {
@@ -1424,6 +1436,7 @@ export const useChatStore = createSelectors(
                 plan: null,
                 timestamp: m.timestamp ?? new Date().toISOString(),
                 ...(m.role === "assistant" && m.model ? { model: m.model } : {}),
+                ...(m.attachments?.length ? { attachments: m.attachments } : {}),
                 ...(split && split.context !== null
                   ? {
                       atlasProse: split.prose,
@@ -1714,6 +1727,14 @@ export const useChatStore = createSelectors(
               session.acpModesPending = false;
               session.disconnected = true;
               if (reason) session.bindError = reason;
+            }
+          }),
+        noteAgentUpdated: (pluginId, version) =>
+          set((s) => {
+            for (const session of Object.values(s.sessions)) {
+              if (pluginIdForAgent(session.agentType) !== pluginId) continue;
+              if (!session.acpSessionId) continue;
+              session.updatedTo = version;
             }
           }),
         noteAgentRemoved: (pluginId, reason) =>
