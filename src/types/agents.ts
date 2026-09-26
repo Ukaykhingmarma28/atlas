@@ -150,9 +150,25 @@ export interface LoadingStatusEvent {
   status: string | null;
 }
 
+/**
+ * Not a session delta: where an installed agent's update is. Keyed by plugin
+ * id — an update belongs to the agent, not to one session. `waiting`: queued
+ * behind a reply still running. `restarting`: the old process was dropped
+ * once idle, and open chats reconnect on their next send. `installing`: the
+ * new version is downloading. `ready`: it is installed. `failed`: the install
+ * did not finish; the next connect retries it.
+ */
+export interface AgentUpdateEvent {
+  kind: "agent_update";
+  plugin_id: string;
+  version: string;
+  phase: "waiting" | "restarting" | "installing" | "ready" | "failed";
+  error: string | null;
+}
+
 /** Everything the `atlas:agents` window event can carry. Session-scoped
- *  deltas, plus the session-less loading status above. */
-export type AgentStreamEvent = AgentDelta | LoadingStatusEvent;
+ *  deltas, plus the session-less loading status and update events above. */
+export type AgentStreamEvent = AgentDelta | LoadingStatusEvent | AgentUpdateEvent;
 
 /**
  * Single multiplexed delta stream emitted on the `atlas:agents` window event.

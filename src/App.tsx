@@ -60,6 +60,7 @@ import type { CliStatus } from "@/features/settings/components/settings-panel";
 import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
+  setAgentUpdatePhase,
   startCatalogListener,
 } from "@/features/agents/stores/agent-registry-store";
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
@@ -97,6 +98,7 @@ import {
   listenUpdateChecking,
 } from "@/features/updater/lib/updater-api";
 import { Toaster, toast } from "sonner";
+import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { IconThemeFonts } from "@/features/icon-theme/components/file-icon";
 import {
   auth,
@@ -1026,6 +1028,32 @@ export function App() {
       // single store write per change, and every tab on that agent reads it.
       if (env.kind === "loading_status") {
         actions.setAgentStartingStatus(env.plugin_id, env.status);
+        return;
+      }
+      // Session-less too: an installed agent was updated on a registry bump.
+      // Rust waited for it to go idle before restarting it, so nothing was
+      // cut off; open chats already got `agent_disconnected` and reconnect on
+      // their next send. The toast is the only place an update is announced.
+      if (env.kind === "agent_update") {
+        const name = agentMeta(env.plugin_id).label;
+        if (env.phase === "waiting" || env.phase === "restarting" || env.phase === "installing") {
+          setAgentUpdatePhase(env.plugin_id, { phase: env.phase, version: env.version });
+          if (env.phase === "restarting") actions.noteAgentUpdated(env.plugin_id, env.version);
+          return;
+        }
+        setAgentUpdatePhase(env.plugin_id, null);
+        if (env.phase === "ready") {
+          // Same id as the marketplace's own Update toast: a manual update can
+          // also be installed by the background pass, and that is one update.
+          toast.success(`${name} updated to v${env.version}`, {
+            id: `agent-update:${env.plugin_id}:${env.version}`,
+          });
+        } else {
+          toast.warning(
+            `${name} v${env.version} couldn't install in the background. It will retry the next time you use it.`,
+            { description: env.error ?? undefined },
+          );
+        }
         return;
       }
       if (

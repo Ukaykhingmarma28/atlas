@@ -747,13 +747,24 @@ pub fn install_manager(app: &AppHandle) {
     // status text ("Downloading Node.js…") for the `Starting …` row, and a
     // connect that gave up at its deadline, counted so the next stall report
     // comes with the phase and not a screenshot of a timer.
+    // One queue for both the bump announcements below and the background
+    // pass after them, so an agent found behind by either waits only once.
+    let pending_updates = PendingUpdates::default();
     {
         let app = app.clone();
+        let host = host.clone();
         let mut events = host.manager().subscribe();
+        let updates = pending_updates.clone();
         tauri::async_runtime::spawn(async move {
             use atlas_agent_manager::{Agent, AgentManagerEvent};
             loop {
                 match events.recv().await {
+                    Ok(AgentManagerEvent::NewVersionAvailable {
+                        agent: Agent::Custom { id },
+                        version,
+                    }) => {
+                        updates.schedule(&app, &host, id.to_string(), version);
+                    }
                     Ok(AgentManagerEvent::LoadingStatusChanged {
                         agent: Agent::Custom { id },
                         status,
@@ -788,6 +799,48 @@ pub fn install_manager(app: &AppHandle) {
                     Ok(_) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        });
+    }
+
+    // Background updates, on every rebuild of the installed table (app start
+    // and each registry refresh above all). Agents that are not running have
+    // their copy on disk brought up to the registry's version now, so their
+    // next start is instant. Running ones that are behind join the idle-restart
+    // queue — that covers a copy left behind with no registry move to announce
+    // it, which the bump path alone never saw. The `watch` coalesces: a burst
+    // of rebuilds while one pass runs is one more pass, not one per rebuild.
+    {
+        let app = app.clone();
+        let host = host.clone();
+        let updates = pending_updates;
+        let mut rebuilds = host.store().updates();
+        tauri::async_runtime::spawn(async move {
+            let running = |host: &AgentHost, id: &atlas_acp_thread::AgentId| {
+                host.manager()
+                    .entry(&atlas_agent_manager::Agent::Custom { id: id.clone() })
+                    .is_some()
+            };
+            loop {
+                for (id, version) in host.store().pending_updates(|id| running(&host, id)).await {
+                    updates.schedule(&app, &host, id.to_string(), version);
+                }
+                let updated = host.store().prefetch_updates(|id| running(&host, id)).await;
+                for id in &updated {
+                    let version = host
+                        .store()
+                        .entry(id)
+                        .and_then(|entry| entry.version)
+                        .map(|version| version.to_string())
+                        .unwrap_or_default();
+                    emit_agent_update(&app, id.as_str(), &version, AgentUpdatePhase::Ready);
+                }
+                if !updated.is_empty() {
+                    super::catalog::emit_catalog_changed(&app, "update");
+                }
+                if rebuilds.changed().await.is_err() {
+                    return;
                 }
             }
         });
@@ -2035,5 +2088,122 @@ impl atlas_native_agent::engine::auth::AtlasTokenSource for AccountTokenSource {
                 std::io::Error::other(text)
             })
         })
+    }
+}
+
+/// Where an agent update is, as the webview hears it on `atlas:agents`
+/// (`{kind: "agent_update", plugin_id, version, phase, error?}`). Not a
+/// session delta — that wire is frozen, and an update belongs to a plugin,
+/// not to one session.
+#[derive(Clone, Copy)]
+pub(crate) enum AgentUpdatePhase<'a> {
+    /// Queued behind a reply that is still running. Nothing is interrupted.
+    Waiting,
+    /// The old process was dropped; open chats reconnect on their next send.
+    Restarting,
+    /// The new version is downloading.
+    Installing,
+    /// The new version is installed.
+    Ready,
+    /// The install failed. The next connect retries it in the foreground.
+    Failed(&'a str),
+}
+
+pub(crate) fn emit_agent_update(
+    app: &AppHandle,
+    plugin_id: &str,
+    version: &str,
+    phase: AgentUpdatePhase<'_>,
+) {
+    let (phase, error) = match phase {
+        AgentUpdatePhase::Waiting => ("waiting", None),
+        AgentUpdatePhase::Restarting => ("restarting", None),
+        AgentUpdatePhase::Installing => ("installing", None),
+        AgentUpdatePhase::Ready => ("ready", None),
+        AgentUpdatePhase::Failed(error) => ("failed", Some(error)),
+    };
+    let _ = app.emit(
+        "atlas:agents",
+        serde_json::json!({
+            "kind": "agent_update",
+            "plugin_id": plugin_id,
+            "version": version,
+            "phase": phase,
+            "error": error,
+        }),
+    );
+}
+
+/// Registry bumps for running agents, applied once each agent is idle.
+///
+/// The manager only announces a bump; this is the half that acts on it. Per
+/// plugin, one waiter: it polls until no turn is running on the agent, then
+/// restarts it (`AgentHost::restart_for_update`) and installs the new version
+/// before anything asks for it. A second bump while one waits just raises the
+/// version the waiter will report — it reads the latest when it fires.
+///
+/// Polled, not evented: nothing emits "turn ended" per agent, and a turn
+/// lasts seconds to minutes, so a two-second look costs nothing and keeps
+/// this independent of the projector's internals.
+#[derive(Clone, Default)]
+struct PendingUpdates(Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>);
+
+impl PendingUpdates {
+    const IDLE_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    fn version_of(&self, plugin_id: &str) -> String {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(plugin_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn schedule(&self, app: &AppHandle, host: &Arc<AgentHost>, plugin_id: String, version: String) {
+        let first = {
+            let mut pending = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            pending.insert(plugin_id.clone(), version).is_none()
+        };
+        if !first {
+            return;
+        }
+        let this = self.clone();
+        let app = app.clone();
+        let host = host.clone();
+        tauri::async_runtime::spawn(async move {
+            if host.agent_turn_running(&plugin_id) {
+                let version = this.version_of(&plugin_id);
+                emit_agent_update(&app, &plugin_id, &version, AgentUpdatePhase::Waiting);
+            }
+            while host.agent_turn_running(&plugin_id) {
+                tokio::time::sleep(Self::IDLE_POLL).await;
+            }
+            let Some(version) = this
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&plugin_id)
+            else {
+                return;
+            };
+            // Uninstalled while we waited: nothing to update.
+            if host.restart_for_update(&plugin_id, &version).is_err() {
+                return;
+            }
+            tracing::info!(target: "atlas::agents", %plugin_id, %version, "restarted agent for update");
+            emit_agent_update(&app, &plugin_id, &version, AgentUpdatePhase::Restarting);
+            emit_agent_update(&app, &plugin_id, &version, AgentUpdatePhase::Installing);
+            let id = atlas_acp_thread::AgentId::new(plugin_id.as_str());
+            match host.store().prefetch_update(&id).await {
+                Ok(_) => emit_agent_update(&app, &plugin_id, &version, AgentUpdatePhase::Ready),
+                Err(error) => {
+                    let error = format!("{error:#}");
+                    tracing::warn!(target: "atlas::agents", %plugin_id, %error, "agent update install failed");
+                    emit_agent_update(&app, &plugin_id, &version, AgentUpdatePhase::Failed(&error));
+                }
+            }
+            super::catalog::emit_catalog_changed(&app, "update");
+        });
     }
 }
