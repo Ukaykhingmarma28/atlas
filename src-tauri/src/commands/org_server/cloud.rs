@@ -25,7 +25,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use atlas_artifacts::{Comment, InboxPage};
+use atlas_artifacts::{Comment, EntryPayload, InboxPage, SessionBoardPage, SessionDetailPage};
 use atlas_comms::wire::ConversationKind;
 use atlas_comms::CommsError;
 
@@ -198,6 +198,42 @@ pub struct InboxQuery<'a> {
     pub limit: Option<u32>,
 }
 
+/// Which page of the Workspace's board to read. The server narrows only by
+/// Workspace and keyword; the author, date and liveness folds are the tool's,
+/// over the pages this reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoardQuery<'a> {
+    /// The grant's Workspace — the board is never read organisation-wide here.
+    pub workspace_id: &'a str,
+    /// The server's keyword search, passed through as it was asked.
+    pub q: Option<&'a str>,
+    /// Where the previous page's `next_cursor` left off.
+    pub cursor: Option<&'a str>,
+}
+
+/// Which page of a recorded session's timeline to read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimelineQuery<'a> {
+    pub org_id: &'a str,
+    pub workspace_id: &'a str,
+    pub session_id: &'a str,
+    /// Where the previous page's `next_cursor` left off.
+    pub cursor: Option<&'a str>,
+    /// At most this many entries; the server's maximum when `None`.
+    pub limit: Option<u32>,
+}
+
+/// One entry's full text: which recorded session, which entry (its row id),
+/// and which part of it (`body`, or a tool call's `arguments` / `result`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PayloadRef<'a> {
+    pub org_id: &'a str,
+    pub workspace_id: &'a str,
+    pub session_id: &'a str,
+    pub row_id: &'a str,
+    pub part: &'a str,
+}
+
 /// One comment on a recorded session, addressed the way the server's routes
 /// address it: the organisation, the Workspace, the recorded session, the
 /// comment.
@@ -241,6 +277,18 @@ pub trait OrganisationCloud: Send + Sync {
     /// lets anyone who can read the Workspace do this, on roots only; the tool
     /// refuses a reply before it gets here.
     fn set_resolved<'a>(&'a self, comment: CommentRef<'a>, resolved: bool) -> CloudFuture<'a, Comment>;
+
+    /// One page of the recorded sessions on `org_id`'s board, most recently
+    /// active first, narrowed to one Workspace and, when asked, the server's
+    /// keyword search.
+    fn board_page<'a>(&'a self, org_id: &'a str, query: BoardQuery<'a>) -> CloudFuture<'a, SessionBoardPage>;
+
+    /// One page of a recorded session's summary and entries, in the server's
+    /// order, with the cursor to the next.
+    fn timeline<'a>(&'a self, query: TimelineQuery<'a>) -> CloudFuture<'a, SessionDetailPage>;
+
+    /// The full text behind one entry of a recorded session.
+    fn entry_payload<'a>(&'a self, entry: PayloadRef<'a>) -> CloudFuture<'a, EntryPayload>;
 
     /// One page of the caller's inbox in `org_id` — mentions, replies and
     /// comments on their recorded sessions — with the unread total. Read-only.

@@ -82,9 +82,33 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
     verb: args.resolved === false ? "Unresolved comment" : "Resolved comment",
     detail: str(obj(answer?.comment)?.id) ?? str(args.comment) ?? "",
   }),
+  // The board read: whose sessions and which keywords, the author by the
+  // name the answer resolved (an email or id reads as the member's name).
+  org_sessions: (args, answer) => {
+    const asked = str(args.author);
+    const author =
+      asked?.toLowerCase() === "me" ? "you" : (str(obj(answer?.author)?.name) ?? asked);
+    const q = str(args.q);
+    if (!author && !q) return { verb: "Listed recorded sessions", detail: "" };
+    const verb = q ? "Searched recorded sessions" : "Listed recorded sessions";
+    const detail = [author ? `by ${author}` : null, q ? `for "${q}"` : null]
+      .filter(Boolean)
+      .join(" ");
+    return { verb, detail };
+  },
+  // One recorded session's page, or one entry's full text in it.
+  org_session: (args, answer) => {
+    const entry = str(args.entry);
+    const session = sessionName(args, answer);
+    if (entry) return { verb: "Read entry", detail: `${entry} of ${session}` };
+    return session === "this session"
+      ? { verb: "Read", detail: session }
+      : { verb: "Read recorded session", detail: session };
+  },
 };
 
-/** The recorded session a comment tool acted on, as a person reads it. */
+/** The recorded session a session or comment tool acted on, as a person
+ *  reads it. */
 function sessionName(args: Json, answer: Json | null): string {
   const session = obj(answer?.session);
   const named = str(args.session);

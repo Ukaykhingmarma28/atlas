@@ -22,11 +22,15 @@ use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ErrorData as McpError;
-use atlas_artifacts::{Comment, InboxEntry, InboxKind};
+use atlas_artifacts::{Comment, InboxEntry, InboxKind, RemoteEntry, RemoteSession};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde_json::{json, Value};
 
 use super::audit::{unaudited, OrgActionRecord, OrgAudit};
-use super::cloud::{CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud};
+use super::cloud::{
+    BoardQuery, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud, PayloadRef,
+    TimelineQuery,
+};
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
@@ -136,6 +140,38 @@ pub(super) fn tools() -> Vec<Tool> {
                     "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
                 },
                 "required": ["comment"]
+            }),
+        ),
+        tool(
+            "org_sessions",
+            "Recorded sessions in the Workspace, most recently active first, with author, agent, model, activity, \
+             liveness and size; your last session is `author: \"me\"` with `limit: 1`. Searches the last 14 days \
+             unless since/until say otherwise, scanning at most 500 sessions.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "author": { "type": "string", "description": "A member's id, name or email, or \"me\"." },
+                    "since": { "type": "string", "description": "Active at or after this ISO date or datetime (UTC)." },
+                    "until": { "type": "string", "description": "Started at or before this ISO date or datetime (UTC)." },
+                    "live": { "type": "boolean", "description": "Only sessions whose agent is (true) or is not (false) still writing." },
+                    "q": { "type": "string", "description": "Keywords the server searches titles, messages, tools and checkpoints for." },
+                    "limit": { "type": "integer", "description": "At most this many sessions (default 20, up to 100)." }
+                }
+            }),
+        ),
+        tool(
+            "org_session",
+            "One recorded session (default: the current one): its summary and a page of its entries in order, or \
+             with `entry` that entry's full text.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "session": { "type": "string", "description": "A recorded session id, or \"current\" (the default)." },
+                    "cursor": { "type": "string", "description": "A previous answer's next_cursor, for more entries." },
+                    "limit": { "type": "integer", "description": "At most this many entries (default 50, up to 500)." },
+                    "entry": { "type": "string", "description": "An entry's id, to read its full text instead." },
+                    "part": { "type": "string", "description": "With entry: body (default), arguments or result." }
+                }
             }),
         ),
     ]
@@ -458,6 +494,31 @@ impl OrgTools {
                 let resolved = bool_arg_or(request, "resolved", true);
                 self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
             }
+            "org_sessions" => {
+                let filters = SessionFilters {
+                    author: string_arg(request, "author"),
+                    since: string_arg(request, "since"),
+                    until: string_arg(request, "until"),
+                    live: request.arguments.as_ref().and_then(|a| a.get("live")).and_then(Value::as_bool),
+                    q: string_arg(request, "q"),
+                    limit: u32_arg(request, "limit")
+                        .map_or(SESSIONS_DEFAULT_LIMIT, |n| (n as usize).min(SESSIONS_MAX_LIMIT)),
+                };
+                self.sessions(&scope, filters).await
+            }
+            "org_session" => {
+                let session = string_arg(request, "session");
+                match string_arg(request, "entry") {
+                    Some(entry) => {
+                        let part = string_arg(request, "part").unwrap_or("body");
+                        self.session_entry(grant, &scope, session, entry, part).await
+                    }
+                    None => {
+                        let page = (string_arg(request, "cursor"), u32_arg(request, "limit"));
+                        self.session(grant, &scope, session, page).await
+                    }
+                }
+            }
             other => tool_error(format!("unknown tool `{other}`")),
         }
     }
@@ -593,10 +654,12 @@ impl OrgTools {
     }
 }
 
-/// The sentinel the comment tools read as the current recorded session.
+/// The sentinel the session and comment tools read as the current recorded
+/// session.
 const CURRENT: &str = "current";
 
-/// A recorded session a comment tool acts on, in the grant's Workspace.
+/// A recorded session a session or comment tool acts on, in the grant's
+/// Workspace.
 struct SessionTarget {
     id: String,
     workspace_id: String,
@@ -607,7 +670,7 @@ struct SessionTarget {
 }
 
 impl OrgTools {
-    /// The recorded session a comment tool names: the current one when it
+    /// The recorded session a tool names: the current one when it
     /// names none or says `"current"`, else the id it gives — any recorded
     /// session in the grant's Workspace, which the server confirms by
     /// answering (a 404 otherwise). Never another Workspace's.
@@ -635,8 +698,8 @@ impl OrgTools {
                         current: true,
                     }),
                     Ok(None) => Err(tool_error(format!(
-                        "the current chat is {NOT_RECORDED_YET} in the Workspace, so it has no comments; \
-                         name a recorded session id instead"
+                        "the current chat is {NOT_RECORDED_YET} in the Workspace; name a recorded session id \
+                         instead (org_sessions lists them)"
                     ))),
                     Err(e) => Err(tool_error(e.to_string())),
                 }
@@ -734,6 +797,402 @@ impl OrgTools {
         tool_json(json!({
             "session": { "id": target.id, "title": target.title, "current": target.current },
             "comment": comment_json(&updated, roster.as_deref()),
+        }))
+    }
+}
+
+// ── The recorded work: org_sessions and org_session ─────────────────────────
+
+/// How far back `org_sessions` looks when it is given neither `since` nor
+/// `until`: "what happened lately" without walking the whole board.
+pub(super) const SESSIONS_DEFAULT_WINDOW_DAYS: i64 = 14;
+
+/// The most recorded sessions one `org_sessions` call reads off the board.
+/// The server narrows only by Workspace and keyword, so every other fold
+/// reads rows it may throw away; this bounds that walk (five of the server's
+/// largest pages), and the answer says when it was reached.
+pub(super) const SESSIONS_SCAN_CAP: usize = 500;
+
+/// How many matches `org_sessions` lists when the model asks for no number.
+pub(super) const SESSIONS_DEFAULT_LIMIT: usize = 20;
+
+/// The most matches one `org_sessions` answer lists.
+pub(super) const SESSIONS_MAX_LIMIT: usize = 100;
+
+/// How many entries one `org_session` page holds when the model asks for no
+/// number: enough to follow a turn or two, few enough to leave room to read.
+pub(super) const TIMELINE_DEFAULT_LIMIT: u32 = 50;
+
+/// The parts of an entry the server keeps full text for.
+const PAYLOAD_PARTS: [&str; 3] = ["body", "arguments", "result"];
+
+/// What `org_sessions` was asked.
+pub(super) struct SessionFilters<'a> {
+    /// A member's id, name or email, or `"me"`.
+    author: Option<&'a str>,
+    since: Option<&'a str>,
+    until: Option<&'a str>,
+    live: Option<bool>,
+    /// The server's keyword search, passed through.
+    q: Option<&'a str>,
+    limit: usize,
+}
+
+/// A moment the model named: an RFC 3339 datetime, a datetime with no zone
+/// (read as UTC), or a bare date — the start of that day as a lower bound,
+/// its last millisecond as an upper one, so `until: "2026-09-22"` includes
+/// all of the 22nd.
+fn parse_moment(text: &str, end_of_day: bool) -> Option<DateTime<Utc>> {
+    if let Ok(at) = DateTime::parse_from_rfc3339(text) {
+        return Some(at.with_timezone(&Utc));
+    }
+    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(at) = NaiveDateTime::parse_from_str(text, format) {
+            return Some(at.and_utc());
+        }
+    }
+    let day = NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()?;
+    let start = day.and_hms_opt(0, 0, 0)?.and_utc();
+    Some(if end_of_day { start + Duration::days(1) - Duration::milliseconds(1) } else { start })
+}
+
+/// A server timestamp, or `None` when it is missing or unreadable — which a
+/// date fold then lets through rather than drops, since the row is real.
+fn stamp(text: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(text).ok().map(|at| at.with_timezone(&Utc))
+}
+
+fn iso(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// A recorded session as `org_sessions` lists it.
+fn recorded_session_json(session: &RemoteSession) -> Value {
+    json!({
+        "id": session.id,
+        "title": session.title,
+        "author": { "user_id": session.author_id, "name": session.author_name },
+        "agent": session.agent,
+        "model": session.model,
+        "started_at": session.started_at,
+        "last_activity_at": session.last_activity_at,
+        "live": session.live,
+        "counts": {
+            "messages": session.message_count,
+            "tool_calls": session.tool_call_count,
+            "checkpoints": session.checkpoint_count,
+        },
+        "insertions": session.insertions,
+        "deletions": session.deletions,
+        "files_touched": session.files_touched,
+        "total_tokens": session.total_tokens,
+    })
+}
+
+/// One entry of a recorded session as the model reads it: what it is, when,
+/// and only the fields that apply to its kind — the server omits the rest,
+/// and so does this, because every empty field is a token the model pays for.
+fn entry_json(entry: &RemoteEntry) -> Value {
+    let mut out = json!({ "id": entry.id, "kind": entry.kind, "at": entry.at, "turn": entry.turn_seq });
+    let mut put = |key: &str, value: Value| {
+        out[key] = value;
+    };
+    let text = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).map(|s| json!(s));
+    if let Some(v) = text(&entry.text) {
+        put("text", v);
+    }
+    if entry.truncated {
+        // The rest is behind `org_session` with `entry`.
+        put("truncated", json!(true));
+        put("body_bytes", json!(entry.body_bytes));
+    }
+    for (key, value) in [
+        ("tool_name", &entry.tool_name),
+        ("tool_title", &entry.tool_title),
+        ("tool_status", &entry.tool_status),
+        ("arguments", &entry.arguments),
+        ("result", &entry.result),
+        ("commit_sha", &entry.commit_sha),
+        ("branch", &entry.branch),
+        ("link_state", &entry.link_state),
+    ] {
+        if let Some(v) = text(value) {
+            put(key, v);
+        }
+    }
+    if entry.result_binary {
+        put("result_binary", json!(true));
+    }
+    if !entry.paths.is_empty() {
+        put("paths", json!(entry.paths));
+    }
+    if !entry.files.is_empty() {
+        put("files", json!(entry.files));
+    }
+    if entry.insertions != 0 || entry.deletions != 0 {
+        put("insertions", json!(entry.insertions));
+        put("deletions", json!(entry.deletions));
+    }
+    out
+}
+
+/// What the answer says when the scan stopped at [`SESSIONS_SCAN_CAP`] with
+/// more of the window still unread: how to narrow, and where to pick up.
+fn scan_cap_note(oldest: Option<&str>) -> String {
+    let resume = match oldest {
+        Some(at) => format!(" or pass until={at} to continue further back"),
+        None => String::new(),
+    };
+    format!(
+        "Stopped after scanning the {SESSIONS_SCAN_CAP} most recently active recorded sessions, before the end of \
+         the window, so older matches may be missing. Narrow with author, q or a shorter since/until window{resume}."
+    )
+}
+
+impl OrgTools {
+    /// `org_sessions`: the recorded sessions on the grant's Workspace's
+    /// board, newest activity first, folded here by author, window and
+    /// liveness — the server has no such filters — and narrowed there by the
+    /// keyword search, which is passed through untouched.
+    ///
+    /// Reads board pages until the window is behind it (the board is ordered
+    /// by last activity, so the first row older than `since` means every
+    /// later one is too), the board ends, `limit` matches are found, or
+    /// [`SESSIONS_SCAN_CAP`] rows have been read — the last reported as
+    /// `truncated`, with a sentence saying how to narrow or go further back.
+    ///
+    /// A session is in the window when it overlaps it: active at or after
+    /// `since`, and started at or before `until`. With neither given, `since`
+    /// is [`SESSIONS_DEFAULT_WINDOW_DAYS`] ago, and the answer says so.
+    ///
+    /// `author: "me"` is the caller, so "my last session" is the first match
+    /// with `limit: 1`: the newest by last activity among their own.
+    async fn sessions(&self, scope: &OrgScope, filters: SessionFilters<'_>) -> CallToolResult {
+        let Some(workspace_id) = scope.workspace_id.as_deref() else {
+            return tool_error(
+                "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
+                 ask the user to reopen the project's cloud settings and start a new chat",
+            );
+        };
+
+        let mut since = match filters.since {
+            None => None,
+            Some(text) => match parse_moment(text, false) {
+                Some(at) => Some(at),
+                None => return tool_error(format!("since \"{text}\" is not an ISO date or datetime")),
+            },
+        };
+        let until = match filters.until {
+            None => None,
+            Some(text) => match parse_moment(text, true) {
+                Some(at) => Some(at),
+                None => return tool_error(format!("until \"{text}\" is not an ISO date or datetime")),
+            },
+        };
+        let default_window = since.is_none() && until.is_none();
+        if default_window {
+            since = Some(Utc::now() - Duration::days(SESSIONS_DEFAULT_WINDOW_DAYS));
+        }
+
+        // The author, as a user id: the caller for "me", else the roster's
+        // one match (several come back as candidates to ask about).
+        let author = match filters.author {
+            None => None,
+            Some(me) if me.eq_ignore_ascii_case("me") => match self.cloud.caller(&scope.org_id).await {
+                Ok(caller) => Some((caller.user_id, caller.name)),
+                Err(e) => return tool_error(e.to_string()),
+            },
+            Some(name) => {
+                let roster = match self.cloud.members(&scope.org_id).await {
+                    Ok(roster) => roster,
+                    Err(e) => return tool_error(e.to_string()),
+                };
+                match resolve_member(&roster, name) {
+                    Ok(member) => Some((member.user_id, member.name)),
+                    Err(answer) => return answer,
+                }
+            }
+        };
+
+        let matches = |session: &RemoteSession| {
+            author.as_ref().is_none_or(|(id, _)| session.author_id.as_deref() == Some(id.as_str()))
+                && filters.live.is_none_or(|live| session.live == live)
+                && until.is_none_or(|until| stamp(&session.started_at).is_none_or(|started| started <= until))
+        };
+
+        let mut found: Vec<Value> = Vec::new();
+        let mut notes: Vec<String> = Vec::new();
+        let mut scanned = 0usize;
+        let mut oldest: Option<String> = None;
+        let mut truncated = false;
+        let mut limit_reached = false;
+        let mut cursor: Option<String> = None;
+        'pages: loop {
+            let query = BoardQuery { workspace_id, q: filters.q, cursor: cursor.as_deref() };
+            let page = match self.cloud.board_page(&scope.org_id, query).await {
+                Ok(page) => page,
+                Err(e) => return tool_error(e.to_string()),
+            };
+            for note in page.notes {
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+            }
+            let rows = page.sessions.len();
+            for (i, session) in page.sessions.into_iter().enumerate() {
+                if scanned == SESSIONS_SCAN_CAP {
+                    truncated = i < rows || page.next_cursor.is_some();
+                    break 'pages;
+                }
+                let last_active = stamp(&session.last_activity_at);
+                if let (Some(since), Some(at)) = (since, last_active) {
+                    if at < since {
+                        // Every later row is older still: the window is behind us.
+                        break 'pages;
+                    }
+                }
+                scanned += 1;
+                oldest = Some(session.last_activity_at.clone()).filter(|s| !s.is_empty()).or(oldest);
+                if matches(&session) {
+                    found.push(recorded_session_json(&session));
+                    if found.len() == filters.limit {
+                        limit_reached = i + 1 < rows || page.next_cursor.is_some();
+                        break 'pages;
+                    }
+                }
+            }
+            match page.next_cursor {
+                // An empty page that still names a next one would walk forever.
+                Some(_) if rows == 0 => break,
+                Some(next) if scanned < SESSIONS_SCAN_CAP => cursor = Some(next),
+                Some(_) => {
+                    truncated = true;
+                    break;
+                }
+                None => break,
+            }
+        }
+
+        if default_window {
+            notes.push(format!(
+                "No since or until was given, so only the last {SESSIONS_DEFAULT_WINDOW_DAYS} days were searched; \
+                 pass since (an ISO date) to look further back."
+            ));
+        }
+        if truncated {
+            notes.push(scan_cap_note(oldest.as_deref()));
+        }
+        if limit_reached {
+            notes.push(format!(
+                "Only the {} most recently active matches are listed; raise limit (up to {SESSIONS_MAX_LIMIT}) or \
+                 narrow the search for more.",
+                filters.limit
+            ));
+        }
+
+        let mut answer = json!({
+            "workspace": { "id": workspace_id },
+            "window": {
+                "since": since.map(iso),
+                "until": until.map(iso),
+                "default": default_window,
+            },
+            "sessions": found,
+            "scanned": scanned,
+            "truncated": truncated,
+            "limit_reached": limit_reached,
+            "notes": notes,
+        });
+        if let Some((id, name)) = author {
+            answer["author"] = json!({ "user_id": id, "name": name });
+        }
+        tool_json(answer)
+    }
+
+    /// `org_session`: one recorded session's summary and one page of its
+    /// entries, in the order the server keeps them (turn, rank, time, id),
+    /// with the cursor to the next page. Defaults to the current session.
+    async fn session(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        (cursor, limit): (Option<&str>, Option<u32>),
+    ) -> CallToolResult {
+        let target = match self.session_target(grant, scope, session).await {
+            Ok(target) => target,
+            Err(answer) => return answer,
+        };
+        let query = TimelineQuery {
+            org_id: &scope.org_id,
+            workspace_id: &target.workspace_id,
+            session_id: &target.id,
+            cursor,
+            limit: Some(limit.unwrap_or(TIMELINE_DEFAULT_LIMIT)),
+        };
+        let page = match self.cloud.timeline(query).await {
+            Ok(page) => page,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let mut summary = recorded_session_json(&page.summary);
+        summary["id"] = json!(target.id);
+        if page.summary.title.as_deref().is_none_or(str::is_empty) {
+            summary["title"] = json!(target.title);
+        }
+        summary["current"] = json!(target.current);
+        summary["counts"] = json!({
+            "prompts": page.counts.prompts,
+            "responses": page.counts.responses,
+            "thinking": page.counts.thinking,
+            "tool_calls": page.counts.tool_calls,
+            "checkpoints": page.counts.checkpoints,
+        });
+        tool_json(json!({
+            "session": summary,
+            "tools": page.tools.iter().map(|t| json!({ "name": t.tool_name, "count": t.count })).collect::<Vec<_>>(),
+            "entries": page.entries.iter().map(entry_json).collect::<Vec<_>>(),
+            "next_cursor": page.next_cursor,
+            "notes": page.notes,
+        }))
+    }
+
+    /// `org_session` with `entry`: the full text of one entry — its body, or
+    /// a tool call's arguments or result — which a page shows cut short.
+    async fn session_entry(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        row_id: &str,
+        part: &str,
+    ) -> CallToolResult {
+        let Some(part) = PAYLOAD_PARTS.iter().copied().find(|p| p.eq_ignore_ascii_case(part)) else {
+            return tool_error(format!("part \"{part}\" is not one of body, arguments or result"));
+        };
+        let target = match self.session_target(grant, scope, session).await {
+            Ok(target) => target,
+            Err(answer) => return answer,
+        };
+        let at = PayloadRef {
+            org_id: &scope.org_id,
+            workspace_id: &target.workspace_id,
+            session_id: &target.id,
+            row_id,
+            part,
+        };
+        let payload = match self.cloud.entry_payload(at).await {
+            Ok(payload) => payload,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        tool_json(json!({
+            "session": { "id": target.id, "title": target.title, "current": target.current },
+            "entry": {
+                "id": row_id,
+                "part": part,
+                "text": payload.text,
+                "binary": payload.binary,
+                "bytes": payload.bytes,
+            },
         }))
     }
 }

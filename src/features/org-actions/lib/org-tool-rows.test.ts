@@ -151,6 +151,47 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Resolved comment k1");
   });
 
+  it("org_sessions says whose recorded sessions it listed and what it searched for", () => {
+    expect(subject("org_sessions", {}, undefined)).toBe("Listed recorded sessions");
+    expect(subject("org_sessions", { author: "me", limit: 1 }, undefined)).toBe(
+      "Listed recorded sessions by you",
+    );
+    expect(subject("org_sessions", { author: "grace@acme.dev" }, undefined)).toBe(
+      "Listed recorded sessions by grace@acme.dev",
+    );
+    expect(
+      subject(
+        "org_sessions",
+        { author: "grace@acme.dev", q: "theme" },
+        { author: { user_id: "u-grace", name: "Grace Hopper" }, sessions: [] },
+      ),
+    ).toBe('Searched recorded sessions by Grace Hopper for "theme"');
+    expect(subject("org_sessions", { q: "importer" }, undefined)).toBe(
+      'Searched recorded sessions for "importer"',
+    );
+  });
+
+  it("org_session names the recorded session, or the entry, it read", () => {
+    expect(subject("org_session", {}, undefined)).toBe("Read this session");
+    expect(subject("org_session", { session: "rs-2" }, undefined)).toBe(
+      "Read recorded session rs-2",
+    );
+    expect(
+      subject(
+        "org_session",
+        {},
+        { session: { id: "rs-1", title: "Fix the theme importer", current: true }, entries: [] },
+      ),
+    ).toBe("Read recorded session Fix the theme importer");
+    expect(
+      subject(
+        "org_session",
+        { entry: "e2", part: "result" },
+        { session: { id: "rs-1", title: "Fix the theme importer" }, entry: { id: "e2" } },
+      ),
+    ).toBe("Read entry e2 of Fix the theme importer");
+  });
+
   it("a tool with no line of its own still gets a row, named by the tool", () => {
     expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
   });

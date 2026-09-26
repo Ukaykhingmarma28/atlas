@@ -8,7 +8,10 @@ use std::sync::Arc;
 
 use agent_client_protocol::schema::v1 as acp;
 use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers};
-use atlas_artifacts::{AnchorKind, Comment, InboxEntry, InboxKind, InboxPage};
+use atlas_artifacts::{
+    AnchorKind, Comment, EntryPayload, InboxEntry, InboxKind, InboxPage, RemoteEntry, RemoteEntryCounts, RemoteSession,
+    SessionBoardPage, SessionDetailPage,
+};
 use atlas_comms::wire::ConversationKind;
 use parking_lot::Mutex;
 use rmcp::model::CallToolRequestParams;
@@ -19,7 +22,10 @@ use rmcp::{RoleClient, ServiceExt};
 use serde_json::{json, Value};
 
 use super::adapter::scope_of;
-use super::tools::{tool_names, tools_list, INSTRUCTIONS, NOT_RECORDED_YET};
+use super::tools::{
+    tool_names, tools_list, INSTRUCTIONS, NOT_RECORDED_YET, SESSIONS_DEFAULT_LIMIT, SESSIONS_DEFAULT_WINDOW_DAYS,
+    SESSIONS_SCAN_CAP, TIMELINE_DEFAULT_LIMIT,
+};
 use super::*;
 use crate::auth::Role;
 use crate::commands::memory_server::{
@@ -59,6 +65,15 @@ struct FakeOrganisation {
     /// The cursor the next inbox page continues from, when there is one.
     inbox_next: Mutex<Option<String>>,
     inbox_fail: AtomicBool,
+    /// The Workspace's board: every recorded session, in any order (the fake
+    /// orders it as the server does, most recently active first).
+    board: Mutex<Vec<RemoteSession>>,
+    board_fail: AtomicBool,
+    /// Recorded session id → its entries, in the server's order.
+    timelines: Mutex<HashMap<String, Vec<RemoteEntry>>>,
+    timeline_fail: AtomicBool,
+    /// `(recorded session, entry, part)` → that part's full text.
+    payloads: Mutex<HashMap<(String, String, String), EntryPayload>>,
     /// Every `(org, what)` asked, in order.
     asked: Mutex<Vec<(String, String)>>,
 }
@@ -102,7 +117,20 @@ impl FakeOrganisation {
         *self.inbox.lock() = inbox;
         self
     }
+
+    fn with_board(self: Arc<Self>, board: Vec<RemoteSession>) -> Arc<Self> {
+        *self.board.lock() = board;
+        self
+    }
+
+    /// How many board pages were read.
+    fn board_reads(&self) -> usize {
+        self.asked().iter().filter(|(_, what)| what.starts_with("board")).count()
+    }
 }
+
+/// The fake board's page size — the server's largest, as the adapter asks.
+const FAKE_BOARD_PAGE: usize = 100;
 
 impl OrganisationCloud for FakeOrganisation {
     fn caller<'a>(&'a self, org_id: &'a str) -> CloudFuture<'a, Caller> {
@@ -195,6 +223,88 @@ impl OrganisationCloud for FakeOrganisation {
                 return Err(CloudError::Unavailable("connection reset".into()));
             }
             Ok(self.inbox_page(org_id, query.unread_only, query.limit))
+        })
+    }
+
+    /// As the server does: one Workspace, most recently active first, the
+    /// keyword matched against titles (the fake's stand-in for the server's
+    /// search), a page at a time with an offset cursor. No author, date or
+    /// liveness filter, because the server has none.
+    fn board_page<'a>(&'a self, org_id: &'a str, query: BoardQuery<'a>) -> CloudFuture<'a, SessionBoardPage> {
+        Box::pin(async move {
+            self.asked.lock().push((
+                org_id.into(),
+                format!("board {} q={:?} cursor={:?}", query.workspace_id, query.q, query.cursor),
+            ));
+            if self.board_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            let mut rows: Vec<RemoteSession> = self
+                .board
+                .lock()
+                .iter()
+                .filter(|s| s.workspace_id == query.workspace_id)
+                .filter(|s| {
+                    query.q.is_none_or(|q| {
+                        s.title.as_deref().is_some_and(|t| t.to_lowercase().contains(&q.to_lowercase()))
+                    })
+                })
+                .cloned()
+                .collect();
+            rows.sort_by(|a, b| (&b.last_activity_at, &b.id).cmp(&(&a.last_activity_at, &a.id)));
+            let start: usize = query.cursor.map_or(0, |c| c.parse().unwrap());
+            let end = (start + FAKE_BOARD_PAGE).min(rows.len());
+            Ok(SessionBoardPage {
+                sessions: rows[start.min(end)..end].to_vec(),
+                next_cursor: (end < rows.len()).then(|| end.to_string()),
+                ..SessionBoardPage::default()
+            })
+        })
+    }
+
+    fn timeline<'a>(&'a self, query: TimelineQuery<'a>) -> CloudFuture<'a, SessionDetailPage> {
+        Box::pin(async move {
+            self.asked.lock().push((
+                query.org_id.into(),
+                format!(
+                    "timeline {}/{} cursor={:?} limit={:?}",
+                    query.workspace_id, query.session_id, query.cursor, query.limit
+                ),
+            ));
+            if self.timeline_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            let summary = self
+                .board
+                .lock()
+                .iter()
+                .find(|s| s.id == query.session_id && s.workspace_id == query.workspace_id)
+                .cloned()
+                .ok_or_else(|| CloudError::NotFound("session".into()))?;
+            let entries = self.timelines.lock().get(query.session_id).cloned().unwrap_or_default();
+            let start: usize = query.cursor.map_or(0, |c| c.parse().unwrap());
+            let end = (start + query.limit.unwrap_or(500) as usize).min(entries.len());
+            Ok(SessionDetailPage {
+                summary,
+                counts: RemoteEntryCounts { prompts: 1, responses: 1, tool_calls: 1, checkpoints: 1, ..Default::default() },
+                entries: entries[start.min(end)..end].to_vec(),
+                next_cursor: (end < entries.len()).then(|| end.to_string()),
+                ..SessionDetailPage::default()
+            })
+        })
+    }
+
+    fn entry_payload<'a>(&'a self, entry: PayloadRef<'a>) -> CloudFuture<'a, EntryPayload> {
+        Box::pin(async move {
+            self.asked.lock().push((
+                entry.org_id.into(),
+                format!("payload {}/{}/{} part={}", entry.workspace_id, entry.session_id, entry.row_id, entry.part),
+            ));
+            self.payloads
+                .lock()
+                .get(&(entry.session_id.to_string(), entry.row_id.to_string(), entry.part.to_string()))
+                .cloned()
+                .ok_or_else(|| CloudError::NotFound("entry".into()))
         })
     }
 }
@@ -1194,6 +1304,471 @@ async fn a_resolve_the_organisation_cannot_take_is_a_tool_error() {
     client.cancel().await.ok();
 }
 
+// ── org_sessions ─────────────────────────────────────────────────────────────
+
+/// `minutes` ago, as the server stamps it.
+fn ago(minutes: i64) -> String {
+    (chrono::Utc::now() - chrono::Duration::minutes(minutes)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+const DAY: i64 = 24 * 60;
+
+/// A recorded session on the grant's Workspace's board, by `author`, started
+/// and last active the given number of minutes ago.
+fn board_row(id: &str, author: &str, started: i64, active: i64, live: bool, title: &str) -> RemoteSession {
+    let name = acme_roster().into_iter().find(|m| m.user_id == author).map(|m| m.name);
+    RemoteSession {
+        id: id.into(),
+        workspace_id: "ws-atlas".into(),
+        title: Some(title.into()),
+        agent: Some("atlas-agent".into()),
+        model: Some("claude-opus-5-5".into()),
+        started_at: ago(started),
+        last_activity_at: ago(active),
+        live,
+        message_count: 12,
+        tool_call_count: 7,
+        checkpoint_count: 2,
+        insertions: 40,
+        deletions: 3,
+        files_touched: 4,
+        total_tokens: 91_000,
+        author_id: Some(author.into()),
+        author_name: name,
+        ..RemoteSession::default()
+    }
+}
+
+/// The Workspace's recent work: Ada's live session an hour ago, Grace's
+/// theme-importer session two days ago, Ada's older one five days ago, Sam's
+/// ten days ago, Grace's three weeks ago (outside the default window), and a
+/// session in another Workspace that must never show.
+fn acme_board() -> Vec<RemoteSession> {
+    vec![
+        board_row("rs-ada-old", "u-1", 5 * DAY + 60, 5 * DAY, false, "Tidy the settings pane"),
+        board_row("rs-grace", "u-grace", 2 * DAY + 90, 2 * DAY, false, "Fix the theme importer"),
+        board_row("rs-ada-live", "u-1", 120, 60, true, "Wire the org tools"),
+        board_row("rs-sam", "u-sam1", 10 * DAY + 30, 10 * DAY, false, "Theme tokens"),
+        board_row("rs-grace-old", "u-grace", 21 * DAY + 30, 21 * DAY, false, "Release notes"),
+        RemoteSession { workspace_id: "ws-other".into(), ..board_row("rs-elsewhere", "u-1", 30, 10, true, "Elsewhere") },
+    ]
+}
+
+fn boarded() -> Arc<FakeOrganisation> {
+    FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer))
+        .with_roster(acme_roster())
+        .with_board(acme_board())
+}
+
+fn session_ids(answer: &Value) -> Vec<String> {
+    answer["sessions"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap().to_string()).collect()
+}
+
+fn notes(answer: &Value) -> String {
+    answer["notes"].as_array().unwrap().iter().map(|n| n.as_str().unwrap()).collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn the_window_and_the_scan_cap_are_fourteen_days_and_five_hundred_sessions() {
+    assert_eq!(SESSIONS_DEFAULT_WINDOW_DAYS, 14);
+    assert_eq!(SESSIONS_SCAN_CAP, 500);
+    assert_eq!(SESSIONS_DEFAULT_LIMIT, 20);
+    assert_eq!(TIMELINE_DEFAULT_LIMIT, 50);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_sessions_lists_the_workspaces_sessions_of_the_last_fourteen_days_newest_activity_first() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({})).await;
+    assert!(!err, "{answer}");
+
+    assert_eq!(session_ids(&answer), ["rs-ada-live", "rs-grace", "rs-ada-old", "rs-sam"]);
+    let first = &answer["sessions"][0];
+    assert_eq!(
+        first,
+        &json!({
+            "id": "rs-ada-live",
+            "title": "Wire the org tools",
+            "author": { "user_id": "u-1", "name": "Ada Lovelace" },
+            "agent": "atlas-agent",
+            "model": "claude-opus-5-5",
+            "started_at": first["started_at"],
+            "last_activity_at": first["last_activity_at"],
+            "live": true,
+            "counts": { "messages": 12, "tool_calls": 7, "checkpoints": 2 },
+            "insertions": 40,
+            "deletions": 3,
+            "files_touched": 4,
+            "total_tokens": 91_000,
+        }),
+    );
+    assert_eq!(answer["window"]["default"], json!(true));
+    assert!(answer["window"]["since"].is_string() && answer["window"]["until"].is_null());
+    assert_eq!(answer["workspace"], json!({ "id": "ws-atlas" }));
+    assert_eq!(answer["truncated"], json!(false));
+    assert_eq!(answer["scanned"], json!(4), "the three-week-old row ends the walk and is not counted");
+    assert!(notes(&answer).contains("only the last 14 days were searched"), "{answer}");
+    assert_eq!(
+        org.asked(),
+        [("org-acme".to_string(), "board ws-atlas q=None cursor=None".to_string())],
+        "one page of the grant's Workspace, in the grant's organisation",
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_explicit_window_holds_the_sessions_that_overlap_it_and_says_nothing_of_a_default() {
+    let org = boarded();
+    let (_server, client) = org_client(org).await;
+    // Six to three days ago: Ada's older session (5 days) overlaps; Grace's
+    // (2 days) started after the window; Sam's (10 days) ended before it.
+    let since = (chrono::Utc::now() - chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
+    let until = (chrono::Utc::now() - chrono::Duration::days(3)).to_rfc3339();
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "since": since, "until": until })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-ada-old"]);
+    assert_eq!(answer["window"]["default"], json!(false));
+    assert!(answer["window"]["since"].as_str().unwrap().starts_with(&since));
+    assert!(!notes(&answer).contains("14 days"), "{answer}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_until_lifts_the_default_window() {
+    let org = boarded();
+    let (_server, client) = org_client(org).await;
+    let until = (chrono::Utc::now() - chrono::Duration::days(15)).format("%Y-%m-%d").to_string();
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "until": until })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-grace-old"]);
+    assert!(answer["window"]["since"].is_null());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_since_or_until_that_is_not_a_date_is_refused_before_the_board_is_read() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    for args in [json!({ "since": "last tuesday" }), json!({ "until": "2026-13-45" })] {
+        let (err, text) = call(&client, "org_sessions", args).await;
+        assert!(err);
+        assert!(text.contains("is not an ISO date or datetime"), "{text}");
+    }
+    assert_eq!(org.board_reads(), 0);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_author_filter_resolves_a_name_and_keeps_only_their_sessions() {
+    let org = boarded();
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "grace@acme.dev", "since": "2000-01-01" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-grace", "rs-grace-old"]);
+    assert_eq!(answer["author"], json!({ "user_id": "u-grace", "name": "Grace Hopper" }));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_author_name_several_members_share_comes_back_as_candidates_and_the_board_is_not_read() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "Sam Lee" })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().unwrap().len(), 2, "{answer}");
+    assert_eq!(org.board_reads(), 0);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn my_last_session_is_the_newest_by_last_activity_among_my_own() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "me", "limit": 1 })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-ada-live"], "not Ada's older one, nor Grace's in between");
+    assert_eq!(answer["author"], json!({ "user_id": "u-1", "name": "Ada Lovelace" }));
+    assert_eq!(answer["limit_reached"], json!(true));
+    assert!(notes(&answer).contains("raise limit"), "{answer}");
+    assert!(org.asked().contains(&("org-acme".to_string(), "caller".to_string())), "\"me\" is the caller");
+    assert!(!org.asked().iter().any(|(_, what)| what == "members"), "\"me\" needs no roster");
+
+    let (_, mine) = call_json(&client, "org_sessions", json!({ "author": "ME" })).await;
+    assert_eq!(session_ids(&mine), ["rs-ada-live", "rs-ada-old"]);
+    assert_eq!(mine["limit_reached"], json!(false));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_live_filter_keeps_sessions_still_being_written_or_only_finished_ones() {
+    let org = boarded();
+    let (_server, client) = org_client(org).await;
+    let (_, live) = call_json(&client, "org_sessions", json!({ "live": true })).await;
+    assert_eq!(session_ids(&live), ["rs-ada-live"]);
+    let (_, done) = call_json(&client, "org_sessions", json!({ "live": false })).await;
+    assert_eq!(session_ids(&done), ["rs-grace", "rs-ada-old", "rs-sam"]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_keyword_is_passed_through_to_the_servers_search() {
+    let org = boarded();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "q": "theme" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-grace", "rs-sam"]);
+    assert_eq!(org.asked(), [("org-acme".to_string(), "board ws-atlas q=Some(\"theme\") cursor=None".to_string())]);
+    client.cancel().await.ok();
+}
+
+/// `n` sessions by Grace, one a minute apart, the newest a minute ago.
+fn busy_board(n: i64) -> Vec<RemoteSession> {
+    (1..=n).map(|i| board_row(&format!("rs-{i:04}"), "u-grace", i + 30, i, false, "Busy work")).collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_scan_stops_at_five_hundred_sessions_and_says_how_to_narrow_or_go_further_back() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer))
+        .with_roster(acme_roster())
+        .with_board(busy_board(650));
+    let (_server, client) = org_client(org.clone()).await;
+    // Ada has none of them, so nothing ends the walk but the cap.
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "me" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), Vec::<String>::new());
+    assert_eq!(answer["scanned"], json!(SESSIONS_SCAN_CAP));
+    assert_eq!(answer["truncated"], json!(true));
+    let said = notes(&answer);
+    assert!(said.contains("scanning the 500 most recently active"), "{said}");
+    assert!(said.contains("Narrow with author, q or a shorter since/until window"), "{said}");
+    let oldest = org.board.lock().iter().find(|s| s.id == "rs-0500").unwrap().last_activity_at.clone();
+    assert!(said.contains(&format!("until={oldest}")), "where to pick up: {said}");
+    assert_eq!(org.board_reads(), 5, "five pages of a hundred, and not a sixth");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_window_that_ends_before_the_cap_is_not_truncated() {
+    let mut board = busy_board(300);
+    board.extend((0..350).map(|i| board_row(&format!("rs-old-{i:04}"), "u-grace", 20 * DAY + i + 30, 20 * DAY + i, false, "Old")));
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster()).with_board(board);
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_sessions", json!({ "author": "me" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["scanned"], json!(300));
+    assert_eq!(answer["truncated"], json!(false));
+    assert!(!notes(&answer).contains("Stopped after scanning"), "{answer}");
+    assert_eq!(org.board_reads(), 4, "the page holding the window's end is the last read");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exactly_five_hundred_sessions_and_the_end_of_the_board_is_not_truncated() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_board(busy_board(500));
+    let (_server, client) = org_client(org).await;
+    let (_, answer) = call_json(&client, "org_sessions", json!({ "author": "me" })).await;
+    assert_eq!(answer["scanned"], json!(500));
+    assert_eq!(answer["truncated"], json!(false));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_board_that_cannot_be_read_is_a_tool_error() {
+    let org = boarded();
+    org.board_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, text) = call(&client, "org_sessions", json!({})).await;
+    assert!(err);
+    assert!(text.contains("could not be reached"), "{text}");
+    client.cancel().await.ok();
+}
+
+// ── org_session ──────────────────────────────────────────────────────────────
+
+fn timeline_entry(id: &str, kind: &str, turn: i64) -> RemoteEntry {
+    RemoteEntry { id: id.into(), kind: kind.into(), at: format!("2026-09-26T10:0{turn}:00Z"), turn_seq: turn, ..Default::default() }
+}
+
+/// An organisation whose chat `s1` is recorded as `rs-1` (on the board, with
+/// four entries in the server's order) beside Grace's `rs-grace`, with the
+/// full text of `rs-1`'s tool call.
+fn timelined() -> Arc<FakeOrganisation> {
+    let mut board = acme_board();
+    board.push(board_row("rs-1", "u-1", 30, 5, true, ""));
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster()).with_board(board);
+    org.record("s1", current(true));
+    let prompt = RemoteEntry { text: Some("fix the importer".into()), ..timeline_entry("e1", "prompt", 1) };
+    let tool = RemoteEntry {
+        tool_name: Some("edit".into()),
+        tool_status: Some("completed".into()),
+        paths: vec!["src/theme.rs".into()],
+        result: Some("ok…".into()),
+        truncated: true,
+        body_bytes: 9_000,
+        ..timeline_entry("e2", "tool_call", 1)
+    };
+    let checkpoint = RemoteEntry {
+        commit_sha: Some("abc123".into()),
+        insertions: 4,
+        deletions: 1,
+        files: vec!["src/theme.rs".into()],
+        ..timeline_entry("e3", "checkpoint", 1)
+    };
+    let reply = RemoteEntry { text: Some("done".into()), ..timeline_entry("e4", "response", 2) };
+    org.timelines.lock().insert("rs-1".into(), vec![prompt, tool, checkpoint, reply]);
+    org.timelines.lock().insert("rs-grace".into(), vec![timeline_entry("g1", "prompt", 1)]);
+    org.payloads.lock().insert(
+        ("rs-1".into(), "e2".into(), "result".into()),
+        EntryPayload { text: Some("ok, the whole result".into()), binary: false, bytes: 9_000 },
+    );
+    org.payloads.lock().insert(
+        ("rs-1".into(), "e1".into(), "body".into()),
+        EntryPayload { text: Some("fix the importer, all of it".into()), binary: false, bytes: 27 },
+    );
+    org
+}
+
+fn entry_ids(answer: &Value) -> Vec<String> {
+    answer["entries"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap().to_string()).collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_with_no_arguments_reads_the_current_session_and_its_entries_in_the_servers_order() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_session", json!({})).await;
+    assert!(!err, "{answer}");
+
+    let session = &answer["session"];
+    assert_eq!(session["id"], json!("rs-1"));
+    assert_eq!(session["current"], json!(true));
+    assert_eq!(session["title"], json!("Fix the theme importer"), "an untitled row takes the chat's own title");
+    assert_eq!(session["author"], json!({ "user_id": "u-1", "name": "Ada Lovelace" }));
+    assert_eq!(session["counts"]["tool_calls"], json!(1));
+    assert_eq!(entry_ids(&answer), ["e1", "e2", "e3", "e4"]);
+    assert_eq!(
+        answer["entries"][1],
+        json!({
+            "id": "e2", "kind": "tool_call", "at": "2026-09-26T10:01:00Z", "turn": 1,
+            "truncated": true, "body_bytes": 9_000,
+            "tool_name": "edit", "tool_status": "completed", "result": "ok…",
+            "paths": ["src/theme.rs"],
+        }),
+        "only the fields a tool call has",
+    );
+    assert_eq!(
+        answer["entries"][2],
+        json!({
+            "id": "e3", "kind": "checkpoint", "at": "2026-09-26T10:01:00Z", "turn": 1,
+            "commit_sha": "abc123", "files": ["src/theme.rs"], "insertions": 4, "deletions": 1,
+        }),
+    );
+    assert_eq!(answer["next_cursor"], Value::Null);
+    assert_eq!(
+        org.asked(),
+        [
+            ("org-acme".to_string(), "current s1 in /p".to_string()),
+            ("org-acme".to_string(), format!("timeline ws-atlas/rs-1 cursor=None limit=Some({TIMELINE_DEFAULT_LIMIT})")),
+        ],
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_reads_the_current_sentinel_as_the_current_session() {
+    let org = timelined();
+    let (_server, client) = org_client(org).await;
+    let (_, default) = call_json(&client, "org_session", json!({})).await;
+    let (err, answer) = call_json(&client, "org_session", json!({ "session": "current" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer, default);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_reads_any_recorded_session_by_id() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_session", json!({ "session": "rs-grace" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["id"], json!("rs-grace"));
+    assert_eq!(answer["session"]["title"], json!("Fix the theme importer"));
+    assert_eq!(answer["session"]["current"], json!(false));
+    assert_eq!(entry_ids(&answer), ["g1"]);
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("current")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_pages_its_entries_with_the_servers_cursor() {
+    let org = timelined();
+    let (_server, client) = org_client(org).await;
+    let (_, first) = call_json(&client, "org_session", json!({ "limit": 3 })).await;
+    assert_eq!(entry_ids(&first), ["e1", "e2", "e3"]);
+    let cursor = first["next_cursor"].as_str().expect("more to read").to_string();
+    let (_, rest) = call_json(&client, "org_session", json!({ "limit": 3, "cursor": cursor })).await;
+    assert_eq!(entry_ids(&rest), ["e4"]);
+    assert_eq!(rest["next_cursor"], Value::Null);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_entry_argument_answers_that_entrys_full_text() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_session", json!({ "entry": "e2", "part": "result" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({
+            "session": { "id": "rs-1", "title": "Fix the theme importer", "current": true },
+            "entry": { "id": "e2", "part": "result", "text": "ok, the whole result", "binary": false, "bytes": 9_000 },
+        }),
+    );
+    let (_, body) = call_json(&client, "org_session", json!({ "entry": "e1" })).await;
+    assert_eq!(body["entry"]["text"], json!("fix the importer, all of it"), "the body by default");
+    assert!(org.asked().contains(&("org-acme".to_string(), "payload ws-atlas/rs-1/e2 part=result".to_string())));
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("timeline")), "an entry read reads no page");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_part_that_is_not_body_arguments_or_result_is_refused_before_anything_is_asked() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_session", json!({ "entry": "e2", "part": "diff" })).await;
+    assert!(err);
+    assert!(text.contains("not one of body, arguments or result"), "{text}");
+    assert!(org.asked().is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_session_on_a_chat_not_recorded_yet_says_so_and_points_at_org_sessions() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None);
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_session", json!({})).await;
+    assert!(err);
+    assert!(text.contains(NOT_RECORDED_YET) && text.contains("org_sessions"), "{text}");
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("timeline")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_or_entry_the_organisation_cannot_give_is_a_tool_error() {
+    let org = timelined();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_session", json!({ "session": "rs-nope" })).await;
+    assert!(err && text.contains("not found"), "{text}");
+    let (err, text) = call(&client, "org_session", json!({ "entry": "e9" })).await;
+    assert!(err && text.contains("not found"), "{text}");
+    org.timeline_fail.store(true, Ordering::SeqCst);
+    let (err, text) = call(&client, "org_session", json!({})).await;
+    assert!(err && text.contains("could not be reached"), "{text}");
+    client.cancel().await.ok();
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1255,7 +1830,16 @@ async fn the_tool_list_is_what_the_model_is_offered() {
     assert_eq!(names, tool_names());
     assert_eq!(
         names,
-        ["org_whoami", "org_members", "org_conversations", "org_inbox", "org_comments", "org_comment_resolve"]
+        [
+            "org_whoami",
+            "org_members",
+            "org_conversations",
+            "org_inbox",
+            "org_comments",
+            "org_comment_resolve",
+            "org_sessions",
+            "org_session"
+        ]
     );
     client.cancel().await.ok();
 }

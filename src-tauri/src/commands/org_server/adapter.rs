@@ -17,8 +17,8 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
-    RecordedSession,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation,
+    OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
 };
 use super::offers::SessionOrgs;
 use super::OrgScope;
@@ -197,6 +197,42 @@ impl OrganisationCloud for AppOrganisationCloud {
                     None,
                     Some(resolved),
                 )
+                .await?)
+        })
+    }
+
+    /// One board page through the Timeline's artifacts client, in the
+    /// grant's Workspace, at the server's largest page so a scan spends as
+    /// few requests (and minted tokens) as it can.
+    fn board_page<'a>(&'a self, org_id: &'a str, query: BoardQuery<'a>) -> CloudFuture<'a, atlas_artifacts::SessionBoardPage> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            let query = atlas_artifacts::BoardQuery {
+                workspace_id: Some(query.workspace_id),
+                q: query.q,
+                cursor: query.cursor,
+                limit: Some(atlas_artifacts::BOARD_PAGE_MAX),
+            };
+            Ok(artifacts.client.board_page(org_id, query).await?)
+        })
+    }
+
+    fn timeline<'a>(&'a self, query: TimelineQuery<'a>) -> CloudFuture<'a, atlas_artifacts::SessionDetailPage> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            Ok(artifacts
+                .client
+                .session_page(query.org_id, query.workspace_id, query.session_id, query.cursor, query.limit)
+                .await?)
+        })
+    }
+
+    fn entry_payload<'a>(&'a self, entry: PayloadRef<'a>) -> CloudFuture<'a, atlas_artifacts::EntryPayload> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            Ok(artifacts
+                .client
+                .entry_payload(entry.org_id, entry.workspace_id, entry.session_id, entry.row_id, entry.part)
                 .await?)
         })
     }

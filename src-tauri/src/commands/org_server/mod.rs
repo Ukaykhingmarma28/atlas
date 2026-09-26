@@ -32,8 +32,9 @@
 //!   made in the tool dispatch and emitted to the window as
 //!   [`ORG_ACTION_EVENT`] for its Logs panel — refusals and failures too.
 //!
-//! `org_whoami`, `org_members`, `org_conversations` and `org_inbox` exist so far; the rest
-//! of the thirteen tools the spec names are added on this skeleton.
+//! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
+//! `org_comment_resolve`, `org_sessions` and `org_session` exist so far; the rest of the
+//! thirteen tools the spec names are added on this skeleton.
 
 mod adapter;
 mod audit;
@@ -52,8 +53,8 @@ pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
-    Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
-    RecordedSession,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation,
+    OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
 };
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};

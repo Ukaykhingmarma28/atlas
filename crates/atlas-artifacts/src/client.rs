@@ -40,6 +40,35 @@ const MAX_ENTRY_PAGES: usize = 40;
 /// rather than quietly answered with fewer.
 pub const INBOX_PAGE_MAX: u32 = 100;
 
+/// The most one board page may hold. The server clamps at 100.
+pub const BOARD_PAGE_MAX: u32 = 100;
+
+/// The most one timeline page may hold. The server clamps at 500.
+pub const ENTRY_PAGE_MAX: u32 = 500;
+
+/// The longest keyword the server's search accepts, in characters; a longer
+/// one is refused rather than cut, so it is cut here.
+pub const SEARCH_MAX_CHARS: usize = 256;
+
+/// Which page of the board to read, and how narrowly.
+///
+/// The server narrows the board by Workspace and by keyword and by nothing
+/// else — there is no author, date or liveness filter on the wire — so those
+/// folds belong to the caller, over the pages this answers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BoardQuery<'a> {
+    /// One Workspace, or every one the person can see.
+    pub workspace_id: Option<&'a str>,
+    /// The server's keyword search (`q`): titles, message previews, tool
+    /// names and Checkpoint metadata. Cut to [`SEARCH_MAX_CHARS`].
+    pub q: Option<&'a str>,
+    /// Where the previous page's `next_cursor` left off.
+    pub cursor: Option<&'a str>,
+    /// At most this many Sessions, clamped to [`BOARD_PAGE_MAX`]; the page
+    /// maximum when `None`.
+    pub limit: Option<u32>,
+}
+
 /// Which Session, in which Project, in which Organisation.
 ///
 /// The three ids travel together on every comment route, and as three bare
@@ -147,6 +176,57 @@ impl ArtifactsClient {
         out.notes
             .push("Showing the most recent Sessions only — there are more on the server.".into());
         Ok(out)
+    }
+
+    /// One page of the board, newest activity first, and nothing more.
+    ///
+    /// [`board`](Self::board) walks pages for the Timeline's glance; a caller
+    /// that folds pages itself — and must know where it stopped — reads them
+    /// one at a time here, continuing from each page's `next_cursor`.
+    pub async fn board_page(&self, org_id: &str, query: BoardQuery<'_>) -> Result<SessionBoardPage> {
+        let limit = query.limit.unwrap_or(BOARD_PAGE_MAX).clamp(1, BOARD_PAGE_MAX);
+        let mut req = self
+            .http
+            .get(format!("{}/sessions", self.base))
+            .bearer_auth(self.token().await?)
+            .query(&[("org", org_id), ("limit", &limit.to_string())]);
+        if let Some(workspace) = query.workspace_id {
+            req = req.query(&[("workspace", workspace)]);
+        }
+        if let Some(q) = query.q.map(str::trim).filter(|q| !q.is_empty()) {
+            let cut: String = q.chars().take(SEARCH_MAX_CHARS).collect();
+            req = req.query(&[("q", cut.as_str())]);
+        }
+        if let Some(cursor) = query.cursor {
+            req = req.query(&[("cursor", cursor)]);
+        }
+        self.send(req, "board").await
+    }
+
+    /// One page of a remote Session's timeline, in the server's order
+    /// `(turnSeq, rank, at, id)`, continuing from `cursor`.
+    ///
+    /// [`session_detail`](Self::session_detail) reads a Session whole for the
+    /// viewer; a reader that pages on request reads one page here, the
+    /// summary, counts and tallies on every page.
+    pub async fn session_page(
+        &self,
+        org_id: &str,
+        project_id: &str,
+        session_id: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<SessionDetailPage> {
+        let limit = limit.unwrap_or(ENTRY_PAGE).clamp(1, ENTRY_PAGE_MAX);
+        let mut req = self
+            .http
+            .get(format!("{}/sessions/{project_id}/{session_id}", self.base))
+            .bearer_auth(self.token().await?)
+            .query(&[("org", org_id), ("limit", &limit.to_string())]);
+        if let Some(cursor) = cursor {
+            req = req.query(&[("cursor", cursor)]);
+        }
+        self.send(req, "session").await
     }
 
     /// One remote Session in full: its summary and its whole timeline.
@@ -543,6 +623,65 @@ mod tests {
         let seen = seen.lock().unwrap().clone();
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0].lines().next().unwrap(), "GET /inbox?org=org_1 HTTP/1.1");
+    }
+
+    // ── One board page and one timeline page, as the organisation tools read them ──
+
+    const EMPTY_BOARD: &str = r#"{"sessions":[],"workspaces":[],"nextCursor":"c2","notes":[]}"#;
+
+    #[tokio::test]
+    async fn one_board_page_is_one_get_carrying_the_workspace_keyword_cursor_and_clamped_limit() {
+        let (base, seen) = loopback(EMPTY_BOARD).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        let query = BoardQuery {
+            workspace_id: Some("ws_1"),
+            q: Some("theme importer"),
+            cursor: Some("c1"),
+            limit: Some(500),
+        };
+        let page = client.board_page("org_1", query).await.unwrap();
+
+        assert_eq!(page.next_cursor.as_deref(), Some("c2"), "one page, its cursor handed back");
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1, "one page, not a walk: {seen:?}");
+        assert_eq!(
+            seen[0].lines().next().unwrap(),
+            "GET /sessions?org=org_1&limit=100&workspace=ws_1&q=theme+importer&cursor=c1 HTTP/1.1",
+            "the keyword passes through as the server's `q`, the limit clamped to its maximum"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_board_page_without_a_keyword_sends_no_q_and_a_long_keyword_is_cut_to_the_servers_maximum() {
+        let (base, seen) = loopback(EMPTY_BOARD).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        client.board_page("org_1", BoardQuery::default()).await.unwrap();
+        let long = "é".repeat(300);
+        client.board_page("org_1", BoardQuery { q: Some(&long), ..BoardQuery::default() }).await.unwrap();
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen[0].lines().next().unwrap(), "GET /sessions?org=org_1&limit=100 HTTP/1.1");
+        let line = seen[1].lines().next().unwrap();
+        let q = line.split("q=").nth(1).unwrap().split(' ').next().unwrap();
+        assert_eq!(q.matches("%C3%A9").count(), SEARCH_MAX_CHARS, "cut on a character boundary: {line}");
+    }
+
+    #[tokio::test]
+    async fn one_timeline_page_is_one_get_with_the_cursor_and_clamped_limit() {
+        let (base, seen) = loopback(r#"{"summary":{"id":"ses_1"},"entries":[],"nextCursor":null}"#).await;
+        let client = ArtifactsClient::at(&base, Arc::new(Tok));
+
+        let page = client.session_page("org_1", "ws_1", "ses_1", Some("t9"), Some(9_000)).await.unwrap();
+
+        assert_eq!(page.summary.id, "ses_1");
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1, "one page, not the whole timeline: {seen:?}");
+        assert_eq!(
+            seen[0].lines().next().unwrap(),
+            "GET /sessions/ws_1/ses_1?org=org_1&limit=500&cursor=t9 HTTP/1.1"
+        );
     }
 
     #[test]
