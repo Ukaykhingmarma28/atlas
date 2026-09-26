@@ -182,6 +182,45 @@ mod tests {
         assert_eq!(server_names(&servers), names);
     }
 
+    /// ADR-0014: reading comments and resolving one are not outward actions
+    /// — a resolve reaches no one, shows on the Timeline, is undone by the
+    /// same call and is audited — so neither may ask. Run the whole merge the
+    /// engine runs and read each tool's standing off the engine's own config:
+    /// the server stays `approve`, and neither tool has a per-tool `prompt`.
+    #[test]
+    fn the_comment_tools_stay_auto_approved_in_the_projection() {
+        use atlas_engine_config::AppToolApproval;
+
+        let projected = thread_config(&[acp::McpServer::Http(
+            acp::McpServerHttp::new("atlas_org", "http://127.0.0.1:9/org")
+                .headers(vec![acp::HttpHeader::new("Authorization", "Bearer t")]),
+        )])
+        .expect("one entry");
+        let overrides: Vec<(String, toml::Value)> = projected
+            .into_iter()
+            .map(|(key, value)| (key, atlas_engine_utils_json_to_toml::json_to_toml(value)))
+            .collect();
+        let merged = atlas_engine_config::build_cli_overrides_layer(&overrides);
+        let server: atlas_engine_config::McpServerConfig = merged
+            .get("mcp_servers")
+            .and_then(|v| v.get("atlas_org"))
+            .expect("mcp_servers.atlas_org")
+            .clone()
+            .try_into()
+            .expect("the engine parses it");
+
+        assert_eq!(server.default_tools_approval_mode, Some(AppToolApproval::Approve));
+        for tool in ["org_comments", "org_comment_resolve"] {
+            let standing = server.tools.get(tool).and_then(|t| t.approval_mode);
+            assert_ne!(standing, Some(AppToolApproval::Prompt), "{tool} must not ask");
+            assert_eq!(
+                standing.or(server.default_tools_approval_mode),
+                Some(AppToolApproval::Approve),
+                "{tool} runs on the server's approve",
+            );
+        }
+    }
+
     #[test]
     fn no_servers_is_no_override() {
         assert_eq!(thread_config(&[]), None);

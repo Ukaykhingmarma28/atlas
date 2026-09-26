@@ -22,11 +22,11 @@ use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ErrorData as McpError;
-use atlas_artifacts::{InboxEntry, InboxKind};
+use atlas_artifacts::{Comment, InboxEntry, InboxKind};
 use serde_json::{json, Value};
 
 use super::audit::{unaudited, OrgActionRecord, OrgAudit};
-use super::cloud::{CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud};
+use super::cloud::{CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud};
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
@@ -113,6 +113,31 @@ pub(super) fn tools() -> Vec<Tool> {
                 }
             }),
         ),
+        tool(
+            "org_comments",
+            "The comment threads on a recorded session (default: the current one): each root with its replies, \
+             authors, anchor, body and resolved state.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "session": { "type": "string", "description": "A recorded session id, or \"current\" (the default)." },
+                    "unresolved_only": { "type": "boolean", "description": "Only threads not yet resolved." }
+                }
+            }),
+        ),
+        tool(
+            "org_comment_resolve",
+            "Resolve, or with `resolved: false` unresolve, a thread by its first comment's id.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "comment": { "type": "string", "description": "The thread's first comment's id." },
+                    "resolved": { "type": "boolean", "description": "false to unresolve; true by default." },
+                    "session": { "type": "string", "description": "Its recorded session id, or \"current\" (the default)." }
+                },
+                "required": ["comment"]
+            }),
+        ),
     ]
 }
 
@@ -151,6 +176,11 @@ fn string_arg<'a>(request: &'a CallToolRequestParams, name: &str) -> Option<&'a 
 /// An optional boolean argument, absent read as `false`.
 fn bool_arg(request: &CallToolRequestParams, name: &str) -> bool {
     request.arguments.as_ref().and_then(|args| args.get(name)).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// An optional boolean argument, `default` when absent.
+fn bool_arg_or(request: &CallToolRequestParams, name: &str, default: bool) -> bool {
+    request.arguments.as_ref().and_then(|args| args.get(name)).and_then(Value::as_bool).unwrap_or(default)
 }
 
 /// An optional positive integer argument.
@@ -193,6 +223,105 @@ fn inbox_entry_json(entry: &InboxEntry, roster: Option<&[Member]>) -> Value {
         },
         "link": entry.path,
     })
+}
+
+/// A member's name from the roster, when it could be read and holds them.
+fn roster_name(roster: Option<&[Member]>, user_id: &str) -> Option<String> {
+    roster.and_then(|r| r.iter().find(|m| m.user_id == user_id)).map(|m| m.name.clone())
+}
+
+/// A comment body as a person reads it: every `<@user-id>` mention the
+/// server parses written as `@Name` from the roster. A mention the roster
+/// cannot name — it failed, or they have left — keeps its `<@id>`, so the
+/// model still holds the id.
+pub(super) fn named_mentions(body: &str, roster: Option<&[Member]>) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(start) = rest.find("<@") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let named = after.find('>').and_then(|end| {
+            let id = &after[..end];
+            if id.is_empty() || id.contains(char::is_whitespace) || id.contains('<') {
+                return None;
+            }
+            roster_name(roster, id).map(|name| (name, end))
+        });
+        match named {
+            Some((name, end)) => {
+                out.push('@');
+                out.push_str(&name);
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push_str("<@");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// One comment as the model reads it: who wrote it (a guest by the name on
+/// the comment, never as a member; a member by the roster), where it is
+/// anchored, its body with mentions named, and when. A deleted comment keeps
+/// its place in the thread and says so, without a body.
+fn comment_json(comment: &Comment, roster: Option<&[Member]>) -> Value {
+    let guest = comment.guest_name.is_some();
+    let name = comment.guest_name.clone().or_else(|| roster_name(roster, &comment.author_id));
+    let mut out = json!({
+        "id": comment.id,
+        "author": { "user_id": comment.author_id, "name": name, "guest": guest },
+        "anchor": {
+            "kind": comment.anchor_kind.as_str(),
+            // The session anchor addresses the session itself and has no row.
+            "id": Some(&comment.anchor_id).filter(|id| !id.is_empty()),
+        },
+        "body": comment.body.as_deref().filter(|_| !comment.is_deleted()).map(|b| named_mentions(b, roster)),
+        "created_at": comment.created_at,
+        "edited_at": comment.edited_at,
+    });
+    if comment.is_deleted() {
+        out["deleted"] = json!(true);
+    }
+    if comment.is_root() {
+        out["resolved"] = match &comment.resolved_at {
+            None => Value::Null,
+            Some(at) => {
+                let by = comment.resolved_by.as_deref();
+                json!({
+                    "at": at,
+                    "by": { "user_id": by, "name": by.and_then(|id| roster_name(roster, id)) },
+                })
+            }
+        };
+    }
+    out
+}
+
+/// A recorded session's comments as threads: each root, oldest first, with
+/// its replies in the order they were written. A reply whose root is not in
+/// the list stands as a thread of its own rather than vanishing.
+fn threads(comments: &[Comment]) -> Vec<(&Comment, Vec<&Comment>)> {
+    let is_root = |c: &Comment| match &c.parent_id {
+        None => true,
+        Some(parent) => !comments.iter().any(|p| &p.id == parent),
+    };
+    comments
+        .iter()
+        .filter(|c| is_root(c))
+        .map(|root| {
+            let replies = comments.iter().filter(|c| c.parent_id.as_deref() == Some(root.id.as_str())).collect();
+            (root, replies)
+        })
+        .collect()
+}
+
+/// Whether a thread is still open: its first comment neither resolved nor
+/// deleted — the same rule `org_whoami`'s unresolved count uses.
+fn open_thread(root: &Comment) -> bool {
+    root.resolved_at.is_none() && !root.is_deleted()
 }
 
 fn member_json(member: &Member) -> Value {
@@ -317,6 +446,17 @@ impl OrgTools {
                     limit: u32_arg(request, "limit"),
                 };
                 self.inbox(&scope, query).await
+            }
+            "org_comments" => {
+                self.comments(grant, &scope, string_arg(request, "session"), bool_arg(request, "unresolved_only"))
+                    .await
+            }
+            "org_comment_resolve" => {
+                let Some(comment) = string_arg(request, "comment") else {
+                    return tool_error("name the comment to resolve: `comment` is its id (see org_comments)");
+                };
+                let resolved = bool_arg_or(request, "resolved", true);
+                self.resolve_comment(grant, &scope, string_arg(request, "session"), comment, resolved).await
             }
             other => tool_error(format!("unknown tool `{other}`")),
         }
@@ -449,6 +589,151 @@ impl OrgTools {
             "unread": page.unread,
             "entries": entries.iter().map(|e| inbox_entry_json(e, roster.as_deref())).collect::<Vec<_>>(),
             "next_cursor": page.next_cursor,
+        }))
+    }
+}
+
+/// The sentinel the comment tools read as the current recorded session.
+const CURRENT: &str = "current";
+
+/// A recorded session a comment tool acts on, in the grant's Workspace.
+struct SessionTarget {
+    id: String,
+    workspace_id: String,
+    /// Its title, when it is the current one (the join reads it); an explicit
+    /// id is not looked up, so it has none.
+    title: Option<String>,
+    current: bool,
+}
+
+impl OrgTools {
+    /// The recorded session a comment tool names: the current one when it
+    /// names none or says `"current"`, else the id it gives — any recorded
+    /// session in the grant's Workspace, which the server confirms by
+    /// answering (a 404 otherwise). Never another Workspace's.
+    async fn session_target(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+    ) -> Result<SessionTarget, CallToolResult> {
+        let Some(workspace_id) = scope.workspace_id.clone() else {
+            return Err(tool_error(
+                "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
+                 ask the user to reopen the project's cloud settings and start a new chat",
+            ));
+        };
+        match session.filter(|s| !s.eq_ignore_ascii_case(CURRENT)) {
+            Some(id) => Ok(SessionTarget { id: id.to_string(), workspace_id, title: None, current: false }),
+            None => {
+                let query = CurrentSessionQuery { scope, native_session_id: &grant.session_id, cwd: &grant.cwd };
+                match self.cloud.current_session(query).await {
+                    Ok(Some(session)) => Ok(SessionTarget {
+                        id: session.id,
+                        workspace_id: session.workspace_id,
+                        title: session.title,
+                        current: true,
+                    }),
+                    Ok(None) => Err(tool_error(format!(
+                        "the current chat is {NOT_RECORDED_YET} in the Workspace, so it has no comments; \
+                         name a recorded session id instead"
+                    ))),
+                    Err(e) => Err(tool_error(e.to_string())),
+                }
+            }
+        }
+    }
+
+    /// `org_comments`: the threads on a recorded session, oldest first, each
+    /// root with its replies, authors named from the roster and mentions
+    /// written as names. The roster is read only to name people; when it
+    /// cannot be, they keep their ids and the threads still answer.
+    async fn comments(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        unresolved_only: bool,
+    ) -> CallToolResult {
+        let target = match self.session_target(grant, scope, session).await {
+            Ok(target) => target,
+            Err(answer) => return answer,
+        };
+        let comments = match self.cloud.comments(&scope.org_id, &target.workspace_id, &target.id).await {
+            Ok(comments) => comments,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let chosen: Vec<_> =
+            threads(&comments).into_iter().filter(|(root, _)| !unresolved_only || open_thread(root)).collect();
+        // Only guests, with no mentions and nothing resolved, name no member.
+        let names_a_member = |c: &Comment| {
+            c.guest_name.is_none() || c.resolved_by.is_some() || c.body.as_deref().is_some_and(|b| b.contains("<@"))
+        };
+        let needs_roster = chosen
+            .iter()
+            .any(|(root, replies)| names_a_member(root) || replies.iter().any(|r| names_a_member(r)));
+        let roster = if needs_roster { self.cloud.members(&scope.org_id).await.ok() } else { None };
+        let roster = roster.as_deref();
+        let listed: Vec<Value> = chosen
+            .iter()
+            .map(|(root, replies)| {
+                let mut thread = comment_json(root, roster);
+                thread["replies"] = replies.iter().map(|r| comment_json(r, roster)).collect();
+                thread
+            })
+            .collect();
+        let open = threads(&comments).iter().filter(|(root, _)| open_thread(root)).count();
+        tool_json(json!({
+            "session": { "id": target.id, "title": target.title, "current": target.current },
+            "unresolved": open,
+            "threads": listed,
+        }))
+    }
+
+    /// `org_comment_resolve`: resolves or unresolves a thread by its root.
+    /// Auto-approved (ADR-0014): it reaches no one, is visible on the
+    /// Timeline, reversible by the same call, and audited like every call.
+    /// A reply is refused here, naming its root, rather than left to the
+    /// server's refusal, because the model can act on the root's id at once.
+    async fn resolve_comment(
+        &self,
+        grant: &Grant,
+        scope: &OrgScope,
+        session: Option<&str>,
+        comment_id: &str,
+        resolved: bool,
+    ) -> CallToolResult {
+        let target = match self.session_target(grant, scope, session).await {
+            Ok(target) => target,
+            Err(answer) => return answer,
+        };
+        let comments = match self.cloud.comments(&scope.org_id, &target.workspace_id, &target.id).await {
+            Ok(comments) => comments,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let Some(found) = comments.iter().find(|c| c.id == comment_id) else {
+            return tool_error(format!(
+                "no comment {comment_id} on recorded session {}; call org_comments for its threads",
+                target.id
+            ));
+        };
+        if let Some(root) = &found.parent_id {
+            return tool_error(format!("only a thread's first comment can be resolved; its root is {root}"));
+        }
+        let at = CommentRef {
+            org_id: &scope.org_id,
+            workspace_id: &target.workspace_id,
+            session_id: &target.id,
+            comment_id,
+        };
+        let updated = match self.cloud.set_resolved(at, resolved).await {
+            Ok(updated) => updated,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        let roster = self.cloud.members(&scope.org_id).await.ok();
+        tool_json(json!({
+            "session": { "id": target.id, "title": target.title, "current": target.current },
+            "comment": comment_json(&updated, roster.as_deref()),
         }))
     }
 }

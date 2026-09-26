@@ -17,7 +17,7 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    Caller, CloudError, CloudFuture, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
+    Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
     RecordedSession,
 };
 use super::offers::SessionOrgs;
@@ -178,6 +178,26 @@ impl OrganisationCloud for AppOrganisationCloud {
         Box::pin(async move {
             let artifacts = self.artifacts()?;
             Ok(artifacts.client.comments(org_id, workspace_id, session_id).await?)
+        })
+    }
+
+    /// The comment route's update half through the Timeline's artifacts
+    /// client, with only `resolved` in the patch: the body is the author's
+    /// and never touched here.
+    fn set_resolved<'a>(&'a self, comment: CommentRef<'a>, resolved: bool) -> CloudFuture<'a, atlas_artifacts::Comment> {
+        Box::pin(async move {
+            let artifacts = self.artifacts()?;
+            Ok(artifacts
+                .client
+                .update_comment(
+                    comment.org_id,
+                    comment.workspace_id,
+                    comment.session_id,
+                    comment.comment_id,
+                    None,
+                    Some(resolved),
+                )
+                .await?)
         })
     }
 

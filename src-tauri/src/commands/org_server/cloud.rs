@@ -198,6 +198,17 @@ pub struct InboxQuery<'a> {
     pub limit: Option<u32>,
 }
 
+/// One comment on a recorded session, addressed the way the server's routes
+/// address it: the organisation, the Workspace, the recorded session, the
+/// comment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommentRef<'a> {
+    pub org_id: &'a str,
+    pub workspace_id: &'a str,
+    pub session_id: &'a str,
+    pub comment_id: &'a str,
+}
+
 /// Everything the organisation tools do remotely.
 ///
 /// **Nothing here marks the inbox read**, and nothing may be added that
@@ -223,6 +234,13 @@ pub trait OrganisationCloud: Send + Sync {
     /// Every comment on a recorded session, roots and replies, oldest first.
     fn comments<'a>(&'a self, org_id: &'a str, workspace_id: &'a str, session_id: &'a str)
         -> CloudFuture<'a, Vec<Comment>>;
+
+    /// Resolves (`resolved: true`) or unresolves a thread's root comment on a
+    /// recorded session, as the caller, and answers the comment as the server
+    /// now holds it (`resolved_at`/`resolved_by` set, or cleared). The server
+    /// lets anyone who can read the Workspace do this, on roots only; the tool
+    /// refuses a reply before it gets here.
+    fn set_resolved<'a>(&'a self, comment: CommentRef<'a>, resolved: bool) -> CloudFuture<'a, Comment>;
 
     /// One page of the caller's inbox in `org_id` — mentions, replies and
     /// comments on their recorded sessions — with the unread total. Read-only.

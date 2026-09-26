@@ -121,6 +121,36 @@ describe("the one-line subject of each organisation call", () => {
     );
   });
 
+  it("org_comments names the recorded session it read", () => {
+    expect(subject("org_comments", {}, undefined)).toBe("Read comments on this session");
+    expect(subject("org_comments", { session: "current" }, undefined)).toBe(
+      "Read comments on this session",
+    );
+    expect(subject("org_comments", { session: "rs-2" }, undefined)).toBe("Read comments on rs-2");
+    expect(
+      subject(
+        "org_comments",
+        { unresolved_only: true },
+        { session: { id: "rs-1", title: "Fix the theme importer", current: true }, threads: [] },
+      ),
+    ).toBe("Read unresolved comments on Fix the theme importer");
+    expect(
+      subject("org_comments", { session: "rs-2" }, { session: { id: "rs-2", title: null } }),
+    ).toBe("Read comments on rs-2");
+  });
+
+  it("org_comment_resolve says which way the thread went and which comment", () => {
+    expect(subject("org_comment_resolve", { comment: "k1" }, undefined)).toBe(
+      "Resolved comment k1",
+    );
+    expect(subject("org_comment_resolve", { comment: "k4", resolved: false }, undefined)).toBe(
+      "Unresolved comment k4",
+    );
+    expect(
+      subject("org_comment_resolve", { comment: "k1", resolved: true }, { comment: { id: "k1" } }),
+    ).toBe("Resolved comment k1");
+  });
+
   it("a tool with no line of its own still gets a row, named by the tool", () => {
     expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
   });

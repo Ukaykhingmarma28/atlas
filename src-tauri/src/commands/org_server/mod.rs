@@ -52,7 +52,7 @@ pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
-    Caller, CloudError, CloudFuture, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
+    Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, OrgConversation, OrganisationCloud,
     RecordedSession,
 };
 #[allow(unused_imports)]

@@ -70,7 +70,27 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
       ? { verb, detail: "" }
       : { verb: `${verb}:`, detail: `${unread} unread` };
   },
+  // The session read: its title once answered (the current one has one), the
+  // id asked for, or "this session" when none was named.
+  org_comments: (args, answer) => {
+    const verb = args.unresolved_only === true ? "Read unresolved comments on" : "Read comments on";
+    return { verb, detail: sessionName(args, answer) };
+  },
+  // Visible, reversible and auto-approved: the row is the whole trail, so it
+  // says which way the thread went and which comment it was.
+  org_comment_resolve: (args, answer) => ({
+    verb: args.resolved === false ? "Unresolved comment" : "Resolved comment",
+    detail: str(obj(answer?.comment)?.id) ?? str(args.comment) ?? "",
+  }),
 };
+
+/** The recorded session a comment tool acted on, as a person reads it. */
+function sessionName(args: Json, answer: Json | null): string {
+  const session = obj(answer?.session);
+  const named = str(args.session);
+  const asked = named && named.toLowerCase() !== "current" ? named : null;
+  return str(session?.title) ?? str(session?.id) ?? asked ?? "this session";
+}
 
 /**
  * The bare tool name of an organisation call, or `null` for any other call.

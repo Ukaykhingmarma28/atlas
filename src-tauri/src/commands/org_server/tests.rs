@@ -50,6 +50,8 @@ struct FakeOrganisation {
     /// Recorded session id → its comments.
     comments: Mutex<HashMap<String, Vec<Comment>>>,
     comments_fail: AtomicBool,
+    /// Resolving or unresolving a comment fails.
+    resolve_fail: AtomicBool,
     /// The caller's inbox, in the order it was written (oldest first), each
     /// entry's read state as the user left it. There is no way to mark one
     /// read: the organisation cloud has no such method, so neither does this.
@@ -153,6 +155,33 @@ impl OrganisationCloud for FakeOrganisation {
                 return Err(CloudError::Unavailable("connection reset".into()));
             }
             Ok(self.comments.lock().get(session_id).cloned().unwrap_or_default())
+        })
+    }
+
+    /// As the server does: sets `resolved_at`/`resolved_by` (the caller) or
+    /// clears both, and answers the comment as it now is. The server refuses
+    /// a reply; so does this, so a test can show the tool never sent one.
+    fn set_resolved<'a>(&'a self, at: CommentRef<'a>, resolved: bool) -> CloudFuture<'a, Comment> {
+        Box::pin(async move {
+            self.asked.lock().push((
+                at.org_id.into(),
+                format!("resolve {}/{}/{} resolved={resolved}", at.workspace_id, at.session_id, at.comment_id),
+            ));
+            if self.resolve_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            let by = self.caller.lock().as_ref().map(|c| c.user_id.clone());
+            let mut sessions = self.comments.lock();
+            let comment = sessions
+                .get_mut(at.session_id)
+                .and_then(|list| list.iter_mut().find(|c| c.id == at.comment_id))
+                .ok_or_else(|| CloudError::NotFound("comment".into()))?;
+            if !comment.is_root() {
+                return Err(CloudError::Forbidden("only a root can be resolved".into()));
+            }
+            comment.resolved_at = resolved.then(|| "2026-09-26T12:00:00Z".to_string());
+            comment.resolved_by = if resolved { by } else { None };
+            Ok(comment.clone())
         })
     }
 
@@ -855,6 +884,316 @@ async fn reading_the_inbox_never_marks_anything_read() {
     client.cancel().await.ok();
 }
 
+// ── org_comments ─────────────────────────────────────────────────────────────
+
+/// A comment by `author` on recorded session `rs-1`, at minute `minute`.
+fn authored(id: &str, parent: Option<&str>, author: &str, body: &str, minute: u32) -> Comment {
+    Comment {
+        author_id: author.into(),
+        body: Some(body.into()),
+        created_at: format!("2026-09-26T10:{minute:02}:00Z"),
+        ..comment(id, parent)
+    }
+}
+
+/// The current session's comments, oldest first: an open thread from Sam on
+/// a checkpoint mentioning Grace, with a reply from Grace and a deleted
+/// reply; a thread Grace resolved; and an open thread from a guest reviewer.
+fn acme_comments() -> Vec<Comment> {
+    let mut root = authored("k1", None, "u-sam1", "<@u-grace> can you check the <@u-ghost> path?", 1);
+    root.anchor_kind = AnchorKind::Checkpoint;
+    root.anchor_id = "cp-7".into();
+    let reply = Comment { edited_at: Some("2026-09-26T10:05:00Z".into()), ..authored("k2", Some("k1"), "u-grace", "done", 2) };
+    let mut gone = authored("k3", Some("k1"), "u-sam2", "never mind", 3);
+    gone.body = None;
+    gone.deleted_at = Some("2026-09-26T10:04:00Z".into());
+    let mut done = authored("k4", None, "u-sam2", "typo in the title", 4);
+    done.resolved_at = Some("2026-09-26T11:00:00Z".into());
+    done.resolved_by = Some("u-grace".into());
+    let mut guest = authored("k5", None, "guest:9f2c", "looks good to me", 5);
+    guest.guest_name = Some("Outside Reviewer".into());
+    vec![root, reply, gone, done, guest]
+}
+
+/// An organisation whose chat `s1` is recorded as `rs-1` with
+/// [`acme_comments`], and whose Workspace also holds `rs-2` with one open
+/// thread.
+fn commented() -> Arc<FakeOrganisation> {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Developer)).with_roster(acme_roster());
+    org.record("s1", current(true));
+    for c in acme_comments() {
+        org.comment_on("rs-1", c);
+    }
+    org.comment_on("rs-2", Comment { session_id: "rs-2".into(), ..authored("z1", None, "u-1", "older remark", 0) });
+    org
+}
+
+fn thread_ids(answer: &Value) -> Vec<String> {
+    answer["threads"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_string()).collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comments_with_no_arguments_reads_the_current_sessions_threads() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comments", json!({})).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({
+            "session": { "id": "rs-1", "title": "Fix the theme importer", "current": true },
+            "unresolved": 2,
+            "threads": [
+                {
+                    "id": "k1",
+                    "author": { "user_id": "u-sam1", "name": "Sam Lee", "guest": false },
+                    "anchor": { "kind": "checkpoint", "id": "cp-7" },
+                    "body": "@Grace Hopper can you check the <@u-ghost> path?",
+                    "created_at": "2026-09-26T10:01:00Z",
+                    "edited_at": null,
+                    "resolved": null,
+                    "replies": [
+                        {
+                            "id": "k2",
+                            "author": { "user_id": "u-grace", "name": "Grace Hopper", "guest": false },
+                            "anchor": { "kind": "session", "id": null },
+                            "body": "done",
+                            "created_at": "2026-09-26T10:02:00Z",
+                            "edited_at": "2026-09-26T10:05:00Z",
+                        },
+                        {
+                            "id": "k3",
+                            "author": { "user_id": "u-sam2", "name": "Sam Lee", "guest": false },
+                            "anchor": { "kind": "session", "id": null },
+                            "body": null,
+                            "created_at": "2026-09-26T10:03:00Z",
+                            "edited_at": null,
+                            "deleted": true,
+                        },
+                    ],
+                },
+                {
+                    "id": "k4",
+                    "author": { "user_id": "u-sam2", "name": "Sam Lee", "guest": false },
+                    "anchor": { "kind": "session", "id": null },
+                    "body": "typo in the title",
+                    "created_at": "2026-09-26T10:04:00Z",
+                    "edited_at": null,
+                    "resolved": {
+                        "at": "2026-09-26T11:00:00Z",
+                        "by": { "user_id": "u-grace", "name": "Grace Hopper" },
+                    },
+                    "replies": [],
+                },
+                {
+                    "id": "k5",
+                    "author": { "user_id": "guest:9f2c", "name": "Outside Reviewer", "guest": true },
+                    "anchor": { "kind": "session", "id": null },
+                    "body": "looks good to me",
+                    "created_at": "2026-09-26T10:05:00Z",
+                    "edited_at": null,
+                    "resolved": null,
+                    "replies": [],
+                },
+            ],
+        }),
+    );
+    assert_eq!(
+        org.asked(),
+        [
+            ("org-acme".to_string(), "current s1 in /p".to_string()),
+            ("org-acme".to_string(), "comments ws-atlas/rs-1".to_string()),
+            ("org-acme".to_string(), "members".to_string()),
+        ],
+        "the current session's comments, in the grant's organisation and Workspace",
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_current_sentinel_is_the_current_session() {
+    let org = commented();
+    let (_server, client) = org_client(org).await;
+    let (_, default) = call_json(&client, "org_comments", json!({})).await;
+    for sentinel in ["current", "Current"] {
+        let (err, answer) = call_json(&client, "org_comments", json!({ "session": sentinel })).await;
+        assert!(!err, "{answer}");
+        assert_eq!(answer, default, "{sentinel}");
+    }
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_explicit_session_id_reads_any_recorded_session_in_the_workspace() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comments", json!({ "session": "rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"], json!({ "id": "rs-2", "title": null, "current": false }));
+    assert_eq!(thread_ids(&answer), ["z1"]);
+    assert_eq!(answer["threads"][0]["author"]["name"], json!("Ada Lovelace"));
+    assert!(
+        !org.asked().iter().any(|(_, what)| what.starts_with("current")),
+        "a named session needs no current-session join",
+    );
+    assert!(org.asked().contains(&("org-acme".to_string(), "comments ws-atlas/rs-2".to_string())));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unresolved_only_leaves_out_resolved_threads() {
+    let org = commented();
+    let (_server, client) = org_client(org).await;
+    let (err, answer) = call_json(&client, "org_comments", json!({ "unresolved_only": true })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(thread_ids(&answer), ["k1", "k5"]);
+    assert_eq!(answer["unresolved"], json!(2));
+    assert_eq!(answer["threads"][0]["replies"].as_array().unwrap().len(), 2, "an open thread keeps its replies");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mentions_are_written_as_names_and_keep_their_id_when_the_roster_cannot_name_them() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (_, answer) = call_json(&client, "org_comments", json!({})).await;
+    assert_eq!(answer["threads"][0]["body"], json!("@Grace Hopper can you check the <@u-ghost> path?"));
+
+    org.roster_fail.store(true, Ordering::SeqCst);
+    let (err, answer) = call_json(&client, "org_comments", json!({})).await;
+    assert!(!err, "the threads still answer without the roster: {answer}");
+    assert_eq!(answer["threads"][0]["body"], json!("<@u-grace> can you check the <@u-ghost> path?"));
+    assert_eq!(answer["threads"][0]["author"], json!({ "user_id": "u-sam1", "name": null, "guest": false }));
+    client.cancel().await.ok();
+}
+
+#[test]
+fn mention_rewriting_leaves_everything_that_is_not_a_mention_alone() {
+    let roster = acme_roster();
+    let named = |body: &str| super::tools::named_mentions(body, Some(&roster));
+    assert_eq!(named("hi <@u-1> and <@u-grace>!"), "hi @Ada Lovelace and @Grace Hopper!");
+    assert_eq!(named("a < b <@ nope> <@> <@u-1"), "a < b <@ nope> <@> <@u-1");
+    assert_eq!(named("<@<@u-1>"), "<@@Ada Lovelace");
+    assert_eq!(named("naïve <@u-1>é"), "naïve @Ada Lovelaceé", "multi-byte text around a mention survives");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_author_is_shown_as_a_guest_by_the_name_on_the_comment() {
+    let org = commented();
+    let (_server, client) = org_client(org).await;
+    let (_, answer) = call_json(&client, "org_comments", json!({})).await;
+    assert_eq!(
+        answer["threads"][2]["author"],
+        json!({ "user_id": "guest:9f2c", "name": "Outside Reviewer", "guest": true }),
+    );
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comments_on_a_chat_not_recorded_yet_says_so() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_roster(acme_roster());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comments", json!({})).await;
+    assert!(err);
+    assert!(text.contains(NOT_RECORDED_YET) && text.contains("recorded session id"), "{text}");
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("comments")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn comments_that_cannot_be_read_are_a_tool_error() {
+    let org = commented();
+    org.comments_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, text) = call(&client, "org_comments", json!({})).await;
+    assert!(err);
+    assert!(text.contains("could not be reached"), "{text}");
+    client.cancel().await.ok();
+}
+
+// ── org_comment_resolve ──────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_comment_resolve_resolves_a_root_on_the_current_session_as_the_caller() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comment_resolve", json!({ "comment": "k1" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"]["id"], json!("rs-1"));
+    assert_eq!(answer["comment"]["id"], json!("k1"));
+    assert_eq!(
+        answer["comment"]["resolved"],
+        json!({ "at": "2026-09-26T12:00:00Z", "by": { "user_id": "u-1", "name": "Ada Lovelace" } }),
+    );
+    assert!(org.asked().contains(&("org-acme".to_string(), "resolve ws-atlas/rs-1/k1 resolved=true".to_string())));
+
+    let (_, after) = call_json(&client, "org_comments", json!({ "unresolved_only": true })).await;
+    assert_eq!(thread_ids(&after), ["k5"], "the thread is resolved for everyone who reads it");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resolved_false_unresolves_a_root() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) =
+        call_json(&client, "org_comment_resolve", json!({ "comment": "k4", "resolved": false, "session": "current" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["comment"]["resolved"], Value::Null);
+    assert!(org.asked().contains(&("org-acme".to_string(), "resolve ws-atlas/rs-1/k4 resolved=false".to_string())));
+    let (_, after) = call_json(&client, "org_comments", json!({ "unresolved_only": true })).await;
+    assert_eq!(thread_ids(&after), ["k1", "k4", "k5"]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_root_on_a_named_session_resolves_there() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_comment_resolve", json!({ "comment": "z1", "session": "rs-2" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["session"], json!({ "id": "rs-2", "title": null, "current": false }));
+    assert!(org.asked().contains(&("org-acme".to_string(), "resolve ws-atlas/rs-2/z1 resolved=true".to_string())));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_is_refused_naming_its_root_and_nothing_is_sent() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_resolve", json!({ "comment": "k2" })).await;
+    assert!(err);
+    assert_eq!(text, "only a thread's first comment can be resolved; its root is k1");
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("resolve")), "the server was never asked");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_comment_id_is_an_error_and_nothing_is_sent() {
+    let org = commented();
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_resolve", json!({ "comment": "k99" })).await;
+    assert!(err);
+    assert!(text.contains("no comment k99 on recorded session rs-1") && text.contains("org_comments"), "{text}");
+    let (err, text) = call(&client, "org_comment_resolve", json!({})).await;
+    assert!(err);
+    assert!(text.contains("`comment`"), "{text}");
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("resolve")));
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resolve_the_organisation_cannot_take_is_a_tool_error() {
+    let org = commented();
+    org.resolve_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_comment_resolve", json!({ "comment": "k1" })).await;
+    assert!(err);
+    assert!(text.contains("could not be reached"), "{text}");
+    assert!(org.comments.lock()["rs-1"][0].resolved_at.is_none(), "nothing changed");
+    client.cancel().await.ok();
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
@@ -914,7 +1253,10 @@ async fn the_tool_list_is_what_the_model_is_offered() {
         .unwrap();
     let names: Vec<String> = client.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
     assert_eq!(names, tool_names());
-    assert_eq!(names, ["org_whoami", "org_members", "org_conversations", "org_inbox"]);
+    assert_eq!(
+        names,
+        ["org_whoami", "org_members", "org_conversations", "org_inbox", "org_comments", "org_comment_resolve"]
+    );
     client.cancel().await.ok();
 }
 
