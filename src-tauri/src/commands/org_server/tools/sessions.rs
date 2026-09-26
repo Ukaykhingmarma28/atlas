@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use rmcp::model::CallToolResult;
 use serde_json::{json, Value};
 
-use super::super::cloud::{BoardQuery, PayloadRef, TimelineQuery};
+use super::super::cloud::{BoardQuery, CloudError, PayloadRef, TimelineQuery};
 use super::super::OrgScope;
 use super::{resolve_member, tool_error, tool_json, OrgTools};
 use crate::commands::memory_server::Grant;
@@ -146,15 +146,93 @@ fn entry_json(entry: &RemoteEntry) -> Value {
 
 /// What the answer says when the scan stopped at [`SESSIONS_SCAN_CAP`] with
 /// more of the window still unread: how to narrow, and where to pick up.
-fn scan_cap_note(oldest: Option<&str>) -> String {
+fn scan_cap_note(oldest: Option<&str>, narrow_with: &str) -> String {
     let resume = match oldest {
         Some(at) => format!(" or pass until={at} to continue further back"),
         None => String::new(),
     };
     format!(
         "Stopped after scanning the {SESSIONS_SCAN_CAP} most recently active recorded sessions, before the end of \
-         the window, so older matches may be missing. Narrow with author, q or a shorter since/until window{resume}."
+         the window, so older matches may be missing. Narrow with {narrow_with}{resume}."
     )
+}
+
+/// The window a board fold reads, as the model named it: `since` and
+/// `until`, or — when it named neither — the last
+/// [`SESSIONS_DEFAULT_WINDOW_DAYS`] days, which the answer then says.
+pub(super) struct Window {
+    since: Option<DateTime<Utc>>,
+    until: Option<DateTime<Utc>>,
+    default: bool,
+}
+
+impl Window {
+    /// The window `since` and `until` name, or the tool's answer refusing a
+    /// moment that is not an ISO date or datetime (before anything is read).
+    pub(super) fn of(since: Option<&str>, until: Option<&str>) -> Result<Self, CallToolResult> {
+        let read = |name: &str, text: Option<&str>, end_of_day: bool| match text {
+            None => Ok(None),
+            Some(text) => parse_moment(text, end_of_day)
+                .map(Some)
+                .ok_or_else(|| tool_error(format!("{name} \"{text}\" is not an ISO date or datetime"))),
+        };
+        let mut since = read("since", since, false)?;
+        let until = read("until", until, true)?;
+        let default = since.is_none() && until.is_none();
+        if default {
+            since = Some(Utc::now() - Duration::days(SESSIONS_DEFAULT_WINDOW_DAYS));
+        }
+        Ok(Self { since, until, default })
+    }
+
+    /// Whether a recorded session overlaps the window at its far end: it
+    /// started at or before `until`. The near end (`since`) is the walk's —
+    /// the first row last active before it ends the walk.
+    fn holds(&self, session: &RemoteSession) -> bool {
+        self.until.is_none_or(|until| stamp(&session.started_at).is_none_or(|started| started <= until))
+    }
+
+    pub(super) fn json(&self) -> Value {
+        json!({ "since": self.since.map(iso), "until": self.until.map(iso), "default": self.default })
+    }
+}
+
+/// What one walk of a Workspace's board is asked ([`OrgTools::walk_board`]).
+pub(super) struct BoardWalk<'a> {
+    pub(super) workspace_id: &'a str,
+    /// The server's keyword search, passed through.
+    pub(super) q: Option<&'a str>,
+    pub(super) window: &'a Window,
+    /// Stop once this many rows are kept; `None` keeps every row in the
+    /// window, up to the scan cap.
+    pub(super) limit: Option<usize>,
+    /// What the scan-cap note tells the model to narrow with.
+    pub(super) narrow_with: &'static str,
+}
+
+/// What a walk of the board found.
+#[derive(Default)]
+pub(super) struct Walked {
+    /// The rows kept, most recently active first, as the board orders them.
+    pub(super) kept: Vec<RemoteSession>,
+    /// How many rows in the window were read.
+    pub(super) scanned: usize,
+    /// The scan cap stopped the walk with more of the window unread.
+    pub(super) truncated: bool,
+    /// `limit` rows were kept with more still unread.
+    pub(super) limit_reached: bool,
+    pub(super) notes: Vec<String>,
+}
+
+/// The Workspace a board fold reads: the one the model named, in the grant's
+/// organisation, else the grant's own.
+pub(super) fn workspace_of<'a>(asked: Option<&'a str>, scope: &'a OrgScope) -> Result<&'a str, CallToolResult> {
+    asked.or(scope.workspace_id.as_deref()).ok_or_else(|| {
+        tool_error(
+            "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
+             ask the user to reopen the project's cloud settings and start a new chat",
+        )
+    })
 }
 
 impl OrgTools {
@@ -162,12 +240,8 @@ impl OrgTools {
     /// board, newest activity first, folded here by author, window and
     /// liveness — the server has no such filters — and narrowed there by the
     /// keyword search, which is passed through untouched.
-    ///
-    /// Reads board pages until the window is behind it (the board is ordered
-    /// by last activity, so the first row older than `since` means every
-    /// later one is too), the board ends, `limit` matches are found, or
-    /// [`SESSIONS_SCAN_CAP`] rows have been read — the last reported as
-    /// `truncated`, with a sentence saying how to narrow or go further back.
+    /// The board is read by [`OrgTools::walk_board`], stopping at `limit`
+    /// matches.
     ///
     /// A session is in the window when it overlaps it: active at or after
     /// `since`, and started at or before `until`. With neither given, `since`
@@ -180,122 +254,39 @@ impl OrgTools {
     /// organisation — never another organisation's: the board is asked in the
     /// grant's, and the server refuses a Workspace that is not in it.
     pub(super) async fn sessions(&self, scope: &OrgScope, filters: SessionFilters<'_>) -> CallToolResult {
-        let Some(workspace_id) = filters.workspace.or(scope.workspace_id.as_deref()) else {
-            return tool_error(
-                "this session's project is bound to the organisation but its Workspace id is not recorded yet; \
-                 ask the user to reopen the project's cloud settings and start a new chat",
-            );
+        let workspace_id = match workspace_of(filters.workspace, scope) {
+            Ok(id) => id,
+            Err(answer) => return answer,
         };
-
-        let mut since = match filters.since {
-            None => None,
-            Some(text) => match parse_moment(text, false) {
-                Some(at) => Some(at),
-                None => return tool_error(format!("since \"{text}\" is not an ISO date or datetime")),
-            },
+        let window = match Window::of(filters.since, filters.until) {
+            Ok(window) => window,
+            Err(answer) => return answer,
         };
-        let until = match filters.until {
-            None => None,
-            Some(text) => match parse_moment(text, true) {
-                Some(at) => Some(at),
-                None => return tool_error(format!("until \"{text}\" is not an ISO date or datetime")),
-            },
-        };
-        let default_window = since.is_none() && until.is_none();
-        if default_window {
-            since = Some(Utc::now() - Duration::days(SESSIONS_DEFAULT_WINDOW_DAYS));
-        }
-
-        // The author, as a user id: the caller for "me", else the roster's
-        // one match (several come back as candidates to ask about).
         let author = match filters.author {
             None => None,
-            Some(me) if me.eq_ignore_ascii_case("me") => match self.cloud.caller(&scope.org_id).await {
-                Ok(caller) => Some((caller.user_id, caller.name)),
-                Err(e) => return tool_error(e.to_string()),
+            Some(name) => match self.author_of(scope, name).await {
+                Ok(author) => Some(author),
+                Err(answer) => return answer,
             },
-            Some(name) => {
-                let roster = match self.cloud.members(&scope.org_id).await {
-                    Ok(roster) => roster,
-                    Err(e) => return tool_error(e.to_string()),
-                };
-                match resolve_member(&roster, name) {
-                    Ok(member) => Some((member.user_id, member.name)),
-                    Err(answer) => return answer,
-                }
-            }
         };
 
-        let matches = |session: &RemoteSession| {
+        let keep = |session: &RemoteSession| {
             author.as_ref().is_none_or(|(id, _)| session.author_id.as_deref() == Some(id.as_str()))
                 && filters.live.is_none_or(|live| session.live == live)
-                && until.is_none_or(|until| stamp(&session.started_at).is_none_or(|started| started <= until))
         };
-
-        let mut found: Vec<Value> = Vec::new();
-        let mut notes: Vec<String> = Vec::new();
-        let mut scanned = 0usize;
-        let mut oldest: Option<String> = None;
-        let mut truncated = false;
-        let mut limit_reached = false;
-        let mut cursor: Option<String> = None;
-        'pages: loop {
-            let query = BoardQuery { workspace_id, q: filters.q, cursor: cursor.as_deref() };
-            let page = match self.cloud.board_page(&scope.org_id, query).await {
-                Ok(page) => page,
-                Err(e) => return tool_error(e.to_string()),
-            };
-            for note in page.notes {
-                if !notes.contains(&note) {
-                    notes.push(note);
-                }
-            }
-            let rows = page.sessions.len();
-            for (i, session) in page.sessions.into_iter().enumerate() {
-                if scanned == SESSIONS_SCAN_CAP {
-                    truncated = i < rows || page.next_cursor.is_some();
-                    break 'pages;
-                }
-                let last_active = stamp(&session.last_activity_at);
-                if let (Some(since), Some(at)) = (since, last_active) {
-                    if at < since {
-                        // Every later row is older still: the window is behind us.
-                        break 'pages;
-                    }
-                }
-                scanned += 1;
-                oldest = Some(session.last_activity_at.clone()).filter(|s| !s.is_empty()).or(oldest);
-                if matches(&session) {
-                    found.push(recorded_session_json(&session));
-                    if found.len() == filters.limit {
-                        limit_reached = i + 1 < rows || page.next_cursor.is_some();
-                        break 'pages;
-                    }
-                }
-            }
-            match page.next_cursor {
-                // An empty page that still names a next one would walk forever.
-                Some(_) if rows == 0 => break,
-                Some(next) if scanned < SESSIONS_SCAN_CAP => cursor = Some(next),
-                Some(_) => {
-                    truncated = true;
-                    break;
-                }
-                None => break,
-            }
-        }
-
-        if default_window {
-            notes.push(format!(
-                "No since or until was given, so only the last {SESSIONS_DEFAULT_WINDOW_DAYS} days were searched; \
-                 pass since (an ISO date) to look further back."
-            ));
-        }
-        if truncated {
-            notes.push(scan_cap_note(oldest.as_deref()));
-        }
-        if limit_reached {
-            notes.push(format!(
+        let walk = BoardWalk {
+            workspace_id,
+            q: filters.q,
+            window: &window,
+            limit: Some(filters.limit),
+            narrow_with: "author, q or a shorter since/until window",
+        };
+        let mut walked = match self.walk_board(&scope.org_id, walk, keep).await {
+            Ok(walked) => walked,
+            Err(e) => return tool_error(e.to_string()),
+        };
+        if walked.limit_reached {
+            walked.notes.push(format!(
                 "Only the {} most recently active matches are listed; raise limit (up to {SESSIONS_MAX_LIMIT}) or \
                  narrow the search for more.",
                 filters.limit
@@ -304,21 +295,107 @@ impl OrgTools {
 
         let mut answer = json!({
             "workspace": { "id": workspace_id },
-            "window": {
-                "since": since.map(iso),
-                "until": until.map(iso),
-                "default": default_window,
-            },
-            "sessions": found,
-            "scanned": scanned,
-            "truncated": truncated,
-            "limit_reached": limit_reached,
-            "notes": notes,
+            "window": window.json(),
+            "sessions": walked.kept.iter().map(recorded_session_json).collect::<Vec<_>>(),
+            "scanned": walked.scanned,
+            "truncated": walked.truncated,
+            "limit_reached": walked.limit_reached,
+            "notes": walked.notes,
         });
         if let Some((id, name)) = author {
             answer["author"] = json!({ "user_id": id, "name": name });
         }
         tool_json(answer)
+    }
+
+    /// A member a board fold is narrowed to, as `(user id, name)`: the caller
+    /// for `"me"`, else the roster's one match — several come back as
+    /// candidates to ask about, and the board is not read.
+    pub(super) async fn author_of(&self, scope: &OrgScope, name: &str) -> Result<(String, String), CallToolResult> {
+        if name.eq_ignore_ascii_case("me") {
+            return match self.cloud.caller(&scope.org_id).await {
+                Ok(caller) => Ok((caller.user_id, caller.name)),
+                Err(e) => Err(tool_error(e.to_string())),
+            };
+        }
+        let roster = self.cloud.members(&scope.org_id).await.map_err(|e| tool_error(e.to_string()))?;
+        resolve_member(&roster, name).map(|member| (member.user_id, member.name))
+    }
+
+    /// One walk of a Workspace's board — the scan `org_sessions` and
+    /// `org_member_activity` share, so both honour the same window and cap.
+    ///
+    /// Reads board pages until the window is behind it (the board is ordered
+    /// by last activity, so the first row older than `since` means every
+    /// later one is too), the board ends, `limit` rows are kept, or
+    /// [`SESSIONS_SCAN_CAP`] rows have been read — the last reported as
+    /// `truncated`, with a sentence saying how to narrow or go further back.
+    /// A row is kept when it is in the window ([`Window::holds`]) and `keep`
+    /// takes it. The notes carry the server's, then what the walk itself has
+    /// to say: that the default window was searched, and that the cap was
+    /// reached.
+    pub(super) async fn walk_board(
+        &self,
+        org_id: &str,
+        walk: BoardWalk<'_>,
+        keep: impl Fn(&RemoteSession) -> bool,
+    ) -> Result<Walked, CloudError> {
+        let mut walked = Walked::default();
+        let mut oldest: Option<String> = None;
+        let mut cursor: Option<String> = None;
+        'pages: loop {
+            let query = BoardQuery { workspace_id: walk.workspace_id, q: walk.q, cursor: cursor.as_deref() };
+            let page = self.cloud.board_page(org_id, query).await?;
+            for note in page.notes {
+                if !walked.notes.contains(&note) {
+                    walked.notes.push(note);
+                }
+            }
+            let rows = page.sessions.len();
+            for (i, session) in page.sessions.into_iter().enumerate() {
+                if walked.scanned == SESSIONS_SCAN_CAP {
+                    walked.truncated = i < rows || page.next_cursor.is_some();
+                    break 'pages;
+                }
+                let last_active = stamp(&session.last_activity_at);
+                if let (Some(since), Some(at)) = (walk.window.since, last_active) {
+                    if at < since {
+                        // Every later row is older still: the window is behind us.
+                        break 'pages;
+                    }
+                }
+                walked.scanned += 1;
+                oldest = Some(session.last_activity_at.clone()).filter(|s| !s.is_empty()).or(oldest);
+                if walk.window.holds(&session) && keep(&session) {
+                    walked.kept.push(session);
+                    if walk.limit == Some(walked.kept.len()) {
+                        walked.limit_reached = i + 1 < rows || page.next_cursor.is_some();
+                        break 'pages;
+                    }
+                }
+            }
+            match page.next_cursor {
+                // An empty page that still names a next one would walk forever.
+                Some(_) if rows == 0 => break,
+                Some(next) if walked.scanned < SESSIONS_SCAN_CAP => cursor = Some(next),
+                Some(_) => {
+                    walked.truncated = true;
+                    break;
+                }
+                None => break,
+            }
+        }
+
+        if walk.window.default {
+            walked.notes.push(format!(
+                "No since or until was given, so only the last {SESSIONS_DEFAULT_WINDOW_DAYS} days were searched; \
+                 pass since (an ISO date) to look further back."
+            ));
+        }
+        if walked.truncated {
+            walked.notes.push(scan_cap_note(oldest.as_deref(), walk.narrow_with));
+        }
+        Ok(walked)
     }
 
     /// `org_session`: one recorded session's summary and one page of its

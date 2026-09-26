@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 
 use super::adapter::scope_of;
 use super::tools::{
-    tool_names, tools_list, INSTRUCTIONS, NOT_RECORDED_YET, SESSIONS_DEFAULT_LIMIT, SESSIONS_DEFAULT_WINDOW_DAYS,
+    tool_names, tools, tools_list, ACTIVITY_ROWS, INSTRUCTIONS, RECORDED_NOTE, NOT_RECORDED_YET, SESSIONS_DEFAULT_LIMIT, SESSIONS_DEFAULT_WINDOW_DAYS,
     SESSIONS_SCAN_CAP, TIMELINE_DEFAULT_LIMIT,
 };
 use super::*;
@@ -77,6 +77,8 @@ struct FakeOrganisation {
     /// orders it as the server does, most recently active first).
     board: Mutex<Vec<RemoteSession>>,
     board_fail: AtomicBool,
+    /// The server refuses the board to this account (a 403).
+    board_forbidden: AtomicBool,
     /// Recorded session id → its entries, in the server's order.
     timelines: Mutex<HashMap<String, Vec<RemoteEntry>>>,
     timeline_fail: AtomicBool,
@@ -321,6 +323,9 @@ impl OrganisationCloud for FakeOrganisation {
             ));
             if self.board_fail.load(Ordering::SeqCst) {
                 return Err(CloudError::Unavailable("connection reset".into()));
+            }
+            if self.board_forbidden.load(Ordering::SeqCst) {
+                return Err(CloudError::Forbidden("403 forbidden".into()));
             }
             let mut rows: Vec<RemoteSession> = self
                 .board
@@ -2563,6 +2568,180 @@ async fn a_board_that_cannot_be_read_is_a_tool_error() {
 
 // ── org_session ──────────────────────────────────────────────────────────────
 
+// ── org_member_activity ──────────────────────────────────────────────────────
+
+/// [`boarded`], with the caller in `role`.
+fn boarded_as(role: Option<Role>) -> Arc<FakeOrganisation> {
+    FakeOrganisation::with_member("Ada Lovelace", role).with_roster(acme_roster()).with_board(acme_board())
+}
+
+async fn offered_names(org: Arc<FakeOrganisation>) -> Vec<String> {
+    let (_server, client) = org_client(org).await;
+    let names = client.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
+    client.cancel().await.ok();
+    names
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_admin_is_offered_org_member_activity_and_no_other_role_is() {
+    let names = offered_names(boarded_as(Some(Role::Admin))).await;
+    assert!(names.contains(&"org_member_activity".to_string()), "{names:?}");
+    assert_eq!(names, tool_names(true));
+
+    for role in [Some(Role::ProductOwner), Some(Role::Developer), Some(Role::Member), None] {
+        let names = offered_names(boarded_as(role)).await;
+        assert!(!names.contains(&"org_member_activity".to_string()), "{role:?} is offered it: {names:?}");
+        assert_eq!(names, tool_names(false), "{role:?} is offered everything else");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_caller_that_cannot_be_read_is_not_offered_org_member_activity() {
+    let org = Arc::new(FakeOrganisation::default()).with_board(acme_board());
+    let names = offered_names(org).await;
+    assert!(!names.contains(&"org_member_activity".to_string()), "{names:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_non_admin_calling_org_member_activity_anyway_is_refused_and_nothing_is_read() {
+    for role in [Some(Role::ProductOwner), Some(Role::Developer), Some(Role::Member), None] {
+        let org = boarded_as(role);
+        let (_server, client) = org_client(org.clone()).await;
+        let (err, text) = call(&client, "org_member_activity", json!({ "member": "Grace Hopper" })).await;
+        assert!(err, "{role:?}: {text}");
+        assert!(text.contains("Only an organisation admin"), "{text}");
+        assert_eq!(org.board_reads(), 0, "{role:?}");
+        assert!(!org.asked().iter().any(|(_, what)| what == "members"), "{role:?}: the roster is not read");
+        client.cancel().await.ok();
+    }
+}
+
+#[test]
+fn org_member_activity_is_described_as_recorded_activity_not_performance() {
+    let tool = tools().into_iter().find(|t| t.name == "org_member_activity").unwrap();
+    let description = tool.description.unwrap();
+    assert!(description.contains("recorded through Atlas (not a measure of performance)"), "{description}");
+    assert!(description.contains("last 14 days"), "{description}");
+    assert!(RECORDED_NOTE.contains("recorded through Atlas, not a measure of performance"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_member_activity_totals_the_members_recorded_sessions_of_the_last_fourteen_days() {
+    let org = boarded_as(Some(Role::Admin));
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_member_activity", json!({ "member": "grace@acme.dev" })).await;
+    assert!(!err, "{answer}");
+
+    assert_eq!(answer["member"], json!({ "user_id": "u-grace", "name": "Grace Hopper" }));
+    assert_eq!(answer["workspace"], json!({ "id": "ws-atlas" }));
+    assert_eq!(answer["window"]["default"], json!(true));
+    // Grace's two-day-old session only: her three-week-old one is outside
+    // the window, and Ada's and Sam's are not hers.
+    assert_eq!(
+        answer["totals"],
+        json!({
+            "recorded_sessions": 1,
+            "checkpoints": 2,
+            "insertions": 40,
+            "deletions": 3,
+            "files_touched": 4,
+            "total_tokens": 91_000,
+        }),
+    );
+    let row = &answer["sessions"][0];
+    assert_eq!(
+        row,
+        &json!({
+            "id": "rs-grace",
+            "title": "Fix the theme importer",
+            "last_activity_at": row["last_activity_at"],
+            "checkpoints": 2,
+            "insertions": 40,
+            "deletions": 3,
+            "files_touched": 4,
+            "total_tokens": 91_000,
+        }),
+    );
+    assert_eq!(answer["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(answer["more_sessions"], json!(0));
+    assert_eq!(answer["scanned"], json!(4), "the same walk as org_sessions: the three-week-old row ends it");
+    assert_eq!(answer["truncated"], json!(false));
+    let said = notes(&answer);
+    assert!(said.contains("recorded through Atlas, not a measure of performance"), "{said}");
+    assert!(said.contains("only the last 14 days were searched"), "{said}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_explicit_window_totals_every_recorded_session_of_the_member_in_it() {
+    let org = boarded_as(Some(Role::Admin));
+    let (_server, client) = org_client(org).await;
+    let (err, answer) =
+        call_json(&client, "org_member_activity", json!({ "member": "u-grace", "since": "2000-01-01" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(session_ids(&answer), ["rs-grace", "rs-grace-old"], "newest first");
+    assert_eq!(answer["totals"]["recorded_sessions"], json!(2));
+    assert_eq!(answer["totals"]["insertions"], json!(80));
+    assert_eq!(answer["totals"]["total_tokens"], json!(182_000));
+    assert_eq!(answer["window"]["default"], json!(false));
+    assert!(!notes(&answer).contains("14 days"), "{answer}");
+
+    let until = (chrono::Utc::now() - chrono::Duration::days(15)).format("%Y-%m-%d").to_string();
+    let (_, older) = call_json(&client, "org_member_activity", json!({ "member": "u-grace", "until": until })).await;
+    assert_eq!(session_ids(&older), ["rs-grace-old"]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_activity_scan_stops_at_five_hundred_sessions_lists_twenty_and_totals_every_one_read() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", Some(Role::Admin))
+        .with_roster(acme_roster())
+        .with_board(busy_board(650));
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_member_activity", json!({ "member": "Grace Hopper" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["scanned"], json!(SESSIONS_SCAN_CAP));
+    assert_eq!(answer["truncated"], json!(true));
+    assert_eq!(answer["totals"]["recorded_sessions"], json!(500));
+    assert_eq!(answer["totals"]["checkpoints"], json!(1_000));
+    assert_eq!(answer["sessions"].as_array().unwrap().len(), ACTIVITY_ROWS);
+    assert_eq!(answer["sessions"][0]["id"], json!("rs-0001"), "most recently active first");
+    assert_eq!(answer["more_sessions"], json!(500 - ACTIVITY_ROWS));
+    let said = notes(&answer);
+    assert!(said.contains("scanning the 500 most recently active"), "{said}");
+    assert!(said.contains("Narrow with a shorter since/until window"), "{said}");
+    assert!(said.contains("the totals cover all 500"), "{said}");
+    assert_eq!(org.board_reads(), 5, "the same cap as org_sessions");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_name_several_share_comes_back_as_candidates_and_the_board_is_not_read() {
+    let org = boarded_as(Some(Role::Admin));
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_member_activity", json!({ "member": "Sam Lee" })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().unwrap().len(), 2, "{answer}");
+    assert_eq!(org.board_reads(), 0);
+
+    let (err, text) = call(&client, "org_member_activity", json!({})).await;
+    assert!(err);
+    assert!(text.contains("name the member"), "{text}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_403_from_the_organisation_is_a_readable_tool_error() {
+    let org = boarded_as(Some(Role::Admin));
+    org.board_forbidden.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org).await;
+    let (err, text) = call(&client, "org_member_activity", json!({ "member": "Grace Hopper" })).await;
+    assert!(err);
+    assert!(text.contains("refused this account a member's recorded activity (403 forbidden)"), "{text}");
+    assert!(text.contains("only an organisation admin can read it"), "{text}");
+    client.cancel().await.ok();
+}
+
 fn timeline_entry(id: &str, kind: &str, turn: i64) -> RemoteEntry {
     RemoteEntry { id: id.into(), kind: kind.into(), at: format!("2026-09-26T10:0{turn}:00Z"), turn_seq: turn, ..Default::default() }
 }
@@ -2865,7 +3044,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
         .await
         .unwrap();
     let names: Vec<String> = client.list_all_tools().await.unwrap().into_iter().map(|t| t.name.to_string()).collect();
-    assert_eq!(names, tool_names());
+    assert_eq!(names, tool_names(false));
     assert_eq!(
         names,
         [
@@ -2887,7 +3066,7 @@ async fn the_tool_list_is_what_the_model_is_offered() {
 
 #[test]
 fn the_tool_list_carries_the_cache_fields_the_2026_07_28_spec_requires() {
-    let list = serde_json::to_value(tools_list()).unwrap();
+    let list = serde_json::to_value(tools_list(false)).unwrap();
     assert_eq!(list["ttlMs"], json!(TOOLS_LIST_TTL_MS));
     assert_eq!(list["cacheScope"], json!("private"));
 }

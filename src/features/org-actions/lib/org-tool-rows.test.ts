@@ -245,6 +245,19 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Read entry e2 of Fix the theme importer");
   });
 
+  it("org_member_activity names whose recorded activity it read", () => {
+    expect(
+      subject(
+        "org_member_activity",
+        { member: "grace@acme.dev" },
+        { member: { user_id: "u-grace", name: "Grace Hopper" }, totals: {} },
+      ),
+    ).toBe("Recorded activity of Grace Hopper");
+    expect(subject("org_member_activity", { member: "grace@acme.dev" }, undefined)).toBe(
+      "Recorded activity of grace@acme.dev",
+    );
+  });
+
   it("org_page_create names the page and the conversation whose Space holds it", () => {
     expect(
       subject(

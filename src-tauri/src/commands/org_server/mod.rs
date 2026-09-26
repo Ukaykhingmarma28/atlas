@@ -46,7 +46,8 @@
 //!
 //! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
 //! `org_comment_resolve`, `org_comment_reply`, `org_sessions`, `org_session`,
-//! `org_page_create` and `org_send` exist so far; the rest of the thirteen tools the spec names are
+//! `org_page_create`, `org_send` and (admins only, [`ADMIN_TOOLS`])
+//! `org_member_activity` exist so far; the rest of the thirteen tools the spec names are
 //! added on this skeleton.
 
 mod adapter;
@@ -72,7 +73,7 @@ pub use cloud::{
 #[allow(unused_imports)]
 pub use offers::{OrgOffer, OrgOfferDecision, SessionOrgs};
 #[allow(unused_imports)]
-pub use tools::{router, OrgTools, INSTRUCTIONS, OUTWARD_TOOLS};
+pub use tools::{router, OrgTools, ADMIN_TOOLS, INSTRUCTIONS, OUTWARD_TOOLS};
 
 /// The name the server goes by in the agent's MCP configuration; its tools
 /// reach the model as `mcp__atlas_org__<tool>`.

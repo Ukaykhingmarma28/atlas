@@ -19,9 +19,11 @@
 //! resolvers more than one area shares. Each area's tools live beside it:
 //! [`roster`] (who you are, members, conversations), [`inbox`],
 //! [`comments`] (threads, resolving, replying), [`messages`] (sending),
-//! [`sessions`] (the recorded work), [`spaces`] (pages in a conversation's
+//! [`sessions`] (the recorded work), [`activity`] (a member's recorded
+//! activity, for admins), [`spaces`] (pages in a conversation's
 //! Space) and [`describe`] (the approval card for an outward call).
 
+mod activity;
 mod comments;
 mod describe;
 mod inbox;
@@ -49,12 +51,16 @@ use super::cloud::{CurrentSessionQuery, InboxQuery, Member, OrgConversation, Org
 use super::offers::SessionOrgs;
 use super::resolve::{self, Resolution};
 use super::{OrgAccessGate, OrgScope, ORG_PATH, ORG_SERVER_NAME};
+use crate::auth::Role;
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
 use atlas_agent_servers::OutwardConsent;
+use activity::ActivityArgs;
 use comments::ReplyArgs;
 use messages::SendArgs;
 #[cfg(test)]
 pub(super) use comments::{named_mentions, with_mentions};
+#[cfg(test)]
+pub(super) use activity::{ACTIVITY_ROWS, RECORDED_NOTE};
 pub(super) use sessions::SESSIONS_DEFAULT_LIMIT;
 use sessions::{SessionFilters, SESSIONS_MAX_LIMIT};
 #[cfg(test)]
@@ -81,6 +87,14 @@ user first; say what you will send. Results are JSON; an error says what was ref
 /// [`OrgTools::answer`] refuses any of them without the user's recorded
 /// approval of that exact call. A new outward tool is one more name here.
 pub const OUTWARD_TOOLS: &[&str] = &["org_comment_reply", "org_send"];
+
+/// The tools only an organisation **admin** is offered: left out of the
+/// `tools/list` answer for a session whose caller holds any other role (read
+/// from the access token's organisation claim, through the organisation
+/// cloud's `caller`), and refused at call time for one that calls it anyway.
+/// The role is a mirror — the server is the authority, and its 403 is still
+/// answered in words.
+pub const ADMIN_TOOLS: &[&str] = &["org_member_activity"];
 
 /// What a tool answers while the user has switched organisation access off.
 const OFF_NOTE: &str =
@@ -119,7 +133,8 @@ fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
     Tool::new(Cow::Borrowed(name), Cow::Borrowed(description), schema(input))
 }
 
-/// The tools, reads first.
+/// Every tool, reads first — [`ADMIN_TOOLS`] included; [`tools_for`] is
+/// what a session is offered.
 pub(super) fn tools() -> Vec<Tool> {
     vec![
         tool(
@@ -258,6 +273,22 @@ pub(super) fn tools() -> Vec<Tool> {
             }),
         ),
         tool(
+            "org_member_activity",
+            "A member's activity recorded through Atlas (not a measure of performance): recorded sessions, \
+             checkpoints, insertions, deletions and tokens over the last 14 days unless since/until say otherwise, \
+             as org_sessions scans. Admins only.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "member": { "type": "string", "description": "A member's id, name or email." },
+                    "since": { "type": "string", "description": "Active at or after this ISO date or datetime (UTC)." },
+                    "until": { "type": "string", "description": "Started at or before this ISO date or datetime (UTC)." },
+                    "workspace": { "type": "string", "description": "A Workspace id in this organisation (default: this project's)." }
+                },
+                "required": ["member"]
+            }),
+        ),
+        tool(
             "org_page_create",
             "Create a page at the root of a conversation's Space, as the user; answers its page_id.",
             json!({
@@ -272,15 +303,22 @@ pub(super) fn tools() -> Vec<Tool> {
     ]
 }
 
+/// The tools a session is offered: every one for an organisation admin,
+/// every one but [`ADMIN_TOOLS`] for anyone else.
+pub(super) fn tools_for(admin: bool) -> Vec<Tool> {
+    tools().into_iter().filter(|t| admin || !ADMIN_TOOLS.contains(&t.name.as_ref())).collect()
+}
+
 #[cfg(test)]
-pub(super) fn tool_names() -> Vec<String> {
-    tools().into_iter().map(|t| t.name.to_string()).collect()
+pub(super) fn tool_names(admin: bool) -> Vec<String> {
+    tools_for(admin).into_iter().map(|t| t.name.to_string()).collect()
 }
 
 /// The `tools/list` answer, with the cache fields MCP 2026-07-28 requires
-/// (see the memory tool server's `tools_list`).
-pub(super) fn tools_list() -> ListToolsResult {
-    ListToolsResult::with_all_items(tools())
+/// (see the memory tool server's `tools_list`). Private-scoped: it differs by
+/// the caller's role.
+pub(super) fn tools_list(admin: bool) -> ListToolsResult {
+    ListToolsResult::with_all_items(tools_for(admin))
         .with_ttl_ms(TOOLS_LIST_TTL_MS)
         .with_cache_scope(CacheScope::Private)
 }
@@ -545,6 +583,15 @@ impl OrgTools {
                     }
                 }
             }
+            "org_member_activity" => {
+                let args = ActivityArgs {
+                    member: string_arg(request, "member"),
+                    since: string_arg(request, "since"),
+                    until: string_arg(request, "until"),
+                    workspace: string_arg(request, "workspace"),
+                };
+                self.member_activity(&scope, args).await
+            }
             "org_page_create" => {
                 let Some(conversation) = string_arg(request, "conversation") else {
                     return tool_error(
@@ -615,17 +662,44 @@ impl OrgTools {
     }
 }
 
+impl OrgTools {
+    /// Whether the session's caller is an admin in the grant's organisation,
+    /// asked afresh on every `tools/list`. Anything short of a known admin —
+    /// no organisation on the grant, the setting off, nobody signed in, a
+    /// role the token does not state, a caller that cannot be read — is not,
+    /// so an admin tool is only ever offered to someone the token names as one.
+    async fn offers_admin_tools(&self, grant: Option<&Grant>) -> bool {
+        let Some(scope) = grant.and_then(|g| g.org.as_ref()) else { return false };
+        if !(self.gate)() || !self.orgs.signed_in() {
+            return false;
+        }
+        matches!(self.cloud.caller(&scope.org_id).await, Ok(caller) if caller.role == Some(Role::Admin))
+    }
+}
+
+/// The session's grant, as the listener's token check left it on the request.
+fn grant_of(context: &RequestContext<RoleServer>) -> Option<Grant> {
+    context
+        .extensions
+        .get::<axum::http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<Grant>())
+        .cloned()
+}
+
 impl ServerHandler for OrgTools {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(INSTRUCTIONS)
     }
 
+    /// The tools this session is offered: [`ADMIN_TOOLS`] only when its
+    /// caller is an admin in the grant's organisation.
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        Ok(tools_list())
+        let admin = self.offers_admin_tools(grant_of(&context).as_ref()).await;
+        Ok(tools_list(admin))
     }
 
     async fn call_tool(
@@ -633,12 +707,7 @@ impl ServerHandler for OrgTools {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
-        let grant = context
-            .extensions
-            .get::<axum::http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<Grant>())
-            .cloned()
-            .ok_or_else(|| McpError::invalid_request("no session token", None))?;
+        let grant = grant_of(&context).ok_or_else(|| McpError::invalid_request("no session token", None))?;
         Ok(self.dispatch(grant, request).await.into())
     }
 }

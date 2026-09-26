@@ -127,6 +127,12 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
       ? { verb: "Read", detail: session }
       : { verb: "Read recorded session", detail: session };
   },
+  // Admins only: a member's activity recorded through Atlas — never named as
+  // performance. The member by the name the answer resolved, else as asked.
+  org_member_activity: (args, answer) => ({
+    verb: "Recorded activity of",
+    detail: str(obj(answer?.member)?.name) ?? str(args.member) ?? "",
+  }),
   // Auto-approved and audited (ADR-0014): the row is the trail, so it names
   // the page and the conversation whose Space holds it — as created once
   // answered, as asked until then.
