@@ -69,6 +69,7 @@ import { PlanTasksPill } from "./plan-tasks-pill";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import { ComposerOptionsPill } from "./composer-options-pill";
 import { UsagePill } from "./usage-pill";
+import { composerPillLabelClass } from "./composer-dropup";
 import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
 import { AiGrantBar } from "./ai-grant-bar";
@@ -291,7 +292,7 @@ function NativeMemoryPill() {
       onClick={reindex}
       disabled={indexing}
       title="Codebase index that grounds the agent's memory recall — click to re-index"
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
+      className="flex items-center px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
         <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
@@ -301,7 +302,7 @@ function NativeMemoryPill() {
           className={status?.indexed ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
         />
       )}
-      {label}
+      <span className={composerPillLabelClass("early")}>{label}</span>
     </button>
   );
 }
@@ -324,14 +325,16 @@ function EffortPill({ tabId }: { tabId: string }) {
   return (
     <button
       onClick={cycle}
-      className="flex items-center gap-1.5 px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+      className="flex items-center px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
       title="Reasoning effort (thinking budget) — Anthropic models"
     >
       <Brain
         size={11}
         className={active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
       />
-      {active ? `Think: ${effort}` : "Think"}
+      <span className={composerPillLabelClass("early")}>
+        {active ? `Think: ${effort}` : "Think"}
+      </span>
     </button>
   );
 }
@@ -505,7 +508,6 @@ function ComposerGroupsMenu({
   // Labels stay visible on every pill — the reference folds unselected tabs
   // to icon-only, but on a toolbar whose pills are real controls that reads
   // worse than it looks (deliberately skipped).
-  const labelCls = (_active: boolean) => "ml-1.5 whitespace-nowrap";
   const pillCls = (active: boolean) =>
     cn(
       "flex items-center px-1.5 h-6.5 rounded-full border text-2xs leading-none font-medium transition-colors cursor-pointer",
@@ -754,7 +756,7 @@ function ComposerGroupsMenu({
         }
       >
         <AgentMark agentType={agentType} className="!h-4 !w-4 !text-3xs !rounded" />
-        <span className={labelCls(openGroup === "agent")}>{agentMeta(currentAgent).label}</span>
+        <span className={composerPillLabelClass("late")}>{agentMeta(currentAgent).label}</span>
       </button>
 
       {showMode && (
@@ -776,7 +778,7 @@ function ComposerGroupsMenu({
               style={{ background: acpModeColor(currentMode) }}
             />
           )}
-          <span className={labelCls(openGroup === "mode")}>
+          <span className={composerPillLabelClass("late")}>
             {isClaude
               ? CLAUDE_PERMISSION_MODE_LABEL[permissionMode]
               : currentAcpMode
@@ -795,7 +797,9 @@ function ComposerGroupsMenu({
           title="Model"
         >
           <Cpu size={11} className="shrink-0 text-[var(--muted-foreground)]" />
-          <span className={cn(labelCls(openGroup === "model"), "max-w-[120px] truncate")}>
+          <span
+            className={cn(composerPillLabelClass(), "max-w-[80px] truncate @[460px]:max-w-[120px]")}
+          >
             {currentModelInfo ? modelLabel(currentModelInfo) : (currentModel ?? "Model")}
           </span>
           <ChevronDown size={10} className="ml-0.5 shrink-0 text-[var(--muted-foreground)]" />
@@ -1902,6 +1906,8 @@ export function MessageInput({
             // input + send button (the focus ring lives there — the "active
             // field" is the input surface, not the toolbar).
             "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--card)]",
+            // The footer pills' labels collapse against THIS width.
+            "@container",
             "shadow-md",
             // NOTE: the disabled dim is NOT applied here. It used to be
             // (`disabled && "opacity-60"` on this shell), and it faded the
@@ -2098,9 +2104,12 @@ export function MessageInput({
               </button>
             </Hint>
           </div>
-          {/* Footer strip — the exposed band of the outer shell. */}
-          <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
-            <div className="flex items-center gap-1">
+          {/* Footer strip — the exposed band of the outer shell. Pill labels
+              collapse to icons as the shell narrows (`composerPillLabelClass`),
+              so the row never wraps or runs past the edge. No overflow clip:
+              the pills' dropups are children and would be cut off. */}
+          <div className="flex items-center justify-between gap-2 px-2 pb-1.5 pt-1">
+            <div className="flex min-w-0 items-center gap-1">
               <ComposerAddMenu
                 // `disabledProp`, NOT `disabled`: a missing org AI grant locks
                 // the input, not the toolbar. Greying the + here made the whole
@@ -2140,7 +2149,7 @@ export function MessageInput({
                 progress + count; opens its own morphing task-list panel, and
                 replaces the PlanDock strip that used to sit above the
                 composer). Both are right-anchored dropups. */}
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <UsagePill tabId={tabId} />
               <ComposerOptionsPill tabId={tabId} />
               <PlanTasksPill tabId={tabId} />
