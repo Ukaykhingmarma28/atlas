@@ -116,6 +116,17 @@ const ORG_TOOL_ROWS: Record<string, OrgRowLine> = {
       ? { verb: "Read", detail: session }
       : { verb: "Read recorded session", detail: session };
   },
+  // Auto-approved and audited (ADR-0014): the row is the trail, so it names
+  // the page and the conversation whose Space holds it — as created once
+  // answered, as asked until then.
+  org_page_create: (args, answer) => {
+    const created = answer ? str(answer.page_id) : null;
+    const name = (created ? str(answer?.name) : null) ?? str(args.name) ?? "";
+    const where =
+      (created ? conversationName(obj(answer?.conversation)) : null) ?? str(args.conversation);
+    const detail = where ? `${name} in ${where}` : name;
+    return { verb: created ? "Created page" : "Create page", detail };
+  },
 };
 
 /** The recorded session a session or comment tool acted on, as a person

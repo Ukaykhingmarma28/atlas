@@ -6,7 +6,9 @@
 //! token reuse, so the organisation tools add no pressure on the rate-limited
 //! token route), the roster through the auth core the Members modal reads,
 //! chat through the one comms manager the chat pane uses (its REST client, no
-//! second socket), and who the user is comes from the auth core's snapshot.
+//! second socket), a Space page through the Spaces manager the canvas uses
+//! (its token source and dial, on a short-lived socket of its own), and who
+//! the user is comes from the auth core's snapshot.
 //! Both are resolved per call rather than held, because this is built during
 //! `setup`, where registration order is not guaranteed — the same reason the
 //! artifacts module's token source resolves `AuthState` per call.
@@ -17,7 +19,8 @@
 use tauri::{AppHandle, Manager};
 
 use super::cloud::{
-    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewReply, OrgConversation,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewPage, NewReply,
+    OrgConversation,
     OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
 };
 use super::offers::SessionOrgs;
@@ -264,6 +267,31 @@ impl OrganisationCloud for AppOrganisationCloud {
         Box::pin(async move {
             let artifacts = self.artifacts()?;
             Ok(artifacts.client.inbox(org_id, query.unread_only, query.cursor, query.limit).await?)
+        })
+    }
+
+    /// One `page.create` through the Spaces manager the canvas uses, on a
+    /// socket of its own for this one frame ([`SpacesManager::create_page`]):
+    /// the server answers `page.created` only to the socket that asked, so a
+    /// private socket makes the answer this call's, and the tree broadcast
+    /// still reaches a canvas open in the window. Held to chat's organisation
+    /// like every chat call, though the socket names its own: chat's is the
+    /// organisation the user has chat open in, and a Space is part of chat.
+    ///
+    /// [`SpacesManager::create_page`]: atlas_comms::spaces::SpacesManager::create_page
+    fn create_page<'a>(&'a self, page: NewPage<'a>) -> CloudFuture<'a, String> {
+        Box::pin(async move {
+            let comms = crate::commands::comms::manager(&self.app).map_err(CloudError::Unavailable)?;
+            let chat_org = comms.org_id();
+            if chat_org.as_deref() != Some(page.org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: page.org_id.to_string(), chat_org });
+            }
+            let Some(spaces) = self.app.try_state::<crate::commands::spaces::SpacesState>() else {
+                return Err(CloudError::Unavailable("Spaces is not ready".into()));
+            };
+            let spaces = spaces.0.clone();
+            let frame = atlas_comms::spaces::PageCreate::root_page(page.name);
+            Ok(spaces.create_page(page.org_id, page.conversation_id, &frame).await?)
         })
     }
 }

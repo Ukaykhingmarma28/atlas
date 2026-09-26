@@ -44,8 +44,9 @@
 //!   without asking (bypass mode) is refused and nothing is sent.
 //!
 //! `org_whoami`, `org_members`, `org_conversations`, `org_inbox`, `org_comments`,
-//! `org_comment_resolve`, `org_comment_reply`, `org_sessions` and `org_session` exist so
-//! far; the rest of the thirteen tools the spec names are added on this skeleton.
+//! `org_comment_resolve`, `org_comment_reply`, `org_sessions`, `org_session` and
+//! `org_page_create` exist so far; the rest of the thirteen tools the spec names are
+//! added on this skeleton.
 
 mod adapter;
 mod audit;
@@ -64,7 +65,7 @@ pub use adapter::{AppOrganisationCloud, AppSessionOrgs};
 pub use audit::{OrgActionRecord, OrgAudit, ORG_ACTION_EVENT};
 #[allow(unused_imports)]
 pub use cloud::{
-    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewReply,
+    BoardQuery, Caller, CloudError, CloudFuture, CommentRef, CurrentSessionQuery, InboxQuery, Member, NewPage, NewReply,
     OrgConversation, OrganisationCloud, PayloadRef, RecordedSession, TimelineQuery,
 };
 #[allow(unused_imports)]

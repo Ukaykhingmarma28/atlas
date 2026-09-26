@@ -82,6 +82,11 @@ struct FakeOrganisation {
     timeline_fail: AtomicBool,
     /// `(recorded session, entry, part)` → that part's full text.
     payloads: Mutex<HashMap<(String, String, String), EntryPayload>>,
+    /// Every page created in a conversation's Space, as `(org, conversation,
+    /// name, page id)`, in order.
+    pages: Mutex<Vec<(String, String, String, String)>>,
+    /// The Space refuses the page (a full Space, an archived conversation).
+    page_fail: AtomicBool,
     /// Every `(org, what)` asked, in order.
     asked: Mutex<Vec<(String, String)>>,
 }
@@ -362,6 +367,26 @@ impl OrganisationCloud for FakeOrganisation {
                 next_cursor: (end < entries.len()).then(|| end.to_string()),
                 ..SessionDetailPage::default()
             })
+        })
+    }
+
+    /// As the Space does: a page at the root with the name given, answered by
+    /// its new id — reached, as the adapter's is, only while chat is on the
+    /// organisation asked about.
+    fn create_page<'a>(&'a self, page: NewPage<'a>) -> CloudFuture<'a, String> {
+        Box::pin(async move {
+            self.asked.lock().push((page.org_id.into(), format!("page_create {} {}", page.conversation_id, page.name)));
+            let chat_org = self.chat_org.lock().clone();
+            if chat_org.as_deref() != Some(page.org_id) {
+                return Err(CloudError::ChatElsewhere { grant_org: page.org_id.into(), chat_org });
+            }
+            if self.page_fail.load(Ordering::SeqCst) {
+                return Err(CloudError::Forbidden("quota_exceeded: A Space holds at most 200 pages and folders.".into()));
+            }
+            let mut pages = self.pages.lock();
+            let id = format!("page-{}", pages.len() + 1);
+            pages.push((page.org_id.into(), page.conversation_id.into(), page.name.into(), id.clone()));
+            Ok(id)
         })
     }
 
@@ -920,6 +945,166 @@ async fn org_conversations_refuses_while_chat_is_on_another_organisation_and_nam
     let (err, text) = call(&client, "org_conversations", json!({})).await;
     assert!(err);
     assert!(text.contains("not connected") && text.contains("org-acme"), "{text}");
+    client.cancel().await.ok();
+}
+
+// ── org_page_create ──────────────────────────────────────────────────────────
+
+/// Every page the fake's Spaces hold, as `(conversation, name)`.
+fn pages_created(org: &FakeOrganisation) -> Vec<(String, String)> {
+    org.pages.lock().iter().map(|(_, conv, name, _)| (conv.clone(), name.clone())).collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_create_creates_a_root_page_in_the_named_conversations_space_and_answers_its_id() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) =
+        call_json(&client, "org_page_create", json!({ "conversation": "#general", "name": "Architecture" })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(
+        answer,
+        json!({
+            "page_id": "page-1",
+            "conversation": { "id": "c-general", "kind": "channel", "name": "general", "caller_is_member": true },
+            "name": "Architecture",
+        }),
+    );
+    assert_eq!(org.pages.lock()[0], ("org-acme".into(), "c-general".into(), "Architecture".into(), "page-1".into()));
+    assert_eq!(
+        org.asked(),
+        [
+            ("org-acme".to_string(), "conversations".to_string()),
+            ("org-acme".to_string(), "page_create c-general Architecture".to_string()),
+        ],
+        "resolved against the grant's organisation's conversations, created there, and nothing else asked",
+    );
+    client.cancel().await.ok();
+}
+
+/// Auto-approved (ADR-0014): creating a page reaches no one, so the call
+/// runs with no approval recorded — unlike a reply, which is refused without one.
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_create_is_auto_approved_and_needs_no_recorded_consent() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client, consent) = consenting_client(org.clone()).await;
+    let (err, text) = call(&client, "org_page_create", json!({ "conversation": "c-general", "name": "Notes" })).await;
+    assert!(!err, "{text}");
+    assert!(!consent.take("s1", ORG_SERVER_NAME, "org_page_create", &json!({ "conversation": "c-general", "name": "Notes" })));
+    assert_eq!(pages_created(&org), [("c-general".to_string(), "Notes".to_string())]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dm_named_by_id_gets_the_page_and_the_answer_names_who_is_in_it() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None)
+        .with_roster(acme_roster())
+        .with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) =
+        call_json(&client, "org_page_create", json!({ "conversation": "c-dm-grace", "name": "  Plan  " })).await;
+    assert!(!err, "{answer}");
+    assert_eq!(answer["name"], json!("Plan"), "the name as created, trimmed");
+    assert_eq!(
+        answer["conversation"]["members"],
+        json!([{ "user_id": "u-1", "name": "Ada Lovelace" }, { "user_id": "u-grace", "name": "Grace Hopper" }]),
+    );
+    assert_eq!(pages_created(&org), [("c-dm-grace".to_string(), "Plan".to_string())]);
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_the_caller_is_not_in_is_refused_and_no_page_is_created() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) =
+        call(&client, "org_page_create", json!({ "conversation": "c-design-web", "name": "Architecture" })).await;
+    assert!(err);
+    assert!(text.contains("not a member of #design"), "{text}");
+    assert!(pages_created(&org).is_empty());
+    assert!(!org.asked().iter().any(|(_, what)| what.starts_with("page_create")), "the Space was never asked");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversation_name_matching_several_is_candidates_and_no_page_is_created() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, answer) = call_json(&client, "org_page_create", json!({ "conversation": "#DESIGN", "name": "X" })).await;
+    assert!(err);
+    assert_eq!(answer["candidates"].as_array().map(Vec::len), Some(2), "{answer}");
+    let (err, text) = call(&client, "org_page_create", json!({ "conversation": "#random", "name": "X" })).await;
+    assert!(err);
+    assert!(text.contains("no conversation matches \"#random\""), "{text}");
+    assert!(pages_created(&org).is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn org_page_create_refuses_while_chat_is_on_another_organisation() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    *org.chat_org.lock() = Some("org-globex".into());
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_page_create", json!({ "conversation": "#general", "name": "X" })).await;
+    assert!(err);
+    assert!(text.contains("org-globex") && text.contains("org-acme"), "{text}");
+    assert!(pages_created(&org).is_empty());
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_missing_blank_or_overlong_name_or_conversation_is_refused_before_anything_is_asked() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let (_server, client) = org_client(org.clone()).await;
+    let too_long = "x".repeat(201);
+    for (args, says) in [
+        (json!({ "name": "X" }), "`conversation`"),
+        (json!({ "conversation": "#general" }), "`name`"),
+        (json!({ "conversation": "#general", "name": "   " }), "`name`"),
+        (json!({ "conversation": "#general", "name": too_long }), "200 characters"),
+    ] {
+        let (err, text) = call(&client, "org_page_create", args.clone()).await;
+        assert!(err, "{args}");
+        assert!(text.contains(says), "{args}: {text}");
+    }
+    assert!(org.asked().is_empty(), "{:?}", org.asked());
+    let exactly = "x".repeat(200);
+    let (err, text) = call(&client, "org_page_create", json!({ "conversation": "#general", "name": exactly })).await;
+    assert!(!err, "{text}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_page_the_space_refuses_is_a_tool_error_with_its_reason() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    org.page_fail.store(true, Ordering::SeqCst);
+    let (_server, client) = org_client(org.clone()).await;
+    let (err, text) = call(&client, "org_page_create", json!({ "conversation": "#general", "name": "X" })).await;
+    assert!(err);
+    assert!(text.contains("200 pages"), "{text}");
+    client.cancel().await.ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_created_page_is_one_audit_record_naming_the_conversation_and_the_page() {
+    let org = FakeOrganisation::with_member("Ada Lovelace", None).with_conversations(acme_conversations());
+    let tokens = Arc::new(MemoryTokens::default());
+    let (server, records) = serve_audited(tokens.clone(), org, setting(true)).await;
+    let client = connect(&server.url_at(ORG_PATH), &offered_token(&tokens, "s1", "/p", Some(acme())))
+        .await
+        .unwrap();
+    let args = json!({ "conversation": "#general", "name": "Architecture" });
+    let (_, answer) = call(&client, "org_page_create", args.clone()).await;
+    let records = records.lock();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].tool, "org_page_create");
+    assert_eq!(records[0].arguments, args);
+    assert!(records[0].ok);
+    assert_eq!(records[0].text, answer);
+    let answered: Value = serde_json::from_str(&records[0].text).unwrap();
+    assert_eq!(answered["conversation"]["name"], json!("general"));
+    assert_eq!(answered["page_id"], json!("page-1"));
+    drop(records);
     client.cancel().await.ok();
 }
 
@@ -2353,7 +2538,8 @@ async fn the_tool_list_is_what_the_model_is_offered() {
             "org_comment_resolve",
             "org_comment_reply",
             "org_sessions",
-            "org_session"
+            "org_session",
+            "org_page_create"
         ]
     );
     client.cancel().await.ok();

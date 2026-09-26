@@ -259,6 +259,17 @@ pub struct NewReply<'a> {
     pub body: &'a str,
 }
 
+/// A page about to be created at the root of a conversation's Space, as the
+/// caller. The name is exactly what the page will be called: trimmed, never
+/// empty, and within the contract's 200-unit bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewPage<'a> {
+    pub org_id: &'a str,
+    /// The conversation whose Space holds the page — one the caller is in.
+    pub conversation_id: &'a str,
+    pub name: &'a str,
+}
+
 /// Everything the organisation tools do remotely.
 ///
 /// **Nothing here marks the inbox read**, and nothing may be added that
@@ -313,4 +324,11 @@ pub trait OrganisationCloud: Send + Sync {
     /// One page of the caller's inbox in `org_id` — mentions, replies and
     /// comments on their recorded sessions — with the unread total. Read-only.
     fn inbox<'a>(&'a self, org_id: &'a str, query: InboxQuery<'a>) -> CloudFuture<'a, InboxPage>;
+
+    /// Creates a page at the root of a conversation's Space, as the caller,
+    /// and answers its id. Not an outward action (ADR-0014): it reaches no
+    /// one, everyone in the conversation can see and move or delete it, and
+    /// the call is audited. Like every chat call, refused with
+    /// [`CloudError::ChatElsewhere`] while chat is not connected to `org_id`.
+    fn create_page<'a>(&'a self, page: NewPage<'a>) -> CloudFuture<'a, String>;
 }

@@ -215,6 +215,40 @@ describe("the one-line subject of each organisation call", () => {
     ).toBe("Read entry e2 of Fix the theme importer");
   });
 
+  it("org_page_create names the page and the conversation whose Space holds it", () => {
+    expect(
+      subject(
+        "org_page_create",
+        { conversation: "#general", name: "Architecture" },
+        {
+          page_id: "p-1",
+          conversation: { id: "c-general", kind: "channel", name: "general" },
+          name: "Architecture",
+        },
+      ),
+    ).toBe("Created page Architecture in #general");
+    expect(
+      subject(
+        "org_page_create",
+        { conversation: "c-dm-grace", name: "Plan" },
+        {
+          page_id: "p-2",
+          conversation: {
+            id: "c-dm-grace",
+            kind: "dm",
+            name: null,
+            members: [{ name: "Grace Hopper" }],
+          },
+          name: "Plan",
+        },
+      ),
+    ).toBe("Created page Plan in DM with Grace Hopper");
+    // Asked, refused or failed: what was asked for, and where.
+    expect(subject("org_page_create", { conversation: "design", name: "Plan" }, undefined)).toBe(
+      "Create page Plan in design",
+    );
+  });
+
   it("a tool with no line of its own still gets a row, named by the tool", () => {
     expect(subject("org_teleport", {}, undefined)).toBe("org_teleport");
   });
