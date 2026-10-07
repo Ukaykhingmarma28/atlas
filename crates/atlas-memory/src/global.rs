@@ -169,10 +169,72 @@ pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize>
             confidence: e.confidence,
         })
         .collect();
-    if items.is_empty() {
-        return Ok(0);
+    let root = store.root().to_string_lossy().to_string();
+    let held: BTreeSet<String> = items.iter().map(|c| c.content_hash.clone()).collect();
+    let promoted = if items.is_empty() {
+        0
+    } else {
+        record_candidates_in(global_dir, &root, &items)?
+    };
+    reconcile_roots_in(global_dir, &root, &held)?;
+    Ok(promoted)
+}
+
+/// Drop `repository_root` from every ledger row it no longer holds (the fact
+/// was forgotten, edited away or fell below the confidence floor). A
+/// promoted row left in fewer than [`PROMOTION_MIN_REPOSITORIES`] is
+/// demoted: unmarked, and removed from the recall archive and `MEMORY.md`.
+/// Rows from before the record store (no repository roots) are untouched.
+pub fn reconcile_roots_in(
+    global_dir: &Path,
+    repository_root: &str,
+    held: &BTreeSet<String>,
+) -> Result<()> {
+    if !ledger_path(global_dir).exists() {
+        return Ok(());
     }
-    record_candidates_in(global_dir, &store.root().to_string_lossy(), &items)
+    let mut ledger = load_ledger(global_dir);
+    let mut demoted: BTreeSet<String> = BTreeSet::new();
+    let mut dirty = false;
+    for (hash, entry) in ledger.candidates.iter_mut() {
+        if held.contains(hash) || !entry.project_roots.remove(repository_root) {
+            continue;
+        }
+        dirty = true;
+        if entry.promoted && entry.project_roots.len() < PROMOTION_MIN_REPOSITORIES {
+            entry.promoted = false;
+            demoted.insert(hash.clone());
+        }
+    }
+    if !dirty {
+        return Ok(());
+    }
+    save_ledger(global_dir, &ledger)?;
+    if demoted.is_empty() {
+        return Ok(());
+    }
+    let keep = |content: &str| !demoted.contains(&record::content_hash(content));
+    let archive: String = std::fs::read_to_string(promoted_path(global_dir))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| {
+            serde_json::from_str::<Promoted>(l)
+                .ok()
+                .is_none_or(|p| keep(&p.content))
+        })
+        .map(|l| format!("{l}\n"))
+        .collect();
+    write_atomic(&promoted_path(global_dir), archive.as_bytes())?;
+    let md_text = std::fs::read_to_string(memory_md_path(global_dir)).unwrap_or_default();
+    if !md_text.is_empty() {
+        let kept: String = md_text
+            .lines()
+            .filter(|l| bullet_content(l).is_none_or(|c| keep(&c)))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        write_atomic(&memory_md_path(global_dir), kept.as_bytes())?;
+    }
+    Ok(())
 }
 
 /// Record promotion candidates from one repository into the ledger, promoting
@@ -256,19 +318,31 @@ pub fn global_recall(query: &str, k: usize) -> Vec<(String, f32)> {
     global_recall_in(&global_dir(), query, k)
 }
 
-/// Injectable-dir form of [`global_recall`]: the promoted memories whose text
-/// contains the whole query (case-sensitive), oldest promotion first, capped
-/// at `k`. Every hit contains every query word, so each scores 1.0.
+/// Injectable-dir form of [`global_recall`]: promoted memories sharing at
+/// least 60% of the query's words (whole words, case-insensitive), best
+/// share first, then oldest promotion first, capped at `k`. Score = share.
 pub fn global_recall_in(global_dir: &Path, query: &str, k: usize) -> Vec<(String, f32)> {
-    if k == 0 || query.trim().is_empty() {
+    let words = |s: &str| -> BTreeSet<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let q = words(query);
+    if k == 0 || q.is_empty() {
         return Vec::new();
     }
-    promoted_contents(global_dir)
+    let mut hits: Vec<(usize, String, f32)> = promoted_contents(global_dir)
         .into_iter()
-        .filter(|c| c.contains(query))
-        .take(k)
-        .map(|c| (c, 1.0))
-        .collect()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let have = words(&c);
+            let share = q.iter().filter(|w| have.contains(*w)).count() as f32 / q.len() as f32;
+            (share >= 0.6).then_some((i, c, share))
+        })
+        .collect();
+    hits.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+    hits.into_iter().take(k).map(|(_, c, s)| (c, s)).collect()
 }
 
 /// Every promoted memory, oldest first, each once: the ones `MEMORY.md`
@@ -615,8 +689,8 @@ mod tests {
         }
         assert!(!md(&dir).contains("Rule number 3 always"));
         assert_eq!(
-            global_recall_in(&dir, "Rule number 3 always", 5),
-            vec![("Rule number 3 always holds".to_string(), 1.0)]
+            global_recall_in(&dir, "Rule number 3 always", 5)[0],
+            ("Rule number 3 always holds".to_string(), 1.0)
         );
         assert_eq!(
             global_recall_in(&dir, "Rule number", 300).len(),
@@ -643,16 +717,44 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            global_recall_in(&dir, "tabs", 5),
-            vec![("Always use tabs".to_string(), 1.0)],
-            "whole-query, case-sensitive substring, like the graph it replaces"
+            global_recall_in(&dir, "tabs", 5)
+                .iter()
+                .map(|h| h.0.as_str())
+                .collect::<Vec<_>>(),
+            ["Always use tabs", "Tabs over spaces in Rust"],
+            "whole words, any case, oldest promotion first"
         );
-        assert_eq!(
-            global_recall_in(&dir, "s", 1),
-            vec![("Commit messages are conventional".to_string(), 1.0)]
+        assert!(
+            global_recall_in(&dir, "s", 1).is_empty(),
+            "a letter is not a word in any memory"
         );
         assert!(global_recall_in(&dir, "tabs", 0).is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A fact forgotten in one of the two repositories that promoted it is
+    /// demoted: it leaves the archive and MEMORY.md and stops being recalled.
+    #[test]
+    fn forgetting_a_promoted_fact_demotes_it() {
+        let dir = tmp_dir("demote");
+        let base = tmp_dir("demote-repos");
+        let a = repository(&base, "a", &[("Tabs over spaces", 0.9)]);
+        let b = repository(&base, "b", &[("Tabs over spaces", 0.9)]);
+        promote_facts_in(&dir, &a).unwrap();
+        assert_eq!(promote_facts_in(&dir, &b).unwrap(), 1);
+        assert_eq!(global_recall_in(&dir, "tabs spaces", 5).len(), 1);
+
+        let id = b.list(EntryKind::Fact, 10, Origin::Any).unwrap()[0].id;
+        b.forget(id, 5, "").unwrap();
+        promote_facts_in(&dir, &b).unwrap();
+
+        assert!(
+            global_recall_in(&dir, "tabs spaces", 5).is_empty(),
+            "demoted"
+        );
+        assert!(!md(&dir).contains("Tabs over spaces"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&base).ok();
     }
 }
