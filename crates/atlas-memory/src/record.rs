@@ -746,7 +746,11 @@ impl RecordStore {
         // log's exact replace rules). Embedded before the lock is taken.
         let durable = matches!(
             ev.kind,
-            EventKind::Decision | EventKind::Fact | EventKind::Failure | EventKind::Architecture
+            EventKind::Decision
+                | EventKind::Fact
+                | EventKind::Failure
+                | EventKind::Architecture
+                | EventKind::Preference
         );
         let vector = payload
             .get("text")
@@ -889,7 +893,7 @@ impl RecordStore {
             .prepare("SELECT note FROM episodes WHERE ended_at > ?1 ORDER BY ended_at LIMIT ?2")?;
         let rows = stmt.query_map(params![since, limit as i64], |r| r.get::<_, String>(0))?;
         Ok(rows
-            .filter_map(|r| r.ok())
+            .filter_map(Result::ok)
             .filter_map(|n| serde_json::from_str(&n).ok())
             .collect())
     }
@@ -1508,11 +1512,7 @@ impl RecordStore {
                 .then(b.confidence.total_cmp(&a.confidence))
                 .then(a.id.cmp(&b.id))
         });
-        fusion.prior(
-            "trust",
-            0.5,
-            by_trust.iter().map(|e| e.id).collect::<Vec<_>>(),
-        );
+        fusion.prior("trust", 0.5, by_trust.iter().map(|e| e.id));
         let mut by_recent: Vec<&Entry> = candidates.values().collect();
         by_recent.sort_by_key(|e| {
             (
@@ -1520,11 +1520,7 @@ impl RecordStore {
                 e.id,
             )
         });
-        fusion.prior(
-            "recent",
-            0.3,
-            by_recent.iter().map(|e| e.id).collect::<Vec<_>>(),
-        );
+        fusion.prior("recent", 0.3, by_recent.iter().map(|e| e.id));
         let hits: Vec<SearchHit> = fusion
             .finish()
             .into_iter()
@@ -2491,7 +2487,7 @@ impl RecordStore {
         let mut stmt = conn.prepare("SELECT note FROM episodes ORDER BY ended_at DESC LIMIT ?1")?;
         let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0))?;
         let mut notes: Vec<crate::handoff::HandoffNote> = rows
-            .filter_map(|r| r.ok())
+            .filter_map(Result::ok)
             .filter_map(|n| serde_json::from_str(&n).ok())
             .collect();
         notes.reverse();
@@ -2545,7 +2541,7 @@ impl RecordStore {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
         })?;
         Ok(rows
-            .filter_map(|r| r.ok())
+            .filter_map(Result::ok)
             .filter_map(|(id, op)| serde_json::from_str(&op).ok().map(|op| (id, op)))
             .collect())
     }
@@ -2662,9 +2658,8 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
         )?;
     }
     if version < 5 {
-        migrate_v5(conn).or_else(|e| {
+        migrate_v5(conn).inspect_err(|_| {
             let _ = conn.execute_batch("ROLLBACK;");
-            Err(e)
         })?;
     }
     if version < 6 {
@@ -2716,9 +2711,8 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
              PRAGMA user_version = 6;
              COMMIT;",
         )
-        .or_else(|e| {
+        .inspect_err(|_| {
             let _ = conn.execute_batch("ROLLBACK;");
-            Err(e)
         })?;
     }
     Ok(())

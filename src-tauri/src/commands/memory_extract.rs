@@ -299,8 +299,8 @@ fn is_external(call: &atlas_agent_wire::ToolCall) -> bool {
     if call.kind.as_deref() == Some("fetch") {
         return true;
     }
-    let names = std::iter::once(call.tool_name.as_str()).chain(call.title.as_deref());
-    names.into_iter().any(|name| {
+    let mut names = std::iter::once(call.tool_name.as_str()).chain(call.title.as_deref());
+    names.any(|name| {
         let lower = name.to_ascii_lowercase();
         let first = lower
             .split(|c: char| c.is_whitespace() || matches!(c, '(' | ':' | '[' | '<'))

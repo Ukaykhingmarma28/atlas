@@ -1200,9 +1200,10 @@ mod tests {
             Ok(Job::Compact { cwd: c }) => assert_eq!(c, cwd),
             other => panic!("expected one-time Compact, got {other:?}"),
         }
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Health { cwd: c }) if c == cwd));
         assert!(
             job_rx.try_recv().is_err(),
-            "first open enqueues exactly IndexCorpus + Compact"
+            "first open enqueues exactly IndexCorpus + Compact + Health"
         );
 
         // Second open of the same project: same engine handle, no new jobs.

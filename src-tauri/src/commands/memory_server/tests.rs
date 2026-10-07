@@ -1427,7 +1427,7 @@ async fn a_changed_citation_makes_the_memory_stale_in_search_and_briefing() {
     .await;
     assert_eq!(r["entry"]["validity"], "valid", "{r}");
     assert_eq!(r["entry"]["citations"][0]["lines"], "1-1", "{r}");
-    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 30;\n").unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 300;\n").unwrap();
     let (_, s) = call(
         &a,
         "memory_search",

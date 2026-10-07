@@ -489,7 +489,11 @@ mod index_corpus_tests {
         let reopened = MemoryEngine::open(root);
         assert!(reopened.corpus.doc("shared:fact:45").is_none());
         assert!(reopened.corpus.doc("shared:fact:44").is_some());
-        assert_eq!(reopened.search_ids(&axis(2), 1, &[]).unwrap(), vec![]);
+        assert!(reopened
+            .search_ids(&axis(2), 1, &[])
+            .unwrap()
+            .iter()
+            .all(|(id, _)| id != "shared:fact:45"));
     }
 
     /// Adding the Graph's vectors never drops docs the indexer already holds

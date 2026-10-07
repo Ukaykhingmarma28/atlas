@@ -599,7 +599,7 @@ fn fold_failures(
         }
     }
     // Stable: equal counts keep newest first (the order the calls came in).
-    out.sort_by(|a, b| b.count.cmp(&a.count));
+    out.sort_by_key(|f| std::cmp::Reverse(f.count));
     out.truncate(8);
     out
 }

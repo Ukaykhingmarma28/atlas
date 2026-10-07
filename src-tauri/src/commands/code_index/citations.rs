@@ -97,6 +97,10 @@ impl Resolver for CodeIndexResolver {
         self.files.stamp(rel)
     }
 
+    fn scope(&self) -> String {
+        self.files.scope()
+    }
+
     fn symbol_span(&self, rel: &str, symbol: &str) -> Option<(u32, u32)> {
         let index = self.index.as_ref()?;
         let in_index = self.in_index(rel)?;

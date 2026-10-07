@@ -143,9 +143,11 @@ impl RecordStore {
             if garbage > 0 {
                 issues.push(Issue::CacheGarbage { count: garbage });
             }
-            conn.prepare("SELECT content FROM entries")?
+            let texts: Vec<String> = conn
+                .prepare("SELECT content FROM entries")?
                 .query_map([], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?
+                .collect::<rusqlite::Result<_>>()?;
+            texts
         };
         if let Some(model) = self.embedder().and_then(|e| e.model_id()) {
             let conn = self.conn();
@@ -481,7 +483,7 @@ mod tests {
         assert_eq!(facts, ["Kept by the snapshot"]);
         let quarantined = std::fs::read_dir(memory_dir(&r))
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .any(|e| e.file_name().to_string_lossy().contains(".corrupt-"));
         assert!(quarantined, "the damaged file is kept");
         assert_eq!(RecordStore::restored_marker(&r).map(|(_, s)| s), Some(true));

@@ -27,6 +27,9 @@ const NEGATIONS: [&str; 7] = [
     "instead of",
 ];
 
+/// Pairs of memories that contradict each other.
+pub type Conflicts = Vec<(Entry, Entry)>;
+
 /// Near-duplicates the user may merge into `keep`.
 #[derive(Debug, Clone)]
 pub struct MergeProposal {
@@ -84,7 +87,7 @@ fn cos(a: &[f32], b: &[f32]) -> f32 {
 /// contradicting, or told apart by the user) is skipped. Merge groups are
 /// single-link clusters; the survivor is the most used, then the most
 /// trusted, then the newest.
-pub fn proposals(store: &RecordStore) -> Result<(Vec<MergeProposal>, Vec<(Entry, Entry)>)> {
+pub fn proposals(store: &RecordStore) -> Result<(Vec<MergeProposal>, Conflicts)> {
     let active: Vec<(Entry, Vec<f32>)> = store
         .durable_active()?
         .into_iter()

@@ -105,7 +105,7 @@ fn a_damaged_file_restores_the_snapshot_and_keeps_the_evidence() {
     );
     assert!(std::fs::read_dir(memory_dir(&r))
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .any(|e| e.file_name().to_string_lossy().contains(".corrupt-")));
 }
 
@@ -132,7 +132,7 @@ fn a_torn_corpus_vector_file_heals_without_a_model() {
     drop(engine);
     let file = std::fs::read_dir(memory_dir(&r))
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .find(|p| p.extension().is_some_and(|x| x == "usearch"))
         .unwrap();

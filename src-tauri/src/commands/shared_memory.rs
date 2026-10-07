@@ -816,6 +816,7 @@ impl SharedMemoryStore {
     /// confidence 1.0, source = the agent, redacted, key-or-hash identity with
     /// near-duplicate merge, logged as an event so the Shared tab shows it.
     /// Working-memory kinds are refused — they are delta-captured only.
+    #[allow(clippy::too_many_arguments)]
     pub fn remember(
         &self,
         project_path: &str,
@@ -836,7 +837,7 @@ impl SharedMemoryStore {
         if content.trim().is_empty() {
             return Err("nothing to remember: content is empty".into());
         }
-        let evidence = citations_for(&*store_for(project_path)?, project_path, evidence)?;
+        let evidence = citations_for(&store_for(project_path)?, project_path, evidence)?;
         self.write_durable(
             project_path,
             NewEntry {

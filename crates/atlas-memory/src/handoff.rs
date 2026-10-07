@@ -50,6 +50,8 @@ pub struct HandoffNote {
     pub incomplete: bool,
 }
 
+// Serde's `skip_serializing_if` passes a reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }

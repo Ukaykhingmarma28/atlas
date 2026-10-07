@@ -462,7 +462,8 @@ async fn cited_fact_goes_stale_after_the_file_changes(w: World) -> Result<(), St
         json!({"query": "access tokens minutes"}),
     )
     .await;
-    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 30;\n").map_err(|e| e.to_string())?;
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 300;\n")
+        .map_err(|e| e.to_string())?;
     let (_, after) = call(
         &w.b,
         "memory_search",

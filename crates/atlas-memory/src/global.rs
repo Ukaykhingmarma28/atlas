@@ -799,7 +799,7 @@ mod tests {
         record_candidates_in(&dir, "/a", &[item]).unwrap();
         let kept = std::fs::read_dir(&dir)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .any(|e| {
                 e.file_name()
                     .to_string_lossy()

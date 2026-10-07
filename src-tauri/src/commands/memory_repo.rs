@@ -212,7 +212,7 @@ pub fn refresh_mirror(home: &Path, store: &RecordStore) -> Result<bool, String> 
             continue;
         }
         let tmp = dir.join(format!(".{file}.tmp"));
-        std::fs::write(&tmp, &text).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     }
     let mut add = vec!["add", "--"];

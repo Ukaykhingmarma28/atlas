@@ -75,6 +75,10 @@ pub trait Resolver: Send + Sync {
     fn stamp(&self, rel: &str) -> Option<(u64, i128)>;
     /// The current 1-based `(start, end)` of `symbol` in `rel`, if known.
     fn symbol_span(&self, rel: &str, symbol: &str) -> Option<(u32, u32)>;
+    /// The tree it reads (its root), so one cache can serve many projects.
+    fn scope(&self) -> String {
+        String::new()
+    }
 }
 
 /// blake3 hex of the lines, each with its whitespace collapsed (so a
@@ -151,6 +155,10 @@ impl Resolver for FileResolver {
 
     fn symbol_span(&self, _rel: &str, _symbol: &str) -> Option<(u32, u32)> {
         None
+    }
+
+    fn scope(&self) -> String {
+        self.root.to_string_lossy().into_owned()
     }
 }
 
@@ -233,8 +241,11 @@ pub fn validate(c: &Citation, r: &dyn Resolver) -> (Validity, Citation) {
 }
 
 /// Validation results, reused while a file's size and mtime are unchanged.
+/// A validation result's key: `(scope, path, size, mtime, hash, start, end)`.
+type CacheKey = (String, String, u64, i128, String, u32, u32);
+
 pub struct ValidationCache {
-    seen: Mutex<HashMap<(String, u64, i128, String, u32, u32), (Validity, Citation)>>,
+    seen: Mutex<HashMap<CacheKey, (Validity, Citation)>>,
 }
 
 impl Default for ValidationCache {
@@ -255,6 +266,7 @@ impl ValidationCache {
             return validate(c, r);
         };
         let key = (
+            r.scope(),
             c.path.clone(),
             size,
             mtime,
