@@ -419,9 +419,13 @@ impl ServerHandler for CodeTools {
 /// The service, routed at [`CODE_PATH`], for the tool-server listener to
 /// merge in front of its token check.
 pub fn router(tools: CodeTools) -> axum::Router {
+    // No idle timeout, as for the memory server: an agent can go many
+    // minutes between code tool calls.
+    let mut sessions = LocalSessionManager::default();
+    sessions.session_config.keep_alive = None;
     let service = StreamableHttpService::new(
         move || Ok(tools.clone()),
-        Arc::new(LocalSessionManager::default()),
+        Arc::new(sessions),
         StreamableHttpServerConfig::default(),
     );
     axum::Router::new().nest_service(CODE_PATH, service)

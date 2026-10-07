@@ -2,8 +2,11 @@
 //!
 //! Every agent that can take the server is handed it on each session request
 //! ([`MemorySessionOffers`]): an ACP session request carries the server in
-//! `mcpServers` when the agent advertised `mcpCapabilities.http`; the native
-//! agent gets it as a StreamableHttp entry in its thread's engine config. The
+//! `mcpServers` when the agent advertised `mcpCapabilities.http`; an agent
+//! that did not gets it as a stdio server, the Atlas binary's own
+//! `mcp-bridge` forwarding to the loopback server with the token in its
+//! environment (ADR-0019); the native agent gets it as a StreamableHttp
+//! entry in its thread's engine config. The
 //! token is minted for the *request*, before a new session's id exists, and
 //! bound to the id once the agent answers; an offer that never binds is
 //! revoked. Each decision is logged, one line per session request.
@@ -25,6 +28,9 @@ use crate::commands::ui_server::{UiOffer, UiOfferDecision, UI_PATH, UI_SERVER_NA
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfferDecision {
     Included,
+    /// Included as a stdio server through `atlas mcp-bridge`: the agent did
+    /// not advertise HTTP MCP (ADR-0019).
+    IncludedViaBridge,
     /// Left out, and why.
     Omitted(&'static str),
 }
@@ -35,25 +41,51 @@ impl OfferDecision {
     pub fn log_line(self, agent: &str, http_mcp: bool) -> String {
         match self {
             Self::Included => format!("memory tool server offer: agent={agent} http_mcp={http_mcp} memory_server=included"),
+            Self::IncludedViaBridge => format!(
+                "memory tool server offer: agent={agent} http_mcp={http_mcp} memory_server=included_via_bridge"
+            ),
             Self::Omitted(reason) => format!(
                 "memory tool server offer: agent={agent} http_mcp={http_mcp} memory_server=omitted reason=\"{reason}\""
             ),
         }
     }
 
-    /// Included only for an agent that advertised HTTP MCP, in a project with
-    /// shared memory on (the tools would hold nothing otherwise), once the
-    /// server is running. Never decided by which agent it is.
+    /// Included in a project with shared memory on (the tools would hold
+    /// nothing otherwise), once the server is running: over HTTP for an agent
+    /// that advertised HTTP MCP, else through the stdio bridge. Never decided
+    /// by which agent it is.
     pub fn decide(http_mcp: bool, sharing_on: bool, server_running: bool) -> Self {
-        if !http_mcp {
-            Self::Omitted("agent did not advertise mcpCapabilities.http")
-        } else if !sharing_on {
+        if !sharing_on {
             Self::Omitted("shared memory is off for this project")
         } else if !server_running {
             Self::Omitted("memory tool server is not running")
-        } else {
+        } else if http_mcp {
             Self::Included
+        } else {
+            Self::IncludedViaBridge
         }
+    }
+}
+
+/// The argument that makes the Atlas binary the stdio bridge.
+pub const BRIDGE_ARG: &str = "mcp-bridge";
+/// The environment variable the bridge reads its session token from (never
+/// argv, which other users' `ps` can read).
+pub const BRIDGE_TOKEN_ENV: &str = "ATLAS_MCP_TOKEN";
+
+/// `name` at `url` as a stdio server: `<this binary> mcp-bridge <url>`, the
+/// token in the environment.
+fn bridge_entry(exe: &std::path::Path, name: &str, url: String, token: &str) -> acp::McpServer {
+    acp::McpServer::Stdio(
+        acp::McpServerStdio::new(name, exe.to_path_buf())
+            .args(vec![BRIDGE_ARG.to_string(), url])
+            .env(vec![acp::EnvVariable::new(BRIDGE_TOKEN_ENV, token)]),
+    )
+}
+
+impl OfferDecision {
+    fn includes(self) -> bool {
+        matches!(self, Self::Included | Self::IncludedViaBridge)
     }
 }
 
@@ -147,10 +179,22 @@ impl SessionMcpServers for MemorySessionOffers {
     fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
         let cwd = request.cwd.to_string_lossy().into_owned();
         let agent = request.agent_id.as_str().to_string();
+        // An agent without HTTP MCP reaches the servers through this binary
+        // as a stdio bridge (ADR-0019); without a path to it, it gets none.
+        let bridge = if request.http_mcp {
+            None
+        } else {
+            std::env::current_exe().ok()
+        };
+        let reachable = request.http_mcp || bridge.is_some();
         // The gate reads the sharing file; only asked when it can matter.
-        let sharing_on = request.http_mcp && (self.gate)(&cwd);
+        let sharing_on = reachable && (self.gate)(&cwd);
         let url = self.host.url();
-        let decision = OfferDecision::decide(request.http_mcp, sharing_on, url.is_some());
+        let decision = if reachable {
+            OfferDecision::decide(request.http_mcp, sharing_on, url.is_some())
+        } else {
+            OfferDecision::Omitted("agent did not advertise mcpCapabilities.http")
+        };
         tracing::info!(
             target: "atlas::memory_server",
             session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
@@ -191,7 +235,8 @@ impl SessionMcpServers for MemorySessionOffers {
 
         let code_url = self.host.url_at(CODE_PATH);
         let code = self.code.as_ref().map(|code| {
-            let decision = code.decide(request.http_mcp, code_url.is_some());
+            // The bridge carries the code server too.
+            let decision = code.decide(reachable, code_url.is_some());
             tracing::info!(
                 target: "atlas::code_server",
                 session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
@@ -202,7 +247,7 @@ impl SessionMcpServers for MemorySessionOffers {
         });
 
         let mut entries: Vec<(&str, String)> = Vec::new();
-        if let (OfferDecision::Included, Some(url)) = (decision, url) {
+        if let (true, Some(url)) = (decision.includes(), url) {
             entries.push((MEMORY_SERVER_NAME, url));
         }
         let mut ui_included = false;
@@ -228,10 +273,11 @@ impl SessionMcpServers for MemorySessionOffers {
         let token = tokens.mint_unbound(&agent, &cwd, scope, ui_included);
         let servers = entries
             .into_iter()
-            .map(|(name, url)| {
-                acp::McpServer::Http(acp::McpServerHttp::new(name, url).headers(vec![
+            .map(|(name, url)| match &bridge {
+                Some(exe) => bridge_entry(exe, name, url, &token),
+                None => acp::McpServer::Http(acp::McpServerHttp::new(name, url).headers(vec![
                     acp::HttpHeader::new("Authorization", format!("Bearer {token}")),
-                ]))
+                ])),
             })
             .collect();
         // The organisation server's outward actions ask first (ADR-0014);

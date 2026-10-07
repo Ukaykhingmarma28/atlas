@@ -8,5 +8,10 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
+    // `atlas mcp-bridge <url>` is the stdio bridge for agents without HTTP
+    // MCP (ADR-0019), not the app.
+    if atlas_lib::run_bridge_if_asked() {
+        return;
+    }
     atlas_lib::run()
 }

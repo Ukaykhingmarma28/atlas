@@ -320,13 +320,23 @@ fn read_capture_docs(project_path: &str) -> Vec<MemoryDoc> {
         Ok(Some(s)) => s,
         _ => return Vec::new(),
     };
-    let sessions = match store.sessions_for_project(project_path) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(target: "atlas::memory", "capture corpus read failed: {e}");
-            return Vec::new();
+    // Live capture keys a Workspace by its canonical path; the importer by the
+    // path as given. Read both, once each (as `memory_pack::capture_heads`
+    // does): on a symlinked root the given path alone finds no live session.
+    let mut ids = vec![crate::commands::capture::project_id_for(
+        std::path::Path::new(project_path),
+    )];
+    if !ids.iter().any(|id| id == project_path) {
+        ids.push(project_path.to_string());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut sessions = Vec::new();
+    for id in &ids {
+        match store.sessions_for_project(id) {
+            Ok(found) => sessions.extend(found.into_iter().filter(|s| seen.insert(s.id.clone()))),
+            Err(e) => tracing::warn!(target: "atlas::memory", "capture corpus read failed: {e}"),
         }
-    };
+    }
 
     let mut out: Vec<MemoryDoc> = Vec::new();
     for s in sessions {
@@ -992,6 +1002,50 @@ mod tests {
             .text
             .contains("refactor the retry loop in the gateway client"));
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Live capture keys a Workspace by its canonical path. Opened through a
+    /// symlink, the reader must still find those sessions, once.
+    #[cfg(unix)]
+    #[test]
+    fn a_capture_session_is_found_through_a_symlinked_root() {
+        use atlas_checkpoint::{model::ProjectMode, Capture, SessionKey, Source, Store};
+
+        let dir = scratch();
+        let canonical = crate::commands::capture::project_id_for(&dir);
+        let link =
+            std::env::temp_dir().join(format!("atlas-capture-link-{}", uuid::Uuid::new_v4()));
+        std::os::unix::fs::symlink(&dir, &link).expect("symlink");
+        {
+            let mut store = Store::open(atlas_checkpoint::atlas_dir(&dir)).expect("store opens");
+            let mut capture = Capture::new(&mut store, ProjectMode::Local);
+            capture
+                .record_prompt(
+                    &SessionKey {
+                        workspace_id: canonical.clone(),
+                        source: Source::Acp,
+                        native_session_id: "native-link".into(),
+                    },
+                    "find the flaky retry test",
+                    1,
+                    Some(atlas_native_agent::ATLAS_AGENT_ID),
+                    None,
+                    Some(&canonical),
+                )
+                .expect("prompt recorded");
+        }
+
+        let docs = read_capture_docs(&link.to_string_lossy());
+        assert_eq!(
+            docs.iter()
+                .filter(|d| d.id == "atlas-agent:native-link")
+                .count(),
+            1,
+            "found once, not missed or doubled"
+        );
+
+        std::fs::remove_file(&link).ok();
         std::fs::remove_dir_all(&dir).ok();
     }
 

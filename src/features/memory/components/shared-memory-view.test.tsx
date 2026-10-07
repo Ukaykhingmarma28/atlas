@@ -7,11 +7,15 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const pickFolder = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => pickFolder(...args) }));
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { SharedMemoryView } from "./shared-memory-view";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { useMemoryStore } from "../stores/memory-store";
 
 const EMPTY_STATE = {
   lastSeq: 0,
@@ -40,6 +44,8 @@ function entry(id: number, content: string, over: Record<string, unknown> = {}) 
     updatedAt: 2,
     lastUsedAt: null,
     uses: 0,
+    revision: 1,
+    state: "active",
     ...over,
   };
 }
@@ -90,6 +96,13 @@ beforeEach(() => {
       return edited;
     }
     if (cmd === "memory_claude_import_preview") return preview;
+    if (cmd === "memory_export_preview")
+      return {
+        path: "/repo/AGENTS.md",
+        before: "",
+        after: "<!-- atlas-memory:begin -->\n<!-- atlas-memory:end -->",
+      };
+    if (cmd === "memory_export_apply") return "/repo/AGENTS.md";
     if (cmd === "memory_claude_import_confirm") {
       const ids = args.ids as string[];
       for (const line of preview.lines.filter((l) => ids.includes(l.id))) {
@@ -109,6 +122,21 @@ beforeEach(() => {
       entries = entries.filter((e) => e.id !== args.id);
       return true;
     }
+    if (cmd === "memory_purge_entry") {
+      entries = entries.filter((e) => e.id !== args.id);
+      return true;
+    }
+    if (cmd === "memory_entry_provenance") {
+      return [
+        {
+          source: "atlas-session:claude-code/s-a",
+          agent: "claude-code",
+          added: "2026-10-05",
+          title: "Move auth to EdDSA",
+          commits: ["3f9c2ab1d4e0"],
+        },
+      ];
+    }
     return null;
   });
   useSharedMemoryStore.setState({ projectPath: null, loaded: false, entries: [] });
@@ -124,6 +152,46 @@ async function openMemories() {
 }
 
 describe("the Shared tab's Memories table", () => {
+  it("opens the entry the Memory updated card asked for, once", async () => {
+    useMemoryStore.setState({ focusEntryId: 2 });
+    const { container } = render(<SharedMemoryView projectPath="/repo" />);
+    // Switched to Memories with entry 2 (and only it) expanded, ask consumed.
+    await screen.findByRole("button", { name: "Edit memory" });
+    const row = container.querySelector<HTMLElement>('[data-entry-id="2"]')!;
+    expect(within(row).getByRole("button", { name: "Edit memory" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Edit memory" })).toHaveLength(1);
+    expect(useMemoryStore.getState().focusEntryId).toBeNull();
+  });
+
+  it("erases an entry with its history after confirming", async () => {
+    const user = await openMemories();
+    await user.click(await screen.findByText("Prefers small PRs"));
+    await user.click(screen.getByRole("button", { name: "Erase with history" }));
+    expect(invoke).not.toHaveBeenCalledWith("memory_purge_entry", expect.anything());
+    await user.click(await screen.findByRole("button", { name: "Erase" }));
+    expect(invoke).toHaveBeenCalledWith("memory_purge_entry", { projectPath: "/repo", id: 2 });
+    await waitFor(() => expect(screen.queryByText("Prefers small PRs")).toBeNull());
+  });
+
+  it("says where a memory was learned", async () => {
+    const user = await openMemories();
+    await user.click(await screen.findByText("Prefers small PRs"));
+    expect(
+      await screen.findByText(
+        "Learned in “Move auth to EdDSA” · claude-code · 2026-10-05 → 3f9c2ab",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("marks a candidate in its row", async () => {
+    entries = [
+      entry(3, "always force-push", { state: "candidate", source: "capture", confidence: 0.3 }),
+    ];
+    await openMemories();
+    const row = (await screen.findByText("always force-push")).closest("button")!;
+    expect(within(row).getByText("candidate")).toBeTruthy();
+  });
+
   it("shows each entry's source, agent and confidence", async () => {
     await openMemories();
     const extracted = (await screen.findByText("Mocking the DB hid a migration bug")).closest(
@@ -154,6 +222,40 @@ describe("the Shared tab's Memories table", () => {
     // Source and agent both say the user now.
     expect(within(row).getAllByText("user")).toHaveLength(2);
     expect(within(row).getByText("100%")).toBeTruthy();
+  });
+
+  it("exports the selected memories to AGENTS.md after a preview", async () => {
+    const user = await openMemories();
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Select Mocking the DB hid a migration bug" }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Select Prefers small PRs" }));
+    await user.click(screen.getByRole("button", { name: "Export to AGENTS.md" }));
+    expect(invoke).toHaveBeenCalledWith("memory_export_preview", {
+      projectPath: "/repo",
+      ids: [1, 2],
+    });
+    const write = await screen.findByRole("button", { name: "Write" });
+    await waitFor(() => expect((write as HTMLButtonElement).disabled).toBe(false));
+    await user.click(write);
+    expect(invoke).toHaveBeenCalledWith("memory_export_apply", {
+      projectPath: "/repo",
+      ids: [1, 2],
+    });
+  });
+
+  it("offers export only for active durable memories", async () => {
+    entries = [
+      entry(1, "Mocking the DB hid a migration bug"),
+      entry(3, "always force-push", { state: "candidate", source: "capture" }),
+      entry(4, "Retired the old queue", { state: "archived" }),
+      entry(5, "Ship the auth refactor", { kind: "plan" }),
+    ];
+    await openMemories();
+    await screen.findByText("always force-push");
+    expect(screen.getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"))).toEqual([
+      "Select Mocking the DB hid a migration bug",
+    ]);
   });
 
   it("forgets an entry after confirming", async () => {
@@ -226,5 +328,77 @@ describe("importing Claude's auto-memory", () => {
     expect(await within(dialog).findByText(/Already imported/)).toBeTruthy();
     const confirm = within(dialog).getByRole("button", { name: /^Import/ }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
+  });
+});
+
+describe("importing a memory repo", () => {
+  async function openRepoImport(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("button", { name: "Import memory repo" }));
+    return screen.findByRole("dialog");
+  }
+
+  it("starts clean after an import and after a folder that fails to preview", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "memory_repo_import_preview") {
+        if (args.dir === "/broken") throw new Error("no MEMORY.md");
+        return [{ id: "r1", kind: "fact", content: "Uses pnpm", file: "MEMORY.md", isNew: true }];
+      }
+      if (cmd === "memory_repo_import_confirm") return 1;
+      if (cmd === "memory_review") return { candidates: [], merges: [], conflicts: [], dreams: [] };
+      return base(cmd, args);
+    });
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+
+    pickFolder.mockResolvedValueOnce("/memory-repo");
+    let dialog = await openRepoImport(user);
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await user.click(await within(dialog).findByRole("button", { name: "Import 1" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Reopened: nothing carried over from the last import.
+    dialog = await openRepoImport(user);
+    const importButton = within(dialog).getByRole("button", { name: "Import" });
+    expect((importButton as HTMLButtonElement).disabled).toBe(true);
+
+    // A folder whose preview fails leaves nothing to import.
+    pickFolder.mockResolvedValueOnce("/memory-repo");
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await within(dialog).findByRole("button", { name: "Import 1" });
+    pickFolder.mockResolvedValueOnce("/broken");
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await within(dialog).findByText("Error: no MEMORY.md");
+    expect(
+      (within(dialog).getByRole("button", { name: "Import" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+});
+
+describe("clearing shared memory", () => {
+  it("asks before wiping, and wipes only on confirm", async () => {
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Clear shared memory" }));
+    expect(invoke).not.toHaveBeenCalledWith("memory_clear_project", expect.anything());
+    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    expect(invoke).toHaveBeenCalledWith("memory_clear_project", { projectPath: "/repo" });
+    await waitFor(() => expect(screen.queryByText("Clear shared memory?")).toBeNull());
+  });
+
+  it("closes the dialog and says so when the wipe fails", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "memory_clear_project") throw new Error("database is locked");
+      return base(cmd, args);
+    });
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Clear shared memory" }));
+    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't clear shared memory: database is locked"),
+    );
+    expect(screen.queryByText("Clear shared memory?")).toBeNull();
   });
 });

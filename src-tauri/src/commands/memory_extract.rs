@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atlas_memory::extract::{self, Trigger};
 use atlas_memory::TranscriptTurn;
@@ -41,6 +41,11 @@ use super::shared_memory::{SharedMemoryStore, Writer};
 /// and asks for structured output), but a hung call must not park the
 /// background queue.
 const EXTRACT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long after a session's end a turn job from it still counts as that
+/// session's last turn (the two are queued from different threads, so the
+/// end can be handled a moment before its last turn).
+const LATE_TURN_WINDOW: Duration = Duration::from_secs(120);
 
 /// Which model one pass asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +88,11 @@ pub struct Extractor {
     model: Arc<dyn ExtractionModel>,
     /// Each live session's latest turns, for its end-of-session pass.
     turns: Mutex<HashMap<String, Vec<TranscriptTurn>>>,
+    /// Sessions whose end was handled, and when. A turn job that arrives
+    /// shortly after its session's end (the two come from different threads)
+    /// runs as the end pass instead of waiting for an end that already
+    /// happened.
+    ended: Mutex<HashMap<String, Instant>>,
 }
 
 impl Extractor {
@@ -91,6 +101,7 @@ impl Extractor {
             memory,
             model,
             turns: Mutex::new(HashMap::new()),
+            ended: Mutex::new(HashMap::new()),
         }
     }
 
@@ -110,6 +121,20 @@ impl Extractor {
             self.turns.lock().remove(&writer.session_id);
             return 0;
         };
+        // The end was handled before this turn's job: this is the session's
+        // last word, so run it as the end pass and keep nothing for an end
+        // that already happened.
+        let late = self
+            .ended
+            .lock()
+            .remove(&writer.session_id)
+            .is_some_and(|at| at.elapsed() < LATE_TURN_WINDOW);
+        if late {
+            self.turns.lock().remove(&writer.session_id);
+            return self
+                .run(route, cwd, writer, &turns, Trigger::SessionEnd)
+                .await;
+        }
         self.turns
             .lock()
             .insert(writer.session_id.clone(), turns.clone());
@@ -126,6 +151,14 @@ impl Extractor {
         cwd: &str,
         writer: &Writer,
     ) -> usize {
+        // Marked first, so a turn job still in flight is recognised as late
+        // even when this returns early. Marks older than the window are
+        // dropped here, so a session resumed later is not mistaken for late.
+        {
+            let mut ended = self.ended.lock();
+            ended.retain(|_, at| at.elapsed() < LATE_TURN_WINDOW);
+            ended.insert(writer.session_id.clone(), Instant::now());
+        }
         let Some(turns) = self.turns.lock().remove(&writer.session_id) else {
             return 0;
         };
@@ -138,7 +171,15 @@ impl Extractor {
 
     /// The model a pass in `cwd` would ask, or `None` when no pass runs there
     /// (sharing off, the reserved local mode, no account and no BYOK choice).
-    fn route(&self, sharing: &MemorySharingState, cwd: &str) -> Option<Route> {
+    /// The model passes ask (the dream pass asks it too, with the same
+    /// consent).
+    pub fn model(&self) -> Arc<dyn ExtractionModel> {
+        self.model.clone()
+    }
+
+    /// The route a pass for `cwd` takes: `None` when sharing is off or no
+    /// model is configured.
+    pub(crate) fn route(&self, sharing: &MemorySharingState, cwd: &str) -> Option<Route> {
         if !sharing.is_enabled(cwd) {
             return None;
         }
@@ -196,6 +237,7 @@ impl Extractor {
             return 0; // no pass ran (the gates are not met yet): nothing to save
         }
 
+        let external = turns.iter().any(|t| t.external);
         // Persist the counters and land the entries (SQLite writes: off the
         // async runtime).
         let (memory, cwd, writer) = (self.memory.clone(), cwd.to_string(), writer.clone());
@@ -205,7 +247,14 @@ impl Extractor {
             }
             let mut recorded = 0;
             for entry in found {
-                match memory.record_extracted(&cwd, &writer, entry.kind, &entry.content, entry.confidence) {
+                // A pass over a session that read outside content proposes,
+                // it does not decide: its entries are candidates (M0, 12c).
+                let confidence = if external {
+                    entry.confidence.min(atlas_memory::record::CANDIDATE_CONFIDENCE)
+                } else {
+                    entry.confidence
+                };
+                match memory.record_extracted(&cwd, &writer, entry.kind, &entry.content, confidence) {
                     Ok(_) => recorded += 1,
                     Err(e) => tracing::debug!(target: "atlas::shared_memory", "extracted entry not recorded: {e}"),
                 }
@@ -234,8 +283,61 @@ pub fn transcript_turns(messages: &[atlas_agent_wire::Message]) -> Vec<Transcrip
             .to_string(),
             text: atlas_agent_transcript::strip_injected_context(&m.content),
             tool_calls: m.tool_calls.len(),
+            external: m.tool_calls.iter().any(is_external),
         })
         .collect()
+}
+
+/// Atlas's own tool servers: their results are not outside content.
+const OWN_SERVERS: [&str; 4] = ["atlas_memory", "atlas_code", "atlas_ui", "atlas_org"];
+
+/// Whether a tool call brought outside content into the session: a web fetch
+/// or search, or an MCP tool of a server other than Atlas's own. MCP calls
+/// are spelled `mcp__<server>__<tool>` by ACP agents and `<server>.<tool>` by
+/// the native agent, in the tool name or the title.
+fn is_external(call: &atlas_agent_wire::ToolCall) -> bool {
+    if call.kind.as_deref() == Some("fetch") {
+        return true;
+    }
+    // The native agent's MCP calls carry kind `other`. A shell command, read
+    // or edit whose title starts with a dotted word (`python3.12 -m pytest`,
+    // `Cargo.toml`) is not one.
+    let dotted = !matches!(
+        call.kind.as_deref(),
+        Some("execute" | "read" | "edit" | "search" | "delete" | "move")
+    );
+    let mut names = std::iter::once(call.tool_name.as_str()).chain(call.title.as_deref());
+    names.any(|name| {
+        let lower = name.to_ascii_lowercase();
+        let first = lower
+            .split(|c: char| c.is_whitespace() || matches!(c, '(' | ':' | '[' | '<'))
+            .next()
+            .unwrap_or("");
+        ["web_search", "websearch", "web_fetch", "webfetch"]
+            .iter()
+            .any(|w| first.contains(w))
+            || mcp_server(first, dotted).is_some_and(|server| !OWN_SERVERS.contains(&server))
+    })
+}
+
+/// The server half of an MCP call's name (see [`is_external`]); `None` for
+/// anything else. The `<server>.<tool>` form is read only when `dotted`, and
+/// never from a token with a `/` in it or an all-digit tool half, so a file
+/// path or a version (`python3.12`) is never read as a call.
+fn mcp_server(token: &str, dotted: bool) -> Option<&str> {
+    if let Some(rest) = token.strip_prefix("mcp__") {
+        return rest.split_once("__").map(|(server, _)| server);
+    }
+    if !dotted || token.contains('/') {
+        return None;
+    }
+    let ident = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    let (server, tool) = token.split_once('.')?;
+    (ident(server) && ident(tool) && !tool.bytes().all(|b| b.is_ascii_digit())).then_some(server)
 }
 
 // ── The real model ───────────────────────────────────────────────────────────
@@ -430,6 +532,7 @@ mod tests {
                 role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
                 text: format!("turn {i}"),
                 tool_calls: 0,
+                external: false,
             })
             .collect()
     }
@@ -625,5 +728,108 @@ mod tests {
         let body = r#"{"choices":[{"message":{"role":"assistant","content":"{\"entries\":[]}"}}]}"#;
         assert_eq!(completion_text(body).as_deref(), Some(r#"{"entries":[]}"#));
         assert_eq!(completion_text("{}"), None);
+    }
+
+    /// The end of a session can be handled before its last turn's job (they
+    /// come from two threads). That turn still gets an end pass, and its
+    /// turns are not kept forever for an end that already happened.
+    #[tokio::test]
+    async fn a_turn_after_its_session_ended_runs_as_the_end_pass() {
+        let h = harness("late-turn", true);
+        assert_eq!(
+            h.extractor
+                .session_ended(&h.sharing, &h.project, &writer())
+                .await,
+            0
+        );
+        let recorded = h
+            .extractor
+            .turn_finished(&h.sharing, &h.project, &writer(), session(4))
+            .await;
+        assert_eq!(
+            recorded, 4,
+            "below the turn gate, but an end pass needs only new assistant text"
+        );
+        assert!(
+            !h.extractor.turns.lock().contains_key("sess-1"),
+            "not kept after its end"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pass_over_a_session_that_fetched_the_web_stores_candidates() {
+        let h = harness("external", true);
+        let mut turns = session(26);
+        turns[10].external = true;
+        let recorded = h
+            .extractor
+            .turn_finished(&h.sharing, &h.project, &writer(), turns)
+            .await;
+        assert!(recorded > 0);
+        let entries = h.memory.entries(&h.project);
+        assert!(
+            entries
+                .iter()
+                .all(|e| e.confidence <= atlas_memory::record::CANDIDATE_CONFIDENCE),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn outside_content_is_a_web_call_or_a_third_party_mcp_tool() {
+        let call =
+            |name: &str, title: Option<&str>, kind: Option<&str>| atlas_agent_wire::ToolCall {
+                id: "c".into(),
+                tool_name: name.into(),
+                title: title.map(str::to_string),
+                kind: kind.map(str::to_string),
+                status: atlas_agent_wire::ToolCallStatus::Completed,
+                arguments: serde_json::json!({}),
+                result: None,
+                locations: vec![],
+                raw_output: None,
+                content_blocks: vec![],
+            };
+        assert!(is_external(&call("WebFetch", None, Some("fetch"))));
+        assert!(is_external(&call("WebSearch", None, None)));
+        assert!(is_external(&call("mcp__acme__deploy", None, None)));
+        assert!(is_external(&call(
+            "tool",
+            Some("github.search_issues"),
+            None
+        )));
+        assert!(!is_external(&call(
+            "mcp__atlas_memory__memory_search",
+            None,
+            None
+        )));
+        assert!(!is_external(&call("atlas_code.grep", None, None)));
+        assert!(!is_external(&call(
+            "Edit src/foo.rs",
+            Some("Edit src/foo.rs"),
+            Some("edit")
+        )));
+        assert!(!is_external(&call(
+            "Read",
+            Some("Read /repo/README.md"),
+            Some("read")
+        )));
+        // A dotted first word of a command or a bare file name is no MCP call.
+        assert!(!is_external(&call(
+            "python3.12 -m pytest",
+            Some("python3.12 -m pytest"),
+            Some("execute")
+        )));
+        assert!(!is_external(&call("python3.12 -m pytest", None, None)));
+        assert!(!is_external(&call(
+            "Cargo.toml",
+            Some("Cargo.toml"),
+            Some("read")
+        )));
+        assert!(is_external(&call(
+            "github.search_issues",
+            None,
+            Some("other")
+        )));
     }
 }

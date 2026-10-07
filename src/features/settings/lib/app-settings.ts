@@ -117,6 +117,15 @@ export interface AppSettings {
    *  reading secret files (ADR-0015). Off: new sessions are not offered the
    *  tools and every call in a running one is refused. Default ON. */
   agentCodeTools: boolean;
+  /** Once a day, with new sessions to read, the memory model proposes memory
+   *  changes; they wait in Memory ▸ Review. Default OFF. */
+  memoryDreams: boolean;
+  /** A read-only Agent Memory Repo mirror of each project's active memory, as
+   *  a local git repository outside the project. Default OFF. */
+  memoryRepoMirror: boolean;
+  /** Atlas's shared memory is the only memory in Atlas sessions: Claude Code
+   *  starts with its auto memory off, Codex with its memories off. Default ON. */
+  atlasOnlyMemory: boolean;
   /** "Command finished" — a successful command longer than
    *  `terminalNotifyMinDurationMs` raises a notification. (Once the terminal
    *  master switch; `notificationsEnabled` is the master now, and this is the
@@ -196,6 +205,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agentUiNavigation: true,
   agentOrgAccess: true,
   agentCodeTools: true,
+  memoryDreams: false,
+  memoryRepoMirror: false,
+  atlasOnlyMemory: true,
   terminalNotifications: true,
   terminalNotifyMinDurationMs: 10_000,
   terminalNotifyOnFailure: true,

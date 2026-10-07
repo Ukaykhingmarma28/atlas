@@ -15,6 +15,7 @@ import { useByokStore } from "@/features/settings/stores/byok-store";
 import { CHAT_PROVIDERS } from "@/features/settings/lib/providers";
 import { useMemorySharingStore } from "../stores/memory-sharing-store";
 import type { SummarizerMode } from "../lib/memory-sharing-api";
+import { EXTRACTION_NOTE, HANDOFF_HINT, RAW_HINT } from "../lib/memory-sharing-copy";
 
 export function MemorySharingControls({ projectPath }: { projectPath: string | null }) {
   const enabled = useMemorySharingStore.use.enabled();
@@ -85,10 +86,7 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
           <Popover.Positioner className="z-popover" align="end" side="bottom" sideOffset={6}>
             <Popover.Popup className="w-[300px] rounded-md border border-border bg-card p-3 shadow-md">
               <div className="eyebrow mb-2">Recent-session handoff</div>
-              <p className="mb-2.5 text-xs leading-snug text-muted-foreground">
-                How the previous session's tail is summarized before it is injected into the next
-                agent.
-              </p>
+              <p className="mb-2.5 text-xs leading-snug text-muted-foreground">{HANDOFF_HINT}</p>
 
               <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
                 <ModeSeg
@@ -133,10 +131,10 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
               )}
 
               {pref.mode === "raw" && (
-                <p className="mt-2.5 text-xs text-muted-foreground">
-                  Injecting the last turns verbatim — no model call, no latency.
-                </p>
+                <p className="mt-2.5 text-xs text-muted-foreground">{RAW_HINT}</p>
               )}
+
+              <p className="mt-2.5 text-xs text-muted-foreground">{EXTRACTION_NOTE}</p>
             </Popover.Popup>
           </Popover.Positioner>
         </Popover.Portal>

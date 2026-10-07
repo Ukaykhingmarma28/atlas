@@ -865,6 +865,138 @@ impl Store {
         Ok(rows)
     }
 
+    /// Every turn of this Session with its state and times, oldest first.
+    pub fn turn_spans(&self, session_id: &str) -> Result<Vec<TurnSpan>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT turn_seq, state, started_at, ended_at FROM turn
+              WHERE session_id = ?1 ORDER BY turn_seq",
+        )?;
+        let rows = stmt
+            .query_map([session_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(turn_seq, state, started, ended)| TurnSpan {
+                turn_seq,
+                // A state we do not know is one this build cannot have
+                // finished: read it as still open.
+                state: TurnState::parse(&state).unwrap_or(TurnState::Open),
+                started_at: parse_time(started),
+                ended_at: ended.map(parse_time),
+            })
+            .collect())
+    }
+
+    /// A Session's failed tool calls, newest first, at most `limit`. Reads
+    /// only inline text payloads, cut to 400 characters: a spilled payload
+    /// stays on disk and a binary result is left out. Walks
+    /// `idx_tool_call_session_seq`.
+    pub fn failed_tool_calls(&self, session_id: &str, limit: i64) -> Result<Vec<FailedCall>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT tool_name, title, substr(arguments, 1, 400),
+                    CASE WHEN result_binary = 0 THEN substr(result, 1, 400) END, turn_seq
+               FROM tool_call
+              WHERE session_id = ?1 AND status = 'failed'
+              ORDER BY seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![session_id, limit], |row| {
+                let name: String = row.get(0)?;
+                Ok(FailedCall {
+                    tool_name: ToolName::parse(&name).unwrap_or(ToolName::Other),
+                    title: row.get(1)?,
+                    arguments: row.get(2)?,
+                    result: row.get(3)?,
+                    turn_seq: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The in-repository paths a Session wrote, newest write first, each
+    /// once, with whether its last write deleted it. At most `limit`.
+    pub fn written_paths(&self, session_id: &str, limit: i64) -> Result<Vec<(String, bool)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.path, f.deleted FROM file_touch f
+              WHERE f.session_id = ?1 AND f.out_of_repo = 0
+                AND f.seq = (SELECT MAX(g.seq) FROM file_touch g
+                              WHERE g.session_id = f.session_id AND g.path = f.path)
+              ORDER BY f.seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![session_id, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The Sessions that wrote `path` (project-relative, as stored), with
+    /// their last write to it, newest first. Uses `idx_file_touch_by_path`.
+    pub fn sessions_touching_path(
+        &self,
+        path: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, DateTime<Utc>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, MAX(created_at) AS last FROM file_touch
+              WHERE path = ?1 GROUP BY session_id
+              ORDER BY last DESC, session_id LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![path, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(session, last)| (session, parse_time(last)))
+            .collect())
+    }
+
+    /// The Checkpoints whose commit carried `path`, newest first. A renamed
+    /// file appears here under its committed name, which no touch has. No
+    /// index covers `files_touched`, so this reads every Checkpoint row: one
+    /// per (Session, commit), small next to the message tables.
+    pub fn checkpoints_touching_path(&self, path: &str, limit: i64) -> Result<Vec<Checkpoint>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint c
+              WHERE EXISTS (SELECT 1 FROM json_each(c.files_touched) WHERE value = ?1)
+              ORDER BY created_at DESC, id LIMIT ?2"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![path, limit], row_to_checkpoint)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The Checkpoints of every commit whose sha starts with `prefix` (hex,
+    /// at least 7). A range over `idx_checkpoint_commit`, for a short sha git
+    /// can no longer resolve.
+    pub fn checkpoints_for_commit_prefix(&self, prefix: &str) -> Result<Vec<Checkpoint>> {
+        if prefix.len() < 7 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(Vec::new());
+        }
+        let low = prefix.to_ascii_lowercase();
+        let high = format!("{low}g");
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint
+              WHERE commit_sha >= ?1 AND commit_sha < ?2 ORDER BY created_at DESC, id"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![low, high], row_to_checkpoint)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// The highest turn number this Session has ever used.
     ///
     /// Seeds the in-memory counter after a restart, so a resumed conversation

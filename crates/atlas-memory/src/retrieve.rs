@@ -5,9 +5,12 @@
 //!
 //! Pipeline:
 //! 1. **Embedding.** Embed the query with the shared [`MiniLmProvider`],
-//!    `store.search` for cosine hits, and apply the legacy **0.30 cosine floor on
-//!    the raw similarity** — before fusion, since the floor is a cosine threshold
-//!    and is meaningless against an RRF score.
+//!    search the corpus index's vector file for cosine hits, and apply the
+//!    legacy **0.30 cosine floor on the raw similarity** — before fusion, since
+//!    the floor is a cosine threshold and is meaningless against an RRF score.
+//!    **Keywords.** BM25 over the docs' words (`docs_fts`), fused with the
+//!    embedding list at the same weight: an exact term finds its doc with no
+//!    model loaded.
 //! 2. **Jaccard dedup** near-identical snippets → take `limit` → [`RetrievedDoc`].
 //! 3. **Global blend.** Only when fewer than [`LOCAL_SPARSE_THRESHOLD`] local docs
 //!    survive, the promoted cross-repository memories (`crate::global`) join as a
@@ -36,6 +39,10 @@ pub(crate) const COSINE_FLOOR: f32 = 0.30;
 const RRF_K: f32 = 60.0;
 /// Embedding list weight — the authoritative recall path.
 const W_EMBED: f32 = 1.0;
+/// Keyword list weight (BM25 over the docs' words): an exact identifier or
+/// term finds its doc even when the model is not loaded or the meaning is
+/// below the cosine floor.
+const W_BM25: f32 = 1.0;
 /// Global cross-repository list weight. With `W_EMBED/W_GLOBAL = 20` and the
 /// same `RRF_K`, the best global hit (`0.05/61 ≈ 0.0008`) scores below the
 /// *worst* embedding hit in a pool of 20 (`1/80 ≈ 0.0125`): a global hit can
@@ -113,8 +120,14 @@ impl MemoryEngine {
             None => Vec::new(),
         };
 
+        // ── 1b. Keywords (BM25) ───────────────────────────────────────────────
+        let bm25_ranked = self.bm25_candidates(query, pool);
+
         // ── 2. Jaccard dedup → top-`limit` ────────────────────────────────────
-        let local = jaccard_dedup(rrf_fuse_weighted(&[(&embed_ranked, W_EMBED)]), limit);
+        let local = jaccard_dedup(
+            rrf_fuse_weighted(&[(&embed_ranked, W_EMBED), (&bm25_ranked, W_BM25)]),
+            limit,
+        );
 
         // ── 3. Blend global cross-repository memory ONLY when local is sparse ──
         // Global is a second, lowest-weight RRF list so it can never outrank a
@@ -126,36 +139,47 @@ impl MemoryEngine {
         if global_ranked.is_empty() {
             return local;
         }
-        let fused = rrf_fuse_weighted(&[(&embed_ranked, W_EMBED), (&global_ranked, W_GLOBAL)]);
+        let fused = rrf_fuse_weighted(&[
+            (&embed_ranked, W_EMBED),
+            (&bm25_ranked, W_BM25),
+            (&global_ranked, W_GLOBAL),
+        ]);
         jaccard_dedup(fused, limit)
     }
 
     /// Cosine hits for an embedded query that clear the floor, ranked best
-    /// first and resolved to display docs via the manifest bimap + docstore.
+    /// first and resolved to display docs through the corpus index.
     fn vector_candidates(&self, qvec: &[f32], pool: usize) -> anyhow::Result<Vec<Ranked>> {
-        let hits = self.store.search(qvec, pool)?;
-        let floored = apply_cosine_floor(hits, COSINE_FLOOR);
+        let hits = self.corpus.search_dense(qvec, pool);
+        Ok(apply_cosine_floor(hits, COSINE_FLOOR)
+            .into_iter()
+            .filter_map(|(id, _sim)| self.ranked(id))
+            .collect())
+    }
 
-        let mut out = Vec::with_capacity(floored.len());
-        for (key, _sim) in floored {
-            let Some(id) = self.manifest.id_for(key) else {
-                continue;
-            };
-            let id = id.to_string();
-            let Some(dt) = self.docstore.get(&id) else {
-                continue;
-            };
-            out.push(Ranked {
-                doc: RetrievedDoc {
-                    id: id.clone(),
-                    title: dt.title.clone(),
-                    source: dt.source.clone(),
-                    text: dt.text.clone(),
-                },
-                id,
-            });
+    /// Docs whose words match the query (BM25), best first.
+    fn bm25_candidates(&self, query: &str, pool: usize) -> Vec<Ranked> {
+        match self.corpus.search_bm25(query, pool) {
+            Ok(ids) => ids.into_iter().filter_map(|id| self.ranked(id)).collect(),
+            Err(e) => {
+                tracing::debug!(target: "atlas_memory::retrieve", "keyword recall failed: {e}");
+                Vec::new()
+            }
         }
-        Ok(out)
+    }
+
+    /// Doc `id` as a ranked candidate, when the index still holds it.
+    fn ranked(&self, id: String) -> Option<Ranked> {
+        let dt = self.corpus.doc(&id)?;
+        Some(Ranked {
+            doc: RetrievedDoc {
+                id: id.clone(),
+                title: dt.title,
+                source: dt.source,
+                text: dt.text,
+            },
+            id,
+        })
     }
 }
 
@@ -172,7 +196,7 @@ async fn embed_query(query: &str, provider: &MiniLmProvider) -> anyhow::Result<O
 
 /// Keep only hits whose raw cosine similarity is at/above `floor`. usearch already
 /// returns them best-first, so order is preserved.
-pub(crate) fn apply_cosine_floor(hits: Vec<(u64, f32)>, floor: f32) -> Vec<(u64, f32)> {
+pub(crate) fn apply_cosine_floor<K>(hits: Vec<(K, f32)>, floor: f32) -> Vec<(K, f32)> {
     hits.into_iter().filter(|(_, sim)| *sim >= floor).collect()
 }
 
@@ -433,7 +457,6 @@ mod tests {
 /// query below; they must not move.
 #[cfg(test)]
 mod fixture_corpus {
-    use crate::docstore::DocText;
     use crate::{MemoryEngine, DIM};
     use std::path::PathBuf;
 
@@ -514,19 +537,21 @@ mod fixture_corpus {
                 4,
             ),
         ];
-        for (id, title, source, text, axis) in docs {
-            let key = engine.manifest.assign_key(id);
-            engine.store.add(key, &vec_of(&[(axis, 1.0)])).unwrap();
-            engine.manifest.upsert(id, id, source, 0);
-            engine.docstore.upsert(
-                id,
-                DocText {
-                    title: title.into(),
-                    source: source.into(),
-                    text: text.into(),
-                },
-            );
-        }
+        let embedded: Vec<(crate::CorpusDoc, Vec<f32>)> = docs
+            .iter()
+            .map(|(id, title, source, text, axis)| {
+                (
+                    crate::CorpusDoc {
+                        id: (*id).into(),
+                        text: format!("{title}\n\n{text}"),
+                        content_hash: (*id).into(),
+                        corpus: (*source).into(),
+                    },
+                    vec_of(&[(*axis, 1.0)]),
+                )
+            })
+            .collect();
+        engine.add_embedded(&embedded).unwrap();
         engine
     }
 

@@ -77,8 +77,9 @@ pub use debug_log::{
 pub use handlers::ClientContext;
 pub use host_env::sanitize_host_env;
 pub use server::{
-    env_quirks, env_quirks_from, load_proxy_env, AgentServer, AgentServerDelegate, ConnectOptions,
-    CustomAgentServer, ExternalAgentServer,
+    atlas_only_memory, env_quirks, env_quirks_from, load_proxy_env, memory_quirks,
+    set_atlas_only_memory, AgentServer, AgentServerDelegate, ConnectOptions, CustomAgentServer,
+    ExternalAgentServer,
 };
 pub use session::{
     AcpSession, CancelProbe, CancelSignal, CancelWaiter, ConfigOptions, SessionDirectories,

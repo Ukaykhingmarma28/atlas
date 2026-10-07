@@ -30,12 +30,18 @@ import type {
   QueryHit,
 } from "@/features/memory/lib/memory-graph-api";
 import type { Policy } from "@/features/memory/lib/memory-policy-api";
+import type { HealthStatus } from "@/features/memory/lib/use-memory-health";
+import type { SessionWrite } from "@/features/memory/lib/use-session-memory-writes";
 import type { SummarizerPref } from "@/features/memory/lib/memory-sharing-api";
 import type {
   ClaudeImportPreview,
   EventKind,
   MemoryEntry,
   MemoryEvent,
+  Provenance,
+  ExportPreview,
+  RepoImportLine,
+  ReviewQueue,
   SharedState,
 } from "@/features/memory/lib/shared-memory-api";
 import type { TypedHandlers, Unit, Unread } from "../types";
@@ -1218,6 +1224,8 @@ function seededEntries(): MemoryEntry[] {
         updatedAt: ago(minutesAgo),
         lastUsedAt: uses ? ago(Math.max(10, minutesAgo / 4)) : null,
         uses,
+        revision: index + 1,
+        state: confidence < 0.5 ? "candidate" : "active",
       };
     },
   );
@@ -1286,6 +1294,24 @@ export interface MemoryResponses {
   memory_list_entries: MemoryEntry[];
   memory_edit_entry: MemoryEntry;
   memory_forget_entry: boolean;
+  memory_purge_entry: boolean;
+  memory_entry_provenance: Provenance[];
+  memory_accept_history: boolean;
+  memory_health_status: HealthStatus;
+  memory_feedback_entry: MemoryEntry | null;
+  memory_review: ReviewQueue;
+  memory_session_writes: SessionWrite[];
+  memory_promote: boolean;
+  memory_archive: number;
+  memory_merge: number;
+  memory_resolve_conflict: boolean;
+  memory_dream_accept: string;
+  memory_export_preview: ExportPreview;
+  memory_export_apply: string;
+  memory_repo_import_preview: RepoImportLine[];
+  memory_repo_import_confirm: number;
+  memory_repo_mirror_dir: string | null;
+  memory_dream_dismiss: Unit;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
@@ -1412,6 +1438,99 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     entryLog.set(path, kept);
     return kept.length !== entries.length;
   },
+  // The mock keeps no history, so erasing is forgetting.
+  memory_purge_entry: ({ projectPath, id }): boolean => {
+    const path = String(projectPath);
+    const entries = entriesFor(path);
+    const kept = entries.filter((e) => e.id !== Number(id));
+    entryLog.set(path, kept);
+    return kept.length !== entries.length;
+  },
+  // The mock's memory is never damaged or edited behind its back.
+  memory_accept_history: (): boolean => false,
+  memory_feedback_entry: ({ projectPath, id, verdict }): MemoryEntry | null => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return null;
+    if (verdict === "wrong") entry.state = "archived";
+    else if (verdict === "stale") entry.state = "candidate";
+    else entry.uses += 1;
+    return entry;
+  },
+  memory_review: ({ projectPath }): ReviewQueue => ({
+    candidates: entriesFor(String(projectPath)).filter((e) => e.state === "candidate"),
+    merges: [],
+    conflicts: [],
+    dreams: [],
+  }),
+  memory_session_writes: (): SessionWrite[] => [],
+  memory_promote: ({ projectPath, id }): boolean => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return false;
+    entry.state = "active";
+    entry.confidence = Math.max(entry.confidence, 0.7);
+    return true;
+  },
+  memory_archive: ({ projectPath, ids }): number => {
+    const wanted = new Set((ids as number[]).map(Number));
+    const hit = entriesFor(String(projectPath)).filter((e) => wanted.has(e.id));
+    for (const e of hit) e.state = "archived";
+    return hit.length;
+  },
+  memory_merge: ({ projectPath, drop }): number => {
+    const wanted = new Set((drop as number[]).map(Number));
+    const hit = entriesFor(String(projectPath)).filter((e) => wanted.has(e.id));
+    for (const e of hit) e.state = "archived";
+    return hit.length;
+  },
+  memory_resolve_conflict: (): boolean => true,
+  memory_dream_accept: (): string => "accepted",
+  memory_export_preview: ({ projectPath, ids }): ExportPreview => {
+    const wanted = new Set((ids as number[]).map(Number));
+    const lines = entriesFor(String(projectPath))
+      .filter((e) => wanted.has(e.id))
+      .map((e) => `- ${e.content}`);
+    return {
+      path: `${String(projectPath)}/AGENTS.md`,
+      before: "",
+      after: [
+        "<!-- atlas-memory:begin -->",
+        "## Project memory (exported from Atlas)",
+        ...lines,
+        "<!-- atlas-memory:end -->",
+        "",
+      ].join("\n"),
+    };
+  },
+  memory_export_apply: ({ projectPath }): string => `${String(projectPath)}/AGENTS.md`,
+  memory_repo_import_preview: (): RepoImportLine[] => [],
+  memory_repo_import_confirm: (): number => 0,
+  memory_repo_mirror_dir: ({ projectPath }): string | null => {
+    const name = String(projectPath).split("/").pop() || "project";
+    return `${HOME}/.atlas/memory-repos/${name}-3f9c2ab1`;
+  },
+  memory_dream_dismiss: (): null => null,
+  memory_health_status: (): HealthStatus => ({
+    checkedAt: Date.now(),
+    record: { checkedAt: Date.now(), found: [], repaired: [], deferred: [] },
+    corpus: { rebuiltVectors: 0, rebuiltFts: false, recreated: false },
+    restored: null,
+  }),
+  memory_entry_provenance: ({ projectPath, id }): Provenance[] => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return [];
+    const added = new Date(entry.createdAt).toISOString().slice(0, 10);
+    return [
+      {
+        source: entry.sessionId
+          ? `atlas-session:${entry.agent || entry.source}/${entry.sessionId}`
+          : entry.source,
+        agent: entry.agent || entry.source,
+        added,
+        title: null,
+        commits: [],
+      },
+    ];
+  },
 
   // ── Claude auto-memory import ────────────────────────────────────────────
   memory_claude_import_preview: ({ projectPath }): ClaudeImportPreview =>
@@ -1440,6 +1559,8 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
         updatedAt: now,
         lastUsedAt: null,
         uses: 0,
+        revision: nextId,
+        state: "active",
       });
       line.isNew = false;
     }

@@ -94,7 +94,10 @@ impl TauriDeltaSink {
             // the live session goes away. Always on and agent-agnostic,
             // unlike `capture` (opt-in, git-backed).
             .with(Arc::new(TranscriptMiddleware { app: app.clone() }))
-            .with(Arc::new(MemoryIngestMiddleware { app }));
+            .with(Arc::new(MemoryIngestMiddleware {
+                app,
+                queue: super::memory_delta::IngestQueue::new("atlas-memory-ingest"),
+            }));
         Self { pipeline }
     }
 }
@@ -428,6 +431,8 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for TranscriptMiddleware {
 /// blocks.
 struct MemoryIngestMiddleware {
     app: AppHandle,
+    /// Capture jobs, in emit order (see [`super::memory_delta::IngestQueue`]).
+    queue: super::memory_delta::IngestQueue,
 }
 
 impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
@@ -446,8 +451,9 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         // Site A — Shared Cross-Agent Memory (v2) capture (write-side parity for
         // all three agents). `classify` is pure/in-memory, but `append_event`
         // does a small disk write (one SQLite transaction in the record store), so we
-        // run the whole `ingest` OFF the `emit` thread on the blocking pool — the
-        // streaming-delta hot path must never block on disk. This feeds ONLY the
+        // run the whole `ingest` OFF the `emit` thread on the ingest queue's one
+        // thread, in emit order — the streaming-delta hot path must never block
+        // on disk, and a later plan must never land before an earlier one. This feeds ONLY the
         // shared event log; the semantic vector index is now (re)built by the
         // background `MemoryIndexer` (Step 4), never synchronously on a delta.
         //
@@ -465,13 +471,35 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             SessionDelta::MessageAppended { message } => message.role == MessageRole::Assistant,
             _ => false,
         };
-        if ingest_relevant && cwd.is_some() {
-            let app = self.app.clone();
-            let envelope = envelope.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                let store = app.state::<SharedMemoryStore>();
-                super::memory_delta::ingest(&envelope, store.inner());
-            });
+        if ingest_relevant {
+            if let Some(cwd) = cwd.clone() {
+                let app = self.app.clone();
+                let envelope = envelope.clone();
+                self.queue.push(move || {
+                    // The switch is read when the job runs: a session registered
+                    // while sharing was on stops capturing as soon as it is
+                    // switched off.
+                    if !app.state::<MemorySharingState>().is_enabled(&cwd) {
+                        return;
+                    }
+                    let store = app.state::<SharedMemoryStore>();
+                    super::memory_delta::ingest(&envelope, store.inner());
+                });
+            }
+        }
+
+        // A retry or `/undo` took turns back: what the session remembered in
+        // them drops to candidate once the recorder has marked them (M4).
+        if matches!(envelope.delta, SessionDelta::HistoryRewound { .. }) {
+            if let Some(cwd) = cwd.clone() {
+                let _ = self.app.state::<Arc<MemoryRegistry>>().enqueue(
+                    super::memory_indexer::Job::RewoundCheck {
+                        cwd,
+                        session: session_id.clone(),
+                        retried: false,
+                    },
+                );
+            }
         }
 
         if is_turn_finished {
@@ -606,6 +634,19 @@ impl SharingGatedLifecycle {
                             // The end-of-session extraction, queued behind the
                             // session's last turn-finished pass.
                             if let Some(ended) = memory.session_ended(&session_id) {
+                                // What it wrote in turns it took back drops to
+                                // candidate. The session ran in `cwd`, so the
+                                // default reader finds its recorder store.
+                                if let Some(windows) = super::memory_capture::rewound_windows_for(
+                                    &super::memory_capture::CaptureReader::default(),
+                                    &ended.cwd,
+                                    &session_id,
+                                    memory.now(),
+                                ) {
+                                    if let Err(e) = memory.demote_rewound(&ended.cwd, &session_id, &windows) {
+                                        tracing::warn!(target: "atlas::shared_memory", "rewound check failed: {e}");
+                                    }
+                                }
                                 if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
                                     let job = super::memory_indexer::Job::SessionEnded {
                                         cwd: ended.cwd,
@@ -875,6 +916,25 @@ pub fn install_manager(app: &AppHandle) {
             let app = bootstrap_app.clone();
             Box::pin(async move { build_bootstrap(&app, &cwd, &session_id).await })
         });
+        // Cited code is checked through the open code index, which finds a
+        // symbol that moved; a scope with no index open reads the files.
+        let check_app = app.clone();
+        let check: super::memory_server::CitationCheck = Arc::new(
+            move |root: &std::path::Path, cites: &[atlas_memory::citation::Citation]| {
+                static CACHE: std::sync::OnceLock<atlas_memory::citation::ValidationCache> =
+                    std::sync::OnceLock::new();
+                let cache = CACHE.get_or_init(Default::default);
+                let resolver = match check_app
+                    .try_state::<Arc<super::code_index::CodeIndexRegistry>>()
+                {
+                    Some(registry) => {
+                        super::code_index::citations::CodeIndexResolver::for_scope(&registry, root)
+                    }
+                    None => super::code_index::citations::CodeIndexResolver::with_index(root, None),
+                };
+                cites.iter().map(|c| cache.check(c, &resolver)).collect()
+            },
+        );
         server.start(
             memory.inner().clone(),
             gate,
@@ -882,6 +942,13 @@ pub fn install_manager(app: &AppHandle) {
                 index: Some(index),
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
+                // Read-only: memory never writes the recorder (memory_capture.rs).
+                capture: super::memory_capture::CaptureReader {
+                    transcripts_dir: app
+                        .try_state::<Arc<super::agent_transcript::TranscriptState>>()
+                        .map(|t| t.config_dir().to_path_buf()),
+                },
+                check: Some(check),
             },
             vec![ui_router, org_router, code_router],
         );

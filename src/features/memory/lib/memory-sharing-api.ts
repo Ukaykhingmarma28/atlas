@@ -1,7 +1,7 @@
 // Shared Cross-Agent Memory — TS bindings for the per-project toggle + handoff
-// summarizer preference. The actual injection happens Rust-side in `agents_send`
-// on the first message of a session; these commands only read/write the two
-// `.atlas/*.json` settings files. Mirrors the plain-invoke pattern in
+// summarizer preference. Agents pull memory through the `atlas_memory` tools
+// (ADR-0010); nothing is injected. These commands only read/write the two
+// per-project settings files. Mirrors the plain-invoke pattern in
 // `memory-policy-api.ts`.
 
 import { invoke } from "@tauri-apps/api/core";

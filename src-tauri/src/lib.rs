@@ -32,6 +32,43 @@ use tauri::Manager;
 // that exercises the decoder rather than by a const that only proves a patch
 // still applies.
 
+/// `atlas mcp-bridge <url>`: run the stdio bridge (ADR-0019) instead of the
+/// app, the session token from `ATLAS_MCP_TOKEN`. Returns whether it ran.
+pub fn run_bridge_if_asked() -> bool {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some(commands::memory_server::BRIDGE_ARG) {
+        return false;
+    }
+    let (Some(url), Ok(token)) = (
+        args.next(),
+        std::env::var(commands::memory_server::BRIDGE_TOKEN_ENV),
+    ) else {
+        eprintln!("usage: ATLAS_MCP_TOKEN=... atlas mcp-bridge <url>");
+        std::process::exit(2);
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("mcp-bridge: {e}");
+            std::process::exit(1);
+        }
+    };
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    if let Err(e) = runtime.block_on(commands::memory_bridge::bridge(
+        &url,
+        &token,
+        stdin,
+        tokio::io::stdout(),
+    )) {
+        eprintln!("mcp-bridge: {e:#}");
+        std::process::exit(1);
+    }
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Whose data this process owns, fixed before ANYTHING resolves a path —
@@ -216,6 +253,10 @@ pub fn run() {
             // off before any project opens still takes the mirrored blocks out.
             app.state::<commands::instruction_sync::InstructionSyncState>()
                 .init(migration.manager.effective().instruction_sync);
+            // Whether agents start with their own memory off (M4).
+            atlas_agent_servers::set_atlas_only_memory(
+                migration.manager.effective().atlas_only_memory,
+            );
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             let keep_awake = Arc::new(keep_awake::KeepAwakeManager::new(
@@ -415,8 +456,23 @@ pub fn run() {
             let registry = Arc::new(commands::memory_indexer::MemoryRegistry::new(job_tx));
             app.manage(registry.clone());
             let indexer_app = app.handle().clone();
+            let ticker_registry = registry.clone();
             tauri::async_runtime::spawn(async move {
                 commands::memory_indexer::MemoryIndexer::run(indexer_app, registry, job_rx).await;
+            });
+            // The memory reconciler's periodic pass (M2): every open project
+            // is checked and repaired every 30 minutes (opening one already
+            // queues a pass).
+            tauri::async_runtime::spawn(async move {
+                let mut every = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+                every.tick().await; // the first tick is immediate
+                loop {
+                    every.tick().await;
+                    for cwd in ticker_registry.open_cwds() {
+                        let _ =
+                            ticker_registry.enqueue(commands::memory_indexer::Job::Health { cwd });
+                    }
+                }
             });
             Ok(())
         })
@@ -868,9 +924,27 @@ pub fn run() {
             commands::shared_memory::memory_list_entries,
             commands::shared_memory::memory_edit_entry,
             commands::shared_memory::memory_forget_entry,
+            commands::shared_memory::memory_purge_entry,
+            commands::shared_memory::memory_entry_provenance,
+            commands::shared_memory::memory_accept_history,
+            commands::shared_memory::memory_feedback_entry,
+            commands::shared_memory::memory_review,
+            commands::shared_memory::memory_session_writes,
+            commands::shared_memory::memory_export_preview,
+            commands::shared_memory::memory_export_apply,
+            commands::shared_memory::memory_promote,
+            commands::shared_memory::memory_archive,
+            commands::shared_memory::memory_merge,
+            commands::shared_memory::memory_resolve_conflict,
+            commands::memory_dream::memory_dream_accept,
+            commands::memory_dream::memory_dream_dismiss,
+            commands::memory_repo::memory_repo_import_preview,
+            commands::memory_repo::memory_repo_import_confirm,
+            commands::memory_repo::memory_repo_mirror_dir,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,
+            commands::memory_indexer::memory_health_status,
             commands::memory_indexer::memory_indexer_close_project,
             commands::models::models_list,
             commands::models::model_download,

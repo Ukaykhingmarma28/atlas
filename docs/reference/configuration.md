@@ -139,6 +139,24 @@ agentOrgAccess = true
 # (default: true)
 agentCodeTools = true
 
+# Once a day, when there are new sessions, ask the memory model to
+# propose changes to shared memory (add, merge, archive, rewrite,
+# link). Proposals wait in Memory > Review; nothing is applied
+# without you. Uses the same model and consent as extraction.
+# (default: false)
+memoryDreams = false
+
+# Keep a read-only Agent Memory Repo mirror of each project's active
+# memory, as a local git repository outside the project. No remote,
+# nothing is pushed. (default: false)
+memoryRepoMirror = false
+
+# Atlas's shared memory is the only memory in Atlas sessions: agents
+# that keep a memory of their own (Claude Code's auto memory, the
+# OpenAI agent's memories) start with it off. Off: each agent also
+# keeps its own memory files. (default: true)
+atlasOnlyMemory = true
+
 # Notify when a command succeeds after running longer than
 # terminalNotifyMinDurationMs. (The master switch for all notifications
 # is notificationsEnabled.) (default: true)
@@ -262,6 +280,9 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `agentUiNavigation` | boolean | `true` | — |
 | `agentOrgAccess` | boolean | `true` | — |
 | `agentCodeTools` | boolean | `true` | — |
+| `memoryDreams` | boolean | `false` | — |
+| `memoryRepoMirror` | boolean | `false` | — |
+| `atlasOnlyMemory` | boolean | `true` | — |
 | `terminalNotifications` | boolean | `true` | — |
 | `terminalNotifyMinDurationMs` | integer | `10000` | 0 ≤ n ≤ 3600000 |
 | `terminalNotifyOnFailure` | boolean | `true` | — |

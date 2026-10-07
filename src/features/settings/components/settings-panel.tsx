@@ -45,6 +45,7 @@ import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-sto
 import { openConfigFile } from "../lib/atlas-config-api";
 import type { AppSettings } from "../lib/app-settings";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useAppStore } from "@/features/app/stores/app-store";
 import { NotificationsSettings } from "./notifications-settings";
 import { SectionTitle, SettingRow, Toggle } from "./settings-controls";
 
@@ -305,6 +306,24 @@ function GeneralSettings() {
       toast.error(`Install failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setInstalling(false);
+    }
+  };
+
+  // The memory mirror lives outside the project; this shows the open
+  // project's copy in the file manager.
+  const projectPath = useAppStore.use.currentProject()?.path ?? null;
+  const openMemoryMirror = async () => {
+    if (!projectPath) return;
+    try {
+      const dir = await invoke<string | null>("memory_repo_mirror_dir", { projectPath });
+      if (!dir) {
+        toast("This project's memory mirror hasn't been written yet");
+        return;
+      }
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(dir);
+    } catch (e) {
+      toast.error(`Couldn't open the mirror: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -571,6 +590,47 @@ function GeneralSettings() {
           checked={settings.agentCodeTools}
           onChange={(next) => updateSettings({ agentCodeTools: next })}
         />
+      </SettingRow>
+      <SettingRow
+        label="Atlas is the only memory in Atlas sessions"
+        description="Claude Code starts with its own auto memory off and Codex with its memories off, so every agent reads and writes the one shared memory. Off: each agent also keeps its own memory files."
+      >
+        <Toggle
+          checked={settings.atlasOnlyMemory}
+          onChange={(next) => updateSettings({ atlasOnlyMemory: next })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Nightly memory review"
+        description="Once a day, when there are new sessions, the memory model reads their handoff notes beside current memory and proposes changes. Proposals wait in Memory › Review; nothing changes without you. Uses the same model and consent as extraction."
+      >
+        <Toggle
+          checked={settings.memoryDreams}
+          onChange={(next) => updateSettings({ memoryDreams: next })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Mirror memory as an Agent Memory Repo"
+        description="Keeps a read-only copy of each project's active memory as a local git repository outside the project, in the open Agent Memory Repo format other tools read. No remote; nothing is pushed."
+      >
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void openMemoryMirror()}
+            disabled={!settings.memoryRepoMirror || !projectPath}
+            className={cn(
+              "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
+              "text-foreground hover:bg-element-hover transition-colors",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            )}
+          >
+            Open folder
+          </button>
+          <Toggle
+            checked={settings.memoryRepoMirror}
+            onChange={(next) => updateSettings({ memoryRepoMirror: next })}
+          />
+        </div>
       </SettingRow>
       <SettingRow
         label="Atlas CLI"

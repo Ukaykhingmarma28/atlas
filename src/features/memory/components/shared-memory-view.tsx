@@ -34,6 +34,9 @@ import {
   X,
   Loader2,
   Download,
+  Eraser,
+  Inbox,
+  FolderInput,
 } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
@@ -44,13 +47,19 @@ import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { MemoryReviewView } from "./memory-review-view";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { useMemoryStore } from "../stores/memory-store";
+import { sharedMemory } from "../lib/shared-memory-api";
 import type {
   ClaudeImportLine,
   ClaudeImportPreview,
+  ExportPreview,
   MemoryEntry,
+  RepoImportLine,
   MemoryEvent,
+  Provenance,
 } from "../lib/shared-memory-api";
 
 interface Props {
@@ -58,7 +67,7 @@ interface Props {
   className?: string;
 }
 
-type Tab = "events" | "plans" | "memories";
+type Tab = "events" | "plans" | "memories" | "review";
 
 /* ── Column tracks (sticky header + rows line up; min-width → horizontal scroll) ── */
 const EVENT_COL = {
@@ -149,6 +158,18 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const [tab, setTab] = useState<Tab>("events");
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importingRepo, setImportingRepo] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clearConfirmed = async () => {
+    setConfirmClear(false);
+    try {
+      await clear();
+    } catch (err) {
+      toast.error(
+        `Couldn't clear shared memory: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
 
   useEffect(() => {
     if (projectPath) void load(projectPath);
@@ -156,6 +177,17 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [kindFilter, setKindFilter] = useState<string>("");
+
+  // Asked to open an entry ("Memory updated" card): show the Memories table
+  // unfiltered, so the row is there for the table to expand.
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  useEffect(() => {
+    if (focusEntryId == null) return;
+    setTab("memories");
+    setQuery("");
+    setAgentFilter("");
+    setKindFilter("");
+  }, [focusEntryId]);
 
   const plans = useMemo(() => events.filter((e) => e.kind === "plan_set"), [events]);
 
@@ -237,6 +269,13 @@ export function SharedMemoryView({ projectPath, className }: Props) {
             label="Memories"
             count={entries.length}
           />
+          <SegBtn
+            active={tab === "review"}
+            onClick={() => setTab("review")}
+            icon={<Inbox size={11} />}
+            label="Review"
+            count={0}
+          />
         </div>
 
         {/* Column filters */}
@@ -277,7 +316,10 @@ export function SharedMemoryView({ projectPath, className }: Props) {
           <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
             <Download size={12} />
           </IconButton>
-          <IconButton label="Clear shared memory" onClick={() => void clear()}>
+          <IconButton label="Import memory repo" onClick={() => setImportingRepo(true)}>
+            <FolderInput size={12} />
+          </IconButton>
+          <IconButton label="Clear shared memory" onClick={() => setConfirmClear(true)}>
             <Trash2 size={12} />
           </IconButton>
         </HintGroup>
@@ -287,9 +329,30 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         onOpenChange={setImporting}
         onImported={() => setTab("memories")}
       />
+      <ImportRepoModal
+        projectPath={projectPath}
+        open={importingRepo}
+        onOpenChange={setImportingRepo}
+        onImported={() => {
+          setTab("review");
+          void refresh();
+        }}
+      />
+      <FileTreeConfirmDelete
+        open={confirmClear}
+        name="shared memory"
+        isDir={false}
+        title="Clear shared memory?"
+        body="Every agent on this project loses every plan, decision, fact, failure and architecture note recorded here. This can't be undone."
+        confirmLabel="Clear"
+        onConfirm={() => void clearConfirmed()}
+        onOpenChange={setConfirmClear}
+      />
 
       {/* Body */}
-      {!loaded ? (
+      {tab === "review" ? (
+        <MemoryReviewView projectPath={projectPath} />
+      ) : !loaded ? (
         <div className="p-3">
           <PanelSkeleton rows={8} />
         </div>
@@ -520,12 +583,70 @@ function PlanRow({
 
 /* ── Memories table ──────────────────────────────────────────────────────────── */
 
+const DURABLE_KINDS: ReadonlySet<string> = new Set([
+  "decision",
+  "fact",
+  "failure",
+  "architecture",
+  "preference",
+]);
+
+/** Whether an entry can go into AGENTS.md: an active durable memory. A
+ *  candidate is unreviewed, and the backend refuses plans, file changes and
+ *  archived entries. */
+function exportable(e: MemoryEntry): boolean {
+  return e.state === "active" && DURABLE_KINDS.has(e.kind);
+}
+
 function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [exporting, setExporting] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  const { clearFocusEntry } = useMemoryStore.use.actions();
+  // Expand the entry asked for once its row is listed, then consume the ask.
+  useEffect(() => {
+    if (focusEntryId == null || !rows.some((r) => r.id === focusEntryId)) return;
+    setExpanded(focusEntryId);
+    clearFocusEntry();
+    scroller.current
+      ?.querySelector(`[data-entry-id="${focusEntryId}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [focusEntryId, rows, clearFocusEntry]);
+  const toggle = (id: number) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // In the order picked; a row filtered out of view, or no longer
+  // exportable, is not exported.
+  const chosen = [...selected].filter((id) => rows.some((r) => r.id === id && exportable(r)));
   return (
-    <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+    <div ref={scroller} className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+      {chosen.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
+          <span>{chosen.length} selected</span>
+          <button
+            type="button"
+            onClick={() => setExporting(true)}
+            className="ml-auto h-6 rounded-md border border-[var(--border)] px-2 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+          >
+            Export to AGENTS.md
+          </button>
+        </div>
+      )}
+      <ExportAgentsModal
+        open={exporting}
+        ids={chosen}
+        onOpenChange={setExporting}
+        onWritten={() => setSelected(new Set())}
+      />
       <div style={{ minWidth: ENTRY_MIN_W }}>
         <HeaderRow>
+          <span className="w-6 shrink-0" />
           <span className={ENTRY_COL.time}>Updated</span>
           <span className={ENTRY_COL.kind}>Kind</span>
           <span className={ENTRY_COL.source}>Source</span>
@@ -543,6 +664,8 @@ function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
               entry={e}
               expanded={expanded === e.id}
               onToggle={() => setExpanded((c) => (c === e.id ? null : e.id))}
+              selected={selected.has(e.id)}
+              onSelect={() => toggle(e.id)}
             />
           ))
         )}
@@ -555,60 +678,78 @@ function EntryRow({
   entry: e,
   expanded,
   onToggle,
+  selected,
+  onSelect,
 }: {
   entry: MemoryEntry;
   expanded: boolean;
   onToggle: () => void;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <div className="border-b border-[var(--atlas-border-subtle)]">
-      <button
-        onClick={onToggle}
-        className={cn(
-          "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
-        )}
-      >
-        <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
-          {eventTime(e.updatedAt)}
-        </span>
-        <span className={ENTRY_COL.kind}>
-          <KindChip kind={e.kind} />
-        </span>
-        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2")}>
-          <SourceChip source={e.source} />
-        </span>
-        <span className={cn(ENTRY_COL.agent, "min-w-0")}>
-          {entryAgent(e.agent) ? (
-            <AgentTag agent={e.agent} />
-          ) : (
-            <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
-              {e.agent || "—"}
-            </span>
+    <div data-entry-id={e.id} className="border-b border-[var(--atlas-border-subtle)]">
+      <div className="flex items-center">
+        <span className="flex w-6 shrink-0 items-center justify-end">
+          {exportable(e) && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onSelect}
+              aria-label={`Select ${e.content}`}
+              className="h-3 w-3 cursor-pointer accent-[var(--primary)]"
+            />
           )}
         </span>
-        <span
+        <button
+          onClick={onToggle}
           className={cn(
-            ENTRY_COL.confidence,
-            "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            "flex-1 min-w-0 flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
+            expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
           )}
         >
-          {confidenceLabel(e.confidence)}
-        </span>
-        <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
-          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
-            {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+          <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
+            {eventTime(e.updatedAt)}
           </span>
-        </span>
-        <span
-          className={cn(
-            ENTRY_COL.chevron,
-            "flex items-center justify-end text-[var(--muted-foreground)]",
-          )}
-        >
-          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </span>
-      </button>
+          <span className={ENTRY_COL.kind}>
+            <KindChip kind={e.kind} />
+          </span>
+          <span className={cn(ENTRY_COL.source, "min-w-0 pr-2 flex items-center gap-1")}>
+            <SourceChip source={e.source} />
+            {e.state && e.state !== "active" && <StateChip state={e.state} />}
+          </span>
+          <span className={cn(ENTRY_COL.agent, "min-w-0")}>
+            {entryAgent(e.agent) ? (
+              <AgentTag agent={e.agent} />
+            ) : (
+              <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
+                {e.agent || "—"}
+              </span>
+            )}
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.confidence,
+              "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            )}
+          >
+            {confidenceLabel(e.confidence)}
+          </span>
+          <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
+            <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+              {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+            </span>
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.chevron,
+              "flex items-center justify-end text-[var(--muted-foreground)]",
+            )}
+          >
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
+        </button>
+      </div>
       {expanded && <EntryDetail entry={e} />}
     </div>
   );
@@ -617,11 +758,30 @@ function EntryRow({
 /** An expanded entry: its full provenance, its content, and the edit and
  *  forget actions. Editing follows the Policy view: a draft, save, revert. */
 function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
-  const { editEntry, forgetEntry } = useSharedMemoryStore.use.actions();
+  const { editEntry, forgetEntry, purgeEntry } = useSharedMemoryStore.use.actions();
+  const projectPath = useSharedMemoryStore.use.projectPath();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(e.content);
   const [saving, setSaving] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
+  const [provenance, setProvenance] = useState<Provenance[]>([]);
+
+  useEffect(() => {
+    if (!projectPath) return;
+    let alive = true;
+    sharedMemory
+      .provenance(projectPath, e.id)
+      .then((p) => {
+        if (alive) setProvenance(p ?? []);
+      })
+      .catch(() => {
+        if (alive) setProvenance([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectPath, e.id]);
   const dirty = draft.trim() !== e.content.trim() && draft.trim().length > 0;
 
   useEffect(() => {
@@ -654,6 +814,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
       toast.success("Memory forgotten");
     } catch (err) {
       toast.error(`Couldn't forget: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const erase = async () => {
+    setConfirmErase(false);
+    try {
+      await purgeEntry(e.id);
+      toast.success("Memory erased with its history");
+    } catch (err) {
+      toast.error(`Couldn't erase: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -691,6 +861,9 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
               <IconButton label="Forget memory" onClick={() => setConfirmForget(true)}>
                 <Trash2 size={12} />
               </IconButton>
+              <IconButton label="Erase with history" onClick={() => setConfirmErase(true)}>
+                <Eraser size={12} />
+              </IconButton>
             </>
           )}
         </div>
@@ -723,6 +896,15 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
           </pre>
         </div>
       )}
+      {provenance.length > 0 && (
+        <div className="space-y-0.5">
+          {provenance.map((p, i) => (
+            <p key={`${p.source}-${i}`} className="text-xs text-[var(--muted-foreground)]">
+              {provenanceLine(p)}
+            </p>
+          ))}
+        </div>
+      )}
       <FileTreeConfirmDelete
         open={confirmForget}
         name={e.content}
@@ -732,6 +914,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
         confirmLabel="Forget"
         onConfirm={() => void forget()}
         onOpenChange={setConfirmForget}
+      />
+      <FileTreeConfirmDelete
+        open={confirmErase}
+        name={e.content}
+        isDir={false}
+        title="Erase this memory and its history?"
+        body="It is forgotten, and every earlier wording is overwritten on disk. Use this for a secret that slipped into memory. This can't be undone. Recorded sessions in the Timeline keep their own copy of the conversation; this does not change them."
+        confirmLabel="Erase"
+        onConfirm={() => void erase()}
+        onOpenChange={setConfirmErase}
       />
     </div>
   );
@@ -744,6 +936,272 @@ const NO_PREVIEW: ClaudeImportPreview = { sources: [], alreadyImported: false, l
 /** Preview, then consent: every line Claude's auto-memory maps to, with its
  *  kind; the new ones start ticked. Only Import writes. Composed from the
  *  Import sessions modal's Dialog shell, tokens and type scale. */
+/** The AGENTS.md export: a preview of the file as it would be written, then
+ *  Write. Only the managed block changes; nothing is written on Cancel. */
+function ExportAgentsModal({
+  open,
+  ids,
+  onOpenChange,
+  onWritten,
+}: {
+  open: boolean;
+  ids: number[];
+  onOpenChange: (open: boolean) => void;
+  onWritten: () => void;
+}) {
+  const projectPath = useSharedMemoryStore.use.projectPath();
+  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [writing, setWriting] = useState(false);
+  const key = ids.join(",");
+
+  useEffect(() => {
+    if (!open || !projectPath) return;
+    let alive = true;
+    setPreview(null);
+    setError(null);
+    sharedMemory
+      .exportPreview(projectPath, ids)
+      .then((p) => alive && setPreview(p))
+      .catch((e) => alive && setError(String(e)));
+    return () => {
+      alive = false;
+    };
+    // `key` stands for `ids`: a new array each render must not re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectPath, key]);
+
+  const write = async () => {
+    if (!projectPath) return;
+    setWriting(true);
+    try {
+      const path = await sharedMemory.exportApply(projectPath, ids);
+      toast.success(`Wrote ${ids.length} ${ids.length === 1 ? "memory" : "memories"} to ${path}`);
+      onWritten();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Export failed: ${String(e)}`);
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <DialogOverlay className="backdrop-blur-sm" />
+        <Dialog.Popup
+          aria-describedby={undefined}
+          className={cn(
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
+            "flex max-h-[80vh] w-[620px] max-w-[92vw] flex-col overflow-hidden rounded-md",
+            "border border-border bg-card shadow-lg animate-scale-in",
+          )}
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+            <Dialog.Title className="text-base font-semibold text-foreground">
+              Export to AGENTS.md
+            </Dialog.Title>
+            <Dialog.Close
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </Dialog.Close>
+          </div>
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
+            {preview
+              ? `${preview.path}: only the block between the atlas-memory markers changes.`
+              : error
+                ? error
+                : "Preparing the preview…"}
+          </p>
+          <div className="flex-1 overflow-auto px-4 py-2">
+            {preview && (
+              <pre className="whitespace-pre-wrap break-words rounded border border-border bg-background p-2 font-mono text-2xs text-secondary-foreground">
+                {preview.after}
+              </pre>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={writing || preview === null}
+              onClick={() => void write()}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                "bg-primary text-primary-foreground hover:bg-primary",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              {writing ? "Writing…" : "Write"}
+            </button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/** Import an Agent Memory Repo folder: pick it, see every line it would
+ *  write, then Import. Lines land as unconfirmed candidates (Review tab). */
+function ImportRepoModal({
+  projectPath,
+  open,
+  onOpenChange,
+  onImported,
+}: {
+  projectPath: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const [dir, setDir] = useState<string | null>(null);
+  const [lines, setLines] = useState<RepoImportLine[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setDir(null);
+      setLines(null);
+      setSelected(new Set());
+      setError(null);
+      setBusy(false);
+    }
+  }, [open]);
+
+  const choose = async () => {
+    setError(null);
+    try {
+      const { open: pick } = await import("@tauri-apps/plugin-dialog");
+      const picked = await pick({ directory: true });
+      if (typeof picked !== "string") return;
+      // The old folder's lines and picks never pair with a new folder.
+      setDir(null);
+      setLines(null);
+      setSelected(new Set());
+      const found = await sharedMemory.previewRepoImport(projectPath, picked);
+      setDir(picked);
+      setLines(found);
+      setSelected(new Set(found.filter((l) => l.isNew).map((l) => l.id)));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const runImport = async () => {
+    if (!dir) return;
+    setBusy(true);
+    try {
+      const count = await sharedMemory.confirmRepoImport(projectPath, dir, [...selected]);
+      toast.success(`Imported ${count} ${count === 1 ? "line" : "lines"} to review`);
+      onImported();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Import failed: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <DialogOverlay className="backdrop-blur-sm" />
+        <Dialog.Popup
+          aria-describedby={undefined}
+          className={cn(
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
+            "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
+            "border border-border bg-card shadow-lg animate-scale-in",
+          )}
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+            <Dialog.Title className="text-base font-semibold text-foreground">
+              Import memory repo
+            </Dialog.Title>
+            <Dialog.Close
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </Dialog.Close>
+          </div>
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
+            Bring in an Agent Memory Repo (a folder with a MEMORY.md). Lines land as unconfirmed
+            candidates: no agent is briefed on them until you approve them in Review.
+          </p>
+          <div className="flex items-center gap-2 px-4 pt-2 text-xs">
+            <button
+              type="button"
+              onClick={() => void choose()}
+              className="h-6 rounded-md border border-border px-2 text-secondary-foreground hover:bg-element-hover"
+            >
+              Choose folder…
+            </button>
+            <span className="min-w-0 truncate text-muted-foreground">{dir ?? ""}</span>
+          </div>
+          <div className="flex-1 overflow-auto px-4 py-2">
+            {error ? (
+              <div className="text-xs text-muted-foreground">{error}</div>
+            ) : lines && lines.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No memory lines in that folder.</div>
+            ) : (
+              lines?.map((l) => (
+                <label key={l.id} className="flex items-baseline gap-2 py-1 text-xs">
+                  <input
+                    type="checkbox"
+                    disabled={!l.isNew}
+                    checked={selected.has(l.id)}
+                    onChange={() => toggle(l.id)}
+                  />
+                  <span className="w-20 shrink-0 text-2xs text-muted-foreground">{l.kind}</span>
+                  <span className={cn("min-w-0 flex-1", !l.isNew && "text-muted-foreground")}>
+                    {l.content}
+                    {l.meta && (
+                      <span className="block text-2xs text-muted-foreground">{l.meta}</span>
+                    )}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={busy || selected.size === 0}
+              onClick={() => void runImport()}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                "bg-primary text-primary-foreground hover:bg-primary",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              {busy ? "Importing…" : selected.size > 0 ? `Import ${selected.size}` : "Import"}
+            </button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 function ImportClaudeMemoryModal({
   open,
   onOpenChange,
@@ -1104,6 +1562,26 @@ function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex max-w-full items-center rounded bg-[var(--card)] px-1.5 py-0.5 text-2xs text-[var(--muted-foreground)]">
       <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/** "Learned in “title” · agent · date → sha", or the bare source. */
+export function provenanceLine(p: Provenance): string {
+  const date = p.added ?? "";
+  if (p.title) {
+    const commit = p.commits[0] ? ` → ${p.commits[0].slice(0, 7)}` : "";
+    return `Learned in “${p.title}” · ${p.agent} · ${date}${commit}`;
+  }
+  if (p.source === "atlas-user") return `Written by you · ${date}`;
+  return `From ${p.source} · ${date}`;
+}
+
+/** A candidate or archived entry's state, beside its source. */
+function StateChip({ state }: { state: string }) {
+  return (
+    <span className="text-3xs uppercase tracking-wide text-[var(--muted-foreground)] border border-[var(--border)] rounded px-1 py-px">
+      {state}
     </span>
   );
 }

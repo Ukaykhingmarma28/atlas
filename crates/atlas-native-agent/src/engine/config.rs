@@ -370,6 +370,28 @@ impl EngineSettings {
                 "suppress_unstable_features_warning".to_string(),
                 TomlValue::Boolean(true),
             ),
+            // Decision 5 (memory plan, 2026-10-03): the engine's own memories
+            // pipeline (phase-1 extraction, phase-2 consolidation into a
+            // global folder) stays off. Atlas's memory is the atlas_memory
+            // tool server, shared by every agent. CLI overrides are the
+            // engine's session-flags layer, merged after every project layer,
+            // so a repo's config cannot switch it back on. The feature has a
+            // legacy alias, `memory_tool`, which sorts after `memories` and is
+            // applied after it, so the alias is pinned off too; the
+            // `memories.*` switches no alias reaches back that up.
+            ("features.memories".to_string(), TomlValue::Boolean(false)),
+            (
+                "features.memory_tool".to_string(),
+                TomlValue::Boolean(false),
+            ),
+            (
+                "memories.use_memories".to_string(),
+                TomlValue::Boolean(false),
+            ),
+            (
+                "memories.generate_memories".to_string(),
+                TomlValue::Boolean(false),
+            ),
         ];
         if cfg!(target_os = "windows") {
             // Windows shell commands ran with no sandbox at all. File writes
@@ -495,6 +517,45 @@ mod tests {
             Some("test-model".to_string()),
             tmp.to_path_buf(),
         )
+    }
+
+    #[test]
+    fn the_engines_own_memories_pipeline_stays_off() {
+        // Decision 5 (memory research, 2026-10-03): Atlas memory is the
+        // atlas_memory tool server, for every agent. The vendored engine's
+        // memories pipeline would be a second store and a second write
+        // protocol in the native prompt; a repo config must not turn it on.
+        let tmp = std::env::temp_dir();
+        let overrides = settings(&tmp).cli_overrides();
+        assert_eq!(
+            overrides
+                .iter()
+                .find(|(k, _)| k == "features.memories")
+                .map(|(_, v)| v.clone()),
+            Some(TomlValue::Boolean(false)),
+        );
+    }
+
+    /// The legacy alias `features.memory_tool` is applied after the canonical
+    /// key, so a config layer below the overrides that sets it must still
+    /// leave the engine's memories off.
+    #[tokio::test]
+    async fn the_legacy_memory_tool_alias_cannot_switch_the_pipeline_back_on() {
+        use atlas_engine_features::Feature;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let s = settings(tmp.path());
+        std::fs::create_dir_all(s.home.path()).expect("engine home");
+        std::fs::write(
+            s.home.path().join("config.toml"),
+            "[features]\nmemory_tool = true\n\n[memories]\nuse_memories = true\ngenerate_memories = true\n",
+        )
+        .expect("config file");
+
+        let config = s.build_config(None).await.expect("config loads");
+        assert!(!config.features.enabled(Feature::MemoryTool));
+        assert!(!config.memories.use_memories);
+        assert!(!config.memories.generate_memories);
     }
 
     /// A projected catalogue with one entitled row and one locked one — the

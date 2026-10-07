@@ -99,12 +99,12 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 | Domain group | Modules |
 |---|---|
 | Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_analytics, agent_memory, catalog, registry, capture, artifacts_cloud |
-| Agent tool servers | memory_server (ADR-0010), ui_server (ADR-0012) |
+| Agent tool servers | memory_server (ADR-0010), memory_bridge (ADR-0019), ui_server (ADR-0012) |
 | Terminal / browser / fs | terminal, browser, fs |
 | Git | git, git_graph, git_watcher, git_autofetch, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops |
 | GitHub | github |
 | Knowledge | knowledge, knowledge_meta, knowledge_links, knowledge_export, knowledge_graph_layout |
-| Memory | memory_* — graph, pack, policy, sharing, summarize, timeline, delta, inject, compile, indexer, retrieve; plus shared_memory, instruction_sync |
+| Memory | memory_* — graph, pack, policy, sharing, summarize, timeline, delta, inject, compile, indexer, retrieve, capture (the session recorder, read-only), dream, repo (the Agent Memory Repo mirror); plus shared_memory, instruction_sync |
 | Models & usage | models, models_pricing, usage, tool_stats |
 | Session chat | session_chat, session_chat_sessions, modelchat |
 | Auth & environment | auth, byok, shell_profile, mcp |
@@ -184,7 +184,7 @@ The `SessionDelta` shapes those consumers pattern-match live in **`crates/atlas-
 
 ### Atlas's tool servers
 
-Atlas hands agents three in-process MCP services on one loopback listener, behind one bearer token per session: the **memory tool server** (`memory_server/`, `/mcp`, ADR-0010), offered to every agent that advertises HTTP MCP, the **UI tool server** (`ui_server/`, `/ui`, ADR-0012), offered only to a connection that carries **UI control** — today the in-process native connection — and the **organisation tool server** (below). One offer (`MemorySessionOffers`) decides all three, because the token table holds one token per session. A UI tool call crosses to the window as `atlas:ui-action`; the frontend performs it through the app's own openers (`src/features/ui-actions/`) and answers through `ui_action_respond`, so Rust mirrors no layout or focus state. `tests/ui-actions-contract.test.ts` keeps the tool list and the window's dispatcher in step.
+Atlas hands agents three in-process MCP services on one loopback listener, behind one bearer token per session: the **memory tool server** (`memory_server/`, `/mcp`, ADR-0010), offered to every agent — over HTTP to one that advertises HTTP MCP, else as a stdio server, the Atlas binary run as `atlas mcp-bridge <url>` with the token in `ATLAS_MCP_TOKEN` (ADR-0019) — the **UI tool server** (`ui_server/`, `/ui`, ADR-0012), offered only to a connection that carries **UI control** — today the in-process native connection — and the **organisation tool server** (below). One offer (`MemorySessionOffers`) decides all three, because the token table holds one token per session. A UI tool call crosses to the window as `atlas:ui-action`; the frontend performs it through the app's own openers (`src/features/ui-actions/`) and answers through `ui_action_respond`, so Rust mirrors no layout or focus state. `tests/ui-actions-contract.test.ts` keeps the tool list and the window's dispatcher in step.
 
 ### The organisation tool server
 
@@ -233,7 +233,7 @@ All wired in as `path` dependencies from `src-tauri/Cargo.toml`, and all members
 | `atlas-git` | Git execution layer: one spawn chokepoint over the real `git` binary (so hooks run), a typed stderr→error taxonomy with friendly messages (ported from GitHub Desktop/dugite), porcelain-v2 status parsing, streaming output for long operations. |
 | `atlas-gitdiff` | Structured side-by-side diff engine: parses unified diffs, computes word-level intra-line change spans (word-diff vendored from `dandavison/delta`, MIT). |
 | `atlas-terminal` | Wraps `portable-pty`, manages `TerminalSession`s, bridges PTY bytes to Tauri events. |
-| `atlas-memory` | On-device RAG/memory engine: MiniLM → usearch HNSW behind a `MemorySearchFn` seam; the shared-memory record store (`record`: SQLite per repository scope, redact-on-write, one-time legacy migration); and global promotion of Facts seen in two or more repositories to `~/.atlas/memory` (`global`). Read its `README.md` and `MIGRATION.md` before changing on-disk index formats. |
+| `atlas-memory` | On-device RAG/memory engine: MiniLM → a healing per-model vector file plus `corpus.sqlite` behind a `MemorySearchFn` seam; the shared-memory record store (`record`: SQLite per repository scope, redact-on-write, immutable hash-chained revisions as the canonical record (ADR-0017), hybrid BM25 + dense search); the reconciler (`health`); code citations checked at read time (`citation`, ADR-0018); consolidation, handoff notes, the dream pass and the Agent Memory Repo format (`consolidate`, `handoff`, `dream`, `amr`); and global promotion of Facts seen in two or more repositories to `~/.atlas/memory` (`global`). Read its `README.md` and `MIGRATION.md` before changing on-disk index formats. |
 | `atlas-instruction-sync` | Mirrors `CLAUDE.md` and `.claude/rules/` into one marked block of a project's `AGENTS.md`, for agents that read only `AGENTS.md`. Plain file I/O, no async, no Tauri; every byte outside the block is kept, and anything it cannot be sure of is skipped and logged. `commands::instruction_sync` decides when it runs. |
 | `atlas-embed` | On-device text embeddings (BERT-family sentence-transformers) and a small vector store, isolated so `candle`'s heavy dependency tree doesn't slow everything else's incremental builds. Embedding only — on-device generation was removed 2026-08-22. |
 | `atlas-codeindex` | The per-project code index: parallel tree-sitter extraction (Rust/TS/TSX/JS/Python/Go) into SQLite + FTS5 at `<project>/.atlas/code-index/index.db`, updated per file from the watchers; symbol search, outlines and symbol source for the `atlas_code` tools. |
@@ -250,7 +250,7 @@ Most app state is plain files, by design — but **three subsystems are SQLite**
 |---|---|---|
 | Session history (thread metadata) | `<app-config-dir>/threads.db` | `atlas-thread-metadata` |
 | Session record / Timeline (checkpoints) | `<project-root>/.atlas/sessions.db` + blob sidecar | `atlas-checkpoint` |
-| Shared memory record (events, entries, sessions) | `<scope-root>/.atlas/memory/memory.sqlite` | `atlas-memory` (`record`) |
+| Shared memory record (revisions, entries, events, sessions, handoff notes, proposals) | `<scope-root>/.atlas/memory/memory.sqlite` (+ daily `memory.snapshot.sqlite`) | `atlas-memory` (`record`) |
 
 `<app-config-dir>` is Tauri's `app_config_dir()` — `~/Library/Application Support/dev.atlas.ide/` on macOS. History is global because threads are grouped *across* projects; the checkpoint record is per-project because a Timeline is about one worktree. Shared memory is per *repository*: its scope root is the main worktree (found through the git common dir), or the launch directory outside git, so every worktree of a repository shares one record.
 

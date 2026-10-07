@@ -27,7 +27,7 @@ use crate::commands::shared_memory::{
     store_for, EventKind, MemoryChanged, RawEvent, SharedMemoryStore,
 };
 
-fn temp_project(label: &str) -> String {
+pub(super) fn temp_project(label: &str) -> String {
     let dir = std::env::temp_dir().join(format!(
         "atlas-memory-server-{label}-{}",
         uuid::Uuid::new_v4()
@@ -38,16 +38,16 @@ fn temp_project(label: &str) -> String {
 
 /// A store whose clock advances one second per read, so every write has its
 /// own `updated_at`.
-fn ticking_memory() -> SharedMemoryStore {
+pub(super) fn ticking_memory() -> SharedMemoryStore {
     let t = Arc::new(AtomicI64::new(1_000));
     SharedMemoryStore::with_clock(Arc::new(move || t.fetch_add(1_000, Ordering::SeqCst)))
 }
 
-fn always_on() -> SharingGate {
+pub(super) fn always_on() -> SharingGate {
     Arc::new(|_| true)
 }
 
-async fn serve(
+pub(super) async fn serve(
     memory: SharedMemoryStore,
     tokens: Arc<MemoryTokens>,
     gate: SharingGate,
@@ -65,7 +65,10 @@ async fn serve(
     .unwrap()
 }
 
-async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()>, String> {
+pub(super) async fn connect(
+    url: &str,
+    token: &str,
+) -> Result<RunningService<RoleClient, ()>, String> {
     let transport = StreamableHttpClientTransport::from_config(
         StreamableHttpClientTransportConfig::with_uri(url.to_string())
             .auth_header(token.to_string()),
@@ -73,7 +76,7 @@ async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()
     ().serve(transport).await.map_err(|e| format!("{e:?}"))
 }
 
-async fn call(
+pub(super) async fn call(
     client: &RunningService<RoleClient, ()>,
     name: &'static str,
     args: Value,
@@ -95,7 +98,7 @@ async fn call(
 }
 
 /// A captured event, as the delta path appends it for a session.
-fn capture(
+pub(super) fn capture(
     memory: &SharedMemoryStore,
     p: &str,
     agent: &str,
@@ -276,6 +279,7 @@ async fn the_briefing_carries_working_memory_the_index_and_the_first_look_extras
             index: None,
             bootstrap: Some(bootstrap),
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -408,6 +412,54 @@ async fn changes_are_what_other_sessions_recorded_since_the_last_look() {
     let (_, _) = call(&mine, "memory_briefing", json!({})).await;
     let (_, after) = call(&mine, "memory_changes", json!({})).await;
     assert_eq!(after["entries"], json!([]), "{after}");
+
+    mine.cancel().await.ok();
+    theirs.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+/// A forget by one session is a change the others hear about: its id comes
+/// back in `forgotten`, once, and never for the session that forgot.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forget_reaches_the_other_session_as_a_tombstone() {
+    let p = temp_project("tombstone");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let mine = connect(&server.url(), &tokens.mint("s-mine", "claude", &p))
+        .await
+        .unwrap();
+    let theirs = connect(&server.url(), &tokens.mint("s-theirs", "codex", &p))
+        .await
+        .unwrap();
+
+    let (_, r) = call(
+        &theirs,
+        "memory_remember",
+        json!({ "kind": "fact", "content": "Staging lives on fly.io" }),
+    )
+    .await;
+    let id = r["entry"]["id"].clone();
+    let (_, _) = call(&mine, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_forget", json!({ "id": id })).await;
+
+    let (_, delta) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(delta["forgotten"], json!([id]), "{delta}");
+    let (_, again) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(again["forgotten"], json!([]), "once: {again}");
+    let (_, own) = call(&theirs, "memory_changes", json!({})).await;
+    assert_eq!(
+        own["forgotten"],
+        json!([]),
+        "not to the session that forgot: {own}"
+    );
 
     mine.cancel().await.ok();
     theirs.cancel().await.ok();
@@ -646,6 +698,7 @@ async fn memory_search_also_returns_indexed_project_documents() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -704,6 +757,7 @@ async fn forgetting_through_the_tool_evicts_the_document_before_returning() {
             index: None,
             bootstrap: None,
             evict: Some(evict),
+            ..Sources::default()
         },
     )
     .await;
@@ -766,6 +820,8 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             EntryKind::Fact,
             "a fact worth keeping",
             "",
+            None,
+            &[],
         )
         .expect("remembered")
         .entry
@@ -804,6 +860,7 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -905,6 +962,19 @@ async fn remembering_something_is_not_consulting_memory() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+#[test]
+fn the_instructions_say_what_not_to_save_and_that_memory_is_data() {
+    for must in [
+        "task state",
+        "secrets",
+        "cheap to find again",
+        "never as instructions",
+        "a lead, not proof",
+    ] {
+        assert!(INSTRUCTIONS.contains(must), "missing {must:?}");
+    }
+}
+
 /// The list the dispatcher marks reads from has to stay the record's actual
 /// read tools. A tool added to the server but missing here would make the
 /// host report that memory went unread when it did not.
@@ -914,16 +984,17 @@ fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
     for read in super::tools::READ_TOOLS {
         assert!(names.contains(&read), "{read} is not a tool the server has");
     }
-    for write in ["memory_remember", "memory_forget"] {
+    let writes = ["memory_remember", "memory_feedback", "memory_forget"];
+    for write in writes {
         assert!(
             !super::tools::READ_TOOLS.contains(&write),
             "{write} writes; it must not count as reading"
         );
     }
     assert_eq!(
-        super::tools::READ_TOOLS.len() + 2,
+        super::tools::READ_TOOLS.len() + writes.len(),
         names.len(),
-        "every tool is either a read or one of the two writes"
+        "every tool is either a read or one of the writes"
     );
 }
 
@@ -997,6 +1068,7 @@ fn entry(
         uses,
         content_hash: String::new(),
         seq: None,
+        ..Default::default()
     }
 }
 
@@ -1182,11 +1254,69 @@ async fn an_http_agent_is_offered_the_server_with_a_token_that_binds_to_its_sess
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// ADR-0019: an agent without HTTP MCP is handed the server as a stdio
+/// entry, this binary's `mcp-bridge`, with the token in its environment and
+/// never on its command line.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_without_http_mcp_is_offered_nothing() {
+async fn an_agent_without_http_mcp_is_offered_the_stdio_bridge() {
     let host = running_host(always_on()).await;
-    let offers = MemorySessionOffers::new(host, always_on());
-    assert_eq!(offered(&offers.offer(&request(false, "/p", None))), None);
+    let offers = MemorySessionOffers::new(host.clone(), always_on());
+    let offer = offers.offer(&request(false, "/p", None));
+    let [acp::McpServer::Stdio(stdio)] = offer.servers() else {
+        panic!("{:?}", offer.servers())
+    };
+    assert_eq!(stdio.name, MEMORY_SERVER_NAME);
+    assert_eq!(stdio.args, [BRIDGE_ARG.to_string(), host.url().unwrap()]);
+    let token = stdio
+        .env
+        .iter()
+        .find(|v| v.name == BRIDGE_TOKEN_ENV)
+        .map(|v| v.value.clone())
+        .expect("the token rides the environment");
+    assert!(!token.is_empty());
+    assert!(
+        stdio.args.iter().all(|a| !a.contains(&token)),
+        "no token in argv"
+    );
+    assert!(host.tokens().grant(&token).is_some(), "a live token");
+}
+
+/// A stdio-only agent's messages reach the loopback server through the
+/// bridge, with the MCP session id carried from the first response on.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_bridge_forwards_and_keeps_the_session() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let p = temp_project("bridge");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(memory, tokens.clone(), always_on(), Sources::default()).await;
+    let token = tokens.mint("s-bridge", "gemini", &p);
+    let (mut to_bridge, bridge_in) = tokio::io::duplex(64 * 1024);
+    let (bridge_out, from_bridge) = tokio::io::duplex(64 * 1024);
+    let url = server.url();
+    let run = tokio::spawn(async move {
+        crate::commands::memory_bridge::bridge(&url, &token, BufReader::new(bridge_in), bridge_out)
+            .await
+    });
+    for line in [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"bridge-test","version":"0"}}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+    ] {
+        to_bridge.write_all(line.as_bytes()).await.unwrap();
+        to_bridge.write_all(b"\n").await.unwrap();
+    }
+    let mut lines = BufReader::new(from_bridge).lines();
+    let first = lines.next_line().await.unwrap().unwrap();
+    assert!(first.contains(r#""id":1"#), "{first}");
+    let second = lines.next_line().await.unwrap().unwrap();
+    assert!(
+        second.contains("memory_briefing"),
+        "the session id was carried: {second}"
+    );
+    drop(to_bridge);
+    run.await.unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(&p);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1221,7 +1351,11 @@ fn the_decision_says_whether_the_server_is_included_and_why_not() {
     );
     assert_eq!(
         OfferDecision::decide(false, true, true),
-        OfferDecision::Omitted("agent did not advertise mcpCapabilities.http")
+        OfferDecision::IncludedViaBridge
+    );
+    assert_eq!(
+        OfferDecision::decide(false, false, true),
+        OfferDecision::Omitted("shared memory is off for this project")
     );
     assert_eq!(
         OfferDecision::decide(true, false, true),
@@ -1240,9 +1374,8 @@ fn each_decision_is_one_log_line_naming_the_agent_its_capability_and_the_outcome
         "memory tool server offer: agent=claude-code http_mcp=true memory_server=included",
     );
     assert_eq!(
-        OfferDecision::decide(false, false, true).log_line("gemini", false),
-        "memory tool server offer: agent=gemini http_mcp=false memory_server=omitted \
-         reason=\"agent did not advertise mcpCapabilities.http\"",
+        OfferDecision::decide(false, true, true).log_line("gemini", false),
+        "memory tool server offer: agent=gemini http_mcp=false memory_server=included_via_bridge",
     );
     assert_eq!(
         OfferDecision::decide(true, false, true).log_line("atlas-agent", true),
@@ -1263,4 +1396,495 @@ fn a_rebind_keeps_the_token_and_a_move_replaces_it() {
     assert_ne!(moved, first);
     assert_eq!(tokens.grant(&first), None);
     assert_eq!(tokens.grant(&moved).unwrap().cwd, "/b");
+}
+
+// ── Evidence (M3) ────────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_changed_citation_makes_the_memory_stale_in_search_and_briefing() {
+    let p = temp_project("cite");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    assert_eq!(r["entry"]["validity"], "valid", "{r}");
+    assert_eq!(r["entry"]["citations"][0]["lines"], "1-1", "{r}");
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 300;\n").unwrap();
+    let (_, s) = call(
+        &a,
+        "memory_search",
+        json!({"query": "access tokens minutes"}),
+    )
+    .await;
+    assert_eq!(s["entries"][0]["validity"], "stale", "{s}");
+    let (_, b) = call(&a, "memory_briefing", json!({})).await;
+    assert!(!b.to_string().contains("15 minutes"), "{b}");
+    assert_eq!(b["staleHidden"], 1, "{b}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_citation_outside_the_repository_is_refused() {
+    let p = temp_project("cite-out");
+    let outside = temp_project("cite-out-other");
+    std::fs::write(std::path::Path::new(&outside).join("x.rs"), "fn x() {}\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let escape = format!("{outside}/x.rs");
+    for (path, lines) in [
+        ("../../etc/passwd", "1"),
+        (escape.as_str(), "1"),
+        ("missing.rs", "1"),
+    ] {
+        let (refused, why) = call(
+            &a,
+            "memory_remember",
+            json!({"kind": "fact", "content": "x", "evidence": [{"path": path, "lines": lines}]}),
+        )
+        .await;
+        assert!(refused, "{path}: {why}");
+    }
+    let (refused, why) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "x", "evidence": [{"path": "src/a.rs", "symbol": "a"}]}),
+    )
+    .await;
+    assert!(refused && why.to_string().contains("give lines"), "{why}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+/// The session decided EdDSA and committed `src/auth.rs`. While the file
+/// holds that work the memory is valid; once a rewrite removes it, the
+/// memory is stale and leaves the briefing. A wall-clock memory store,
+/// because writes are matched to capture's turn times.
+#[tokio::test(flavor = "multi_thread")]
+async fn landed_work_that_was_removed_makes_an_uncited_memory_stale() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("work");
+    let file = std::path::Path::new(&p).join("src/auth.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let agent_text = "pub fn sign(token: &Token) -> Sig {\n    eddsa::sign(token)\n}\n\npub fn verify(sig: &Sig) -> bool {\n    eddsa::verify(sig)\n}\n";
+    let memory = SharedMemoryStore::new();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    std::fs::write(&file, agent_text).unwrap();
+    rec.write("src/auth.rs", agent_text.as_bytes());
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    drop(rec);
+
+    let (_, got) = call(&a, "memory_get", json!({"id": r["entry"]["id"]})).await;
+    assert_eq!(got["entry"]["validity"], "valid", "{got}");
+    assert_eq!(got["entry"]["validityFrom"], "commits");
+    assert_eq!(got["entry"]["commits"][0]["sha"], "3f9c2ab1d4e0");
+
+    std::fs::write(
+        &file,
+        "pub fn sign(token: &Token) -> Sig {\n    hs256::sign(token, SECRET)\n}\n",
+    )
+    .unwrap();
+    let (_, b) = call(&a, "memory_briefing", json!({})).await;
+    assert!(!b.to_string().contains("EdDSA"), "{b}");
+    assert_eq!(b["staleHidden"], 1, "{b}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+/// Code citations decide alone, a failure's undone work is expected, and
+/// a write capture never saw has no commit evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_evidence_leaves_cited_memories_failures_and_unrecorded_sessions_alone() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("work-scope");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = SharedMemoryStore::new();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let other = connect(&server.url(), &tokens.mint("s-z", "codex", &p))
+        .await
+        .unwrap();
+
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "tokens");
+    let (_, cited) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    let (_, failure) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "failure", "content": "ring 0.16 can't parse PKCS#8 v2"}),
+    )
+    .await;
+    rec.write("src/ttl.rs", b"pub const TOKEN_TTL_MINUTES: u32 = 15;\n");
+    rec.close_turn();
+    rec.commit("aa11bb22cc33dd44ee55ff6600113f9c2ab1d4e0", &["src/ttl.rs"]);
+    drop(rec);
+    let (_, unrecorded) = call(
+        &other,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Use Postgres"}),
+    )
+    .await;
+
+    for (r, field) in [
+        (&cited, "evidence"),
+        (&failure, "kind"),
+        (&unrecorded, "session"),
+    ] {
+        let (_, got) = call(&a, "memory_get", json!({"id": r["entry"]["id"]})).await;
+        assert!(got["entry"].get("validityFrom").is_none(), "{field}: {got}");
+    }
+    a.cancel().await.ok();
+    other.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+// ── Feedback (M4) ────────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wrong_feedback_leaves_the_briefing_and_a_bad_verdict_is_refused() {
+    let p = temp_project("feedback");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "CI runs on Jenkins"}),
+    )
+    .await;
+    let (refused, why) = call(
+        &b,
+        "memory_feedback",
+        json!({"id": r["entry"]["id"], "verdict": "meh"}),
+    )
+    .await;
+    assert!(refused && why.to_string().contains("useful"), "{why}");
+    let (failed, out) = call(
+        &b,
+        "memory_feedback",
+        json!({"id": r["entry"]["id"], "verdict": "wrong", "note": "GitHub Actions"}),
+    )
+    .await;
+    assert!(!failed, "{out}");
+    assert_eq!(out["entry"]["state"], "archived", "{out}");
+    let (_, brief) = call(&b, "memory_briefing", json!({})).await;
+    assert!(!brief.to_string().contains("Jenkins"), "{brief}");
+    let (_, history) = call(&b, "memory_history", json!({"id": r["entry"]["id"]})).await;
+    assert!(
+        history.to_string().contains("Jenkins"),
+        "kept in history: {history}"
+    );
+    a.cancel().await.ok();
+    b.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+// ── The handoff note (M4) ────────────────────────────────────────────────────
+
+/// The note the next agent gets says what the recorded session did, not
+/// only what it remembered: its files, its failures, its commit, and that
+/// its last turn never finished.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_handoff_carries_what_the_recorded_session_did() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("handoff-facts");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    memory.session_started("s-a", "claude-code", &p);
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    rec.write("src/auth.rs", b"pub fn sign() {}\n");
+    rec.fail("cargo test -p auth", "error: test failed");
+    rec.fail("cargo test -p auth", "error: test failed");
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    rec.next_turn("now rotate the keys");
+    drop(rec);
+    memory.session_ended("s-a");
+    let (_, brief) = call(&b, "memory_briefing", json!({})).await;
+    let h = &brief["handoff"];
+    assert_eq!(h["title"], "Move auth to EdDSA", "{brief}");
+    assert_eq!(h["files"][0], "src/auth.rs");
+    assert_eq!(h["failedTools"][0]["detail"], "cargo test -p auth");
+    assert_eq!(h["failedTools"][0]["count"], 2);
+    assert_eq!(h["commits"][0]["sha"], "3f9c2ab1d4e0");
+    assert_eq!(h["interrupted"], true);
+    b.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[test]
+fn a_long_handoff_is_cut_files_first_and_decisions_last() {
+    let note = atlas_memory::handoff::HandoffNote {
+        session: "s-a".into(),
+        agent: "claude-code".into(),
+        decisions: vec!["Sign JWTs with EdDSA".into()],
+        files: (0..400)
+            .map(|i| format!("src/generated/file_{i}.rs"))
+            .collect(),
+        interrupted: true,
+        ..Default::default()
+    };
+    let v = super::tools::capped_handoff(&note, 4096);
+    assert!(v.to_string().len() <= 4096);
+    assert_eq!(v["decisions"][0], "Sign JWTs with EdDSA");
+    assert_eq!(v["interrupted"], true);
+    assert!(v["files"].as_array().unwrap().len() < 400);
+}
+
+// ── memory_why (M4) ──────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_names_the_sessions_behind_a_path_and_a_commit() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("why");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    rec.write("src/auth.rs", b"pub fn sign() {}\n");
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    drop(rec);
+    call(
+        &a,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    call(
+        &b,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Unrelated: CI runs on GitHub Actions"}),
+    )
+    .await;
+
+    let (_, why) = call(&b, "memory_why", json!({"path": "src/auth.rs"})).await;
+    assert_eq!(
+        why["sessions"][0]["session"], "atlas-session:claude-code/s-a",
+        "{why}"
+    );
+    assert_eq!(why["sessions"][0]["title"], "Move auth to EdDSA");
+    assert_eq!(why["sessions"][0]["commits"][0]["sha"], "3f9c2ab1d4e0");
+    let memories: Vec<&str> = why["memories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|m| m["content"].as_str())
+        .collect();
+    assert_eq!(
+        memories,
+        ["Sign JWTs with EdDSA"],
+        "only the writing session's memories"
+    );
+
+    let (_, by_commit) = call(&b, "memory_why", json!({"commit": "3f9c2ab"})).await;
+    assert_eq!(
+        by_commit["sessions"][0]["session"], "atlas-session:claude-code/s-a",
+        "{by_commit}"
+    );
+
+    let (refused, why_not) = call(&b, "memory_why", json!({"path": "../../etc/passwd"})).await;
+    assert!(refused, "{why_not}");
+    let (refused, _) = call(
+        &b,
+        "memory_why",
+        json!({"path": "src/auth.rs", "commit": "3f9c2ab"}),
+    )
+    .await;
+    assert!(refused, "exactly one target");
+    a.cancel().await.ok();
+    b.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_without_capture_answers_from_citations() {
+    let p = temp_project("why-bare");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    let (_, why) = call(&a, "memory_why", json!({"path": "src/ttl.rs"})).await;
+    assert_eq!(why["sessions"], json!([]), "{why}");
+    assert_eq!(
+        why["memories"][0]["content"],
+        "Access tokens live 15 minutes"
+    );
+    assert!(why["note"]
+        .as_str()
+        .is_some_and(|n| n.contains("capture is off")));
+    assert!(!atlas_checkpoint::atlas_dir(&p).join("sessions.db").exists());
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+/// memory_why's memories carry validity like every other read: a memory
+/// whose cited lines changed is "stale" there, as memory_search reports it.
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_marks_a_memory_whose_cited_lines_changed_as_stale() {
+    let p = temp_project("why-stale");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    assert_eq!(r["entry"]["validity"], "valid", "{r}");
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 300;\n").unwrap();
+
+    let (_, why) = call(&a, "memory_why", json!({"path": "src/ttl.rs"})).await;
+    let memory_of = |v: &Value, key: &str| {
+        v[key]
+            .as_array()
+            .and_then(|all| all.iter().find(|m| m["id"] == r["entry"]["id"]))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let cited = memory_of(&why, "memories");
+    assert_eq!(cited["validity"], "stale", "{why}");
+    let (_, s) = call(
+        &a,
+        "memory_search",
+        json!({"query": "access tokens minutes"}),
+    )
+    .await;
+    assert_eq!(
+        memory_of(&s, "entries")["validity"],
+        cited["validity"],
+        "{s}"
+    );
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
 }

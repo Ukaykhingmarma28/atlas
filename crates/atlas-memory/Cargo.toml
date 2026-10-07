@@ -32,6 +32,11 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 atlas-redact = { path = "../atlas-redact" }
 # Normalised content hash of an entry (its identity when no key is given).
 sha2 = "0.10"
+# The retrieval core shared with the code index: content-keyed embedding
+# cache codec, healing vector files, RRF fusion.
+atlas-retrieval = { path = "../atlas-retrieval" }
+# The revision hash chain and corpus document keys.
+blake3 = { workspace = true }
 
 async-trait = "0.1"
 anyhow = "1"

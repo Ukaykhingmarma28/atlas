@@ -401,6 +401,21 @@ pub struct AppSettings {
     /// refused. Default ON.
     #[serde(default = "default_true")]
     pub agent_code_tools: bool,
+    /// Once a day, with new sessions to read, ask the memory model (the same
+    /// route and consent as extraction) to propose memory changes. Proposals
+    /// wait in the Memory panel's Review tab; nothing is applied without the
+    /// user. Default OFF.
+    #[serde(default)]
+    pub memory_dreams: bool,
+    /// Keep a read-only Agent Memory Repo mirror of each project's active
+    /// memory in a local git repository outside the project. Default OFF.
+    #[serde(default)]
+    pub memory_repo_mirror: bool,
+    /// Atlas's shared memory is the only memory in Atlas sessions: Claude
+    /// Code starts with its auto memory off and Codex with its memories off.
+    /// Off: each agent also keeps its own. Default ON.
+    #[serde(default = "default_true")]
+    pub atlas_only_memory: bool,
     /// "Command finished": a successful command longer than
     /// `terminal_notify_min_duration_ms` notifies. (Once the terminal master
     /// switch; `notifications_enabled` is the master now.)
@@ -533,6 +548,9 @@ impl Default for AppSettings {
             agent_ui_navigation: true,
             agent_org_access: true,
             agent_code_tools: true,
+            memory_dreams: false,
+            memory_repo_mirror: false,
+            atlas_only_memory: true,
             terminal_notifications: true,
             terminal_notify_min_duration_ms: default_terminal_notify_min_duration_ms(),
             terminal_notify_on_failure: true,
@@ -758,6 +776,26 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # reading secret files such as .env. Off: the code tools are withdrawn\n\
          # and every call is refused; agents use their own shell instead.\n\
          # (default: true)",
+    ),
+    (
+        "memoryDreams",
+        "# Once a day, when there are new sessions, ask the memory model to\n\
+         # propose changes to shared memory (add, merge, archive, rewrite,\n\
+         # link). Proposals wait in Memory > Review; nothing is applied\n\
+         # without you. Uses the same model and consent as extraction.\n\
+         # (default: false)",
+    ),
+    (
+        "memoryRepoMirror",
+        "# Keep a read-only Agent Memory Repo mirror of each project's active\n\
+         # memory, as a local git repository outside the project. No remote,\n\
+         # nothing is pushed. (default: false)",
+    ),
+    (
+        "atlasOnlyMemory",
+        "# Atlas's shared memory is the only memory in Atlas sessions: Claude\n\
+         # Code starts with its auto memory off, Codex with its memories off.\n\
+         # Off: each agent also keeps its own memory files. (default: true)",
     ),
     (
         "terminalNotifications",
@@ -1164,6 +1202,9 @@ pub struct SettingsPatch {
     pub agent_ui_navigation: Option<bool>,
     pub agent_org_access: Option<bool>,
     pub agent_code_tools: Option<bool>,
+    pub memory_dreams: Option<bool>,
+    pub memory_repo_mirror: Option<bool>,
+    pub atlas_only_memory: Option<bool>,
     pub terminal_notifications: Option<bool>,
     pub terminal_notify_min_duration_ms: Option<u32>,
     pub terminal_notify_on_failure: Option<bool>,
@@ -1270,6 +1311,15 @@ impl SettingsPatch {
         if let Some(v) = self.agent_code_tools {
             settings.agent_code_tools = v;
         }
+        if let Some(v) = self.memory_dreams {
+            settings.memory_dreams = v;
+        }
+        if let Some(v) = self.memory_repo_mirror {
+            settings.memory_repo_mirror = v;
+        }
+        if let Some(v) = self.atlas_only_memory {
+            settings.atlas_only_memory = v;
+        }
         if let Some(v) = self.terminal_notifications {
             settings.terminal_notifications = v;
         }
@@ -1369,6 +1419,9 @@ impl SettingsPatch {
         set_bool!(agent_ui_navigation, "agentUiNavigation");
         set_bool!(agent_org_access, "agentOrgAccess");
         set_bool!(agent_code_tools, "agentCodeTools");
+        set_bool!(memory_dreams, "memoryDreams");
+        set_bool!(memory_repo_mirror, "memoryRepoMirror");
+        set_bool!(atlas_only_memory, "atlasOnlyMemory");
         set_bool!(terminal_notifications, "terminalNotifications");
         set_bool!(terminal_notify_on_failure, "terminalNotifyOnFailure");
         set_bool!(terminal_notify_on_attention, "terminalNotifyOnAttention");
@@ -2848,6 +2901,9 @@ someFutureKey = \"left alone\"
             agent_ui_navigation: Some(!defaults.agent_ui_navigation),
             agent_org_access: Some(!defaults.agent_org_access),
             agent_code_tools: Some(!defaults.agent_code_tools),
+            memory_dreams: Some(!defaults.memory_dreams),
+            memory_repo_mirror: Some(!defaults.memory_repo_mirror),
+            atlas_only_memory: Some(!defaults.atlas_only_memory),
             terminal_notifications: Some(!defaults.terminal_notifications),
             terminal_notify_min_duration_ms: Some(defaults.terminal_notify_min_duration_ms + 1),
             terminal_notify_on_failure: Some(!defaults.terminal_notify_on_failure),

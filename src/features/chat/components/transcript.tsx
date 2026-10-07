@@ -154,6 +154,9 @@ interface TranscriptProps {
   /** Bumped on every restart so the indicator's elapsed clock (and its stall
    *  state) start over with the new attempt. */
   workingEpoch?: number;
+  /** Rendered under the last row while no turn is running (the "Memory
+   *  updated" card). */
+  footer?: React.ReactNode;
 }
 
 /** Per (tab, session) scroll position, so switching away and back returns the
@@ -283,6 +286,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     onStallSwitch,
     onStallCopyDiagnostics,
     workingEpoch,
+    footer,
   },
   ref,
 ) {
@@ -956,6 +960,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             </div>
           )}
           {rowViews}
+          {!turnInProgress && footer}
           {working && (
             <WorkingIndicator
               key={workingEpoch}
