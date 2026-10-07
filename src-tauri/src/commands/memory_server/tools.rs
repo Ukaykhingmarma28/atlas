@@ -181,7 +181,8 @@ pub(super) fn tools() -> Vec<Tool> {
             "memory_changes",
             "What other sessions recorded since this session last looked (its briefing or its last \
              call here): new or edited entries of every kind, newest first. Call it when resuming \
-             after a pause or a long task. Empty when nothing changed.",
+             after a pause or a long task. Empty when nothing changed. When the result says \
+             \"more\": true, call it again for the next page.",
             json!({ "type": "object", "properties": {} }),
         ),
         tool(

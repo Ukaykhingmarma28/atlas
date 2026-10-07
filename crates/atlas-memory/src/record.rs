@@ -617,6 +617,38 @@ impl RecordStore {
         Ok(n as usize)
     }
 
+    /// Entries of `kind` written after `since` by any session but
+    /// `exclude_session`, oldest first by `(updated_at, id)`, at most `limit`.
+    /// What a changes call pages through.
+    pub fn changed_since(
+        &self,
+        kind: EntryKind,
+        since: i64,
+        exclude_session: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM entries WHERE kind = ?1 AND updated_at > ?2 AND session <> ?3 \
+             ORDER BY updated_at ASC, id ASC LIMIT ?4",
+        )?;
+        let rows = stmt.query_map(
+            params![kind.as_str(), since, exclude_session, limit as i64],
+            entry_from_row,
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The newest `updated_at` of any entry (0 for an empty record).
+    pub fn max_updated_at(&self) -> Result<i64> {
+        let conn = self.conn();
+        Ok(conn.query_row(
+            "SELECT COALESCE(MAX(updated_at), 0) FROM entries",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Entries whose content or key contains `query` (case-insensitive),
     /// optionally restricted to `kinds`, most recently written first.
     pub fn query(&self, query: &str, kinds: &[EntryKind], limit: usize) -> Result<Vec<Entry>> {

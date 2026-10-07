@@ -9,8 +9,9 @@
 //!   kinds within [`INDEX_MAX_ENTRIES`] and [`INDEX_MAX_CHARS`] of content. An
 //!   index line carries a capped `content`; `memory_get` has the rest.
 //! - **Changes** are the entries other sessions wrote or edited after the
-//!   session's last look, newest first, at most [`CHANGES_MAX_PER_KIND`] of
-//!   each kind. The session's own writes are left out: it made them.
+//!   session's last look, newest first, a page of at most
+//!   [`CHANGES_MAX_PER_KIND`] of each kind (`more` asks for the next). The
+//!   session's own writes are left out: it made them.
 //! - **The clock** ([`SessionClocks`]) is the newest `updated_at` a session
 //!   has seen, kept per session id from its briefing or last changes call and
 //!   dropped when the session ends. Storage is unbounded; only what one read
@@ -208,44 +209,74 @@ pub(super) fn read_briefing(store: &RecordStore, now: i64) -> anyhow::Result<Bri
 pub(super) struct Changes {
     pub since: i64,
     pub synced_to: i64,
-    /// Newest first, at most [`CHANGES_MAX_PER_KIND`] of each kind.
+    /// Newest first. At most [`CHANGES_MAX_PER_KIND`] of each kind per call;
+    /// `more` says there is another page.
     pub entries: Vec<Entry>,
+    pub more: bool,
 }
 
 /// Entries written or edited after `since` by sessions other than
-/// `own_session`. Blocking (SQLite).
+/// `own_session`, one page of them. Blocking (SQLite).
 pub(super) fn read_changes(
     store: &RecordStore,
     since: i64,
     own_session: &str,
 ) -> anyhow::Result<Changes> {
-    let mut synced_to = since;
-    let mut entries: Vec<Entry> = Vec::new();
+    let mut groups = Vec::new();
     for kind in EntryKind::ALL {
-        let limit = if kind == EntryKind::Plan {
-            1
-        } else {
-            RANK_POOL
-        };
-        let of_kind = store.list(kind, limit, Origin::Any)?;
-        synced_to = of_kind
-            .iter()
-            .map(|e| e.updated_at)
-            .fold(synced_to, i64::max);
-        entries.extend(
-            of_kind
-                .into_iter()
-                .rev()
-                .filter(|e| e.updated_at > since && e.session_id != own_session)
-                .take(CHANGES_MAX_PER_KIND),
-        );
+        // One more than a page: enough to know whether this kind overflows.
+        groups.push(store.changed_since(kind, since, own_session, CHANGES_MAX_PER_KIND + 1)?);
     }
-    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
+    let pool_max = store.max_updated_at()?;
+    let (entries, synced_to, more) = page_changes(groups, CHANGES_MAX_PER_KIND, pool_max, since);
     Ok(Changes {
         since,
         synced_to,
         entries,
+        more,
     })
+}
+
+/// One page from per-kind groups of pending entries (each oldest first).
+///
+/// Without overflow every pending entry is returned and the clock moves to
+/// `pool_max` (past the reader's own writes too). With overflow, the clock
+/// stops just before the oldest entry a full kind left out: every entry older
+/// than that is returned, everything at or after it waits for the next call.
+/// Nothing is skipped and nothing is returned twice. If that would return
+/// nothing (more than a page shares one instant), the whole instant is
+/// returned and the clock moves to it.
+pub(super) fn page_changes(
+    groups: Vec<Vec<Entry>>,
+    per_kind: usize,
+    pool_max: i64,
+    since: i64,
+) -> (Vec<Entry>, i64, bool) {
+    let cutoff = groups
+        .iter()
+        .filter(|g| g.len() > per_kind)
+        .map(|g| g[per_kind].updated_at)
+        .min();
+    let mut pending: Vec<Entry> = groups.into_iter().flatten().collect();
+    let (mut out, synced, more) = match cutoff {
+        None => (pending, pool_max.max(since), false),
+        Some(cut) => {
+            let before: Vec<Entry> = pending
+                .iter()
+                .filter(|e| e.updated_at < cut)
+                .cloned()
+                .collect();
+            if before.is_empty() {
+                let first = pending.iter().map(|e| e.updated_at).min().unwrap_or(since);
+                pending.retain(|e| e.updated_at == first);
+                (pending, first, true)
+            } else {
+                (before, cut - 1, true)
+            }
+        }
+    };
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
+    (out, synced, more)
 }
 
 // ── Wire shapes ──────────────────────────────────────────────────────────────
@@ -352,6 +383,7 @@ pub(super) fn changes_json(c: &Changes) -> Value {
     json!({
         "since": c.since,
         "syncedTo": c.synced_to,
+        "more": c.more,
         "entries": c.entries.iter().map(entry_json).collect::<Vec<_>>(),
     })
 }
@@ -369,4 +401,92 @@ fn truncate_chars(s: &str, max: usize) -> String {
     let mut out: String = s.chars().take(max).collect();
     out.push('…');
     out
+}
+
+#[cfg(test)]
+mod briefing_tests {
+    use super::*;
+    use atlas_memory::record::{open_scope, NewEntry};
+
+    fn remember(store: &RecordStore, i: i64, session: &str) {
+        store
+            .remember(
+                NewEntry {
+                    kind: EntryKind::Decision,
+                    key: format!("k{i}"),
+                    content: format!("Decision number {i}"),
+                    source: "codex".into(),
+                    agent: "codex".into(),
+                    session_id: session.into(),
+                    confidence: 1.0,
+                    at: 1_000 + i,
+                },
+                1_000 + i,
+            )
+            .unwrap();
+    }
+
+    fn entry(id: i64, content: &str, confidence: f64, updated_at: i64) -> Entry {
+        Entry {
+            id,
+            kind: EntryKind::Fact,
+            key: String::new(),
+            content: content.into(),
+            status: String::new(),
+            source: "x".into(),
+            agent: "x".into(),
+            session_id: "s".into(),
+            confidence,
+            created_at: updated_at,
+            updated_at,
+            last_used_at: None,
+            uses: 0,
+            content_hash: String::new(),
+            seq: None,
+        }
+    }
+
+    /// Twelve decisions from another session between two looks: the reader
+    /// gets all twelve across calls, none twice, and `more` says when to
+    /// call again.
+    #[test]
+    fn changes_page_through_every_entry_without_skipping() {
+        let root = std::env::temp_dir().join(format!("atlas-changes-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let store = open_scope(&root).unwrap();
+        for i in 0..12 {
+            remember(&store, i, "s-other");
+        }
+        remember(&store, 99, "s-mine"); // own write: never returned
+        let mut since = 0;
+        let mut seen: Vec<String> = Vec::new();
+        for _ in 0..5 {
+            let c = read_changes(&store, since, "s-mine").unwrap();
+            seen.extend(c.entries.iter().map(|e| e.content.clone()));
+            assert!(c.synced_to >= since, "the clock never goes back");
+            since = c.synced_to;
+            if !c.more {
+                break;
+            }
+        }
+        let mut unique = seen.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 12, "{seen:?}");
+        assert_eq!(seen.len(), 12, "nothing returned twice: {seen:?}");
+        assert!(!seen.iter().any(|c| c.contains("99")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// More than a page's worth sharing one timestamp is returned whole,
+    /// rather than looping forever on an unmovable clock.
+    #[test]
+    fn a_burst_at_one_instant_is_not_a_livelock() {
+        let group: Vec<Entry> = (1..=10)
+            .map(|id| entry(id, &format!("f{id}"), 1.0, 5))
+            .collect();
+        let (out, synced, _) = page_changes(vec![group], 8, 5, 0);
+        assert_eq!(out.len(), 10);
+        assert_eq!(synced, 5);
+    }
 }
