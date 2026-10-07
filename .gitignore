@@ -39,6 +39,7 @@ skills-lock.json
 # pointed at.
 *.md
 !README.md
+!CLAUDE.md
 !TELEMETRY.md
 !CONTRIBUTING.md
 !.github/SECURITY.md

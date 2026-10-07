@@ -53,6 +53,25 @@ A progress report belongs in the project's **Updates** tab (or an initiative upd
 - Read an issue before updating it, and confirm its identifier and the intended change.
 - Close a GitHub issue as soon as its fix merges into the version branch (see "Branching model" in `CONTRIBUTING.md`). `Fixes #N` only auto-closes on merges into `main`, so the merger closes it by hand with a comment naming the PR and branch.
 
+## Linear features, and what each one is for here
+
+Use the structure Linear already has before inventing one in issue bodies. Each row is the job, then the feature that does it.
+
+| job                                                        | feature                                 | how we use it                                                                                                                              |
+| ---------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| a goal spanning several projects                           | **Initiatives**                         | one per pillar or launch; projects hang off it, and its updates roll up the projects'                                                      |
+| a body of work with a goal and an end                      | **Projects** + **milestones**           | milestones are the phases ("Phase 01", "post-cohort"), never a separate project per phase                                                  |
+| "where are we" reporting                                   | **Project / initiative updates**        | weekly, with a health (on track / at risk / off track). Ask Linear Agent (⌘J) to draft one from the project's activity                     |
+| a time-boxed batch of work                                 | **Cycles**                              | when the team commits to a sprint; an issue in a cycle is a promise                                                                        |
+| a spec, PRD, decision record or notes longer than an issue | **Documents**, attached to the project  | link to it from the issues; the repo's ADRs stay in `docs/adr/`                                                                            |
+| a request from an outside person or company                | **Customers** + **customer requests**   | an enterprise lead becomes a Customer; the issues they ask for carry a request, so "most-asked" is a sort, not a guess                     |
+| a repeatable issue shape                                   | **Templates**                           | bug report, wayfinder question, beta signup: the template sets the labels and sections                                                     |
+| a saved slice of the backlog                               | **Custom views**                        | `Agent queue` (ready-for-agent, open), `Needs a human` (needs-decision or needs-spec), `Handwritten` (the founders' notes)                 |
+| conventions every agent should follow                      | **Agent guidance** (workspace and team) | Settings → Agents → Additional guidance: a short pointer to this file's rules. Linear passes it to every agent that works an issue         |
+| a workflow run the same way each time                      | **Linear Agent skills** and **Loops**   | team-shared skills (e.g. "triage the backlog", "draft the weekly update"); a Loop runs one on a schedule or trigger                        |
+| handing an issue to an agent                               | **Delegate** (assign to an agent)       | the human stays the owner; filter views by Delegate to see what agents hold. Coding sessions spend the workspace's AI credits              |
+| incoming work from outside the team                        | **Triage**                              | on for Growth, so form submissions land in a queue to accept or decline. Triage rules, Triage Intelligence and Asks need the Business plan |
+
 ## When a skill says…
 
 - **"publish to the issue tracker"**: create a Linear issue on the Atlas team, following "Writing an issue".
