@@ -399,12 +399,33 @@ async fn with_code_tools_off_the_code_server_is_not_offered() {
     );
 }
 
+/// ADR-0019: an agent without HTTP MCP gets the code server through the
+/// same stdio bridge as memory, on the same token.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_without_http_mcp_is_offered_nothing() {
+async fn an_agent_without_http_mcp_gets_the_code_server_through_the_bridge() {
     let host = running_host(enabled(true)).await;
     let offers =
         MemorySessionOffers::new(host, sharing(true)).with_code(CodeOffer::new(enabled(true)));
-    assert!(names(&offers.offer(&session_request(false))).is_empty());
+    let offer = offers.offer(&session_request(false));
+    let bridged: Vec<(String, String)> = offer
+        .servers()
+        .iter()
+        .map(|server| {
+            let acp::McpServer::Stdio(stdio) = server else {
+                panic!("stdio entries only: {server:?}")
+            };
+            let token = stdio
+                .env
+                .iter()
+                .find(|v| v.name == "ATLAS_MCP_TOKEN")
+                .map(|v| v.value.clone())
+                .expect("the token rides the environment");
+            (stdio.name.clone(), token)
+        })
+        .collect();
+    let names: Vec<&str> = bridged.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["atlas_memory", "atlas_code"]);
+    assert_eq!(bridged[0].1, bridged[1].1, "one token for both");
 }
 
 #[test]

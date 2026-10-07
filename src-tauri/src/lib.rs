@@ -32,6 +32,43 @@ use tauri::Manager;
 // that exercises the decoder rather than by a const that only proves a patch
 // still applies.
 
+/// `atlas mcp-bridge <url>`: run the stdio bridge (ADR-0019) instead of the
+/// app, the session token from `ATLAS_MCP_TOKEN`. Returns whether it ran.
+pub fn run_bridge_if_asked() -> bool {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some(commands::memory_server::BRIDGE_ARG) {
+        return false;
+    }
+    let (Some(url), Ok(token)) = (
+        args.next(),
+        std::env::var(commands::memory_server::BRIDGE_TOKEN_ENV),
+    ) else {
+        eprintln!("usage: ATLAS_MCP_TOKEN=... atlas mcp-bridge <url>");
+        std::process::exit(2);
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("mcp-bridge: {e}");
+            std::process::exit(1);
+        }
+    };
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    if let Err(e) = runtime.block_on(commands::memory_bridge::bridge(
+        &url,
+        &token,
+        stdin,
+        tokio::io::stdout(),
+    )) {
+        eprintln!("mcp-bridge: {e:#}");
+        std::process::exit(1);
+    }
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Whose data this process owns, fixed before ANYTHING resolves a path —

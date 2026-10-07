@@ -1254,11 +1254,69 @@ async fn an_http_agent_is_offered_the_server_with_a_token_that_binds_to_its_sess
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// ADR-0019: an agent without HTTP MCP is handed the server as a stdio
+/// entry, this binary's `mcp-bridge`, with the token in its environment and
+/// never on its command line.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_without_http_mcp_is_offered_nothing() {
+async fn an_agent_without_http_mcp_is_offered_the_stdio_bridge() {
     let host = running_host(always_on()).await;
-    let offers = MemorySessionOffers::new(host, always_on());
-    assert_eq!(offered(&offers.offer(&request(false, "/p", None))), None);
+    let offers = MemorySessionOffers::new(host.clone(), always_on());
+    let offer = offers.offer(&request(false, "/p", None));
+    let [acp::McpServer::Stdio(stdio)] = offer.servers() else {
+        panic!("{:?}", offer.servers())
+    };
+    assert_eq!(stdio.name, MEMORY_SERVER_NAME);
+    assert_eq!(stdio.args, [BRIDGE_ARG.to_string(), host.url().unwrap()]);
+    let token = stdio
+        .env
+        .iter()
+        .find(|v| v.name == BRIDGE_TOKEN_ENV)
+        .map(|v| v.value.clone())
+        .expect("the token rides the environment");
+    assert!(!token.is_empty());
+    assert!(
+        stdio.args.iter().all(|a| !a.contains(&token)),
+        "no token in argv"
+    );
+    assert!(host.tokens().grant(&token).is_some(), "a live token");
+}
+
+/// A stdio-only agent's messages reach the loopback server through the
+/// bridge, with the MCP session id carried from the first response on.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_bridge_forwards_and_keeps_the_session() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let p = temp_project("bridge");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(memory, tokens.clone(), always_on(), Sources::default()).await;
+    let token = tokens.mint("s-bridge", "gemini", &p);
+    let (mut to_bridge, bridge_in) = tokio::io::duplex(64 * 1024);
+    let (bridge_out, from_bridge) = tokio::io::duplex(64 * 1024);
+    let url = server.url();
+    let run = tokio::spawn(async move {
+        crate::commands::memory_bridge::bridge(&url, &token, BufReader::new(bridge_in), bridge_out)
+            .await
+    });
+    for line in [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"bridge-test","version":"0"}}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+    ] {
+        to_bridge.write_all(line.as_bytes()).await.unwrap();
+        to_bridge.write_all(b"\n").await.unwrap();
+    }
+    let mut lines = BufReader::new(from_bridge).lines();
+    let first = lines.next_line().await.unwrap().unwrap();
+    assert!(first.contains(r#""id":1"#), "{first}");
+    let second = lines.next_line().await.unwrap().unwrap();
+    assert!(
+        second.contains("memory_briefing"),
+        "the session id was carried: {second}"
+    );
+    drop(to_bridge);
+    run.await.unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(&p);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1293,7 +1351,11 @@ fn the_decision_says_whether_the_server_is_included_and_why_not() {
     );
     assert_eq!(
         OfferDecision::decide(false, true, true),
-        OfferDecision::Omitted("agent did not advertise mcpCapabilities.http")
+        OfferDecision::IncludedViaBridge
+    );
+    assert_eq!(
+        OfferDecision::decide(false, false, true),
+        OfferDecision::Omitted("shared memory is off for this project")
     );
     assert_eq!(
         OfferDecision::decide(true, false, true),
@@ -1312,9 +1374,8 @@ fn each_decision_is_one_log_line_naming_the_agent_its_capability_and_the_outcome
         "memory tool server offer: agent=claude-code http_mcp=true memory_server=included",
     );
     assert_eq!(
-        OfferDecision::decide(false, false, true).log_line("gemini", false),
-        "memory tool server offer: agent=gemini http_mcp=false memory_server=omitted \
-         reason=\"agent did not advertise mcpCapabilities.http\"",
+        OfferDecision::decide(false, true, true).log_line("gemini", false),
+        "memory tool server offer: agent=gemini http_mcp=false memory_server=included_via_bridge",
     );
     assert_eq!(
         OfferDecision::decide(true, false, true).log_line("atlas-agent", true),
