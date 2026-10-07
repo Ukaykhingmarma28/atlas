@@ -39,6 +39,7 @@ import type {
   MemoryEntry,
   MemoryEvent,
   Provenance,
+  ExportPreview,
   ReviewQueue,
   SharedState,
 } from "@/features/memory/lib/shared-memory-api";
@@ -1304,6 +1305,8 @@ export interface MemoryResponses {
   memory_merge: number;
   memory_resolve_conflict: boolean;
   memory_dream_accept: string;
+  memory_export_preview: ExportPreview;
+  memory_export_apply: string;
   memory_dream_dismiss: Unit;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
@@ -1477,6 +1480,24 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
   },
   memory_resolve_conflict: (): boolean => true,
   memory_dream_accept: (): string => "accepted",
+  memory_export_preview: ({ projectPath, ids }): ExportPreview => {
+    const wanted = new Set((ids as number[]).map(Number));
+    const lines = entriesFor(String(projectPath))
+      .filter((e) => wanted.has(e.id))
+      .map((e) => `- ${e.content}`);
+    return {
+      path: `${String(projectPath)}/AGENTS.md`,
+      before: "",
+      after: [
+        "<!-- atlas-memory:begin -->",
+        "## Project memory (exported from Atlas)",
+        ...lines,
+        "<!-- atlas-memory:end -->",
+        "",
+      ].join("\n"),
+    };
+  },
+  memory_export_apply: ({ projectPath }): string => `${String(projectPath)}/AGENTS.md`,
   memory_dream_dismiss: (): null => null,
   memory_health_status: (): HealthStatus => ({
     checkedAt: Date.now(),

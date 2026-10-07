@@ -889,6 +889,8 @@ pub fn run() {
             commands::shared_memory::memory_feedback_entry,
             commands::shared_memory::memory_review,
             commands::shared_memory::memory_session_writes,
+            commands::shared_memory::memory_export_preview,
+            commands::shared_memory::memory_export_apply,
             commands::shared_memory::memory_promote,
             commands::shared_memory::memory_archive,
             commands::shared_memory::memory_merge,

@@ -92,6 +92,13 @@ beforeEach(() => {
       return edited;
     }
     if (cmd === "memory_claude_import_preview") return preview;
+    if (cmd === "memory_export_preview")
+      return {
+        path: "/repo/AGENTS.md",
+        before: "",
+        after: "<!-- atlas-memory:begin -->\n<!-- atlas-memory:end -->",
+      };
+    if (cmd === "memory_export_apply") return "/repo/AGENTS.md";
     if (cmd === "memory_claude_import_confirm") {
       const ids = args.ids as string[];
       for (const line of preview.lines.filter((l) => ids.includes(l.id))) {
@@ -200,6 +207,26 @@ describe("the Shared tab's Memories table", () => {
     // Source and agent both say the user now.
     expect(within(row).getAllByText("user")).toHaveLength(2);
     expect(within(row).getByText("100%")).toBeTruthy();
+  });
+
+  it("exports the selected memories to AGENTS.md after a preview", async () => {
+    const user = await openMemories();
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Select Mocking the DB hid a migration bug" }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Select Prefers small PRs" }));
+    await user.click(screen.getByRole("button", { name: "Export to AGENTS.md" }));
+    expect(invoke).toHaveBeenCalledWith("memory_export_preview", {
+      projectPath: "/repo",
+      ids: [1, 2],
+    });
+    const write = await screen.findByRole("button", { name: "Write" });
+    await waitFor(() => expect((write as HTMLButtonElement).disabled).toBe(false));
+    await user.click(write);
+    expect(invoke).toHaveBeenCalledWith("memory_export_apply", {
+      projectPath: "/repo",
+      ids: [1, 2],
+    });
   });
 
   it("forgets an entry after confirming", async () => {

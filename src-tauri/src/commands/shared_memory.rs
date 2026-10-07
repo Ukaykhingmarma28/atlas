@@ -1601,6 +1601,128 @@ pub async fn memory_feedback_entry(
     .await
 }
 
+// ── Export to AGENTS.md (M4) ──────────────────────────────────────────────────
+
+const EXPORT_BEGIN: &str = "<!-- atlas-memory:begin -->";
+const EXPORT_END: &str = "<!-- atlas-memory:end -->";
+
+/// `existing` with its managed block replaced by `block`, or `block`
+/// appended (blank-line separated). Text outside the markers never moves.
+fn apply_block(existing: &str, block: &str) -> String {
+    if let (Some(b), Some(e)) = (existing.find(EXPORT_BEGIN), existing.find(EXPORT_END)) {
+        if b < e {
+            return format!(
+                "{}{}{}",
+                &existing[..b],
+                block,
+                &existing[e + EXPORT_END.len()..]
+            );
+        }
+    }
+    if existing.trim().is_empty() {
+        return format!("{block}\n");
+    }
+    format!("{}\n\n{block}\n", existing.trim_end_matches('\n'))
+}
+
+/// The managed block for `entries`, grouped by kind.
+fn export_block(entries: &[Entry]) -> String {
+    let mut out = format!("{EXPORT_BEGIN}\n## Project memory (exported from Atlas)\n");
+    for (kind, title) in [
+        (EntryKind::Preference, "Preferences"),
+        (EntryKind::Decision, "Decisions"),
+        (EntryKind::Architecture, "Architecture"),
+        (EntryKind::Fact, "Facts"),
+        (EntryKind::Failure, "Known dead ends"),
+    ] {
+        let items: Vec<&Entry> = entries.iter().filter(|e| e.kind == kind).collect();
+        if items.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("### {title}\n"));
+        for e in items {
+            out.push_str(&format!(
+                "- {}\n",
+                e.content.split_whitespace().collect::<Vec<_>>().join(" ")
+            ));
+        }
+    }
+    out.push_str(EXPORT_END);
+    out
+}
+
+/// What exporting `ids` would do to `<scope root>/AGENTS.md`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPreview {
+    pub path: String,
+    pub before: String,
+    pub after: String,
+}
+
+/// The export of `ids`: the target file, its text now and after. Refuses an
+/// archived or forgotten entry and one whose cited code changed.
+fn export_plan(project_path: &str, ids: &[i64]) -> Result<ExportPreview, String> {
+    let store = store_for(project_path)?;
+    let mut entries = Vec::new();
+    let files = atlas_memory::citation::FileResolver::new(store.root());
+    let mut stale = Vec::new();
+    for id in ids {
+        let entry = store
+            .peek(*id)
+            .map_err(|e| format!("{e:#}"))?
+            .filter(|e| e.state != record::State::Archived && e.kind.is_durable())
+            .ok_or_else(|| format!("memory {id} is not a live memory"))?;
+        let each: Vec<atlas_memory::citation::Validity> = entry
+            .citations()
+            .iter()
+            .map(|c| atlas_memory::citation::validate(c, &files).0)
+            .collect();
+        if atlas_memory::citation::overall(&each) == Some(atlas_memory::citation::Validity::Stale) {
+            stale.push(entry.content.clone());
+        }
+        entries.push(entry);
+    }
+    if !stale.is_empty() {
+        return Err(format!(
+            "the code these cite changed; check them first: {}",
+            stale.join(" · ")
+        ));
+    }
+    if entries.is_empty() {
+        return Err("choose the memories to export".into());
+    }
+    let path = store.root().join("AGENTS.md");
+    let before = fs::read_to_string(&path).unwrap_or_default();
+    let after = apply_block(&before, &export_block(&entries));
+    Ok(ExportPreview {
+        path: path.to_string_lossy().into_owned(),
+        before,
+        after,
+    })
+}
+
+/// What exporting `ids` to `AGENTS.md` would write. Writes nothing.
+#[tauri::command]
+pub async fn memory_export_preview(
+    project_path: String,
+    ids: Vec<i64>,
+) -> Result<ExportPreview, String> {
+    off_main(move || export_plan(&project_path, &ids)).await
+}
+
+/// Write `ids` into the managed block of `<scope root>/AGENTS.md`. Returns
+/// the file's path.
+#[tauri::command]
+pub async fn memory_export_apply(project_path: String, ids: Vec<i64>) -> Result<String, String> {
+    off_main(move || {
+        let plan = export_plan(&project_path, &ids)?;
+        atomic_write(Path::new(&plan.path), &plan.after)?;
+        Ok(plan.path)
+    })
+    .await
+}
+
 /// What one session wrote to memory after `since` (ms): the chat's "Memory
 /// updated" card.
 #[tauri::command]
@@ -1680,6 +1802,50 @@ mod contract;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_managed_block_is_replaced_and_nothing_else_moves() {
+        let block = "<!-- atlas-memory:begin -->\nNEW\n<!-- atlas-memory:end -->";
+        let before =
+            "# Rules\nkeep me\n\n<!-- atlas-memory:begin -->\nOLD\n<!-- atlas-memory:end -->\n\ntail\n";
+        assert_eq!(
+            apply_block(before, block),
+            "# Rules\nkeep me\n\n<!-- atlas-memory:begin -->\nNEW\n<!-- atlas-memory:end -->\n\ntail\n"
+        );
+        assert_eq!(
+            apply_block("# Rules\n", block),
+            format!("# Rules\n\n{block}\n")
+        );
+        assert_eq!(apply_block("", block), format!("{block}\n"));
+    }
+
+    #[test]
+    fn an_export_refuses_archived_memories_and_writes_only_the_block() {
+        let p = temp_project("export");
+        let store = SharedMemoryStore::new();
+        let w = Writer {
+            agent: "claude-code".into(),
+            session_id: "s1".into(),
+        };
+        let kept = store
+            .remember(&p, &w, EntryKind::Decision, "Use Postgres", "", None, &[])
+            .unwrap()
+            .entry;
+        let gone = store
+            .remember(&p, &w, EntryKind::Fact, "CI runs on Jenkins", "", None, &[])
+            .unwrap()
+            .entry;
+        store.archive(&p, &[gone.id]).unwrap();
+        assert!(export_plan(&p, &[kept.id, gone.id]).is_err());
+        let root = store_for(&p).unwrap().root().to_path_buf();
+        fs::write(root.join("AGENTS.md"), "# House rules\n").unwrap();
+        let plan = export_plan(&p, &[kept.id]).unwrap();
+        assert!(plan
+            .after
+            .starts_with("# House rules\n\n<!-- atlas-memory:begin -->"));
+        assert!(plan.after.contains("### Decisions\n- Use Postgres\n"));
+        let _ = fs::remove_dir_all(&p);
+    }
 
     fn temp_project(label: &str) -> String {
         let dir =

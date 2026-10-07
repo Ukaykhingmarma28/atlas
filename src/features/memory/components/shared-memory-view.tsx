@@ -53,6 +53,7 @@ import { sharedMemory } from "../lib/shared-memory-api";
 import type {
   ClaudeImportLine,
   ClaudeImportPreview,
+  ExportPreview,
   MemoryEntry,
   MemoryEvent,
   Provenance,
@@ -547,10 +548,40 @@ function PlanRow({
 
 function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [exporting, setExporting] = useState(false);
+  const toggle = (id: number) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // In the order picked; a row filtered out of view is not exported.
+  const chosen = [...selected].filter((id) => rows.some((r) => r.id === id));
   return (
     <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+      {chosen.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
+          <span>{chosen.length} selected</span>
+          <button
+            type="button"
+            onClick={() => setExporting(true)}
+            className="ml-auto h-6 rounded-md border border-[var(--border)] px-2 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
+          >
+            Export to AGENTS.md
+          </button>
+        </div>
+      )}
+      <ExportAgentsModal
+        open={exporting}
+        ids={chosen}
+        onOpenChange={setExporting}
+        onWritten={() => setSelected(new Set())}
+      />
       <div style={{ minWidth: ENTRY_MIN_W }}>
         <HeaderRow>
+          <span className="w-6 shrink-0" />
           <span className={ENTRY_COL.time}>Updated</span>
           <span className={ENTRY_COL.kind}>Kind</span>
           <span className={ENTRY_COL.source}>Source</span>
@@ -568,6 +599,8 @@ function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
               entry={e}
               expanded={expanded === e.id}
               onToggle={() => setExpanded((c) => (c === e.id ? null : e.id))}
+              selected={selected.has(e.id)}
+              onSelect={() => toggle(e.id)}
             />
           ))
         )}
@@ -580,61 +613,76 @@ function EntryRow({
   entry: e,
   expanded,
   onToggle,
+  selected,
+  onSelect,
 }: {
   entry: MemoryEntry;
   expanded: boolean;
   onToggle: () => void;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   return (
     <div className="border-b border-[var(--atlas-border-subtle)]">
-      <button
-        onClick={onToggle}
-        className={cn(
-          "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
-        )}
-      >
-        <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
-          {eventTime(e.updatedAt)}
+      <div className="flex items-center">
+        <span className="flex w-6 shrink-0 items-center justify-end">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onSelect}
+            aria-label={`Select ${e.content}`}
+            className="h-3 w-3 cursor-pointer accent-[var(--primary)]"
+          />
         </span>
-        <span className={ENTRY_COL.kind}>
-          <KindChip kind={e.kind} />
-        </span>
-        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2 flex items-center gap-1")}>
-          <SourceChip source={e.source} />
-          {e.state && e.state !== "active" && <StateChip state={e.state} />}
-        </span>
-        <span className={cn(ENTRY_COL.agent, "min-w-0")}>
-          {entryAgent(e.agent) ? (
-            <AgentTag agent={e.agent} />
-          ) : (
-            <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
-              {e.agent || "—"}
-            </span>
-          )}
-        </span>
-        <span
+        <button
+          onClick={onToggle}
           className={cn(
-            ENTRY_COL.confidence,
-            "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            "flex-1 min-w-0 flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
+            expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
           )}
         >
-          {confidenceLabel(e.confidence)}
-        </span>
-        <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
-          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
-            {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+          <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
+            {eventTime(e.updatedAt)}
           </span>
-        </span>
-        <span
-          className={cn(
-            ENTRY_COL.chevron,
-            "flex items-center justify-end text-[var(--muted-foreground)]",
-          )}
-        >
-          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </span>
-      </button>
+          <span className={ENTRY_COL.kind}>
+            <KindChip kind={e.kind} />
+          </span>
+          <span className={cn(ENTRY_COL.source, "min-w-0 pr-2 flex items-center gap-1")}>
+            <SourceChip source={e.source} />
+            {e.state && e.state !== "active" && <StateChip state={e.state} />}
+          </span>
+          <span className={cn(ENTRY_COL.agent, "min-w-0")}>
+            {entryAgent(e.agent) ? (
+              <AgentTag agent={e.agent} />
+            ) : (
+              <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
+                {e.agent || "—"}
+              </span>
+            )}
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.confidence,
+              "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            )}
+          >
+            {confidenceLabel(e.confidence)}
+          </span>
+          <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
+            <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+              {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+            </span>
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.chevron,
+              "flex items-center justify-end text-[var(--muted-foreground)]",
+            )}
+          >
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
+        </button>
+      </div>
       {expanded && <EntryDetail entry={e} />}
     </div>
   );
@@ -821,6 +869,116 @@ const NO_PREVIEW: ClaudeImportPreview = { sources: [], alreadyImported: false, l
 /** Preview, then consent: every line Claude's auto-memory maps to, with its
  *  kind; the new ones start ticked. Only Import writes. Composed from the
  *  Import sessions modal's Dialog shell, tokens and type scale. */
+/** The AGENTS.md export: a preview of the file as it would be written, then
+ *  Write. Only the managed block changes; nothing is written on Cancel. */
+function ExportAgentsModal({
+  open,
+  ids,
+  onOpenChange,
+  onWritten,
+}: {
+  open: boolean;
+  ids: number[];
+  onOpenChange: (open: boolean) => void;
+  onWritten: () => void;
+}) {
+  const projectPath = useSharedMemoryStore.use.projectPath();
+  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [writing, setWriting] = useState(false);
+  const key = ids.join(",");
+
+  useEffect(() => {
+    if (!open || !projectPath) return;
+    let alive = true;
+    setPreview(null);
+    setError(null);
+    sharedMemory
+      .exportPreview(projectPath, ids)
+      .then((p) => alive && setPreview(p))
+      .catch((e) => alive && setError(String(e)));
+    return () => {
+      alive = false;
+    };
+    // `key` stands for `ids`: a new array each render must not re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectPath, key]);
+
+  const write = async () => {
+    if (!projectPath) return;
+    setWriting(true);
+    try {
+      const path = await sharedMemory.exportApply(projectPath, ids);
+      toast.success(`Wrote ${ids.length} ${ids.length === 1 ? "memory" : "memories"} to ${path}`);
+      onWritten();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Export failed: ${String(e)}`);
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <DialogOverlay className="backdrop-blur-sm" />
+        <Dialog.Popup
+          aria-describedby={undefined}
+          className={cn(
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
+            "flex max-h-[80vh] w-[620px] max-w-[92vw] flex-col overflow-hidden rounded-md",
+            "border border-border bg-card shadow-lg animate-scale-in",
+          )}
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+            <Dialog.Title className="text-base font-semibold text-foreground">
+              Export to AGENTS.md
+            </Dialog.Title>
+            <Dialog.Close
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </Dialog.Close>
+          </div>
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
+            {preview
+              ? `${preview.path}: only the block between the atlas-memory markers changes.`
+              : error
+                ? error
+                : "Preparing the preview…"}
+          </p>
+          <div className="flex-1 overflow-auto px-4 py-2">
+            {preview && (
+              <pre className="whitespace-pre-wrap break-words rounded border border-border bg-background p-2 font-mono text-2xs text-secondary-foreground">
+                {preview.after}
+              </pre>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={writing || preview === null}
+              onClick={() => void write()}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                "bg-primary text-primary-foreground hover:bg-primary",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              {writing ? "Writing…" : "Write"}
+            </button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 function ImportClaudeMemoryModal({
   open,
   onOpenChange,

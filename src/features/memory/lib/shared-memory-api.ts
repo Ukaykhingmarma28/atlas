@@ -146,6 +146,13 @@ export interface ReviewQueue {
   dreams: DreamProposal[];
 }
 
+/** What exporting memories to AGENTS.md would do. */
+export interface ExportPreview {
+  path: string;
+  before: string;
+  after: string;
+}
+
 /** A verdict on a memory after using it. */
 export type Verdict = "useful" | "wrong" | "stale";
 
@@ -207,6 +214,12 @@ export const sharedMemory = {
   /** Settle a contradiction: keep one side, or record that both hold. */
   resolveConflict: (projectPath: string, a: number, b: number, keep: "a" | "b" | "both") =>
     invoke<boolean>("memory_resolve_conflict", { projectPath, a, b, keep }),
+  /** The AGENTS.md export of `ids`: the file now and after. Writes nothing. */
+  exportPreview: (projectPath: string, ids: number[]) =>
+    invoke<ExportPreview>("memory_export_preview", { projectPath, ids }),
+  /** Write `ids` into AGENTS.md's managed block. Returns the file's path. */
+  exportApply: (projectPath: string, ids: number[]) =>
+    invoke<string>("memory_export_apply", { projectPath, ids }),
   /** Accept a nightly-review proposal: `"accepted"`, or `"obsolete"` when
    *  memory moved on since and nothing was written. */
   acceptDream: (projectPath: string, id: number) =>
