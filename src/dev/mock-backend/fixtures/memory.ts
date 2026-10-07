@@ -30,6 +30,7 @@ import type {
   QueryHit,
 } from "@/features/memory/lib/memory-graph-api";
 import type { Policy } from "@/features/memory/lib/memory-policy-api";
+import type { HealthStatus } from "@/features/memory/lib/use-memory-health";
 import type { SummarizerPref } from "@/features/memory/lib/memory-sharing-api";
 import type {
   ClaudeImportPreview,
@@ -1291,6 +1292,8 @@ export interface MemoryResponses {
   memory_forget_entry: boolean;
   memory_purge_entry: boolean;
   memory_entry_provenance: Provenance[];
+  memory_accept_history: boolean;
+  memory_health_status: HealthStatus;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
@@ -1425,6 +1428,14 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     entryLog.set(path, kept);
     return kept.length !== entries.length;
   },
+  // The mock's memory is never damaged or edited behind its back.
+  memory_accept_history: (): boolean => false,
+  memory_health_status: (): HealthStatus => ({
+    checkedAt: Date.now(),
+    record: { checkedAt: Date.now(), found: [], repaired: [], deferred: [] },
+    corpus: { rebuiltVectors: 0, rebuiltFts: false, recreated: false },
+    restored: null,
+  }),
   memory_entry_provenance: ({ projectPath, id }): Provenance[] => {
     const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
     if (!entry) return [];

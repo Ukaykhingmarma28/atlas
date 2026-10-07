@@ -415,8 +415,23 @@ pub fn run() {
             let registry = Arc::new(commands::memory_indexer::MemoryRegistry::new(job_tx));
             app.manage(registry.clone());
             let indexer_app = app.handle().clone();
+            let ticker_registry = registry.clone();
             tauri::async_runtime::spawn(async move {
                 commands::memory_indexer::MemoryIndexer::run(indexer_app, registry, job_rx).await;
+            });
+            // The memory reconciler's periodic pass (M2): every open project
+            // is checked and repaired every 30 minutes (opening one already
+            // queues a pass).
+            tauri::async_runtime::spawn(async move {
+                let mut every = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+                every.tick().await; // the first tick is immediate
+                loop {
+                    every.tick().await;
+                    for cwd in ticker_registry.open_cwds() {
+                        let _ =
+                            ticker_registry.enqueue(commands::memory_indexer::Job::Health { cwd });
+                    }
+                }
             });
             Ok(())
         })
@@ -870,9 +885,11 @@ pub fn run() {
             commands::shared_memory::memory_forget_entry,
             commands::shared_memory::memory_purge_entry,
             commands::shared_memory::memory_entry_provenance,
+            commands::shared_memory::memory_accept_history,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,
+            commands::memory_indexer::memory_health_status,
             commands::memory_indexer::memory_indexer_close_project,
             commands::models::models_list,
             commands::models::model_download,

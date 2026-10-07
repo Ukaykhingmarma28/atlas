@@ -25,7 +25,7 @@ use std::time::Duration;
 use atlas_memory::{CorpusDoc, MemoryEngine, MiniLmProvider};
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
@@ -62,7 +62,26 @@ pub enum Job {
     /// (`atlas_memory::global`): run once when a project opens and after an
     /// extractor pass stores entries.
     Compact { cwd: String },
+    /// Check every memory invariant for `cwd` and repair what can be rebuilt
+    /// (M2): on open, every 30 minutes, and after a model switch.
+    Health { cwd: String },
 }
+
+/// What the last reconciler pass for a project found and did, for the
+/// Memory panel (`memory_health_status`).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthStatus {
+    pub checked_at: i64,
+    pub record: atlas_memory::health::Report,
+    pub corpus: atlas_memory::CorpusHealth,
+    /// `(when, from a snapshot)` when an open restored a damaged record.
+    pub restored: Option<(i64, bool)>,
+}
+
+/// The Tauri event a finished health pass emits: `{ "cwd": string }`. The
+/// panel re-reads `memory_health_status` on it.
+pub const MEMORY_HEALTH_EVENT: &str = "atlas:memory-health";
 
 /// `cwd`-keyed owner of every open project's [`MemoryEngine`] plus its FS watcher.
 /// Stored as a Tauri managed `State<Arc<MemoryRegistry>>`.
@@ -80,6 +99,11 @@ pub struct MemoryRegistry {
     /// twice. `None` until the first successful load; a failed load (model not yet
     /// downloaded) leaves it `None` so a later call retries.
     provider: tokio::sync::Mutex<Option<Arc<MiniLmProvider>>>,
+    /// Jobs that did not fit the queue, retried by the worker after its next
+    /// job instead of being lost.
+    overflow: parking_lot::Mutex<Vec<Job>>,
+    /// The last health pass per project.
+    health: DashMap<String, HealthStatus>,
 }
 
 impl MemoryRegistry {
@@ -92,7 +116,53 @@ impl MemoryRegistry {
             job_tx,
             debounce_window: DEBOUNCE_WINDOW,
             provider: tokio::sync::Mutex::new(None),
+            overflow: parking_lot::Mutex::new(Vec::new()),
+            health: DashMap::new(),
         }
+    }
+
+    /// Queue `job`; when the queue is full, remember it for the worker to
+    /// retry after its next job. Extraction jobs are logged and dropped
+    /// instead: their turns are a snapshot that can't be recomputed later,
+    /// and the session's end pass still covers them.
+    fn send_or_remember(&self, job: Job) {
+        use tokio::sync::mpsc::error::TrySendError;
+        match self.job_tx.try_send(job) {
+            Ok(()) => {}
+            Err(TrySendError::Full(job)) => match job {
+                Job::ExtractSession { .. } | Job::SessionEnded { .. } => {
+                    tracing::warn!(
+                        target: "atlas::memory_indexer",
+                        "extraction job dropped: queue full"
+                    );
+                }
+                other => {
+                    tracing::warn!(
+                        target: "atlas::memory_indexer",
+                        "queue full; {other:?} kept for retry"
+                    );
+                    self.overflow.lock().push(other);
+                }
+            },
+            Err(TrySendError::Closed(_)) => {}
+        }
+    }
+
+    /// The jobs that did not fit, once (the worker re-queues them).
+    pub fn take_overflow(&self) -> Vec<Job> {
+        std::mem::take(&mut *self.overflow.lock())
+    }
+
+    /// Every project with an open engine.
+    pub fn open_cwds(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.engines.iter().map(|e| e.key().clone()).collect();
+        out.sort();
+        out
+    }
+
+    /// The last health pass for `cwd`, if one ran.
+    pub fn health_status(&self, cwd: &str) -> Option<HealthStatus> {
+        self.health.get(cwd).map(|h| h.clone())
     }
 
     /// The shared [`MiniLmProvider`], loaded lazily on first use and cached. Both
@@ -156,26 +226,32 @@ impl MemoryRegistry {
 
         if Arc::ptr_eq(&inserted, &fresh) {
             self.start_watcher(cwd);
-            // Cold index on open. Drop-on-full is fine (watcher/force_reindex retry).
-            let _ = self.job_tx.try_send(Job::IndexCorpus {
+            // Cold index on open, one global-promotion pass (it only reads the
+            // record's Facts and the small global ledger), then a health pass.
+            // A full queue keeps them for retry.
+            self.send_or_remember(Job::IndexCorpus {
                 cwd: cwd.to_string(),
             });
-            // One global-promotion pass per open: it only reads the record's
-            // Facts and the small global ledger, so it is cheap; drop-on-full
-            // is fine (the next open or extraction re-enqueues).
-            let _ = self.job_tx.try_send(Job::Compact {
+            self.send_or_remember(Job::Compact {
+                cwd: cwd.to_string(),
+            });
+            self.send_or_remember(Job::Health {
                 cwd: cwd.to_string(),
             });
         }
         inserted
     }
 
-    /// Enqueue a job (non-blocking). Drops on a full queue rather than stalling
-    /// the caller — the IPC thread must never block on indexing.
+    /// Enqueue a job (non-blocking). A full queue keeps the job for retry
+    /// (extraction jobs are dropped with a warning) rather than stalling the
+    /// caller — the IPC thread must never block on indexing. `Err` only when
+    /// the indexer has stopped.
     pub fn enqueue(&self, job: Job) -> Result<(), String> {
-        self.job_tx
-            .try_send(job)
-            .map_err(|e| format!("indexer queue: {e}"))
+        if self.job_tx.is_closed() {
+            return Err("indexer queue: closed".into());
+        }
+        self.send_or_remember(job);
+        Ok(())
     }
 
     /// Fire-and-forget background reindex nudge for `cwd` (Step 5). Designed to
@@ -184,24 +260,9 @@ impl MemoryRegistry {
     /// `debug` log (a later FS-watcher tick or `force_reindex` re-enqueues);
     /// a closed queue (app shutting down) is likewise a silent drop.
     pub fn enqueue_index(&self, cwd: &str) {
-        use tokio::sync::mpsc::error::TrySendError;
-        match self.job_tx.try_send(Job::IndexCorpus {
+        self.send_or_remember(Job::IndexCorpus {
             cwd: cwd.to_string(),
-        }) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) => {
-                tracing::debug!(
-                    target: "atlas::memory_indexer",
-                    "reindex nudge dropped (queue full): {cwd}"
-                );
-            }
-            Err(TrySendError::Closed(_)) => {
-                tracing::debug!(
-                    target: "atlas::memory_indexer",
-                    "reindex nudge dropped (indexer stopped): {cwd}"
-                );
-            }
-        }
+        });
     }
 
     /// Queue one `IndexCorpus` pass for `cwd`, the pass that embeds the whole
@@ -381,38 +442,149 @@ impl MemoryIndexer {
     /// Drain the queue forever. Spawned once from `lib.rs` with the matching
     /// receiver; returns only when every `job_tx` is dropped (app shutdown).
     pub async fn run(app: AppHandle, registry: Arc<MemoryRegistry>, mut rx: mpsc::Receiver<Job>) {
+        let lanes = Lanes::spawn(|job| {
+            tauri::async_runtime::spawn(job);
+        });
         while let Some(job) = rx.recv().await {
-            match job {
-                Job::IndexCorpus { cwd } => {
-                    // Shared provider — loaded once, reused by retrieve too.
-                    let Some(prov) = registry.provider(&app).await else {
-                        tracing::warn!(
-                            target: "atlas::memory_indexer",
-                            "IndexCorpus {cwd}: MiniLM model not downloaded; skipping"
-                        );
-                        continue;
-                    };
-                    if let Err(e) = index_one(&registry, &cwd, &prov).await {
-                        tracing::warn!(target: "atlas::memory_indexer", "IndexCorpus {cwd} failed: {e}");
-                    }
-                }
-                Job::ExtractSession { cwd, writer, turns } => {
-                    extract(&app, &registry, &cwd, writer, Some(turns)).await;
-                }
-                Job::SessionEnded { cwd, writer } => {
-                    extract(&app, &registry, &cwd, writer, None).await;
-                }
-                Job::Compact { cwd } => {
-                    if let Err(e) = compact_one(&registry, &cwd).await {
-                        tracing::warn!(
-                            target: "atlas::memory_indexer",
-                            "Compact {cwd} failed: {e}"
-                        );
-                    }
-                }
+            let extraction = matches!(job, Job::ExtractSession { .. } | Job::SessionEnded { .. });
+            let (app, registry_for_job) = (app.clone(), registry.clone());
+            let work: Work = Box::pin(async move { handle(&app, &registry_for_job, job).await });
+            if extraction {
+                lanes.extract(work);
+            } else {
+                lanes.index(work);
+            }
+            for retry in registry.take_overflow() {
+                registry.send_or_remember(retry);
             }
         }
     }
+}
+
+/// One queued job's work.
+type Work = futures::future::BoxFuture<'static, ()>;
+
+/// The indexer's two lanes: index, promotion and health jobs on one,
+/// extraction (model calls, up to 60 s) on another, so neither waits on the
+/// other. Each lane runs its jobs in order.
+struct Lanes {
+    index: mpsc::UnboundedSender<Work>,
+    extract: mpsc::UnboundedSender<Work>,
+}
+
+impl Lanes {
+    /// Two lanes, each a task `spawn` starts that runs its jobs in order.
+    fn spawn(spawn: impl Fn(futures::future::BoxFuture<'static, ()>)) -> Self {
+        let lane = || {
+            let (tx, mut rx) = mpsc::unbounded_channel::<Work>();
+            spawn(Box::pin(async move {
+                while let Some(job) = rx.recv().await {
+                    job.await;
+                }
+            }));
+            tx
+        };
+        Self {
+            index: lane(),
+            extract: lane(),
+        }
+    }
+
+    fn index(&self, work: Work) {
+        let _ = self.index.send(work);
+    }
+
+    fn extract(&self, work: Work) {
+        let _ = self.extract.send(work);
+    }
+}
+
+/// Run one job.
+async fn handle(app: &AppHandle, registry: &MemoryRegistry, job: Job) {
+    match job {
+        Job::IndexCorpus { cwd } => {
+            // Shared provider — loaded once, reused by retrieve too.
+            let Some(prov) = registry.provider(app).await else {
+                tracing::warn!(
+                    target: "atlas::memory_indexer",
+                    "IndexCorpus {cwd}: MiniLM model not downloaded; skipping"
+                );
+                return;
+            };
+            if let Err(e) = index_one(registry, &cwd, &prov).await {
+                tracing::warn!(target: "atlas::memory_indexer", "IndexCorpus {cwd} failed: {e}");
+            }
+        }
+        Job::ExtractSession { cwd, writer, turns } => {
+            extract(app, registry, &cwd, writer, Some(turns)).await;
+        }
+        Job::SessionEnded { cwd, writer } => {
+            extract(app, registry, &cwd, writer, None).await;
+        }
+        Job::Compact { cwd } => {
+            if let Err(e) = compact_one(registry, &cwd).await {
+                tracing::warn!(target: "atlas::memory_indexer", "Compact {cwd} failed: {e}");
+            }
+        }
+        Job::Health { cwd } => {
+            if let Err(e) = health_one(app, registry, &cwd).await {
+                tracing::warn!(target: "atlas::memory_indexer", "Health {cwd} failed: {e}");
+            }
+        }
+    }
+}
+
+/// One reconciler pass for `cwd`: the record (check → repair → snapshot) and
+/// the corpus (vector file, FTS). Stored for the panel and announced.
+async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Result<(), String> {
+    let Some(engine) = registry.open_engine(cwd) else {
+        return Ok(());
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    let owned = cwd.to_string();
+    let (record, restored) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let store = super::shared_memory::store_for(&owned)?;
+        let report = store.heal(now).map_err(|e| format!("{e:#}"))?;
+        if let Err(e) = store.snapshot_if_due(now) {
+            tracing::warn!(target: "atlas::memory_indexer", "memory snapshot failed: {e:#}");
+        }
+        Ok((
+            report,
+            atlas_memory::record::RecordStore::restored_marker(store.root()),
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let corpus = engine.write().await.heal().map_err(|e| format!("{e:#}"))?;
+    if !record.repaired.is_empty() || corpus != atlas_memory::CorpusHealth::default() {
+        tracing::info!(
+            target: "atlas::memory_indexer",
+            "health {cwd}: repaired {:?}, corpus {corpus:?}",
+            record.repaired
+        );
+    }
+    // The marker is read once; the restore stays reported while the app runs.
+    let restored = restored.or_else(|| registry.health_status(cwd).and_then(|h| h.restored));
+    registry.health.insert(
+        cwd.to_string(),
+        HealthStatus {
+            checked_at: now,
+            record,
+            corpus,
+            restored,
+        },
+    );
+    let _ = app.emit(MEMORY_HEALTH_EVENT, serde_json::json!({ "cwd": cwd }));
+    Ok(())
+}
+
+/// The last reconciler pass for a project (`null` before the first).
+#[tauri::command]
+pub fn memory_health_status(
+    project_path: String,
+    registry: State<'_, Arc<MemoryRegistry>>,
+) -> Option<HealthStatus> {
+    registry.health_status(&project_path)
 }
 
 /// Gather the corpus for `cwd`, diff+embed it into that project's engine under
@@ -732,26 +904,82 @@ mod tests {
     /// must drop gracefully when the queue is full. The queue here has capacity 1
     /// and is never drained, so a blocking send would hang this test forever —
     /// completing at all proves it is non-blocking.
+    /// A nudge that doesn't fit the queue is remembered, not lost, and never
+    /// blocks: the worker re-queues it after its next job.
     #[test]
-    fn enqueue_index_never_blocks_and_drops_when_full() {
+    fn a_full_queue_is_remembered_and_retried() {
         let (job_tx, mut job_rx) = mpsc::channel::<Job>(1);
-        let registry = MemoryRegistry::new(job_tx);
-
-        // First nudge fills the single slot.
+        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
         registry.enqueue_index("/proj/a");
-        // Queue is now full — these overflow nudges must be DROPPED, not block.
-        registry.enqueue_index("/proj/a");
-        registry.enqueue_index("/proj/b");
+        registry.enqueue_index("/proj/b"); // queue full
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd }) if cwd == "/proj/a"));
+        let retried: Vec<String> = registry
+            .take_overflow()
+            .into_iter()
+            .filter_map(|j| match j {
+                Job::IndexCorpus { cwd } => Some(cwd),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(retried, ["/proj/b"]);
+        assert!(registry.take_overflow().is_empty(), "taken once");
+    }
 
-        // Exactly one job made it in; the overflow was dropped gracefully.
-        match job_rx.try_recv() {
-            Ok(Job::IndexCorpus { cwd }) => assert_eq!(cwd, "/proj/a"),
-            other => panic!("expected exactly one IndexCorpus, got {other:?}"),
-        }
-        assert!(
-            job_rx.try_recv().is_err(),
-            "overflow reindex nudges must be dropped, not queued"
-        );
+    /// An extraction job that doesn't fit is dropped with a warning: its
+    /// turns are a snapshot, and the session's end pass still covers them.
+    #[test]
+    fn a_full_queue_drops_an_extraction_job_instead_of_keeping_it() {
+        let (job_tx, _job_rx) = mpsc::channel::<Job>(1);
+        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
+        registry.enqueue_index("/proj/a");
+        let writer = super::super::shared_memory::Writer {
+            agent: "codex".into(),
+            session_id: "s".into(),
+        };
+        registry
+            .enqueue(Job::SessionEnded {
+                cwd: "/proj/a".into(),
+                writer,
+            })
+            .unwrap();
+        assert!(registry.take_overflow().is_empty());
+    }
+
+    /// A slow extraction (a gateway call can take 60 s) must not hold up the
+    /// index pass queued behind it.
+    #[tokio::test]
+    async fn extraction_does_not_hold_up_indexing() {
+        let lanes = Lanes::spawn(|job| {
+            tokio::spawn(job);
+        });
+        let (tx, mut seen) = mpsc::unbounded_channel::<&'static str>();
+        let slow = tx.clone();
+        lanes.extract(Box::pin(async move {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let _ = slow.send("extract");
+        }));
+        lanes.index(Box::pin(async move {
+            let _ = tx.send("index");
+        }));
+        let first = tokio::time::timeout(Duration::from_secs(1), seen.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first, "index");
+    }
+
+    #[test]
+    fn opening_a_project_queues_a_health_pass_after_promotion() {
+        let (job_tx, mut job_rx) = mpsc::channel::<Job>(16);
+        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
+        let root = tmp_root("health-open");
+        let cwd = root.to_string_lossy().to_string();
+        let _ = registry.engine_for(&cwd);
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { .. })));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { .. })));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Health { cwd: c }) if c == cwd));
+        assert_eq!(registry.open_cwds(), vec![cwd]);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     /// N rapid FS signals collapse into exactly ONE `IndexCorpus` job.
@@ -857,6 +1085,7 @@ mod tests {
         registry.request_reindex(&cwd);
         assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd: c }) if c == cwd));
         assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { cwd: c }) if c == cwd));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Health { cwd: c }) if c == cwd));
         assert!(
             job_rx.try_recv().is_err(),
             "no second IndexCorpus on first open"

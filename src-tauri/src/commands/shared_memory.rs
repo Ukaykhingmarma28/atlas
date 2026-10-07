@@ -1144,6 +1144,33 @@ pub async fn memory_purge_entry(
     Ok(erased)
 }
 
+/// The user confirmed that an edit of the memory history made outside Atlas
+/// was theirs: re-seal the hash chain from the first bad revision and heal,
+/// so the view follows the accepted history. `false` when the chain was
+/// intact. Only from the panel's confirmed button, never automatic.
+#[tauri::command]
+pub async fn memory_accept_history(
+    project_path: String,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<bool, String> {
+    let cwd = project_path.clone();
+    let accepted = off_main(move || {
+        let store = store_for(&project_path)?;
+        let accepted = store.accept_history().map_err(|e| format!("{e:#}"))?;
+        if accepted {
+            store
+                .heal(chrono::Utc::now().timestamp_millis())
+                .map_err(|e| format!("{e:#}"))?;
+        }
+        Ok(accepted)
+    })
+    .await?;
+    if accepted {
+        let _ = registry.enqueue(super::memory_indexer::Job::Health { cwd });
+    }
+    Ok(accepted)
+}
+
 /// Where a memory was learned, as the panel's entry detail shows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

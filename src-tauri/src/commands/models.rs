@@ -522,7 +522,14 @@ pub async fn model_select(
 
     // Drop cached models so the next call loads the newly selected one.
     match entry.kind {
-        ModelKind::Embedding => registry.invalidate_provider().await,
+        ModelKind::Embedding => {
+            registry.invalidate_provider().await;
+            // A health pass per open project backfills the new model's
+            // vectors for every memory (VectorsMissing → sync_vectors).
+            for cwd in registry.open_cwds() {
+                let _ = registry.enqueue(crate::commands::memory_indexer::Job::Health { cwd });
+            }
+        }
         // Swaps the code index's embedder; vectors re-sync per model file,
         // from the embedding cache where they can. No memory re-index.
         ModelKind::CodeEmbedding => crate::commands::code_index::embed::refresh(&app).await,

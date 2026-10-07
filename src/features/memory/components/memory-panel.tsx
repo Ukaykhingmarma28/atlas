@@ -1,5 +1,10 @@
+import { useState } from "react";
 import { Share2, SlidersHorizontal } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
+import { chainBroken, healthLine, useMemoryHealth } from "../lib/use-memory-health";
 import { MemoryGraphView } from "./memory-graph-view";
 import { MemoryPolicyView } from "./memory-policy-view";
 import { MemorySharingControls } from "./memory-sharing-controls";
@@ -58,6 +63,7 @@ export function MemoryPanel() {
         </PillGroup>
 
         <div className="ml-auto flex items-center gap-1">
+          <MemoryHealthLine projectPath={projectPath} />
           <MemorySharingControls projectPath={projectPath} />
         </div>
       </div>
@@ -119,4 +125,48 @@ function PillSeg({
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="h-full flex items-center justify-center">{children}</div>;
+}
+
+/** What the memory reconciler's last pass found, in one muted line; when the
+ *  history was edited outside Atlas, the one way to trust it again. */
+function MemoryHealthLine({ projectPath }: { projectPath: string | null }) {
+  const status = useMemoryHealth(projectPath);
+  const [confirm, setConfirm] = useState(false);
+  const line = healthLine(status);
+  if (!line || !projectPath) return null;
+  const accept = async () => {
+    setConfirm(false);
+    try {
+      await invoke<boolean>("memory_accept_history", { projectPath });
+      toast.success("Memory history accepted");
+    } catch (err) {
+      toast.error(`Couldn't accept: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  return (
+    <span className="flex items-center gap-1.5 text-2xs text-[var(--muted-foreground)]">
+      {line}
+      {chainBroken(status) && (
+        <>
+          <button
+            type="button"
+            onClick={() => setConfirm(true)}
+            className="underline underline-offset-2 hover:text-[var(--foreground)]"
+          >
+            I made this edit
+          </button>
+          <FileTreeConfirmDelete
+            open={confirm}
+            name="memory history"
+            isDir={false}
+            title="Trust the edited memory history?"
+            body="Memories whose history was changed outside Atlas will be trusted again and served to every agent as they now read. If you did not make this edit, restore yesterday's snapshot instead."
+            confirmLabel="Trust it"
+            onConfirm={() => void accept()}
+            onOpenChange={setConfirm}
+          />
+        </>
+      )}
+    </span>
+  );
 }
