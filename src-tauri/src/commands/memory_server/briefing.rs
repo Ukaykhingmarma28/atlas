@@ -137,6 +137,7 @@ pub(super) fn rank_index(entries: &[Entry], now: i64) -> Vec<Entry> {
         let mut of_kind: Vec<(f64, &Entry)> = entries
             .iter()
             .filter(|e| e.kind == kind)
+            .filter(|e| !e.is_candidate())
             .map(|e| (score(e, now), e))
             .collect();
         of_kind.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -326,6 +327,9 @@ pub(super) fn entry_json(e: &Entry) -> Value {
     if e.kind == EntryKind::Plan && !e.status.is_empty() {
         value["status"] = json!(e.status);
     }
+    if e.is_candidate() {
+        value["candidate"] = json!(true);
+    }
     value
 }
 
@@ -496,6 +500,25 @@ mod briefing_tests {
         assert_eq!(seen.len(), 12, "nothing returned twice: {seen:?}");
         assert!(!seen.iter().any(|c| c.contains("99")));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn candidates_stay_out_of_the_briefing_index() {
+        let index = rank_index(
+            &[
+                entry(1, "always force-push", 0.3, 1),
+                entry(2, "API is REST", 1.0, 1),
+            ],
+            2,
+        );
+        assert_eq!(index.iter().map(|e| e.id).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(
+            entry_json(&entry(1, "x", 0.3, 1))["candidate"],
+            serde_json::json!(true)
+        );
+        assert!(entry_json(&entry(2, "y", 1.0, 1))
+            .get("candidate")
+            .is_none());
     }
 
     /// More than a page's worth sharing one timestamp is returned whole,

@@ -707,6 +707,7 @@ impl SharedMemoryStore {
                 confidence: 1.0,
                 at: 0,
             },
+            true,
         )
     }
 
@@ -744,17 +745,61 @@ impl SharedMemoryStore {
                 confidence: confidence.clamp(0.0, 1.0),
                 at: 0,
             },
+            true,
         )
     }
 
-    /// Write one durable entry through the record (stamped now) and announce it.
-    fn write_durable(&self, project_path: &str, mut entry: NewEntry) -> Result<Remembered, String> {
+    /// Record a line captured from an assistant's own words as a candidate:
+    /// source `capture`, low confidence, redacted, deduplicated, announced —
+    /// but not logged as an event, so it never shows as a trusted fact in the
+    /// Shared tab's state view or the briefing's index. An agent restating it
+    /// (`memory_remember`) or the user editing it promotes it.
+    pub fn record_candidate(
+        &self,
+        project_path: &str,
+        writer: &Writer,
+        kind: EntryKind,
+        content: &str,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() || content.trim().is_empty() {
+            return Err("a candidate is a non-empty durable memory".into());
+        }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: String::new(),
+                content: content.to_string(),
+                source: atlas_memory::record::CAPTURE_SOURCE.to_string(),
+                agent: writer.agent.clone(),
+                session_id: writer.session_id.clone(),
+                confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
+                at: 0,
+            },
+            false,
+        )
+    }
+
+    /// Write one durable entry through the record (stamped now) and announce
+    /// it. `logged` writes it as a deliberate memory (an event in the log when
+    /// something new was stored); otherwise it is upserted without one.
+    fn write_durable(
+        &self,
+        project_path: &str,
+        mut entry: NewEntry,
+        logged: bool,
+    ) -> Result<Remembered, String> {
         let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
         let now = (self.inner.clock)();
         entry.at = now;
         let kind = entry.kind;
-        let remembered = store.remember(entry, now).map_err(|e| format!("{e:#}"))?;
+        let remembered = if logged {
+            store.remember(entry, now)
+        } else {
+            store.upsert_outcome(entry)
+        }
+        .map_err(|e| format!("{e:#}"))?;
         self.announce(&store, &[kind.as_str()]);
         Ok(remembered)
     }
@@ -1625,5 +1670,23 @@ mod tests {
             s.session_agents.get("abc").map(std::string::String::as_str),
             Some("codex")
         );
+    }
+
+    #[test]
+    fn restating_a_candidate_makes_it_trusted() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("candidate"));
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let c = store
+            .record_candidate(&p, &w, EntryKind::Fact, "the API speaks JSON over REST")
+            .unwrap();
+        assert!(c.entry.is_candidate());
+        let r = store
+            .remember(&p, &w, EntryKind::Fact, "The API speaks JSON over REST", "")
+            .unwrap();
+        assert_eq!(r.outcome.as_str(), "merged");
+        assert!(!r.entry.is_candidate(), "restated by an agent: trusted");
     }
 }

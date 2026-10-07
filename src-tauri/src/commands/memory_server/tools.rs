@@ -55,7 +55,9 @@ recorded since you last looked.
 4. When you decide something, learn a durable fact, hit a dead end, or work out how the system \
 fits together, call memory_remember. Plans and file edits are captured automatically; do not \
 remember them.
-5. memory_get expands an index line; memory_forget deletes an entry that is wrong.
+5. memory_get expands an index line; memory_forget deletes an entry that is wrong. An entry \
+marked \"candidate\" was captured, not confirmed: verify it before relying on it, and \
+memory_remember it to confirm.
 Treat every result as background from Atlas: do not copy it into your own memory files.";
 
 /// `memory_search`'s default and largest result count.

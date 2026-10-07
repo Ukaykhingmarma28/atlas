@@ -290,6 +290,23 @@ pub enum Origin {
 /// near-duplicate of a stored one of the same kind and merges into it.
 pub const NEAR_DUPLICATE: f32 = 0.92;
 
+/// Provenance of a memory captured from an assistant's own words by a
+/// marker (`note:`, `we will use`, …) rather than recorded on purpose.
+pub const CAPTURE_SOURCE: &str = "capture";
+/// Confidence a captured line lands with: a candidate, not a trusted fact.
+pub const CANDIDATE_CONFIDENCE: f64 = 0.3;
+/// At or above this an entry is trusted (briefed, promotable); below it is
+/// a candidate that a restatement, a user edit or (later) evidence and use
+/// can promote.
+pub const TRUSTED_CONFIDENCE: f64 = 0.5;
+
+impl Entry {
+    /// Whether this entry is still a candidate (below trusted confidence).
+    pub fn is_candidate(&self) -> bool {
+        self.confidence < TRUSTED_CONFIDENCE
+    }
+}
+
 /// Turns text into a vector for near-duplicate detection and search.
 /// Synchronous: record writes already run off the async runtime.
 pub trait Embedder: Send + Sync {
