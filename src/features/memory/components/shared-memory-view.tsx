@@ -50,6 +50,7 @@ import { cn } from "@/lib/utils";
 import { MemoryReviewView } from "./memory-review-view";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { useMemoryStore } from "../stores/memory-store";
 import { sharedMemory } from "../lib/shared-memory-api";
 import type {
   ClaudeImportLine,
@@ -176,6 +177,17 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [kindFilter, setKindFilter] = useState<string>("");
+
+  // Asked to open an entry ("Memory updated" card): show the Memories table
+  // unfiltered, so the row is there for the table to expand.
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  useEffect(() => {
+    if (focusEntryId == null) return;
+    setTab("memories");
+    setQuery("");
+    setAgentFilter("");
+    setKindFilter("");
+  }, [focusEntryId]);
 
   const plans = useMemo(() => events.filter((e) => e.kind === "plan_set"), [events]);
 
@@ -590,6 +602,18 @@ function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  const { clearFocusEntry } = useMemoryStore.use.actions();
+  // Expand the entry asked for once its row is listed, then consume the ask.
+  useEffect(() => {
+    if (focusEntryId == null || !rows.some((r) => r.id === focusEntryId)) return;
+    setExpanded(focusEntryId);
+    clearFocusEntry();
+    scroller.current
+      ?.querySelector(`[data-entry-id="${focusEntryId}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [focusEntryId, rows, clearFocusEntry]);
   const toggle = (id: number) =>
     setSelected((s) => {
       const next = new Set(s);
@@ -601,7 +625,7 @@ function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   // exportable, is not exported.
   const chosen = [...selected].filter((id) => rows.some((r) => r.id === id && exportable(r)));
   return (
-    <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+    <div ref={scroller} className="flex-1 min-h-0 overflow-auto hide-scrollbar">
       {chosen.length > 0 && (
         <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
           <span>{chosen.length} selected</span>
@@ -664,7 +688,7 @@ function EntryRow({
   onSelect: () => void;
 }) {
   return (
-    <div className="border-b border-[var(--atlas-border-subtle)]">
+    <div data-entry-id={e.id} className="border-b border-[var(--atlas-border-subtle)]">
       <div className="flex items-center">
         <span className="flex w-6 shrink-0 items-center justify-end">
           {exportable(e) && (
@@ -1147,6 +1171,9 @@ function ImportRepoModal({
                   <span className="w-20 shrink-0 text-2xs text-muted-foreground">{l.kind}</span>
                   <span className={cn("min-w-0 flex-1", !l.isNew && "text-muted-foreground")}>
                     {l.content}
+                    {l.meta && (
+                      <span className="block text-2xs text-muted-foreground">{l.meta}</span>
+                    )}
                   </span>
                 </label>
               ))

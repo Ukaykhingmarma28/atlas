@@ -9,12 +9,28 @@ import { Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { sharedMemory } from "../lib/shared-memory-api";
+import { useMemoryStore } from "../stores/memory-store";
 import {
   useSessionMemoryWrites,
   writesSummary,
   type SessionWrite,
 } from "../lib/use-session-memory-writes";
+
+/** Open the entry in Memory ▸ Shared ▸ Memories, expanded. The Memory tab is
+ *  one per column, so this focuses the open one or opens it. */
+function openEntry(id: number) {
+  useMemoryStore.getState().actions.focusEntry(id);
+  useLayoutStore.getState().actions.addTab({
+    id: "memory",
+    type: "memory",
+    title: "Memory",
+    closable: true,
+    dirty: false,
+    data: {},
+  });
+}
 
 export function MemoryUpdatedCard({
   projectPath,
@@ -65,9 +81,19 @@ export function MemoryUpdatedCard({
               <span className="w-16 shrink-0 text-3xs uppercase tracking-wide text-[var(--atlas-text-disabled)]">
                 {w.kind}
               </span>
-              <span className="min-w-0 flex-1 break-words text-[var(--foreground)]">
-                {w.content || "(forgotten)"}
-              </span>
+              {w.live ? (
+                <button
+                  type="button"
+                  onClick={() => openEntry(w.id)}
+                  className="min-w-0 flex-1 break-words text-left text-[var(--foreground)] hover:underline"
+                >
+                  {w.content}
+                </button>
+              ) : (
+                <span className="min-w-0 flex-1 break-words text-[var(--foreground)]">
+                  {w.content || "(forgotten)"}
+                </span>
+              )}
               {w.live && w.state === "candidate" && (
                 <span className="shrink-0 text-3xs uppercase text-[var(--muted-foreground)]">
                   candidate

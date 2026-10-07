@@ -8,6 +8,8 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) })
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryUpdatedCard } from "./memory-updated-card";
+import { useMemoryStore } from "../stores/memory-store";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 
 function write(id: number, content: string, op = "insert", state = "active", live = true) {
   return { id, rev: id * 10, op, kind: "decision", content, state, at: id, live };
@@ -56,6 +58,19 @@ describe("the Memory updated card", () => {
     await screen.findByText("Memory updated: 1 saved, 1 removed");
     expect(screen.getAllByRole("button", { name: "Forget" })).toHaveLength(1);
     expect(screen.getByText("removed")).toBeTruthy();
+  });
+
+  it("opens a row's entry in Memory ▸ Shared", async () => {
+    useMemoryStore.setState({ subTab: "graph", focusEntryId: null });
+    const user = userEvent.setup();
+    render(<MemoryUpdatedCard projectPath="/repo" sessionId="s-a" />);
+    await user.click(await screen.findByText("Memory updated: 2 saved"));
+    await user.click(screen.getByRole("button", { name: "Sign JWTs with EdDSA" }));
+    expect(useMemoryStore.getState().subTab).toBe("shared");
+    expect(useMemoryStore.getState().focusEntryId).toBe(2);
+    const layout = useLayoutStore.getState();
+    const active = layout.tabs.find((t) => t.id === layout.activeByGroup[layout.focusedGroupId]);
+    expect(active?.type).toBe("memory");
   });
 
   it("offers no Forget on a write whose entry is gone or archived", async () => {

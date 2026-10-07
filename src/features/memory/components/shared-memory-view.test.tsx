@@ -15,6 +15,7 @@ import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { SharedMemoryView } from "./shared-memory-view";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { useMemoryStore } from "../stores/memory-store";
 
 const EMPTY_STATE = {
   lastSeq: 0,
@@ -151,6 +152,17 @@ async function openMemories() {
 }
 
 describe("the Shared tab's Memories table", () => {
+  it("opens the entry the Memory updated card asked for, once", async () => {
+    useMemoryStore.setState({ focusEntryId: 2 });
+    const { container } = render(<SharedMemoryView projectPath="/repo" />);
+    // Switched to Memories with entry 2 (and only it) expanded, ask consumed.
+    await screen.findByRole("button", { name: "Edit memory" });
+    const row = container.querySelector<HTMLElement>('[data-entry-id="2"]')!;
+    expect(within(row).getByRole("button", { name: "Edit memory" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Edit memory" })).toHaveLength(1);
+    expect(useMemoryStore.getState().focusEntryId).toBeNull();
+  });
+
   it("erases an entry with its history after confirming", async () => {
     const user = await openMemories();
     await user.click(await screen.findByText("Prefers small PRs"));

@@ -25,6 +25,9 @@ type PolicyPhase =
 interface MemoryStoreState {
   /** Active sub-tab, preserved across remounts. */
   subTab: MemorySubTab;
+  /** An entry to open in Shared ▸ Memories (the "Memory updated" card's row
+   *  click). The Memories table expands it, then clears it. */
+  focusEntryId: number | null;
   /** Which project the caches below belong to (reset on change). */
   project: string | null;
 
@@ -35,6 +38,9 @@ interface MemoryStoreState {
 
   actions: {
     setSubTab: (t: MemorySubTab) => void;
+    /** Switch to Shared and ask its Memories table to open entry `id`. */
+    focusEntry: (id: number) => void;
+    clearFocusEntry: () => void;
     /** Drop caches when the project changes. */
     ensureProject: (projectPath: string | null) => void;
     loadPolicies: (projectPath: string, force?: boolean) => Promise<void>;
@@ -48,12 +54,15 @@ interface MemoryStoreState {
 export const useMemoryStore = createSelectors(
   create<MemoryStoreState>()((set, get) => ({
     subTab: "graph",
+    focusEntryId: null,
     project: null,
     policies: null,
     policyPhase: "idle",
     policyError: null,
     actions: {
       setSubTab: (t) => set({ subTab: t }),
+      focusEntry: (id) => set({ subTab: "shared", focusEntryId: id }),
+      clearFocusEntry: () => set({ focusEntryId: null }),
 
       ensureProject: (projectPath) => {
         if (get().project === projectPath) return;
