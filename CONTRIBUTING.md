@@ -166,7 +166,7 @@ Releases are tagged `alpha-X.Y.Z`, with occasional `exp-X.Y.Z-X.Y.Z` snapshots.
 
 ### Versioning
 
-The version lives in four places: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the Settings "About" label in `src/features/settings/components/settings-panel.tsx`. The scripts change all four together, and refresh `Cargo.lock`'s entry for the app so CI's `--locked` builds still run.
+The version is written in three places: `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`. The scripts change all three together, and refresh `Cargo.lock`'s entry for the app so CI's `--locked` builds still run. Everything else reads it from one of those: Rust through `CARGO_PKG_VERSION`, the About screen through `getVersion()`, the DMG scripts from `tauri.conf.json`.
 
 ```bash
 bun run bump          # patch bump: 0.2.3 -> 0.2.4
@@ -174,7 +174,7 @@ bun run bump 0.3.0    # explicit version
 bun run debump        # inverse of bump
 ```
 
-Run `bun run bump` (`scripts/bump.sh`) once per release, on the version branch, before opening the PR into `main`. Never edit the four files by hand.
+Run `bun run bump` (`scripts/bump.sh`) once per release, on the version branch, before opening the PR into `main`. Never edit the three files by hand.
 
 ## Verification
 

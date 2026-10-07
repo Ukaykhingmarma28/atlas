@@ -11,7 +11,6 @@
 #   - src-tauri/Cargo.toml          (version = "...")
 #   - Cargo.lock                    (the atlas package's entry)
 #   - src-tauri/tauri.conf.json     ("version": "...")
-#   - src/features/settings/components/settings-panel.tsx  (About label)
 
 set -euo pipefail
 
@@ -19,7 +18,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$ROOT/package.json"
 CARGO="$ROOT/src-tauri/Cargo.toml"
 TAURI_CONF="$ROOT/src-tauri/tauri.conf.json"
-SETTINGS="$ROOT/src/features/settings/components/settings-panel.tsx"
 
 # Source of truth = package.json. Pull the first `"version": "..."` line.
 current=$(grep -m1 '"version":' "$PKG" | sed -E 's/.*"version" *: *"([^"]+)".*/\1/')
@@ -74,9 +72,6 @@ in_place "s/\"version\": \"$escaped\"/\"version\": \"$new\"/g" "$TAURI_CONF"
 # elsewhere in the file.
 in_place "s/^version = \"$escaped\"/version = \"$new\"/" "$CARGO"
 
-# Settings panel About label.
-in_place "s/v$escaped — The second brain IDE/v$new — The second brain IDE/g" "$SETTINGS"
-
 # Cargo.lock records the app's own version too. Left stale, every CI job's
 # `cargo test --locked` refuses to run (one "v bump" commit failed 63 jobs).
 # `--workspace` touches only workspace members' entries; `--offline` because
@@ -88,4 +83,3 @@ echo "  $PKG"
 echo "  $CARGO"
 echo "  $ROOT/Cargo.lock"
 echo "  $TAURI_CONF"
-echo "  $SETTINGS"
