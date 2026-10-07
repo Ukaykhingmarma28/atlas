@@ -149,6 +149,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const [tab, setTab] = useState<Tab>("events");
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     if (projectPath) void load(projectPath);
@@ -277,7 +278,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
           <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
             <Download size={12} />
           </IconButton>
-          <IconButton label="Clear shared memory" onClick={() => void clear()}>
+          <IconButton label="Clear shared memory" onClick={() => setConfirmClear(true)}>
             <Trash2 size={12} />
           </IconButton>
         </HintGroup>
@@ -286,6 +287,16 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         open={importing}
         onOpenChange={setImporting}
         onImported={() => setTab("memories")}
+      />
+      <FileTreeConfirmDelete
+        open={confirmClear}
+        name="shared memory"
+        isDir={false}
+        title="Clear shared memory?"
+        body="Every agent on this project loses every plan, decision, fact, failure and architecture note recorded here. This can't be undone."
+        confirmLabel="Clear"
+        onConfirm={() => void clear()}
+        onOpenChange={setConfirmClear}
       />
 
       {/* Body */}

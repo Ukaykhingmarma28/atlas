@@ -228,3 +228,14 @@ describe("importing Claude's auto-memory", () => {
     expect(confirm.disabled).toBe(true);
   });
 });
+
+describe("clearing shared memory", () => {
+  it("asks before wiping, and wipes only on confirm", async () => {
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Clear shared memory" }));
+    expect(invoke).not.toHaveBeenCalledWith("memory_clear_project", expect.anything());
+    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    expect(invoke).toHaveBeenCalledWith("memory_clear_project", { projectPath: "/repo" });
+  });
+});
