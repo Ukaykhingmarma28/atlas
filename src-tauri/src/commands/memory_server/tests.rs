@@ -1833,3 +1833,58 @@ async fn memory_why_without_capture_answers_from_citations() {
     a.cancel().await.ok();
     let _ = std::fs::remove_dir_all(&p);
 }
+
+/// memory_why's memories carry validity like every other read: a memory
+/// whose cited lines changed is "stale" there, as memory_search reports it.
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_marks_a_memory_whose_cited_lines_changed_as_stale() {
+    let p = temp_project("why-stale");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    assert_eq!(r["entry"]["validity"], "valid", "{r}");
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 300;\n").unwrap();
+
+    let (_, why) = call(&a, "memory_why", json!({"path": "src/ttl.rs"})).await;
+    let memory_of = |v: &Value, key: &str| {
+        v[key]
+            .as_array()
+            .and_then(|all| all.iter().find(|m| m["id"] == r["entry"]["id"]))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let cited = memory_of(&why, "memories");
+    assert_eq!(cited["validity"], "stale", "{why}");
+    let (_, s) = call(
+        &a,
+        "memory_search",
+        json!({"query": "access tokens minutes"}),
+    )
+    .await;
+    assert_eq!(
+        memory_of(&s, "entries")["validity"],
+        cited["validity"],
+        "{s}"
+    );
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}

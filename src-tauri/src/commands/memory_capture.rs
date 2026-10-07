@@ -219,6 +219,7 @@ pub fn work_evidence(
         return None;
     }
     let (scope, here) = (canonical(scope_root), canonical(found.root));
+    let sub = launch_dir(&scope, &here);
     let kept: Vec<Kept> = touches
         .iter()
         .filter(|t| {
@@ -227,7 +228,7 @@ pub fn work_evidence(
                 .any(|c| c.files_touched.contains(&t.path))
         })
         .take(10)
-        .map(|t| kept(&scope, &here, t, cache))
+        .map(|t| kept(&scope, &here, &sub, t, cache))
         .collect();
     let mut validity = work_validity(&kept);
     // A flagged capture may have lost touches: it cannot prove the work gone.
@@ -247,19 +248,41 @@ pub fn work_evidence(
     Some(WorkCheck { commits, validity })
 }
 
+/// Where the launch directory `here` sits in the repository, for [`kept`]. A
+/// directory under the scope root is a subdirectory of the main checkout
+/// unless it lies in a worktree nested there (one git still lists, removed
+/// or not); any other directory is a linked worktree's root. Both come
+/// canonical, so a subdirectory launch is never read as a worktree.
+fn launch_dir(scope: &Path, here: &Path) -> PathBuf {
+    match here.strip_prefix(scope) {
+        Ok(sub) if sub.as_os_str().is_empty() => PathBuf::new(),
+        Ok(sub) => {
+            // A live subdirectory with no `.git` on the way up to the scope
+            // root is no worktree: git need not be asked.
+            let maybe_worktree = !here.exists()
+                || here
+                    .ancestors()
+                    .take(sub.components().count())
+                    .any(|d| d.join(".git").exists());
+            if maybe_worktree {
+                repo_dir(&worktree_roots(scope), here).unwrap_or_else(|| sub.to_path_buf())
+            } else {
+                sub.to_path_buf()
+            }
+        }
+        Err(_) => PathBuf::new(),
+    }
+}
+
 /// Whether one landed file still holds the session's work: the agent's line
 /// fingerprint against each copy of the file as it is now, in the scope root
-/// and where the session ran (a linked worktree holds its branch's work until
-/// it is merged). Kept when any copy holds it, gone only when every copy that
-/// exists has lost it. A deletion is kept while a copy stays gone. Both roots
-/// come canonical, so a subdirectory launch is never read as a worktree.
-fn kept(scope: &Path, here: &Path, touch: &FileTouch, cache: &KeptCache) -> Kept {
-    let repo_rel = match here.strip_prefix(scope) {
-        Ok(sub) => sub.join(&touch.path),
-        // A linked worktree: the same repository path.
-        Err(_) => PathBuf::from(&touch.path),
-    };
-    let main = scope.join(&repo_rel);
+/// and where the session ran (a linked worktree, nested in the main checkout
+/// or not, holds its branch's work until it is merged). `sub` is where
+/// `here` sits in the repository ([`launch_dir`]). Kept when any copy holds
+/// it, gone only when every copy that exists has lost it. A deletion is kept
+/// while a copy stays gone.
+fn kept(scope: &Path, here: &Path, sub: &Path, touch: &FileTouch, cache: &KeptCache) -> Kept {
+    let main = scope.join(sub).join(&touch.path);
     let local = here.join(&touch.path);
     // A removed worktree says nothing about its own copy.
     let live = here.exists();
@@ -1032,12 +1055,95 @@ mod tests {
         std::fs::write(feat.join("src/auth.rs"), agent).unwrap();
         let touch = touch_of("src/auth.rs", agent);
         let cache = KeptCache::default();
-        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::Yes);
+        let sub = launch_dir(&main, &feat);
+        assert_eq!(kept(&main, &feat, &sub, &touch, &cache), Kept::Yes);
 
         std::fs::remove_dir_all(&feat).unwrap();
-        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::No, "never merged");
+        assert_eq!(
+            kept(&main, &feat, &sub, &touch, &cache),
+            Kept::No,
+            "never merged"
+        );
         std::fs::write(main.join("src/auth.rs"), agent).unwrap();
-        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::Yes, "merged");
+        assert_eq!(
+            kept(&main, &feat, &sub, &touch, &cache),
+            Kept::Yes,
+            "merged"
+        );
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    /// Run git in `dir`, with an identity so commits work anywhere.
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A worktree nested in the main checkout (`.claude/worktrees/x`) is a
+    /// worktree, not a subdirectory: its files are judged at their repository
+    /// path in the main checkout too. Work merged there is kept after the
+    /// worktree rewrote its own copy, and after the worktree was removed.
+    #[test]
+    fn work_from_a_worktree_nested_in_the_main_checkout_is_judged_at_its_repository_path() {
+        let main = scratch_dir("kept-nested");
+        git(&main, &["init", "-q"]);
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        let nested = main.join(".claude/worktrees/x");
+        std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        git(&main, &["worktree", "add", "-q", nested.to_str().unwrap()]);
+        let agent = "pub fn sign() -> Alg {\n    Alg::EdDSA\n}\n";
+
+        let mut rec = test_support::Recording::open_turn(
+            &nested.to_string_lossy(),
+            "s-n",
+            "claude-code",
+            "sign with EdDSA",
+        );
+        rec.write("src/auth.rs", agent.as_bytes());
+        let at = chrono::Utc::now().timestamp_millis();
+        rec.close_turn();
+        rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+        drop(rec);
+        // Merged into the main checkout; the worktree moved on.
+        for (dir, text) in [
+            (&main, agent),
+            (&nested, "pub fn sign() -> &str {\n    \"HS256\"\n}\n"),
+        ] {
+            std::fs::create_dir_all(dir.join("src")).unwrap();
+            std::fs::write(dir.join("src/auth.rs"), text).unwrap();
+        }
+
+        let cache = KeptCache::default();
+        {
+            let stores = CaptureReader::default().stores(&main.to_string_lossy());
+            let found = stores.find("s-n").expect("recorded in the nested worktree");
+            let check = work_evidence(&main, &found, at, &cache).expect("the work was committed");
+            assert_eq!(check.validity, Some(Validity::Valid), "{check:?}");
+        }
+
+        // Removed but not pruned: git still lists it.
+        std::fs::remove_dir_all(&nested).unwrap();
+        let sub = launch_dir(&main, &nested);
+        assert_eq!(sub, PathBuf::new());
+        let touch = touch_of("src/auth.rs", agent);
+        assert_eq!(kept(&main, &nested, &sub, &touch, &cache), Kept::Yes);
         let _ = std::fs::remove_dir_all(&main);
     }
 
