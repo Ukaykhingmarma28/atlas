@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atlas_memory::extract::{self, Trigger};
 use atlas_memory::TranscriptTurn;
@@ -41,6 +41,11 @@ use super::shared_memory::{SharedMemoryStore, Writer};
 /// and asks for structured output), but a hung call must not park the
 /// background queue.
 const EXTRACT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long after a session's end a turn job from it still counts as that
+/// session's last turn (the two are queued from different threads, so the
+/// end can be handled a moment before its last turn).
+const LATE_TURN_WINDOW: Duration = Duration::from_secs(120);
 
 /// Which model one pass asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +88,11 @@ pub struct Extractor {
     model: Arc<dyn ExtractionModel>,
     /// Each live session's latest turns, for its end-of-session pass.
     turns: Mutex<HashMap<String, Vec<TranscriptTurn>>>,
+    /// Sessions whose end was handled, and when. A turn job that arrives
+    /// shortly after its session's end (the two come from different threads)
+    /// runs as the end pass instead of waiting for an end that already
+    /// happened.
+    ended: Mutex<HashMap<String, Instant>>,
 }
 
 impl Extractor {
@@ -91,6 +101,7 @@ impl Extractor {
             memory,
             model,
             turns: Mutex::new(HashMap::new()),
+            ended: Mutex::new(HashMap::new()),
         }
     }
 
@@ -110,6 +121,20 @@ impl Extractor {
             self.turns.lock().remove(&writer.session_id);
             return 0;
         };
+        // The end was handled before this turn's job: this is the session's
+        // last word, so run it as the end pass and keep nothing for an end
+        // that already happened.
+        let late = self
+            .ended
+            .lock()
+            .remove(&writer.session_id)
+            .is_some_and(|at| at.elapsed() < LATE_TURN_WINDOW);
+        if late {
+            self.turns.lock().remove(&writer.session_id);
+            return self
+                .run(route, cwd, writer, &turns, Trigger::SessionEnd)
+                .await;
+        }
         self.turns
             .lock()
             .insert(writer.session_id.clone(), turns.clone());
@@ -126,6 +151,14 @@ impl Extractor {
         cwd: &str,
         writer: &Writer,
     ) -> usize {
+        // Marked first, so a turn job still in flight is recognised as late
+        // even when this returns early. Marks older than the window are
+        // dropped here, so a session resumed later is not mistaken for late.
+        {
+            let mut ended = self.ended.lock();
+            ended.retain(|_, at| at.elapsed() < LATE_TURN_WINDOW);
+            ended.insert(writer.session_id.clone(), Instant::now());
+        }
         let Some(turns) = self.turns.lock().remove(&writer.session_id) else {
             return 0;
         };
@@ -625,5 +658,31 @@ mod tests {
         let body = r#"{"choices":[{"message":{"role":"assistant","content":"{\"entries\":[]}"}}]}"#;
         assert_eq!(completion_text(body).as_deref(), Some(r#"{"entries":[]}"#));
         assert_eq!(completion_text("{}"), None);
+    }
+
+    /// The end of a session can be handled before its last turn's job (they
+    /// come from two threads). That turn still gets an end pass, and its
+    /// turns are not kept forever for an end that already happened.
+    #[tokio::test]
+    async fn a_turn_after_its_session_ended_runs_as_the_end_pass() {
+        let h = harness("late-turn", true);
+        assert_eq!(
+            h.extractor
+                .session_ended(&h.sharing, &h.project, &writer())
+                .await,
+            0
+        );
+        let recorded = h
+            .extractor
+            .turn_finished(&h.sharing, &h.project, &writer(), session(4))
+            .await;
+        assert_eq!(
+            recorded, 4,
+            "below the turn gate, but an end pass needs only new assistant text"
+        );
+        assert!(
+            !h.extractor.turns.lock().contains_key("sess-1"),
+            "not kept after its end"
+        );
     }
 }

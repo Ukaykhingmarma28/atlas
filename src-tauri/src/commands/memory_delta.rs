@@ -85,6 +85,35 @@ pub fn ingest(envelope: &SessionDeltaEnvelope, store: &SharedMemoryStore) {
     }
 }
 
+/// One background thread that runs capture jobs in the order they were
+/// pushed. The blocking pool gives no ordering across threads, so two plan
+/// updates sent there could append out of order and the older plan would
+/// win by key.
+pub struct IngestQueue {
+    tx: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>,
+}
+
+impl IngestQueue {
+    pub fn new(name: &str) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
+        std::thread::Builder::new()
+            .name(name.to_string())
+            .spawn(move || {
+                while let Ok(job) = rx.recv() {
+                    job();
+                }
+            })
+            .expect("spawn the memory ingest thread");
+        Self { tx }
+    }
+
+    /// Run `job` after every job pushed before it. Never blocks; a job pushed
+    /// after shutdown is dropped.
+    pub fn push(&self, job: impl FnOnce() + Send + 'static) {
+        let _ = self.tx.send(Box::new(job));
+    }
+}
+
 /// Pure classifier: map one delta to zero or more typed events. Unit-testable.
 pub fn classify(delta: &SessionDelta, session_id: &str, agent: &str) -> Vec<RawEvent> {
     match delta {
@@ -407,6 +436,22 @@ mod tests {
             "not a logged, trusted fact"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Capture runs off the emit thread but in emit order: a later plan update
+    /// can never land before an earlier one and win by key.
+    #[test]
+    fn the_ingest_queue_runs_jobs_in_push_order() {
+        let queue = IngestQueue::new("atlas-memory-ingest-test");
+        let seen = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        for i in 0..200 {
+            let seen = seen.clone();
+            queue.push(move || seen.lock().push(i));
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        queue.push(move || tx.send(()).unwrap());
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(*seen.lock(), (0..200).collect::<Vec<_>>());
     }
 
     // ── Known gaps ──────────────────────────────────────────────────────────

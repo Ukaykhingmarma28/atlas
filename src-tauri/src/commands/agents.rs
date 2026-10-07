@@ -94,7 +94,10 @@ impl TauriDeltaSink {
             // the live session goes away. Always on and agent-agnostic,
             // unlike `capture` (opt-in, git-backed).
             .with(Arc::new(TranscriptMiddleware { app: app.clone() }))
-            .with(Arc::new(MemoryIngestMiddleware { app }));
+            .with(Arc::new(MemoryIngestMiddleware {
+                app,
+                queue: super::memory_delta::IngestQueue::new("atlas-memory-ingest"),
+            }));
         Self { pipeline }
     }
 }
@@ -428,6 +431,8 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for TranscriptMiddleware {
 /// blocks.
 struct MemoryIngestMiddleware {
     app: AppHandle,
+    /// Capture jobs, in emit order (see [`super::memory_delta::IngestQueue`]).
+    queue: super::memory_delta::IngestQueue,
 }
 
 impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
@@ -446,8 +451,9 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         // Site A — Shared Cross-Agent Memory (v2) capture (write-side parity for
         // all three agents). `classify` is pure/in-memory, but `append_event`
         // does a small disk write (one SQLite transaction in the record store), so we
-        // run the whole `ingest` OFF the `emit` thread on the blocking pool — the
-        // streaming-delta hot path must never block on disk. This feeds ONLY the
+        // run the whole `ingest` OFF the `emit` thread on the ingest queue's one
+        // thread, in emit order — the streaming-delta hot path must never block
+        // on disk, and a later plan must never land before an earlier one. This feeds ONLY the
         // shared event log; the semantic vector index is now (re)built by the
         // background `MemoryIndexer` (Step 4), never synchronously on a delta.
         //
@@ -465,13 +471,21 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             SessionDelta::MessageAppended { message } => message.role == MessageRole::Assistant,
             _ => false,
         };
-        if ingest_relevant && cwd.is_some() {
-            let app = self.app.clone();
-            let envelope = envelope.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                let store = app.state::<SharedMemoryStore>();
-                super::memory_delta::ingest(&envelope, store.inner());
-            });
+        if ingest_relevant {
+            if let Some(cwd) = cwd.clone() {
+                let app = self.app.clone();
+                let envelope = envelope.clone();
+                self.queue.push(move || {
+                    // The switch is read when the job runs: a session registered
+                    // while sharing was on stops capturing as soon as it is
+                    // switched off.
+                    if !app.state::<MemorySharingState>().is_enabled(&cwd) {
+                        return;
+                    }
+                    let store = app.state::<SharedMemoryStore>();
+                    super::memory_delta::ingest(&envelope, store.inner());
+                });
+            }
         }
 
         if is_turn_finished {
