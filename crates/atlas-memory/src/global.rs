@@ -137,11 +137,34 @@ struct Promoted {
     content: String,
 }
 
+/// One load-modify-save of the ledger at a time (two projects opening at
+/// once used to race and drop a repository root).
+static LEDGER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The ledger, or an empty one when there is none. An unreadable ledger is
+/// kept as `global-candidates.json.corrupt-<ms>` before the empty one is
+/// returned, so the next save does not overwrite the evidence.
 fn load_ledger(dir: &Path) -> Ledger {
-    std::fs::read(ledger_path(dir))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    let path = ledger_path(dir);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Ledger::default();
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(ledger) => ledger,
+        Err(e) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
+            let quarantine = dir.join(format!("global-candidates.json.corrupt-{now}"));
+            tracing::warn!(
+                target: "atlas_memory",
+                "global ledger unreadable ({e}); kept as {}",
+                quarantine.display()
+            );
+            let _ = std::fs::rename(&path, quarantine);
+            Ledger::default()
+        }
+    }
 }
 
 fn save_ledger(dir: &Path, ledger: &Ledger) -> Result<()> {
@@ -193,6 +216,9 @@ pub fn reconcile_roots_in(
     if !ledger_path(global_dir).exists() {
         return Ok(());
     }
+    let _guard = LEDGER_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut ledger = load_ledger(global_dir);
     let mut demoted: BTreeSet<String> = BTreeSet::new();
     let mut dirty = false;
@@ -247,6 +273,9 @@ pub fn record_candidates_in(
     items: &[Candidate],
 ) -> Result<usize> {
     std::fs::create_dir_all(global_dir).context("create global memory dir")?;
+    let _guard = LEDGER_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut ledger = load_ledger(global_dir);
     let listed: BTreeSet<String> = listed_contents(global_dir)
         .iter()
@@ -756,5 +785,27 @@ mod tests {
         assert!(!md(&dir).contains("Tabs over spaces"));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_corrupt_ledger_is_quarantined_not_overwritten() {
+        let dir = tmp_dir("ledger-corrupt");
+        std::fs::write(ledger_path(&dir), b"{ not json").unwrap();
+        let item = Candidate {
+            content_hash: "h".into(),
+            content: "Tabs".into(),
+            confidence: 0.9,
+        };
+        record_candidates_in(&dir, "/a", &[item]).unwrap();
+        let kept = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("global-candidates.json.corrupt-")
+            });
+        assert!(kept, "the corrupt ledger is kept for inspection");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

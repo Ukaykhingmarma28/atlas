@@ -491,6 +491,26 @@ enum Guard {
     Expect(Option<i64>),
 }
 
+/// A merge of the same words by the entry's own last writer (same source,
+/// same session) within this long is a retry, not a restatement.
+const RETRY_WINDOW_MS: i64 = 5 * 60 * 1000;
+
+/// Whether writing `e` over entry `id` (same content) is a retry of the
+/// entry's last write: same source and session, within [`RETRY_WINDOW_MS`],
+/// and the entry is active. A candidate's restatement is never a retry: it
+/// is what confirms the candidate.
+fn is_retry(tx: &Transaction<'_>, e: &NewEntry, id: i64) -> Result<bool> {
+    let (source, session, updated_at, state): (String, String, i64, String) = tx.query_row(
+        "SELECT source, session, updated_at, state FROM entries WHERE id = ?1",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+    Ok(source == e.source
+        && session == e.session_id
+        && state == State::Active.as_str()
+        && (e.at - updated_at).abs() < RETRY_WINDOW_MS)
+}
+
 /// Refuse a keyed replace of entry `id` that `guard` does not allow.
 fn check_guard(tx: &Transaction<'_>, e: &NewEntry, id: i64, guard: Guard) -> Result<()> {
     let Guard::Expect(expected) = guard else {
@@ -591,7 +611,58 @@ impl std::fmt::Debug for RecordStore {
 impl RecordStore {
     /// Open (creating if needed) `<root>/.atlas/memory/memory.sqlite`. Prefer
     /// [`open_scope`], which keeps one handle per root per process.
+    ///
+    /// A database that fails to open, migrate or pass `PRAGMA quick_check` is
+    /// never written: it is renamed to `memory.sqlite.corrupt-<ms>` (with its
+    /// `-wal`/`-shm`), the daily snapshot (or an empty store) takes its place,
+    /// and a `restored.json` marker tells the app once
+    /// ([`restored_marker`](Self::restored_marker)). Quarantined files are kept.
     pub fn open(root: &Path) -> Result<Self> {
+        match Self::open_checked(root) {
+            Ok(store) => Ok(store),
+            Err(e) => {
+                let dir = memory_dir(root);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as i64);
+                tracing::warn!(
+                    target: "atlas::memory",
+                    "memory database at {} is damaged ({e:#}); quarantining",
+                    dir.display()
+                );
+                for suffix in ["", "-wal", "-shm"] {
+                    let from = dir.join(format!("{DB_FILE}{suffix}"));
+                    if from.exists() {
+                        std::fs::rename(
+                            &from,
+                            dir.join(format!("{DB_FILE}{suffix}.corrupt-{now}")),
+                        )?;
+                    }
+                }
+                let snapshot = dir.join(crate::health::SNAPSHOT_FILE);
+                let from_snapshot =
+                    snapshot.exists() && std::fs::copy(&snapshot, dir.join(DB_FILE)).is_ok();
+                std::fs::write(
+                    dir.join("restored.json"),
+                    serde_json::json!({ "at": now, "from_snapshot": from_snapshot }).to_string(),
+                )?;
+                Self::open_checked(root)
+            }
+        }
+    }
+
+    /// `(when, whether from a snapshot)` if an open restored a damaged
+    /// database since the last call; reading it clears it, so the app
+    /// reports it once.
+    pub fn restored_marker(root: &Path) -> Option<(i64, bool)> {
+        let path = memory_dir(root).join("restored.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
+        let _ = std::fs::remove_file(&path);
+        Some((v["at"].as_i64()?, v["from_snapshot"].as_bool()?))
+    }
+
+    fn open_checked(root: &Path) -> Result<Self> {
         let dir = memory_dir(root);
         std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
         let path = dir.join(DB_FILE);
@@ -600,6 +671,10 @@ impl RecordStore {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         migrate_schema(&conn)?;
+        let quick: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+        if quick != "ok" {
+            anyhow::bail!("quick_check: {quick}");
+        }
         Ok(Self {
             root: root.to_path_buf(),
             conn: Mutex::new(conn),
@@ -622,7 +697,7 @@ impl RecordStore {
         self.embedder().is_some()
     }
 
-    fn embedder(&self) -> Option<Arc<dyn Embedder>> {
+    pub(crate) fn embedder(&self) -> Option<Arc<dyn Embedder>> {
         self.embedder
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -647,7 +722,7 @@ impl RecordStore {
         &self.root
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -925,6 +1000,21 @@ impl RecordStore {
             Some(found) => {
                 if !e.key.is_empty() && found.content_hash != content_hash(&e.content) {
                     check_guard(&tx, &e, found.id, guard)?;
+                }
+                if found.content_hash == content_hash(&e.content) && is_retry(&tx, &e, found.id)? {
+                    // The same writer saying the same thing again moments
+                    // later (a retried tool call) is not a restatement: no
+                    // revision, no use bump.
+                    let entry = tx.query_row(
+                        "SELECT * FROM entries WHERE id = ?1",
+                        [found.id],
+                        entry_from_row,
+                    )?;
+                    tx.commit()?;
+                    return Ok(Remembered {
+                        entry,
+                        outcome: WriteOutcome::Merged,
+                    });
                 }
                 write_identity(&tx, &e, found)?
             }
@@ -4097,6 +4187,40 @@ pub(crate) mod tests {
         );
         assert!(hits[0].why.iter().any(|(leg, _)| *leg == "dense"));
         assert!(hits[0].why.iter().any(|(leg, _)| *leg == "bm25"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_retried_write_is_idempotent() {
+        let root = temp_root("retry");
+        let store = open_scope(&root).unwrap();
+        let first = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "CI runs on GitHub Actions", 1_000),
+                1_000,
+            )
+            .unwrap();
+        for i in 1..10 {
+            let again = store
+                .remember(
+                    tool_write(EntryKind::Fact, "", "CI runs on GitHub Actions", 1_000 + i),
+                    1_000 + i,
+                )
+                .unwrap();
+            assert_eq!(again.outcome, WriteOutcome::Merged);
+        }
+        let e = store.get(first.entry.id, 2_000).unwrap().unwrap();
+        assert_eq!(e.uses, 0, "a retry is not a restatement");
+        assert_eq!(store.history(e.id).unwrap().len(), 1, "one revision");
+        // The same words from another writer still count.
+        let other = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "CI runs on GitHub Actions", 1_100)
+        };
+        store.remember(other, 1_100).unwrap();
+        assert_eq!(store.get(e.id, 2_001).unwrap().unwrap().uses, 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
