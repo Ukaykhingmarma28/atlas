@@ -35,7 +35,7 @@ pub(super) enum Milestone {
 
 /// Every probe tagged at or below this must pass. Raised by each
 /// milestone's gate task.
-pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M1;
+pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M2;
 
 /// Words → a 64-d count vector: cosine ≈ shared vocabulary. Deterministic.
 struct BagOfWords;
