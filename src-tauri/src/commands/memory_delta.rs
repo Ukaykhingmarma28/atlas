@@ -99,8 +99,12 @@ impl IngestQueue {
         std::thread::Builder::new()
             .name(name.to_string())
             .spawn(move || {
+                // One panicking job must not end the thread: every later
+                // capture would be dropped for the app's lifetime.
                 while let Ok(job) = rx.recv() {
-                    job();
+                    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+                        tracing::warn!(target: "atlas::shared_memory", "capture job panicked");
+                    }
                 }
             })
             .expect("spawn the memory ingest thread");
@@ -192,24 +196,23 @@ fn scan_assistant_text(content: &str, session_id: &str, agent: &str) -> Vec<RawE
     let mut out = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim().trim_start_matches(['-', '*', '#', '>', ' ']);
-        let lower = trimmed.to_lowercase();
-        let (kind, marker) = if let Some(m) = DECISION_MARKERS.iter().find(|m| lower.contains(**m))
-        {
-            (EventKind::Decision, *m)
-        } else if let Some(m) = FAILURE_MARKERS.iter().find(|m| lower.contains(**m)) {
-            (EventKind::Failure, *m)
-        } else if let Some(m) = ARCH_MARKERS.iter().find(|m| lower.contains(**m)) {
-            (EventKind::Architecture, *m)
-        } else if let Some(m) = FACT_MARKERS.iter().find(|m| lower.contains(**m)) {
-            (EventKind::Fact, *m)
+        // Markers are ASCII, so they are found in `trimmed` itself: an offset
+        // taken from a lowercased copy can land inside a character here
+        // ('İ' lowercases one byte longer).
+        let first = |markers: &[&str]| markers.iter().find_map(|m| find_marker(trimmed, m));
+        let (kind, end) = if let Some(end) = first(&DECISION_MARKERS[..]) {
+            (EventKind::Decision, end)
+        } else if let Some(end) = first(&FAILURE_MARKERS[..]) {
+            (EventKind::Failure, end)
+        } else if let Some(end) = first(&ARCH_MARKERS[..]) {
+            (EventKind::Architecture, end)
+        } else if let Some(end) = first(&FACT_MARKERS[..]) {
+            (EventKind::Fact, end)
         } else {
             continue;
         };
         // Take the clause after the marker as the captured text.
-        let idx = lower.find(marker).unwrap_or(0) + marker.len();
-        let text = trimmed[idx.min(trimmed.len())..]
-            .trim_start_matches([':', ' ', '-'])
-            .trim();
+        let text = trimmed[end..].trim_start_matches([':', ' ', '-']).trim();
         if text.len() < 4 {
             continue;
         }
@@ -225,6 +228,18 @@ fn scan_assistant_text(content: &str, session_id: &str, agent: &str) -> Vec<RawE
         }
     }
     out
+}
+
+/// The byte offset just past the first ASCII-case-insensitive match of the
+/// ASCII `marker` in `text`; always a char boundary.
+fn find_marker(text: &str, marker: &str) -> Option<usize> {
+    text.char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| {
+            text.get(i..i + marker.len())
+                .is_some_and(|s| s.eq_ignore_ascii_case(marker))
+        })
+        .map(|i| i + marker.len())
 }
 
 fn cap(s: &str) -> String {
@@ -354,6 +369,17 @@ mod tests {
         assert_eq!(evs[0].kind, EventKind::Fact);
     }
 
+    /// 'İ' lowercases one byte longer, so an offset found in a lowercased
+    /// copy fell inside 'é' here and panicked the ingest thread.
+    #[test]
+    fn a_marker_after_a_case_changing_letter_is_cut_at_a_char_boundary() {
+        let evs = scan_assistant_text("İ note:é is the default", "s1", "codex");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].payload["text"], "é is the default");
+        let evs = scan_assistant_text("Going With EdDSA", "s1", "codex");
+        assert_eq!(evs[0].payload["text"], "EdDSA");
+    }
+
     #[test]
     fn prose_without_marker_is_ignored() {
         assert!(scan_assistant_text("Here is some normal explanation text.", "s1", "x").is_empty());
@@ -452,6 +478,17 @@ mod tests {
         queue.push(move || tx.send(()).unwrap());
         rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         assert_eq!(*seen.lock(), (0..200).collect::<Vec<_>>());
+    }
+
+    /// A job that panics is contained: the thread keeps running the rest.
+    #[test]
+    fn a_panicking_job_does_not_stop_the_ingest_queue() {
+        let queue = IngestQueue::new("atlas-memory-ingest-panic-test");
+        queue.push(|| panic!("a broken capture job"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        queue.push(move || tx.send(()).unwrap());
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the job after the panic ran");
     }
 
     // ── Known gaps ──────────────────────────────────────────────────────────

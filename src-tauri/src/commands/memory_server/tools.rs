@@ -729,8 +729,8 @@ impl MemoryTools {
                     Ok(a) => a,
                     Err(refused) => return refused,
                 };
-                let (reader, cwd) = (self.sources.capture.clone(), grant.cwd.clone());
-                match run_blocking(move || why_blocking(&reader, &cwd, args)).await {
+                let (sources, cwd) = (self.sources.clone(), grant.cwd.clone());
+                match run_blocking(move || why_blocking(&sources, &cwd, args)).await {
                     Ok(Ok(value)) => ok_json(value),
                     Ok(Err(e)) => tool_error(e),
                     Err(e) => tool_error(format!("memory unavailable: {e}")),
@@ -1082,9 +1082,10 @@ fn record_call(
 const WHY_MEMORIES: usize = 10;
 
 /// `memory_why`: the recorded sessions behind a path or a commit, their
-/// handoff notes, and the memories they wrote or that cite the path.
-/// Blocking. Read-only: capture is opened for reading only, never created.
-fn why_blocking(reader: &CaptureReader, cwd: &str, args: WhyArgs) -> Result<Value, String> {
+/// handoff notes, and the memories they wrote or that cite the path, each
+/// with what its evidence says now. Blocking. Read-only: capture is opened
+/// for reading only, never created.
+fn why_blocking(sources: &Sources, cwd: &str, args: WhyArgs) -> Result<Value, String> {
     use crate::commands::memory_capture::{why_sessions, WhyTarget};
     let store = shared_memory::store_for(cwd)?;
     let scope_root = store.root().to_path_buf();
@@ -1106,7 +1107,7 @@ fn why_blocking(reader: &CaptureReader, cwd: &str, args: WhyArgs) -> Result<Valu
         }
         _ => return Err("give exactly one of path or commit".into()),
     };
-    let stores = reader.stores(cwd);
+    let stores = sources.capture.stores(cwd);
     let sessions = why_sessions(&stores, &scope_root, &target);
     let ids: Vec<String> = sessions.iter().map(|s| s.session.clone()).collect();
     let e = |e: anyhow::Error| format!("{e:#}");
@@ -1120,6 +1121,8 @@ fn why_blocking(reader: &CaptureReader, cwd: &str, args: WhyArgs) -> Result<Valu
     }
     entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
     entries.truncate(WHY_MEMORIES);
+    let checked = check_entries(sources, cwd, &entries);
+    let writers = sources_of(cwd, &entries);
     let five = |v: &[String]| v.iter().take(5).cloned().collect::<Vec<_>>();
     let sessions_json: Vec<Value> = sessions
         .iter()
@@ -1150,7 +1153,10 @@ fn why_blocking(reader: &CaptureReader, cwd: &str, args: WhyArgs) -> Result<Valu
     let mut value = json!({
         "target": target_json,
         "sessions": sessions_json,
-        "memories": entries.iter().map(briefing::entry_json).collect::<Vec<_>>(),
+        "memories": entries
+            .iter()
+            .map(|e| entry_with_sources(e, &writers, 0, &checked))
+            .collect::<Vec<_>>(),
     });
     if sessions.is_empty() {
         value["note"] = json!(match (stores.is_empty(), &target) {
@@ -1166,18 +1172,15 @@ fn why_blocking(reader: &CaptureReader, cwd: &str, args: WhyArgs) -> Result<Valu
     Ok(value)
 }
 
-/// `rel` (relative to the launch directory `cwd`) as a scope-root relative,
-/// `/`-separated path. Refuses absolute paths and `..`.
+/// `rel` (relative to the launch directory `cwd`) as a repository relative,
+/// `/`-separated path: relative to the deepest worktree holding `cwd`, so a
+/// worktree nested in the main checkout gives the same path as the checkout.
+/// Refuses absolute paths and `..`.
 fn scope_relative(scope_root: &std::path::Path, cwd: &str, rel: &str) -> Result<String, String> {
     let rel = atlas_memory::citation::safe_rel(rel)
         .ok_or_else(|| format!("`{rel}` is not a path inside the repository"))?;
-    let base = dunce::canonicalize(cwd).unwrap_or_else(|_| std::path::PathBuf::from(cwd));
-    let root = dunce::canonicalize(scope_root).unwrap_or_else(|_| scope_root.to_path_buf());
-    // The scope root, then each worktree (a linked worktree is not under it).
-    let sub = std::iter::once(root)
-        .chain(atlas_checkpoint::git::worktree_paths(&base))
-        .find_map(|r| base.strip_prefix(&r).ok().map(std::path::Path::to_path_buf))
-        .unwrap_or_default();
+    let worktrees = memory_capture::worktree_roots(scope_root);
+    let sub = memory_capture::repo_dir(&worktrees, std::path::Path::new(cwd)).unwrap_or_default();
     let parts: Vec<String> = sub
         .join(rel)
         .components()

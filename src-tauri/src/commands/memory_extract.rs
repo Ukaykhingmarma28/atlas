@@ -299,6 +299,13 @@ fn is_external(call: &atlas_agent_wire::ToolCall) -> bool {
     if call.kind.as_deref() == Some("fetch") {
         return true;
     }
+    // The native agent's MCP calls carry kind `other`. A shell command, read
+    // or edit whose title starts with a dotted word (`python3.12 -m pytest`,
+    // `Cargo.toml`) is not one.
+    let dotted = !matches!(
+        call.kind.as_deref(),
+        Some("execute" | "read" | "edit" | "search" | "delete" | "move")
+    );
     let mut names = std::iter::once(call.tool_name.as_str()).chain(call.title.as_deref());
     names.any(|name| {
         let lower = name.to_ascii_lowercase();
@@ -309,18 +316,19 @@ fn is_external(call: &atlas_agent_wire::ToolCall) -> bool {
         ["web_search", "websearch", "web_fetch", "webfetch"]
             .iter()
             .any(|w| first.contains(w))
-            || mcp_server(first).is_some_and(|server| !OWN_SERVERS.contains(&server))
+            || mcp_server(first, dotted).is_some_and(|server| !OWN_SERVERS.contains(&server))
     })
 }
 
 /// The server half of an MCP call's name (see [`is_external`]); `None` for
-/// anything else, and for a token with a `/` in it, so a file path is never
-/// read as a call.
-fn mcp_server(token: &str) -> Option<&str> {
+/// anything else. The `<server>.<tool>` form is read only when `dotted`, and
+/// never from a token with a `/` in it or an all-digit tool half, so a file
+/// path or a version (`python3.12`) is never read as a call.
+fn mcp_server(token: &str, dotted: bool) -> Option<&str> {
     if let Some(rest) = token.strip_prefix("mcp__") {
         return rest.split_once("__").map(|(server, _)| server);
     }
-    if token.contains('/') {
+    if !dotted || token.contains('/') {
         return None;
     }
     let ident = |s: &str| {
@@ -329,7 +337,7 @@ fn mcp_server(token: &str) -> Option<&str> {
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     };
     let (server, tool) = token.split_once('.')?;
-    (ident(server) && ident(tool)).then_some(server)
+    (ident(server) && ident(tool) && !tool.bytes().all(|b| b.is_ascii_digit())).then_some(server)
 }
 
 // ── The real model ───────────────────────────────────────────────────────────
@@ -805,6 +813,23 @@ mod tests {
             "Read",
             Some("Read /repo/README.md"),
             Some("read")
+        )));
+        // A dotted first word of a command or a bare file name is no MCP call.
+        assert!(!is_external(&call(
+            "python3.12 -m pytest",
+            Some("python3.12 -m pytest"),
+            Some("execute")
+        )));
+        assert!(!is_external(&call("python3.12 -m pytest", None, None)));
+        assert!(!is_external(&call(
+            "Cargo.toml",
+            Some("Cargo.toml"),
+            Some("read")
+        )));
+        assert!(is_external(&call(
+            "github.search_issues",
+            None,
+            Some("other")
         )));
     }
 }

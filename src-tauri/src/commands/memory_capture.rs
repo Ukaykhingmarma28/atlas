@@ -218,6 +218,7 @@ pub fn work_evidence(
     if checkpoints.is_empty() {
         return None;
     }
+    let (scope, here) = (canonical(scope_root), canonical(found.root));
     let kept: Vec<Kept> = touches
         .iter()
         .filter(|t| {
@@ -226,7 +227,7 @@ pub fn work_evidence(
                 .any(|c| c.files_touched.contains(&t.path))
         })
         .take(10)
-        .map(|t| kept(scope_root, found.root, t, cache))
+        .map(|t| kept(&scope, &here, t, cache))
         .collect();
     let mut validity = work_validity(&kept);
     // A flagged capture may have lost touches: it cannot prove the work gone.
@@ -247,29 +248,56 @@ pub fn work_evidence(
 }
 
 /// Whether one landed file still holds the session's work: the agent's line
-/// fingerprint against the file as it is now, in the scope root first and
-/// then where the session ran. A deletion is kept while the file stays gone.
-fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) -> Kept {
-    let repo_rel = match root.strip_prefix(scope_root) {
+/// fingerprint against each copy of the file as it is now, in the scope root
+/// and where the session ran (a linked worktree holds its branch's work until
+/// it is merged). Kept when any copy holds it, gone only when every copy that
+/// exists has lost it. A deletion is kept while a copy stays gone. Both roots
+/// come canonical, so a subdirectory launch is never read as a worktree.
+fn kept(scope: &Path, here: &Path, touch: &FileTouch, cache: &KeptCache) -> Kept {
+    let repo_rel = match here.strip_prefix(scope) {
         Ok(sub) => sub.join(&touch.path),
         // A linked worktree: the same repository path.
         Err(_) => PathBuf::from(&touch.path),
     };
-    let found = [scope_root.join(&repo_rel), root.join(&touch.path)]
-        .into_iter()
-        .find(|p| p.is_file());
-    let path = match (found, touch.deleted) {
-        (None, true) => return Kept::Yes,
-        (Some(_), true) => return Kept::No,
-        (None, false) if root.exists() => return Kept::No,
+    let main = scope.join(&repo_rel);
+    let local = here.join(&touch.path);
+    // A removed worktree says nothing about its own copy.
+    let live = here.exists();
+    if touch.deleted {
+        return if !main.is_file() || (live && !local.is_file()) {
+            Kept::Yes
+        } else {
+            Kept::No
+        };
+    }
+    let mut copies = vec![main];
+    if local != copies[0] {
+        copies.push(local);
+    }
+    copies.retain(|p| p.is_file());
+    if copies.is_empty() {
         // Its worktree is gone.
-        (None, false) => return Kept::Unknown,
-        (Some(path), false) => path,
-    };
+        return if live { Kept::No } else { Kept::Unknown };
+    }
     let Some(agent) = touch.sketch_after.as_deref() else {
         return Kept::Unknown;
     };
-    let Ok(meta) = std::fs::metadata(&path) else {
+    let answers: Vec<Kept> = copies
+        .iter()
+        .map(|path| kept_in(path, agent, &touch.id, cache))
+        .collect();
+    if answers.contains(&Kept::Yes) {
+        Kept::Yes
+    } else if answers.iter().all(|k| *k == Kept::No) {
+        Kept::No
+    } else {
+        Kept::Unknown
+    }
+}
+
+/// Whether the file at `path` holds the agent's fingerprint `agent`.
+fn kept_in(path: &Path, agent: &str, touch_id: &str, cache: &KeptCache) -> Kept {
+    let Ok(meta) = std::fs::metadata(path) else {
         return Kept::Unknown;
     };
     if meta.len() > MAX_FILE_BYTES {
@@ -280,7 +308,7 @@ fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) ->
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos() as i128);
-    let key = (path.clone(), meta.len(), mtime, touch.id.clone());
+    let key = (path.to_path_buf(), meta.len(), mtime, touch_id.to_string());
     if let Some(hit) = cache
         .0
         .lock()
@@ -289,7 +317,7 @@ fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) ->
     {
         return *hit;
     }
-    let answer = match std::fs::read(&path)
+    let answer = match std::fs::read(path)
         .ok()
         .and_then(|b| atlas_checkpoint::sketch::sketch(&b))
     {
@@ -410,12 +438,16 @@ pub fn why_sessions(
     scope_root: &Path,
     target: &WhyTarget,
 ) -> Vec<WhySession> {
+    let worktrees = match target {
+        WhyTarget::Path(_) => worktree_roots(scope_root),
+        WhyTarget::Commit(_) => Vec::new(),
+    };
     let mut hits: Vec<(chrono::DateTime<chrono::Utc>, String, usize)> = Vec::new();
     for (i, (root, store)) in stores.0.iter().enumerate() {
         match target {
             WhyTarget::Path(rel) => {
                 // A store keys paths relative to its own launch directory.
-                let Some(local) = local_path(scope_root, root, rel) else {
+                let Some(local) = local_path(&worktrees, root, rel) else {
                     continue;
                 };
                 for (session, last) in store
@@ -483,17 +515,44 @@ pub fn why_sessions(
     out
 }
 
-/// `rel` (scope-root relative) as the store at `root` spells it: relative
-/// to that launch directory. `None` when the path lies outside it. A linked
-/// worktree holds the same repository paths.
-fn local_path(scope_root: &Path, root: &Path, rel: &str) -> Option<String> {
-    match root.strip_prefix(scope_root) {
-        Ok(sub) if !sub.as_os_str().is_empty() => {
+/// `rel` (repository relative) as the store at `root` spells it: relative
+/// to that launch directory. `None` when the path lies outside it. Every
+/// worktree, nested in the main checkout or not, holds the same repository
+/// paths.
+fn local_path(worktrees: &[PathBuf], root: &Path, rel: &str) -> Option<String> {
+    match repo_dir(worktrees, root) {
+        Some(sub) if !sub.as_os_str().is_empty() => {
             let prefix = format!("{}/", sub.to_string_lossy().replace('\\', "/"));
             rel.strip_prefix(&prefix).map(str::to_string)
         }
         _ => Some(rel.to_string()),
     }
+}
+
+/// The scope root and every worktree of its repository, canonical.
+pub(crate) fn worktree_roots(scope_root: &Path) -> Vec<PathBuf> {
+    std::iter::once(scope_root.to_path_buf())
+        .chain(atlas_checkpoint::git::worktree_paths(scope_root))
+        .map(|w| canonical(&w))
+        .collect()
+}
+
+/// Where the launch directory `dir` sits in the repository: its path under
+/// the deepest of `worktrees` that holds it, so a worktree nested inside
+/// the main checkout wins over the checkout. Compared canonically, so a
+/// verbatim (`\\?\`) or symlinked spelling still matches. Empty for a
+/// worktree itself; `None` when no worktree holds it.
+pub(crate) fn repo_dir(worktrees: &[PathBuf], dir: &Path) -> Option<PathBuf> {
+    let dir = canonical(dir);
+    worktrees
+        .iter()
+        .filter_map(|w| dir.strip_prefix(w).ok())
+        .min_by_key(|sub| sub.components().count())
+        .map(Path::to_path_buf)
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// The stretches of time (ms) that only rewound turns of a session cover:
@@ -899,8 +958,14 @@ mod tests {
             )
             .unwrap()
             .entry;
+        // Every stamp is floored to the millisecond: keep the write, the
+        // turn's close and the next turn's start in distinct ones, or the
+        // live turn's span can swallow the write.
+        let tick = || std::thread::sleep(std::time::Duration::from_millis(3));
+        tick();
         rec.close_turn();
         rec.rewind(1);
+        tick();
         rec.next_turn("sign with EdDSA");
         let kept = memory
             .remember(
@@ -924,6 +989,105 @@ mod tests {
         assert_eq!(state(undone.id), State::Candidate);
         assert_eq!(state(kept.id), State::Active);
         let _ = std::fs::remove_dir_all(&p);
+    }
+
+    fn scratch_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("atlas-{label}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dunce::canonicalize(&dir).unwrap()
+    }
+
+    fn touch_of(path: &str, agent_wrote: &str) -> FileTouch {
+        FileTouch {
+            id: "t1".into(),
+            tool_call_id: "c1".into(),
+            session_id: "s1".into(),
+            turn_seq: 1,
+            seq: 1,
+            path: path.into(),
+            sha256_after: None,
+            existed_before: true,
+            deleted: false,
+            out_of_repo: false,
+            created_at: chrono::Utc::now(),
+            sketch_after: atlas_checkpoint::sketch::sketch(agent_wrote.as_bytes()),
+        }
+    }
+
+    /// Work committed on a linked worktree's branch is kept while the main
+    /// checkout still holds the base branch's file, and still once merged
+    /// there after the worktree is gone.
+    #[test]
+    fn work_on_a_linked_worktree_branch_is_judged_in_that_worktree() {
+        let main = scratch_dir("kept-main");
+        let feat = scratch_dir("kept-feat");
+        let agent = "pub fn sign() -> Alg {\n    Alg::EdDSA\n}\n";
+        std::fs::create_dir_all(main.join("src")).unwrap();
+        std::fs::create_dir_all(feat.join("src")).unwrap();
+        std::fs::write(
+            main.join("src/auth.rs"),
+            "pub fn sign() -> &str {\n    \"HS256\"\n}\n",
+        )
+        .unwrap();
+        std::fs::write(feat.join("src/auth.rs"), agent).unwrap();
+        let touch = touch_of("src/auth.rs", agent);
+        let cache = KeptCache::default();
+        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::Yes);
+
+        std::fs::remove_dir_all(&feat).unwrap();
+        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::No, "never merged");
+        std::fs::write(main.join("src/auth.rs"), agent).unwrap();
+        assert_eq!(kept(&main, &feat, &touch, &cache), Kept::Yes, "merged");
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    /// A store's paths are relative to its launch directory: a subdirectory
+    /// launch spelled through a symlink still strips its prefix, and a
+    /// worktree nested in the main checkout holds plain repository paths.
+    #[test]
+    fn a_repository_path_is_spelled_as_each_launch_directory_keys_it() {
+        let repo = scratch_dir("local-path");
+        let nested = repo.join(".claude/worktrees/x");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(repo.join("crates/auth")).unwrap();
+        let worktrees = vec![repo.clone(), nested.clone()];
+        assert_eq!(
+            local_path(
+                &worktrees,
+                &repo.join("crates/auth"),
+                "crates/auth/src/lib.rs"
+            )
+            .as_deref(),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            local_path(&worktrees, &repo.join("crates/auth"), "src/lib.rs"),
+            None
+        );
+        assert_eq!(
+            local_path(&worktrees, &nested, "src/a.rs").as_deref(),
+            Some("src/a.rs")
+        );
+        assert_eq!(
+            repo_dir(&worktrees, &nested.join("sub")),
+            Some(PathBuf::from("sub"))
+        );
+        #[cfg(unix)]
+        {
+            let link = scratch_dir("local-path-link").join("repo");
+            std::os::unix::fs::symlink(&repo, &link).unwrap();
+            assert_eq!(
+                local_path(
+                    &worktrees,
+                    &link.join("crates/auth"),
+                    "crates/auth/src/lib.rs"
+                )
+                .as_deref(),
+                Some("src/lib.rs")
+            );
+            let _ = std::fs::remove_dir_all(link.parent().unwrap());
+        }
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]

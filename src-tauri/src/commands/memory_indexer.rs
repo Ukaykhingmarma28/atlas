@@ -564,9 +564,11 @@ async fn handle(app: &AppHandle, registry: &MemoryRegistry, job: Job) {
             session,
             retried,
         } => {
-            let checked = rewound_check(app, vec![(cwd.clone(), session.clone())]).await;
-            // The recorder had not marked the turn yet: look once more.
-            if checked == 0 && !retried {
+            rewound_check(app, vec![(cwd.clone(), session.clone())]).await;
+            // The recorder marks the turn on its own worker and may not have
+            // yet, even when an earlier turn of the session was rewound
+            // already: look once more. Demoting is idempotent.
+            if !retried {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -593,18 +595,16 @@ fn capture_reader(app: &AppHandle) -> super::memory_capture::CaptureReader {
     }
 }
 
-/// Run the rewound-turn check for each `(cwd, session)`. Returns how many
-/// sessions the recorder had a rewound turn for.
-async fn rewound_check(app: &AppHandle, sessions: Vec<(String, String)>) -> usize {
+/// Run the rewound-turn check for each `(cwd, session)`.
+async fn rewound_check(app: &AppHandle, sessions: Vec<(String, String)>) {
     let Some(memory) = app
         .try_state::<super::shared_memory::SharedMemoryStore>()
         .map(|m| m.inner().clone())
     else {
-        return 0;
+        return;
     };
     let reader = capture_reader(app);
-    tokio::task::spawn_blocking(move || {
-        let mut seen = 0;
+    let _ = tokio::task::spawn_blocking(move || {
         for (cwd, session) in sessions {
             let now = memory.now();
             let Some(windows) =
@@ -615,15 +615,12 @@ async fn rewound_check(app: &AppHandle, sessions: Vec<(String, String)>) -> usiz
             if windows.is_empty() {
                 continue;
             }
-            seen += 1;
             if let Err(e) = memory.demote_rewound(&cwd, &session, &windows) {
                 tracing::warn!(target: "atlas::memory_indexer", "rewound check failed: {e}");
             }
         }
-        seen
     })
-    .await
-    .unwrap_or(0)
+    .await;
 }
 
 /// One reconciler pass for `cwd`: the record (check → repair → snapshot) and
@@ -632,6 +629,9 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
     let Some(engine) = registry.open_engine(cwd) else {
         return Ok(());
     };
+    // The vector backfill (VectorsMissing) runs only with the model loaded,
+    // and a model switch has just dropped it. A no-op when not downloaded.
+    let _ = registry.provider(app).await;
     let now = chrono::Utc::now().timestamp_millis();
     let owned = cwd.to_string();
     let code = app
