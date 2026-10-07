@@ -368,6 +368,63 @@ pub fn session_facts(found: &Recorded<'_>) -> atlas_memory::handoff::SessionFact
     }
 }
 
+/// The stretches of time (ms) that only rewound turns of a session cover:
+/// each rewound turn's span with every other turn's span cut out, so a
+/// write that also falls inside a live turn is never demoted. An open span
+/// runs to `now_ms`. Sorted.
+pub fn rewound_windows(spans: &[TurnSpan], now_ms: i64) -> Vec<(i64, i64)> {
+    let span = |t: &TurnSpan| {
+        (
+            t.started_at.timestamp_millis(),
+            t.ended_at.map_or(now_ms, |e| e.timestamp_millis()),
+        )
+    };
+    let live: Vec<(i64, i64)> = spans
+        .iter()
+        .filter(|t| t.state != TurnState::Rewound)
+        .map(span)
+        .collect();
+    let mut out = Vec::new();
+    for rewound in spans.iter().filter(|t| t.state == TurnState::Rewound) {
+        let mut pieces = vec![span(rewound)];
+        for (a, b) in &live {
+            pieces = pieces
+                .into_iter()
+                .flat_map(|(x, y)| {
+                    if *b < x || *a > y {
+                        vec![(x, y)]
+                    } else {
+                        [(x, a - 1), (b + 1, y)]
+                            .into_iter()
+                            .filter(|(p, q)| p <= q)
+                            .collect()
+                    }
+                })
+                .collect();
+        }
+        out.extend(pieces);
+    }
+    out.sort_unstable();
+    out
+}
+
+/// `session`'s rewound windows from its recorded turns; `None` when capture
+/// never saw the session.
+pub fn rewound_windows_for(
+    reader: &CaptureReader,
+    cwd: &str,
+    session: &str,
+    now_ms: i64,
+) -> Option<Vec<(i64, i64)>> {
+    let stores = reader.stores(cwd);
+    let found = stores.find(session)?;
+    let spans = found
+        .store
+        .turn_spans(&found.session.id)
+        .unwrap_or_default();
+    Some(rewound_windows(&spans, now_ms))
+}
+
 /// Text from the recorder, cleaned and redacted again: capture redacted it
 /// on write, and memory serves no text its own redactor hasn't seen.
 fn safe(s: &str) -> String {
@@ -500,6 +557,13 @@ pub(crate) mod test_support {
                     },
                 )
                 .expect("call recorded");
+        }
+
+        /// The agent took back the last `turns` turns (a retry).
+        pub(crate) fn rewind(&mut self, turns: i64) {
+            Capture::new(&mut self.store, ProjectMode::Local)
+                .rewind_turns(&self.row, turns)
+                .expect("turns rewound");
         }
 
         /// The next prompt of the same session: a new turn, left open.
@@ -660,6 +724,78 @@ mod tests {
             matches!(turn_at(&spans, 9_000), TurnAt::One(t) if t.turn_seq == 3),
             "an open turn runs on"
         );
+    }
+
+    #[test]
+    fn rewound_windows_cut_out_every_live_turn() {
+        use atlas_checkpoint::{TurnSpan, TurnState};
+        let at = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).unwrap();
+        let span = |turn, state, from, to: Option<i64>| TurnSpan {
+            turn_seq: turn,
+            state,
+            started_at: at(from),
+            ended_at: to.map(at),
+        };
+        let spans = [
+            span(1, TurnState::Completed, 1_000, Some(2_000)),
+            // Opened by a queued prompt before turn 1 closed.
+            span(2, TurnState::Rewound, 1_900, Some(3_000)),
+            span(3, TurnState::Completed, 3_500, None),
+        ];
+        assert_eq!(rewound_windows(&spans, 9_000), [(2_001, 3_000)]);
+        assert!(rewound_windows(&spans[..1], 9_000).is_empty());
+    }
+
+    /// End to end on a real capture store and a wall-clock memory store.
+    #[test]
+    fn writes_in_a_taken_back_turn_become_candidates() {
+        use crate::commands::shared_memory::{SharedMemoryStore, Writer};
+        use atlas_memory::record::{EntryKind, State};
+        let p = scratch_project("rewound");
+        let memory = SharedMemoryStore::new();
+        let writer = Writer {
+            agent: "atlas-agent".into(),
+            session_id: "s-n".into(),
+        };
+        let mut rec =
+            test_support::Recording::open_turn(&p, "s-n", "atlas-agent", "sign with HS256");
+        let undone = memory
+            .remember(
+                &p,
+                &writer,
+                EntryKind::Decision,
+                "Sign JWTs with HS256",
+                "",
+                None,
+                &[],
+            )
+            .unwrap()
+            .entry;
+        rec.close_turn();
+        rec.rewind(1);
+        rec.next_turn("sign with EdDSA");
+        let kept = memory
+            .remember(
+                &p,
+                &writer,
+                EntryKind::Decision,
+                "Sign JWTs with EdDSA",
+                "",
+                None,
+                &[],
+            )
+            .unwrap()
+            .entry;
+        rec.close_turn();
+        drop(rec);
+        let now = memory.now();
+        let windows =
+            rewound_windows_for(&CaptureReader::default(), &p, "s-n", now).expect("recorded");
+        assert_eq!(memory.demote_rewound(&p, "s-n", &windows).unwrap(), 1);
+        let state = |id| memory.get_entry(&p, id).unwrap().unwrap().state;
+        assert_eq!(state(undone.id), State::Candidate);
+        assert_eq!(state(kept.id), State::Active);
+        let _ = std::fs::remove_dir_all(&p);
     }
 
     #[test]

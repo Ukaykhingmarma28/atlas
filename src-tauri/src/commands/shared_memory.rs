@@ -1170,6 +1170,40 @@ impl SharedMemoryStore {
         Ok(removed)
     }
 
+    /// Demote what `session` wrote in turns the agent took back (M4), and
+    /// tell listeners. Returns how many entries moved.
+    pub fn demote_rewound(
+        &self,
+        project_path: &str,
+        session: &str,
+        windows: &[(i64, i64)],
+    ) -> Result<usize, String> {
+        if windows.is_empty() {
+            return Ok(0);
+        }
+        let store = store_for(project_path)?;
+        let ids = store
+            .demote_rewound(session, windows, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        if !ids.is_empty() {
+            self.announce_ids(&store, &ids);
+        }
+        Ok(ids.len())
+    }
+
+    /// What `session` wrote to memory after `since` (the "Memory updated"
+    /// card), newest first.
+    pub fn session_writes(
+        &self,
+        project_path: &str,
+        session: &str,
+        since: i64,
+    ) -> Result<Vec<record::SessionWrite>, String> {
+        store_for(project_path)?
+            .session_writes(session, since)
+            .map_err(|e| format!("{e:#}"))
+    }
+
     /// Announce a change to the kinds of `ids` (all durable kinds when none
     /// can be read).
     fn announce_ids(&self, store: &RecordStore, ids: &[i64]) {
@@ -1532,6 +1566,19 @@ pub async fn memory_feedback_entry(
             .map(MemoryEntry::from))
     })
     .await
+}
+
+/// What one session wrote to memory after `since` (ms): the chat's "Memory
+/// updated" card.
+#[tauri::command]
+pub async fn memory_session_writes(
+    project_path: String,
+    session_id: String,
+    since: i64,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Vec<record::SessionWrite>, String> {
+    let store = store.inner().clone();
+    off_main(move || store.session_writes(&project_path, &session_id, since)).await
 }
 
 /// The Review tab: candidates, merge proposals and contradictions.

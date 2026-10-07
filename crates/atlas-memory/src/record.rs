@@ -2312,6 +2312,105 @@ impl RecordStore {
     }
 }
 
+/// One write a session made to memory, as the "Memory updated" card lists it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionWrite {
+    pub id: i64,
+    pub rev: i64,
+    pub op: String,
+    pub kind: String,
+    pub content: String,
+    pub state: String,
+    pub at: i64,
+}
+
+impl RecordStore {
+    /// What one session wrote to memory after `since`, newest first, at most
+    /// 20 (the "Memory updated" card). Read from the revisions, so replaced
+    /// and forgotten entries are listed too.
+    pub fn session_writes(&self, session: &str, since: i64) -> Result<Vec<SessionWrite>> {
+        if session.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT entry_id, rev, op, kind, content, state, at FROM revisions \
+             WHERE session = ?1 AND at > ?2 \
+               AND op IN ('insert','replace','merge','edit','forget','feedback','rewind') \
+             ORDER BY rev DESC LIMIT 20",
+        )?;
+        let rows = stmt.query_map(params![session, since], |r| {
+            Ok(SessionWrite {
+                id: r.get(0)?,
+                rev: r.get(1)?,
+                op: r.get(2)?,
+                kind: r.get(3)?,
+                content: r.get(4)?,
+                state: r.get(5)?,
+                at: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Drop to candidates the active entries whose latest content write was
+    /// made by `session` inside one of `windows` (ms, inclusive): turns the
+    /// agent took back. An entry written again afterwards (by anyone) is
+    /// left alone. Idempotent. Returns the ids demoted, ascending.
+    pub fn demote_rewound(
+        &self,
+        session: &str,
+        windows: &[(i64, i64)],
+        at: i64,
+    ) -> Result<Vec<i64>> {
+        if session.is_empty() || windows.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut ids: Vec<i64> = Vec::new();
+        {
+            let mut stmt = tx.prepare(
+                "SELECT e.id FROM entries e JOIN revisions r ON r.entry_id = e.id \
+                 WHERE r.session = ?1 AND r.at BETWEEN ?2 AND ?3 AND e.state = 'active' \
+                   AND r.rev = (SELECT MAX(m.rev) FROM revisions m WHERE m.entry_id = e.id \
+                                AND m.op IN ('insert','replace','merge','edit')) \
+                 ORDER BY e.id",
+            )?;
+            for (from, to) in windows {
+                for id in stmt.query_map(params![session, from, to], |r| r.get::<_, i64>(0))? {
+                    let id = id?;
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+        }
+        ids.sort_unstable();
+        for id in &ids {
+            tx.execute(
+                "UPDATE entries SET confidence = MIN(confidence, ?2), updated_at = ?3 WHERE id = ?1",
+                params![id, CANDIDATE_CONFIDENCE, at],
+            )?;
+            after_write(&tx, *id, "rewind", false, None)?;
+        }
+        tx.commit()?;
+        Ok(ids)
+    }
+
+    /// Sessions that started or ended at or after `since`.
+    pub fn sessions_since(&self, since: i64, limit: usize) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT session_id FROM sessions WHERE COALESCE(ended_at, started_at) >= ?1 \
+             ORDER BY session_id LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![since, limit as i64], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+}
+
 /// Whether a stored JSON document carries `text` (as JSON spells it).
 fn json_mentions(json: &str, text: &str) -> bool {
     let spelled = serde_json::to_string(text).unwrap_or_default();
@@ -4898,6 +4997,89 @@ pub(crate) mod tests {
         assert_eq!(store.links(LINK_CONTRADICTS).unwrap(), vec![(1, 2)]);
         assert!(store.unlink(1, 2, LINK_CONTRADICTS).unwrap());
         assert!(store.links_of(1).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_write_in_a_rewound_window_drops_to_candidate_unless_written_again() {
+        let root = temp_root("rewound");
+        let store = open_scope(&root).unwrap();
+        let undone = store
+            .remember(
+                tool_write(EntryKind::Decision, "", "Use HS256", 1_500),
+                1_500,
+            )
+            .unwrap()
+            .entry;
+        let restated = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "The API speaks JSON", 1_600),
+                1_600,
+            )
+            .unwrap()
+            .entry;
+        let kept = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 5_000),
+                5_000,
+            )
+            .unwrap()
+            .entry;
+        // Another session restates the second one after the turn was taken back.
+        let other = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "The API speaks JSON", 3_000)
+        };
+        store.remember(other, 3_000).unwrap();
+        let windows = [(1_000, 2_000)];
+        assert_eq!(
+            store.demote_rewound("s1", &windows, 9_000).unwrap(),
+            vec![undone.id]
+        );
+        assert_eq!(
+            store.get(undone.id, 9_001).unwrap().unwrap().state,
+            State::Candidate
+        );
+        assert_eq!(
+            store.history(undone.id).unwrap().last().unwrap().op,
+            "rewind"
+        );
+        assert_eq!(
+            store.get(restated.id, 9_001).unwrap().unwrap().state,
+            State::Active
+        );
+        assert_eq!(
+            store.get(kept.id, 9_001).unwrap().unwrap().state,
+            State::Active
+        );
+        assert!(
+            store
+                .demote_rewound("s1", &windows, 9_500)
+                .unwrap()
+                .is_empty(),
+            "idempotent"
+        );
+        // The retried turn restates it: a candidate is never swallowed as a retry.
+        store
+            .remember(
+                tool_write(EntryKind::Decision, "", "Use HS256", 9_600),
+                9_600,
+            )
+            .unwrap();
+        assert_eq!(
+            store.get(undone.id, 9_700).unwrap().unwrap().state,
+            State::Active
+        );
+        let writes = store.session_writes("s1", 0).unwrap();
+        assert_eq!(writes[0].id, undone.id, "newest first");
+        assert!(writes.iter().any(|w| w.op == "rewind"));
+        assert!(store
+            .session_writes("s2", 0)
+            .unwrap()
+            .iter()
+            .all(|w| w.id == restated.id));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -65,6 +65,14 @@ pub enum Job {
     /// Check every memory invariant for `cwd` and repair what can be rebuilt
     /// (M2): on open, every 30 minutes, and after a model switch.
     Health { cwd: String },
+    /// Demote what `session` wrote in turns the agent took back (M4),
+    /// matched by time to the session recorder's turns. `retried`: already
+    /// re-queued once because the recorder had not marked the turn yet.
+    RewoundCheck {
+        cwd: String,
+        session: String,
+        retried: bool,
+    },
 }
 
 /// What the last reconciler pass for a project found and did, for the
@@ -535,7 +543,71 @@ async fn handle(app: &AppHandle, registry: &MemoryRegistry, job: Job) {
                 tracing::warn!(target: "atlas::memory_indexer", "Health {cwd} failed: {e}");
             }
         }
+        Job::RewoundCheck {
+            cwd,
+            session,
+            retried,
+        } => {
+            let checked = rewound_check(app, vec![(cwd.clone(), session.clone())]).await;
+            // The recorder had not marked the turn yet: look once more.
+            if checked == 0 && !retried {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
+                        let _ = registry.enqueue(Job::RewoundCheck {
+                            cwd,
+                            session,
+                            retried: true,
+                        });
+                    }
+                });
+            }
+        }
     }
+}
+
+/// The session recorder, read-only, as memory reads it: the launch
+/// directory, the repository's worktrees and the transcripts directory.
+fn capture_reader(app: &AppHandle) -> super::memory_capture::CaptureReader {
+    super::memory_capture::CaptureReader {
+        transcripts_dir: app
+            .try_state::<Arc<super::agent_transcript::TranscriptState>>()
+            .map(|t| t.config_dir().to_path_buf()),
+    }
+}
+
+/// Run the rewound-turn check for each `(cwd, session)`. Returns how many
+/// sessions the recorder had a rewound turn for.
+async fn rewound_check(app: &AppHandle, sessions: Vec<(String, String)>) -> usize {
+    let Some(memory) = app
+        .try_state::<super::shared_memory::SharedMemoryStore>()
+        .map(|m| m.inner().clone())
+    else {
+        return 0;
+    };
+    let reader = capture_reader(app);
+    tokio::task::spawn_blocking(move || {
+        let mut seen = 0;
+        for (cwd, session) in sessions {
+            let now = memory.now();
+            let Some(windows) =
+                super::memory_capture::rewound_windows_for(&reader, &cwd, &session, now)
+            else {
+                continue;
+            };
+            if windows.is_empty() {
+                continue;
+            }
+            seen += 1;
+            if let Err(e) = memory.demote_rewound(&cwd, &session, &windows) {
+                tracing::warn!(target: "atlas::memory_indexer", "rewound check failed: {e}");
+            }
+        }
+        seen
+    })
+    .await
+    .unwrap_or(0)
 }
 
 /// One reconciler pass for `cwd`: the record (check → repair → snapshot) and
@@ -582,6 +654,21 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
     })
     .await
     .map_err(|e| e.to_string())??;
+    // Sessions of the last day: what they wrote in turns they took back.
+    let owned = cwd.to_string();
+    let recent = tokio::task::spawn_blocking(move || {
+        super::shared_memory::store_for(&owned)
+            .ok()
+            .and_then(|s| s.sessions_since(now - 24 * 3600 * 1000, 50).ok())
+            .unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default();
+    rewound_check(
+        app,
+        recent.into_iter().map(|s| (cwd.to_string(), s)).collect(),
+    )
+    .await;
     let corpus = engine.write().await.heal().map_err(|e| format!("{e:#}"))?;
     if !record.repaired.is_empty() || corpus != atlas_memory::CorpusHealth::default() {
         tracing::info!(

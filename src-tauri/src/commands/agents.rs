@@ -488,6 +488,20 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             }
         }
 
+        // A retry or `/undo` took turns back: what the session remembered in
+        // them drops to candidate once the recorder has marked them (M4).
+        if matches!(envelope.delta, SessionDelta::HistoryRewound { .. }) {
+            if let Some(cwd) = cwd.clone() {
+                let _ = self.app.state::<Arc<MemoryRegistry>>().enqueue(
+                    super::memory_indexer::Job::RewoundCheck {
+                        cwd,
+                        session: session_id.clone(),
+                        retried: false,
+                    },
+                );
+            }
+        }
+
         if is_turn_finished {
             // Site B — the extractor's turn-finished pass, for every agent
             // (`super::memory_extract`). The conversation is read now, off the
@@ -620,6 +634,19 @@ impl SharingGatedLifecycle {
                             // The end-of-session extraction, queued behind the
                             // session's last turn-finished pass.
                             if let Some(ended) = memory.session_ended(&session_id) {
+                                // What it wrote in turns it took back drops to
+                                // candidate. The session ran in `cwd`, so the
+                                // default reader finds its recorder store.
+                                if let Some(windows) = super::memory_capture::rewound_windows_for(
+                                    &super::memory_capture::CaptureReader::default(),
+                                    &ended.cwd,
+                                    &session_id,
+                                    memory.now(),
+                                ) {
+                                    if let Err(e) = memory.demote_rewound(&ended.cwd, &session_id, &windows) {
+                                        tracing::warn!(target: "atlas::shared_memory", "rewound check failed: {e}");
+                                    }
+                                }
                                 if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
                                     let job = super::memory_indexer::Job::SessionEnded {
                                         cwd: ended.cwd,

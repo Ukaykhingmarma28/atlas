@@ -31,6 +31,7 @@ import type {
 } from "@/features/memory/lib/memory-graph-api";
 import type { Policy } from "@/features/memory/lib/memory-policy-api";
 import type { HealthStatus } from "@/features/memory/lib/use-memory-health";
+import type { SessionWrite } from "@/features/memory/lib/use-session-memory-writes";
 import type { SummarizerPref } from "@/features/memory/lib/memory-sharing-api";
 import type {
   ClaudeImportPreview,
@@ -1297,6 +1298,7 @@ export interface MemoryResponses {
   memory_health_status: HealthStatus;
   memory_feedback_entry: MemoryEntry | null;
   memory_review: ReviewQueue;
+  memory_session_writes: SessionWrite[];
   memory_promote: boolean;
   memory_archive: number;
   memory_merge: number;
@@ -1450,6 +1452,7 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     merges: [],
     conflicts: [],
   }),
+  memory_session_writes: (): SessionWrite[] => [],
   memory_promote: ({ projectPath, id }): boolean => {
     const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
     if (!entry) return false;

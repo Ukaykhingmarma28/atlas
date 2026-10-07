@@ -108,6 +108,7 @@ import { ChatHeader } from "./chat-header";
 import { openNewAgentChat } from "../lib/open-agent-session";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
+import { MemoryUpdatedCard } from "@/features/memory/components/memory-updated-card";
 import { useQueryClient } from "@tanstack/react-query";
 import { prefetchTextDiff } from "@/features/git/lib/git-diff-api";
 import { OPEN_TURN_DIFF_EVENT, type TurnDiffRequest } from "../lib/open-turn-diff";
@@ -1506,6 +1507,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 onStallRestart={handleRestartAgent}
                 onStallSwitch={handleSwitchAgent}
                 onStallCopyDiagnostics={handleCopyDiagnostics}
+                footer={
+                  <MemoryUpdatedCard
+                    projectPath={projectPathForTab(tabId)}
+                    sessionId={acpSessionId || null}
+                  />
+                }
               />
             </Suspense>
             <div className="absolute inset-x-0 top-0 z-20">
