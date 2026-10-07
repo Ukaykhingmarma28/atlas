@@ -117,6 +117,20 @@ import { collectTurnEdits } from "../lib/turn-edits";
 /** Height the floating header occupies — the transcript pads its content by
  *  this much so the first row clears the bar. Must match `ChatHeader`'s bar. */
 const HEADER_INSET = 46;
+
+/** When this app run first saw each bound session (ms). The "Memory updated"
+ *  card lists only what the session wrote since then, so a session resumed
+ *  after a restart does not re-list what it wrote days ago. Module-level so a
+ *  panel re-mount keeps it; the chat store records no session start. */
+const memorySinceBySession = new Map<string, number>();
+function memorySince(sessionId: string): number {
+  let at = memorySinceBySession.get(sessionId);
+  if (at === undefined) {
+    at = Date.now();
+    memorySinceBySession.set(sessionId, at);
+  }
+  return at;
+}
 import { PermissionModal } from "./permission-modal";
 import { ChatCommentsController } from "./chat-comments-controller";
 import { useCommentCount } from "../stores/chat-comments-store";
@@ -379,6 +393,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   );
 
   const acpSessionId = session?.acpSessionId ?? "";
+  const memoryWritesSince = acpSessionId ? memorySince(acpSessionId) : 0;
   /** Handle on the bind effect's in-flight attempt — see `epoch` inside it.
    *  Null whenever no bind effect is mounted (tab already bound). */
   const bindControlRef = useRef<{
@@ -1511,6 +1526,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                   <MemoryUpdatedCard
                     projectPath={projectPathForTab(tabId)}
                     sessionId={acpSessionId || null}
+                    since={memoryWritesSince}
                   />
                 }
               />

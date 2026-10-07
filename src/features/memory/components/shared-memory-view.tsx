@@ -159,6 +159,16 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const [importing, setImporting] = useState(false);
   const [importingRepo, setImportingRepo] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const clearConfirmed = async () => {
+    setConfirmClear(false);
+    try {
+      await clear();
+    } catch (err) {
+      toast.error(
+        `Couldn't clear shared memory: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
 
   useEffect(() => {
     if (projectPath) void load(projectPath);
@@ -323,7 +333,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         title="Clear shared memory?"
         body="Every agent on this project loses every plan, decision, fact, failure and architecture note recorded here. This can't be undone."
         confirmLabel="Clear"
-        onConfirm={() => void clear()}
+        onConfirm={() => void clearConfirmed()}
         onOpenChange={setConfirmClear}
       />
 
@@ -561,6 +571,21 @@ function PlanRow({
 
 /* ── Memories table ──────────────────────────────────────────────────────────── */
 
+const DURABLE_KINDS: ReadonlySet<string> = new Set([
+  "decision",
+  "fact",
+  "failure",
+  "architecture",
+  "preference",
+]);
+
+/** Whether an entry can go into AGENTS.md: an active durable memory. A
+ *  candidate is unreviewed, and the backend refuses plans, file changes and
+ *  archived entries. */
+function exportable(e: MemoryEntry): boolean {
+  return e.state === "active" && DURABLE_KINDS.has(e.kind);
+}
+
 function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -572,8 +597,9 @@ function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
       else next.add(id);
       return next;
     });
-  // In the order picked; a row filtered out of view is not exported.
-  const chosen = [...selected].filter((id) => rows.some((r) => r.id === id));
+  // In the order picked; a row filtered out of view, or no longer
+  // exportable, is not exported.
+  const chosen = [...selected].filter((id) => rows.some((r) => r.id === id && exportable(r)));
   return (
     <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
       {chosen.length > 0 && (
@@ -641,13 +667,15 @@ function EntryRow({
     <div className="border-b border-[var(--atlas-border-subtle)]">
       <div className="flex items-center">
         <span className="flex w-6 shrink-0 items-center justify-end">
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onSelect}
-            aria-label={`Select ${e.content}`}
-            className="h-3 w-3 cursor-pointer accent-[var(--primary)]"
-          />
+          {exportable(e) && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onSelect}
+              aria-label={`Select ${e.content}`}
+              className="h-3 w-3 cursor-pointer accent-[var(--primary)]"
+            />
+          )}
         </span>
         <button
           onClick={onToggle}
@@ -1017,7 +1045,9 @@ function ImportRepoModal({
     if (!open) {
       setDir(null);
       setLines(null);
+      setSelected(new Set());
       setError(null);
+      setBusy(false);
     }
   }, [open]);
 
@@ -1027,8 +1057,12 @@ function ImportRepoModal({
       const { open: pick } = await import("@tauri-apps/plugin-dialog");
       const picked = await pick({ directory: true });
       if (typeof picked !== "string") return;
-      setDir(picked);
+      // The old folder's lines and picks never pair with a new folder.
+      setDir(null);
+      setLines(null);
+      setSelected(new Set());
       const found = await sharedMemory.previewRepoImport(projectPath, picked);
+      setDir(picked);
       setLines(found);
       setSelected(new Set(found.filter((l) => l.isNew).map((l) => l.id)));
     } catch (e) {

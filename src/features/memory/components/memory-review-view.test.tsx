@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { MemoryReviewView } from "./memory-review-view";
 
 function entry(id: number, content: string, over: Record<string, unknown> = {}) {
@@ -59,6 +61,8 @@ beforeEach(() => {
   };
   invoke.mockReset();
   invoke.mockImplementation(async (cmd: string) => (cmd === "memory_review" ? queue : true));
+  vi.mocked(toast).mockClear();
+  vi.mocked(toast.error).mockClear();
 });
 afterEach(cleanup);
 
@@ -112,5 +116,41 @@ describe("the review queue", () => {
     }));
     render(<MemoryReviewView projectPath="/repo" />);
     expect(await screen.findByText("Nothing to review")).toBeTruthy();
+  });
+
+  it("says the queue could not be read instead of claiming it is empty", async () => {
+    invoke.mockImplementation(async () => {
+      throw new Error("database is locked");
+    });
+    render(<MemoryReviewView projectPath="/repo" />);
+    expect(
+      await screen.findByText("Couldn't read the review queue: database is locked"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Nothing to review")).toBeNull();
+  });
+
+  it("reports an action that fails", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) => {
+      if (cmd === "memory_promote") throw new Error("database is locked");
+      return base(cmd, ...rest);
+    });
+    const user = userEvent.setup();
+    render(<MemoryReviewView projectPath="/repo" />);
+    await user.click((await screen.findAllByRole("button", { name: "Approve" }))[0]);
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't update memory: database is locked"),
+    );
+  });
+
+  it("says when an accepted proposal went stale", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) =>
+      cmd === "memory_dream_accept" ? "obsolete" : base(cmd, ...rest),
+    );
+    const user = userEvent.setup();
+    render(<MemoryReviewView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Memory moved on; nothing was changed"));
   });
 });

@@ -7,9 +7,12 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const pickFolder = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => pickFolder(...args) }));
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { SharedMemoryView } from "./shared-memory-view";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
 
@@ -229,6 +232,20 @@ describe("the Shared tab's Memories table", () => {
     });
   });
 
+  it("offers export only for active durable memories", async () => {
+    entries = [
+      entry(1, "Mocking the DB hid a migration bug"),
+      entry(3, "always force-push", { state: "candidate", source: "capture" }),
+      entry(4, "Retired the old queue", { state: "archived" }),
+      entry(5, "Ship the auth refactor", { kind: "plan" }),
+    ];
+    await openMemories();
+    await screen.findByText("always force-push");
+    expect(screen.getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"))).toEqual([
+      "Select Mocking the DB hid a migration bug",
+    ]);
+  });
+
   it("forgets an entry after confirming", async () => {
     const user = await openMemories();
     await user.click(await screen.findByText("Prefers small PRs"));
@@ -302,6 +319,50 @@ describe("importing Claude's auto-memory", () => {
   });
 });
 
+describe("importing a memory repo", () => {
+  async function openRepoImport(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("button", { name: "Import memory repo" }));
+    return screen.findByRole("dialog");
+  }
+
+  it("starts clean after an import and after a folder that fails to preview", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "memory_repo_import_preview") {
+        if (args.dir === "/broken") throw new Error("no MEMORY.md");
+        return [{ id: "r1", kind: "fact", content: "Uses pnpm", file: "MEMORY.md", isNew: true }];
+      }
+      if (cmd === "memory_repo_import_confirm") return 1;
+      if (cmd === "memory_review") return { candidates: [], merges: [], conflicts: [], dreams: [] };
+      return base(cmd, args);
+    });
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+
+    pickFolder.mockResolvedValueOnce("/memory-repo");
+    let dialog = await openRepoImport(user);
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await user.click(await within(dialog).findByRole("button", { name: "Import 1" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Reopened: nothing carried over from the last import.
+    dialog = await openRepoImport(user);
+    const importButton = within(dialog).getByRole("button", { name: "Import" });
+    expect((importButton as HTMLButtonElement).disabled).toBe(true);
+
+    // A folder whose preview fails leaves nothing to import.
+    pickFolder.mockResolvedValueOnce("/memory-repo");
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await within(dialog).findByRole("button", { name: "Import 1" });
+    pickFolder.mockResolvedValueOnce("/broken");
+    await user.click(within(dialog).getByRole("button", { name: "Choose folder…" }));
+    await within(dialog).findByText("Error: no MEMORY.md");
+    expect(
+      (within(dialog).getByRole("button", { name: "Import" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+});
+
 describe("clearing shared memory", () => {
   it("asks before wiping, and wipes only on confirm", async () => {
     const user = userEvent.setup();
@@ -310,5 +371,22 @@ describe("clearing shared memory", () => {
     expect(invoke).not.toHaveBeenCalledWith("memory_clear_project", expect.anything());
     await user.click(await screen.findByRole("button", { name: "Clear" }));
     expect(invoke).toHaveBeenCalledWith("memory_clear_project", { projectPath: "/repo" });
+    await waitFor(() => expect(screen.queryByText("Clear shared memory?")).toBeNull());
+  });
+
+  it("closes the dialog and says so when the wipe fails", async () => {
+    const base = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "memory_clear_project") throw new Error("database is locked");
+      return base(cmd, args);
+    });
+    const user = userEvent.setup();
+    render(<SharedMemoryView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Clear shared memory" }));
+    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't clear shared memory: database is locked"),
+    );
+    expect(screen.queryByText("Clear shared memory?")).toBeNull();
   });
 });

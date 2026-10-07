@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
 import { sharedMemory } from "../lib/shared-memory-api";
@@ -34,6 +35,8 @@ export function MemoryUpdatedCard({
   const forget = async (w: SessionWrite) => {
     try {
       await sharedMemory.forgetEntry(projectPath, w.id);
+    } catch (err) {
+      toast.error(`Couldn't forget: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       await refresh();
     }
@@ -65,12 +68,18 @@ export function MemoryUpdatedCard({
               <span className="min-w-0 flex-1 break-words text-[var(--foreground)]">
                 {w.content || "(forgotten)"}
               </span>
-              {w.state === "candidate" && (
+              {w.live && w.state === "candidate" && (
                 <span className="shrink-0 text-3xs uppercase text-[var(--muted-foreground)]">
                   candidate
                 </span>
               )}
-              {w.op !== "forget" && w.state !== "tombstoned" && (
+              {/* Forgotten or archived since, by anyone: nothing left to forget. */}
+              {!w.live && w.op !== "forget" && (
+                <span className="shrink-0 text-3xs uppercase text-[var(--muted-foreground)]">
+                  removed
+                </span>
+              )}
+              {w.live && (
                 <button
                   type="button"
                   onClick={() => setForgetting(w)}

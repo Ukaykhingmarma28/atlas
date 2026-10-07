@@ -15,9 +15,12 @@ export interface SessionWrite {
   op: string;
   kind: string;
   content: string;
-  /** `active`, `candidate`, `archived` or `tombstoned`. */
+  /** `active`, `candidate`, `archived` or `tombstoned`, at this revision. */
   state: string;
   at: number;
+  /** Whether the entry still stands now (exists and is not archived),
+   *  whoever changed it since. */
+  live: boolean;
 }
 
 const DEBOUNCE_MS = 300;
@@ -45,10 +48,11 @@ export function useSessionMemoryWrites(
   }, [projectPath, sessionId, since]);
 
   useEffect(() => {
-    if (!projectPath || !sessionId) {
-      setWrites([]);
-      return;
-    }
+    // Another session's rows never show under this one, and a read still in
+    // flight for the old session lands nowhere.
+    seq.current++;
+    setWrites((w) => (w.length === 0 ? w : []));
+    if (!projectPath || !sessionId) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let unlisten: (() => void) | undefined;
@@ -80,11 +84,12 @@ const OP_LABEL: Record<string, string> = {
   rewind: "taken back",
 };
 
-/** "2 saved, 1 replaced": counts by op, in the order ops first appear. */
+/** "2 saved, 1 replaced": counts by op, in the order ops first appear. A
+ *  write whose entry no longer stands counts as removed. */
 export function writesSummary(writes: SessionWrite[]): string {
   const counts = new Map<string, number>();
   for (const w of writes) {
-    const label = OP_LABEL[w.op] ?? w.op;
+    const label = w.live || w.op === "forget" ? (OP_LABEL[w.op] ?? w.op) : "removed";
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return [...counts].map(([label, n]) => `${n} ${label}`).join(", ");

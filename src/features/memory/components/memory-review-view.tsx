@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   sharedMemory,
@@ -28,15 +29,20 @@ export function MemoryReviewView({
 }) {
   const [queue, setQueue] = useState<ReviewQueue>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const seq = useRef(0);
 
   const refresh = useCallback(async () => {
     const mine = ++seq.current;
     try {
       const next = await sharedMemory.review(projectPath);
-      if (mine === seq.current) setQueue(next);
-    } catch {
-      // A failed read keeps the last queue.
+      if (mine === seq.current) {
+        setQueue(next);
+        setLoadError(null);
+      }
+    } catch (err) {
+      // A failed read keeps the last queue, and says so while it is empty.
+      if (mine === seq.current) setLoadError(errorText(err));
     } finally {
       if (mine === seq.current) setLoaded(true);
     }
@@ -61,10 +67,13 @@ export function MemoryReviewView({
     };
   }, [refresh]);
 
-  /** Run one action, then re-read the queue. */
+  /** Run one action, then re-read the queue. A failure or a proposal that
+   *  went stale is reported; either way the queue is re-read. */
   const act = (run: () => Promise<unknown>) => async () => {
     try {
-      await run();
+      if ((await run()) === "obsolete") toast("Memory moved on; nothing was changed");
+    } catch (err) {
+      toast.error(`Couldn't update memory: ${errorText(err)}`);
     } finally {
       await refresh();
     }
@@ -80,7 +89,9 @@ export function MemoryReviewView({
   return (
     <div className={cn("flex-1 min-h-0 overflow-y-auto px-3 py-2", className)}>
       {loaded && empty ? (
-        <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Nothing to review</p>
+        <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
+          {loadError ? `Couldn't read the review queue: ${loadError}` : "Nothing to review"}
+        </p>
       ) : null}
       {dreams.length > 0 && (
         <Section title="Proposed by the nightly review" count={dreams.length}>
@@ -182,6 +193,10 @@ export function MemoryReviewView({
       )}
     </div>
   );
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** One line saying what a proposal would do. */

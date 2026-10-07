@@ -1310,6 +1310,7 @@ export interface MemoryResponses {
   memory_export_apply: string;
   memory_repo_import_preview: RepoImportLine[];
   memory_repo_import_confirm: number;
+  memory_repo_mirror_dir: string | null;
   memory_dream_dismiss: Unit;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
@@ -1503,6 +1504,10 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
   memory_export_apply: ({ projectPath }): string => `${String(projectPath)}/AGENTS.md`,
   memory_repo_import_preview: (): RepoImportLine[] => [],
   memory_repo_import_confirm: (): number => 0,
+  memory_repo_mirror_dir: ({ projectPath }): string | null => {
+    const name = String(projectPath).split("/").pop() || "project";
+    return `${HOME}/.atlas/memory-repos/${name}-3f9c2ab1`;
+  },
   memory_dream_dismiss: (): null => null,
   memory_health_status: (): HealthStatus => ({
     checkedAt: Date.now(),
