@@ -216,6 +216,10 @@ pub fn run() {
             // off before any project opens still takes the mirrored blocks out.
             app.state::<commands::instruction_sync::InstructionSyncState>()
                 .init(migration.manager.effective().instruction_sync);
+            // Whether agents start with their own memory off (M4).
+            atlas_agent_servers::set_atlas_only_memory(
+                migration.manager.effective().atlas_only_memory,
+            );
             let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
             app.manage(atlas_config.clone());
             let keep_awake = Arc::new(keep_awake::KeepAwakeManager::new(

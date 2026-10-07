@@ -235,6 +235,26 @@ fn read_dir(dir: &Path) -> Vec<Mapped> {
     out
 }
 
+/// The `legacy_imports` name of one line offered by an import: the line is
+/// not offered again, whatever its directory gains later.
+fn line_source(id: &str) -> String {
+    format!("claude-memory-line:{id}")
+}
+
+/// Marks a directory whose import recorded each line it offered.
+fn lines_marker(dir: &Path) -> String {
+    format!("{}#lines", source_name(dir))
+}
+
+/// When `path` was last modified, in ms (0 when unknown).
+fn modified_ms(path: &Path) -> i64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as i64)
+}
+
 /// The `legacy_imports` name of one Claude memory directory.
 fn source_name(dir: &Path) -> String {
     let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
@@ -278,11 +298,21 @@ impl SharedMemoryStore {
         let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         let mut all_imported = !dirs.is_empty();
         for dir in dirs {
-            let imported = store.import_recorded(&source_name(dir)).map_err(err)?;
-            all_imported &= imported;
+            // A directory imported before still offers what Claude wrote
+            // since: a line is known when that import offered it (each is
+            // recorded), or, for an import recorded before lines were, when
+            // its file has not changed since.
+            let imported_at = store.import_recorded_at(&source_name(dir)).map_err(err)?;
+            all_imported &= imported_at.is_some();
+            // Only an import from before lines were recorded falls back to
+            // file times.
+            let by_lines = store.import_recorded(&lines_marker(dir)).map_err(err)?;
             for m in read_dir(dir) {
                 let id = line_id(m.kind, &m.content);
-                let is_new = !imported && !store.holds_content(m.kind, &m.content).map_err(err)?;
+                let offered = store.import_recorded(&line_source(&id)).map_err(err)?
+                    || (!by_lines
+                        && imported_at.is_some_and(|at| modified_ms(&dir.join(&m.file)) <= at));
+                let is_new = !offered && !store.holds_content(m.kind, &m.content).map_err(err)?;
                 if let Some(&at) = seen.get(&id) {
                     // The same memory in two sources: new if either offers it.
                     lines[at].is_new |= is_new;
@@ -299,12 +329,13 @@ impl SharedMemoryStore {
                 });
             }
         }
+        let fresh = lines.iter().any(|l| l.is_new);
         Ok(ClaudeImportPreview {
             sources: dirs
                 .iter()
                 .map(|d| d.to_string_lossy().into_owned())
                 .collect(),
-            already_imported: all_imported,
+            already_imported: all_imported && !fresh,
             lines,
         })
     }
@@ -327,6 +358,7 @@ impl SharedMemoryStore {
         }
         let preview = self.claude_import_preview(project_path, dirs)?;
         let store = store_for(project_path)?;
+        let offered: Vec<String> = preview.lines.iter().map(|l| l.id.clone()).collect();
         let now = self.now();
         let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
         let mut written = 0;
@@ -361,6 +393,10 @@ impl SharedMemoryStore {
         }
         for dir in dirs {
             store.mark_imported(&source_name(dir), now).map_err(err)?;
+            store.mark_imported(&lines_marker(dir), now).map_err(err)?;
+        }
+        for id in &offered {
+            store.mark_imported(&line_source(id), now).map_err(err)?;
         }
         if !kinds.is_empty() {
             self.announce(&store, &kinds);
@@ -641,6 +677,33 @@ mod tests {
                 "preference".to_string()
             ]
         );
+    }
+
+    /// A memory Claude writes after the first import is offered by the next
+    /// one; what that import offered is not.
+    #[test]
+    fn a_file_added_after_an_import_is_offered_again() {
+        let (store, p, dir) = (SharedMemoryStore::new(), project(), sample());
+        let first = store.claude_import_preview(&p, &[dir.clone()]).unwrap();
+        let ids: Vec<String> = first.lines.iter().map(|l| l.id.clone()).collect();
+        store
+            .claude_import_confirm(&p, &[dir.clone()], &ids[..1])
+            .unwrap();
+        std::fs::write(
+            dir.join("ci.md"),
+            "---\nname: ci.md\ndescription: CI runs on GitHub Actions\nmetadata:\n  node_type: memory\n  type: project\n---\n\nMoved off Jenkins.\n",
+        )
+        .unwrap();
+        let second = store.claude_import_preview(&p, &[dir.clone()]).unwrap();
+        assert!(!second.already_imported);
+        let fresh: Vec<&str> = second
+            .lines
+            .iter()
+            .filter(|l| l.is_new)
+            .map(|l| l.content.as_str())
+            .collect();
+        assert_eq!(fresh.len(), 1, "{fresh:?}");
+        assert!(fresh[0].contains("GitHub Actions"), "{fresh:?}");
     }
 
     /// Once per source: the second import shows nothing new and writes nothing

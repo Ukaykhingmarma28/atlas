@@ -1385,6 +1385,18 @@ impl RecordStore {
         )?)
     }
 
+    /// When the import from `source` was recorded, if it was.
+    pub fn import_recorded_at(&self, source: &str) -> Result<Option<i64>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT at FROM legacy_imports WHERE source = ?1",
+                [source],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// Record that the one-time import from `source` ran at `at`. Idempotent.
     pub fn mark_imported(&self, source: &str, at: i64) -> Result<()> {
         let conn = self.conn();

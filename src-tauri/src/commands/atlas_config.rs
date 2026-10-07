@@ -160,6 +160,8 @@ pub fn notify_settings_changed(app: &AppHandle, settings: &AppSettings, generati
         state.apply_setting(app, settings.instruction_sync);
     }
     // 7. re-sync the keep-awake manager with the live setting.
+    // The next agent session launches with its own memory on or off.
+    atlas_agent_servers::set_atlas_only_memory(settings.atlas_only_memory);
     if let Some(keep_awake) = app.try_state::<Arc<crate::keep_awake::KeepAwakeManager>>() {
         keep_awake.set_enabled(settings.keep_awake_while_running);
     }
