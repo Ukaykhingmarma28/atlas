@@ -31,6 +31,10 @@ pub struct Sources {
     /// Drop one document from the index now (`memory_forget`). Without it a
     /// forgotten entry's text stays retrievable until the next corpus pass.
     pub evict: Option<IndexEvict>,
+    /// The session recorder, read-only: where a memory's writing session is
+    /// resolved to its title and commits. The default reads the launch
+    /// directory and the repository's worktrees.
+    pub capture: crate::commands::memory_capture::CaptureReader,
 }
 
 /// The running server. Dropping it (or [`shutdown`](Self::shutdown)) stops it.

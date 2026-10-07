@@ -176,6 +176,10 @@ pub struct MemoryEntry {
     pub updated_at: i64,
     pub last_used_at: Option<i64>,
     pub uses: u32,
+    /// The revision the entry currently is.
+    pub revision: i64,
+    /// `active`, `candidate` (captured, not confirmed) or `archived`.
+    pub state: String,
 }
 
 impl From<Entry> for MemoryEntry {
@@ -194,6 +198,8 @@ impl From<Entry> for MemoryEntry {
             updated_at: e.updated_at,
             last_used_at: e.last_used_at,
             uses: e.uses,
+            revision: e.rev,
+            state: e.state.as_str().to_string(),
         }
     }
 }
@@ -661,6 +667,18 @@ pub const EXTRACTOR_SOURCE: &str = "extractor";
 /// The provenance of every edit made from the Memory panel.
 pub const USER_SOURCE: &str = "user";
 
+/// How a durable write lands.
+#[derive(Debug, Clone, Copy)]
+enum How {
+    /// A captured line: upserted, not logged, last writer wins.
+    Candidate,
+    /// The extractor: logged, last writer wins.
+    Logged,
+    /// An agent's `memory_remember`: logged, and a keyed replace of another
+    /// writer's entry needs the revision it read.
+    Agent { expected_revision: Option<i64> },
+}
+
 /// Who a write is attributed to: the agent and session a memory-server token
 /// belongs to, or the session the extractor distilled.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -684,11 +702,12 @@ impl SharedMemoryStore {
         kind: EntryKind,
         content: &str,
         key: &str,
+        expected_revision: Option<i64>,
     ) -> Result<Remembered, String> {
         if !kind.is_durable() {
             return Err(format!(
                 "`{}` is working memory, captured from the session automatically; \
-                 remember records only decision, fact, failure or architecture",
+                 remember records only decision, fact, failure, architecture or preference",
                 kind.as_str()
             ));
         }
@@ -707,7 +726,7 @@ impl SharedMemoryStore {
                 confidence: 1.0,
                 at: 0,
             },
-            true,
+            How::Agent { expected_revision },
         )
     }
 
@@ -745,7 +764,7 @@ impl SharedMemoryStore {
                 confidence: confidence.clamp(0.0, 1.0),
                 at: 0,
             },
-            true,
+            How::Logged,
         )
     }
 
@@ -776,30 +795,38 @@ impl SharedMemoryStore {
                 confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
                 at: 0,
             },
-            false,
+            How::Candidate,
         )
     }
 
     /// Write one durable entry through the record (stamped now) and announce
-    /// it. `logged` writes it as a deliberate memory (an event in the log when
-    /// something new was stored); otherwise it is upserted without one.
+    /// it, the way `how` says.
     fn write_durable(
         &self,
         project_path: &str,
         mut entry: NewEntry,
-        logged: bool,
+        how: How,
     ) -> Result<Remembered, String> {
         let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
         let now = (self.inner.clock)();
         entry.at = now;
         let kind = entry.kind;
-        let remembered = if logged {
-            store.remember(entry, now)
-        } else {
-            store.upsert_outcome(entry)
-        }
-        .map_err(|e| format!("{e:#}"))?;
+        let written = match how {
+            How::Candidate => store.upsert_outcome(entry),
+            How::Logged => store.remember(entry, now),
+            How::Agent { expected_revision } => {
+                store.remember_guarded(entry, now, expected_revision)
+            }
+        };
+        let remembered =
+            written.map_err(
+                |e| match e.downcast_ref::<atlas_memory::record::Conflict>() {
+                    // The agent reads this: it names the revision to pass.
+                    Some(conflict) => conflict.to_string(),
+                    None => format!("{e:#}"),
+                },
+            )?;
         self.announce(&store, &[kind.as_str()]);
         Ok(remembered)
     }
@@ -840,15 +867,54 @@ impl SharedMemoryStore {
         kinds: &[EntryKind],
         limit: usize,
     ) -> Vec<Entry> {
+        self.search_hits(project_path, query, kinds, limit)
+            .into_iter()
+            .map(|h| h.entry)
+            .collect()
+    }
+
+    /// [`search_entries`](Self::search_entries) with the legs that found each
+    /// hit (`bm25`, `dense`, by rank).
+    pub fn search_hits(
+        &self,
+        project_path: &str,
+        query: &str,
+        kinds: &[EntryKind],
+        limit: usize,
+    ) -> Vec<atlas_memory::record::SearchHit> {
         store_for(project_path)
             .and_then(|s| {
-                s.search(query, kinds, limit.max(1), (self.inner.clock)())
+                s.search_explained(query, kinds, limit.max(1), (self.inner.clock)())
                     .map_err(|e| format!("{e:#}"))
             })
             .unwrap_or_else(|e| {
                 tracing::warn!(target: "atlas::shared_memory", "search failed: {e}");
                 Vec::new()
             })
+    }
+
+    /// Every revision of entry `id`, oldest first (`memory_history`).
+    pub fn history(
+        &self,
+        project_path: &str,
+        id: i64,
+    ) -> Result<Vec<atlas_memory::record::Revision>, String> {
+        store_for(project_path)?
+            .history(id)
+            .map_err(|e| format!("{e:#}"))
+    }
+
+    /// Forget entry `id` if it is live, then erase its text from every table
+    /// of the record (revisions, log events, cached vectors). For a secret
+    /// that slipped into memory. `false` when there was nothing to erase.
+    pub fn purge_entry(&self, project_path: &str, id: i64) -> Result<bool, String> {
+        let forgotten = self.forget(project_path, id, "")?;
+        let store = store_for(project_path)?;
+        let erased = store.purge(id).map_err(|e| format!("{e:#}"))?;
+        if let Some(entry) = &forgotten {
+            self.announce(&store, &[entry.kind.as_str()]);
+        }
+        Ok(erased || forgotten.is_some())
     }
 
     /// Whether `id` is still a live entry. Never stamps it as used, so the
@@ -1058,6 +1124,74 @@ pub async fn memory_edit_entry(
     let edited = off_main(move || store.edit_entry(&project_path, id, &content)).await?;
     registry.enqueue_index(&cwd);
     Ok(edited)
+}
+
+/// Forget one entry and erase its text from every table of the record
+/// ("Erase with history"). `false` when there was nothing to erase. The
+/// retrieval index is nudged so relevant memory stops finding it. Recorded
+/// sessions keep their own copy of the conversation; this does not touch them.
+#[tauri::command]
+pub async fn memory_purge_entry(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    let cwd = project_path.clone();
+    let erased = off_main(move || store.purge_entry(&project_path, id)).await?;
+    registry.enqueue_index(&cwd);
+    Ok(erased)
+}
+
+/// Where a memory was learned, as the panel's entry detail shows it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvenanceView {
+    pub source: String,
+    pub agent: String,
+    pub added: Option<String>,
+    pub title: Option<String>,
+    pub commits: Vec<String>,
+}
+
+/// The panel's "Learned in …" lines for entry `id`, resolved against the
+/// capture record (read-only). Plain sources when capture is off.
+#[tauri::command]
+pub async fn memory_entry_provenance(
+    project_path: String,
+    id: i64,
+    app: tauri::AppHandle,
+) -> Result<Vec<ProvenanceView>, String> {
+    use tauri::Manager;
+    let transcripts = app
+        .state::<Arc<super::agent_transcript::TranscriptState>>()
+        .config_dir()
+        .to_path_buf();
+    off_main(move || {
+        let store = store_for(&project_path)?;
+        let mut sources = store
+            .sources_for(&[id])
+            .map_err(|e| format!("{e:#}"))?
+            .remove(&id)
+            .unwrap_or_default();
+        let reader = super::memory_capture::CaptureReader {
+            transcripts_dir: Some(transcripts),
+        };
+        super::memory_capture::resolve_sources(&reader.stores(&project_path), &mut sources);
+        Ok(sources
+            .iter()
+            .map(|s| ProvenanceView {
+                source: atlas_memory::record::source_uri(s),
+                agent: s.agent.clone(),
+                added: chrono::DateTime::from_timestamp_millis(s.at)
+                    .map(|d| d.format("%Y-%m-%d").to_string()),
+                title: s.title.clone(),
+                commits: s.commits.clone(),
+            })
+            .collect())
+    })
+    .await
 }
 
 /// Forget (delete) one entry. `false` when it was already gone. The
@@ -1684,7 +1818,14 @@ mod tests {
             .unwrap();
         assert!(c.entry.is_candidate());
         let r = store
-            .remember(&p, &w, EntryKind::Fact, "The API speaks JSON over REST", "")
+            .remember(
+                &p,
+                &w,
+                EntryKind::Fact,
+                "The API speaks JSON over REST",
+                "",
+                None,
+            )
             .unwrap();
         assert_eq!(r.outcome.as_str(), "merged");
         assert!(!r.entry.is_candidate(), "restated by an agent: trusted");

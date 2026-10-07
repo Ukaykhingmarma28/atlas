@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use atlas_memory::record::{Embedder, Embedding};
+use atlas_memory::record::{Embedder, Embedding, EntryKind};
 use futures::future::BoxFuture;
 use rmcp::service::RunningService;
 use rmcp::RoleClient;
@@ -35,7 +35,7 @@ pub(super) enum Milestone {
 
 /// Every probe tagged at or below this must pass. Raised by each
 /// milestone's gate task.
-pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M0;
+pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M1;
 
 /// Words → a 64-d count vector: cosine ≈ shared vocabulary. Deterministic.
 struct BagOfWords;
@@ -57,6 +57,10 @@ impl Embedder for BagOfWords {
             model: "bench-bow-64".into(),
             vector: v,
         })
+    }
+
+    fn model_id(&self) -> Option<String> {
+        Some("bench-bow-64".into())
     }
 }
 
@@ -363,6 +367,83 @@ async fn search_says_why(w: World) -> Result<(), String> {
     check(s["entries"][0]["why"].is_object(), || format!("{s}"))
 }
 
+async fn a_parallel_session_of_the_same_agent_cannot_clobber(w: World) -> Result<(), String> {
+    call(
+        &w.a,
+        "memory_remember",
+        json!({"kind": "decision", "key": "db", "content": "Use Postgres"}),
+    )
+    .await;
+    // claude-code again, in another session (another worktree of the same repo).
+    let twin = crate::commands::shared_memory::Writer {
+        agent: "claude-code".into(),
+        session_id: "s-twin".into(),
+    };
+    let refused = w
+        .memory
+        .remember(
+            &w.project,
+            &twin,
+            EntryKind::Decision,
+            "Use SQLite",
+            "db",
+            None,
+        )
+        .is_err();
+    let (_, s) = call(
+        &w.b,
+        "memory_search",
+        json!({"query": "database decision Postgres"}),
+    )
+    .await;
+    check(
+        refused
+            && contents(&s, "entries")
+                .iter()
+                .any(|c| c.contains("Postgres")),
+        || format!("{s}"),
+    )
+}
+
+async fn a_preference_is_briefed_first(w: World) -> Result<(), String> {
+    call(
+        &w.a,
+        "memory_remember",
+        json!({"kind": "preference", "content": "Use bun, not npm; the lockfile is bun.lock"}),
+    )
+    .await;
+    for i in 0..40 {
+        call(
+            &w.a,
+            "memory_remember",
+            json!({"kind": "fact", "content": format!("Build fact {i}")}),
+        )
+        .await;
+    }
+    let (_, b) = call(&w.b, "memory_briefing", json!({})).await;
+    check(
+        b["preferences"][0]["content"]
+            .as_str()
+            .is_some_and(|c| c.contains("bun")),
+        || format!("{b}"),
+    )
+}
+
+async fn every_briefed_entry_says_where_it_came_from(w: World) -> Result<(), String> {
+    call(
+        &w.a,
+        "memory_remember",
+        json!({"kind": "decision", "key": "auth.alg", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    let (_, b) = call(&w.b, "memory_briefing", json!({})).await;
+    let line = b["index"]["decision"][0].clone();
+    check(
+        line["sources"][0] == "atlas-session:claude-code/s-a" && line["added"].as_str().is_some(),
+        || format!("{b}"),
+    )
+}
+
 async fn cited_fact_goes_stale_after_the_file_changes(w: World) -> Result<(), String> {
     let file = std::path::Path::new(&w.project).join("src").join("ttl.rs");
     std::fs::create_dir_all(file.parent().expect("a parent")).map_err(|e| e.to_string())?;
@@ -478,6 +559,17 @@ fn probes() -> Vec<(&'static str, Milestone, Probe)> {
             Box::pin(a_stale_keyed_write_is_refused(w))
         }),
         ("search_says_why", M1, |w| Box::pin(search_says_why(w))),
+        (
+            "a_parallel_session_of_the_same_agent_cannot_clobber",
+            M1,
+            |w| Box::pin(a_parallel_session_of_the_same_agent_cannot_clobber(w)),
+        ),
+        ("a_preference_is_briefed_first", M1, |w| {
+            Box::pin(a_preference_is_briefed_first(w))
+        }),
+        ("every_briefed_entry_says_where_it_came_from", M1, |w| {
+            Box::pin(every_briefed_entry_says_where_it_came_from(w))
+        }),
         ("cited_fact_goes_stale_after_the_file_changes", M3, |w| {
             Box::pin(cited_fact_goes_stale_after_the_file_changes(w))
         }),

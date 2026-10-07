@@ -147,8 +147,11 @@ pub fn states_a_choice(text: &str) -> bool {
 }
 
 /// Claude's frontmatter `type` (with the memory's text) → the record kind.
+/// `user` and `feedback` memories are how the user wants things done: the
+/// preferences every agent is briefed on first.
 pub fn map_kind(claude_type: &str, text: &str) -> EntryKind {
     match claude_type.trim().to_ascii_lowercase().as_str() {
+        "user" | "feedback" => EntryKind::Preference,
         "project" if states_a_choice(text) => EntryKind::Decision,
         _ => EntryKind::Fact,
     }
@@ -532,9 +535,9 @@ mod tests {
 
     #[test]
     fn claude_types_map_to_kinds() {
-        assert_eq!(map_kind("feedback", "we decided X"), EntryKind::Fact);
+        assert_eq!(map_kind("feedback", "we decided X"), EntryKind::Preference);
         assert_eq!(map_kind("reference", "chose Y"), EntryKind::Fact);
-        assert_eq!(map_kind("user", "prefers Z"), EntryKind::Fact);
+        assert_eq!(map_kind("user", "prefers Z"), EntryKind::Preference);
         assert_eq!(
             map_kind("project", "use RS256 instead of HS256"),
             EntryKind::Decision
@@ -563,8 +566,8 @@ mod tests {
                 ("dash.md", "fact"),
                 ("freeze.md", "fact"),
                 ("jwt.md", "decision"),
-                ("no-mocks.md", "fact"),
-                ("prefs.md", "fact"),
+                ("no-mocks.md", "preference"),
+                ("prefs.md", "preference"),
             ]
             .map(|(f, k)| (f.to_string(), k.to_string()))
             .to_vec(),
@@ -630,7 +633,14 @@ mod tests {
         assert_eq!(heard.len(), 1, "one change for the whole import");
         let mut announced = heard[0].kinds.clone();
         announced.sort();
-        assert_eq!(announced, vec!["decision".to_string(), "fact".to_string()]);
+        assert_eq!(
+            announced,
+            vec![
+                "decision".to_string(),
+                "fact".to_string(),
+                "preference".to_string()
+            ]
+        );
     }
 
     /// Once per source: the second import shows nothing new and writes nothing
@@ -670,7 +680,7 @@ mod tests {
         crate::commands::shared_memory::store_for(&p)
             .unwrap()
             .upsert(NewEntry {
-                kind: EntryKind::Fact,
+                kind: EntryKind::Preference,
                 key: String::new(),
                 content: "prefers   small PRs".into(),
                 source: "claude-code".into(),

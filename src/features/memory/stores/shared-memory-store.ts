@@ -67,6 +67,8 @@ interface SharedMemoryStore {
     editEntry: (id: number, content: string) => Promise<void>;
     /** Forget (delete) an entry. Throws on failure. */
     forgetEntry: (id: number) => Promise<void>;
+    /** Forget an entry and erase its history. Throws on failure. */
+    purgeEntry: (id: number) => Promise<void>;
     /** What importing Claude's auto-memory would write. Reads only. */
     previewClaudeImport: () => Promise<ClaudeImportPreview | null>;
     /** Import the previewed lines in `ids`; returns how many were written.
@@ -187,6 +189,14 @@ export const useSharedMemoryStore = createSelectors(
         const { projectPath } = get();
         if (!projectPath) return;
         await sharedMemory.forgetEntry(projectPath, id);
+        if (get().projectPath !== projectPath) return;
+        set({ entries: get().entries.filter((e) => e.id !== id) });
+        await get().actions.refresh();
+      },
+      purgeEntry: async (id) => {
+        const { projectPath } = get();
+        if (!projectPath) return;
+        await sharedMemory.purgeEntry(projectPath, id);
         if (get().projectPath !== projectPath) return;
         set({ entries: get().entries.filter((e) => e.id !== id) });
         await get().actions.refresh();

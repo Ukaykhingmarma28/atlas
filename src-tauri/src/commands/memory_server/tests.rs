@@ -279,6 +279,7 @@ async fn the_briefing_carries_working_memory_the_index_and_the_first_look_extras
             index: None,
             bootstrap: Some(bootstrap),
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -697,6 +698,7 @@ async fn memory_search_also_returns_indexed_project_documents() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -755,6 +757,7 @@ async fn forgetting_through_the_tool_evicts_the_document_before_returning() {
             index: None,
             bootstrap: None,
             evict: Some(evict),
+            ..Sources::default()
         },
     )
     .await;
@@ -855,6 +858,7 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -1061,6 +1065,7 @@ fn entry(
         uses,
         content_hash: String::new(),
         seq: None,
+        ..Default::default()
     }
 }
 

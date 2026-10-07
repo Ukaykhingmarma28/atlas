@@ -23,7 +23,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use atlas_memory::record::{Entry, EntryKind, Origin, RecordStore};
+use atlas_memory::record::{Entry, EntryKind, Origin, RecordStore, Source, State};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
@@ -36,6 +36,15 @@ pub(super) const INDEX_MAX_CHARS: usize = 8_000;
 pub(super) const INDEX_ENTRY_MAX_CHARS: usize = 160;
 /// The active plan's content cap in a briefing.
 const PLAN_MAX_CHARS: usize = 2_000;
+/// The briefing's preferences: at most this many, newest first ...
+const PREFERENCES_MAX: usize = 30;
+/// ... within this many characters of content, the oldest dropped first.
+const PREFERENCES_MAX_CHARS: usize = 2_000;
+/// One preference line's content cap.
+const PREFERENCE_MAX_CHARS: usize = 300;
+/// How many sources an index line carries (the newest); `memory_get` and
+/// `memory_history` show them all.
+pub(super) const INDEX_SOURCES: usize = 2;
 /// How many entries of one kind a changes call carries.
 pub(super) const CHANGES_MAX_PER_KIND: usize = 8;
 /// Recency half-life for ranking: two weeks.
@@ -137,7 +146,9 @@ pub(super) fn rank_index(entries: &[Entry], now: i64) -> Vec<Entry> {
         let mut of_kind: Vec<(f64, &Entry)> = entries
             .iter()
             .filter(|e| e.kind == kind)
-            .filter(|e| !e.is_candidate())
+            // Only active entries are briefed: a candidate is unconfirmed, an
+            // archived entry is out of briefings by definition.
+            .filter(|e| e.state == State::Active)
             .map(|e| (score(e, now), e))
             .collect();
         of_kind.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -169,6 +180,9 @@ pub(super) fn rank_index(entries: &[Entry], now: i64) -> Vec<Entry> {
 #[derive(Debug, Default)]
 pub(super) struct Briefing {
     pub plan: Option<Entry>,
+    /// How the user wants things done: briefed first, newest first, never
+    /// ranked by recency (a preference does not age).
+    pub preferences: Vec<Entry>,
     /// Newest first.
     pub files_changed: Vec<Entry>,
     /// Grouped by kind, best first within a kind.
@@ -190,19 +204,44 @@ pub(super) fn read_briefing(store: &RecordStore, now: i64) -> anyhow::Result<Bri
     for kind in DURABLE_KINDS {
         durable.extend(store.list(kind, RANK_POOL, Origin::Any)?);
     }
+    let preferences =
+        brief_preferences(store.list(EntryKind::Preference, RANK_POOL, Origin::Any)?);
     let synced_to = plan
         .iter()
         .chain(&files_changed)
         .chain(&durable)
+        .chain(&preferences)
         .map(|e| e.updated_at)
         .max()
         .unwrap_or(0);
     Ok(Briefing {
         plan,
+        preferences,
         files_changed,
         index: rank_index(&durable, now),
         synced_to,
     })
+}
+
+/// The preferences a briefing leads with, from the stored ones (oldest
+/// first): the active ones, newest first, at most [`PREFERENCES_MAX`] and
+/// [`PREFERENCES_MAX_CHARS`] of content, the oldest dropped first.
+pub(super) fn brief_preferences(stored: Vec<Entry>) -> Vec<Entry> {
+    let mut out = Vec::new();
+    let mut chars = 0usize;
+    for e in stored
+        .into_iter()
+        .rev()
+        .filter(|e| e.state == State::Active)
+    {
+        let cost = one_line(&e.content, PREFERENCE_MAX_CHARS).chars().count();
+        if out.len() == PREFERENCES_MAX || chars + cost > PREFERENCES_MAX_CHARS {
+            break;
+        }
+        chars += cost;
+        out.push(e);
+    }
+    out
 }
 
 /// What other sessions recorded since a session last looked.
@@ -323,6 +362,9 @@ pub(super) fn entry_json(e: &Entry) -> Value {
         "confidence": e.confidence,
         "updatedAt": e.updated_at,
         "uses": e.uses,
+        "revision": e.rev,
+        "state": e.state.as_str(),
+        "added": added(e.created_at),
     });
     if e.kind == EntryKind::Plan && !e.status.is_empty() {
         value["status"] = json!(e.status);
@@ -331,6 +373,27 @@ pub(super) fn entry_json(e: &Entry) -> Value {
         value["candidate"] = json!(true);
     }
     value
+}
+
+/// The UTC date an entry was first saved, `YYYY-MM-DD`.
+fn added(created_at: i64) -> Option<String> {
+    chrono::DateTime::from_timestamp_millis(created_at).map(|d| d.format("%Y-%m-%d").to_string())
+}
+
+/// Attach provenance to an entry object: the `keep` newest of its sources
+/// (0 = all), as `atlas-session:<agent>/<session>`, `atlas-user`, or the
+/// writer's raw source.
+pub(super) fn with_sources(value: &mut Value, sources: &[Source], keep: usize) {
+    let uris: Vec<String> = sources
+        .iter()
+        .map(atlas_memory::record::source_uri)
+        .collect();
+    let start = if keep == 0 {
+        0
+    } else {
+        uris.len().saturating_sub(keep)
+    };
+    value["sources"] = json!(uris[start..]);
 }
 
 /// One entry as the index lists it: `content` capped at `max_chars`, with
@@ -345,6 +408,7 @@ fn capped_json(e: &Entry, max_chars: usize) -> Value {
         "by": provenance(e),
         "confidence": e.confidence,
         "updatedAt": e.updated_at,
+        "added": added(e.created_at),
     });
     if truncated {
         value["truncated"] = json!(true);
@@ -353,7 +417,17 @@ fn capped_json(e: &Entry, max_chars: usize) -> Value {
 }
 
 /// The `memory_briefing` result, before the first-look extras are added.
-pub(super) fn briefing_json(b: &Briefing) -> Value {
+/// Each index line and preference carries its newest sources from `sources`.
+pub(super) fn briefing_json(b: &Briefing, sources: &HashMap<i64, Vec<Source>>) -> Value {
+    let line = |e: &Entry, max: usize| {
+        let mut v = capped_json(e, max);
+        with_sources(
+            &mut v,
+            sources.get(&e.id).map_or(&[][..], Vec::as_slice),
+            INDEX_SOURCES,
+        );
+        v
+    };
     let plan = b.plan.as_ref().map(|p| {
         let content = truncate_chars(p.content.trim(), PLAN_MAX_CHARS);
         let mut value = json!({
@@ -387,28 +461,38 @@ pub(super) fn briefing_json(b: &Briefing) -> Value {
             .index
             .iter()
             .filter(|e| e.kind == kind)
-            .map(|e| capped_json(e, INDEX_ENTRY_MAX_CHARS))
+            .map(|e| line(e, INDEX_ENTRY_MAX_CHARS))
             .collect();
         if !of_kind.is_empty() {
             index.insert(kind.as_str().to_string(), Value::Array(of_kind));
         }
     }
+    let preferences: Vec<Value> = b
+        .preferences
+        .iter()
+        .map(|e| line(e, PREFERENCE_MAX_CHARS))
+        .collect();
     json!({
         "plan": plan,
+        "preferences": preferences,
         "filesChanged": files,
         "index": index,
         "syncedTo": b.synced_to,
     })
 }
 
-/// The `memory_changes` result.
-pub(super) fn changes_json(c: &Changes) -> Value {
+/// The `memory_changes` result, each entry with all its sources.
+pub(super) fn changes_json(c: &Changes, sources: &HashMap<i64, Vec<Source>>) -> Value {
     json!({
         "since": c.since,
         "syncedTo": c.synced_to,
         "more": c.more,
         "forgotten": c.forgotten,
-        "entries": c.entries.iter().map(entry_json).collect::<Vec<_>>(),
+        "entries": c.entries.iter().map(|e| {
+            let mut v = entry_json(e);
+            with_sources(&mut v, sources.get(&e.id).map_or(&[][..], Vec::as_slice), 0);
+            v
+        }).collect::<Vec<_>>(),
     })
 }
 
@@ -467,6 +551,13 @@ mod briefing_tests {
             uses: 0,
             content_hash: String::new(),
             seq: None,
+            // State follows confidence, as every write through the store sets it.
+            state: if confidence < atlas_memory::record::TRUSTED_CONFIDENCE {
+                State::Candidate
+            } else {
+                State::Active
+            },
+            ..Default::default()
         }
     }
 
@@ -500,6 +591,36 @@ mod briefing_tests {
         assert_eq!(seen.len(), 12, "nothing returned twice: {seen:?}");
         assert!(!seen.iter().any(|c| c.contains("99")));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_active_entries_are_briefed() {
+        let make = |id: i64, state: State| Entry {
+            state,
+            ..entry(id, &format!("f{id}"), 1.0, 1)
+        };
+        let index = rank_index(
+            &[
+                make(1, State::Archived),
+                make(2, State::Candidate),
+                make(3, State::Active),
+            ],
+            2,
+        );
+        assert_eq!(index.iter().map(|e| e.id).collect::<Vec<_>>(), vec![3]);
+    }
+
+    #[test]
+    fn preferences_lead_newest_first_within_their_budget() {
+        let pref = |id: i64, content: &str| Entry {
+            kind: EntryKind::Preference,
+            ..entry(id, content, 1.0, id)
+        };
+        let mut stored: Vec<Entry> = (1..=40).map(|i| pref(i, &format!("pref {i}"))).collect();
+        stored[39].state = State::Archived;
+        let got = brief_preferences(stored);
+        assert_eq!(got.len(), PREFERENCES_MAX);
+        assert_eq!(got[0].id, 39, "newest active first");
     }
 
     #[test]

@@ -11,9 +11,9 @@
 //! - **Handed to every agent that can take it** ([`offers`]): ACP agents that
 //!   advertise `mcpCapabilities.http`, and the native agent through its
 //!   thread's engine config.
-//! - **Seven tools** ([`tools`]), read first, write last: `memory_briefing`,
+//! - **Eight tools** ([`tools`]), read first, write last: `memory_briefing`,
 //!   `memory_changes`, `memory_search`, `memory_get`, `memory_list`,
-//!   `memory_remember`, `memory_forget`. The server's instructions
+//!   `memory_history`, `memory_remember`, `memory_forget`. The server's instructions
 //!   ([`INSTRUCTIONS`]) tell the agent when to call each — the briefing first
 //!   in every session — because with nothing pushed, the protocol is what
 //!   makes memory reach the model.

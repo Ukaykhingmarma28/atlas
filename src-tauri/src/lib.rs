@@ -868,6 +868,8 @@ pub fn run() {
             commands::shared_memory::memory_list_entries,
             commands::shared_memory::memory_edit_entry,
             commands::shared_memory::memory_forget_entry,
+            commands::shared_memory::memory_purge_entry,
+            commands::shared_memory::memory_entry_provenance,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,

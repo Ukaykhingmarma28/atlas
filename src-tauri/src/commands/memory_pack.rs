@@ -131,7 +131,7 @@ pub fn build_session_handoff(
     current_session_id: &str,
     transcripts_dir: &Path,
 ) -> Option<(String, usize)> {
-    let roots = scope_roots(cwd, transcripts_dir);
+    let roots = scope_roots(cwd, Some(transcripts_dir));
     // A root whose capture was never enabled has no store and is skipped.
     let stores: Vec<(&PathBuf, Store)> = roots
         .iter()
@@ -194,8 +194,8 @@ enum Origin {
 /// a scope) and every subdirectory of one that Atlas has recorded a session in
 /// (subdirectory launches share it too) — found through the transcripts Atlas
 /// keeps for every session, since each launch directory keeps its own capture
-/// store.
-fn scope_roots(cwd: &str, transcripts_dir: &Path) -> Vec<PathBuf> {
+/// store. Without `transcripts_dir` only `cwd` and the worktrees are found.
+pub(crate) fn scope_roots(cwd: &str, transcripts_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = vec![PathBuf::from(cwd)];
     let mut seen: HashSet<PathBuf> = HashSet::from([canonical(Path::new(cwd))]);
     let worktrees: Vec<PathBuf> = atlas_checkpoint::git::worktree_paths(Path::new(cwd))
@@ -210,6 +210,9 @@ fn scope_roots(cwd: &str, transcripts_dir: &Path) -> Vec<PathBuf> {
             roots.push(wt.clone());
         }
     }
+    let Some(transcripts_dir) = transcripts_dir else {
+        return roots;
+    };
     let scope = canonical(&atlas_checkpoint::git::scope_root(Path::new(cwd)));
     for (launched, _) in super::agent_transcript::recorded_projects(transcripts_dir) {
         let dir = canonical(Path::new(&launched));

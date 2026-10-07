@@ -36,6 +36,7 @@ import type {
   EventKind,
   MemoryEntry,
   MemoryEvent,
+  Provenance,
   SharedState,
 } from "@/features/memory/lib/shared-memory-api";
 import type { TypedHandlers, Unit, Unread } from "../types";
@@ -1218,6 +1219,8 @@ function seededEntries(): MemoryEntry[] {
         updatedAt: ago(minutesAgo),
         lastUsedAt: uses ? ago(Math.max(10, minutesAgo / 4)) : null,
         uses,
+        revision: index + 1,
+        state: confidence < 0.5 ? "candidate" : "active",
       };
     },
   );
@@ -1286,6 +1289,8 @@ export interface MemoryResponses {
   memory_list_entries: MemoryEntry[];
   memory_edit_entry: MemoryEntry;
   memory_forget_entry: boolean;
+  memory_purge_entry: boolean;
+  memory_entry_provenance: Provenance[];
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
@@ -1412,6 +1417,30 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     entryLog.set(path, kept);
     return kept.length !== entries.length;
   },
+  // The mock keeps no history, so erasing is forgetting.
+  memory_purge_entry: ({ projectPath, id }): boolean => {
+    const path = String(projectPath);
+    const entries = entriesFor(path);
+    const kept = entries.filter((e) => e.id !== Number(id));
+    entryLog.set(path, kept);
+    return kept.length !== entries.length;
+  },
+  memory_entry_provenance: ({ projectPath, id }): Provenance[] => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return [];
+    const added = new Date(entry.createdAt).toISOString().slice(0, 10);
+    return [
+      {
+        source: entry.sessionId
+          ? `atlas-session:${entry.agent || entry.source}/${entry.sessionId}`
+          : entry.source,
+        agent: entry.agent || entry.source,
+        added,
+        title: null,
+        commits: [],
+      },
+    ];
+  },
 
   // ── Claude auto-memory import ────────────────────────────────────────────
   memory_claude_import_preview: ({ projectPath }): ClaudeImportPreview =>
@@ -1440,6 +1469,8 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
         updatedAt: now,
         lastUsedAt: null,
         uses: 0,
+        revision: nextId,
+        state: "active",
       });
       line.isNew = false;
     }

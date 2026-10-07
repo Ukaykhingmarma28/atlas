@@ -457,6 +457,25 @@ async fn index_one(
         "indexed {cwd}: +{} ~{} -{} ={}",
         stats.added, stats.updated, stats.deleted, stats.unchanged
     );
+    // Memories written while no model was loaded have no vector yet; the
+    // model is loaded now, so embed them (off the async runtime).
+    let cwd_owned = cwd.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Ok(store) = super::shared_memory::store_for(&cwd_owned) {
+            match store.sync_vectors() {
+                Ok(n) if n > 0 => tracing::info!(
+                    target: "atlas::memory_indexer",
+                    "embedded {n} memories missing a vector"
+                ),
+                Ok(_) => {}
+                Err(e) => tracing::warn!(
+                    target: "atlas::memory_indexer",
+                    "memory vector backfill failed: {e:#}"
+                ),
+            }
+        }
+    })
+    .await;
     Ok(())
 }
 
@@ -616,6 +635,15 @@ impl atlas_memory::record::Embedder for ModelEmbedder {
             model: provider.provider_name().to_string(),
             vector,
         })
+    }
+
+    /// The loaded model's id: what the record's vector cache is keyed by.
+    /// `None` until the model is loaded, so a backfill waits for it.
+    fn model_id(&self) -> Option<String> {
+        let registry = self.app.try_state::<Arc<MemoryRegistry>>()?;
+        registry
+            .loaded_provider()
+            .map(|p| p.provider_name().to_string())
     }
 }
 

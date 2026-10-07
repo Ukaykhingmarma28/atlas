@@ -40,6 +40,8 @@ function entry(id: number, content: string, over: Record<string, unknown> = {}) 
     updatedAt: 2,
     lastUsedAt: null,
     uses: 0,
+    revision: 1,
+    state: "active",
     ...over,
   };
 }
@@ -109,6 +111,21 @@ beforeEach(() => {
       entries = entries.filter((e) => e.id !== args.id);
       return true;
     }
+    if (cmd === "memory_purge_entry") {
+      entries = entries.filter((e) => e.id !== args.id);
+      return true;
+    }
+    if (cmd === "memory_entry_provenance") {
+      return [
+        {
+          source: "atlas-session:claude-code/s-a",
+          agent: "claude-code",
+          added: "2026-10-05",
+          title: "Move auth to EdDSA",
+          commits: ["3f9c2ab1d4e0"],
+        },
+      ];
+    }
     return null;
   });
   useSharedMemoryStore.setState({ projectPath: null, loaded: false, entries: [] });
@@ -124,6 +141,35 @@ async function openMemories() {
 }
 
 describe("the Shared tab's Memories table", () => {
+  it("erases an entry with its history after confirming", async () => {
+    const user = await openMemories();
+    await user.click(await screen.findByText("Prefers small PRs"));
+    await user.click(screen.getByRole("button", { name: "Erase with history" }));
+    expect(invoke).not.toHaveBeenCalledWith("memory_purge_entry", expect.anything());
+    await user.click(await screen.findByRole("button", { name: "Erase" }));
+    expect(invoke).toHaveBeenCalledWith("memory_purge_entry", { projectPath: "/repo", id: 2 });
+    await waitFor(() => expect(screen.queryByText("Prefers small PRs")).toBeNull());
+  });
+
+  it("says where a memory was learned", async () => {
+    const user = await openMemories();
+    await user.click(await screen.findByText("Prefers small PRs"));
+    expect(
+      await screen.findByText(
+        "Learned in “Move auth to EdDSA” · claude-code · 2026-10-05 → 3f9c2ab",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("marks a candidate in its row", async () => {
+    entries = [
+      entry(3, "always force-push", { state: "candidate", source: "capture", confidence: 0.3 }),
+    ];
+    await openMemories();
+    const row = (await screen.findByText("always force-push")).closest("button")!;
+    expect(within(row).getByText("candidate")).toBeTruthy();
+  });
+
   it("shows each entry's source, agent and confidence", async () => {
     await openMemories();
     const extracted = (await screen.findByText("Mocking the DB hid a migration bug")).closest(

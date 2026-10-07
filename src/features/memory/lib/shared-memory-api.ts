@@ -97,6 +97,24 @@ export interface MemoryEntry {
   updatedAt: number;
   lastUsedAt: number | null;
   uses: number;
+  /** The revision the entry currently is. */
+  revision: number;
+  /** `active`, `candidate` (captured, not confirmed) or `archived`. */
+  state: "active" | "candidate" | "archived";
+}
+
+/** Where a memory was learned: the session that wrote it, resolved against the
+ *  session recorder when capture records the project. */
+export interface Provenance {
+  /** `atlas-session:<agent>/<session>`, `atlas-user`, or a raw source. */
+  source: string;
+  agent: string;
+  /** `YYYY-MM-DD`. */
+  added: string | null;
+  /** The recorded session's title (its first prompt), when recorded. */
+  title: string | null;
+  /** The commits that session produced, newest first (12 hex). */
+  commits: string[];
 }
 
 /** One line an import of Claude's auto-memory would write (the preview). */
@@ -136,6 +154,13 @@ export const sharedMemory = {
   /** Forget (delete) an entry. `false` when it was already gone. */
   forgetEntry: (projectPath: string, id: number) =>
     invoke<boolean>("memory_forget_entry", { projectPath, id }),
+  /** Forget an entry and erase its text from every table of the record
+   *  ("Erase with history"). `false` when there was nothing to erase. */
+  purgeEntry: (projectPath: string, id: number) =>
+    invoke<boolean>("memory_purge_entry", { projectPath, id }),
+  /** Where an entry was learned (read-only from the session recorder). */
+  provenance: (projectPath: string, id: number) =>
+    invoke<Provenance[]>("memory_entry_provenance", { projectPath, id }),
   /** What importing the project's Claude auto-memory would write. Writes nothing. */
   previewClaudeImport: (projectPath: string) =>
     invoke<ClaudeImportPreview>("memory_claude_import_preview", { projectPath }),

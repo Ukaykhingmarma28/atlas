@@ -799,6 +799,8 @@ function entries(): MemoryEntry[] {
         updatedAt: edit?.updatedAt ?? at,
         lastUsedAt: uses ? LOAD - Math.min(uses, 3) * 5 * HOUR : null,
         uses,
+        revision: index + 1,
+        state: "active",
       };
     })
     .filter((entry): entry is MemoryEntry => entry !== null)

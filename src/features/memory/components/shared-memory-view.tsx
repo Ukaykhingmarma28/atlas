@@ -34,6 +34,7 @@ import {
   X,
   Loader2,
   Download,
+  Eraser,
 } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
@@ -46,11 +47,13 @@ import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { sharedMemory } from "../lib/shared-memory-api";
 import type {
   ClaudeImportLine,
   ClaudeImportPreview,
   MemoryEntry,
   MemoryEvent,
+  Provenance,
 } from "../lib/shared-memory-api";
 
 interface Props {
@@ -586,8 +589,9 @@ function EntryRow({
         <span className={ENTRY_COL.kind}>
           <KindChip kind={e.kind} />
         </span>
-        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2")}>
+        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2 flex items-center gap-1")}>
           <SourceChip source={e.source} />
+          {e.state && e.state !== "active" && <StateChip state={e.state} />}
         </span>
         <span className={cn(ENTRY_COL.agent, "min-w-0")}>
           {entryAgent(e.agent) ? (
@@ -628,11 +632,30 @@ function EntryRow({
 /** An expanded entry: its full provenance, its content, and the edit and
  *  forget actions. Editing follows the Policy view: a draft, save, revert. */
 function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
-  const { editEntry, forgetEntry } = useSharedMemoryStore.use.actions();
+  const { editEntry, forgetEntry, purgeEntry } = useSharedMemoryStore.use.actions();
+  const projectPath = useSharedMemoryStore.use.projectPath();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(e.content);
   const [saving, setSaving] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
+  const [provenance, setProvenance] = useState<Provenance[]>([]);
+
+  useEffect(() => {
+    if (!projectPath) return;
+    let alive = true;
+    sharedMemory
+      .provenance(projectPath, e.id)
+      .then((p) => {
+        if (alive) setProvenance(p ?? []);
+      })
+      .catch(() => {
+        if (alive) setProvenance([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectPath, e.id]);
   const dirty = draft.trim() !== e.content.trim() && draft.trim().length > 0;
 
   useEffect(() => {
@@ -665,6 +688,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
       toast.success("Memory forgotten");
     } catch (err) {
       toast.error(`Couldn't forget: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const erase = async () => {
+    setConfirmErase(false);
+    try {
+      await purgeEntry(e.id);
+      toast.success("Memory erased with its history");
+    } catch (err) {
+      toast.error(`Couldn't erase: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -702,6 +735,9 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
               <IconButton label="Forget memory" onClick={() => setConfirmForget(true)}>
                 <Trash2 size={12} />
               </IconButton>
+              <IconButton label="Erase with history" onClick={() => setConfirmErase(true)}>
+                <Eraser size={12} />
+              </IconButton>
             </>
           )}
         </div>
@@ -734,6 +770,15 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
           </pre>
         </div>
       )}
+      {provenance.length > 0 && (
+        <div className="space-y-0.5">
+          {provenance.map((p, i) => (
+            <p key={`${p.source}-${i}`} className="text-xs text-[var(--muted-foreground)]">
+              {provenanceLine(p)}
+            </p>
+          ))}
+        </div>
+      )}
       <FileTreeConfirmDelete
         open={confirmForget}
         name={e.content}
@@ -743,6 +788,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
         confirmLabel="Forget"
         onConfirm={() => void forget()}
         onOpenChange={setConfirmForget}
+      />
+      <FileTreeConfirmDelete
+        open={confirmErase}
+        name={e.content}
+        isDir={false}
+        title="Erase this memory and its history?"
+        body="It is forgotten, and every earlier wording is overwritten on disk. Use this for a secret that slipped into memory. This can't be undone. Recorded sessions in the Timeline keep their own copy of the conversation; this does not change them."
+        confirmLabel="Erase"
+        onConfirm={() => void erase()}
+        onOpenChange={setConfirmErase}
       />
     </div>
   );
@@ -1115,6 +1170,26 @@ function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex max-w-full items-center rounded bg-[var(--card)] px-1.5 py-0.5 text-2xs text-[var(--muted-foreground)]">
       <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/** "Learned in “title” · agent · date → sha", or the bare source. */
+export function provenanceLine(p: Provenance): string {
+  const date = p.added ?? "";
+  if (p.title) {
+    const commit = p.commits[0] ? ` → ${p.commits[0].slice(0, 7)}` : "";
+    return `Learned in “${p.title}” · ${p.agent} · ${date}${commit}`;
+  }
+  if (p.source === "atlas-user") return `Written by you · ${date}`;
+  return `From ${p.source} · ${date}`;
+}
+
+/** A candidate or archived entry's state, beside its source. */
+function StateChip({ state }: { state: string }) {
+  return (
+    <span className="text-3xs uppercase tracking-wide text-[var(--muted-foreground)] border border-[var(--border)] rounded px-1 py-px">
+      {state}
     </span>
   );
 }

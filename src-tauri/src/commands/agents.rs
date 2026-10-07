@@ -896,6 +896,12 @@ pub fn install_manager(app: &AppHandle) {
                 index: Some(index),
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
+                // Read-only: memory never writes the recorder (memory_capture.rs).
+                capture: super::memory_capture::CaptureReader {
+                    transcripts_dir: app
+                        .try_state::<Arc<super::agent_transcript::TranscriptState>>()
+                        .map(|t| t.config_dir().to_path_buf()),
+                },
             },
             vec![ui_router, org_router, code_router],
         );
