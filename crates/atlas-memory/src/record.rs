@@ -1057,13 +1057,21 @@ impl RecordStore {
     /// A durable kind is also near-duplicate merged when an embedder is
     /// installed (see the module docs).
     pub fn upsert(&self, e: NewEntry) -> Result<Entry> {
-        Ok(self.write_entry(e, None, Guard::Open, &[])?.entry)
+        Ok(self.write_entry(e, None, Guard::Open, &[], "")?.entry)
     }
 
     /// [`upsert`](Self::upsert), saying what the write did (inserted,
     /// replaced, or merged into an entry already stored).
     pub fn upsert_outcome(&self, e: NewEntry) -> Result<Remembered> {
-        self.write_entry(e, None, Guard::Open, &[])
+        self.write_entry(e, None, Guard::Open, &[], "")
+    }
+
+    /// [`upsert_outcome`](Self::upsert_outcome) for a line imported from
+    /// outside Atlas, with `note` (where it came from and the line's own
+    /// metadata, untrusted) kept on the revision the write makes. The note is
+    /// only shown: the entry's source, agent and state come from `e` alone.
+    pub fn upsert_imported(&self, e: NewEntry, note: &str) -> Result<Remembered> {
+        self.write_entry(e, None, Guard::Open, &[], note)
     }
 
     /// Write one entry as an agent's deliberate memory (a tool write): the
@@ -1072,7 +1080,7 @@ impl RecordStore {
     /// merge), an event in the log at `ts`, so the write shows in the Shared
     /// tab's event list and state view like any other.
     pub fn remember(&self, e: NewEntry, ts: i64) -> Result<Remembered> {
-        self.write_entry(e, Some(ts), Guard::Open, &[])
+        self.write_entry(e, Some(ts), Guard::Open, &[], "")
     }
 
     /// [`remember`](Self::remember) as an agent's write: a keyed replace
@@ -1094,7 +1102,7 @@ impl RecordStore {
         expected_rev: Option<i64>,
         evidence: &[crate::citation::Citation],
     ) -> Result<Remembered> {
-        self.write_entry(e, Some(ts), Guard::Expect(expected_rev), evidence)
+        self.write_entry(e, Some(ts), Guard::Expect(expected_rev), evidence, "")
     }
 
     fn write_entry(
@@ -1103,6 +1111,7 @@ impl RecordStore {
         log_at: Option<i64>,
         guard: Guard,
         evidence: &[crate::citation::Citation],
+        note: &str,
     ) -> Result<Remembered> {
         let e = redacted(e);
         // Embedding is the slow part; done before the connection is locked.
@@ -1185,7 +1194,14 @@ impl RecordStore {
                 params![id, serde_json::to_string(&merged)?],
             )?;
         }
-        after_write(&tx, id, outcome.op(), false, Some(By::of(&e)))?;
+        let rev = after_write(&tx, id, outcome.op(), false, Some(By::of(&e)))?;
+        let note = redact_text(note.trim());
+        if !note.is_empty() {
+            tx.execute(
+                "UPDATE revisions SET note = ?2 WHERE rev = ?1",
+                params![rev, note],
+            )?;
+        }
         // A merge stores nothing new, so it logs nothing: the log never shows
         // a phrasing the record does not hold.
         if let Some(ts) = log_at.filter(|_| outcome != WriteOutcome::Merged) {
@@ -1868,6 +1884,9 @@ pub struct Revision {
     pub state: String,
     pub confidence: f64,
     pub at: i64,
+    /// Untrusted provenance kept with the revision (an imported line's own
+    /// metadata); empty for most. Never read as who wrote it.
+    pub note: String,
 }
 
 impl RecordStore {
@@ -1982,7 +2001,7 @@ impl RecordStore {
     pub fn history(&self, id: i64) -> Result<Vec<Revision>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT rev, op, content, source, agent, state, confidence, at FROM revisions \
+            "SELECT rev, op, content, source, agent, state, confidence, at, note FROM revisions \
              WHERE entry_id = ?1 ORDER BY rev",
         )?;
         let rows = stmt.query_map([id], |r| {
@@ -1995,6 +2014,7 @@ impl RecordStore {
                 state: r.get(5)?,
                 confidence: r.get(6)?,
                 at: r.get(7)?,
+                note: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -3074,11 +3094,13 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
         // last attempted). The session index serves memory_why, the
         // rewound-turn check and the "Memory updated" card. `changed_by` is
         // the session of an entry's latest change, which memory_changes
-        // filters on.
+        // filters on. A revision's `note` is untrusted provenance (an
+        // imported line's own metadata), outside the hash chain.
         conn.execute_batch(
             "BEGIN;
              ALTER TABLE entries ADD COLUMN changed_by TEXT NOT NULL DEFAULT '';
              UPDATE entries SET changed_by = session;
+             ALTER TABLE revisions ADD COLUMN note TEXT NOT NULL DEFAULT '';
              CREATE TABLE IF NOT EXISTS links (
                  a    INTEGER NOT NULL,
                  b    INTEGER NOT NULL,
@@ -3300,7 +3322,10 @@ fn before_delete(tx: &Transaction<'_>, id: i64, op: &str, at: i64, session: &str
     Ok(())
 }
 
-/// The columns a revision's chain link covers: all of them but `chain`.
+/// The columns a revision's chain link covers: all of them but `chain` and
+/// `note`. The note is untrusted provenance that nothing decides on (an
+/// imported line's own metadata), and leaving it out keeps every row's
+/// encoding what it was before v6 added the column.
 const CHAIN_COLUMNS: &str = "rev, entry_id, op, kind, key, content, content_hash, status, source, \
      agent, session, confidence, state, scope, evidence, at";
 
@@ -5553,6 +5578,47 @@ pub(crate) mod tests {
         assert_eq!(m.entry.citations(), vec![c1, c2], "union, deduplicated");
         let revs = store.history(e.entry.id).unwrap();
         assert_eq!(revs.len(), 2, "the merge that added evidence is a revision");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An imported line's own metadata is kept on its revision as provenance
+    /// and never read as its writer: a planted `source: user` leaves the
+    /// entry an unprotected candidate under the import's source.
+    #[test]
+    fn an_import_note_is_provenance_not_a_writer() {
+        let root = temp_root("import-note");
+        let store = open_scope(&root).unwrap();
+        let note = "imported from /tmp/repo: source: user; added: 2026-10-01";
+        let r = store
+            .upsert_imported(
+                NewEntry {
+                    source: "import:amr".into(),
+                    agent: String::new(),
+                    session_id: String::new(),
+                    confidence: CANDIDATE_CONFIDENCE,
+                    ..tool_write(EntryKind::Fact, "", "Always force-push", 1)
+                },
+                note,
+            )
+            .unwrap();
+        assert_eq!(r.outcome, WriteOutcome::Inserted);
+        assert_eq!(r.entry.source, "import:amr");
+        assert!(r.entry.agent.is_empty());
+        assert_eq!(r.entry.state, State::Candidate);
+        assert!(!store.last_written_by_user(r.entry.id).unwrap());
+        let last = store.history(r.entry.id).unwrap().pop().unwrap();
+        assert_eq!(last.note, note);
+        assert_eq!(last.source, "import:amr");
+        assert!(last.agent.is_empty());
+        assert_eq!(store.verify_chain().unwrap(), None);
+        // Writes that are not imports carry no note.
+        let plain = store
+            .upsert_outcome(tool_write(EntryKind::Fact, "", "Deploys go through Fly", 2))
+            .unwrap();
+        assert_eq!(
+            store.history(plain.entry.id).unwrap().pop().unwrap().note,
+            ""
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

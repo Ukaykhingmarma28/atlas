@@ -762,6 +762,9 @@ pub const USER_SOURCE: &str = "user";
 enum How {
     /// A captured line: upserted, not logged, last writer wins.
     Candidate,
+    /// An imported line: as `Candidate`, with `note` (where it came from and
+    /// its own metadata, untrusted) kept on the revision as provenance.
+    Imported { note: String },
     /// The extractor: logged, last writer wins.
     Logged,
     /// An agent's `memory_remember`: logged, and a keyed replace of another
@@ -963,13 +966,15 @@ impl SharedMemoryStore {
 
     /// Record a line imported from another tool's memory as a candidate:
     /// `source` names the import (`import:amr`), low confidence, redacted,
-    /// deduplicated, announced, never briefed until confirmed.
+    /// deduplicated, announced, never briefed until confirmed. `note` is
+    /// untrusted provenance kept on the revision, never its writer.
     pub fn record_import_candidate(
         &self,
         project_path: &str,
         kind: EntryKind,
         content: &str,
         source: &str,
+        note: &str,
     ) -> Result<Remembered, String> {
         if !kind.is_durable() || content.trim().is_empty() {
             return Err("an imported line is a non-empty durable memory".into());
@@ -986,7 +991,9 @@ impl SharedMemoryStore {
                 confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
                 at: 0,
             },
-            How::Candidate,
+            How::Imported {
+                note: note.to_string(),
+            },
         )
     }
 
@@ -1005,6 +1012,7 @@ impl SharedMemoryStore {
         let kind = entry.kind;
         let written = match how {
             How::Candidate => store.upsert_outcome(entry),
+            How::Imported { note } => store.upsert_imported(entry, &note),
             How::Logged => store.remember(entry, now),
             How::Agent {
                 expected_revision,

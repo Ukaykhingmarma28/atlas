@@ -1010,6 +1010,8 @@ fn record_call(
                     "state": r.state,
                     "confidence": r.confidence,
                     "at": r.at,
+                    // Untrusted provenance (an imported line's own metadata).
+                    "note": r.note,
                 })).collect::<Vec<_>>(),
                 "provenance": memory_capture::provenance_json(&sources),
             }))

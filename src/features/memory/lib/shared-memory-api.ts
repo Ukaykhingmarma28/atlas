@@ -160,6 +160,9 @@ export interface RepoImportLine {
   content: string;
   /** The file it came from, relative to the chosen folder. */
   file: string;
+  /** The line's own metadata (`key: value; …`), empty when none. Untrusted:
+   *  kept as provenance, never as who wrote it. */
+  meta: string;
   /** `false` when memory already holds it: confirm skips it. */
   isNew: boolean;
 }
