@@ -1303,6 +1303,8 @@ export interface MemoryResponses {
   memory_archive: number;
   memory_merge: number;
   memory_resolve_conflict: boolean;
+  memory_dream_accept: string;
+  memory_dream_dismiss: Unit;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
@@ -1451,6 +1453,7 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     candidates: entriesFor(String(projectPath)).filter((e) => e.state === "candidate"),
     merges: [],
     conflicts: [],
+    dreams: [],
   }),
   memory_session_writes: (): SessionWrite[] => [],
   memory_promote: ({ projectPath, id }): boolean => {
@@ -1473,6 +1476,8 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     return hit.length;
   },
   memory_resolve_conflict: (): boolean => true,
+  memory_dream_accept: (): string => "accepted",
+  memory_dream_dismiss: (): null => null,
   memory_health_status: (): HealthStatus => ({
     checkedAt: Date.now(),
     record: { checkedAt: Date.now(), found: [], repaired: [], deferred: [] },

@@ -48,6 +48,14 @@ beforeEach(() => {
         b: entry(9, "main needs Java 17", { state: "active" }),
       },
     ],
+    dreams: [
+      {
+        id: 41,
+        op: { op: "archive", id: 10, reason: "transient" },
+        why: "task state",
+        entries: [entry(10, "PR 412 is in review", { state: "active" })],
+      },
+    ],
   };
   invoke.mockReset();
   invoke.mockImplementation(async (cmd: string) => (cmd === "memory_review" ? queue : true));
@@ -60,7 +68,8 @@ describe("the review queue", () => {
     render(<MemoryReviewView projectPath="/repo" />);
     await user.click((await screen.findAllByRole("button", { name: "Approve" }))[0]);
     expect(invoke).toHaveBeenCalledWith("memory_promote", { projectPath: "/repo", id: 1 });
-    await user.click(screen.getAllByRole("button", { name: "Dismiss" })[1]);
+    // The nightly review's Dismiss comes first, then one per candidate.
+    await user.click(screen.getAllByRole("button", { name: "Dismiss" })[2]);
     expect(invoke).toHaveBeenCalledWith("memory_archive", { projectPath: "/repo", ids: [2] });
   });
 
@@ -87,8 +96,20 @@ describe("the review queue", () => {
     });
   });
 
+  it("accepts a nightly-review proposal", async () => {
+    const user = userEvent.setup();
+    render(<MemoryReviewView projectPath="/repo" />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    expect(invoke).toHaveBeenCalledWith("memory_dream_accept", { projectPath: "/repo", id: 41 });
+  });
+
   it("says when there is nothing to review", async () => {
-    invoke.mockImplementation(async () => ({ candidates: [], merges: [], conflicts: [] }));
+    invoke.mockImplementation(async () => ({
+      candidates: [],
+      merges: [],
+      conflicts: [],
+      dreams: [],
+    }));
     render(<MemoryReviewView projectPath="/repo" />);
     expect(await screen.findByText("Nothing to review")).toBeTruthy();
   });

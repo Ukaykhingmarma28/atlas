@@ -129,11 +129,21 @@ export interface ConflictPair {
   b: MemoryEntry;
 }
 
+/** One change the nightly review proposed, with the entries it names. */
+export interface DreamProposal {
+  id: number;
+  /** The operation as proposed: `{ op: "add" | "merge" | "archive" | "rewrite" | "link", … }`. */
+  op: { op: string; content?: string; reason?: string; rel?: string; kind?: string };
+  why: string;
+  entries: MemoryEntry[];
+}
+
 /** What waits for the user in the Review tab. */
 export interface ReviewQueue {
   candidates: MemoryEntry[];
   merges: MergeProposal[];
   conflicts: ConflictPair[];
+  dreams: DreamProposal[];
 }
 
 /** A verdict on a memory after using it. */
@@ -197,6 +207,13 @@ export const sharedMemory = {
   /** Settle a contradiction: keep one side, or record that both hold. */
   resolveConflict: (projectPath: string, a: number, b: number, keep: "a" | "b" | "both") =>
     invoke<boolean>("memory_resolve_conflict", { projectPath, a, b, keep }),
+  /** Accept a nightly-review proposal: `"accepted"`, or `"obsolete"` when
+   *  memory moved on since and nothing was written. */
+  acceptDream: (projectPath: string, id: number) =>
+    invoke<string>("memory_dream_accept", { projectPath, id }),
+  /** Dismiss a nightly-review proposal. */
+  dismissDream: (projectPath: string, id: number) =>
+    invoke<void>("memory_dream_dismiss", { projectPath, id }),
   /** The user's verdict on one entry. `null` for an unknown id. */
   feedback: (projectPath: string, id: number, verdict: Verdict) =>
     invoke<MemoryEntry | null>("memory_feedback_entry", { projectPath, id, verdict }),

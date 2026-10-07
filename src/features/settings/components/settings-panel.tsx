@@ -573,6 +573,33 @@ function GeneralSettings() {
         />
       </SettingRow>
       <SettingRow
+        label="Atlas is the only memory in Atlas sessions"
+        description="Claude Code starts with its own auto memory off and Codex with its memories off, so every agent reads and writes the one shared memory. Off: each agent also keeps its own memory files."
+      >
+        <Toggle
+          checked={settings.atlasOnlyMemory}
+          onChange={(next) => updateSettings({ atlasOnlyMemory: next })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Nightly memory review"
+        description="Once a day, when there are new sessions, the memory model reads their handoff notes beside current memory and proposes changes. Proposals wait in Memory › Review; nothing changes without you. Uses the same model and consent as extraction."
+      >
+        <Toggle
+          checked={settings.memoryDreams}
+          onChange={(next) => updateSettings({ memoryDreams: next })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Mirror memory as an Agent Memory Repo"
+        description="Keeps a read-only copy of each project's active memory as a local git repository outside the project, in the open Agent Memory Repo format other tools read. No remote; nothing is pushed."
+      >
+        <Toggle
+          checked={settings.memoryRepoMirror}
+          onChange={(next) => updateSettings({ memoryRepoMirror: next })}
+        />
+      </SettingRow>
+      <SettingRow
         label="Atlas CLI"
         description={`Adds an \`atlas\` command to your shell — type \`atlas .\` in any terminal to open the current folder as a project. Refreshed automatically on every launch so an older copy never lingers. ${cliInstalledLine}.`}
       >

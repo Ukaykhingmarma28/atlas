@@ -893,6 +893,8 @@ pub fn run() {
             commands::shared_memory::memory_archive,
             commands::shared_memory::memory_merge,
             commands::shared_memory::memory_resolve_conflict,
+            commands::memory_dream::memory_dream_accept,
+            commands::memory_dream::memory_dream_dismiss,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,

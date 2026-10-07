@@ -73,6 +73,9 @@ pub enum Job {
         session: String,
         retried: bool,
     },
+    /// The daily dream pass for `cwd` (M4), if it is due: a model call, so
+    /// it runs on the extraction lane.
+    Dream { cwd: String },
 }
 
 /// What the last reconciler pass for a project found and did, for the
@@ -458,7 +461,10 @@ impl MemoryIndexer {
             tauri::async_runtime::spawn(job);
         });
         while let Some(job) = rx.recv().await {
-            let extraction = matches!(job, Job::ExtractSession { .. } | Job::SessionEnded { .. });
+            let extraction = matches!(
+                job,
+                Job::ExtractSession { .. } | Job::SessionEnded { .. } | Job::Dream { .. }
+            );
             let (app, registry_for_job) = (app.clone(), registry.clone());
             let work: Work = Box::pin(async move { handle(&app, &registry_for_job, job).await });
             if extraction {
@@ -541,6 +547,16 @@ async fn handle(app: &AppHandle, registry: &MemoryRegistry, job: Job) {
         Job::Health { cwd } => {
             if let Err(e) = health_one(app, registry, &cwd).await {
                 tracing::warn!(target: "atlas::memory_indexer", "Health {cwd} failed: {e}");
+            }
+        }
+        Job::Dream { cwd } => {
+            let now = chrono::Utc::now().timestamp_millis();
+            match super::memory_dream::dream_if_due(app, &cwd, now).await {
+                Ok(Some(id)) => {
+                    tracing::info!(target: "atlas::memory_indexer", "dream {id} for {cwd}");
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!(target: "atlas::memory_indexer", "Dream {cwd}: {e}"),
             }
         }
         Job::RewoundCheck {
@@ -669,6 +685,16 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
         recent.into_iter().map(|s| (cwd.to_string(), s)).collect(),
     )
     .await;
+    // The daily dream, when the user turned it on; it decides itself
+    // whether it is due.
+    let dreams = app
+        .try_state::<crate::state::AtlasConfigHandle>()
+        .is_some_and(|config| config.lock().effective().memory_dreams);
+    if dreams {
+        registry.send_or_remember(Job::Dream {
+            cwd: cwd.to_string(),
+        });
+    }
     let corpus = engine.write().await.heal().map_err(|e| format!("{e:#}"))?;
     if !record.repaired.is_empty() || corpus != atlas_memory::CorpusHealth::default() {
         tracing::info!(

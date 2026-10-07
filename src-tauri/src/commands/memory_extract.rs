@@ -171,7 +171,15 @@ impl Extractor {
 
     /// The model a pass in `cwd` would ask, or `None` when no pass runs there
     /// (sharing off, the reserved local mode, no account and no BYOK choice).
-    fn route(&self, sharing: &MemorySharingState, cwd: &str) -> Option<Route> {
+    /// The model passes ask (the dream pass asks it too, with the same
+    /// consent).
+    pub fn model(&self) -> Arc<dyn ExtractionModel> {
+        self.model.clone()
+    }
+
+    /// The route a pass for `cwd` takes: `None` when sharing is off or no
+    /// model is configured.
+    pub(crate) fn route(&self, sharing: &MemorySharingState, cwd: &str) -> Option<Route> {
         if !sharing.is_enabled(cwd) {
             return None;
         }

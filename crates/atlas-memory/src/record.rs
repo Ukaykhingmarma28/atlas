@@ -2456,6 +2456,125 @@ impl RecordStore {
     }
 }
 
+/// A pending dream proposal is `pending` until the user accepts or dismisses
+/// it, or an accept finds it `obsolete` (an id gone, a revision moved on).
+pub const PROPOSAL_PENDING: &str = "pending";
+
+impl RecordStore {
+    /// The newest dream: `(at, episodes_to)`, the newest episode end it read.
+    pub fn last_dream(&self) -> Result<Option<(i64, i64)>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT at, episodes_to FROM dreams ORDER BY at DESC, id DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// The newest `limit` handoff notes, oldest first.
+    pub fn recent_episodes(&self, limit: usize) -> Result<Vec<crate::handoff::HandoffNote>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT note FROM episodes ORDER BY ended_at DESC LIMIT ?1")?;
+        let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0))?;
+        let mut notes: Vec<crate::handoff::HandoffNote> = rows
+            .filter_map(|r| r.ok())
+            .filter_map(|n| serde_json::from_str(&n).ok())
+            .collect();
+        notes.reverse();
+        Ok(notes)
+    }
+
+    /// Keep one dream and its surviving operations as pending proposals, in
+    /// one transaction. Returns the dream id.
+    pub fn record_dream(
+        &self,
+        at: i64,
+        model: &str,
+        episodes_to: i64,
+        kept: &[crate::dream::DreamOp],
+        dropped: &[(crate::dream::DreamOp, &str)],
+    ) -> Result<i64> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let dropped_json: Vec<serde_json::Value> = dropped
+            .iter()
+            .map(|(op, why)| serde_json::json!({ "op": op, "why": why }))
+            .collect();
+        tx.execute(
+            "INSERT INTO dreams (at, model, episodes_to, kept, dropped) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                at,
+                model,
+                episodes_to,
+                kept.len() as i64,
+                serde_json::to_string(&dropped_json)?
+            ],
+        )?;
+        let dream = tx.last_insert_rowid();
+        for op in kept {
+            tx.execute(
+                "INSERT INTO dream_proposals (dream_id, op, status, at) VALUES (?1, ?2, ?3, ?4)",
+                params![dream, serde_json::to_string(op)?, PROPOSAL_PENDING, at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(dream)
+    }
+
+    /// Proposals in `status`, oldest first, as `(id, op)`. A row whose op no
+    /// longer parses is skipped.
+    pub fn dream_proposals(&self, status: &str) -> Result<Vec<(i64, crate::dream::DreamOp)>> {
+        let conn = self.conn();
+        let mut stmt =
+            conn.prepare("SELECT id, op FROM dream_proposals WHERE status = ?1 ORDER BY id")?;
+        let rows = stmt.query_map([status], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        Ok(rows
+            .filter_map(|r| r.ok())
+            .filter_map(|(id, op)| serde_json::from_str(&op).ok().map(|op| (id, op)))
+            .collect())
+    }
+
+    /// One proposal and its status.
+    pub fn dream_proposal(&self, id: i64) -> Result<Option<(crate::dream::DreamOp, String)>> {
+        let row: Option<(String, String)> = self
+            .conn()
+            .query_row(
+                "SELECT op, status FROM dream_proposals WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.and_then(|(op, status)| serde_json::from_str(&op).ok().map(|op| (op, status))))
+    }
+
+    /// Set a proposal's status (`accepted`, `dismissed`, `obsolete`).
+    pub fn set_proposal_status(&self, id: i64, status: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE dream_proposals SET status = ?2 WHERE id = ?1",
+            params![id, status],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the latest revision of `id` was written by the user (a dream
+    /// never touches it).
+    pub fn last_written_by_user(&self, id: i64) -> Result<bool> {
+        let agent: Option<String> = self
+            .conn()
+            .query_row(
+                "SELECT agent FROM revisions WHERE entry_id = ?1 ORDER BY rev DESC LIMIT 1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(agent.as_deref() == Some("user"))
+    }
+}
+
 /// Whether a stored JSON document carries `text` (as JSON spells it).
 fn json_mentions(json: &str, text: &str) -> bool {
     let spelled = serde_json::to_string(text).unwrap_or_default();

@@ -60,6 +60,9 @@ pub mod consolidate;
 // The handoff note each finished session leaves for the next agent (M4).
 pub mod handoff;
 
+// The dream pass: a daily model review that only proposes (M4).
+pub mod dream;
+
 // ─── Ported-from-the-old-SDK modules ───────────────────────────────────────────────
 //
 // These were the old SDK's embeddings and memory crates until 2026-08-22; they are

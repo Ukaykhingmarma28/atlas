@@ -46,6 +46,7 @@ pub mod knowledge_meta;
 pub mod log;
 pub mod memory_capture;
 pub mod memory_delta;
+pub mod memory_dream;
 pub mod memory_extract;
 pub mod memory_graph;
 pub mod memory_indexer;

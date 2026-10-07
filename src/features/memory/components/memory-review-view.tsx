@@ -8,10 +8,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
-import { sharedMemory, type MemoryEntry, type ReviewQueue } from "../lib/shared-memory-api";
+import {
+  sharedMemory,
+  type DreamProposal,
+  type MemoryEntry,
+  type ReviewQueue,
+} from "../lib/shared-memory-api";
 import { MEMORY_CHANGED_EVENT } from "../stores/shared-memory-store";
 
-const EMPTY: ReviewQueue = { candidates: [], merges: [], conflicts: [] };
+const EMPTY: ReviewQueue = { candidates: [], merges: [], conflicts: [], dreams: [] };
 const DEBOUNCE_MS = 300;
 
 export function MemoryReviewView({
@@ -65,14 +70,41 @@ export function MemoryReviewView({
     }
   };
 
+  const dreams = queue.dreams ?? [];
   const empty =
-    queue.candidates.length === 0 && queue.merges.length === 0 && queue.conflicts.length === 0;
+    queue.candidates.length === 0 &&
+    queue.merges.length === 0 &&
+    queue.conflicts.length === 0 &&
+    dreams.length === 0;
 
   return (
     <div className={cn("flex-1 min-h-0 overflow-y-auto px-3 py-2", className)}>
       {loaded && empty ? (
         <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Nothing to review</p>
       ) : null}
+      {dreams.length > 0 && (
+        <Section title="Proposed by the nightly review" count={dreams.length}>
+          {dreams.map((d) => (
+            <Card key={d.id}>
+              <div className="text-xs text-[var(--foreground)]">{dreamLabel(d.op)}</div>
+              {d.why && <div className="text-2xs text-[var(--muted-foreground)]">{d.why}</div>}
+              {d.entries.map((e) => (
+                <Line key={e.id} entry={e} muted />
+              ))}
+              <Actions>
+                <Action
+                  label="Accept"
+                  onClick={act(() => sharedMemory.acceptDream(projectPath, d.id))}
+                />
+                <Action
+                  label="Dismiss"
+                  onClick={act(() => sharedMemory.dismissDream(projectPath, d.id))}
+                />
+              </Actions>
+            </Card>
+          ))}
+        </Section>
+      )}
       {queue.conflicts.length > 0 && (
         <Section title="Contradictions" count={queue.conflicts.length}>
           {queue.conflicts.map(({ a, b }) => (
@@ -150,6 +182,24 @@ export function MemoryReviewView({
       )}
     </div>
   );
+}
+
+/** One line saying what a proposal would do. */
+function dreamLabel(op: DreamProposal["op"]): string {
+  switch (op.op) {
+    case "add":
+      return `Add ${op.kind ?? "memory"}: ${op.content ?? ""}`;
+    case "merge":
+      return "Merge these into the first";
+    case "archive":
+      return `Archive (${op.reason ?? "unused"})`;
+    case "rewrite":
+      return `Rewrite as: ${op.content ?? ""}`;
+    case "link":
+      return op.rel === "supersedes" ? "The first replaces the second" : "These contradict";
+    default:
+      return op.op;
+  }
 }
 
 function Section({

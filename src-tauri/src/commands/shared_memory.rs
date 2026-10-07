@@ -202,6 +202,17 @@ pub struct ConflictPair {
     pub b: MemoryEntry,
 }
 
+/// One change the nightly review proposed, with the entries it names.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DreamProposalView {
+    pub id: i64,
+    /// The operation as the model gave it (`{"op": "archive", "id": 3, …}`).
+    pub op: serde_json::Value,
+    pub why: String,
+    pub entries: Vec<MemoryEntry>,
+}
+
 /// What waits for the user in the Memory panel's Review tab (M4).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -209,6 +220,7 @@ pub struct ReviewQueue {
     pub candidates: Vec<MemoryEntry>,
     pub merges: Vec<MergeProposalView>,
     pub conflicts: Vec<ConflictPair>,
+    pub dreams: Vec<DreamProposalView>,
 }
 
 impl From<Entry> for MemoryEntry {
@@ -1082,7 +1094,28 @@ impl SharedMemoryStore {
                 });
             }
         }
+        let mut dreams = Vec::new();
+        for (id, op) in store
+            .dream_proposals(record::PROPOSAL_PENDING)
+            .map_err(e)?
+            .into_iter()
+            .take(REVIEW_MAX)
+        {
+            let entries = op
+                .ids()
+                .into_iter()
+                .filter_map(|i| store.peek(i).ok().flatten())
+                .map(MemoryEntry::from)
+                .collect();
+            dreams.push(DreamProposalView {
+                id,
+                why: op.why().to_string(),
+                op: serde_json::to_value(&op).unwrap_or_default(),
+                entries,
+            });
+        }
         Ok(ReviewQueue {
+            dreams,
             candidates: candidates.into_iter().map(MemoryEntry::from).collect(),
             merges: merges
                 .into_iter()
