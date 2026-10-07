@@ -6,43 +6,56 @@
 //! the extracted-memory markdown (`.atlas/memory/extracted/*.md`) on first open
 //! (see [`legacy`]).
 //!
-//! Three tables (`<scope root>/.atlas/memory/memory.sqlite`, WAL):
+//! The tables (`<scope root>/.atlas/memory/memory.sqlite`, WAL; schema v5):
 //!
+//! - **revisions** — canonical and immutable: every write to an entry
+//!   (insert, replace, merge, edit, fold, import, forget, …) appends one row
+//!   holding the entry as it then stood, sealed into a blake3 hash chain over
+//!   the previous row. Only [`RecordStore::clear`] and [`RecordStore::purge`]
+//!   ever delete one.
+//! - **entries** — the current state: one row per live memory with its kind,
+//!   key, content, provenance (`source`, `agent`, `session`), `confidence`,
+//!   `state` (active, candidate, archived), `scope`, `evidence`, timestamps,
+//!   `uses`, a normalised `content_hash` and the revision it currently is.
+//!   Rebuildable from the revisions ([`RecordStore::rebuild_entries_from_revisions`]).
+//!   Nothing is ever evicted: the old per-kind caps are display limits
+//!   applied by [`RecordStore::list`].
 //! - **events** — the append-only log (`seq`, `ts`, `kind`, `key`, `agent`,
 //!   `session`, `payload`). The Shared tab's event list, query and append are
-//!   served straight from it, byte-compatible with the JSONL log.
-//! - **entries** — the record itself: one row per live memory with its kind,
-//!   key, content, provenance (`source`, `agent`, `session`), `confidence`,
-//!   timestamps, `uses` and a normalised `content_hash`. Appending an event
-//!   folds it into entries with the log's replace rules (same key replaces, a
-//!   finished plan clears the active plan, a repeat edit to a path replaces the
-//!   earlier one). Nothing is ever evicted: the old per-kind caps are display
-//!   limits applied by [`RecordStore::list`].
-//! - **sessions** — which agent owned which session, and when it started and
-//!   ended.
+//!   served straight from it, byte-compatible with the JSONL log. Appending an
+//!   event folds it into entries with the log's replace rules (same key
+//!   replaces, a finished plan clears the active plan, a repeat edit to a path
+//!   replaces the earlier one).
+//! - **entries_fts** (BM25, rewritten in the same transaction as its entry)
+//!   and **embed_cache** (f16 vectors keyed by model + text) are projections.
+//! - **forgotten** — tombstones, so other sessions hear about a forget; and
+//!   **sessions** — which agent owned which session, and when.
 //!
-//! Every write passes through `atlas_redact` before it lands, whoever wrote it.
+//! Every write passes through [`clean`] and `atlas_redact` before it lands,
+//! whoever wrote it.
 //!
 //! **Concurrency.** One connection per scope per process, behind a mutex:
 //! [`open_scope`] hands every caller the same `Arc<RecordStore>` for a root, so
 //! the single-writer invariant is a lock, never cross-process coordination.
 //! Every method is synchronous and may touch disk; async callers run it on the
-//! blocking pool.
+//! blocking pool. A keyed agent write that would replace another writer's
+//! memory is refused unless it names the current revision
+//! ([`RecordStore::remember_guarded`], [`Conflict`]).
 //!
 //! Entry ids are `INTEGER AUTOINCREMENT` and never reused, so a vector index
 //! can key embeddings by entry id; a replaced entry keeps its id.
 //!
 //! **Near-duplicates.** With an [`Embedder`] installed ([`RecordStore::set_embedder`]),
 //! a direct write of a durable kind that matches no key and no content hash is
-//! compared by cosine against the scope's stored vectors (the `entry_vectors`
-//! table, searched through an in-memory [`HnswStore`] keyed by entry id). At
-//! [`NEAR_DUPLICATE`] or above it merges into the surviving entry instead of
-//! inserting, bumping that entry's use count. With no model (not downloaded,
-//! or it cannot embed a text) dedup is key-or-hash only; a write never fails
-//! for want of an embedding. Event-log folds keep the log's exact replace
-//! rules and are not near-duplicate merged, so the Shared tab's state view is
-//! unchanged by this; their durable entries are embedded all the same, so a
-//! later direct write can merge into a captured memory.
+//! compared by cosine against the live entries' cached vectors (searched
+//! through an in-memory [`HnswStore`] keyed by entry id, built from the
+//! cache). At [`NEAR_DUPLICATE`] or above it merges into the surviving entry
+//! instead of inserting, bumping that entry's use count. With no model (not
+//! downloaded, or it cannot embed a text) dedup is key-or-hash only; a write
+//! never fails for want of an embedding. Event-log folds keep the log's exact
+//! replace rules and are not near-duplicate merged, so the Shared tab's state
+//! view is unchanged by this; their durable entries are embedded all the
+//! same, so a later direct write can merge into a captured memory.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -67,6 +80,7 @@ pub const CAP_FILES_CHANGED: usize = 50;
 pub const CAP_FACTS: usize = 50;
 pub const CAP_FAILURES: usize = 30;
 pub const CAP_ARCHITECTURE: usize = 30;
+pub const CAP_PREFERENCES: usize = 30;
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
 
@@ -84,6 +98,9 @@ pub enum EventKind {
     Failure,
     /// A durable architecture/structure note about the system.
     Architecture,
+    /// How the user wants things done, or a correction with the rule to
+    /// follow next time.
+    Preference,
     SessionStart,
     SessionEnd,
     TodoAdded,
@@ -111,6 +128,7 @@ impl EventKind {
             Self::Fact => "fact",
             Self::Failure => "failure",
             Self::Architecture => "architecture",
+            Self::Preference => "preference",
             Self::SessionStart => "session_start",
             Self::SessionEnd => "session_end",
             Self::TodoAdded => "todo_added",
@@ -122,26 +140,31 @@ impl EventKind {
 
 /// The six kinds of shared-memory entry (CONTEXT.md § "Shared memory domain").
 /// Active plan and File changed are working memory; the other four are durable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
     Plan,
     Decision,
     FileChanged,
+    #[default]
     Fact,
     Failure,
     Architecture,
+    /// How the user wants things done (a preference, or a correction with the
+    /// rule to follow next time). Briefed first, and never aged by recency.
+    Preference,
 }
 
 impl EntryKind {
     /// Every kind, working memory first.
-    pub const ALL: [EntryKind; 6] = [
+    pub const ALL: [EntryKind; 7] = [
         Self::Plan,
         Self::FileChanged,
         Self::Decision,
         Self::Fact,
         Self::Failure,
         Self::Architecture,
+        Self::Preference,
     ];
 
     /// The display cap of this kind (the Active plan shows one).
@@ -153,6 +176,7 @@ impl EntryKind {
             Self::Fact => CAP_FACTS,
             Self::Failure => CAP_FAILURES,
             Self::Architecture => CAP_ARCHITECTURE,
+            Self::Preference => CAP_PREFERENCES,
         }
     }
 
@@ -165,6 +189,7 @@ impl EntryKind {
             Self::Fact => EventKind::Fact,
             Self::Failure => EventKind::Failure,
             Self::Architecture => EventKind::Architecture,
+            Self::Preference => EventKind::Preference,
         }
     }
 
@@ -176,6 +201,7 @@ impl EntryKind {
             Self::Fact => "fact",
             Self::Failure => "failure",
             Self::Architecture => "architecture",
+            Self::Preference => "preference",
         }
     }
 
@@ -188,6 +214,7 @@ impl EntryKind {
             "fact" => Self::Fact,
             "failure" => Self::Failure,
             "architecture" => Self::Architecture,
+            "preference" => Self::Preference,
             _ => return None,
         })
     }
@@ -196,7 +223,7 @@ impl EntryKind {
     pub fn is_durable(self) -> bool {
         matches!(
             self,
-            Self::Decision | Self::Fact | Self::Failure | Self::Architecture
+            Self::Decision | Self::Fact | Self::Failure | Self::Architecture | Self::Preference
         )
     }
 }
@@ -226,7 +253,7 @@ pub struct EventRow {
 }
 
 /// One live entry in the record.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Entry {
     pub id: i64,
     pub kind: EntryKind,
@@ -250,6 +277,44 @@ pub struct Entry {
     /// The event whose fold last wrote this entry; `None` for entries written
     /// directly (imports, and later tools/extractor/user edits).
     pub seq: Option<u64>,
+    /// The revision this row currently is (v5).
+    pub rev: i64,
+    pub state: State,
+    /// `repo` (shared by the repository's agents) or `user` (this user, every repo).
+    pub scope: String,
+    /// JSON array of citations; `[]` when the memory cites nothing.
+    pub evidence: String,
+}
+
+/// Where an entry stands. Tombstones are not a state of a live entry: a
+/// forgotten entry leaves `entries`, and its last revision says `tombstoned`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum State {
+    #[default]
+    Active,
+    /// Captured, not confirmed (below [`TRUSTED_CONFIDENCE`]).
+    Candidate,
+    /// Out of briefings and default search (expiry, feedback); kept.
+    Archived,
+}
+
+impl State {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Candidate => "candidate",
+            Self::Archived => "archived",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Self {
+        match raw {
+            "candidate" => Self::Candidate,
+            "archived" => Self::Archived,
+            _ => Self::Active,
+        }
+    }
 }
 
 /// One entry to upsert directly (not through the event log).
@@ -290,6 +355,49 @@ pub enum Origin {
 /// near-duplicate of a stored one of the same kind and merges into it.
 pub const NEAR_DUPLICATE: f32 = 0.92;
 
+/// One search result and the legs that found it (`(leg, 1-based rank)`).
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub entry: Entry,
+    pub why: Vec<(&'static str, usize)>,
+}
+
+/// How deep each search leg reads before fusion.
+const LEG_DEPTH: usize = 100;
+/// Cosine below which the meaning leg ignores an entry.
+const MIN_SIMILARITY: f32 = 0.35;
+
+/// The FTS5 tokenizer of every memory full-text index: Porter stemming over
+/// unicode61, so `JWTs` finds `JWT` and `signing` finds `sign`.
+pub(crate) const FTS_TOKENIZE: &str = "porter unicode61 remove_diacritics 2";
+
+/// An FTS5 MATCH expression for free text: its words, each quoted, OR-ed.
+/// One- and two-letter words (`is`, `a`, `of`) are left out when the text has
+/// a longer one, so they do not pull in every entry that uses them. `None`
+/// when the text has no word. Quoting makes every user string safe: no FTS5
+/// syntax can leak in.
+pub(crate) fn fts_query(text: &str) -> Option<String> {
+    let all: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    let long: Vec<&String> = all.iter().filter(|w| w.chars().count() >= 3).collect();
+    let chosen: Vec<&String> = if long.is_empty() {
+        all.iter().collect()
+    } else {
+        long
+    };
+    let mut words: Vec<String> = Vec::new();
+    for w in chosen {
+        let quoted = format!("\"{w}\"");
+        if !words.contains(&quoted) {
+            words.push(quoted);
+        }
+    }
+    (!words.is_empty()).then(|| words.join(" OR "))
+}
+
 /// Provenance of a memory captured from an assistant's own words by a
 /// marker (`note:`, `we will use`, …) rather than recorded on purpose.
 pub const CAPTURE_SOURCE: &str = "capture";
@@ -301,9 +409,9 @@ pub const CANDIDATE_CONFIDENCE: f64 = 0.3;
 pub const TRUSTED_CONFIDENCE: f64 = 0.5;
 
 impl Entry {
-    /// Whether this entry is still a candidate (below trusted confidence).
+    /// Whether this entry is still a candidate (captured, not confirmed).
     pub fn is_candidate(&self) -> bool {
-        self.confidence < TRUSTED_CONFIDENCE
+        self.state == State::Candidate
     }
 }
 
@@ -313,6 +421,12 @@ pub trait Embedder: Send + Sync {
     /// The text's embedding, or `None` when it cannot be embedded right now
     /// (no model downloaded, a failed forward pass). Never an error.
     fn embed(&self, text: &str) -> Option<Embedding>;
+
+    /// The model this embedder runs, when known without embedding anything:
+    /// what the cache is keyed by for a backfill or a lookup.
+    fn model_id(&self) -> Option<String> {
+        None
+    }
 }
 
 /// One text's vector, tagged with the model that produced it: vectors from
@@ -336,6 +450,15 @@ pub enum WriteOutcome {
 }
 
 impl WriteOutcome {
+    /// The revision op this outcome is recorded as.
+    fn op(self) -> &'static str {
+        match self {
+            Self::Inserted => "insert",
+            Self::Replaced => "replace",
+            Self::Merged => "merge",
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Inserted => "inserted",
@@ -343,6 +466,59 @@ impl WriteOutcome {
             Self::Merged => "merged",
         }
     }
+}
+
+/// A keyed write refused because the memory it would replace changed under
+/// the writer, or was last written by another agent or session.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[error(
+    "memory {id} is at revision {current_rev} (by {by}): \"{content}\". Read both versions, write \
+     one that keeps what is still true, and pass expected_revision={current_rev} to replace it."
+)]
+pub struct Conflict {
+    pub id: i64,
+    pub current_rev: i64,
+    pub by: String,
+    pub content: String,
+}
+
+/// Who may replace a keyed entry.
+#[derive(Debug, Clone, Copy)]
+enum Guard {
+    /// Internal writes (extractor, imports, capture): last writer wins.
+    Open,
+    /// An agent's write: the current revision, or its own entry.
+    Expect(Option<i64>),
+}
+
+/// Refuse a keyed replace of entry `id` that `guard` does not allow.
+fn check_guard(tx: &Transaction<'_>, e: &NewEntry, id: i64, guard: Guard) -> Result<()> {
+    let Guard::Expect(expected) = guard else {
+        return Ok(());
+    };
+    let (rev, source, agent, session, content): (i64, String, String, String, String) = tx
+        .query_row(
+            "SELECT rev, source, agent, session, content FROM entries WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )?;
+    let allowed = match expected {
+        Some(want) => want == rev,
+        // Own entry = same agent AND same session. A parallel session of the
+        // same agent (another worktree) must read before it replaces.
+        None => source == e.source && session == e.session_id,
+    };
+    if allowed {
+        return Ok(());
+    }
+    let by = if agent.is_empty() { source } else { agent };
+    Err(Conflict {
+        id,
+        current_rev: rev,
+        by,
+        content,
+    }
+    .into())
 }
 
 /// The result of [`RecordStore::remember`].
@@ -392,7 +568,8 @@ pub struct RecordStore {
     root: PathBuf,
     conn: Mutex<Connection>,
     embedder: RwLock<Option<Arc<dyn Embedder>>>,
-    /// The HNSW over `entry_vectors` for one model, built on first need.
+    /// The HNSW over the live entries' cached vectors for one model, built on
+    /// first need.
     /// Always locked after `conn`, never before.
     vectors: Mutex<Option<VectorIndex>>,
 }
@@ -510,23 +687,23 @@ impl RecordStore {
             payload,
         };
         insert_event(&tx, &row)?;
-        let vectors_before = vector_count(&tx)?;
-        fold(&tx, &row)?;
-        // A fold that rewrote or removed indexed entries leaves stale ids in
+        // A fold that rewrote or removed existing entries leaves stale ids in
         // the in-memory index; rebuild it on next need rather than let them
         // crowd out real candidates.
-        let stale = vector_count(&tx)? < vectors_before;
+        let stale = fold(&tx, &row)?;
         let folded = match &vector {
             Some((model, v)) => {
-                let id: Option<i64> = tx
-                    .query_row("SELECT id FROM entries WHERE seq = ?1", [seq as i64], |r| {
-                        r.get(0)
-                    })
+                let found: Option<(i64, String)> = tx
+                    .query_row(
+                        "SELECT id, content FROM entries WHERE seq = ?1",
+                        [seq as i64],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
                     .optional()?;
-                if let Some(id) = id {
-                    put_vector(&tx, id, model, v)?;
+                if let Some((_, content)) = &found {
+                    put_cache(&tx, model, content, v)?;
                 }
-                id.map(|id| (id, model, v))
+                found.map(|(id, _)| (id, model, v))
             }
             None => None,
         };
@@ -700,13 +877,13 @@ impl RecordStore {
     /// A durable kind is also near-duplicate merged when an embedder is
     /// installed (see the module docs).
     pub fn upsert(&self, e: NewEntry) -> Result<Entry> {
-        Ok(self.write_entry(e, None)?.entry)
+        Ok(self.write_entry(e, None, Guard::Open)?.entry)
     }
 
     /// [`upsert`](Self::upsert), saying what the write did (inserted,
     /// replaced, or merged into an entry already stored).
     pub fn upsert_outcome(&self, e: NewEntry) -> Result<Remembered> {
-        self.write_entry(e, None)
+        self.write_entry(e, None, Guard::Open)
     }
 
     /// Write one entry as an agent's deliberate memory (a tool write): the
@@ -715,10 +892,25 @@ impl RecordStore {
     /// merge), an event in the log at `ts`, so the write shows in the Shared
     /// tab's event list and state view like any other.
     pub fn remember(&self, e: NewEntry, ts: i64) -> Result<Remembered> {
-        self.write_entry(e, Some(ts))
+        self.write_entry(e, Some(ts), Guard::Open)
     }
 
-    fn write_entry(&self, e: NewEntry, log_at: Option<i64>) -> Result<Remembered> {
+    /// [`remember`](Self::remember) as an agent's write: a keyed replace
+    /// goes through only when `expected_rev` is the entry's current revision,
+    /// or, with none given, when the entry's last writer is this writer —
+    /// the same agent **and** the same session (a parallel session of the
+    /// same agent, in another worktree, is another writer). Otherwise the
+    /// error is a [`Conflict`] naming the current revision.
+    pub fn remember_guarded(
+        &self,
+        e: NewEntry,
+        ts: i64,
+        expected_rev: Option<i64>,
+    ) -> Result<Remembered> {
+        self.write_entry(e, Some(ts), Guard::Expect(expected_rev))
+    }
+
+    fn write_entry(&self, e: NewEntry, log_at: Option<i64>, guard: Guard) -> Result<Remembered> {
         let e = redacted(e);
         // Embedding is the slow part; done before the connection is locked.
         let vector = if e.kind.is_durable() {
@@ -730,7 +922,12 @@ impl RecordStore {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let (id, outcome) = match find_identity(&tx, &e)? {
-            Some(found) => write_identity(&tx, &e, found)?,
+            Some(found) => {
+                if !e.key.is_empty() && found.content_hash != content_hash(&e.content) {
+                    check_guard(&tx, &e, found.id, guard)?;
+                }
+                write_identity(&tx, &e, found)?
+            }
             None => match vector
                 .as_ref()
                 .map(|(m, v)| self.near_duplicate(&tx, &e, m, v))
@@ -744,15 +941,18 @@ impl RecordStore {
                 None => (insert_entry(&tx, &e)?, WriteOutcome::Inserted),
             },
         };
-        // The survivor of a merge keeps its own vector (its content stands);
-        // anything written anew gets the new one.
+        // The survivor of a merge keeps its own content, so its cached vector
+        // stands; anything written anew gets the new text's vector. Vectors
+        // are keyed by (model, text), so none can describe text it was not
+        // computed from.
         let new_vector = match (&vector, outcome) {
             (Some((model, v)), WriteOutcome::Inserted | WriteOutcome::Replaced) => {
-                put_vector(&tx, id, model, v)?;
+                put_cache(&tx, model, &e.content, v)?;
                 Some((model, v))
             }
             _ => None,
         };
+        after_write(&tx, id, outcome.op(), false, Some(By::of(&e)))?;
         // A merge stores nothing new, so it logs nothing: the log never shows
         // a phrasing the record does not hold.
         if let Some(ts) = log_at.filter(|_| outcome != WriteOutcome::Merged) {
@@ -774,8 +974,16 @@ impl RecordStore {
         }
         let entry = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)?;
         tx.commit()?;
-        if let Some((model, v)) = new_vector {
-            self.index_put(id, model, v);
+        match (new_vector, outcome) {
+            (Some((model, v)), _) => self.index_put(id, model, v),
+            // A replace that could not be embedded: the index's vector for
+            // this id described the old words.
+            (None, WriteOutcome::Replaced) => {
+                if let Some(index) = self.vectors().as_ref() {
+                    let _ = index.hnsw.remove(id as u64);
+                }
+            }
+            _ => {}
         }
         Ok(Remembered { entry, outcome })
     }
@@ -808,21 +1016,23 @@ impl RecordStore {
         // have been forgotten or rewritten since it was indexed).
         let mut best: Option<(i64, f32)> = None;
         for (id, _) in hits {
-            let row: Option<(String, String, Vec<u8>)> = tx
+            let row: Option<(String, String, String)> = tx
                 .query_row(
-                    "SELECT e.kind, e.key, v.vec FROM entries e JOIN entry_vectors v ON v.id = e.id \
-                     WHERE e.id = ?1 AND v.model = ?2",
-                    params![id as i64, model],
+                    "SELECT kind, key, content FROM entries WHERE id = ?1",
+                    [id as i64],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .optional()?;
-            let Some((kind, key, blob)) = row else {
+            let Some((kind, key, content)) = row else {
                 continue;
             };
             if kind != e.kind.as_str() || (!e.key.is_empty() && !key.is_empty()) {
                 continue;
             }
-            let sim = cosine(v, &decode_vec(&blob));
+            let Some(stored) = cached(tx, model, &content)? else {
+                continue;
+            };
+            let sim = cosine(v, &stored);
             if sim >= NEAR_DUPLICATE && best.is_none_or(|(_, b)| sim > b) {
                 best = Some((id as i64, sim));
             }
@@ -889,11 +1099,9 @@ impl RecordStore {
              confidence = 1.0, updated_at = ?5, seq = ?6 WHERE id = ?1",
             params![id, content, content_hash(&content), source, ts, seq as i64],
         )?;
-        match &vector {
-            Some((model, v)) => put_vector(&tx, id, model, v)?,
-            None => {
-                tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [id])?;
-            }
+        after_write(&tx, id, "edit", false, None)?;
+        if let Some((model, v)) = &vector {
+            put_cache(&tx, model, &content, v)?;
         }
         let entry = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)?;
         tx.commit()?;
@@ -924,13 +1132,22 @@ impl RecordStore {
             .query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)
             .optional()?;
         if let Some(e) = &entry {
+            before_delete(&tx, id, "forget", at, session)?;
             tx.execute("DELETE FROM entries WHERE id = ?1", [id])?;
-            tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [id])?;
-            retract_events_of(&tx, e)?;
+            let seqs = retract_events_of(&tx, e)?;
+            // The retracted seqs ride the tombstone, so purge can reach the
+            // log's copies of the text later.
             tx.execute(
-                "INSERT INTO forgotten (id, kind, session, at) VALUES (?1, ?2, ?3, ?4) \
-                 ON CONFLICT(id) DO UPDATE SET session = excluded.session, at = excluded.at",
-                params![id, e.kind.as_str(), session, at],
+                "INSERT INTO forgotten (id, kind, session, at, seqs) VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(id) DO UPDATE SET session = excluded.session, at = excluded.at, \
+                 seqs = excluded.seqs",
+                params![
+                    id,
+                    e.kind.as_str(),
+                    session,
+                    at,
+                    serde_json::to_string(&seqs)?
+                ],
             )?;
         }
         tx.commit()?;
@@ -989,9 +1206,7 @@ impl RecordStore {
     }
 
     /// Entries relevant to `query`, best first, at most `limit`, optionally
-    /// restricted to `kinds`. Relevance is the share of the query's terms an
-    /// entry contains, plus its cosine to the query when an embedder is
-    /// installed. An empty query lists the most recently written entries.
+    /// restricted to `kinds` (see [`search_explained`](Self::search_explained)).
     /// Every entry returned is stamped as used at `now`.
     pub fn search(
         &self,
@@ -1000,69 +1215,210 @@ impl RecordStore {
         limit: usize,
         now: i64,
     ) -> Result<Vec<Entry>> {
-        const MIN_SIMILARITY: f32 = 0.35;
+        Ok(self
+            .search_explained(query, kinds, limit, now)?
+            .into_iter()
+            .map(|h| h.entry)
+            .collect())
+    }
+
+    /// Entries relevant to `query`, best first, at most `limit`, each with the
+    /// legs that found it. Reciprocal-rank fusion of two legs — BM25 over the
+    /// entries' words (FTS5) and meaning (cosine ≥ [`MIN_SIMILARITY`] over the
+    /// content-keyed cache), each [`LEG_DEPTH`] deep — then two priors that
+    /// only reorder what a leg found: trust (active before candidate, then
+    /// confidence) and recency (last use or write). Archived entries are left
+    /// out. An empty query lists the most recently written entries (no `why`).
+    /// Every entry returned is stamped as used at `now`.
+    pub fn search_explained(
+        &self,
+        query: &str,
+        kinds: &[EntryKind],
+        limit: usize,
+        now: i64,
+    ) -> Result<Vec<SearchHit>> {
         if query.trim().is_empty() {
             let out = self.query("", kinds, limit)?;
             self.mark_used(&out, now)?;
-            return Ok(out);
+            return Ok(out
+                .into_iter()
+                .map(|entry| SearchHit {
+                    entry,
+                    why: Vec::new(),
+                })
+                .collect());
         }
-        let terms = terms(query);
-        let vector = self.embed(query.trim());
-        let conn = self.conn();
-        let similar: HashMap<i64, f32> = match &vector {
-            Some((model, v)) => {
-                let mut stmt =
-                    conn.prepare("SELECT id, vec FROM entry_vectors WHERE model = ?1")?;
-                let rows = stmt.query_map([model], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
-                })?;
-                let mut out = HashMap::new();
-                for row in rows {
-                    let (id, blob) = row?;
-                    let sim = cosine(v, &decode_vec(&blob));
-                    if sim >= MIN_SIMILARITY {
-                        out.insert(id, sim);
+        let qvec = self.embed(query.trim());
+        let bm25: Vec<i64> = match fts_query(query) {
+            Some(m) => {
+                let conn = self.conn();
+                let mut stmt = conn.prepare(
+                    "SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+                )?;
+                let ids = stmt
+                    .query_map(params![m, LEG_DEPTH as i64], |r| r.get(0))?
+                    .collect::<rusqlite::Result<Vec<i64>>>()?;
+                ids
+            }
+            None => Vec::new(),
+        };
+        let dense: Vec<i64> = match &qvec {
+            Some((model, v)) => self
+                .dense_ids(model, v, LEG_DEPTH)?
+                .into_iter()
+                .filter(|(_, sim)| *sim >= MIN_SIMILARITY)
+                .map(|(id, _)| id)
+                .collect(),
+            None => Vec::new(),
+        };
+        let mut candidates: HashMap<i64, Entry> = HashMap::new();
+        {
+            let conn = self.conn();
+            for id in bm25.iter().chain(dense.iter()) {
+                if candidates.contains_key(id) {
+                    continue;
+                }
+                if let Some(e) = conn
+                    .query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)
+                    .optional()?
+                {
+                    if e.state != State::Archived && (kinds.is_empty() || kinds.contains(&e.kind)) {
+                        candidates.insert(*id, e);
                     }
                 }
-                out
-            }
-            None => HashMap::new(),
-        };
-        let mut stmt = conn.prepare("SELECT * FROM entries ORDER BY updated_at DESC, id DESC")?;
-        let mut scored: Vec<(f32, Entry)> = Vec::new();
-        for row in stmt.query_map([], entry_from_row)? {
-            let e = row?;
-            if !kinds.is_empty() && !kinds.contains(&e.kind) {
-                continue;
-            }
-            let haystack = format!("{} {}", e.key, e.content).to_lowercase();
-            let hit = terms
-                .iter()
-                .filter(|t| haystack.contains(t.as_str()))
-                .count();
-            let term_score = if terms.is_empty() {
-                0.0
-            } else {
-                hit as f32 / terms.len() as f32
-            };
-            let score = term_score + similar.get(&e.id).copied().unwrap_or(0.0);
-            if score > 0.0 {
-                scored.push((score, e));
             }
         }
-        drop(stmt);
-        drop(conn);
-        // Stable: equal scores keep newest-first.
-        scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let out: Vec<Entry> = scored.into_iter().take(limit).map(|(_, e)| e).collect();
-        self.mark_used(&out, now)?;
-        Ok(out
+        let mut fusion: atlas_retrieval::rrf::Fusion<i64> = atlas_retrieval::rrf::Fusion::new();
+        fusion.leg(
+            "bm25",
+            1.0,
+            bm25.into_iter().filter(|id| candidates.contains_key(id)),
+        );
+        fusion.leg(
+            "dense",
+            1.0,
+            dense.into_iter().filter(|id| candidates.contains_key(id)),
+        );
+        let mut by_trust: Vec<&Entry> = candidates.values().collect();
+        by_trust.sort_by(|a, b| {
+            (a.state == State::Candidate)
+                .cmp(&(b.state == State::Candidate))
+                .then(b.confidence.total_cmp(&a.confidence))
+                .then(a.id.cmp(&b.id))
+        });
+        fusion.prior(
+            "trust",
+            0.5,
+            by_trust.iter().map(|e| e.id).collect::<Vec<_>>(),
+        );
+        let mut by_recent: Vec<&Entry> = candidates.values().collect();
+        by_recent.sort_by_key(|e| {
+            (
+                std::cmp::Reverse(e.last_used_at.unwrap_or(0).max(e.updated_at)),
+                e.id,
+            )
+        });
+        fusion.prior(
+            "recent",
+            0.3,
+            by_recent.iter().map(|e| e.id).collect::<Vec<_>>(),
+        );
+        let hits: Vec<SearchHit> = fusion
+            .finish()
             .into_iter()
-            .map(|e| Entry {
-                last_used_at: Some(now),
-                ..e
+            .take(limit)
+            .filter_map(|f| {
+                candidates
+                    .remove(&f.id)
+                    .map(|entry| SearchHit { entry, why: f.legs })
+            })
+            .collect();
+        let used: Vec<Entry> = hits.iter().map(|h| h.entry.clone()).collect();
+        self.mark_used(&used, now)?;
+        Ok(hits
+            .into_iter()
+            .map(|h| SearchHit {
+                entry: Entry {
+                    last_used_at: Some(now),
+                    ..h.entry
+                },
+                why: h.why,
             })
             .collect())
+    }
+
+    /// Entry ids nearest `v` among `model`'s cached vectors, `(id, cosine)`,
+    /// best first. Lock order is `conn` then `vectors`, as everywhere here.
+    fn dense_ids(&self, model: &str, v: &[f32], k: usize) -> Result<Vec<(i64, f32)>> {
+        let conn = self.conn();
+        let mut index = self.vectors();
+        if !index
+            .as_ref()
+            .is_some_and(|i| i.model == model && i.dim == v.len())
+        {
+            *index = Some(build_index(&conn, model, v.len())?);
+        }
+        Ok(match index.as_ref() {
+            Some(i) => i
+                .hnsw
+                .search(v, k)?
+                .into_iter()
+                .map(|(id, sim)| (id as i64, sim))
+                .collect(),
+            None => Vec::new(),
+        })
+    }
+
+    /// Embed every live entry whose current text has no cached vector for the
+    /// installed model. Returns how many were added; 0 without a model.
+    pub fn sync_vectors(&self) -> Result<usize> {
+        let Some(embedder) = self.embedder() else {
+            return Ok(0);
+        };
+        let Some(model) = embedder.model_id() else {
+            return Ok(0);
+        };
+        let missing: Vec<(i64, String)> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare("SELECT id, content FROM entries")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (id, content) = row?;
+                if cached(&conn, &model, &content)?.is_none() {
+                    out.push((id, content));
+                }
+            }
+            out
+        };
+        let mut added = 0;
+        for (id, content) in missing {
+            let Some((m, v)) = self.embed(&content) else {
+                continue;
+            };
+            {
+                let mut conn = self.conn();
+                let tx = conn.transaction()?;
+                put_cache(&tx, &m, &content, &v)?;
+                tx.commit()?;
+            }
+            self.index_put(id, &m, &v);
+            added += 1;
+        }
+        Ok(added)
+    }
+
+    /// The cached vector of entry `id`'s current text for the installed model.
+    #[cfg(test)]
+    pub(crate) fn vector_of(&self, id: i64) -> Option<Vec<f32>> {
+        let model = self.embedder()?.model_id()?;
+        let conn = self.conn();
+        let content: String = conn
+            .query_row("SELECT content FROM entries WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .ok()?;
+        cached(&conn, &model, &content).ok().flatten()
     }
 
     /// One entry by id, stamped as used at `now`; `None` when there is no
@@ -1169,8 +1525,9 @@ impl RecordStore {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute_batch(
-            "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; DELETE FROM entry_vectors; \
-             DELETE FROM retracted_events; DELETE FROM forgotten;",
+            "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; \
+             DELETE FROM retracted_events; DELETE FROM forgotten; DELETE FROM revisions; \
+             DELETE FROM entries_fts; DELETE FROM embed_cache;",
         )?;
         tx.commit()?;
         *self.vectors() = None;
@@ -1178,9 +1535,271 @@ impl RecordStore {
     }
 }
 
+/// Who wrote a memory, in which session, and when. `title` and `commits`
+/// describe that session as the capture record has it; the app fills them
+/// at read time and they are never stored here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Source {
+    pub agent: String,
+    pub session: String,
+    pub at: i64,
+    pub title: Option<String>,
+    pub commits: Vec<String>,
+}
+
+/// A stable reference to the session a memory came from, in the spirit of
+/// the Agent Memory Repo `source` key. Opaque: Atlas has no URL scheme.
+pub fn source_uri(s: &Source) -> String {
+    if s.agent == "user" {
+        "atlas-user".to_string()
+    } else if s.session.is_empty() {
+        s.agent.clone()
+    } else {
+        format!("atlas-session:{}/{}", s.agent, s.session)
+    }
+}
+
+/// One immutable revision of an entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Revision {
+    pub rev: i64,
+    pub op: String,
+    pub content: String,
+    pub source: String,
+    pub agent: String,
+    pub state: String,
+    pub confidence: f64,
+    pub at: i64,
+}
+
+impl RecordStore {
+    /// Rebuild `entries` (and its FTS rows) from the revisions: each entry's
+    /// latest revision, unless that revision is a tombstone. The repair the
+    /// reconciler runs when the current-state table and the history
+    /// disagree. `uses`, `last_used_at` and `seq` are not revisioned: they
+    /// come back as their defaults (0, null, null); `created_at` is the
+    /// entry's first revision's time.
+    pub fn rebuild_entries_from_revisions(&self) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute_batch("DELETE FROM entries; DELETE FROM entries_fts;")?;
+        let n = tx.execute(
+            &format!(
+                "INSERT INTO entries (id, {SNAPSHOT_COLUMNS}, created_at, updated_at, rev) \
+                 SELECT r.entry_id, r.kind, r.key, r.content, r.content_hash, r.status, r.source, \
+                        r.agent, r.session, r.confidence, r.state, r.scope, r.evidence, \
+                        (SELECT MIN(f.at) FROM revisions f WHERE f.entry_id = r.entry_id), r.at, r.rev \
+                 FROM revisions r \
+                 WHERE r.rev = (SELECT MAX(m.rev) FROM revisions m WHERE m.entry_id = r.entry_id) \
+                   AND r.state <> 'tombstoned'"
+            ),
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO entries_fts (rowid, key, content) SELECT id, key, content FROM entries",
+            [],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        *self.vectors() = None;
+        Ok(n)
+    }
+
+    /// The first revision whose chain link doesn't match its row and the link
+    /// before it, or `None` when the whole history verifies. One pass.
+    pub fn verify_chain(&self) -> Result<Option<i64>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CHAIN_COLUMNS}, chain FROM revisions ORDER BY rev"
+        ))?;
+        let mut rows = stmt.query([])?;
+        let mut prev = vec![0u8; 32];
+        while let Some(r) = rows.next()? {
+            let stored: Vec<u8> = r.get(16)?;
+            if chain_link(&prev, &chain_bytes(r)?)[..] != stored[..] {
+                return Ok(Some(r.get(0)?));
+            }
+            prev = stored;
+        }
+        Ok(None)
+    }
+
+    /// The distinct writers of each entry, oldest first, at most five each:
+    /// every revision that put words in it (a restatement by another session
+    /// is a second source).
+    pub fn sources_for(&self, ids: &[i64]) -> Result<HashMap<i64, Vec<Source>>> {
+        let mut out: HashMap<i64, Vec<Source>> = HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        let marks = vec!["?"; ids.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT entry_id, CASE WHEN agent = '' THEN source ELSE agent END AS who, session, \
+                    MIN(at) AS first_at, MIN(rev) AS first_rev FROM revisions \
+             WHERE entry_id IN ({marks}) \
+               AND op IN ('insert','replace','merge','edit','fold','import','baseline','promote') \
+             GROUP BY entry_id, who, session ORDER BY entry_id, first_at, first_rev"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids), |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                Source {
+                    agent: r.get(1)?,
+                    session: r.get(2)?,
+                    at: r.get(3)?,
+                    ..Default::default()
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, s) = row?;
+            let list = out.entry(id).or_default();
+            if list.len() < 5 {
+                list.push(s);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every revision of entry `id`, oldest first (empty for an unknown id).
+    pub fn history(&self, id: i64) -> Result<Vec<Revision>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT rev, op, content, source, agent, state, confidence, at FROM revisions \
+             WHERE entry_id = ?1 ORDER BY rev",
+        )?;
+        let rows = stmt.query_map([id], |r| {
+            Ok(Revision {
+                rev: r.get(0)?,
+                op: r.get(1)?,
+                content: r.get(2)?,
+                source: r.get(3)?,
+                agent: r.get(4)?,
+                state: r.get(5)?,
+                confidence: r.get(6)?,
+                at: r.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Erase a forgotten entry's text everywhere it survives: its revisions,
+    /// the log events forget retracted, its cached vectors (every model),
+    /// with SQLite's secure delete on and the WAL truncated, so the bytes are
+    /// overwritten rather than left in free pages. The tombstone row stays,
+    /// textless, and history keeps one textless `purge` marker; the hash
+    /// chain is re-sealed from the first removed revision. For secrets.
+    /// Refused for a live entry (forget it first). Returns whether anything
+    /// was erased.
+    pub fn purge(&self, id: i64) -> Result<bool> {
+        let mut conn = self.conn();
+        if conn
+            .query_row("SELECT 1 FROM entries WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some()
+        {
+            anyhow::bail!("memory {id} is live; forget it before purging");
+        }
+        conn.pragma_update(None, "secure_delete", "ON")?;
+        let erased = (|| -> Result<bool> {
+            let tx = conn.transaction()?;
+            let texts: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT DISTINCT content FROM revisions WHERE entry_id = ?1 AND op <> 'purge'",
+                )?;
+                let rows = stmt.query_map([id], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            if texts.is_empty() {
+                return Ok(false);
+            }
+            let mut seqs: Vec<i64> = tx
+                .query_row("SELECT seqs FROM forgotten WHERE id = ?1", [id], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()?
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            // An edit retracted the wording it replaced without the tombstone
+            // knowing: every logged event of the entry's kinds whose text is
+            // one of its wordings goes too.
+            let hashes: std::collections::HashSet<String> =
+                texts.iter().map(|t| content_hash(t)).collect();
+            let kinds: Vec<String> = {
+                let mut stmt =
+                    tx.prepare("SELECT DISTINCT kind FROM revisions WHERE entry_id = ?1")?;
+                let rows = stmt.query_map([id], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for kind in kinds.iter().filter_map(|k| EntryKind::parse(k)) {
+                let mut stmt = tx.prepare("SELECT seq, payload FROM events WHERE kind = ?1")?;
+                let rows = stmt.query_map([kind.event_kind().as_str()], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                })?;
+                for row in rows {
+                    let (seq, payload) = row?;
+                    let payload: serde_json::Value =
+                        serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+                    let text = payload
+                        .get(content_field(kind))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    if !text.is_empty() && hashes.contains(&content_hash(text)) {
+                        seqs.push(seq);
+                    }
+                }
+            }
+            for seq in &seqs {
+                tx.execute("DELETE FROM events WHERE seq = ?1", [seq])?;
+                tx.execute("DELETE FROM retracted_events WHERE seq = ?1", [seq])?;
+            }
+            let models: Vec<String> = {
+                let mut stmt = tx.prepare("SELECT DISTINCT model FROM embed_cache")?;
+                let rows = stmt.query_map([], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for text in &texts {
+                for model in &models {
+                    tx.execute(
+                        "DELETE FROM embed_cache WHERE key = ?1",
+                        [&atlas_retrieval::codec::cache_key(model, text)[..]],
+                    )?;
+                }
+            }
+            let (first, kind, at): (i64, String, i64) = tx.query_row(
+                "SELECT MIN(rev), \
+                        (SELECT kind FROM revisions WHERE entry_id = ?1 ORDER BY rev DESC LIMIT 1), \
+                        (SELECT MAX(at) FROM revisions WHERE entry_id = ?1) \
+                 FROM revisions WHERE entry_id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
+            tx.execute("DELETE FROM revisions WHERE entry_id = ?1", [id])?;
+            tx.execute(
+                "INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, source, agent, \
+                 session, confidence, state, at) \
+                 VALUES (?1, 'purge', ?2, '', '', '', 'user', '', '', 0, 'tombstoned', ?3)",
+                params![id, kind, at],
+            )?;
+            reseal_from(&tx, first)?;
+            tx.execute("UPDATE forgotten SET seqs = '[]' WHERE id = ?1", [id])?;
+            tx.commit()?;
+            Ok(true)
+        })();
+        conn.pragma_update(None, "secure_delete", "OFF")?;
+        let erased = erased?;
+        if erased {
+            let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+        }
+        Ok(erased)
+    }
+}
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// The log as the Shared tab lists and searches it: every event not retracted.
 const LIVE_EVENTS: &str = "WHERE seq NOT IN (SELECT seq FROM retracted_events)";
@@ -1232,6 +1851,246 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
              COMMIT;",
         )?;
     }
+    if version < 5 {
+        migrate_v5(conn).or_else(|e| {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        })?;
+    }
+    Ok(())
+}
+
+/// v5: canonical revisions, entry state/scope/evidence, BM25, content-keyed
+/// vectors. One transaction: every live entry gets a `baseline` revision,
+/// every stored vector moves into the cache under (model, text), and the
+/// baselines are sealed into the hash chain.
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "BEGIN;
+         CREATE TABLE IF NOT EXISTS revisions (
+             rev           INTEGER PRIMARY KEY AUTOINCREMENT,
+             entry_id      INTEGER NOT NULL,
+             op            TEXT NOT NULL,
+             kind          TEXT NOT NULL,
+             key           TEXT NOT NULL,
+             content       TEXT NOT NULL,
+             content_hash  TEXT NOT NULL,
+             status        TEXT NOT NULL DEFAULT '',
+             source        TEXT NOT NULL,
+             agent         TEXT NOT NULL,
+             session       TEXT NOT NULL,
+             confidence    REAL NOT NULL,
+             state         TEXT NOT NULL,
+             scope         TEXT NOT NULL DEFAULT 'repo',
+             evidence      TEXT NOT NULL DEFAULT '[]',
+             at            INTEGER NOT NULL,
+             chain         BLOB NOT NULL DEFAULT x''
+         );
+         CREATE INDEX IF NOT EXISTS revisions_entry ON revisions(entry_id, rev);
+         ALTER TABLE entries ADD COLUMN rev INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE entries ADD COLUMN state TEXT NOT NULL DEFAULT 'active';
+         ALTER TABLE entries ADD COLUMN scope TEXT NOT NULL DEFAULT 'repo';
+         ALTER TABLE entries ADD COLUMN evidence TEXT NOT NULL DEFAULT '[]';
+         ALTER TABLE forgotten ADD COLUMN seqs TEXT NOT NULL DEFAULT '[]';
+         UPDATE entries SET state = 'candidate' WHERE confidence < 0.5;
+         CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+             key, content, content='', contentless_delete=1,
+             tokenize='porter unicode61 remove_diacritics 2');
+         INSERT INTO entries_fts(rowid, key, content) SELECT id, key, content FROM entries;
+         CREATE TABLE IF NOT EXISTS embed_cache (
+             key    BLOB PRIMARY KEY,
+             model  TEXT NOT NULL,
+             dims   INTEGER NOT NULL,
+             vec    BLOB NOT NULL
+         );
+         INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, status, source, agent,
+                                session, confidence, state, scope, evidence, at)
+           SELECT id, 'baseline', kind, key, content, content_hash, status, source, agent, session,
+                  confidence, state, scope, evidence, updated_at FROM entries ORDER BY id;
+         UPDATE entries SET rev = (SELECT MAX(r.rev) FROM revisions r WHERE r.entry_id = entries.id);",
+    )?;
+    // entry_vectors (f32, keyed by entry id) → embed_cache (f16, keyed by
+    // model + text): the vector now names the text it was computed from.
+    let moved: Vec<(String, String, Vec<u8>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT v.model, e.content, v.vec FROM entry_vectors v JOIN entries e ON e.id = v.id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (model, content, blob) in moved {
+        let v = decode_vec(&blob);
+        conn.execute(
+            "INSERT OR REPLACE INTO embed_cache (key, model, dims, vec) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                &atlas_retrieval::codec::cache_key(&model, &content)[..],
+                model,
+                v.len() as i64,
+                atlas_retrieval::codec::to_f16(&v)
+            ],
+        )?;
+    }
+    conn.execute_batch("DROP TABLE IF EXISTS entry_vectors;")?;
+    reseal_from(conn, 0)?;
+    conn.execute_batch("PRAGMA user_version = 5; COMMIT;")?;
+    Ok(())
+}
+
+// ── Revisions ────────────────────────────────────────────────────────────────
+
+/// The entry columns a revision snapshots (besides id, op and time).
+const SNAPSHOT_COLUMNS: &str =
+    "kind, key, content, content_hash, status, source, agent, session, confidence, state, scope, evidence";
+
+/// Who wrote a revision when it is not the entry row's own writer: a merge
+/// keeps the surviving entry's writer, but the revision is the restater's.
+#[derive(Clone, Copy)]
+struct By<'a> {
+    source: &'a str,
+    agent: &'a str,
+    session: &'a str,
+}
+
+impl<'a> By<'a> {
+    fn of(e: &'a NewEntry) -> Self {
+        Self {
+            source: &e.source,
+            agent: &e.agent,
+            session: &e.session_id,
+        }
+    }
+}
+
+/// After a write to entry `id`: settle its state (`archive` archives it;
+/// otherwise its confidence decides, so a real write revives an archived
+/// entry), append its row as a new immutable revision `op` (by `by` when the
+/// writer is not the row's own), seal it into the chain, point `entries.rev`
+/// at it, and rewrite its FTS row. Returns the new revision number.
+fn after_write(
+    tx: &Transaction<'_>,
+    id: i64,
+    op: &str,
+    archive: bool,
+    by: Option<By<'_>>,
+) -> Result<i64> {
+    tx.execute(
+        "UPDATE entries SET state = CASE WHEN ?3 THEN 'archived' \
+         WHEN confidence < ?2 THEN 'candidate' ELSE 'active' END WHERE id = ?1",
+        params![id, TRUSTED_CONFIDENCE, archive],
+    )?;
+    tx.execute(
+        "INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, status, source, agent, \
+         session, confidence, state, scope, evidence, at) \
+         SELECT id, ?2, kind, key, content, content_hash, status, COALESCE(?3, source), \
+         COALESCE(?4, agent), COALESCE(?5, session), confidence, state, scope, evidence, updated_at \
+         FROM entries WHERE id = ?1",
+        params![
+            id,
+            op,
+            by.map(|b| b.source),
+            by.map(|b| b.agent),
+            by.map(|b| b.session)
+        ],
+    )?;
+    let rev = tx.last_insert_rowid();
+    seal(tx, rev)?;
+    tx.execute(
+        "UPDATE entries SET rev = ?2 WHERE id = ?1",
+        params![id, rev],
+    )?;
+    tx.execute("DELETE FROM entries_fts WHERE rowid = ?1", [id])?;
+    tx.execute(
+        "INSERT INTO entries_fts (rowid, key, content) SELECT id, key, content FROM entries WHERE id = ?1",
+        [id],
+    )?;
+    Ok(rev)
+}
+
+/// Before entry `id` leaves `entries`: its last state as a sealed
+/// `tombstoned` revision `op` (by `session`, at `at`), and its FTS row
+/// dropped.
+fn before_delete(tx: &Transaction<'_>, id: i64, op: &str, at: i64, session: &str) -> Result<()> {
+    let n = tx.execute(
+        "INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, status, source, agent, \
+         session, confidence, state, scope, evidence, at) \
+         SELECT id, ?2, kind, key, content, content_hash, status, source, agent, ?4, confidence, \
+         'tombstoned', scope, evidence, ?3 FROM entries WHERE id = ?1",
+        params![id, op, at, session],
+    )?;
+    if n == 1 {
+        seal(tx, tx.last_insert_rowid())?;
+    }
+    tx.execute("DELETE FROM entries_fts WHERE rowid = ?1", [id])?;
+    Ok(())
+}
+
+/// The columns a revision's chain link covers: all of them but `chain`.
+const CHAIN_COLUMNS: &str = "rev, entry_id, op, kind, key, content, content_hash, status, source, \
+     agent, session, confidence, state, scope, evidence, at";
+
+/// A row's columns as bytes, each tagged by type and length-prefixed, so no
+/// two different rows encode alike.
+fn chain_bytes(r: &rusqlite::Row<'_>) -> rusqlite::Result<Vec<u8>> {
+    use rusqlite::types::ValueRef;
+    let mut out = Vec::new();
+    for i in 0..16 {
+        let (tag, field): (u8, Vec<u8>) = match r.get_ref(i)? {
+            ValueRef::Null => (0, Vec::new()),
+            ValueRef::Integer(n) => (1, n.to_le_bytes().to_vec()),
+            ValueRef::Real(f) => (2, f.to_bits().to_le_bytes().to_vec()),
+            ValueRef::Text(t) => (3, t.to_vec()),
+            ValueRef::Blob(b) => (4, b.to_vec()),
+        };
+        out.push(tag);
+        out.extend_from_slice(&(field.len() as u64).to_le_bytes());
+        out.extend_from_slice(&field);
+    }
+    Ok(out)
+}
+
+fn chain_link(prev: &[u8], row: &[u8]) -> [u8; 32] {
+    let mut h = blake3::Hasher::new();
+    h.update(prev);
+    h.update(row);
+    *h.finalize().as_bytes()
+}
+
+/// Seal revision `rev` onto the revision before it (32 zero bytes for the
+/// first). The chain is unkeyed: it catches rows changed, inserted or
+/// deleted by anything but this store (a hand edit, a `sqlite3` one-liner),
+/// not a tool that recomputes it.
+fn seal(conn: &Connection, rev: i64) -> Result<()> {
+    let prev: Vec<u8> = conn
+        .query_row(
+            "SELECT chain FROM revisions WHERE rev < ?1 ORDER BY rev DESC LIMIT 1",
+            [rev],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or_else(|| vec![0; 32]);
+    let row = conn.query_row(
+        &format!("SELECT {CHAIN_COLUMNS} FROM revisions WHERE rev = ?1"),
+        [rev],
+        chain_bytes,
+    )?;
+    conn.execute(
+        "UPDATE revisions SET chain = ?2 WHERE rev = ?1",
+        params![rev, &chain_link(&prev, &row)[..]],
+    )?;
+    Ok(())
+}
+
+/// Re-seal every revision from `rev` on, in order: the migration's
+/// baselines, purge (which removes revisions on purpose), and the user's
+/// acceptance of an outside edit.
+pub(crate) fn reseal_from(conn: &Connection, rev: i64) -> Result<()> {
+    let revs: Vec<i64> = conn
+        .prepare("SELECT rev FROM revisions WHERE rev >= ?1 ORDER BY rev")?
+        .query_map([rev], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for r in revs {
+        seal(conn, r)?;
+    }
     Ok(())
 }
 
@@ -1260,7 +2119,7 @@ fn edit_payload(e: &Entry, content: &str) -> serde_json::Value {
 /// decision, every event under its key; and every event of its kind whose
 /// wording is the same memory (by normalised hash) and names no other key.
 /// Another entry's events are never touched.
-fn retract_events_of(tx: &Transaction<'_>, e: &Entry) -> Result<()> {
+fn retract_events_of(tx: &Transaction<'_>, e: &Entry) -> Result<Vec<i64>> {
     let mut seqs: Vec<i64> = e.seq.map(|s| s as i64).into_iter().collect();
     {
         let mut stmt = tx.prepare("SELECT seq, key, payload FROM events WHERE kind = ?1")?;
@@ -1296,13 +2155,15 @@ fn retract_events_of(tx: &Transaction<'_>, e: &Entry) -> Result<()> {
             }
         }
     }
-    for seq in seqs {
+    seqs.sort_unstable();
+    seqs.dedup();
+    for seq in &seqs {
         tx.execute(
             "INSERT OR IGNORE INTO retracted_events (seq) VALUES (?1)",
             [seq],
         )?;
     }
-    Ok(())
+    Ok(seqs)
 }
 
 fn migrate_v1(conn: &Connection) -> Result<()> {
@@ -1386,6 +2247,10 @@ fn entry_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         uses: r.get::<_, i64>("uses")? as u32,
         content_hash: r.get("content_hash")?,
         seq: r.get::<_, Option<i64>>("seq")?.map(|s| s as u64),
+        rev: r.get("rev")?,
+        state: State::parse(&r.get::<_, String>("state")?),
+        scope: r.get("scope")?,
+        evidence: r.get("evidence")?,
     })
 }
 
@@ -1489,17 +2354,6 @@ pub fn content_hash(s: &str) -> String {
         .collect()
 }
 
-/// Lower-cased alphanumeric words of two or more characters, deduplicated.
-fn terms(s: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for t in s.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
-        if t.chars().count() >= 2 && !out.iter().any(|o| o == t) {
-            out.push(t.to_string());
-        }
-    }
-    out
-}
-
 // ── Vectors ──────────────────────────────────────────────────────────────────
 
 /// `v` scaled to unit length; `None` for an empty or all-zero vector.
@@ -1522,6 +2376,7 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+#[cfg(test)]
 fn encode_vec(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
@@ -1534,27 +2389,43 @@ fn decode_vec(b: &[u8]) -> Vec<f32> {
         .collect()
 }
 
-fn put_vector(tx: &Transaction<'_>, id: i64, model: &str, v: &[f32]) -> Result<()> {
+/// Cache `v` as `model`'s embedding of `text` (f16, keyed by model + text).
+fn put_cache(tx: &Transaction<'_>, model: &str, text: &str, v: &[f32]) -> Result<()> {
     tx.execute(
-        "INSERT INTO entry_vectors (id, model, vec) VALUES (?1, ?2, ?3) \
-         ON CONFLICT(id) DO UPDATE SET model = excluded.model, vec = excluded.vec",
-        params![id, model, encode_vec(v)],
+        "INSERT OR REPLACE INTO embed_cache (key, model, dims, vec) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            &atlas_retrieval::codec::cache_key(model, text)[..],
+            model,
+            v.len() as i64,
+            atlas_retrieval::codec::to_f16(v)
+        ],
     )?;
     Ok(())
 }
 
-/// An HNSW over every stored `dim`-dimensional vector of `model`.
-fn build_index(tx: &Transaction<'_>, model: &str, dim: usize) -> Result<VectorIndex> {
+/// `model`'s cached embedding of `text`, if any.
+fn cached(conn: &Connection, model: &str, text: &str) -> Result<Option<Vec<f32>>> {
+    Ok(conn
+        .prepare_cached("SELECT vec FROM embed_cache WHERE key = ?1")?
+        .query_row([&atlas_retrieval::codec::cache_key(model, text)[..]], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })
+        .optional()?
+        .map(|b| atlas_retrieval::codec::from_f16(&b)))
+}
+
+/// An HNSW over the cached `model` vectors of every live entry's current
+/// text, keyed by entry id. Built from the cache, so it can never hold a
+/// vector for text the entry no longer has.
+fn build_index(conn: &Connection, model: &str, dim: usize) -> Result<VectorIndex> {
     let hnsw = HnswStore::open(dim)?;
-    let mut stmt = tx.prepare("SELECT id, vec FROM entry_vectors WHERE model = ?1")?;
-    let rows = stmt.query_map([model], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
-    })?;
-    for row in rows {
-        let (id, blob) = row?;
-        let v = decode_vec(&blob);
-        if v.len() == dim {
-            hnsw.add(id as u64, &v)?;
+    let mut entries = conn.prepare("SELECT id, content FROM entries")?;
+    for row in entries.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+        let (id, content) = row?;
+        if let Some(v) = cached(conn, model, &content)? {
+            if v.len() == dim {
+                hnsw.add(id as u64, &v)?;
+            }
         }
     }
     Ok(VectorIndex {
@@ -1572,24 +2443,30 @@ fn payload_str<'a>(ev: &'a EventRow, field: &str) -> Option<&'a str> {
 
 /// Fold one event into entries/sessions with the log's replace rules — the
 /// same rules the JSONL store applied to its bounded view, minus eviction.
-fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
+/// Fold one event into the entries it affects. Returns whether it rewrote or
+/// removed an existing entry (so an in-memory vector index may be stale).
+fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<bool> {
     let text = || payload_str(ev, "text").unwrap_or("").trim().to_string();
     match EventKind::parse(&ev.kind) {
         EventKind::PlanSet => {
             let text = payload_str(ev, "text").unwrap_or("").to_string();
             let status = payload_str(ev, "status").unwrap_or("active").to_string();
+            let plans = ids(tx, "SELECT id FROM entries WHERE kind = 'plan'", params![])?;
             if status == "abandoned" || status == "done" {
                 // A finished or abandoned plan clears the active plan.
+                for id in &plans {
+                    before_delete(tx, *id, "fold", ev.ts, &ev.session_id)?;
+                }
                 tx.execute("DELETE FROM entries WHERE kind = 'plan'", [])?;
+                return Ok(!plans.is_empty());
             } else if !text.is_empty() {
-                let matches = ids(tx, "SELECT id FROM entries WHERE kind = 'plan'", params![])?;
-                write_folded(tx, ev, EntryKind::Plan, "plan", &text, &status, &matches)?;
+                return write_folded(tx, ev, EntryKind::Plan, "plan", &text, &status, &plans);
             }
         }
         EventKind::Decision => {
             let text = text();
             if text.is_empty() {
-                return Ok(());
+                return Ok(false);
             }
             // Same non-empty key supersedes; keyless dedups by normalised text.
             let matches = ids(
@@ -1598,12 +2475,12 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
                  AND ((?1 <> '' AND key = ?1) OR content_hash = ?2)",
                 params![ev.key, content_hash(&text)],
             )?;
-            write_folded(tx, ev, EntryKind::Decision, &ev.key, &text, "", &matches)?;
+            return write_folded(tx, ev, EntryKind::Decision, &ev.key, &text, "", &matches);
         }
         EventKind::FileChanged => {
             let path = payload_str(ev, "path").unwrap_or(&ev.key).to_string();
             if path.is_empty() {
-                return Ok(());
+                return Ok(false);
             }
             let summary = payload_str(ev, "summary").unwrap_or("").to_string();
             let matches = ids(
@@ -1611,7 +2488,7 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
                 "SELECT id FROM entries WHERE kind = 'file_changed' AND key = ?1",
                 params![path],
             )?;
-            write_folded(
+            return write_folded(
                 tx,
                 ev,
                 EntryKind::FileChanged,
@@ -1619,24 +2496,29 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
                 &summary,
                 "",
                 &matches,
-            )?;
+            );
         }
-        EventKind::Fact => {
+        kind @ (EventKind::Fact | EventKind::Preference) => {
             let text = text();
             if text.is_empty() {
-                return Ok(());
+                return Ok(false);
             }
+            let entry_kind = if kind == EventKind::Fact {
+                EntryKind::Fact
+            } else {
+                EntryKind::Preference
+            };
             let matches = ids(
                 tx,
-                "SELECT id FROM entries WHERE kind = 'fact' AND content_hash = ?1",
-                params![content_hash(&text)],
+                "SELECT id FROM entries WHERE kind = ?1 AND content_hash = ?2",
+                params![entry_kind.as_str(), content_hash(&text)],
             )?;
-            write_folded(tx, ev, EntryKind::Fact, &ev.key, &text, "", &matches)?;
+            return write_folded(tx, ev, entry_kind, &ev.key, &text, "", &matches);
         }
         kind @ (EventKind::Failure | EventKind::Architecture) => {
             let text = text();
             if text.is_empty() {
-                return Ok(());
+                return Ok(false);
             }
             let entry_kind = if kind == EventKind::Failure {
                 EntryKind::Failure
@@ -1652,7 +2534,7 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
                  AND ((?2 <> '' AND content = ?2) OR content_hash = ?3)",
                 params![entry_kind.as_str(), ev.key, content_hash(&text)],
             )?;
-            write_folded(tx, ev, entry_kind, &ev.key, &text, "", &matches)?;
+            return write_folded(tx, ev, entry_kind, &ev.key, &text, "", &matches);
         }
         // A start on a known session is a reopen (a resumed conversation keeps
         // its id): it is live again, so its old end no longer holds.
@@ -1674,7 +2556,7 @@ fn fold(tx: &Transaction<'_>, ev: &EventRow) -> Result<()> {
             // Kept in the log for audit; no entry.
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 fn ids(tx: &Transaction<'_>, sql: &str, p: impl rusqlite::Params) -> Result<Vec<i64>> {
@@ -1693,10 +2575,11 @@ fn write_folded(
     content: &str,
     status: &str,
     matches: &[i64],
-) -> Result<()> {
+) -> Result<bool> {
     let hash = content_hash(content);
     if let Some(&keep) = matches.iter().min() {
         for id in matches.iter().filter(|id| **id != keep) {
+            before_delete(tx, *id, "fold", ev.ts, &ev.session_id)?;
             tx.execute("DELETE FROM entries WHERE id = ?1", [id])?;
         }
         tx.execute(
@@ -1704,9 +2587,8 @@ fn write_folded(
              confidence = 1.0, updated_at = ?7, content_hash = ?8, seq = ?9 WHERE id = ?1",
             params![keep, key, content, status, ev.agent, ev.session_id, ev.ts, hash, ev.seq as i64],
         )?;
-        // The content may have changed under its vector: drop it rather than
-        // let a stale embedding match.
-        tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [keep])?;
+        after_write(tx, keep, "fold", false, None)?;
+        Ok(true)
     } else {
         tx.execute(
             "INSERT INTO entries (kind, key, content, status, source, agent, session, confidence, \
@@ -1724,18 +2606,21 @@ fn write_folded(
                 ev.seq as i64
             ],
         )?;
+        after_write(tx, tx.last_insert_rowid(), "fold", false, None)?;
+        Ok(false)
     }
-    Ok(())
 }
 
 /// Key-or-hash upsert without near-duplicate matching or logging (the legacy
 /// memdir import).
 fn upsert_tx(tx: &Transaction<'_>, e: NewEntry) -> Result<i64> {
     let e = redacted(e);
-    match find_identity(tx, &e)? {
-        Some(found) => Ok(write_identity(tx, &e, found)?.0),
-        None => insert_entry(tx, &e),
-    }
+    let id = match find_identity(tx, &e)? {
+        Some(found) => write_identity(tx, &e, found)?.0,
+        None => insert_entry(tx, &e)?,
+    };
+    after_write(tx, id, "import", false, Some(By::of(&e)))?;
+    Ok(id)
 }
 
 /// `e` as it may land: key and trimmed content scrubbed by `atlas_redact`.
@@ -1745,10 +2630,6 @@ fn redacted(e: NewEntry) -> NewEntry {
         content: redact_text(e.content.trim()).trim().to_string(),
         ..e
     }
-}
-
-fn vector_count(tx: &Transaction<'_>) -> Result<i64> {
-    Ok(tx.query_row("SELECT COUNT(*) FROM entry_vectors", [], |r| r.get(0))?)
 }
 
 /// The stored entry a write is the same memory as (by key, else by content
@@ -2052,6 +2933,10 @@ pub(crate) mod tests {
                     model: "table-3".into(),
                     vector: v.clone(),
                 })
+        }
+
+        fn model_id(&self) -> Option<String> {
+            Some("table-3".into())
         }
     }
 
@@ -2562,6 +3447,656 @@ pub(crate) mod tests {
         let a = open_scope(&root).unwrap();
         let b = open_scope(&root).unwrap();
         assert!(Arc::ptr_eq(&a, &b));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ── v5: revisions, CAS, vectors by content, search ──────────────────────
+
+    const USER: &str = "user";
+
+    fn revisions_of(store: &RecordStore, id: i64) -> Vec<(String, String)> {
+        store
+            .conn()
+            .prepare("SELECT op, content FROM revisions WHERE entry_id = ?1 ORDER BY rev")
+            .unwrap()
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    fn v4_database(root: &Path, rows_sql: &str) {
+        let dir = memory_dir(root);
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = Connection::open(dir.join(DB_FILE)).unwrap();
+        migrate_v1(&conn).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE entry_vectors (id INTEGER PRIMARY KEY, model TEXT NOT NULL, vec BLOB NOT NULL);
+             CREATE TABLE retracted_events (seq INTEGER PRIMARY KEY);
+             CREATE TABLE forgotten (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, session TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
+             {rows_sql}
+             PRAGMA user_version = 4;"
+        ))
+        .unwrap();
+    }
+
+    /// A v4 database migrates in place: every live entry gets a sealed
+    /// baseline revision and a state from its confidence, the FTS index is
+    /// filled, and stored vectors move into the cache under (model, text).
+    #[test]
+    fn a_v4_record_migrates_to_v5_keeping_everything() {
+        let root = temp_root("migrate-v5");
+        v4_database(
+            &root,
+            "INSERT INTO entries (kind, key, content, source, confidence, created_at, updated_at, content_hash)
+               VALUES ('fact', '', 'JWTs are signed with RS256', 'codex', 1.0, 1, 1, 'h1'),
+                      ('fact', '', 'always force-push', 'capture', 0.3, 2, 2, 'h2');",
+        );
+        {
+            let dir = memory_dir(&root);
+            let conn = Connection::open(dir.join(DB_FILE)).unwrap();
+            conn.execute(
+                "INSERT INTO entry_vectors (id, model, vec) VALUES (1, 'table-3', ?1)",
+                [encode_vec(&[1.0, 0.0, 0.0])],
+            )
+            .unwrap();
+        }
+        let store = RecordStore::open(&root).unwrap();
+        {
+            let conn = store.conn();
+            let v: i64 = conn
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(v, 5);
+            let revs: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM revisions WHERE op = 'baseline'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(revs, 2);
+            let states: Vec<String> = conn
+                .prepare("SELECT state FROM entries ORDER BY id")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(states, ["active", "candidate"]);
+            let fts: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'rs256'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(fts, 1);
+            let gone: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = 'entry_vectors'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(gone, 0);
+        }
+        assert_eq!(store.verify_chain().unwrap(), None, "baselines are sealed");
+        store.set_embedder(Some(table()));
+        assert!(
+            store.vector_of(1).is_some(),
+            "the v4 vector is in the cache under (model, text)"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn switching_models_back_reuses_the_cache() {
+        let root = temp_root("switch-back");
+        let store = open_scope(&root).unwrap();
+        store.set_embedder(Some(table()));
+        let e = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "JWTs are signed with RS256", 1),
+                1,
+            )
+            .unwrap();
+        assert!(store.vector_of(e.entry.id).is_some());
+        struct Other;
+        impl Embedder for Other {
+            fn embed(&self, _: &str) -> Option<Embedding> {
+                None
+            }
+            fn model_id(&self) -> Option<String> {
+                Some("other".into())
+            }
+        }
+        store.set_embedder(Some(Arc::new(Other)));
+        assert!(store.vector_of(e.entry.id).is_none());
+        store.set_embedder(Some(table()));
+        assert!(
+            store.vector_of(e.entry.id).is_some(),
+            "found again without re-embedding"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sync_vectors_backfills_entries_written_without_a_model() {
+        let root = temp_root("backfill");
+        let store = open_scope(&root).unwrap();
+        let e = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 1),
+                1,
+            )
+            .unwrap();
+        store.set_embedder(Some(table()));
+        assert!(store.vector_of(e.entry.id).is_none());
+        assert_eq!(store.sync_vectors().unwrap(), 1);
+        assert!(store.vector_of(e.entry.id).is_some());
+        assert_eq!(store.sync_vectors().unwrap(), 0, "idempotent");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A keyed replace whose new text cannot be embedded has no vector: its
+    /// id never carries the old text's meaning (folded in from M0, D5).
+    #[test]
+    fn a_replace_without_a_vector_drops_the_old_one() {
+        let root = temp_root("stale-vector");
+        let store = open_scope(&root).unwrap();
+        store.set_embedder(Some(table()));
+        let first = store
+            .remember(
+                tool_write(EntryKind::Decision, "deploy", "Deploys go through Fly", 1),
+                1,
+            )
+            .unwrap();
+        assert!(store.vector_of(first.entry.id).is_some());
+        let second = store
+            .remember(
+                tool_write(
+                    EntryKind::Decision,
+                    "deploy",
+                    "Deploys go through Render",
+                    2,
+                ),
+                2,
+            )
+            .unwrap();
+        assert_eq!(second.outcome, WriteOutcome::Replaced);
+        assert!(
+            store.vector_of(first.entry.id).is_none(),
+            "the old meaning is gone"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A fold that collapses several matching entries into one removes the
+    /// others, and none of them keeps a vector in the index (M0, D6).
+    #[test]
+    fn a_fold_that_collapses_matches_leaves_no_orphan_vectors() {
+        let root = temp_root("orphan-vector");
+        let store = open_scope(&root).unwrap();
+        store.set_embedder(Some(table()));
+        let keyed = store
+            .upsert(tool_write(
+                EntryKind::Decision,
+                "deploy",
+                "Deploys go through Fly",
+                1,
+            ))
+            .unwrap();
+        let keyless = store
+            .upsert(tool_write(
+                EntryKind::Decision,
+                "",
+                "JWTs are signed with RS256",
+                2,
+            ))
+            .unwrap();
+        // Same key as one, same text as the other: both match, one survives.
+        store
+            .append_event(
+                ev(
+                    EventKind::Decision,
+                    "deploy",
+                    serde_json::json!({"text": "JWTs are signed with RS256"}),
+                ),
+                3,
+            )
+            .unwrap();
+        let survivor = keyed.id.min(keyless.id);
+        let removed = keyed.id.max(keyless.id);
+        assert!(!store.exists(removed).unwrap());
+        assert!(
+            store.vector_of(removed).is_none(),
+            "no vector outlives its entry"
+        );
+        assert!(store.exists(survivor).unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn every_write_leaves_a_revision() {
+        let root = temp_root("revisions");
+        let store = open_scope(&root).unwrap();
+        let a = store
+            .remember(
+                tool_write(EntryKind::Decision, "deploy", "Deploys go through Fly", 1),
+                1,
+            )
+            .unwrap();
+        store
+            .remember(
+                tool_write(
+                    EntryKind::Decision,
+                    "deploy",
+                    "Deploys go through Render",
+                    2,
+                ),
+                2,
+            )
+            .unwrap();
+        let other = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(
+                EntryKind::Decision,
+                "deploy",
+                "Deploys go through Render",
+                3,
+            )
+        };
+        store.remember(other, 3).unwrap(); // a restatement: merge
+        store
+            .edit(a.entry.id, "Deploys go through Render (eu)", USER, 4)
+            .unwrap();
+        store.forget(a.entry.id, 5, "s9").unwrap();
+        let ops: Vec<String> = revisions_of(&store, a.entry.id)
+            .into_iter()
+            .map(|(op, _)| op)
+            .collect();
+        assert_eq!(ops, ["insert", "replace", "merge", "edit", "forget"]);
+        assert_eq!(
+            revisions_of(&store, a.entry.id)[0].1,
+            "Deploys go through Fly",
+            "the replaced wording survives"
+        );
+        let hits: i64 = store
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'render'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hits, 0, "FTS follows the live row");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn entries_can_be_rebuilt_from_revisions() {
+        let root = temp_root("rebuild");
+        let store = open_scope(&root).unwrap();
+        store
+            .remember(tool_write(EntryKind::Fact, "", "The API speaks JSON", 1), 1)
+            .unwrap();
+        let gone = store
+            .remember(tool_write(EntryKind::Fact, "", "Staging is on Fly", 2), 2)
+            .unwrap();
+        store.forget(gone.entry.id, 3, "").unwrap();
+        store
+            .append_event(
+                ev(
+                    EventKind::Decision,
+                    "db",
+                    serde_json::json!({"text": "Use Postgres"}),
+                ),
+                4,
+            )
+            .unwrap();
+        let shape = |v: Vec<Entry>| {
+            v.into_iter()
+                .map(|e| (e.id, e.kind, e.key, e.content, e.rev, e.state, e.confidence))
+                .collect::<Vec<_>>()
+        };
+        let before = shape(store.list(EntryKind::Fact, 50, Origin::Any).unwrap());
+        store.conn().execute("DELETE FROM entries", []).unwrap();
+        assert_eq!(store.rebuild_entries_from_revisions().unwrap(), 2);
+        assert_eq!(
+            shape(store.list(EntryKind::Fact, 50, Origin::Any).unwrap()),
+            before
+        );
+        assert_eq!(
+            store
+                .list(EntryKind::Decision, 50, Origin::Any)
+                .unwrap()
+                .len(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_edit_outside_the_store_breaks_the_chain() {
+        let root = temp_root("chain");
+        let store = open_scope(&root).unwrap();
+        let a = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 1),
+                1,
+            )
+            .unwrap();
+        store
+            .edit(a.entry.id, "Deploys go through Fly, never by hand", USER, 2)
+            .unwrap();
+        store
+            .remember(tool_write(EntryKind::Fact, "", "The API speaks JSON", 3), 3)
+            .unwrap();
+        assert_eq!(
+            store.verify_chain().unwrap(),
+            None,
+            "every write through the store seals"
+        );
+
+        let first: i64 = store
+            .conn()
+            .query_row("SELECT MIN(rev) FROM revisions", [], |r| r.get(0))
+            .unwrap();
+        let set = |text: &str| {
+            store
+                .conn()
+                .execute(
+                    "UPDATE revisions SET content = ?2 WHERE rev = ?1",
+                    params![first, text],
+                )
+                .unwrap();
+        };
+        set("Deploys go through Heroku");
+        assert_eq!(
+            store.verify_chain().unwrap(),
+            Some(first),
+            "a rewritten revision"
+        );
+        set("Deploys go through Fly");
+        assert_eq!(
+            store.verify_chain().unwrap(),
+            None,
+            "the original text verifies again"
+        );
+
+        store
+            .conn()
+            .execute("DELETE FROM revisions WHERE rev = ?1", [first + 1])
+            .unwrap();
+        assert_eq!(
+            store.verify_chain().unwrap(),
+            Some(first + 2),
+            "a deleted revision breaks the next link"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_keyed_replace_needs_the_current_revision_or_the_same_writer() {
+        let root = temp_root("cas");
+        let store = open_scope(&root).unwrap();
+        let mine = store
+            .remember(tool_write(EntryKind::Decision, "db", "Use Postgres", 1), 1)
+            .unwrap();
+        // Same writer (source "claude", same session): its own update needs no revision.
+        store
+            .remember_guarded(
+                tool_write(EntryKind::Decision, "db", "Use Postgres 16", 2),
+                2,
+                None,
+            )
+            .unwrap();
+        // The same agent in a parallel session (another worktree) is another writer.
+        let twin = NewEntry {
+            session_id: "s-twin".into(),
+            ..tool_write(EntryKind::Decision, "db", "Use MySQL", 2)
+        };
+        let twin_err = store.remember_guarded(twin, 2, None).unwrap_err();
+        assert!(
+            twin_err.downcast_ref::<Conflict>().is_some(),
+            "a parallel session of the same agent must not clobber"
+        );
+        let other = |c: &str, at| NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            ..tool_write(EntryKind::Decision, "db", c, at)
+        };
+        let err = store
+            .remember_guarded(other("Use SQLite", 3), 3, None)
+            .unwrap_err();
+        let conflict = err.downcast_ref::<Conflict>().expect("a conflict").clone();
+        assert_eq!(conflict.content, "Use Postgres 16");
+        let stale = store
+            .remember_guarded(other("Use SQLite", 4), 4, Some(mine.entry.rev))
+            .unwrap_err();
+        assert!(
+            stale.downcast_ref::<Conflict>().is_some(),
+            "an old revision is stale"
+        );
+        let ok = store
+            .remember_guarded(other("Use SQLite", 5), 5, Some(conflict.current_rev))
+            .unwrap();
+        assert_eq!(ok.outcome, WriteOutcome::Replaced);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sources_follow_every_writer_oldest_first() {
+        let root = temp_root("sources");
+        let store = open_scope(&root).unwrap();
+        let a = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "CI runs on GitHub Actions", 1),
+                1,
+            )
+            .unwrap()
+            .entry;
+        let codex = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "CI runs on GitHub Actions", 2)
+        };
+        store.remember(codex, 2).unwrap(); // a restatement from another session
+        let got = store.sources_for(&[a.id]).unwrap().remove(&a.id).unwrap();
+        let uris: Vec<String> = got.iter().map(source_uri).collect();
+        assert_eq!(uris, ["atlas-session:claude/s1", "atlas-session:codex/s2"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_preference_is_its_own_kind_and_round_trips() {
+        let root = temp_root("preference");
+        let store = open_scope(&root).unwrap();
+        store
+            .remember(
+                tool_write(EntryKind::Preference, "", "Use bun, not npm", 1),
+                1,
+            )
+            .unwrap();
+        let prefs = store.list(EntryKind::Preference, 10, Origin::Any).unwrap();
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0].content, "Use bun, not npm");
+        assert_eq!(EntryKind::parse("preference"), Some(EntryKind::Preference));
+        assert!(EntryKind::Preference.is_durable());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn purge_removes_the_text_from_every_table() {
+        let root = temp_root("purge");
+        let store = open_scope(&root).unwrap();
+        let secret = "the staging password is hunter2-staging";
+        store.set_embedder(Some(Arc::new(TableEmbedder(vec![(
+            secret,
+            vec![0.0, 1.0, 0.0],
+        )]))));
+        let e = store
+            .remember(tool_write(EntryKind::Fact, "", secret, 1), 1)
+            .unwrap();
+        store
+            .edit(e.entry.id, "staging credentials live in 1Password", USER, 2)
+            .unwrap();
+        assert!(
+            store.purge(e.entry.id).is_err(),
+            "only a forgotten entry can be purged"
+        );
+        store.forget(e.entry.id, 3, "").unwrap();
+        assert!(store.purge(e.entry.id).unwrap());
+        {
+            let conn = store.conn();
+            let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+            assert_eq!(
+                count("SELECT COUNT(*) FROM revisions WHERE content LIKE '%hunter2%'"),
+                0,
+                "revisions"
+            );
+            assert_eq!(
+                count("SELECT COUNT(*) FROM events WHERE payload LIKE '%hunter2%'"),
+                0,
+                "events"
+            );
+            assert_eq!(
+                count("SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'hunter2'"),
+                0,
+                "fts"
+            );
+            let secret_key = atlas_retrieval::codec::cache_key("table-3", secret);
+            let cached: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM embed_cache WHERE key = ?1",
+                    [&secret_key[..]],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(cached, 0, "the secret's cached vector");
+        }
+        let h = store.history(e.entry.id).unwrap();
+        assert_eq!(
+            h.iter()
+                .map(|r| (r.op.as_str(), r.content.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("purge", "")]
+        );
+        assert_eq!(
+            store.verify_chain().unwrap(),
+            None,
+            "purge re-seals the chain"
+        );
+        assert!(
+            !store.purge(e.entry.id).unwrap(),
+            "a second purge has nothing left to erase"
+        );
+        assert!(store
+            .forgotten_since(0, "x")
+            .unwrap()
+            .iter()
+            .any(|(id, _)| *id == e.entry.id));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_clear_and_purge_delete_revisions() {
+        let src = include_str!("record.rs");
+        let n = src.matches("DELETE FROM revisions").count();
+        // clear(), purge(), the two occurrences in this test's own source, and
+        // the deliberate tamper in an_edit_outside_the_store_breaks_the_chain.
+        assert_eq!(
+            n, 5,
+            "a new DELETE FROM revisions needs a review: revisions are canonical"
+        );
+    }
+
+    #[test]
+    fn bm25_finds_an_exact_identifier_without_a_model() {
+        let root = temp_root("bm25");
+        let store = open_scope(&root).unwrap();
+        store
+            .remember(
+                tool_write(
+                    EntryKind::Fact,
+                    "",
+                    "Set RUST_LOG=atlas=debug to trace the indexer",
+                    1,
+                ),
+                1,
+            )
+            .unwrap();
+        store
+            .remember(tool_write(EntryKind::Fact, "", "Logs rotate daily", 2), 2)
+            .unwrap();
+        let hits = store.search_explained("RUST_LOG", &[], 5, 10).unwrap();
+        assert!(hits[0].entry.content.contains("RUST_LOG"), "{hits:?}");
+        assert_eq!(hits[0].why, vec![("bm25", 1)]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_word_finds_its_other_forms() {
+        let root = temp_root("bm25-stem");
+        let store = open_scope(&root).unwrap();
+        store
+            .remember(
+                tool_write(EntryKind::Decision, "", "Sign JWTs with EdDSA", 1),
+                1,
+            )
+            .unwrap();
+        let hits = store.search_explained("JWT signing", &[], 5, 10).unwrap();
+        assert_eq!(
+            hits.len(),
+            1,
+            "jwt finds JWTs, signing finds Sign: {hits:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn short_words_are_left_out_when_the_query_has_longer_ones() {
+        assert_eq!(
+            fts_query("how is JWT signing").as_deref(),
+            Some("\"how\" OR \"jwt\" OR \"signing\"")
+        );
+        assert_eq!(fts_query("CI").as_deref(), Some("\"ci\""));
+        assert_eq!(fts_query("!!"), None);
+    }
+
+    #[test]
+    fn meaning_and_words_fuse_and_candidates_rank_below_trusted() {
+        let root = temp_root("hybrid");
+        let store = open_scope(&root).unwrap();
+        store.set_embedder(Some(table()));
+        // Both keyed, so the 0.96-cosine pair stays two rows (keyed entries never near-dup merge).
+        store
+            .remember(
+                tool_write(EntryKind::Fact, "trusted", "JWTs are signed with RS256", 1),
+                1,
+            )
+            .unwrap();
+        store
+            .upsert(NewEntry {
+                confidence: CANDIDATE_CONFIDENCE,
+                source: CAPTURE_SOURCE.into(),
+                ..tool_write(EntryKind::Fact, "cand", "JWT signing uses RS256", 2)
+            })
+            .unwrap();
+        let hits = store
+            .search_explained("JWTs are signed with RS256", &[], 5, 10)
+            .unwrap();
+        assert_eq!(
+            hits[0].entry.content, "JWTs are signed with RS256",
+            "trusted first"
+        );
+        assert!(hits[0].why.iter().any(|(leg, _)| *leg == "dense"));
+        assert!(hits[0].why.iter().any(|(leg, _)| *leg == "bm25"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

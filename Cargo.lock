@@ -3338,6 +3338,8 @@ dependencies = [
  "atlas-embed",
  "atlas-profile",
  "atlas-redact",
+ "atlas-retrieval",
+ "blake3",
  "chrono",
  "rusqlite",
  "serde",

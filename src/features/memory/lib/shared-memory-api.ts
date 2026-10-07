@@ -14,6 +14,7 @@ export type EventKind =
   | "fact"
   | "failure"
   | "architecture"
+  | "preference"
   | "session_start"
   | "session_end"
   | "todo_added"
@@ -69,7 +70,14 @@ export interface SharedState {
 }
 
 /** Which of the six kinds a record entry is. */
-export type EntryKind = "plan" | "decision" | "file_changed" | "fact" | "failure" | "architecture";
+export type EntryKind =
+  | "plan"
+  | "decision"
+  | "file_changed"
+  | "fact"
+  | "failure"
+  | "architecture"
+  | "preference";
 
 /** One record entry with its provenance and confidence (the Memories view). */
 export interface MemoryEntry {
