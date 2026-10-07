@@ -523,6 +523,28 @@ async fn the_handoff_note_carries_the_last_sessions_decisions(w: World) -> Resul
     )
 }
 
+async fn memory_why_names_the_session_that_wrote_a_file(w: World) -> Result<(), String> {
+    use crate::commands::memory_capture::test_support::Recording;
+    let mut rec = Recording::open_turn(&w.project, "s-a", "claude-code", "Move auth to EdDSA");
+    rec.write("src/auth.rs", b"pub fn sign() {}\n");
+    rec.close_turn();
+    drop(rec);
+    call(
+        &w.a,
+        "memory_remember",
+        json!({"kind": "decision", "key": "auth.alg", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    let (_, why) = call(&w.b, "memory_why", json!({"path": "src/auth.rs"})).await;
+    check(
+        why["sessions"][0]["session"] == "atlas-session:claude-code/s-a"
+            && contents(&why, "memories")
+                .iter()
+                .any(|c| c.contains("EdDSA")),
+        || format!("{why}"),
+    )
+}
+
 type Probe = fn(World) -> BoxFuture<'static, Result<(), String>>;
 
 fn probes() -> Vec<(&'static str, Milestone, Probe)> {
@@ -582,6 +604,9 @@ fn probes() -> Vec<(&'static str, Milestone, Probe)> {
             M4,
             |w| Box::pin(the_handoff_note_carries_the_last_sessions_decisions(w)),
         ),
+        ("memory_why_names_the_session_that_wrote_a_file", M4, |w| {
+            Box::pin(memory_why_names_the_session_that_wrote_a_file(w))
+        }),
     ]
 }
 

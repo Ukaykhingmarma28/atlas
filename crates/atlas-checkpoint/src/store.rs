@@ -939,6 +939,64 @@ impl Store {
         Ok(rows)
     }
 
+    /// The Sessions that wrote `path` (project-relative, as stored), with
+    /// their last write to it, newest first. Uses `idx_file_touch_by_path`.
+    pub fn sessions_touching_path(
+        &self,
+        path: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, DateTime<Utc>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, MAX(created_at) AS last FROM file_touch
+              WHERE path = ?1 GROUP BY session_id
+              ORDER BY last DESC, session_id LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![path, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(session, last)| (session, parse_time(last)))
+            .collect())
+    }
+
+    /// The Checkpoints whose commit carried `path`, newest first. A renamed
+    /// file appears here under its committed name, which no touch has. No
+    /// index covers `files_touched`, so this reads every Checkpoint row: one
+    /// per (Session, commit), small next to the message tables.
+    pub fn checkpoints_touching_path(&self, path: &str, limit: i64) -> Result<Vec<Checkpoint>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint c
+              WHERE EXISTS (SELECT 1 FROM json_each(c.files_touched) WHERE value = ?1)
+              ORDER BY created_at DESC, id LIMIT ?2"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![path, limit], row_to_checkpoint)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The Checkpoints of every commit whose sha starts with `prefix` (hex,
+    /// at least 7). A range over `idx_checkpoint_commit`, for a short sha git
+    /// can no longer resolve.
+    pub fn checkpoints_for_commit_prefix(&self, prefix: &str) -> Result<Vec<Checkpoint>> {
+        if prefix.len() < 7 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(Vec::new());
+        }
+        let low = prefix.to_ascii_lowercase();
+        let high = format!("{low}g");
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint
+              WHERE commit_sha >= ?1 AND commit_sha < ?2 ORDER BY created_at DESC, id"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![low, high], row_to_checkpoint)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// The highest turn number this Session has ever used.
     ///
     /// Seeds the in-memory counter after a restart, so a resumed conversation

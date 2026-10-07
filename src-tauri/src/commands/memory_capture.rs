@@ -312,7 +312,7 @@ fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) ->
 /// the files it wrote, the tool calls that failed, the commits it produced,
 /// whether its last turn was cut off, and its branch and title.
 pub fn session_facts(found: &Recorded<'_>) -> atlas_memory::handoff::SessionFacts {
-    use atlas_memory::handoff::{CommitFact, SessionFacts};
+    use atlas_memory::handoff::SessionFacts;
     let (store, session) = (found.store, &found.session);
     let spans = store.turn_spans(&session.id).unwrap_or_default();
     let interrupted = spans
@@ -334,28 +334,7 @@ pub fn session_facts(found: &Recorded<'_>) -> atlas_memory::handoff::SessionFact
             }
         })
         .collect();
-    let mut checkpoints = store
-        .checkpoints_for_session(&session.id)
-        .unwrap_or_default();
-    checkpoints.sort_by(|a, b| {
-        b.created_at
-            .cmp(&a.created_at)
-            .then(a.commit_sha.cmp(&b.commit_sha))
-    });
-    let commits = checkpoints
-        .into_iter()
-        .take(5)
-        .map(|c| CommitFact {
-            sha: c.commit_sha.chars().take(12).collect(),
-            // Git owns the message; the record keeps none.
-            subject: atlas_checkpoint::git::commit_info(found.root, &c.commit_sha)
-                .ok()
-                .map(|i| short(&safe(&i.subject), 80))
-                .filter(|s| !s.is_empty()),
-            branch: c.branch,
-            orphaned: c.link_state == LinkState::Orphaned,
-        })
-        .collect();
+    let commits = commit_facts(found, 5, true);
     SessionFacts {
         title: session.title.as_deref().map(safe),
         branch: session.branch.clone(),
@@ -365,6 +344,155 @@ pub fn session_facts(found: &Recorded<'_>) -> atlas_memory::handoff::SessionFact
         interrupted,
         rewound_turns,
         incomplete: session.needs_attention,
+    }
+}
+
+/// A recorded session's commits, newest first, at most `limit`. `subjects`
+/// asks git for each message (git owns it; the record keeps none).
+fn commit_facts(
+    found: &Recorded<'_>,
+    limit: usize,
+    subjects: bool,
+) -> Vec<atlas_memory::handoff::CommitFact> {
+    let mut checkpoints = found
+        .store
+        .checkpoints_for_session(&found.session.id)
+        .unwrap_or_default();
+    checkpoints.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then(a.commit_sha.cmp(&b.commit_sha))
+    });
+    checkpoints
+        .into_iter()
+        .take(limit)
+        .map(|c| atlas_memory::handoff::CommitFact {
+            sha: c.commit_sha.chars().take(12).collect(),
+            subject: subjects
+                .then(|| atlas_checkpoint::git::commit_info(found.root, &c.commit_sha).ok())
+                .flatten()
+                .map(|i| short(&safe(&i.subject), 80))
+                .filter(|s| !s.is_empty()),
+            branch: c.branch,
+            orphaned: c.link_state == LinkState::Orphaned,
+        })
+        .collect()
+}
+
+/// The target of `memory_why`.
+pub enum WhyTarget {
+    /// Scope-root relative, `/`-separated.
+    Path(String),
+    /// Lower-case hex, 7 to 40.
+    Commit(String),
+}
+
+/// One recorded session behind a path or a commit.
+pub struct WhySession {
+    /// The agent's session id: what memory's sources name too.
+    pub session: String,
+    pub agent: Option<String>,
+    pub title: Option<String>,
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub commits: Vec<atlas_memory::handoff::CommitFact>,
+    pub incomplete: bool,
+}
+
+/// At most this many sessions in a `memory_why` answer.
+pub const WHY_SESSIONS: usize = 5;
+
+/// The recorded sessions behind `target`, newest first, at most
+/// [`WHY_SESSIONS`]. Empty when capture is off. For a path: sessions that
+/// wrote it, and sessions whose linked commits carried it (a renamed file
+/// is only there). For a commit: its linked checkpoints.
+pub fn why_sessions(
+    stores: &ScopeStores,
+    scope_root: &Path,
+    target: &WhyTarget,
+) -> Vec<WhySession> {
+    let mut hits: Vec<(chrono::DateTime<chrono::Utc>, String, usize)> = Vec::new();
+    for (i, (root, store)) in stores.0.iter().enumerate() {
+        match target {
+            WhyTarget::Path(rel) => {
+                // A store keys paths relative to its own launch directory.
+                let Some(local) = local_path(scope_root, root, rel) else {
+                    continue;
+                };
+                for (session, last) in store
+                    .sessions_touching_path(&local, WHY_SESSIONS as i64)
+                    .unwrap_or_default()
+                {
+                    hits.push((last, session, i));
+                }
+                for c in store
+                    .checkpoints_touching_path(&local, WHY_SESSIONS as i64)
+                    .unwrap_or_default()
+                {
+                    if c.link_state == LinkState::Linked {
+                        hits.push((c.created_at, c.session_id, i));
+                    }
+                }
+            }
+            WhyTarget::Commit(sha) => {
+                let full = atlas_checkpoint::git::commit_info(root, sha)
+                    .ok()
+                    .map(|info| info.sha);
+                let found = match full {
+                    Some(full) => store.checkpoints_for_commit(&full).unwrap_or_default(),
+                    None => store.checkpoints_for_commit_prefix(sha).unwrap_or_default(),
+                };
+                // An orphaned checkpoint's claim on the commit was withdrawn.
+                for c in found
+                    .into_iter()
+                    .filter(|c| c.link_state == LinkState::Linked)
+                {
+                    hits.push((c.created_at, c.session_id, i));
+                }
+            }
+        }
+    }
+    hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let mut out: Vec<WhySession> = Vec::new();
+    for (at, row, i) in hits {
+        if out.len() == WHY_SESSIONS {
+            break;
+        }
+        let (root, store) = &stores.0[i];
+        let Ok(Some(session)) = store.session(&row) else {
+            continue;
+        };
+        if out.iter().any(|w| w.session == session.native_session_id) {
+            continue;
+        }
+        let found = Recorded {
+            root,
+            store,
+            session,
+        };
+        let commits = commit_facts(&found, 3, false);
+        let session = found.session;
+        out.push(WhySession {
+            session: session.native_session_id,
+            agent: session.agent,
+            title: session.title.as_deref().map(safe),
+            at,
+            commits,
+            incomplete: session.needs_attention,
+        });
+    }
+    out
+}
+
+/// `rel` (scope-root relative) as the store at `root` spells it: relative
+/// to that launch directory. `None` when the path lies outside it. A linked
+/// worktree holds the same repository paths.
+fn local_path(scope_root: &Path, root: &Path, rel: &str) -> Option<String> {
+    match root.strip_prefix(scope_root) {
+        Ok(sub) if !sub.as_os_str().is_empty() => {
+            let prefix = format!("{}/", sub.to_string_lossy().replace('\\', "/"));
+            rel.strip_prefix(&prefix).map(str::to_string)
+        }
+        _ => Some(rel.to_string()),
     }
 }
 

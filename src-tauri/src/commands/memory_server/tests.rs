@@ -1655,3 +1655,120 @@ fn a_long_handoff_is_cut_files_first_and_decisions_last() {
     assert_eq!(v["interrupted"], true);
     assert!(v["files"].as_array().unwrap().len() < 400);
 }
+
+// ── memory_why (M4) ──────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_names_the_sessions_behind_a_path_and_a_commit() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("why");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    rec.write("src/auth.rs", b"pub fn sign() {}\n");
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    drop(rec);
+    call(
+        &a,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    call(
+        &b,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Unrelated: CI runs on GitHub Actions"}),
+    )
+    .await;
+
+    let (_, why) = call(&b, "memory_why", json!({"path": "src/auth.rs"})).await;
+    assert_eq!(
+        why["sessions"][0]["session"], "atlas-session:claude-code/s-a",
+        "{why}"
+    );
+    assert_eq!(why["sessions"][0]["title"], "Move auth to EdDSA");
+    assert_eq!(why["sessions"][0]["commits"][0]["sha"], "3f9c2ab1d4e0");
+    let memories: Vec<&str> = why["memories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|m| m["content"].as_str())
+        .collect();
+    assert_eq!(
+        memories,
+        ["Sign JWTs with EdDSA"],
+        "only the writing session's memories"
+    );
+
+    let (_, by_commit) = call(&b, "memory_why", json!({"commit": "3f9c2ab"})).await;
+    assert_eq!(
+        by_commit["sessions"][0]["session"], "atlas-session:claude-code/s-a",
+        "{by_commit}"
+    );
+
+    let (refused, why_not) = call(&b, "memory_why", json!({"path": "../../etc/passwd"})).await;
+    assert!(refused, "{why_not}");
+    let (refused, _) = call(
+        &b,
+        "memory_why",
+        json!({"path": "src/auth.rs", "commit": "3f9c2ab"}),
+    )
+    .await;
+    assert!(refused, "exactly one target");
+    a.cancel().await.ok();
+    b.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn memory_why_without_capture_answers_from_citations() {
+    let p = temp_project("why-bare");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    let (_, why) = call(&a, "memory_why", json!({"path": "src/ttl.rs"})).await;
+    assert_eq!(why["sessions"], json!([]), "{why}");
+    assert_eq!(
+        why["memories"][0]["content"],
+        "Access tokens live 15 minutes"
+    );
+    assert!(why["note"]
+        .as_str()
+        .is_some_and(|n| n.contains("capture is off")));
+    assert!(!atlas_checkpoint::atlas_dir(&p).join("sessions.db").exists());
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}

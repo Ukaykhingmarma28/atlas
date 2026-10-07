@@ -2399,6 +2399,51 @@ impl RecordStore {
         Ok(ids)
     }
 
+    /// Live (not archived) entries that `sessions` wrote (any content
+    /// write), newest first, at most `limit`. Uses `revisions_session`.
+    pub fn entries_by_sessions(&self, sessions: &[String], limit: usize) -> Result<Vec<Entry>> {
+        if sessions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let marks = vec!["?"; sessions.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT * FROM entries WHERE id IN (SELECT DISTINCT entry_id FROM revisions \
+               WHERE session IN ({marks}) \
+                 AND op IN ('insert','replace','merge','edit','import','promote')) \
+             AND state <> 'archived' ORDER BY updated_at DESC, id DESC LIMIT {limit}"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(sessions), entry_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Live entries with a citation of `path` (scope-root relative), newest
+    /// first, at most `limit`.
+    pub fn entries_citing(&self, path: &str, limit: usize) -> Result<Vec<Entry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM entries WHERE state <> 'archived' AND json_valid(evidence) AND EXISTS \
+               (SELECT 1 FROM json_each(entries.evidence) \
+                 WHERE json_extract(value, '$.path') = ?1) \
+             ORDER BY updated_at DESC, id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![path, limit as i64], entry_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The handoff note `session` left, if it left one.
+    pub fn episode_of(&self, session: &str) -> Result<Option<crate::handoff::HandoffNote>> {
+        let note: Option<String> = self
+            .conn()
+            .query_row(
+                "SELECT note FROM episodes WHERE session = ?1",
+                [session],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(note.and_then(|n| serde_json::from_str(&n).ok()))
+    }
+
     /// Sessions that started or ended at or after `since`.
     pub fn sessions_since(&self, since: i64, limit: usize) -> Result<Vec<String>> {
         let conn = self.conn();
@@ -5080,6 +5125,57 @@ pub(crate) mod tests {
             .unwrap()
             .iter()
             .all(|w| w.id == restated.id));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn entries_by_sessions_and_citations_find_live_entries_newest_first() {
+        use crate::citation::{cite, FileResolver};
+        let root = temp_root("why");
+        let store = open_scope(&root).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/ttl.rs"), "const TTL: u32 = 15;\n").unwrap();
+        let a = store
+            .remember(
+                tool_write(EntryKind::Decision, "", "Sign JWTs with EdDSA", 1),
+                1,
+            )
+            .unwrap()
+            .entry;
+        let b = store
+            .remember(tool_write(EntryKind::Fact, "", "CI runs on Jenkins", 2), 2)
+            .unwrap()
+            .entry;
+        store.archive(&[b.id], 3).unwrap();
+        let other = NewEntry {
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "Tokens live 15 minutes", 4)
+        };
+        let files = FileResolver::new(&root);
+        let cited = store
+            .remember_guarded(
+                other,
+                4,
+                None,
+                &[cite(&files, "src/ttl.rs", 1, 1, None).unwrap()],
+            )
+            .unwrap()
+            .entry;
+        let by_s1: Vec<i64> = store
+            .entries_by_sessions(&["s1".to_string()], 10)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(by_s1, vec![a.id], "the archived one is left out");
+        let citing: Vec<i64> = store
+            .entries_citing("src/ttl.rs", 10)
+            .unwrap()
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(citing, vec![cited.id]);
+        assert!(store.entries_by_sessions(&[], 10).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 }
