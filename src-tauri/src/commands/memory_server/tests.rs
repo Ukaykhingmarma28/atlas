@@ -820,6 +820,8 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             EntryKind::Fact,
             "a fact worth keeping",
             "",
+            None,
+            &[],
         )
         .expect("remembered")
         .entry
@@ -960,9 +962,6 @@ async fn remembering_something_is_not_consulting_memory() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
-/// The list the dispatcher marks reads from has to stay the record's actual
-/// read tools. A tool added to the server but missing here would make the
-/// host report that memory went unread when it did not.
 #[test]
 fn the_instructions_say_what_not_to_save_and_that_memory_is_data() {
     for must in [
@@ -976,6 +975,9 @@ fn the_instructions_say_what_not_to_save_and_that_memory_is_data() {
     }
 }
 
+/// The list the dispatcher marks reads from has to stay the record's actual
+/// read tools. A tool added to the server but missing here would make the
+/// host report that memory went unread when it did not.
 #[test]
 fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
     let names = tool_names();
@@ -1332,4 +1334,208 @@ fn a_rebind_keeps_the_token_and_a_move_replaces_it() {
     assert_ne!(moved, first);
     assert_eq!(tokens.grant(&first), None);
     assert_eq!(tokens.grant(&moved).unwrap().cwd, "/b");
+}
+
+// ── Evidence (M3) ────────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_changed_citation_makes_the_memory_stale_in_search_and_briefing() {
+    let p = temp_project("cite");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    assert_eq!(r["entry"]["validity"], "valid", "{r}");
+    assert_eq!(r["entry"]["citations"][0]["lines"], "1-1", "{r}");
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 30;\n").unwrap();
+    let (_, s) = call(
+        &a,
+        "memory_search",
+        json!({"query": "access tokens minutes"}),
+    )
+    .await;
+    assert_eq!(s["entries"][0]["validity"], "stale", "{s}");
+    let (_, b) = call(&a, "memory_briefing", json!({})).await;
+    assert!(!b.to_string().contains("15 minutes"), "{b}");
+    assert_eq!(b["staleHidden"], 1, "{b}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_citation_outside_the_repository_is_refused() {
+    let p = temp_project("cite-out");
+    let outside = temp_project("cite-out-other");
+    std::fs::write(std::path::Path::new(&outside).join("x.rs"), "fn x() {}\n").unwrap();
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let escape = format!("{outside}/x.rs");
+    for (path, lines) in [
+        ("../../etc/passwd", "1"),
+        (escape.as_str(), "1"),
+        ("missing.rs", "1"),
+    ] {
+        let (refused, why) = call(
+            &a,
+            "memory_remember",
+            json!({"kind": "fact", "content": "x", "evidence": [{"path": path, "lines": lines}]}),
+        )
+        .await;
+        assert!(refused, "{path}: {why}");
+    }
+    let (refused, why) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "x", "evidence": [{"path": "src/a.rs", "symbol": "a"}]}),
+    )
+    .await;
+    assert!(refused && why.to_string().contains("give lines"), "{why}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+/// The session decided EdDSA and committed `src/auth.rs`. While the file
+/// holds that work the memory is valid; once a rewrite removes it, the
+/// memory is stale and leaves the briefing. A wall-clock memory store,
+/// because writes are matched to capture's turn times.
+#[tokio::test(flavor = "multi_thread")]
+async fn landed_work_that_was_removed_makes_an_uncited_memory_stale() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("work");
+    let file = std::path::Path::new(&p).join("src/auth.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let agent_text = "pub fn sign(token: &Token) -> Sig {\n    eddsa::sign(token)\n}\n\npub fn verify(sig: &Sig) -> bool {\n    eddsa::verify(sig)\n}\n";
+    let memory = SharedMemoryStore::new();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Sign JWTs with EdDSA"}),
+    )
+    .await;
+    std::fs::write(&file, agent_text).unwrap();
+    rec.write("src/auth.rs", agent_text.as_bytes());
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    drop(rec);
+
+    let (_, got) = call(&a, "memory_get", json!({"id": r["entry"]["id"]})).await;
+    assert_eq!(got["entry"]["validity"], "valid", "{got}");
+    assert_eq!(got["entry"]["validityFrom"], "commits");
+    assert_eq!(got["entry"]["commits"][0]["sha"], "3f9c2ab1d4e0");
+
+    std::fs::write(
+        &file,
+        "pub fn sign(token: &Token) -> Sig {\n    hs256::sign(token, SECRET)\n}\n",
+    )
+    .unwrap();
+    let (_, b) = call(&a, "memory_briefing", json!({})).await;
+    assert!(!b.to_string().contains("EdDSA"), "{b}");
+    assert_eq!(b["staleHidden"], 1, "{b}");
+    a.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+/// Code citations decide alone, a failure's undone work is expected, and
+/// a write capture never saw has no commit evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_evidence_leaves_cited_memories_failures_and_unrecorded_sessions_alone() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("work-scope");
+    let file = std::path::Path::new(&p).join("src/ttl.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "pub const TOKEN_TTL_MINUTES: u32 = 15;\n").unwrap();
+    let memory = SharedMemoryStore::new();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude-code", &p))
+        .await
+        .unwrap();
+    let other = connect(&server.url(), &tokens.mint("s-z", "codex", &p))
+        .await
+        .unwrap();
+
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "tokens");
+    let (_, cited) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "Access tokens live 15 minutes",
+               "evidence": [{"path": "src/ttl.rs", "lines": "1"}]}),
+    )
+    .await;
+    let (_, failure) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "failure", "content": "ring 0.16 can't parse PKCS#8 v2"}),
+    )
+    .await;
+    rec.write("src/ttl.rs", b"pub const TOKEN_TTL_MINUTES: u32 = 15;\n");
+    rec.close_turn();
+    rec.commit("aa11bb22cc33dd44ee55ff6600113f9c2ab1d4e0", &["src/ttl.rs"]);
+    drop(rec);
+    let (_, unrecorded) = call(
+        &other,
+        "memory_remember",
+        json!({"kind": "decision", "content": "Use Postgres"}),
+    )
+    .await;
+
+    for (r, field) in [
+        (&cited, "evidence"),
+        (&failure, "kind"),
+        (&unrecorded, "session"),
+    ] {
+        let (_, got) = call(&a, "memory_get", json!({"id": r["entry"]["id"]})).await;
+        assert!(got["entry"].get("validityFrom").is_none(), "{field}: {got}");
+    }
+    a.cancel().await.ok();
+    other.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
 }

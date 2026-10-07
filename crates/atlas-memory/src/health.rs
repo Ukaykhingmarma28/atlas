@@ -303,6 +303,32 @@ impl RecordStore {
         std::fs::rename(&tmp, &path)?;
         Ok(true)
     }
+
+    /// Archive what nobody wrote or used within
+    /// [`EXPIRE_AFTER_MS`](crate::record::EXPIRE_AFTER_MS) (M3, ADR-0018):
+    /// every such candidate, and an active memory only when `resolver` finds
+    /// its citations stale. An active memory without citations never expires
+    /// on time alone: it is the long-term memory. Returns how many archived.
+    pub fn expire(&self, now: i64, resolver: &dyn crate::citation::Resolver) -> Result<usize> {
+        use crate::citation::{overall, validate, Validity};
+        use crate::record::State;
+        let mut ids = Vec::new();
+        for e in self.expiry_candidates(now)? {
+            if e.state == State::Candidate {
+                ids.push(e.id);
+                continue;
+            }
+            let each: Vec<Validity> = e
+                .citations()
+                .iter()
+                .map(|c| validate(c, resolver).0)
+                .collect();
+            if overall(&each) == Some(Validity::Stale) {
+                ids.push(e.id);
+            }
+        }
+        self.archive(&ids, now)
+    }
 }
 
 #[cfg(test)]
@@ -461,5 +487,49 @@ mod tests {
         assert_eq!(RecordStore::restored_marker(&r).map(|(_, s)| s), Some(true));
         assert_eq!(RecordStore::restored_marker(&r), None, "reported once");
         let _ = std::fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn expiry_archives_old_candidates_and_old_stale_citations_only() {
+        use crate::citation::{cite, FileResolver};
+        use crate::record::{State, CANDIDATE_CONFIDENCE, EXPIRE_AFTER_MS};
+        let r = root("expire");
+        let store = open_scope(&r).unwrap();
+        std::fs::write(r.join("ttl.rs"), "const TTL: u32 = 15;\n").unwrap();
+        let files = FileResolver::new(&r);
+        let entry = |content: &str, confidence: f64| NewEntry {
+            kind: EntryKind::Fact,
+            key: String::new(),
+            content: content.into(),
+            source: "claude".into(),
+            agent: "claude".into(),
+            session_id: "s".into(),
+            confidence,
+            at: 1,
+        };
+        let candidate = store
+            .upsert(entry("always force-push", CANDIDATE_CONFIDENCE))
+            .unwrap()
+            .id;
+        let cited = store
+            .remember_guarded(
+                entry("Tokens live 15 minutes", 1.0),
+                1,
+                None,
+                &[cite(&files, "ttl.rs", 1, 1, None).unwrap()],
+            )
+            .unwrap()
+            .entry
+            .id;
+        let uncited = write(&store, "Deploys go through Fly", 1);
+        let now = 2 + EXPIRE_AFTER_MS;
+        // The cited lines still hold: only the candidate expires.
+        assert_eq!(store.expire(now, &files).unwrap(), 1);
+        std::fs::write(r.join("ttl.rs"), "const TTL: u32 = 30;\n").unwrap();
+        assert_eq!(store.expire(now, &files).unwrap(), 1);
+        let state = |id| store.get(id, now).unwrap().unwrap().state;
+        assert_eq!(state(candidate), State::Archived);
+        assert_eq!(state(cited), State::Archived);
+        assert_eq!(state(uncited), State::Active, "never on time alone");
     }
 }

@@ -225,6 +225,16 @@ impl TurnState {
     }
 }
 
+/// One turn's lifecycle as recorded: when it started and, once it ended
+/// (completed, aborted or rewound), when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnSpan {
+    pub turn_seq: i64,
+    pub state: TurnState,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+}
+
 /// Token accounting for a Session.
 ///
 /// Agent-dependent by nature: only the native agent reports a real input/output

@@ -889,6 +889,25 @@ pub fn install_manager(app: &AppHandle) {
             let app = bootstrap_app.clone();
             Box::pin(async move { build_bootstrap(&app, &cwd, &session_id).await })
         });
+        // Cited code is checked through the open code index, which finds a
+        // symbol that moved; a scope with no index open reads the files.
+        let check_app = app.clone();
+        let check: super::memory_server::CitationCheck = Arc::new(
+            move |root: &std::path::Path, cites: &[atlas_memory::citation::Citation]| {
+                static CACHE: std::sync::OnceLock<atlas_memory::citation::ValidationCache> =
+                    std::sync::OnceLock::new();
+                let cache = CACHE.get_or_init(Default::default);
+                let resolver = match check_app
+                    .try_state::<Arc<super::code_index::CodeIndexRegistry>>()
+                {
+                    Some(registry) => {
+                        super::code_index::citations::CodeIndexResolver::for_scope(&registry, root)
+                    }
+                    None => super::code_index::citations::CodeIndexResolver::with_index(root, None),
+                };
+                cites.iter().map(|c| cache.check(c, &resolver)).collect()
+            },
+        );
         server.start(
             memory.inner().clone(),
             gate,
@@ -902,6 +921,7 @@ pub fn install_manager(app: &AppHandle) {
                         .try_state::<Arc<super::agent_transcript::TranscriptState>>()
                         .map(|t| t.config_dir().to_path_buf()),
                 },
+                check: Some(check),
             },
             vec![ui_router, org_router, code_router],
         );

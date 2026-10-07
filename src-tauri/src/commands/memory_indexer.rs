@@ -77,6 +77,8 @@ pub struct HealthStatus {
     pub corpus: atlas_memory::CorpusHealth,
     /// `(when, from a snapshot)` when an open restored a damaged record.
     pub restored: Option<(i64, bool)>,
+    /// Memories this pass archived as unused (M3 expiry).
+    pub archived: usize,
 }
 
 /// The Tauri event a finished health pass emits: `{ "cwd": string }`. The
@@ -542,15 +544,32 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
     };
     let now = chrono::Utc::now().timestamp_millis();
     let owned = cwd.to_string();
-    let (record, restored) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+    let code = app
+        .try_state::<Arc<super::code_index::CodeIndexRegistry>>()
+        .map(|r| r.inner().clone());
+    let (record, restored, archived) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let store = super::shared_memory::store_for(&owned)?;
         let report = store.heal(now).map_err(|e| format!("{e:#}"))?;
         if let Err(e) = store.snapshot_if_due(now) {
             tracing::warn!(target: "atlas::memory_indexer", "memory snapshot failed: {e:#}");
         }
+        // Unused candidates, and unused memories whose cited code changed,
+        // leave for the archive. Cited code is read through the code index
+        // when one is open, so a symbol that only moved still holds.
+        let resolver = match &code {
+            Some(registry) => {
+                super::code_index::citations::CodeIndexResolver::for_scope(registry, store.root())
+            }
+            None => super::code_index::citations::CodeIndexResolver::with_index(store.root(), None),
+        };
+        let archived = store.expire(now, &resolver).unwrap_or_else(|e| {
+            tracing::warn!(target: "atlas::memory_indexer", "memory expiry failed: {e:#}");
+            0
+        });
         Ok((
             report,
             atlas_memory::record::RecordStore::restored_marker(store.root()),
+            archived,
         ))
     })
     .await
@@ -572,6 +591,7 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
             record,
             corpus,
             restored,
+            archived,
         },
     );
     let _ = app.emit(MEMORY_HEALTH_EVENT, serde_json::json!({ "cwd": cwd }));

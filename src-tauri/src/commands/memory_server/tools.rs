@@ -23,7 +23,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use atlas_memory::record::{Entry, EntryKind, Source};
+use atlas_memory::citation::{Citation, Validity};
+use atlas_memory::record::{Entry, EntryKind, RecordStore, Source};
 use futures::future::BoxFuture;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -35,12 +36,12 @@ use rmcp::ErrorData as McpError;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::briefing::{self, SessionClocks, SessionReads};
+use super::briefing::{self, Checked, SessionClocks, SessionReads};
 use super::host::{SharingGate, Sources};
 use super::tokens::Grant;
 use crate::commands::memory_capture::{self, CaptureReader};
 use crate::commands::memory_pack::{Handoff, PackEntry};
-use crate::commands::shared_memory::{self, SharedMemoryStore, Writer};
+use crate::commands::shared_memory::{self, EvidenceArg, SharedMemoryStore, Writer};
 
 /// What the server tells every agent about itself: the protocol for a memory
 /// nothing pushes. Claude Code shows it as the server's instructions; the
@@ -64,7 +65,10 @@ issue numbers, branch names, what is in progress), anything cheap to find again 
 code, or secrets. Plans and file edits are captured automatically; do not remember them. To \
 change a memory another session wrote (another agent, or another session of yours), read it \
 first and pass its revision as expected_revision. If you are refused, read both versions and \
-write one that keeps what is still true.
+write one that keeps what is still true. When a memory is about code, cite it with evidence \
+(path, lines, symbol): cited memories are checked against the code each time they are read. A \
+memory you write while editing files is also checked against the commits that carried those \
+files. A memory marked \"stale\" no longer matches the code; check before using it.
 5. memory_get expands an index line; memory_history shows every earlier wording of one; \
 memory_forget deletes an entry that is wrong. An entry \
 marked \"candidate\" was captured, not confirmed: verify it before relying on it, and \
@@ -131,6 +135,12 @@ pub struct Bootstrap {
 /// installer.
 pub type BootstrapSource =
     Arc<dyn Fn(String, String) -> BoxFuture<'static, Bootstrap> + Send + Sync>;
+
+/// `(scope root, citations) -> each one's validity and the citation as found
+/// now`. Blocking: called from record work already off the async runtime.
+/// The app resolves through the code index; without one, the files are read.
+pub type CitationCheck =
+    Arc<dyn Fn(&std::path::Path, &[Citation]) -> Vec<(Validity, Citation)> + Send + Sync>;
 
 // ── Specs ────────────────────────────────────────────────────────────────────
 
@@ -270,7 +280,15 @@ pub(super) fn tools() -> Vec<Tool> {
                     "content": { "type": "string", "description": "The memory, stated on its own." },
                     "key": { "type": "string", "description": "Optional topic key; the same key replaces." },
                     "expected_revision": { "type": "integer",
-                        "description": "The revision you read; required to replace an entry another writer (or the user) last wrote." }
+                        "description": "The revision you read; required to replace an entry another writer (or the user) last wrote." },
+                    "evidence": { "type": "array", "maxItems": 8, "items": { "type": "object",
+                        "properties": {
+                            "path": { "type": "string" },
+                            "lines": { "type": "string", "description": "\"12-30\" or \"12\"" },
+                            "symbol": { "type": "string", "description": "The function or type, so the lines can be found again if they move." }
+                        },
+                        "required": ["path", "lines"] },
+                        "description": "The code this memory rests on. It is checked whenever the memory is read; if the code changes, the memory is marked stale." }
                 },
                 "required": ["kind", "content"]
             }),
@@ -334,6 +352,8 @@ struct RememberArgs {
     key: String,
     #[serde(default)]
     expected_revision: Option<i64>,
+    #[serde(default)]
+    evidence: Vec<EvidenceArg>,
 }
 
 #[derive(Deserialize)]
@@ -384,21 +404,121 @@ fn sources_of(cwd: &str, entries: &[Entry]) -> HashMap<i64, Vec<Source>> {
 }
 
 /// One entry as every tool returns it, with its sources (`keep` newest; 0 =
-/// all).
-fn entry_with_sources(e: &Entry, sources: &HashMap<i64, Vec<Source>>, keep: usize) -> Value {
+/// all) and what its evidence says now.
+fn entry_with_sources(
+    e: &Entry,
+    sources: &HashMap<i64, Vec<Source>>,
+    keep: usize,
+    checked: &Checked,
+) -> Value {
     let mut v = briefing::entry_json(e);
     briefing::with_sources(
         &mut v,
         sources.get(&e.id).map_or(&[][..], Vec::as_slice),
         keep,
     );
+    briefing::with_evidence(&mut v, e.id, checked);
     v
 }
 
-/// `{"entries": [...]}` with every entry's sources. Blocking.
-fn entries_json(cwd: &str, entries: &[Entry]) -> Value {
-    let sources = sources_of(cwd, entries);
-    json!({ "entries": entries.iter().map(|e| entry_with_sources(e, &sources, 0)).collect::<Vec<_>>() })
+/// `{"entries": [...]}` with every entry's sources and evidence. Blocking.
+fn entries_json(sources: &Sources, cwd: &str, entries: &[Entry]) -> Value {
+    let checked = check_entries(sources, cwd, entries);
+    let writers = sources_of(cwd, entries);
+    json!({ "entries": entries.iter().map(|e| entry_with_sources(e, &writers, 0, &checked)).collect::<Vec<_>>() })
+}
+
+// ── Evidence (M3, ADR-0018) ──────────────────────────────────────────────────
+
+/// The citation results reused across reads when no check is installed.
+fn default_cache() -> &'static atlas_memory::citation::ValidationCache {
+    static CACHE: std::sync::OnceLock<atlas_memory::citation::ValidationCache> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Every entry's evidence, checked now. Blocking.
+fn check_entries(sources: &Sources, cwd: &str, entries: &[Entry]) -> Checked {
+    let Ok(store) = shared_memory::store_for(cwd) else {
+        return Checked::default();
+    };
+    let root = store.root().to_path_buf();
+    let mut out = Checked::default();
+    for e in entries {
+        let cites = e.citations();
+        if cites.is_empty() {
+            continue;
+        }
+        let results: Vec<(Validity, Citation)> = match &sources.check {
+            Some(check) => check(root.as_path(), cites.as_slice()),
+            None => {
+                let r = atlas_memory::citation::FileResolver::new(&root);
+                cites.iter().map(|c| default_cache().check(c, &r)).collect()
+            }
+        };
+        let each: Vec<Validity> = results.iter().map(|(v, _)| *v).collect();
+        if let Some(v) = atlas_memory::citation::overall(&each) {
+            out.cites
+                .insert(e.id, (v, results.into_iter().map(|(_, c)| c).collect()));
+        }
+    }
+    out.work = work_checks(&sources.capture, &store, cwd, entries);
+    out
+}
+
+/// At most this many uncited entries get a commit-evidence check per read.
+const WORK_CHECK_MAX: usize = 300;
+
+fn work_cache() -> &'static memory_capture::KeptCache {
+    static CACHE: std::sync::OnceLock<memory_capture::KeptCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Commit evidence for the newest uncited decisions, facts and architecture
+/// notes among `entries` (a failure's work is expected to be undone; a
+/// preference is about the user). Blocking.
+fn work_checks(
+    reader: &CaptureReader,
+    store: &RecordStore,
+    cwd: &str,
+    entries: &[Entry],
+) -> HashMap<i64, memory_capture::WorkCheck> {
+    let mut wanted: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.kind,
+                EntryKind::Decision | EntryKind::Fact | EntryKind::Architecture
+            )
+        })
+        .filter(|e| e.citations().is_empty())
+        .collect();
+    if wanted.is_empty() {
+        return HashMap::new();
+    }
+    let stores = reader.stores(cwd);
+    if stores.is_empty() {
+        return HashMap::new();
+    }
+    wanted.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
+    wanted.truncate(WORK_CHECK_MAX);
+    let ids: Vec<i64> = wanted.iter().map(|e| e.id).collect();
+    let scope_root = store.root().to_path_buf();
+    let mut unrecorded: std::collections::HashSet<String> = Default::default();
+    let mut out = HashMap::new();
+    for (id, (agent, session, at)) in store.last_writes(&ids).unwrap_or_default() {
+        if agent == shared_memory::USER_SOURCE || unrecorded.contains(&session) {
+            continue;
+        }
+        let Some(found) = stores.find(&session) else {
+            unrecorded.insert(session);
+            continue;
+        };
+        if let Some(check) = memory_capture::work_evidence(&scope_root, &found, at, work_cache()) {
+            out.insert(id, check);
+        }
+    }
+    out
 }
 
 /// `result`'s JSON object with the index's `documents` added.
@@ -501,8 +621,8 @@ impl MemoryTools {
             "memory_search" => self.search(grant, request).await,
             "memory_forget" => self.forget(grant, request).await,
             "memory_get" | "memory_list" | "memory_history" | "memory_remember" => {
-                let (memory, capture) = (self.memory.clone(), self.sources.capture.clone());
-                run_blocking(move || record_call(&memory, &capture, &grant, &request))
+                let (memory, sources) = (self.memory.clone(), self.sources.clone());
+                run_blocking(move || record_call(&memory, &sources, &grant, &request))
                     .await
                     .unwrap_or_else(|e| tool_error(format!("memory unavailable: {e}")))
             }
@@ -513,10 +633,11 @@ impl MemoryTools {
     /// `memory_briefing`: the record's briefing, the first-look extras, and
     /// the session's clock set to what it has now seen.
     async fn briefing(&self, grant: Grant) -> CallToolResult {
-        let (cwd, now) = (grant.cwd.clone(), self.memory.now());
+        let (cwd, now, checks) = (grant.cwd.clone(), self.memory.now(), self.sources.clone());
         let read = run_blocking(move || {
             let store = shared_memory::store_for(&cwd)?;
-            let b = briefing::read_briefing(&store, now).map_err(|e| format!("{e:#}"))?;
+            let check = |entries: &[Entry]| check_entries(&checks, &cwd, entries);
+            let b = briefing::read_briefing(&store, now, &check).map_err(|e| format!("{e:#}"))?;
             let ids: Vec<i64> = b.index.iter().chain(&b.preferences).map(|e| e.id).collect();
             let sources = store.sources_for(&ids).unwrap_or_default();
             Ok::<_, String>((b, sources))
@@ -624,15 +745,23 @@ impl MemoryTools {
             .limit
             .unwrap_or(SEARCH_DEFAULT_LIMIT)
             .clamp(1, SEARCH_MAX_LIMIT);
-        let (memory, cwd, query) = (self.memory.clone(), grant.cwd.clone(), args.query.clone());
+        let (memory, cwd, query, checks) = (
+            self.memory.clone(),
+            grant.cwd.clone(),
+            args.query.clone(),
+            self.sources.clone(),
+        );
         let result = run_blocking(move || {
-            let hits = memory.search_hits(&cwd, &query, &kinds, limit);
+            let mut hits = memory.search_hits(&cwd, &query, &kinds, limit);
             let entries: Vec<Entry> = hits.iter().map(|h| h.entry.clone()).collect();
+            let checked = check_entries(&checks, &cwd, &entries);
+            // A stale memory is still found, after every one that holds.
+            hits.sort_by_key(|h| checked.is_stale(h.entry.id));
             let sources = sources_of(&cwd, &entries);
             let entries: Vec<Value> = hits
                 .iter()
                 .map(|h| {
-                    let mut v = entry_with_sources(&h.entry, &sources, 0);
+                    let mut v = entry_with_sources(&h.entry, &sources, 0, &checked);
                     if !h.why.is_empty() {
                         v["why"] = Value::Object(
                             h.why
@@ -678,10 +807,11 @@ impl MemoryTools {
 /// The record-only tools. Blocking.
 fn record_call(
     memory: &SharedMemoryStore,
-    capture: &CaptureReader,
+    sources: &Sources,
     grant: &Grant,
     request: &CallToolRequestParams,
 ) -> CallToolResult {
+    let capture = &sources.capture;
     match request.name.as_ref() {
         "memory_get" => {
             let args: IdArgs = match args(request) {
@@ -690,9 +820,11 @@ fn record_call(
             };
             match memory.get_entry(&grant.cwd, args.id) {
                 Ok(Some(entry)) => {
-                    let mut sources = sources_of(&grant.cwd, std::slice::from_ref(&entry));
-                    let mut value = entry_with_sources(&entry, &sources, 0);
-                    let mut mine = sources.remove(&entry.id).unwrap_or_default();
+                    let one = std::slice::from_ref(&entry);
+                    let checked = check_entries(sources, &grant.cwd, one);
+                    let mut writers = sources_of(&grant.cwd, one);
+                    let mut value = entry_with_sources(&entry, &writers, 0, &checked);
+                    let mut mine = writers.remove(&entry.id).unwrap_or_default();
                     memory_capture::resolve_sources(&capture.stores(&grant.cwd), &mut mine);
                     value["provenance"] = memory_capture::provenance_json(&mine);
                     ok_json(json!({ "entry": value }))
@@ -715,7 +847,7 @@ fn record_call(
             if let Some(limit) = args.limit {
                 entries.truncate(limit.clamp(1, LIST_MAX_LIMIT));
             }
-            ok_json(entries_json(&grant.cwd, &entries))
+            ok_json(entries_json(sources, &grant.cwd, &entries))
         }
         "memory_history" => {
             let args: IdArgs = match args(request) {
@@ -766,12 +898,15 @@ fn record_call(
                 &args.content,
                 &args.key,
                 args.expected_revision,
+                &args.evidence,
             ) {
                 Ok(r) => {
-                    let sources = sources_of(&grant.cwd, std::slice::from_ref(&r.entry));
+                    let one = std::slice::from_ref(&r.entry);
+                    let checked = check_entries(sources, &grant.cwd, one);
+                    let writers = sources_of(&grant.cwd, one);
                     ok_json(json!({
                         "outcome": r.outcome.as_str(),
-                        "entry": entry_with_sources(&r.entry, &sources, 0),
+                        "entry": entry_with_sources(&r.entry, &writers, 0, &checked),
                     }))
                 }
                 Err(e) => tool_error(format!("not remembered: {e}")),

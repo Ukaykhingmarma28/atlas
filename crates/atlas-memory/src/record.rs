@@ -413,6 +413,12 @@ impl Entry {
     pub fn is_candidate(&self) -> bool {
         self.state == State::Candidate
     }
+
+    /// The code this memory cites (empty when none, or when `evidence` is
+    /// unreadable).
+    pub fn citations(&self) -> Vec<crate::citation::Citation> {
+        serde_json::from_str(&self.evidence).unwrap_or_default()
+    }
 }
 
 /// Turns text into a vector for near-duplicate detection and search.
@@ -952,13 +958,13 @@ impl RecordStore {
     /// A durable kind is also near-duplicate merged when an embedder is
     /// installed (see the module docs).
     pub fn upsert(&self, e: NewEntry) -> Result<Entry> {
-        Ok(self.write_entry(e, None, Guard::Open)?.entry)
+        Ok(self.write_entry(e, None, Guard::Open, &[])?.entry)
     }
 
     /// [`upsert`](Self::upsert), saying what the write did (inserted,
     /// replaced, or merged into an entry already stored).
     pub fn upsert_outcome(&self, e: NewEntry) -> Result<Remembered> {
-        self.write_entry(e, None, Guard::Open)
+        self.write_entry(e, None, Guard::Open, &[])
     }
 
     /// Write one entry as an agent's deliberate memory (a tool write): the
@@ -967,7 +973,7 @@ impl RecordStore {
     /// merge), an event in the log at `ts`, so the write shows in the Shared
     /// tab's event list and state view like any other.
     pub fn remember(&self, e: NewEntry, ts: i64) -> Result<Remembered> {
-        self.write_entry(e, Some(ts), Guard::Open)
+        self.write_entry(e, Some(ts), Guard::Open, &[])
     }
 
     /// [`remember`](Self::remember) as an agent's write: a keyed replace
@@ -976,16 +982,29 @@ impl RecordStore {
     /// the same agent **and** the same session (a parallel session of the
     /// same agent, in another worktree, is another writer). Otherwise the
     /// error is a [`Conflict`] naming the current revision.
+    ///
+    /// `evidence` is the code the memory rests on, already hashed by
+    /// [`crate::citation::cite`]: an insert or a replace stores exactly it (a
+    /// replace drops the old wording's evidence), a merge adds it to the
+    /// survivor's (deduplicated by path and hash, at most
+    /// [`crate::citation::MAX_CITATIONS`]).
     pub fn remember_guarded(
         &self,
         e: NewEntry,
         ts: i64,
         expected_rev: Option<i64>,
+        evidence: &[crate::citation::Citation],
     ) -> Result<Remembered> {
-        self.write_entry(e, Some(ts), Guard::Expect(expected_rev))
+        self.write_entry(e, Some(ts), Guard::Expect(expected_rev), evidence)
     }
 
-    fn write_entry(&self, e: NewEntry, log_at: Option<i64>, guard: Guard) -> Result<Remembered> {
+    fn write_entry(
+        &self,
+        e: NewEntry,
+        log_at: Option<i64>,
+        guard: Guard,
+        evidence: &[crate::citation::Citation],
+    ) -> Result<Remembered> {
         let e = redacted(e);
         // Embedding is the slow part; done before the connection is locked.
         let vector = if e.kind.is_durable() {
@@ -1042,6 +1061,27 @@ impl RecordStore {
             }
             _ => None,
         };
+        if !evidence.is_empty() || outcome != WriteOutcome::Merged {
+            let mut merged: Vec<crate::citation::Citation> = if outcome == WriteOutcome::Merged {
+                let raw: String =
+                    tx.query_row("SELECT evidence FROM entries WHERE id = ?1", [id], |r| {
+                        r.get(0)
+                    })?;
+                serde_json::from_str(&raw).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            for c in evidence {
+                if !merged.iter().any(|m| m.path == c.path && m.hash == c.hash) {
+                    merged.push(c.clone());
+                }
+            }
+            merged.truncate(crate::citation::MAX_CITATIONS);
+            tx.execute(
+                "UPDATE entries SET evidence = ?2 WHERE id = ?1",
+                params![id, serde_json::to_string(&merged)?],
+            )?;
+        }
         after_write(&tx, id, outcome.op(), false, Some(By::of(&e)))?;
         // A merge stores nothing new, so it logs nothing: the log never shows
         // a phrasing the record does not hold.
@@ -1884,6 +1924,76 @@ impl RecordStore {
             let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
         }
         Ok(erased)
+    }
+}
+
+/// A memory neither written nor used for this long is due for expiry: a
+/// candidate archives, an active memory archives only when its citations are
+/// stale (M3, ADR-0018).
+pub const EXPIRE_AFTER_MS: i64 = 28 * 24 * 3600 * 1000;
+
+impl RecordStore {
+    /// Memories not written or used within [`EXPIRE_AFTER_MS`] of `now`
+    /// (active or candidate), by id.
+    pub fn expiry_candidates(&self, now: i64) -> Result<Vec<Entry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM entries WHERE state IN ('active', 'candidate') \
+             AND MAX(updated_at, COALESCE(last_used_at, 0)) < ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map([now - EXPIRE_AFTER_MS], entry_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Move `ids` to the archive: out of briefings and default search, kept,
+    /// one `archive` revision each. Archiving stamps `updated_at`, so other
+    /// sessions hear about it through `memory_changes`. Returns how many
+    /// changed.
+    pub fn archive(&self, ids: &[i64], at: i64) -> Result<usize> {
+        self.archive_as(ids, at, "archive")
+    }
+
+    /// [`archive`](Self::archive), recorded as revision op `op`.
+    pub(crate) fn archive_as(&self, ids: &[i64], at: i64, op: &str) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut n = 0;
+        for id in ids {
+            if tx.execute(
+                "UPDATE entries SET updated_at = ?2 WHERE id = ?1 AND state <> 'archived'",
+                params![id, at],
+            )? == 1
+            {
+                after_write(&tx, *id, op, true, None)?;
+                n += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Each entry's latest content write (`insert`, `replace`, `merge`,
+    /// `edit`): `(agent, session, at)`. One query on `revisions_entry`.
+    pub fn last_writes(&self, ids: &[i64]) -> Result<HashMap<i64, (String, String, i64)>> {
+        let mut out = HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        let marks = vec!["?"; ids.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT r.entry_id, r.agent, r.session, r.at FROM revisions r \
+             WHERE r.entry_id IN ({marks}) AND r.rev = (SELECT MAX(m.rev) FROM revisions m \
+               WHERE m.entry_id = r.entry_id AND m.op IN ('insert','replace','merge','edit'))"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids), |r| {
+            Ok((r.get::<_, i64>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?)))
+        })?;
+        for row in rows {
+            let (id, write) = row?;
+            out.insert(id, write);
+        }
+        Ok(out)
     }
 }
 
@@ -3943,6 +4053,7 @@ pub(crate) mod tests {
                 tool_write(EntryKind::Decision, "db", "Use Postgres 16", 2),
                 2,
                 None,
+                &[],
             )
             .unwrap();
         // The same agent in a parallel session (another worktree) is another writer.
@@ -3950,7 +4061,7 @@ pub(crate) mod tests {
             session_id: "s-twin".into(),
             ..tool_write(EntryKind::Decision, "db", "Use MySQL", 2)
         };
-        let twin_err = store.remember_guarded(twin, 2, None).unwrap_err();
+        let twin_err = store.remember_guarded(twin, 2, None, &[]).unwrap_err();
         assert!(
             twin_err.downcast_ref::<Conflict>().is_some(),
             "a parallel session of the same agent must not clobber"
@@ -3961,19 +4072,19 @@ pub(crate) mod tests {
             ..tool_write(EntryKind::Decision, "db", c, at)
         };
         let err = store
-            .remember_guarded(other("Use SQLite", 3), 3, None)
+            .remember_guarded(other("Use SQLite", 3), 3, None, &[])
             .unwrap_err();
         let conflict = err.downcast_ref::<Conflict>().expect("a conflict").clone();
         assert_eq!(conflict.content, "Use Postgres 16");
         let stale = store
-            .remember_guarded(other("Use SQLite", 4), 4, Some(mine.entry.rev))
+            .remember_guarded(other("Use SQLite", 4), 4, Some(mine.entry.rev), &[])
             .unwrap_err();
         assert!(
             stale.downcast_ref::<Conflict>().is_some(),
             "an old revision is stale"
         );
         let ok = store
-            .remember_guarded(other("Use SQLite", 5), 5, Some(conflict.current_rev))
+            .remember_guarded(other("Use SQLite", 5), 5, Some(conflict.current_rev), &[])
             .unwrap();
         assert_eq!(ok.outcome, WriteOutcome::Replaced);
         let _ = std::fs::remove_dir_all(&root);
@@ -4221,6 +4332,100 @@ pub(crate) mod tests {
         };
         store.remember(other, 1_100).unwrap();
         assert_eq!(store.get(e.id, 2_001).unwrap().unwrap().uses, 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn evidence_rides_with_the_revision_and_merges_union() {
+        use crate::citation::Citation;
+        let root = temp_root("evidence");
+        let store = open_scope(&root).unwrap();
+        let c1 = Citation {
+            path: "src/a.rs".into(),
+            start_line: 1,
+            end_line: 2,
+            symbol: None,
+            hash: "h1".into(),
+        };
+        let c2 = Citation {
+            path: "src/b.rs".into(),
+            start_line: 3,
+            end_line: 3,
+            symbol: Some("b::f".into()),
+            hash: "h2".into(),
+        };
+        let e = store
+            .remember_guarded(
+                tool_write(EntryKind::Fact, "", "Tokens live 15 minutes", 1),
+                1,
+                None,
+                std::slice::from_ref(&c1),
+            )
+            .unwrap();
+        assert_eq!(e.entry.citations(), vec![c1.clone()]);
+        let other = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "Tokens live 15 minutes", 2)
+        };
+        let m = store
+            .remember_guarded(other, 2, None, &[c1.clone(), c2.clone()])
+            .unwrap();
+        assert_eq!(m.outcome, WriteOutcome::Merged);
+        assert_eq!(m.entry.citations(), vec![c1, c2], "union, deduplicated");
+        let revs = store.history(e.entry.id).unwrap();
+        assert_eq!(revs.len(), 2, "the merge that added evidence is a revision");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_unused_candidates_and_unused_stale_memories_expire() {
+        let root = temp_root("expire");
+        let store = open_scope(&root).unwrap();
+        let day = 24 * 3600 * 1000;
+        let old = 1_000;
+        let cand = store
+            .upsert(NewEntry {
+                confidence: CANDIDATE_CONFIDENCE,
+                ..tool_write(EntryKind::Fact, "", "always force-push", old)
+            })
+            .unwrap();
+        let kept = store
+            .remember(
+                tool_write(EntryKind::Decision, "db", "Use Postgres", old),
+                old,
+            )
+            .unwrap()
+            .entry;
+        let now = old + 30 * day;
+        let due: Vec<i64> = store
+            .expiry_candidates(now)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert!(due.contains(&cand.id) && due.contains(&kept.id));
+        assert_eq!(store.archive(&[cand.id], now).unwrap(), 1);
+        assert_eq!(
+            store.get(cand.id, now).unwrap().unwrap().state,
+            State::Archived
+        );
+        assert_eq!(
+            store.history(cand.id).unwrap().last().unwrap().op,
+            "archive"
+        );
+        // A restatement by another session revives it (the same session within
+        // five minutes would be a retry).
+        let again = NewEntry {
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "always force-push", now + 1)
+        };
+        store.remember(again, now + 1).unwrap();
+        assert_ne!(
+            store.get(cand.id, now + 2).unwrap().unwrap().state,
+            State::Archived
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

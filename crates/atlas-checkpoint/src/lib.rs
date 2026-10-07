@@ -84,7 +84,7 @@ pub use import::{
 pub use model::{
     AgentEdit, Binding, Checkpoint, FileTouch, LinkState, Message, Mode, ProjectDetection,
     ProjectMode, Role, Session, Source, SyncState, TokenTotals, ToolCall, ToolStatus, TurnMessages,
-    TurnState, UsageDeltaRow,
+    TurnSpan, TurnState, UsageDeltaRow,
 };
 pub use schema::{REQUIRED_INDEXES, SCHEMA_VERSION};
 pub use store::{CheckpointInput, MessageInput, Store};

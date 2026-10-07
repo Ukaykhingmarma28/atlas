@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 
 use super::briefing::{SessionClocks, SessionReads};
 use super::tokens::{require_token, MemoryTokens};
-use super::tools::{BootstrapSource, IndexEvict, IndexSearch, MemoryTools};
+use super::tools::{BootstrapSource, CitationCheck, IndexEvict, IndexSearch, MemoryTools};
 use super::MCP_PATH;
 use crate::commands::shared_memory::SharedMemoryStore;
 
@@ -35,6 +35,9 @@ pub struct Sources {
     /// resolved to its title and commits. The default reads the launch
     /// directory and the repository's worktrees.
     pub capture: crate::commands::memory_capture::CaptureReader,
+    /// Checks a memory's code citations (M3). Without it the cited files are
+    /// read directly, with no symbol lookup for moved code.
+    pub check: Option<CitationCheck>,
 }
 
 /// The running server. Dropping it (or [`shutdown`](Self::shutdown)) stops it.

@@ -865,6 +865,35 @@ impl Store {
         Ok(rows)
     }
 
+    /// Every turn of this Session with its state and times, oldest first.
+    pub fn turn_spans(&self, session_id: &str) -> Result<Vec<TurnSpan>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT turn_seq, state, started_at, ended_at FROM turn
+              WHERE session_id = ?1 ORDER BY turn_seq",
+        )?;
+        let rows = stmt
+            .query_map([session_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(turn_seq, state, started, ended)| TurnSpan {
+                turn_seq,
+                // A state we do not know is one this build cannot have
+                // finished: read it as still open.
+                state: TurnState::parse(&state).unwrap_or(TurnState::Open),
+                started_at: parse_time(started),
+                ended_at: ended.map(parse_time),
+            })
+            .collect())
+    }
+
     /// The highest turn number this Session has ever used.
     ///
     /// Seeds the in-memory counter after a restart, so a resumed conversation

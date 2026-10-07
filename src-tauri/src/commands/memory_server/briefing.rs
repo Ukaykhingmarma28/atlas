@@ -23,6 +23,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use atlas_memory::citation::{Citation, Validity};
 use atlas_memory::record::{Entry, EntryKind, Origin, RecordStore, Source, State};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -189,10 +190,47 @@ pub(super) struct Briefing {
     pub index: Vec<Entry>,
     /// The newest `updated_at` read: what the session has now seen.
     pub synced_to: i64,
+    /// Active durable entries left out because their evidence is stale.
+    pub stale_hidden: usize,
+    /// What the evidence of the durable entries said (M3).
+    pub checked: Checked,
 }
 
-/// The briefing, from the record. Blocking (SQLite).
-pub(super) fn read_briefing(store: &RecordStore, now: i64) -> anyhow::Result<Briefing> {
+/// Entries' evidence, checked now (M3, ADR-0018): code citations, and for an
+/// uncited decision, fact or architecture note the commits that carried its
+/// writing turn's work. Citations, when present, decide alone.
+#[derive(Debug, Default)]
+pub(super) struct Checked {
+    pub cites: HashMap<i64, (Validity, Vec<Citation>)>,
+    pub work: HashMap<i64, crate::commands::memory_capture::WorkCheck>,
+}
+
+impl Checked {
+    pub fn validity(&self, id: i64) -> Option<Validity> {
+        match self.cites.get(&id) {
+            Some((v, _)) => Some(*v),
+            None => self.work.get(&id).and_then(|w| w.validity),
+        }
+    }
+
+    pub fn is_stale(&self, id: i64) -> bool {
+        self.validity(id) == Some(Validity::Stale)
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.cites.extend(other.cites);
+        self.work.extend(other.work);
+    }
+}
+
+/// The briefing, from the record. `check` judges the durable pool's evidence;
+/// an active entry it finds stale is left out of the index and counted.
+/// Blocking (SQLite, and the files `check` reads).
+pub(super) fn read_briefing(
+    store: &RecordStore,
+    now: i64,
+    check: &dyn Fn(&[Entry]) -> Checked,
+) -> anyhow::Result<Briefing> {
     let plan = store.list(EntryKind::Plan, 1, Origin::Any)?.pop();
     let mut files_changed = store.list(
         EntryKind::FileChanged,
@@ -214,12 +252,21 @@ pub(super) fn read_briefing(store: &RecordStore, now: i64) -> anyhow::Result<Bri
         .map(|e| e.updated_at)
         .max()
         .unwrap_or(0);
+    let active: Vec<Entry> = durable
+        .into_iter()
+        .filter(|e| e.state == State::Active)
+        .collect();
+    let checked = check(&active);
+    let (stale, fresh): (Vec<Entry>, Vec<Entry>) =
+        active.into_iter().partition(|e| checked.is_stale(e.id));
     Ok(Briefing {
         plan,
         preferences,
         files_changed,
-        index: rank_index(&durable, now),
+        index: rank_index(&fresh, now),
         synced_to,
+        stale_hidden: stale.len(),
+        checked,
     })
 }
 
@@ -375,6 +422,40 @@ pub(super) fn entry_json(e: &Entry) -> Value {
     value
 }
 
+/// Attach what an entry's evidence says now: `validity` and the citations
+/// as found now when it cites code; otherwise the `commits` that carried its
+/// writing turn's work and, when they decided it, `validity` with
+/// `validityFrom: "commits"`.
+pub(super) fn with_evidence(value: &mut Value, id: i64, checked: &Checked) {
+    if let Some((validity, cites)) = checked.cites.get(&id) {
+        value["validity"] = json!(validity.as_str());
+        value["citations"] = json!(cites
+            .iter()
+            .map(|c| {
+                let mut v = json!({
+                    "path": c.path,
+                    "lines": format!("{}-{}", c.start_line, c.end_line),
+                });
+                if let Some(symbol) = &c.symbol {
+                    v["symbol"] = json!(symbol);
+                }
+                v
+            })
+            .collect::<Vec<_>>());
+        return;
+    }
+    let Some(work) = checked.work.get(&id) else {
+        return;
+    };
+    if !work.commits.is_empty() {
+        value["commits"] = json!(work.commits);
+    }
+    if let Some(validity) = work.validity {
+        value["validity"] = json!(validity.as_str());
+        value["validityFrom"] = json!("commits");
+    }
+}
+
 /// The UTC date an entry was first saved, `YYYY-MM-DD`.
 fn added(created_at: i64) -> Option<String> {
     chrono::DateTime::from_timestamp_millis(created_at).map(|d| d.format("%Y-%m-%d").to_string())
@@ -426,6 +507,7 @@ pub(super) fn briefing_json(b: &Briefing, sources: &HashMap<i64, Vec<Source>>) -
             sources.get(&e.id).map_or(&[][..], Vec::as_slice),
             INDEX_SOURCES,
         );
+        with_evidence(&mut v, e.id, &b.checked);
         v
     };
     let plan = b.plan.as_ref().map(|p| {
@@ -472,13 +554,17 @@ pub(super) fn briefing_json(b: &Briefing, sources: &HashMap<i64, Vec<Source>>) -
         .iter()
         .map(|e| line(e, PREFERENCE_MAX_CHARS))
         .collect();
-    json!({
+    let mut value = json!({
         "plan": plan,
         "preferences": preferences,
         "filesChanged": files,
         "index": index,
         "syncedTo": b.synced_to,
-    })
+    });
+    if b.stale_hidden > 0 {
+        value["staleHidden"] = json!(b.stale_hidden);
+    }
+    value
 }
 
 /// The `memory_changes` result, each entry with all its sources.

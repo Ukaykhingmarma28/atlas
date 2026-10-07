@@ -13,6 +13,7 @@
 //! - The `codebase_index_status` / `codebase_index_build` commands the
 //!   composer's index pill and the turn-end refresh call.
 
+pub mod citations;
 pub mod embed;
 mod graph_tools;
 pub mod grep_index;

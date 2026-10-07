@@ -8,9 +8,13 @@
 //! degrades to "nothing recorded" when capture is off, unreadable, or written
 //! by a newer Atlas.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use atlas_checkpoint::{LinkState, Session, Source, Store};
+use atlas_checkpoint::{
+    Checkpoint, FileTouch, LinkState, Session, Source, Store, TurnSpan, TurnState,
+};
+use atlas_memory::citation::{work_validity, CommitEvidence, Kept, Validity, MAX_FILE_BYTES};
 
 /// Where memory looks for recorded sessions. `transcripts_dir` finds the
 /// scope's subdirectory launches, as the recent-session handoff does; without
@@ -141,6 +145,169 @@ pub fn provenance_json(sources: &[atlas_memory::record::Source]) -> serde_json::
     )
 }
 
+/// The turn of a recorded session that was running at a moment.
+pub enum TurnAt<'a> {
+    None,
+    One(&'a TurnSpan),
+    /// Two turns overlap there (a queued prompt opened the next turn before
+    /// the last one closed). Nothing is inferred from an ambiguous write.
+    Ambiguous,
+}
+
+/// The turn running at `at_ms`. Both clocks are this machine's: capture
+/// stamps a turn when its worker records the prompt and when the turn
+/// finishes, memory stamps a write when it lands. An open turn runs on.
+pub fn turn_at(spans: &[TurnSpan], at_ms: i64) -> TurnAt<'_> {
+    let mut hits = spans.iter().filter(|t| {
+        t.started_at.timestamp_millis() <= at_ms
+            && t.ended_at.is_none_or(|e| at_ms <= e.timestamp_millis())
+    });
+    match (hits.next(), hits.next()) {
+        (None, _) => TurnAt::None,
+        (Some(t), None) => TurnAt::One(t),
+        _ => TurnAt::Ambiguous,
+    }
+}
+
+/// Work-evidence answers, reused while a file's size and mtime are unchanged.
+#[derive(Default)]
+pub struct KeptCache(std::sync::Mutex<HashMap<(PathBuf, u64, i128, String), Kept>>);
+
+/// A memory's commit evidence and the validity it gives.
+#[derive(Debug)]
+pub struct WorkCheck {
+    pub commits: Vec<CommitEvidence>,
+    pub validity: Option<Validity>,
+}
+
+/// The commits that carried the work of the turn in which `found`'s session
+/// wrote at `at_ms`, and whether that work is still in the tree. `None` when
+/// the write falls in no single turn, the turn was taken back, it wrote no
+/// file, or none of its files reached a commit (memory plan M3 Task 4b).
+pub fn work_evidence(
+    scope_root: &Path,
+    found: &Recorded<'_>,
+    at_ms: i64,
+    cache: &KeptCache,
+) -> Option<WorkCheck> {
+    let spans = found.store.turn_spans(&found.session.id).ok()?;
+    let TurnAt::One(turn) = turn_at(&spans, at_ms) else {
+        return None;
+    };
+    if turn.state == TurnState::Rewound {
+        return None;
+    }
+    let touches: Vec<FileTouch> = found
+        .store
+        .latest_file_touches(&found.session.id)
+        .ok()?
+        .into_iter()
+        .filter(|t| t.turn_seq == turn.turn_seq && !t.out_of_repo)
+        .collect();
+    let checkpoints: Vec<Checkpoint> = found
+        .store
+        .checkpoints_for_session(&found.session.id)
+        .ok()?
+        .into_iter()
+        .filter(|c| {
+            c.files_touched
+                .iter()
+                .any(|f| touches.iter().any(|t| &t.path == f))
+        })
+        .collect();
+    if checkpoints.is_empty() {
+        return None;
+    }
+    let kept: Vec<Kept> = touches
+        .iter()
+        .filter(|t| {
+            checkpoints
+                .iter()
+                .any(|c| c.files_touched.contains(&t.path))
+        })
+        .take(10)
+        .map(|t| kept(scope_root, found.root, t, cache))
+        .collect();
+    let mut validity = work_validity(&kept);
+    // A flagged capture may have lost touches: it cannot prove the work gone.
+    if found.session.needs_attention && validity == Some(Validity::Stale) {
+        validity = Some(Validity::Unverifiable);
+    }
+    let mut commits: Vec<CommitEvidence> = checkpoints
+        .iter()
+        .map(|c| CommitEvidence {
+            sha: c.commit_sha.chars().take(12).collect(),
+            orphaned: c.link_state == LinkState::Orphaned,
+        })
+        .collect();
+    commits.sort_by(|a, b| a.sha.cmp(&b.sha));
+    commits.dedup();
+    commits.truncate(3);
+    Some(WorkCheck { commits, validity })
+}
+
+/// Whether one landed file still holds the session's work: the agent's line
+/// fingerprint against the file as it is now, in the scope root first and
+/// then where the session ran. A deletion is kept while the file stays gone.
+fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) -> Kept {
+    let repo_rel = match root.strip_prefix(scope_root) {
+        Ok(sub) => sub.join(&touch.path),
+        // A linked worktree: the same repository path.
+        Err(_) => PathBuf::from(&touch.path),
+    };
+    let found = [scope_root.join(&repo_rel), root.join(&touch.path)]
+        .into_iter()
+        .find(|p| p.is_file());
+    let path = match (found, touch.deleted) {
+        (None, true) => return Kept::Yes,
+        (Some(_), true) => return Kept::No,
+        (None, false) if root.exists() => return Kept::No,
+        // Its worktree is gone.
+        (None, false) => return Kept::Unknown,
+        (Some(path), false) => path,
+    };
+    let Some(agent) = touch.sketch_after.as_deref() else {
+        return Kept::Unknown;
+    };
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return Kept::Unknown;
+    };
+    if meta.len() > MAX_FILE_BYTES {
+        return Kept::Unknown;
+    }
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    let key = (path.clone(), meta.len(), mtime, touch.id.clone());
+    if let Some(hit) = cache
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&key)
+    {
+        return *hit;
+    }
+    let answer = match std::fs::read(&path)
+        .ok()
+        .and_then(|b| atlas_checkpoint::sketch::sketch(&b))
+    {
+        Some(now) if atlas_checkpoint::sketch::retains_agent_work(agent, &now) => Kept::Yes,
+        Some(_) => Kept::No,
+        None => Kept::Unknown,
+    };
+    let mut seen = cache
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if seen.len() > 10_000 {
+        seen.clear();
+    }
+    seen.insert(key, answer);
+    answer
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::Path;
@@ -187,6 +354,49 @@ pub(crate) mod test_support {
             Capture::new(&mut self.store, ProjectMode::Local)
                 .finish_turn(&self.row, self.turn)
                 .expect("turn closed");
+        }
+
+        /// A completed write of `path` (project-relative) in the open turn,
+        /// with the hash and fingerprint live capture takes at write time.
+        pub(crate) fn write(&mut self, path: &str, content: &[u8]) {
+            use atlas_checkpoint::tools::{ResolvedPath, ToolName};
+            use atlas_checkpoint::{FileWrite, ToolCallContent, ToolStatus};
+            let native_call_id = format!("write-{}-{path}", self.turn);
+            let mut capture = Capture::new(&mut self.store, ProjectMode::Local);
+            let call = capture
+                .record_tool_call(
+                    &self.row,
+                    ToolCallContent {
+                        turn_seq: self.turn,
+                        native_call_id: Some(&native_call_id),
+                        tool_name: ToolName::Write,
+                        title: None,
+                        kind: Some("edit"),
+                        status: ToolStatus::Completed,
+                        locations: &serde_json::json!([]),
+                        arguments: None,
+                        result: None,
+                    },
+                )
+                .expect("call recorded");
+            let resolved = ResolvedPath {
+                path: path.into(),
+                out_of_repo: false,
+            };
+            capture
+                .record_file_write(
+                    &self.row,
+                    &call,
+                    self.turn,
+                    FileWrite {
+                        path: &resolved,
+                        sha256_after: Some(atlas_checkpoint::hash_written_content(content)),
+                        sketch_after: atlas_checkpoint::sketch::sketch(content),
+                        existed_before: false,
+                        deleted: false,
+                    },
+                )
+                .expect("touch recorded");
         }
 
         /// A linked checkpoint of `sha` carrying `files`, as the commit walk writes it.
@@ -263,6 +473,33 @@ mod tests {
             assert_eq!(found.as_deref(), Some(id), "{agent}");
         }
         let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
+    fn a_write_belongs_to_the_one_turn_running_then_and_overlaps_decide_nothing() {
+        use atlas_checkpoint::{TurnSpan, TurnState};
+        let at = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).unwrap();
+        let span = |turn, from, to: Option<i64>| TurnSpan {
+            turn_seq: turn,
+            state: TurnState::Completed,
+            started_at: at(from),
+            ended_at: to.map(at),
+        };
+        let spans = [
+            span(1, 1_000, Some(2_000)),
+            span(2, 1_900, Some(3_000)),
+            span(3, 4_000, None),
+        ];
+        assert!(matches!(turn_at(&spans, 1_500), TurnAt::One(t) if t.turn_seq == 1));
+        assert!(
+            matches!(turn_at(&spans, 1_950), TurnAt::Ambiguous),
+            "a queued prompt overlapped turn 1"
+        );
+        assert!(matches!(turn_at(&spans, 3_500), TurnAt::None));
+        assert!(
+            matches!(turn_at(&spans, 9_000), TurnAt::One(t) if t.turn_seq == 3),
+            "an open turn runs on"
+        );
     }
 
     #[test]

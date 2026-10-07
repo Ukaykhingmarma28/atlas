@@ -35,7 +35,7 @@ pub(super) enum Milestone {
 
 /// Every probe tagged at or below this must pass. Raised by each
 /// milestone's gate task.
-pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M2;
+pub(super) const CURRENT_MILESTONE: Milestone = Milestone::M3;
 
 /// Words → a 64-d count vector: cosine ≈ shared vocabulary. Deterministic.
 struct BagOfWords;
@@ -388,6 +388,7 @@ async fn a_parallel_session_of_the_same_agent_cannot_clobber(w: World) -> Result
             "Use SQLite",
             "db",
             None,
+            &[],
         )
         .is_err();
     let (_, s) = call(

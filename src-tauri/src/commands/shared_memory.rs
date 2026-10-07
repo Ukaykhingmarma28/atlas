@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use atlas_memory::citation::Citation;
 use atlas_memory::record::{
     self, Embedder, Entry, EntryKind, NewEntry, NewEvent, Origin, RecordStore, Remembered,
 };
@@ -668,15 +669,73 @@ pub const EXTRACTOR_SOURCE: &str = "extractor";
 pub const USER_SOURCE: &str = "user";
 
 /// How a durable write lands.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum How {
     /// A captured line: upserted, not logged, last writer wins.
     Candidate,
     /// The extractor: logged, last writer wins.
     Logged,
     /// An agent's `memory_remember`: logged, and a keyed replace of another
-    /// writer's entry needs the revision it read.
-    Agent { expected_revision: Option<i64> },
+    /// writer's entry needs the revision it read. `evidence` is the code the
+    /// memory rests on, already read and hashed here.
+    Agent {
+        expected_revision: Option<i64>,
+        evidence: Vec<Citation>,
+    },
+}
+
+/// One code citation as an agent gives it to `memory_remember` (M3).
+#[derive(Debug, Clone, Deserialize)]
+pub struct EvidenceArg {
+    pub path: String,
+    /// `"12-30"` or `"12"`. Required: the symbol only finds them again later.
+    #[serde(default)]
+    pub lines: Option<String>,
+    #[serde(default)]
+    pub symbol: Option<String>,
+}
+
+/// The agent's cited lines as citations rooted at the scope root, hashed
+/// from disk now. A path is taken relative to the session's launch directory
+/// (`project_path`) and must land inside the scope root.
+fn citations_for(
+    store: &RecordStore,
+    project_path: &str,
+    evidence: &[EvidenceArg],
+) -> Result<Vec<Citation>, String> {
+    if evidence.len() > atlas_memory::citation::MAX_CITATIONS {
+        return Err(format!(
+            "at most {} citations per memory",
+            atlas_memory::citation::MAX_CITATIONS
+        ));
+    }
+    let root = dunce::canonicalize(store.root()).unwrap_or_else(|_| store.root().to_path_buf());
+    let resolver = atlas_memory::citation::FileResolver::new(&root);
+    evidence
+        .iter()
+        .map(|ev| {
+            let lines = ev
+                .lines
+                .as_deref()
+                .ok_or("give lines (\"12-30\"); the symbol is used to find them again later")?;
+            let bad = || format!("bad lines `{lines}`: give \"12-30\" or \"12\"");
+            let (a, b) = lines.split_once('-').unwrap_or((lines, lines));
+            let a = a.trim().parse::<u32>().map_err(|_| bad())?;
+            let b = b.trim().parse::<u32>().map_err(|_| bad())?;
+            let abs = dunce::canonicalize(Path::new(project_path).join(&ev.path))
+                .map_err(|_| format!("`{}` does not exist", ev.path))?;
+            let rel = abs
+                .strip_prefix(&root)
+                .map_err(|_| format!("`{}` is outside the repository", ev.path))?;
+            atlas_memory::citation::cite(
+                &resolver,
+                &rel.to_string_lossy().replace('\\', "/"),
+                a,
+                b,
+                ev.symbol.clone().filter(|s| !s.trim().is_empty()),
+            )
+        })
+        .collect()
 }
 
 /// Who a write is attributed to: the agent and session a memory-server token
@@ -703,6 +762,7 @@ impl SharedMemoryStore {
         content: &str,
         key: &str,
         expected_revision: Option<i64>,
+        evidence: &[EvidenceArg],
     ) -> Result<Remembered, String> {
         if !kind.is_durable() {
             return Err(format!(
@@ -714,6 +774,7 @@ impl SharedMemoryStore {
         if content.trim().is_empty() {
             return Err("nothing to remember: content is empty".into());
         }
+        let evidence = citations_for(&*store_for(project_path)?, project_path, evidence)?;
         self.write_durable(
             project_path,
             NewEntry {
@@ -726,7 +787,10 @@ impl SharedMemoryStore {
                 confidence: 1.0,
                 at: 0,
             },
-            How::Agent { expected_revision },
+            How::Agent {
+                expected_revision,
+                evidence,
+            },
         )
     }
 
@@ -815,9 +879,10 @@ impl SharedMemoryStore {
         let written = match how {
             How::Candidate => store.upsert_outcome(entry),
             How::Logged => store.remember(entry, now),
-            How::Agent { expected_revision } => {
-                store.remember_guarded(entry, now, expected_revision)
-            }
+            How::Agent {
+                expected_revision,
+                evidence,
+            } => store.remember_guarded(entry, now, expected_revision, &evidence),
         };
         let remembered =
             written.map_err(
@@ -1852,6 +1917,7 @@ mod tests {
                 "The API speaks JSON over REST",
                 "",
                 None,
+                &[],
             )
             .unwrap();
         assert_eq!(r.outcome.as_str(), "merged");

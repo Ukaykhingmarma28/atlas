@@ -47,7 +47,9 @@ pub use tokens::{Grant, MemoryTokens};
 /// answers under the same rule.
 pub(crate) use tools::TOOLS_LIST_TTL_MS;
 #[allow(unused_imports)]
-pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS};
+pub use tools::{
+    Bootstrap, BootstrapSource, CitationCheck, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS,
+};
 
 /// The path the MCP endpoint is served at.
 pub const MCP_PATH: &str = "/mcp";
