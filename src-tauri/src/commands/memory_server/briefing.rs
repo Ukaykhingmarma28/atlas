@@ -213,6 +213,8 @@ pub(super) struct Changes {
     /// `more` says there is another page.
     pub entries: Vec<Entry>,
     pub more: bool,
+    /// Ids other sessions forgot within this page's clock, oldest first.
+    pub forgotten: Vec<i64>,
 }
 
 /// Entries written or edited after `since` by sessions other than
@@ -229,11 +231,28 @@ pub(super) fn read_changes(
     }
     let pool_max = store.max_updated_at()?;
     let (entries, synced_to, more) = page_changes(groups, CHANGES_MAX_PER_KIND, pool_max, since);
+    // Forgets after the last look, by other sessions. Within this page's
+    // clock only: a forget newer than a page's cutoff arrives with that page.
+    let forgotten: Vec<(i64, i64)> = store.forgotten_since(since, own_session)?;
+    let synced_to = if more {
+        synced_to
+    } else {
+        forgotten
+            .iter()
+            .map(|(_, at)| *at)
+            .fold(synced_to, i64::max)
+    };
+    let forgotten = forgotten
+        .into_iter()
+        .filter(|(_, at)| *at <= synced_to)
+        .map(|(id, _)| id)
+        .collect();
     Ok(Changes {
         since,
         synced_to,
         entries,
         more,
+        forgotten,
     })
 }
 
@@ -384,6 +403,7 @@ pub(super) fn changes_json(c: &Changes) -> Value {
         "since": c.since,
         "syncedTo": c.synced_to,
         "more": c.more,
+        "forgotten": c.forgotten,
         "entries": c.entries.iter().map(entry_json).collect::<Vec<_>>(),
     })
 }

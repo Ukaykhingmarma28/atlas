@@ -517,8 +517,12 @@ impl MemoryTools {
             Err(refused) => return refused,
         };
         let id = args.id;
-        let (memory, cwd) = (self.memory.clone(), grant.cwd.clone());
-        let gone = match run_blocking(move || memory.forget(&cwd, id)).await {
+        let (memory, cwd, session) = (
+            self.memory.clone(),
+            grant.cwd.clone(),
+            grant.session_id.clone(),
+        );
+        let gone = match run_blocking(move || memory.forget(&cwd, id, &session)).await {
             Ok(Ok(gone)) => gone,
             Ok(Err(e)) => return tool_error(format!("not forgotten: {e}")),
             Err(e) => return tool_error(format!("memory unavailable: {e}")),

@@ -891,14 +891,16 @@ impl RecordStore {
         Ok(Some(entry))
     }
 
-    /// Remove one entry (and its vector). Returns it, or `None` when no entry
-    /// has that id.
+    /// Remove one entry (and its vector) at `at`, by `session` (empty for the
+    /// Memory panel). Returns it, or `None` when no entry has that id.
     ///
     /// The log keeps its sequence, but the events that carried the entry (its
     /// identity's events, see `retract_events_of`) are **retracted**: the
     /// log's list and search no longer show them, so a forgotten memory
-    /// surfaces nowhere. Nothing new is logged.
-    pub fn forget(&self, id: i64) -> Result<Option<Entry>> {
+    /// surfaces nowhere. Nothing new is logged. A tombstone
+    /// `(id, kind, session, at)` is kept so other sessions' `memory_changes`
+    /// can report the forget.
+    pub fn forget(&self, id: i64, at: i64, session: &str) -> Result<Option<Entry>> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let entry = tx
@@ -908,6 +910,11 @@ impl RecordStore {
             tx.execute("DELETE FROM entries WHERE id = ?1", [id])?;
             tx.execute("DELETE FROM entry_vectors WHERE id = ?1", [id])?;
             retract_events_of(&tx, e)?;
+            tx.execute(
+                "INSERT INTO forgotten (id, kind, session, at) VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(id) DO UPDATE SET session = excluded.session, at = excluded.at",
+                params![id, e.kind.as_str(), session, at],
+            )?;
         }
         tx.commit()?;
         if entry.is_some() {
@@ -916,6 +923,19 @@ impl RecordStore {
             }
         }
         Ok(entry)
+    }
+
+    /// Entries forgotten after `since` by any session but `exclude_session`:
+    /// `(id, at)`, oldest first.
+    pub fn forgotten_since(&self, since: i64, exclude_session: &str) -> Result<Vec<(i64, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, at FROM forgotten WHERE at > ?1 AND session <> ?2 ORDER BY at ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![since, exclude_session], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Whether an entry of `kind` already holds `content` (by the redacted,
@@ -1133,7 +1153,7 @@ impl RecordStore {
         let tx = conn.transaction()?;
         tx.execute_batch(
             "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; DELETE FROM entry_vectors; \
-             DELETE FROM retracted_events;",
+             DELETE FROM retracted_events; DELETE FROM forgotten;",
         )?;
         tx.commit()?;
         *self.vectors() = None;
@@ -1143,7 +1163,7 @@ impl RecordStore {
 
 // ── Schema ───────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// The log as the Shared tab lists and searches it: every event not retracted.
 const LIVE_EVENTS: &str = "WHERE seq NOT IN (SELECT seq FROM retracted_events)";
@@ -1169,16 +1189,32 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
              COMMIT;",
         )?;
     }
-    // v3: events whose content was forgotten, hidden from the log's list and
-    // search (the rows stay, so the sequence never goes back).
-    conn.execute_batch(
-        "BEGIN;
-         CREATE TABLE IF NOT EXISTS retracted_events (
-             seq  INTEGER PRIMARY KEY
-         );
-         PRAGMA user_version = 3;
-         COMMIT;",
-    )?;
+    if version < 3 {
+        // v3: events whose content was forgotten, hidden from the log's list
+        // and search (the rows stay, so the sequence never goes back).
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS retracted_events (
+                 seq  INTEGER PRIMARY KEY
+             );
+             PRAGMA user_version = 3;
+             COMMIT;",
+        )?;
+    }
+    if version < 4 {
+        // v4: forgets as tombstones, so other sessions can hear about them.
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS forgotten (
+                 id       INTEGER PRIMARY KEY,
+                 kind     TEXT NOT NULL,
+                 session  TEXT NOT NULL DEFAULT '',
+                 at       INTEGER NOT NULL
+             );
+             PRAGMA user_version = 4;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -2196,10 +2232,10 @@ pub(crate) mod tests {
             )
             .unwrap();
         assert_eq!(
-            store.forget(first.entry.id).unwrap().map(|e| e.id),
+            store.forget(first.entry.id, 1, "").unwrap().map(|e| e.id),
             Some(first.entry.id)
         );
-        assert_eq!(store.forget(first.entry.id).unwrap(), None);
+        assert_eq!(store.forget(first.entry.id, 1, "").unwrap(), None);
         // Nothing left to merge into.
         let near = store
             .remember(
@@ -2328,7 +2364,7 @@ pub(crate) mod tests {
             .unwrap();
         let entry = store.query("6543", &[], 10).unwrap().remove(0);
 
-        store.forget(entry.id).unwrap().expect("forgotten");
+        store.forget(entry.id, 1, "").unwrap().expect("forgotten");
         assert!(store.search_events("6543", 10).unwrap().is_empty());
         let listed: Vec<u64> = store
             .events_newest(10)
@@ -2388,7 +2424,7 @@ pub(crate) mod tests {
             .into_iter()
             .find(|e| e.key == "a.ts")
             .unwrap();
-        store.forget(a.id).unwrap();
+        store.forget(a.id, 1, "").unwrap();
         let left = store.search_events("formatted", 10).unwrap().len();
         assert_eq!(left, 1);
         assert!(store.events_newest(10).unwrap()[0]
@@ -2415,7 +2451,7 @@ pub(crate) mod tests {
             "the corrected wording is gone"
         );
         assert_eq!(store.search_events("5432", 10).unwrap().len(), 1);
-        store.forget(fact.id).unwrap();
+        store.forget(fact.id, 1, "").unwrap();
         assert!(store.search_events("staging", 10).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -417,6 +417,54 @@ async fn changes_are_what_other_sessions_recorded_since_the_last_look() {
     let _ = std::fs::remove_dir_all(&p);
 }
 
+/// A forget by one session is a change the others hear about: its id comes
+/// back in `forgotten`, once, and never for the session that forgot.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forget_reaches_the_other_session_as_a_tombstone() {
+    let p = temp_project("tombstone");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let mine = connect(&server.url(), &tokens.mint("s-mine", "claude", &p))
+        .await
+        .unwrap();
+    let theirs = connect(&server.url(), &tokens.mint("s-theirs", "codex", &p))
+        .await
+        .unwrap();
+
+    let (_, r) = call(
+        &theirs,
+        "memory_remember",
+        json!({ "kind": "fact", "content": "Staging lives on fly.io" }),
+    )
+    .await;
+    let id = r["entry"]["id"].clone();
+    let (_, _) = call(&mine, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_forget", json!({ "id": id })).await;
+
+    let (_, delta) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(delta["forgotten"], json!([id]), "{delta}");
+    let (_, again) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(again["forgotten"], json!([]), "once: {again}");
+    let (_, own) = call(&theirs, "memory_changes", json!({})).await;
+    assert_eq!(
+        own["forgotten"],
+        json!([]),
+        "not to the session that forgot: {own}"
+    );
+
+    mine.cancel().await.ok();
+    theirs.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unknown_or_revoked_token_is_refused() {
     let project = temp_project("auth");

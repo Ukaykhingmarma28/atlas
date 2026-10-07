@@ -759,11 +759,18 @@ impl SharedMemoryStore {
         Ok(remembered)
     }
 
-    /// Delete one entry by id (`memory_forget`). `Ok(None)` when there is no
-    /// such entry.
-    pub fn forget(&self, project_path: &str, id: i64) -> Result<Option<Entry>, String> {
+    /// Delete one entry by id (`memory_forget`) on behalf of `session_id`
+    /// (empty for the Memory panel). `Ok(None)` when there is no such entry.
+    pub fn forget(
+        &self,
+        project_path: &str,
+        id: i64,
+        session_id: &str,
+    ) -> Result<Option<Entry>, String> {
         let store = store_for(project_path)?;
-        let gone = store.forget(id).map_err(|e| format!("{e:#}"))?;
+        let gone = store
+            .forget(id, (self.inner.clock)(), session_id)
+            .map_err(|e| format!("{e:#}"))?;
         if let Some(entry) = &gone {
             self.announce(&store, &[entry.kind.as_str()]);
         }
@@ -868,7 +875,7 @@ impl SharedMemoryStore {
     /// The user's forget of entry `id` from the Memory panel. `false` when
     /// there was no such entry.
     pub fn forget_entry(&self, project_path: &str, id: i64) -> Result<bool, String> {
-        Ok(self.forget(project_path, id)?.is_some())
+        Ok(self.forget(project_path, id, "")?.is_some())
     }
 }
 
