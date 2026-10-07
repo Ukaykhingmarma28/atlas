@@ -940,6 +940,7 @@ pub fn run() {
             commands::memory_dream::memory_dream_dismiss,
             commands::memory_repo::memory_repo_import_preview,
             commands::memory_repo::memory_repo_import_confirm,
+            commands::memory_repo::memory_repo_mirror_dir,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,

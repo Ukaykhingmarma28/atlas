@@ -235,10 +235,11 @@ fn read_dir(dir: &Path) -> Vec<Mapped> {
     out
 }
 
-/// The `legacy_imports` name of one line offered by an import: the line is
-/// not offered again, whatever its directory gains later.
-fn line_source(id: &str) -> String {
-    format!("claude-memory-line:{id}")
+/// The `legacy_imports` name of one line an import of `dir` offered: the line
+/// is not offered from that directory again, whatever it gains later. Keyed by
+/// directory, so a line skipped in one source is still offered by another.
+fn line_source(dir: &Path, id: &str) -> String {
+    format!("{}#line:{id}", source_name(dir))
 }
 
 /// Marks a directory whose import recorded each line it offered.
@@ -309,7 +310,7 @@ impl SharedMemoryStore {
             let by_lines = store.import_recorded(&lines_marker(dir)).map_err(err)?;
             for m in read_dir(dir) {
                 let id = line_id(m.kind, &m.content);
-                let offered = store.import_recorded(&line_source(&id)).map_err(err)?
+                let offered = store.import_recorded(&line_source(dir, &id)).map_err(err)?
                     || (!by_lines
                         && imported_at.is_some_and(|at| modified_ms(&dir.join(&m.file)) <= at));
                 let is_new = !offered && !store.holds_content(m.kind, &m.content).map_err(err)?;
@@ -358,7 +359,6 @@ impl SharedMemoryStore {
         }
         let preview = self.claude_import_preview(project_path, dirs)?;
         let store = store_for(project_path)?;
-        let offered: Vec<String> = preview.lines.iter().map(|l| l.id.clone()).collect();
         let now = self.now();
         let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
         let mut written = 0;
@@ -394,9 +394,11 @@ impl SharedMemoryStore {
         for dir in dirs {
             store.mark_imported(&source_name(dir), now).map_err(err)?;
             store.mark_imported(&lines_marker(dir), now).map_err(err)?;
-        }
-        for id in &offered {
-            store.mark_imported(&line_source(id), now).map_err(err)?;
+            for m in read_dir(dir) {
+                store
+                    .mark_imported(&line_source(dir, &line_id(m.kind, &m.content)), now)
+                    .map_err(err)?;
+            }
         }
         if !kinds.is_empty() {
             self.announce(&store, &kinds);

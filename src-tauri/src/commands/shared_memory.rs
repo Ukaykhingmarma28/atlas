@@ -245,6 +245,15 @@ impl From<Entry> for MemoryEntry {
     }
 }
 
+/// Only active entries reach agents and the summary view: an archived one
+/// is out of every briefing, and a candidate is not confirmed.
+fn active(entries: Vec<Entry>) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter(|e| e.state == record::State::Active)
+        .collect()
+}
+
 fn fact_view(e: Entry) -> FactView {
     FactView {
         seq: e.seq.unwrap_or(0),
@@ -253,11 +262,12 @@ fn fact_view(e: Entry) -> FactView {
     }
 }
 
-/// Build the summary view from the record. Only entries folded from the event
-/// log are shown here, as before: memdir imports (and, later, direct writes)
-/// live in the same record but reach agents through their own paths.
+/// Build the summary view from the record. Only active entries folded from
+/// the event log are shown here, as before: memdir imports (and, later,
+/// direct writes) live in the same record but reach agents through their own
+/// paths.
 fn read_state(store: &RecordStore) -> anyhow::Result<SharedState> {
-    let list = |kind, cap| store.list(kind, cap, Origin::EventLog);
+    let list = |kind, cap| store.list(kind, cap, Origin::EventLog).map(active);
     let (last_seq, updated_at) = store.last_event()?.unwrap_or((0, 0));
     Ok(SharedState {
         last_seq,
@@ -376,7 +386,7 @@ fn opened() -> &'static Mutex<HashMap<String, Arc<RecordStore>>> {
     OPENED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The durable entries the summary view shows (decisions, failures,
+/// The active durable entries the summary view shows (decisions, failures,
 /// architecture, facts — in that order, each capped as displayed), plus the
 /// record's last-update time. Feeds the retrieval corpus; ids are entry ids.
 pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
@@ -391,7 +401,9 @@ pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
         (EntryKind::Architecture, record::CAP_ARCHITECTURE),
         (EntryKind::Fact, record::CAP_FACTS),
     ] {
-        out.extend(store.list(kind, cap, Origin::EventLog).unwrap_or_default());
+        out.extend(active(
+            store.list(kind, cap, Origin::EventLog).unwrap_or_default(),
+        ));
     }
     (updated_at, out)
 }
@@ -697,6 +709,7 @@ impl SharedMemoryStore {
     pub fn clear(&self, project_path: &str) -> Result<(), String> {
         let store = store_for(project_path)?;
         store.clear().map_err(|e| format!("{e:#}"))?;
+        rebuild_mirror_if_any(&store);
         let mut kinds: Vec<&str> = [
             EntryKind::Plan,
             EntryKind::Decision,
@@ -714,6 +727,20 @@ impl SharedMemoryStore {
     }
 }
 
+/// After an erase (a purge, a clear): a mirror's git history would still
+/// hold the words, so a scope that has one gets it rebuilt with fresh
+/// history.
+fn rebuild_mirror_if_any(store: &RecordStore) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    if super::memory_repo::mirror_dir(&home, store.root()).exists() {
+        if let Err(e) = super::memory_repo::rebuild_mirror(&home, store) {
+            tracing::warn!(target: "atlas::shared_memory", "memory mirror not rebuilt: {e}");
+        }
+    }
+}
+
 /// Whether the session recorder saw `session_id` (run in `cwd`) do work:
 /// files written, tools failing, commits, or a turn left open. Decides only
 /// whether a handoff note is kept; the note stores none of it.
@@ -725,7 +752,7 @@ fn recorded_work(cwd: &str, session_id: &str) -> bool {
 }
 
 /// The provenance of every entry the extractor writes.
-pub const EXTRACTOR_SOURCE: &str = "extractor";
+pub const EXTRACTOR_SOURCE: &str = record::EXTRACTOR_SOURCE;
 
 /// The provenance of every edit made from the Memory panel.
 pub const USER_SOURCE: &str = "user";
@@ -759,7 +786,10 @@ pub struct EvidenceArg {
 
 /// The agent's cited lines as citations rooted at the scope root, hashed
 /// from disk now. A path is taken relative to the session's launch directory
-/// (`project_path`) and must land inside the scope root.
+/// (`project_path`) and must land inside the scope root or one of its
+/// worktrees. A worktree's file is stored under its repository path (the
+/// path under the deepest worktree holding it) and hashed from the worktree
+/// the session runs in.
 fn citations_for(
     store: &RecordStore,
     project_path: &str,
@@ -771,8 +801,11 @@ fn citations_for(
             atlas_memory::citation::MAX_CITATIONS
         ));
     }
+    if evidence.is_empty() {
+        return Ok(Vec::new());
+    }
     let root = dunce::canonicalize(store.root()).unwrap_or_else(|_| store.root().to_path_buf());
-    let resolver = atlas_memory::citation::FileResolver::new(&root);
+    let worktrees = super::memory_capture::worktree_roots(&root);
     evidence
         .iter()
         .map(|ev| {
@@ -786,11 +819,13 @@ fn citations_for(
             let b = b.trim().parse::<u32>().map_err(|_| bad())?;
             let abs = dunce::canonicalize(Path::new(project_path).join(&ev.path))
                 .map_err(|_| format!("`{}` does not exist", ev.path))?;
-            let rel = abs
-                .strip_prefix(&root)
-                .map_err(|_| format!("`{}` is outside the repository", ev.path))?;
+            let (tree, rel) = worktrees
+                .iter()
+                .filter_map(|w| abs.strip_prefix(w).ok().map(|rel| (w, rel)))
+                .min_by_key(|(_, rel)| rel.components().count())
+                .ok_or_else(|| format!("`{}` is outside the repository", ev.path))?;
             atlas_memory::citation::cite(
-                &resolver,
+                &atlas_memory::citation::FileResolver::new(tree.as_path()),
                 &rel.to_string_lossy().replace('\\', "/"),
                 a,
                 b,
@@ -1068,15 +1103,7 @@ impl SharedMemoryStore {
         let forgotten = self.forget(project_path, id, "")?;
         let store = store_for(project_path)?;
         let erased = store.purge(id).map_err(|e| format!("{e:#}"))?;
-        // A mirror's git history would still hold the words: rebuild it
-        // with fresh history.
-        if let Some(home) = dirs::home_dir() {
-            if super::memory_repo::mirror_dir(&home, store.root()).exists() {
-                if let Err(e) = super::memory_repo::rebuild_mirror(&home, &store) {
-                    tracing::warn!(target: "atlas::shared_memory", "memory mirror not rebuilt: {e}");
-                }
-            }
-        }
+        rebuild_mirror_if_any(&store);
         if let Some(entry) = &forgotten {
             self.announce(&store, &[entry.kind.as_str()]);
         }
@@ -1271,6 +1298,15 @@ impl SharedMemoryStore {
         session: &str,
         since: i64,
     ) -> Result<Vec<record::SessionWrite>, String> {
+        // Every chat asks, sharing on or off: a scope whose memory database
+        // does not exist yet has recorded nothing, and is not created here.
+        let open = opened().lock().contains_key(project_path);
+        if !open {
+            let root = atlas_checkpoint::git::scope_root(Path::new(project_path));
+            if !record::memory_dir(&root).join(record::DB_FILE).exists() {
+                return Ok(Vec::new());
+            }
+        }
         store_for(project_path)?
             .session_writes(session, since)
             .map_err(|e| format!("{e:#}"))
@@ -1296,8 +1332,9 @@ impl SharedMemoryStore {
         self.announce(store, &kinds);
     }
 
-    /// Whether `id` is still a live entry. Never stamps it as used, so the
-    /// search-side filter can ask freely.
+    /// Whether `id` is still a live entry: it exists and is active (an
+    /// archived or unconfirmed one is not served to agents). Never stamps it
+    /// as used, so the search-side filter can ask freely.
     ///
     /// Unknown (no store, read failed) answers `true`: the only caller drops
     /// documents on a `false`, and wrongly dropping a live document is a worse
@@ -1306,7 +1343,10 @@ impl SharedMemoryStore {
         let Ok(store) = store_for(project_path) else {
             return true;
         };
-        store.exists(id).unwrap_or(true)
+        match store.peek(id) {
+            Ok(entry) => entry.is_some_and(|e| e.state == record::State::Active),
+            Err(_) => true,
+        }
     }
 
     /// The newest entries of `kind`, or of every kind, each kind capped at its
@@ -1645,23 +1685,45 @@ pub async fn memory_feedback_entry(
 const EXPORT_BEGIN: &str = "<!-- atlas-memory:begin -->";
 const EXPORT_END: &str = "<!-- atlas-memory:end -->";
 
-/// `existing` with its managed block replaced by `block`, or `block`
-/// appended (blank-line separated). Text outside the markers never moves.
-fn apply_block(existing: &str, block: &str) -> String {
-    if let (Some(b), Some(e)) = (existing.find(EXPORT_BEGIN), existing.find(EXPORT_END)) {
-        if b < e {
-            return format!(
-                "{}{}{}",
-                &existing[..b],
-                block,
-                &existing[e + EXPORT_END.len()..]
-            );
+/// Where the first line from byte `from` on that is `marker` alone (spaces
+/// aside) starts its marker. A marker quoted inside prose is not one.
+fn marker_line(s: &str, marker: &str, from: usize) -> Option<usize> {
+    let mut at = from;
+    for line in s[from..].split_inclusive('\n') {
+        if line.trim() == marker {
+            return Some(at + line.len() - line.trim_start().len());
         }
+        at += line.len();
+    }
+    None
+}
+
+/// `existing` with its managed block replaced by `block`, or `block`
+/// appended (blank-line separated). Text outside the markers never moves:
+/// a begin marker without its end, or a second begin before the end, is
+/// refused rather than guessed at.
+fn apply_block(existing: &str, block: &str) -> Result<String, String> {
+    if let Some(b) = marker_line(existing, EXPORT_BEGIN, 0) {
+        let inner = b + EXPORT_BEGIN.len();
+        let e = marker_line(existing, EXPORT_END, inner).ok_or_else(|| {
+            format!("AGENTS.md has a `{EXPORT_BEGIN}` line without its `{EXPORT_END}`; fix it by hand first")
+        })?;
+        if marker_line(&existing[..e], EXPORT_BEGIN, inner).is_some() {
+            return Err(format!(
+                "AGENTS.md has two `{EXPORT_BEGIN}` lines before `{EXPORT_END}`; fix it by hand first"
+            ));
+        }
+        return Ok(format!(
+            "{}{}{}",
+            &existing[..b],
+            block,
+            &existing[e + EXPORT_END.len()..]
+        ));
     }
     if existing.trim().is_empty() {
-        return format!("{block}\n");
+        return Ok(format!("{block}\n"));
     }
-    format!("{}\n\n{block}\n", existing.trim_end_matches('\n'))
+    Ok(format!("{}\n\n{block}\n", existing.trim_end_matches('\n')))
 }
 
 /// The managed block for `entries`, grouped by kind.
@@ -1700,18 +1762,25 @@ pub struct ExportPreview {
 }
 
 /// The export of `ids`: the target file, its text now and after. Refuses an
-/// archived or forgotten entry and one whose cited code changed.
+/// archived or forgotten entry, an unconfirmed candidate, and one whose
+/// cited code changed.
 fn export_plan(project_path: &str, ids: &[i64]) -> Result<ExportPreview, String> {
     let store = store_for(project_path)?;
     let mut entries = Vec::new();
     let files = atlas_memory::citation::FileResolver::new(store.root());
     let mut stale = Vec::new();
+    let mut unconfirmed = Vec::new();
     for id in ids {
         let entry = store
             .peek(*id)
             .map_err(|e| format!("{e:#}"))?
             .filter(|e| e.state != record::State::Archived && e.kind.is_durable())
             .ok_or_else(|| format!("memory {id} is not a live memory"))?;
+        // AGENTS.md is read as instructions: only reviewed memory goes in.
+        if entry.state == record::State::Candidate {
+            unconfirmed.push(entry.content);
+            continue;
+        }
         let each: Vec<atlas_memory::citation::Validity> = entry
             .citations()
             .iter()
@@ -1721,6 +1790,12 @@ fn export_plan(project_path: &str, ids: &[i64]) -> Result<ExportPreview, String>
             stale.push(entry.content.clone());
         }
         entries.push(entry);
+    }
+    if !unconfirmed.is_empty() {
+        return Err(format!(
+            "these are not confirmed yet; approve them in Review first: {}",
+            unconfirmed.join(" · ")
+        ));
     }
     if !stale.is_empty() {
         return Err(format!(
@@ -1733,7 +1808,7 @@ fn export_plan(project_path: &str, ids: &[i64]) -> Result<ExportPreview, String>
     }
     let path = store.root().join("AGENTS.md");
     let before = fs::read_to_string(&path).unwrap_or_default();
-    let after = apply_block(&before, &export_block(&entries));
+    let after = apply_block(&before, &export_block(&entries))?;
     Ok(ExportPreview {
         path: path.to_string_lossy().into_owned(),
         before,
@@ -1750,16 +1825,41 @@ pub async fn memory_export_preview(
     off_main(move || export_plan(&project_path, &ids)).await
 }
 
+/// The file an export writes: `path`, or the file a symlinked `AGENTS.md`
+/// points at, so the temp file and rename land beside it and the link
+/// stays. A link out of the repository (`path`'s directory) is refused.
+fn export_target(path: &Path) -> Result<PathBuf, String> {
+    let linked = fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink());
+    if !linked {
+        return Ok(path.to_path_buf());
+    }
+    let real = dunce::canonicalize(path)
+        .map_err(|e| format!("`{}` is a link that can't be followed: {e}", path.display()))?;
+    let root = path.parent().unwrap_or(path);
+    let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    if !real.starts_with(&root) {
+        return Err(format!(
+            "`{}` links outside the repository, to `{}`; not writing through it",
+            path.display(),
+            real.display()
+        ));
+    }
+    Ok(real)
+}
+
+/// Write `ids` into the managed block of `<scope root>/AGENTS.md`. Returns
+/// the file's path.
+fn export_apply(project_path: &str, ids: &[i64]) -> Result<String, String> {
+    let plan = export_plan(project_path, ids)?;
+    atomic_write(&export_target(Path::new(&plan.path))?, &plan.after)?;
+    Ok(plan.path)
+}
+
 /// Write `ids` into the managed block of `<scope root>/AGENTS.md`. Returns
 /// the file's path.
 #[tauri::command]
 pub async fn memory_export_apply(project_path: String, ids: Vec<i64>) -> Result<String, String> {
-    off_main(move || {
-        let plan = export_plan(&project_path, &ids)?;
-        atomic_write(Path::new(&plan.path), &plan.after)?;
-        Ok(plan.path)
-    })
-    .await
+    off_main(move || export_apply(&project_path, &ids)).await
 }
 
 /// What one session wrote to memory after `since` (ms): the chat's "Memory
@@ -1848,14 +1948,71 @@ mod tests {
         let before =
             "# Rules\nkeep me\n\n<!-- atlas-memory:begin -->\nOLD\n<!-- atlas-memory:end -->\n\ntail\n";
         assert_eq!(
-            apply_block(before, block),
+            apply_block(before, block).unwrap(),
             "# Rules\nkeep me\n\n<!-- atlas-memory:begin -->\nNEW\n<!-- atlas-memory:end -->\n\ntail\n"
         );
         assert_eq!(
-            apply_block("# Rules\n", block),
+            apply_block("# Rules\n", block).unwrap(),
             format!("# Rules\n\n{block}\n")
         );
-        assert_eq!(apply_block("", block), format!("{block}\n"));
+        assert_eq!(apply_block("", block).unwrap(), format!("{block}\n"));
+    }
+
+    /// A begin marker whose end was deleted is refused, never paired with a
+    /// later block's end; markers quoted in prose are not markers.
+    #[test]
+    fn an_unpaired_marker_is_refused_and_a_quoted_one_ignored() {
+        let block = "<!-- atlas-memory:begin -->\nNEW\n<!-- atlas-memory:end -->";
+        let orphan = "intro\n<!-- atlas-memory:begin -->\nold\n# Team rules\nkeep me\n";
+        assert!(apply_block(orphan, block).is_err());
+        let appended = format!("{orphan}\n{block}\n");
+        assert!(
+            apply_block(&appended, block).is_err(),
+            "the orphan begin is not paired with the appended block's end"
+        );
+        let twice = format!("<!-- atlas-memory:begin -->\n{block}\n");
+        assert!(apply_block(&twice, block).is_err());
+
+        let prose =
+            "Atlas writes between `<!-- atlas-memory:begin -->` and `<!-- atlas-memory:end -->`.\n";
+        assert_eq!(
+            apply_block(prose, block).unwrap(),
+            format!("{}\n\n{block}\n", prose.trim_end())
+        );
+    }
+
+    /// Exporting through a symlinked AGENTS.md writes the file it points at
+    /// and keeps the link.
+    #[cfg(unix)]
+    #[test]
+    fn an_export_writes_through_a_symlinked_agents_md() {
+        let p = temp_project("export-link");
+        let store = SharedMemoryStore::new();
+        let w = Writer {
+            agent: "claude-code".into(),
+            session_id: "s1".into(),
+        };
+        let kept = store
+            .remember(&p, &w, EntryKind::Decision, "Use Postgres", "", None, &[])
+            .unwrap()
+            .entry;
+        let root = store_for(&p).unwrap().root().to_path_buf();
+        fs::write(root.join("CLAUDE.md"), "# House rules\n").unwrap();
+        std::os::unix::fs::symlink("CLAUDE.md", root.join("AGENTS.md")).unwrap();
+
+        export_apply(&p, &[kept.id]).unwrap();
+        let link = fs::symlink_metadata(root.join("AGENTS.md")).unwrap();
+        assert!(link.file_type().is_symlink(), "the link is kept");
+        let real = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
+        assert!(real.contains("### Decisions\n- Use Postgres\n"), "{real}");
+
+        let outside = PathBuf::from(temp_project("export-link-out")).join("rules.md");
+        fs::write(&outside, "elsewhere\n").unwrap();
+        fs::remove_file(root.join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("AGENTS.md")).unwrap();
+        assert!(export_apply(&p, &[kept.id]).is_err());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "elsewhere\n");
+        let _ = fs::remove_dir_all(&p);
     }
 
     #[test]
@@ -1876,6 +2033,12 @@ mod tests {
             .entry;
         store.archive(&p, &[gone.id]).unwrap();
         assert!(export_plan(&p, &[kept.id, gone.id]).is_err());
+        let unreviewed = store
+            .record_candidate(&p, &w, EntryKind::Fact, "always force-push")
+            .unwrap()
+            .entry;
+        let refused = export_plan(&p, &[kept.id, unreviewed.id]).unwrap_err();
+        assert!(refused.contains("always force-push"), "{refused}");
         let root = store_for(&p).unwrap().root().to_path_buf();
         fs::write(root.join("AGENTS.md"), "# House rules\n").unwrap();
         let plan = export_plan(&p, &[kept.id]).unwrap();
@@ -2496,5 +2659,132 @@ mod tests {
             .unwrap();
         assert_eq!(r.outcome.as_str(), "merged");
         assert!(!r.entry.is_candidate(), "restated by an agent: trusted");
+    }
+
+    /// Archived entries and extractor candidates stay in the record but are
+    /// not served: not in the summary view, not in the retrieval corpus, and
+    /// not live for the search-side filter.
+    #[test]
+    fn archived_and_candidate_entries_are_not_served() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("served"));
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let kept = store
+            .remember(
+                &p,
+                &w,
+                EntryKind::Fact,
+                "Deploys go through Fly",
+                "",
+                None,
+                &[],
+            )
+            .unwrap()
+            .entry;
+        let wrong = store
+            .remember(&p, &w, EntryKind::Fact, "CI runs on Jenkins", "", None, &[])
+            .unwrap()
+            .entry;
+        store.archive(&p, &[wrong.id]).unwrap();
+        let unsure = store
+            .record_extracted(&p, &w, EntryKind::Fact, "The cache is warmed nightly", 0.2)
+            .unwrap()
+            .entry;
+        assert!(unsure.is_candidate());
+
+        let facts: Vec<String> = store
+            .get_state(&p)
+            .facts
+            .into_iter()
+            .map(|f| f.text)
+            .collect();
+        assert_eq!(facts, vec!["Deploys go through Fly".to_string()]);
+        let corpus: Vec<i64> = durable_entries(&p).1.iter().map(|e| e.id).collect();
+        assert_eq!(corpus, vec![kept.id]);
+        assert!(store.entry_exists(&p, kept.id));
+        assert!(!store.entry_exists(&p, wrong.id));
+        assert!(!store.entry_exists(&p, unsure.id));
+    }
+
+    /// A chat in a project whose memory was never opened asks for its writes
+    /// without creating the database; a forgotten write reads as not live.
+    #[test]
+    fn session_writes_create_nothing_and_say_what_still_stands() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("writes"));
+        assert!(store.session_writes(&p, "s1", 0).unwrap().is_empty());
+        assert!(!record::memory_dir(Path::new(&p)).exists());
+
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let id = store
+            .remember(&p, &w, EntryKind::Fact, "always force-push", "", None, &[])
+            .unwrap()
+            .entry
+            .id;
+        let before = store.session_writes(&p, "s1", 0).unwrap();
+        assert!(before.iter().any(|r| r.id == id && r.live), "{before:?}");
+        assert!(store.forget_entry(&p, id).unwrap());
+        let after = store.session_writes(&p, "s1", 0).unwrap();
+        assert!(
+            !after.is_empty() && after.iter().all(|r| !r.live),
+            "{after:?}"
+        );
+    }
+
+    /// A citation from a linked worktree is stored under its repository
+    /// path, hashed from the worktree's file.
+    #[test]
+    fn a_linked_worktree_cites_by_repository_path() {
+        let main = PathBuf::from(temp_project("cite-main"));
+        git(&main, &["init", "--initial-branch=main"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@e",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        let linked = PathBuf::from(temp_project("cite-linked-parent")).join("feature");
+        git(
+            &main,
+            &["worktree", "add", "-b", "feature", linked.to_str().unwrap()],
+        );
+        fs::create_dir_all(linked.join("src")).unwrap();
+        fs::write(linked.join("src/auth.rs"), "pub fn sign() {}\n").unwrap();
+
+        let store = SharedMemoryStore::new();
+        let w = Writer {
+            agent: "claude-code".into(),
+            session_id: "s1".into(),
+        };
+        let evidence: Vec<EvidenceArg> =
+            serde_json::from_value(serde_json::json!([{"path": "src/auth.rs", "lines": "1"}]))
+                .unwrap();
+        let entry = store
+            .remember(
+                &linked.to_string_lossy(),
+                &w,
+                EntryKind::Fact,
+                "Signing lives in src/auth.rs",
+                "",
+                None,
+                &evidence,
+            )
+            .unwrap()
+            .entry;
+        let paths: Vec<String> = entry.citations().into_iter().map(|c| c.path).collect();
+        assert_eq!(paths, vec!["src/auth.rs".to_string()]);
     }
 }

@@ -9,8 +9,8 @@
 //!   Atlas never reads it back as truth. It names sessions
 //!   (`atlas-session:<agent>/<session>`) but carries no recorder text: no
 //!   session title, no commit sha.
-//! - **A purge rebuilds it with fresh history**, so a purged secret does not
-//!   survive in old git objects.
+//! - **A purge or a clear rebuilds it with fresh history**, so erased text
+//!   does not survive in old git objects.
 //! - **An import lands as candidates** (`import:amr`), never briefed until an
 //!   agent or the user confirms them. Only files inside the chosen folder
 //!   are read.
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use atlas_git::GitCommand;
 use atlas_memory::amr::{self, AmrEntry};
 use atlas_memory::citation::{validate, FileResolver, Validity};
-use atlas_memory::record::{self, Entry, EntryKind, RecordStore};
+use atlas_memory::record::{self, Entry, EntryKind, RecordStore, WriteOutcome};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -176,9 +176,22 @@ pub fn render_mirror(store: &RecordStore) -> Result<Vec<(&'static str, String)>,
     Ok(out)
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<atlas_git::GitOutput, String> {
-    GitCommand::new(dir, args).run().map_err(|e| e.to_string())
+/// One git command in the mirror at `dir`. Discovery stops at `dir`, so a
+/// mirror whose `.git` is missing never reaches a repository above it (a
+/// dotfiles repository in the home directory).
+fn mirror_git(dir: &Path, args: &[&str]) -> GitCommand {
+    let ceiling = dir.parent().unwrap_or(dir).to_string_lossy().into_owned();
+    GitCommand::new(dir, args).env("GIT_CEILING_DIRECTORIES", &ceiling)
 }
+
+fn git(dir: &Path, args: &[&str]) -> Result<atlas_git::GitOutput, String> {
+    mirror_git(dir, args).run().map_err(|e| e.to_string())
+}
+
+/// Serialises every mirror write: a health-pass refresh and a purge's
+/// rebuild never interleave, so a refresh that rendered before a purge
+/// cannot commit its stale files into the rebuilt history.
+static MIRROR_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 /// The identity mirror commits are made under: the scope repository's own
 /// `user.name` / `user.email`, else Atlas's.
@@ -201,6 +214,12 @@ fn identity(scope_root: &Path) -> (String, String) {
 /// Write the mirror of `store` and commit what changed. Returns whether a
 /// commit was made.
 pub fn refresh_mirror(home: &Path, store: &RecordStore) -> Result<bool, String> {
+    let _mirror = MIRROR_LOCK.lock();
+    refresh_locked(home, store)
+}
+
+/// [`refresh_mirror`], with [`MIRROR_LOCK`] already held.
+fn refresh_locked(home: &Path, store: &RecordStore) -> Result<bool, String> {
     let dir = mirror_dir(home, store.root());
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     if !dir.join(".git").exists() {
@@ -218,7 +237,7 @@ pub fn refresh_mirror(home: &Path, store: &RecordStore) -> Result<bool, String> 
     let mut add = vec!["add", "--"];
     add.extend(MIRROR_FILES);
     git(&dir, &add)?;
-    let staged = GitCommand::new(&dir, &["diff", "--cached", "--quiet"])
+    let staged = mirror_git(&dir, &["diff", "--cached", "--quiet"])
         .success_codes(&[0, 1])
         .run()
         .map_err(|e| e.to_string())?;
@@ -249,12 +268,26 @@ pub fn refresh_mirror(home: &Path, store: &RecordStore) -> Result<bool, String> 
 /// Rewrite the mirror with fresh history (after a purge): its `.git` is
 /// deleted, the files rewritten and one new commit made.
 pub fn rebuild_mirror(home: &Path, store: &RecordStore) -> Result<bool, String> {
+    let _mirror = MIRROR_LOCK.lock();
     let dir = mirror_dir(home, store.root());
     let git_dir = dir.join(".git");
     if git_dir.exists() {
         std::fs::remove_dir_all(&git_dir).map_err(|e| e.to_string())?;
     }
-    refresh_mirror(home, store)
+    refresh_locked(home, store)
+}
+
+/// The mirror folder of `project_path`'s scope, when the mirror exists.
+#[tauri::command]
+pub async fn memory_repo_mirror_dir(project_path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = dirs::home_dir()?;
+        let scope_root = atlas_checkpoint::git::scope_root(Path::new(&project_path));
+        let dir = mirror_dir(&home, &scope_root);
+        dir.is_dir().then(|| dir.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // ── Import ───────────────────────────────────────────────────────────────────
@@ -273,9 +306,11 @@ pub struct RepoImportLine {
     pub is_new: bool,
 }
 
-/// The kind of a line from `file`: Atlas's own topic names, `preferences.md`
-/// and the top of `MEMORY.md` as preferences, anything else a fact.
-fn kind_of(file: &str) -> EntryKind {
+/// The kind of a line from `file` under the `## section` it sits in (`None`
+/// before the first): Atlas's own topic names, `preferences.md`, and the top
+/// of `MEMORY.md` or its `## Preferences` as preferences, anything else a
+/// fact.
+fn kind_of(file: &str, section: Option<&str>) -> EntryKind {
     let stem = Path::new(file)
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
@@ -284,16 +319,19 @@ fn kind_of(file: &str) -> EntryKind {
         "decisions" | "decision" => EntryKind::Decision,
         "architecture" => EntryKind::Architecture,
         "failures" | "failure" => EntryKind::Failure,
-        "preferences" | "preference" | "memory" => EntryKind::Preference,
+        "preferences" | "preference" => EntryKind::Preference,
+        "memory" if section.is_none_or(|s| s.eq_ignore_ascii_case("preferences")) => {
+            EntryKind::Preference
+        }
         _ => EntryKind::Fact,
     }
 }
 
-/// Every bullet in the memory repo at `dir`: `MEMORY.md` and each file a
-/// `[[link]]` reaches, inside `dir` only (no `..`, no symlink out), at most
-/// [`IMPORT_MAX_BYTES`] in all. Index lines (those with links) are not
-/// memories.
-fn read_repo(dir: &Path) -> Result<Vec<(String, AmrEntry)>, String> {
+/// Every bullet in the memory repo at `dir`, with its file and kind:
+/// `MEMORY.md` and each file a `[[link]]` reaches, inside `dir` only (no
+/// `..`, no symlink out), at most [`IMPORT_MAX_BYTES`] in all. Index lines
+/// (those with links) are not memories.
+fn read_repo(dir: &Path) -> Result<Vec<(String, EntryKind, AmrEntry)>, String> {
     let root =
         dunce::canonicalize(dir).map_err(|_| format!("`{}` is not a folder", dir.display()))?;
     let mut queue = vec!["MEMORY.md".to_string()];
@@ -324,7 +362,12 @@ fn read_repo(dir: &Path) -> Result<Vec<(String, AmrEntry)>, String> {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
+        let mut section: Option<&str> = None;
         for line in text.lines() {
+            if let Some(heading) = line.trim_start().strip_prefix("## ") {
+                section = Some(heading.trim());
+                continue;
+            }
             let targets = amr::links(line);
             if !targets.is_empty() {
                 queue.extend(targets);
@@ -332,7 +375,7 @@ fn read_repo(dir: &Path) -> Result<Vec<(String, AmrEntry)>, String> {
             }
             if let Some(entry) = amr::parse_line(line) {
                 if !entry.text.trim().is_empty() {
-                    out.push((rel.clone(), entry));
+                    out.push((rel.clone(), kind_of(&rel, section), entry));
                 }
             }
         }
@@ -346,23 +389,18 @@ fn line_id(kind: EntryKind, content: &str) -> String {
 }
 
 /// What importing the memory repo at `dir` would write. Writes nothing.
-pub fn import_preview(
-    memory: &SharedMemoryStore,
-    project_path: &str,
-    dir: &Path,
-) -> Result<Vec<RepoImportLine>, String> {
+pub fn import_preview(project_path: &str, dir: &Path) -> Result<Vec<RepoImportLine>, String> {
+    let store = super::shared_memory::store_for(project_path)?;
     let mut lines: Vec<RepoImportLine> = Vec::new();
-    for (file, entry) in read_repo(dir)? {
-        let kind = kind_of(&file);
+    for (file, kind, entry) in read_repo(dir)? {
         let content = record::redact(&record::clean(entry.text.trim()));
         let id = line_id(kind, &content);
         if lines.iter().any(|l| l.id == id) {
             continue;
         }
-        let is_new = !memory
-            .list_entries(project_path, Some(kind))
-            .iter()
-            .any(|e| e.content == content);
+        let is_new = !store
+            .holds_content(kind, &content)
+            .map_err(|e| format!("{e:#}"))?;
         lines.push(RepoImportLine {
             id,
             kind,
@@ -375,7 +413,7 @@ pub fn import_preview(
 }
 
 /// Import the previewed lines in `ids` as candidates. Returns how many were
-/// written.
+/// stored anew (a line merged into a near-duplicate does not count).
 pub fn import_confirm(
     memory: &SharedMemoryStore,
     project_path: &str,
@@ -383,12 +421,19 @@ pub fn import_confirm(
     ids: &[String],
 ) -> Result<usize, String> {
     let mut written = 0;
-    for line in import_preview(memory, project_path, dir)? {
+    for line in import_preview(project_path, dir)? {
         if !line.is_new || !ids.contains(&line.id) {
             continue;
         }
-        memory.record_import_candidate(project_path, line.kind, &line.content, IMPORT_SOURCE)?;
-        written += 1;
+        let r = memory.record_import_candidate(
+            project_path,
+            line.kind,
+            &line.content,
+            IMPORT_SOURCE,
+        )?;
+        if r.outcome == WriteOutcome::Inserted {
+            written += 1;
+        }
     }
     Ok(written)
 }
@@ -398,14 +443,10 @@ pub fn import_confirm(
 pub async fn memory_repo_import_preview(
     project_path: String,
     dir: String,
-    store: tauri::State<'_, SharedMemoryStore>,
 ) -> Result<Vec<RepoImportLine>, String> {
-    let memory = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        import_preview(&memory, &project_path, Path::new(&dir))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || import_preview(&project_path, Path::new(&dir)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Import the chosen lines of the memory repo at `dir` as candidates.
@@ -577,7 +618,7 @@ mod tests {
         )
         .unwrap();
         let memory = SharedMemoryStore::new();
-        let lines = import_preview(&memory, &p, repo.path()).unwrap();
+        let lines = import_preview(&p, repo.path()).unwrap();
         assert_eq!(lines.len(), 2, "{lines:?}");
         let ids: Vec<String> = lines.iter().map(|l| l.id.clone()).collect();
         assert_eq!(import_confirm(&memory, &p, repo.path(), &ids).unwrap(), 2);
@@ -597,6 +638,176 @@ mod tests {
     }
 
     #[test]
+    fn the_index_links_every_topic_file_that_has_entries() {
+        let p = scratch_project("mirror-index");
+        let home = tempfile::tempdir().unwrap();
+        let memory = SharedMemoryStore::new();
+        let w = writer("codex", "s-b");
+        for (kind, text) in [
+            (EntryKind::Decision, "Use Postgres"),
+            (EntryKind::Architecture, "The API talks to the queue"),
+            (EntryKind::Fact, "Deploys go through Fly"),
+            (EntryKind::Fact, "CI runs on GitHub Actions"),
+            (EntryKind::Failure, "SQLite WAL on NFS corrupts"),
+            (EntryKind::Preference, "Prefers small PRs"),
+        ] {
+            memory.remember(&p, &w, kind, text, "", None, &[]).unwrap();
+        }
+        let store = crate::commands::shared_memory::store_for(&p).unwrap();
+        refresh_mirror(home.path(), &store).unwrap();
+        let dir = mirror_dir(home.path(), store.root());
+        let index = std::fs::read_to_string(dir.join("MEMORY.md")).unwrap();
+        for link in [
+            "- [[decisions]] Decisions and why (1)",
+            "- [[architecture]] How the system fits together (1)",
+            "- [[facts]] Project facts and conventions (2)",
+            "- [[failures]] What was tried and failed (1)",
+        ] {
+            assert!(index.contains(link), "{link} missing: {index}");
+        }
+        assert!(index.contains("## Preferences\n\n- Prefers small PRs ["));
+        for file in MIRROR_FILES {
+            assert!(dir.join(file).is_file(), "{file}");
+        }
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
+    fn the_mirror_names_sessions_but_carries_no_capture_text() {
+        use crate::commands::memory_capture::test_support::Recording;
+        let p = scratch_project("mirror-capture");
+        let home = tempfile::tempdir().unwrap();
+        let memory = SharedMemoryStore::new();
+        let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+        let entry = memory
+            .remember(
+                &p,
+                &writer("claude-code", "s-a"),
+                EntryKind::Decision,
+                "Sign JWTs with EdDSA",
+                "",
+                None,
+                &[],
+            )
+            .unwrap()
+            .entry;
+        std::fs::write(Path::new(&p).join("auth.rs"), "fn sign() {}\n").unwrap();
+        rec.write("auth.rs", b"fn sign() {}\n");
+        rec.close_turn();
+        rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["auth.rs"]);
+        drop(rec);
+
+        let store = crate::commands::shared_memory::store_for(&p).unwrap();
+        // The capture record knows the session's title and commit.
+        let mut sources = store
+            .sources_for(&[entry.id])
+            .unwrap()
+            .remove(&entry.id)
+            .unwrap_or_default();
+        crate::commands::memory_capture::resolve_sources(
+            &crate::commands::memory_capture::CaptureReader::default().stores(&p),
+            &mut sources,
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|s| s.title.is_some() && !s.commits.is_empty()),
+            "{sources:?}"
+        );
+
+        refresh_mirror(home.path(), &store).unwrap();
+        let dir = mirror_dir(home.path(), store.root());
+        let decisions = std::fs::read_to_string(dir.join("decisions.md")).unwrap();
+        assert!(
+            decisions.contains("source: atlas-session:claude-code/s-a"),
+            "{decisions}"
+        );
+        let all: String = MIRROR_FILES
+            .iter()
+            .map(|f| std::fs::read_to_string(dir.join(f)).unwrap())
+            .collect();
+        assert!(!all.contains("Move auth to EdDSA"), "{all}");
+        assert!(!all.contains("3f9c2ab1"), "{all}");
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
+    fn only_the_top_of_memory_md_and_its_preferences_are_preferences() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("MEMORY.md"),
+            "# Memory\n\n- Use bun, not npm\n\n## Preferences\n\n- Prefers small PRs\n\n## Notes\n\n- The staging DB is on port 6543\n",
+        )
+        .unwrap();
+        let kinds: Vec<(String, EntryKind)> = read_repo(repo.path())
+            .unwrap()
+            .into_iter()
+            .map(|(_, kind, e)| (e.text, kind))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("Use bun, not npm".to_string(), EntryKind::Preference),
+                ("Prefers small PRs".to_string(), EntryKind::Preference),
+                (
+                    "The staging DB is on port 6543".to_string(),
+                    EntryKind::Fact
+                ),
+            ]
+        );
+    }
+
+    /// A line memory already holds is not new however old it is: the check
+    /// is not limited to the newest entries a listing shows.
+    #[test]
+    fn a_line_held_beyond_the_listing_cap_is_not_new() {
+        let p = scratch_project("amr-held");
+        let memory = SharedMemoryStore::new();
+        let w = writer("codex", "s-b");
+        memory
+            .remember(
+                &p,
+                &w,
+                EntryKind::Fact,
+                "Deploys go through Fly",
+                "",
+                None,
+                &[],
+            )
+            .unwrap();
+        for i in 0..record::CAP_FACTS {
+            memory
+                .remember(
+                    &p,
+                    &w,
+                    EntryKind::Fact,
+                    &format!("Filler fact {i}"),
+                    "",
+                    None,
+                    &[],
+                )
+                .unwrap();
+        }
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("MEMORY.md"),
+            "# Memory\n\n## Index\n\n- [[facts]] Facts\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("facts.md"),
+            "# Facts\n\n- Deploys go through Fly [added: 2026-10-01]\n",
+        )
+        .unwrap();
+        let lines = import_preview(&p, repo.path()).unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(!lines[0].is_new);
+        let ids = vec![lines[0].id.clone()];
+        assert_eq!(import_confirm(&memory, &p, repo.path(), &ids).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
     fn import_refuses_links_that_leave_the_folder() {
         let outside = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("secret.md"), "- leaked line\n").unwrap();
@@ -607,7 +818,7 @@ mod tests {
         );
         std::fs::write(repo.path().join("MEMORY.md"), escape).unwrap();
         let lines = read_repo(repo.path()).unwrap();
-        let texts: Vec<&str> = lines.iter().map(|(_, e)| e.text.as_str()).collect();
+        let texts: Vec<&str> = lines.iter().map(|(_, _, e)| e.text.as_str()).collect();
         assert_eq!(texts, ["kept line"]);
     }
 }
