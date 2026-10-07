@@ -203,6 +203,8 @@ pub(super) struct Briefing {
 pub(super) struct Checked {
     pub cites: HashMap<i64, (Validity, Vec<Citation>)>,
     pub work: HashMap<i64, crate::commands::memory_capture::WorkCheck>,
+    /// The memories each one is linked as contradicting (M4).
+    pub conflicts: HashMap<i64, Vec<i64>>,
 }
 
 impl Checked {
@@ -215,11 +217,6 @@ impl Checked {
 
     pub fn is_stale(&self, id: i64) -> bool {
         self.validity(id) == Some(Validity::Stale)
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        self.cites.extend(other.cites);
-        self.work.extend(other.work);
     }
 }
 
@@ -422,11 +419,15 @@ pub(super) fn entry_json(e: &Entry) -> Value {
     value
 }
 
-/// Attach what an entry's evidence says now: `validity` and the citations
+/// Attach the memories it contradicts (`conflicts`), and what an entry's
+/// evidence says now: `validity` and the citations
 /// as found now when it cites code; otherwise the `commits` that carried its
 /// writing turn's work and, when they decided it, `validity` with
 /// `validityFrom: "commits"`.
 pub(super) fn with_evidence(value: &mut Value, id: i64, checked: &Checked) {
+    if let Some(others) = checked.conflicts.get(&id) {
+        value["conflicts"] = json!(others);
+    }
     if let Some((validity, cites)) = checked.cites.get(&id) {
         value["validity"] = json!(validity.as_str());
         value["citations"] = json!(cites

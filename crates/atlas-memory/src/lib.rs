@@ -54,6 +54,9 @@ pub mod health;
 // Evidence for a memory: cited code, checked at read time (M3, ADR-0018).
 pub mod citation;
 
+// Idle-time consolidation: merge proposals and contradiction links (M4).
+pub mod consolidate;
+
 // ─── Ported-from-the-old-SDK modules ───────────────────────────────────────────────
 //
 // These were the old SDK's embeddings and memory crates until 2026-08-22; they are

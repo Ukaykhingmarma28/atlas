@@ -1657,7 +1657,9 @@ impl RecordStore {
         tx.execute_batch(
             "DELETE FROM events; DELETE FROM entries; DELETE FROM sessions; \
              DELETE FROM retracted_events; DELETE FROM forgotten; DELETE FROM revisions; \
-             DELETE FROM entries_fts; DELETE FROM embed_cache;",
+             DELETE FROM entries_fts; DELETE FROM embed_cache; DELETE FROM links; \
+             DELETE FROM episodes; DELETE FROM feedback; DELETE FROM dreams; \
+             DELETE FROM dream_proposals;",
         )?;
         tx.commit()?;
         *self.vectors() = None;
@@ -1915,6 +1917,30 @@ impl RecordStore {
             )?;
             reseal_from(&tx, first)?;
             tx.execute("UPDATE forgotten SET seqs = '[]' WHERE id = ?1", [id])?;
+            // Everything else that could carry its words or name it.
+            tx.execute("DELETE FROM feedback WHERE entry_id = ?1", [id])?;
+            tx.execute("DELETE FROM links WHERE a = ?1 OR b = ?1", [id])?;
+            let proposals: Vec<(i64, String)> = {
+                let mut stmt = tx.prepare("SELECT id, op FROM dream_proposals")?;
+                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for (pid, op) in proposals {
+                let op_json: serde_json::Value = serde_json::from_str(&op).unwrap_or_default();
+                if json_names_id(&op_json, id) || texts.iter().any(|t| json_mentions(&op, t)) {
+                    tx.execute("DELETE FROM dream_proposals WHERE id = ?1", [pid])?;
+                }
+            }
+            let episodes: Vec<(String, String)> = {
+                let mut stmt = tx.prepare("SELECT session, note FROM episodes")?;
+                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for (session, note) in episodes {
+                if texts.iter().any(|t| json_mentions(&note, t)) {
+                    tx.execute("DELETE FROM episodes WHERE session = ?1", [session])?;
+                }
+            }
             tx.commit()?;
             Ok(true)
         })();
@@ -1997,9 +2023,258 @@ impl RecordStore {
     }
 }
 
+// ── Feedback, review and links (M4) ──────────────────────────────────────────
+
+/// What a memory was worth to the agent (or user) that used it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Useful,
+    Wrong,
+    Stale,
+}
+
+impl Verdict {
+    pub fn parse(raw: &str) -> Option<Self> {
+        Some(match raw.trim() {
+            "useful" => Self::Useful,
+            "wrong" => Self::Wrong,
+            "stale" => Self::Stale,
+            _ => return None,
+        })
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Useful => "useful",
+            Self::Wrong => "wrong",
+            Self::Stale => "stale",
+        }
+    }
+}
+
+/// The confidence a promotion raises a memory to.
+pub const PROMOTED_CONFIDENCE: f64 = 0.7;
+
+/// How two memories relate: one replaced the other, they disagree, or the
+/// user said they are different things (so neither is proposed again).
+pub const LINK_SUPERSEDES: &str = "supersedes";
+pub const LINK_CONTRADICTS: &str = "contradicts";
+pub const LINK_DISTINCT: &str = "distinct";
+
+impl RecordStore {
+    /// An agent's or the user's verdict on a memory it used. Useful: counted,
+    /// and a candidate another session vouches for is promoted. Wrong:
+    /// archived, kept in history. Stale: back to a candidate until confirmed
+    /// again. Every verdict is kept as a `feedback` row. `None` for an
+    /// unknown id.
+    pub fn feedback(
+        &self,
+        id: i64,
+        verdict: Verdict,
+        note: &str,
+        by: &str,
+        session: &str,
+        at: i64,
+    ) -> Result<Option<Entry>> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let Some(e) = tx
+            .query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        tx.execute(
+            "INSERT INTO feedback (entry_id, verdict, note, by, session, at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                id,
+                verdict.as_str(),
+                redact_text(note.trim()),
+                by,
+                session,
+                at
+            ],
+        )?;
+        let who = By {
+            source: by,
+            agent: by,
+            session,
+        };
+        match verdict {
+            Verdict::Useful => {
+                tx.execute(
+                    "UPDATE entries SET uses = uses + 1, last_used_at = ?2 WHERE id = ?1",
+                    params![id, at],
+                )?;
+                // The writer's own session can't vouch for itself.
+                if e.state == State::Candidate && e.session_id != session {
+                    tx.execute(
+                        "UPDATE entries SET confidence = MAX(confidence, ?2), updated_at = ?3 \
+                         WHERE id = ?1",
+                        params![id, PROMOTED_CONFIDENCE, at],
+                    )?;
+                    after_write(&tx, id, "promote", false, Some(who))?;
+                }
+            }
+            Verdict::Wrong => {
+                tx.execute(
+                    "UPDATE entries SET updated_at = ?2 WHERE id = ?1",
+                    params![id, at],
+                )?;
+                after_write(&tx, id, "feedback", true, Some(who))?;
+            }
+            Verdict::Stale => {
+                tx.execute(
+                    "UPDATE entries SET confidence = MIN(confidence, ?2), updated_at = ?3 \
+                     WHERE id = ?1",
+                    params![id, CANDIDATE_CONFIDENCE, at],
+                )?;
+                after_write(&tx, id, "feedback", false, Some(who))?;
+            }
+        }
+        let out = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)?;
+        tx.commit()?;
+        Ok(Some(out))
+    }
+
+    /// The user's approval from the review queue: a candidate or archived
+    /// memory becomes active. Returns whether the entry exists.
+    pub fn promote(&self, id: i64, at: i64) -> Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let n = tx.execute(
+            "UPDATE entries SET confidence = MAX(confidence, ?2), updated_at = ?3 WHERE id = ?1",
+            params![id, PROMOTED_CONFIDENCE, at],
+        )?;
+        if n == 1 {
+            after_write(
+                &tx,
+                id,
+                "promote",
+                false,
+                Some(By {
+                    source: "user",
+                    agent: "user",
+                    session: "",
+                }),
+            )?;
+        }
+        tx.commit()?;
+        Ok(n == 1)
+    }
+
+    /// One entry by id, without stamping it as used.
+    pub fn peek(&self, id: i64) -> Result<Option<Entry>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)
+            .optional()?)
+    }
+
+    /// Entries in `state`, newest first.
+    pub fn list_state(&self, state: State, limit: usize) -> Result<Vec<Entry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM entries WHERE state = ?1 ORDER BY updated_at DESC, id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![state.as_str(), limit as i64], entry_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Record that `a` relates to `b` (`supersedes`, `contradicts`,
+    /// `distinct`). Idempotent; returns whether the link is new.
+    pub fn link(&self, a: i64, b: i64, rel: &str, at: i64, by: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "INSERT OR IGNORE INTO links (a, b, rel, at, by) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![a, b, rel, at, by],
+        )? == 1)
+    }
+
+    /// Every pair linked by one of `rels`, as `(min, max)`.
+    pub fn linked_pairs(&self, rels: &[&str]) -> Result<std::collections::BTreeSet<(i64, i64)>> {
+        let mut out = std::collections::BTreeSet::new();
+        for rel in rels {
+            for (a, b) in self.links(rel)? {
+                out.insert((a.min(b), a.max(b)));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Active entries of the durable kinds, by id.
+    pub fn durable_active(&self) -> Result<Vec<Entry>> {
+        let kinds: Vec<&str> = EntryKind::ALL
+            .into_iter()
+            .filter(|k| k.is_durable())
+            .map(EntryKind::as_str)
+            .collect();
+        let marks = vec!["?"; kinds.len()].join(",");
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT * FROM entries WHERE state = 'active' AND kind IN ({marks}) ORDER BY id"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(kinds), entry_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The installed model's cached vector of `text`, if any. Never embeds.
+    pub fn vector_for_text(&self, text: &str) -> Option<Vec<f32>> {
+        let model = self.embedder()?.model_id()?;
+        cached(&self.conn(), &model, text).ok().flatten()
+    }
+
+    /// Remove one link. Returns whether it existed.
+    pub fn unlink(&self, a: i64, b: i64, rel: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM links WHERE a = ?1 AND b = ?2 AND rel = ?3",
+            params![a, b, rel],
+        )? == 1)
+    }
+
+    /// Every link touching `id`, as `(other, rel)`.
+    pub fn links_of(&self, id: i64) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT CASE WHEN a = ?1 THEN b ELSE a END, rel FROM links \
+             WHERE a = ?1 OR b = ?1 ORDER BY at, rel",
+        )?;
+        let rows = stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Every link with relation `rel`, as `(a, b)`.
+    pub fn links(&self, rel: &str) -> Result<Vec<(i64, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT a, b FROM links WHERE rel = ?1 ORDER BY a, b")?;
+        let rows = stmt.query_map([rel], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+}
+
+/// Whether a stored JSON document carries `text` (as JSON spells it).
+fn json_mentions(json: &str, text: &str) -> bool {
+    let spelled = serde_json::to_string(text).unwrap_or_default();
+    let inner = spelled.trim_matches('"');
+    !inner.is_empty() && json.contains(inner)
+}
+
+/// Whether a JSON value names entry `id`: any integer equal to it, except
+/// under a key about revisions.
+fn json_names_id(v: &serde_json::Value, id: i64) -> bool {
+    match v {
+        serde_json::Value::Number(n) => n.as_i64() == Some(id),
+        serde_json::Value::Array(items) => items.iter().any(|x| json_names_id(x, id)),
+        serde_json::Value::Object(map) => map
+            .iter()
+            .any(|(k, x)| !k.contains("rev") && json_names_id(x, id)),
+        _ => false,
+    }
+}
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 /// The log as the Shared tab lists and searches it: every event not retracted.
 const LIVE_EVENTS: &str = "WHERE seq NOT IN (SELECT seq FROM retracted_events)";
@@ -2053,6 +2328,60 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
     }
     if version < 5 {
         migrate_v5(conn).or_else(|e| {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        })?;
+    }
+    if version < 6 {
+        // v6 (M4): links between memories, one handoff note per finished
+        // session, agents' verdicts, and the dream pass's proposals. The
+        // session index serves memory_why, the rewound-turn check and the
+        // "Memory updated" card.
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS links (
+                 a    INTEGER NOT NULL,
+                 b    INTEGER NOT NULL,
+                 rel  TEXT NOT NULL,
+                 at   INTEGER NOT NULL,
+                 by   TEXT NOT NULL,
+                 PRIMARY KEY (a, b, rel)
+             );
+             CREATE TABLE IF NOT EXISTS episodes (
+                 session     TEXT PRIMARY KEY,
+                 agent       TEXT NOT NULL,
+                 started_at  INTEGER,
+                 ended_at    INTEGER NOT NULL,
+                 note        TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS feedback (
+                 entry_id  INTEGER NOT NULL,
+                 verdict   TEXT NOT NULL,
+                 note      TEXT NOT NULL DEFAULT '',
+                 by        TEXT NOT NULL,
+                 session   TEXT NOT NULL,
+                 at        INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS dreams (
+                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                 at           INTEGER NOT NULL,
+                 model        TEXT NOT NULL,
+                 episodes_to  INTEGER NOT NULL,
+                 kept         INTEGER NOT NULL,
+                 dropped      TEXT NOT NULL DEFAULT '[]'
+             );
+             CREATE TABLE IF NOT EXISTS dream_proposals (
+                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                 dream_id  INTEGER NOT NULL,
+                 op        TEXT NOT NULL,
+                 status    TEXT NOT NULL DEFAULT 'pending',
+                 at        INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS revisions_session ON revisions(session, at);
+             PRAGMA user_version = 6;
+             COMMIT;",
+        )
+        .or_else(|e| {
             let _ = conn.execute_batch("ROLLBACK;");
             Err(e)
         })?;
@@ -3707,7 +4036,7 @@ pub(crate) mod tests {
             let v: i64 = conn
                 .query_row("PRAGMA user_version", [], |r| r.get(0))
                 .unwrap();
-            assert_eq!(v, 5);
+            assert_eq!(v, SCHEMA_VERSION);
             let revs: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM revisions WHERE op = 'baseline'",
@@ -4426,6 +4755,89 @@ pub(crate) mod tests {
             store.get(cand.id, now + 2).unwrap().unwrap().state,
             State::Archived
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn wrong_feedback_archives_and_keeps_history() {
+        let root = temp_root("feedback");
+        let store = open_scope(&root).unwrap();
+        let e = store
+            .remember(tool_write(EntryKind::Fact, "", "CI runs on Jenkins", 1), 1)
+            .unwrap()
+            .entry;
+        let after = store
+            .feedback(
+                e.id,
+                Verdict::Wrong,
+                "it is GitHub Actions",
+                "codex",
+                "s2",
+                2,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.state, State::Archived);
+        let last = store.history(e.id).unwrap().pop().unwrap();
+        assert_eq!(
+            (last.op.as_str(), last.agent.as_str()),
+            ("feedback", "codex")
+        );
+        assert!(store
+            .feedback(e.id + 99, Verdict::Useful, "", "codex", "s2", 3)
+            .unwrap()
+            .is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn useful_feedback_from_another_session_promotes_a_candidate() {
+        let root = temp_root("promote");
+        let store = open_scope(&root).unwrap();
+        let c = store
+            .upsert(NewEntry {
+                confidence: CANDIDATE_CONFIDENCE,
+                ..tool_write(EntryKind::Fact, "", "The API speaks JSON", 1)
+            })
+            .unwrap();
+        let same = store
+            .feedback(c.id, Verdict::Useful, "", "claude", "s1", 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            same.state,
+            State::Candidate,
+            "the writer's own session can't vouch for itself"
+        );
+        let other = store
+            .feedback(c.id, Verdict::Useful, "", "codex", "s2", 3)
+            .unwrap()
+            .unwrap();
+        assert_eq!(other.state, State::Active);
+        assert_eq!(other.uses, 2);
+        let stale = store
+            .feedback(c.id, Verdict::Stale, "moved to v2", "codex", "s2", 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stale.state, State::Candidate);
+        assert!(store.promote(c.id, 5).unwrap());
+        assert_eq!(store.get(c.id, 6).unwrap().unwrap().state, State::Active);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn links_are_idempotent_and_read_from_either_side() {
+        let root = temp_root("links");
+        let store = open_scope(&root).unwrap();
+        store.link(1, 2, LINK_CONTRADICTS, 1, "health").unwrap();
+        store.link(1, 2, LINK_CONTRADICTS, 2, "health").unwrap();
+        assert_eq!(
+            store.links_of(2).unwrap(),
+            vec![(1, LINK_CONTRADICTS.to_string())]
+        );
+        assert_eq!(store.links(LINK_CONTRADICTS).unwrap(), vec![(1, 2)]);
+        assert!(store.unlink(1, 2, LINK_CONTRADICTS).unwrap());
+        assert!(store.links_of(1).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

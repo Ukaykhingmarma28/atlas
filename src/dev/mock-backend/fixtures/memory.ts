@@ -38,6 +38,7 @@ import type {
   MemoryEntry,
   MemoryEvent,
   Provenance,
+  ReviewQueue,
   SharedState,
 } from "@/features/memory/lib/shared-memory-api";
 import type { TypedHandlers, Unit, Unread } from "../types";
@@ -1294,6 +1295,12 @@ export interface MemoryResponses {
   memory_entry_provenance: Provenance[];
   memory_accept_history: boolean;
   memory_health_status: HealthStatus;
+  memory_feedback_entry: MemoryEntry | null;
+  memory_review: ReviewQueue;
+  memory_promote: boolean;
+  memory_archive: number;
+  memory_merge: number;
+  memory_resolve_conflict: boolean;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
@@ -1430,6 +1437,39 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
   },
   // The mock's memory is never damaged or edited behind its back.
   memory_accept_history: (): boolean => false,
+  memory_feedback_entry: ({ projectPath, id, verdict }): MemoryEntry | null => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return null;
+    if (verdict === "wrong") entry.state = "archived";
+    else if (verdict === "stale") entry.state = "candidate";
+    else entry.uses += 1;
+    return entry;
+  },
+  memory_review: ({ projectPath }): ReviewQueue => ({
+    candidates: entriesFor(String(projectPath)).filter((e) => e.state === "candidate"),
+    merges: [],
+    conflicts: [],
+  }),
+  memory_promote: ({ projectPath, id }): boolean => {
+    const entry = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!entry) return false;
+    entry.state = "active";
+    entry.confidence = Math.max(entry.confidence, 0.7);
+    return true;
+  },
+  memory_archive: ({ projectPath, ids }): number => {
+    const wanted = new Set((ids as number[]).map(Number));
+    const hit = entriesFor(String(projectPath)).filter((e) => wanted.has(e.id));
+    for (const e of hit) e.state = "archived";
+    return hit.length;
+  },
+  memory_merge: ({ projectPath, drop }): number => {
+    const wanted = new Set((drop as number[]).map(Number));
+    const hit = entriesFor(String(projectPath)).filter((e) => wanted.has(e.id));
+    for (const e of hit) e.state = "archived";
+    return hit.length;
+  },
+  memory_resolve_conflict: (): boolean => true,
   memory_health_status: (): HealthStatus => ({
     checkedAt: Date.now(),
     record: { checkedAt: Date.now(), found: [], repaired: [], deferred: [] },

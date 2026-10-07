@@ -79,6 +79,8 @@ pub struct HealthStatus {
     pub restored: Option<(i64, bool)>,
     /// Memories this pass archived as unused (M3 expiry).
     pub archived: usize,
+    /// Contradicting pairs this pass newly linked (M4 consolidation).
+    pub linked: usize,
 }
 
 /// The Tauri event a finished health pass emits: `{ "cwd": string }`. The
@@ -547,7 +549,7 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
     let code = app
         .try_state::<Arc<super::code_index::CodeIndexRegistry>>()
         .map(|r| r.inner().clone());
-    let (record, restored, archived) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+    let (record, restored, archived, linked) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let store = super::shared_memory::store_for(&owned)?;
         let report = store.heal(now).map_err(|e| format!("{e:#}"))?;
         if let Err(e) = store.snapshot_if_due(now) {
@@ -566,10 +568,16 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
             tracing::warn!(target: "atlas::memory_indexer", "memory expiry failed: {e:#}");
             0
         });
+        // Contradictions become links every reader sees; nothing is merged.
+        let linked = atlas_memory::consolidate::link_contradictions(&store, now).unwrap_or_else(|e| {
+            tracing::warn!(target: "atlas::memory_indexer", "memory consolidation failed: {e:#}");
+            0
+        });
         Ok((
             report,
             atlas_memory::record::RecordStore::restored_marker(store.root()),
             archived,
+            linked,
         ))
     })
     .await
@@ -592,6 +600,7 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
             corpus,
             restored,
             archived,
+            linked,
         },
     );
     let _ = app.emit(MEMORY_HEALTH_EVENT, serde_json::json!({ "cwd": cwd }));

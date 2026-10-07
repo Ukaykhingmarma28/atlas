@@ -117,6 +117,28 @@ export interface Provenance {
   commits: string[];
 }
 
+/** Near-duplicates the user may merge into `keep` (the Review tab). */
+export interface MergeProposal {
+  keep: MemoryEntry;
+  drop: MemoryEntry[];
+}
+
+/** Two current memories linked as contradicting each other. */
+export interface ConflictPair {
+  a: MemoryEntry;
+  b: MemoryEntry;
+}
+
+/** What waits for the user in the Review tab. */
+export interface ReviewQueue {
+  candidates: MemoryEntry[];
+  merges: MergeProposal[];
+  conflicts: ConflictPair[];
+}
+
+/** A verdict on a memory after using it. */
+export type Verdict = "useful" | "wrong" | "stale";
+
 /** One line an import of Claude's auto-memory would write (the preview). */
 export interface ClaudeImportLine {
   /** Stable id of the line; what confirm takes. */
@@ -161,6 +183,23 @@ export const sharedMemory = {
   /** Where an entry was learned (read-only from the session recorder). */
   provenance: (projectPath: string, id: number) =>
     invoke<Provenance[]>("memory_entry_provenance", { projectPath, id }),
+  /** Candidates, merge proposals and contradictions waiting for review. */
+  review: (projectPath: string) => invoke<ReviewQueue>("memory_review", { projectPath }),
+  /** Approve a candidate (or restore an archived memory). */
+  promote: (projectPath: string, id: number) =>
+    invoke<boolean>("memory_promote", { projectPath, id }),
+  /** Dismiss memories: archived, kept in history. Returns how many changed. */
+  archive: (projectPath: string, ids: number[]) =>
+    invoke<number>("memory_archive", { projectPath, ids }),
+  /** Merge near-duplicates into `keep`: the others are archived as superseded. */
+  merge: (projectPath: string, keep: number, drop: number[]) =>
+    invoke<number>("memory_merge", { projectPath, keep, drop }),
+  /** Settle a contradiction: keep one side, or record that both hold. */
+  resolveConflict: (projectPath: string, a: number, b: number, keep: "a" | "b" | "both") =>
+    invoke<boolean>("memory_resolve_conflict", { projectPath, a, b, keep }),
+  /** The user's verdict on one entry. `null` for an unknown id. */
+  feedback: (projectPath: string, id: number, verdict: Verdict) =>
+    invoke<MemoryEntry | null>("memory_feedback_entry", { projectPath, id, verdict }),
   /** What importing the project's Claude auto-memory would write. Writes nothing. */
   previewClaudeImport: (projectPath: string) =>
     invoke<ClaudeImportPreview>("memory_claude_import_preview", { projectPath }),

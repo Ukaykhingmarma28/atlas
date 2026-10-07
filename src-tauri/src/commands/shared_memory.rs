@@ -183,6 +183,34 @@ pub struct MemoryEntry {
     pub state: String,
 }
 
+/// At most this many candidates and merge proposals in the review queue.
+const REVIEW_MAX: usize = 200;
+
+/// Near-duplicates the user may merge into `keep`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeProposalView {
+    pub keep: MemoryEntry,
+    pub drop: Vec<MemoryEntry>,
+}
+
+/// Two current memories that disagree.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictPair {
+    pub a: MemoryEntry,
+    pub b: MemoryEntry,
+}
+
+/// What waits for the user in the Memory panel's Review tab (M4).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewQueue {
+    pub candidates: Vec<MemoryEntry>,
+    pub merges: Vec<MergeProposalView>,
+    pub conflicts: Vec<ConflictPair>,
+}
+
 impl From<Entry> for MemoryEntry {
     fn from(e: Entry) -> Self {
         Self {
@@ -982,6 +1010,164 @@ impl SharedMemoryStore {
         Ok(erased || forgotten.is_some())
     }
 
+    /// An agent's verdict on a memory it used (`memory_feedback`): useful
+    /// counts it (and promotes a candidate another session vouches for),
+    /// wrong archives it, stale demotes it to a candidate. `Ok(None)` for an
+    /// unknown id.
+    pub fn feedback(
+        &self,
+        project_path: &str,
+        id: i64,
+        verdict: record::Verdict,
+        note: &str,
+        writer: &Writer,
+    ) -> Result<Option<Entry>, String> {
+        let store = store_for(project_path)?;
+        let out = store
+            .feedback(
+                id,
+                verdict,
+                note,
+                &writer.agent,
+                &writer.session_id,
+                (self.inner.clock)(),
+            )
+            .map_err(|e| format!("{e:#}"))?;
+        if let Some(e) = &out {
+            self.announce(&store, &[e.kind.as_str()]);
+        }
+        Ok(out)
+    }
+
+    /// The Memory panel's review queue: unconfirmed candidates, merge
+    /// proposals, and the pairs linked as contradicting.
+    pub fn review(&self, project_path: &str) -> Result<ReviewQueue, String> {
+        let store = store_for(project_path)?;
+        let e = |e: anyhow::Error| format!("{e:#}");
+        let candidates = store
+            .list_state(record::State::Candidate, REVIEW_MAX)
+            .map_err(e)?;
+        let (merges, _) = atlas_memory::consolidate::proposals(&store).map_err(e)?;
+        let mut conflicts = Vec::new();
+        for (a, b) in store.links(record::LINK_CONTRADICTS).map_err(e)? {
+            let (Some(a), Some(b)) = (store.peek(a).map_err(e)?, store.peek(b).map_err(e)?) else {
+                continue;
+            };
+            if a.state == record::State::Active && b.state == record::State::Active {
+                conflicts.push(ConflictPair {
+                    a: a.into(),
+                    b: b.into(),
+                });
+            }
+        }
+        Ok(ReviewQueue {
+            candidates: candidates.into_iter().map(MemoryEntry::from).collect(),
+            merges: merges
+                .into_iter()
+                .take(REVIEW_MAX)
+                .map(|m| MergeProposalView {
+                    keep: m.keep.into(),
+                    drop: m.drop.into_iter().map(MemoryEntry::from).collect(),
+                })
+                .collect(),
+            conflicts,
+        })
+    }
+
+    /// The user approved a candidate (or restored an archived memory).
+    pub fn promote(&self, project_path: &str, id: i64) -> Result<bool, String> {
+        let store = store_for(project_path)?;
+        let done = store
+            .promote(id, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        self.announce_ids(&store, &[id]);
+        Ok(done)
+    }
+
+    /// The user dismissed memories: archived, kept in history.
+    pub fn archive(&self, project_path: &str, ids: &[i64]) -> Result<usize, String> {
+        let store = store_for(project_path)?;
+        let n = store
+            .archive(ids, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        self.announce_ids(&store, ids);
+        Ok(n)
+    }
+
+    /// The user merged near-duplicates into `keep`: the others are archived
+    /// and linked as superseded by it.
+    pub fn merge(&self, project_path: &str, keep: i64, drop: &[i64]) -> Result<usize, String> {
+        let store = store_for(project_path)?;
+        let now = (self.inner.clock)();
+        let drop: Vec<i64> = drop.iter().copied().filter(|d| *d != keep).collect();
+        let n = store.archive(&drop, now).map_err(|e| format!("{e:#}"))?;
+        for d in &drop {
+            store
+                .link(keep, *d, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                .map_err(|e| format!("{e:#}"))?;
+        }
+        self.announce_ids(&store, &[keep]);
+        Ok(n)
+    }
+
+    /// The user settled a contradiction: keep `a`, keep `b`, or both hold
+    /// (the link becomes `distinct`, so the pair is never proposed again).
+    pub fn resolve_conflict(
+        &self,
+        project_path: &str,
+        a: i64,
+        b: i64,
+        keep: &str,
+    ) -> Result<bool, String> {
+        let store = store_for(project_path)?;
+        let now = (self.inner.clock)();
+        let (lo, hi) = (a.min(b), a.max(b));
+        let e = |e: anyhow::Error| format!("{e:#}");
+        match keep {
+            "a" => {
+                store.archive(&[b], now).map_err(e)?;
+                store
+                    .link(a, b, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            "b" => {
+                store.archive(&[a], now).map_err(e)?;
+                store
+                    .link(b, a, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            "both" => {
+                store
+                    .link(lo, hi, record::LINK_DISTINCT, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            other => return Err(format!("keep `{other}`: one of a, b, both")),
+        }
+        let removed = store.unlink(lo, hi, record::LINK_CONTRADICTS).map_err(e)?;
+        self.announce_ids(&store, &[a, b]);
+        Ok(removed)
+    }
+
+    /// Announce a change to the kinds of `ids` (all durable kinds when none
+    /// can be read).
+    fn announce_ids(&self, store: &RecordStore, ids: &[i64]) {
+        let mut kinds: Vec<&'static str> = ids
+            .iter()
+            .filter_map(|id| store.peek(*id).ok().flatten())
+            .map(|e| e.kind.as_str())
+            .collect();
+        kinds.sort_unstable();
+        kinds.dedup();
+        if kinds.is_empty() {
+            kinds = EntryKind::ALL
+                .into_iter()
+                .filter(|k| k.is_durable())
+                .map(EntryKind::as_str)
+                .collect();
+        }
+        self.announce(store, &kinds);
+    }
+
     /// Whether `id` is still a live entry. Never stamps it as used, so the
     /// search-side filter can ask freely.
     ///
@@ -1300,6 +1486,87 @@ pub async fn memory_forget_entry(
     let gone = off_main(move || store.forget_entry(&project_path, id)).await?;
     registry.enqueue_index(&cwd);
     Ok(gone)
+}
+
+/// The user's verdict on one entry from the panel: `useful`, `wrong` or
+/// `stale`. `None` for an unknown id.
+#[tauri::command]
+pub async fn memory_feedback_entry(
+    project_path: String,
+    id: i64,
+    verdict: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Option<MemoryEntry>, String> {
+    let store = store.inner().clone();
+    off_main(move || {
+        let verdict = record::Verdict::parse(&verdict)
+            .ok_or_else(|| format!("unknown verdict `{verdict}`; one of useful, wrong, stale"))?;
+        let user = Writer {
+            agent: USER_SOURCE.to_string(),
+            session_id: String::new(),
+        };
+        Ok(store
+            .feedback(&project_path, id, verdict, "", &user)?
+            .map(MemoryEntry::from))
+    })
+    .await
+}
+
+/// The Review tab: candidates, merge proposals and contradictions.
+#[tauri::command]
+pub async fn memory_review(
+    project_path: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<ReviewQueue, String> {
+    let store = store.inner().clone();
+    off_main(move || store.review(&project_path)).await
+}
+
+/// Approve a candidate from the Review tab.
+#[tauri::command]
+pub async fn memory_promote(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    off_main(move || store.promote(&project_path, id)).await
+}
+
+/// Dismiss memories from the Review tab: archived, kept in history.
+#[tauri::command]
+pub async fn memory_archive(
+    project_path: String,
+    ids: Vec<i64>,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<usize, String> {
+    let store = store.inner().clone();
+    off_main(move || store.archive(&project_path, &ids)).await
+}
+
+/// Merge near-duplicates into `keep` from the Review tab.
+#[tauri::command]
+pub async fn memory_merge(
+    project_path: String,
+    keep: i64,
+    drop: Vec<i64>,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<usize, String> {
+    let store = store.inner().clone();
+    off_main(move || store.merge(&project_path, keep, &drop)).await
+}
+
+/// Settle a contradiction from the Review tab: `keep` is `a`, `b` or `both`.
+#[tauri::command]
+pub async fn memory_resolve_conflict(
+    project_path: String,
+    a: i64,
+    b: i64,
+    keep: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    off_main(move || store.resolve_conflict(&project_path, a, b, &keep)).await
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

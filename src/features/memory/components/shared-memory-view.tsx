@@ -35,6 +35,7 @@ import {
   Loader2,
   Download,
   Eraser,
+  Inbox,
 } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
@@ -45,6 +46,7 @@ import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { MemoryReviewView } from "./memory-review-view";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
 import { sharedMemory } from "../lib/shared-memory-api";
@@ -61,7 +63,7 @@ interface Props {
   className?: string;
 }
 
-type Tab = "events" | "plans" | "memories";
+type Tab = "events" | "plans" | "memories" | "review";
 
 /* ── Column tracks (sticky header + rows line up; min-width → horizontal scroll) ── */
 const EVENT_COL = {
@@ -241,6 +243,13 @@ export function SharedMemoryView({ projectPath, className }: Props) {
             label="Memories"
             count={entries.length}
           />
+          <SegBtn
+            active={tab === "review"}
+            onClick={() => setTab("review")}
+            icon={<Inbox size={11} />}
+            label="Review"
+            count={0}
+          />
         </div>
 
         {/* Column filters */}
@@ -303,7 +312,9 @@ export function SharedMemoryView({ projectPath, className }: Props) {
       />
 
       {/* Body */}
-      {!loaded ? (
+      {tab === "review" ? (
+        <MemoryReviewView projectPath={projectPath} />
+      ) : !loaded ? (
         <div className="p-3">
           <PanelSkeleton rows={8} />
         </div>

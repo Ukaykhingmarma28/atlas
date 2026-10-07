@@ -984,16 +984,17 @@ fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
     for read in super::tools::READ_TOOLS {
         assert!(names.contains(&read), "{read} is not a tool the server has");
     }
-    for write in ["memory_remember", "memory_forget"] {
+    let writes = ["memory_remember", "memory_feedback", "memory_forget"];
+    for write in writes {
         assert!(
             !super::tools::READ_TOOLS.contains(&write),
             "{write} writes; it must not count as reading"
         );
     }
     assert_eq!(
-        super::tools::READ_TOOLS.len() + 2,
+        super::tools::READ_TOOLS.len() + writes.len(),
         names.len(),
-        "every tool is either a read or one of the two writes"
+        "every tool is either a read or one of the writes"
     );
 }
 
@@ -1537,5 +1538,58 @@ async fn commit_evidence_leaves_cited_memories_failures_and_unrecorded_sessions_
     }
     a.cancel().await.ok();
     other.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+// ── Feedback (M4) ────────────────────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wrong_feedback_leaves_the_briefing_and_a_bad_verdict_is_refused() {
+    let p = temp_project("feedback");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let a = connect(&server.url(), &tokens.mint("s-a", "claude", &p))
+        .await
+        .unwrap();
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    let (_, r) = call(
+        &a,
+        "memory_remember",
+        json!({"kind": "fact", "content": "CI runs on Jenkins"}),
+    )
+    .await;
+    let (refused, why) = call(
+        &b,
+        "memory_feedback",
+        json!({"id": r["entry"]["id"], "verdict": "meh"}),
+    )
+    .await;
+    assert!(refused && why.to_string().contains("useful"), "{why}");
+    let (failed, out) = call(
+        &b,
+        "memory_feedback",
+        json!({"id": r["entry"]["id"], "verdict": "wrong", "note": "GitHub Actions"}),
+    )
+    .await;
+    assert!(!failed, "{out}");
+    assert_eq!(out["entry"]["state"], "archived", "{out}");
+    let (_, brief) = call(&b, "memory_briefing", json!({})).await;
+    assert!(!brief.to_string().contains("Jenkins"), "{brief}");
+    let (_, history) = call(&b, "memory_history", json!({"id": r["entry"]["id"]})).await;
+    assert!(
+        history.to_string().contains("Jenkins"),
+        "kept in history: {history}"
+    );
+    a.cancel().await.ok();
+    b.cancel().await.ok();
     let _ = std::fs::remove_dir_all(&p);
 }
