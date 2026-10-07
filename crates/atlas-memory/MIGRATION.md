@@ -27,11 +27,12 @@ and were deleted with it (#54). The seam as it stands today is below.
 
 | Path | Written by | Purpose |
 |---|---|---|
-| `hnsw.usearch` | `HnswStore::save` | Persistent usearch HNSW index (384-d MiniLM vectors, cosine). |
-| `manifest.json` | `Manifest::save` | `{ provider_name, dim, next_key, entries[] }`. Holds the `id ↔ u64 key` bimap and per-doc `content_hash` so an unchanged doc is never re-embedded. **Supersedes** the legacy `index.json`. Atomic write (temp + rename). |
-| `docstore.json` | `DocStore::save` | `id → { title, source, text }` side-map so retrieval renders docs without re-gathering the corpus. |
+| `corpus.sqlite` | `corpus::CorpusIndex` | The corpus index (M1): docs, BM25 rows and the `(model, text)` embedding cache. Replaces `hnsw.usearch` + `manifest.json` + `docstore.json`, which are deleted on first open (derived; the corpus is embedded again once). |
+| `corpus.<model>.usearch` | `atlas_retrieval::VectorFile` | One model's vectors, rebuilt from the cache when missing, torn or out of step. Switching back to an earlier model re-embeds nothing. |
+| `memory.snapshot.sqlite` | `RecordStore::snapshot_if_due` | The record's daily snapshot (M2). |
+| `memory.sqlite.corrupt-<ms>` | `RecordStore::open` | A damaged record set aside (M2); the snapshot is restored in its place. |
 | `extracted/*.md` | `extract.rs` | One markdown file per session of gated native session-extraction output (memdir). Also embedded into HNSW. |
-| `memory.sqlite` (+ `-wal`, `-shm`) | `record::RecordStore` | The shared-memory **record store** (#80): `events`, `entries`, `sessions`, WAL. Lives only at the **scope root** (the repository's main worktree, else the launch directory). Replaces `.atlas/shared-memory/events.jsonl` + `state.json` as the Shared tab's store. |
+| `memory.sqlite` (+ `-wal`, `-shm`) | `record::RecordStore` | The shared-memory **record store** (#80): `events`, `entries`, `sessions`, WAL; since schema v5 (M1) `revisions` (canonical, hash-chained), `entries_fts`, `embed_cache`; since v6 (M4) `links`, `episodes`, `feedback`, `dreams`, `dream_proposals`. Each migration is one transaction: v5 gives every live entry a `baseline` revision and moves stored vectors into the cache. Lives only at the **scope root** (the repository's main worktree, else the launch directory). Replaces `.atlas/shared-memory/events.jsonl` + `state.json` as the Shared tab's store. |
 | `.record-store-migrated` | `record::legacy` | Marker: this directory's legacy `shared-memory/events.jsonl` and `extracted/*.md` were folded into its scope's record store. Written in every worktree that had legacy files; the same fact is kept in the store's `legacy_imports` table. The legacy files are kept one release. |
 
 No longer written or read (#89), safe to delete: `graph/` (the grafeo graph;
@@ -58,6 +59,13 @@ are kept as they are.
 
 The global dir resolves to `~/.atlas/memory/` by default, or the
 `ATLAS_GLOBAL_MEMORY_DIR` override (see §3).
+
+### Agent Memory Repo mirror — `~/.atlas/memory-repos/<repo>-<8 hex>/` (M4)
+
+Written only with the setting `memoryRepoMirror` on: a local git repository
+(`MEMORY.md`, `decisions.md`, `architecture.md`, `facts.md`, `failures.md`)
+holding active, non-stale memories. Derived: deleting it loses nothing, and a
+purge rewrites it with fresh history. No remote, nothing is pushed.
 
 ---
 
