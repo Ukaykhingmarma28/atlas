@@ -894,6 +894,51 @@ impl Store {
             .collect())
     }
 
+    /// A Session's failed tool calls, newest first, at most `limit`. Reads
+    /// only inline text payloads, cut to 400 characters: a spilled payload
+    /// stays on disk and a binary result is left out. Walks
+    /// `idx_tool_call_session_seq`.
+    pub fn failed_tool_calls(&self, session_id: &str, limit: i64) -> Result<Vec<FailedCall>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT tool_name, title, substr(arguments, 1, 400),
+                    CASE WHEN result_binary = 0 THEN substr(result, 1, 400) END, turn_seq
+               FROM tool_call
+              WHERE session_id = ?1 AND status = 'failed'
+              ORDER BY seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![session_id, limit], |row| {
+                let name: String = row.get(0)?;
+                Ok(FailedCall {
+                    tool_name: ToolName::parse(&name).unwrap_or(ToolName::Other),
+                    title: row.get(1)?,
+                    arguments: row.get(2)?,
+                    result: row.get(3)?,
+                    turn_seq: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The in-repository paths a Session wrote, newest write first, each
+    /// once, with whether its last write deleted it. At most `limit`.
+    pub fn written_paths(&self, session_id: &str, limit: i64) -> Result<Vec<(String, bool)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.path, f.deleted FROM file_touch f
+              WHERE f.session_id = ?1 AND f.out_of_repo = 0
+                AND f.seq = (SELECT MAX(g.seq) FROM file_touch g
+                              WHERE g.session_id = f.session_id AND g.path = f.path)
+              ORDER BY f.seq DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![session_id, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// The highest turn number this Session has ever used.
     ///
     /// Seeds the in-memory counter after a restart, so a resumed conversation

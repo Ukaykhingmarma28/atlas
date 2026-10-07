@@ -87,6 +87,9 @@ const SEARCH_MAX_LIMIT: usize = 50;
 /// conversation they were meant to inform.
 const INDEX_DEFAULT_LIMIT: usize = 6;
 const INDEX_MAX_LIMIT: usize = 20;
+/// The handoff note's JSON budget in a briefing.
+const HANDOFF_MAX_BYTES: usize = 4096;
+
 /// `memory_list`'s largest result count.
 const LIST_MAX_LIMIT: usize = 200;
 /// How long a client may treat the tool list as fresh. The tools never change
@@ -203,7 +206,10 @@ pub(super) fn tools() -> Vec<Tool> {
              failures and architecture notes (`index`, one capped line each; memory_get expands \
              one), the project's conventions from its memory files (`projectMemory`), and the tail \
              of the previous session, whichever agent ran it (`recentSession`). Every entry carries \
-             \"sources\" (the sessions that wrote it) and \"added\" (the date it was first saved).",
+             \"sources\" (the sessions that wrote it) and \"added\" (the date it was first saved). \
+             It also carries \"handoff\": what the previous session (whichever agent ran it) left: \
+             its plan, open items, decisions, failures and files, and, when Atlas recorded that \
+             session, its failed tool calls, its commits, and whether its last turn was interrupted.",
             json!({ "type": "object", "properties": {} }),
         ),
         tool(
@@ -559,6 +565,37 @@ fn work_checks(
     out
 }
 
+/// The handoff note as JSON within `cap` bytes. Lists are cut from the end,
+/// one item at a time, in this order: what is easiest to rediscover first
+/// (files, failed tools), what the next agent can't rediscover last
+/// (decisions, open items). Scalars are never cut; `plan` is cut to 1000
+/// characters.
+pub(super) fn capped_handoff(note: &atlas_memory::handoff::HandoffNote, cap: usize) -> Value {
+    let mut note = note.clone();
+    if let Some(plan) = &mut note.plan {
+        if plan.chars().count() > 1000 {
+            *plan = plan.chars().take(1000).collect::<String>() + "…";
+        }
+    }
+    loop {
+        let value = serde_json::to_value(&note).unwrap_or(Value::Null);
+        if value.to_string().len() <= cap {
+            return value;
+        }
+        let cut = note.files.pop().is_some()
+            || note.failed_tools.pop().is_some()
+            || note.facts.pop().is_some()
+            || note.architecture.pop().is_some()
+            || note.commits.pop().is_some()
+            || note.failures.pop().is_some()
+            || note.decisions.pop().is_some()
+            || note.open_items.pop().is_some();
+        if !cut {
+            return value;
+        }
+    }
+}
+
 /// `result`'s JSON object with the index's `documents` added.
 fn with_documents(result: CallToolResult, docs: &[IndexDoc]) -> CallToolResult {
     let parsed = result
@@ -701,6 +738,25 @@ impl MemoryTools {
                 value["recentSession"] =
                     json!({ "text": h.text, "turns": h.turns, "attribution": h.attribution });
             }
+        }
+        let (cwd, own, reader) = (
+            grant.cwd.clone(),
+            grant.session_id.clone(),
+            self.sources.capture.clone(),
+        );
+        let handoff = run_blocking(move || {
+            let store = shared_memory::store_for(&cwd).ok()?;
+            let mut note = store.last_episode(&own).ok().flatten()?;
+            // The previous session's facts, read now: its commits may have
+            // landed after it ended.
+            if let Some(found) = reader.stores(&cwd).find(&note.session) {
+                note.apply_facts(memory_capture::session_facts(&found));
+            }
+            Some(note)
+        })
+        .await;
+        if let Ok(Some(note)) = handoff {
+            value["handoff"] = capped_handoff(&note, HANDOFF_MAX_BYTES);
         }
         self.clocks.looked(&grant.session_id, briefing.synced_to);
         ok_json(value)

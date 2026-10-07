@@ -57,6 +57,9 @@ pub mod citation;
 // Idle-time consolidation: merge proposals and contradiction links (M4).
 pub mod consolidate;
 
+// The handoff note each finished session leaves for the next agent (M4).
+pub mod handoff;
+
 // ─── Ported-from-the-old-SDK modules ───────────────────────────────────────────────
 //
 // These were the old SDK's embeddings and memory crates until 2026-08-22; they are

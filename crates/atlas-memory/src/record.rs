@@ -834,6 +834,66 @@ impl RecordStore {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Every live event one session logged, oldest first.
+    pub fn events_of_session(&self, session: &str) -> Result<Vec<EventRow>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT seq, ts, agent, session, kind, key, payload FROM events {LIVE_EVENTS} \
+             AND session = ?1 ORDER BY seq"
+        ))?;
+        let rows = stmt.query_map([session], event_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Keep a finished session's handoff note (one per session; a resumed
+    /// session's later end replaces it).
+    pub fn record_episode(&self, note: &crate::handoff::HandoffNote) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO episodes (session, agent, started_at, ended_at, note) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                note.session,
+                note.agent,
+                note.started_at,
+                note.ended_at,
+                serde_json::to_string(note)?
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The newest handoff note left by any session but `except_session`.
+    pub fn last_episode(
+        &self,
+        except_session: &str,
+    ) -> Result<Option<crate::handoff::HandoffNote>> {
+        let note: Option<String> = self
+            .conn()
+            .query_row(
+                "SELECT note FROM episodes WHERE session <> ?1 ORDER BY ended_at DESC LIMIT 1",
+                [except_session],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(note.and_then(|n| serde_json::from_str(&n).ok()))
+    }
+
+    /// Handoff notes that ended after `since`, oldest first, at most `limit`.
+    pub fn episodes_since(
+        &self,
+        since: i64,
+        limit: usize,
+    ) -> Result<Vec<crate::handoff::HandoffNote>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT note FROM episodes WHERE ended_at > ?1 ORDER BY ended_at LIMIT ?2")?;
+        let rows = stmt.query_map(params![since, limit as i64], |r| r.get::<_, String>(0))?;
+        Ok(rows
+            .filter_map(|r| r.ok())
+            .filter_map(|n| serde_json::from_str(&n).ok())
+            .collect())
+    }
+
     /// Events whose payload, key or agent contains `query` (case-insensitive,
     /// Unicode-aware), newest first, at most `limit`. An empty query matches
     /// everything.

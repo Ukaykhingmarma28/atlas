@@ -235,6 +235,17 @@ pub struct TurnSpan {
     pub ended_at: Option<DateTime<Utc>>,
 }
 
+/// One failed tool call, as a handoff note reads it: inline payloads only,
+/// cut short.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedCall {
+    pub tool_name: crate::tools::ToolName,
+    pub title: Option<String>,
+    pub arguments: Option<String>,
+    pub result: Option<String>,
+    pub turn_seq: i64,
+}
+
 /// Token accounting for a Session.
 ///
 /// Agent-dependent by nature: only the native agent reports a real input/output

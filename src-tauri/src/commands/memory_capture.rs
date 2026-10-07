@@ -308,6 +308,131 @@ fn kept(scope_root: &Path, root: &Path, touch: &FileTouch, cache: &KeptCache) ->
     answer
 }
 
+/// What a recorded session shows, for its handoff note and the dream (M4):
+/// the files it wrote, the tool calls that failed, the commits it produced,
+/// whether its last turn was cut off, and its branch and title.
+pub fn session_facts(found: &Recorded<'_>) -> atlas_memory::handoff::SessionFacts {
+    use atlas_memory::handoff::{CommitFact, SessionFacts};
+    let (store, session) = (found.store, &found.session);
+    let spans = store.turn_spans(&session.id).unwrap_or_default();
+    let interrupted = spans
+        .last()
+        .is_some_and(|t| matches!(t.state, TurnState::Open | TurnState::Aborted));
+    let rewound_turns = spans
+        .iter()
+        .filter(|t| t.state == TurnState::Rewound)
+        .count() as u32;
+    let files_written = store
+        .written_paths(&session.id, atlas_memory::handoff::MAX_FILES as i64)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(path, deleted)| {
+            if deleted {
+                format!("{path} (deleted)")
+            } else {
+                path
+            }
+        })
+        .collect();
+    let mut checkpoints = store
+        .checkpoints_for_session(&session.id)
+        .unwrap_or_default();
+    checkpoints.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then(a.commit_sha.cmp(&b.commit_sha))
+    });
+    let commits = checkpoints
+        .into_iter()
+        .take(5)
+        .map(|c| CommitFact {
+            sha: c.commit_sha.chars().take(12).collect(),
+            // Git owns the message; the record keeps none.
+            subject: atlas_checkpoint::git::commit_info(found.root, &c.commit_sha)
+                .ok()
+                .map(|i| short(&safe(&i.subject), 80))
+                .filter(|s| !s.is_empty()),
+            branch: c.branch,
+            orphaned: c.link_state == LinkState::Orphaned,
+        })
+        .collect();
+    SessionFacts {
+        title: session.title.as_deref().map(safe),
+        branch: session.branch.clone(),
+        files_written,
+        failed_tools: fold_failures(store.failed_tool_calls(&session.id, 50).unwrap_or_default()),
+        commits,
+        interrupted,
+        rewound_turns,
+        incomplete: session.needs_attention,
+    }
+}
+
+/// Text from the recorder, cleaned and redacted again: capture redacted it
+/// on write, and memory serves no text its own redactor hasn't seen.
+fn safe(s: &str) -> String {
+    atlas_memory::record::redact(&atlas_memory::record::clean(s))
+}
+
+/// Failed calls folded by (tool, what was tried), most repeated first, then
+/// newest; at most 8.
+fn fold_failures(
+    calls: Vec<atlas_checkpoint::FailedCall>,
+) -> Vec<atlas_memory::handoff::FailedTool> {
+    use atlas_memory::handoff::FailedTool;
+    let mut out: Vec<FailedTool> = Vec::new();
+    for call in calls {
+        let command = call
+            .arguments
+            .as_deref()
+            .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
+            .and_then(|v| {
+                v.get("command")
+                    .and_then(|c| c.as_str())
+                    .map(str::to_string)
+            });
+        let detail = command.or(call.title).unwrap_or_default();
+        let detail = short(&safe(first_line(&detail)), 100);
+        let error = call
+            .result
+            .as_deref()
+            .map(first_line)
+            .filter(|l| !l.is_empty())
+            .map(|l| short(&safe(l), 120));
+        let tool = call.tool_name.as_str().to_string();
+        match out
+            .iter_mut()
+            .find(|f| f.tool == tool && f.detail == detail)
+        {
+            Some(seen) => seen.count += 1,
+            None => out.push(FailedTool {
+                tool,
+                detail,
+                error,
+                count: 1,
+            }),
+        }
+    }
+    // Stable: equal counts keep newest first (the order the calls came in).
+    out.sort_by(|a, b| b.count.cmp(&a.count));
+    out.truncate(8);
+    out
+}
+
+fn first_line(s: &str) -> &str {
+    s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+}
+
+fn short(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    s.chars().take(max).collect::<String>() + "…"
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::Path;
@@ -323,6 +448,7 @@ pub(crate) mod test_support {
         pub(crate) key: SessionKey,
         pub(crate) row: String,
         pub(crate) turn: i64,
+        calls: u32,
     }
 
     impl Recording {
@@ -347,7 +473,41 @@ pub(crate) mod test_support {
                 key,
                 row,
                 turn: 1,
+                calls: 0,
             }
+        }
+
+        /// A failed shell call in the open turn, as live capture records it.
+        pub(crate) fn fail(&mut self, command: &str, error: &str) {
+            use atlas_checkpoint::tools::ToolName;
+            use atlas_checkpoint::{ToolCallContent, ToolStatus};
+            self.calls += 1;
+            let native_call_id = format!("fail-{}-{}", self.turn, self.calls);
+            let arguments = serde_json::json!({ "command": command }).to_string();
+            Capture::new(&mut self.store, ProjectMode::Local)
+                .record_tool_call(
+                    &self.row,
+                    ToolCallContent {
+                        turn_seq: self.turn,
+                        native_call_id: Some(&native_call_id),
+                        tool_name: ToolName::Bash,
+                        title: Some(command),
+                        kind: Some("execute"),
+                        status: ToolStatus::Failed,
+                        locations: &serde_json::json!([]),
+                        arguments: Some(&arguments),
+                        result: Some(error.as_bytes()),
+                    },
+                )
+                .expect("call recorded");
+        }
+
+        /// The next prompt of the same session: a new turn, left open.
+        pub(crate) fn next_turn(&mut self, prompt: &str) {
+            self.turn += 1;
+            Capture::new(&mut self.store, ProjectMode::Local)
+                .record_prompt(&self.key, prompt, self.turn, None, None, None)
+                .expect("prompt recorded");
         }
 
         pub(crate) fn close_turn(&mut self) {

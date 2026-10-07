@@ -1593,3 +1593,65 @@ async fn wrong_feedback_leaves_the_briefing_and_a_bad_verdict_is_refused() {
     b.cancel().await.ok();
     let _ = std::fs::remove_dir_all(&p);
 }
+
+// ── The handoff note (M4) ────────────────────────────────────────────────────
+
+/// The note the next agent gets says what the recorded session did, not
+/// only what it remembered: its files, its failures, its commit, and that
+/// its last turn never finished.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_handoff_carries_what_the_recorded_session_did() {
+    use crate::commands::memory_capture::test_support::Recording;
+    let p = temp_project("handoff-facts");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let b = connect(&server.url(), &tokens.mint("s-b", "codex", &p))
+        .await
+        .unwrap();
+    memory.session_started("s-a", "claude-code", &p);
+    let mut rec = Recording::open_turn(&p, "s-a", "claude-code", "Move auth to EdDSA");
+    rec.write("src/auth.rs", b"pub fn sign() {}\n");
+    rec.fail("cargo test -p auth", "error: test failed");
+    rec.fail("cargo test -p auth", "error: test failed");
+    rec.close_turn();
+    rec.commit("3f9c2ab1d4e0aa11bb22cc33dd44ee55ff660011", &["src/auth.rs"]);
+    rec.next_turn("now rotate the keys");
+    drop(rec);
+    memory.session_ended("s-a");
+    let (_, brief) = call(&b, "memory_briefing", json!({})).await;
+    let h = &brief["handoff"];
+    assert_eq!(h["title"], "Move auth to EdDSA", "{brief}");
+    assert_eq!(h["files"][0], "src/auth.rs");
+    assert_eq!(h["failedTools"][0]["detail"], "cargo test -p auth");
+    assert_eq!(h["failedTools"][0]["count"], 2);
+    assert_eq!(h["commits"][0]["sha"], "3f9c2ab1d4e0");
+    assert_eq!(h["interrupted"], true);
+    b.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
+#[test]
+fn a_long_handoff_is_cut_files_first_and_decisions_last() {
+    let note = atlas_memory::handoff::HandoffNote {
+        session: "s-a".into(),
+        agent: "claude-code".into(),
+        decisions: vec!["Sign JWTs with EdDSA".into()],
+        files: (0..400)
+            .map(|i| format!("src/generated/file_{i}.rs"))
+            .collect(),
+        interrupted: true,
+        ..Default::default()
+    };
+    let v = super::tools::capped_handoff(&note, 4096);
+    assert!(v.to_string().len() <= 4096);
+    assert_eq!(v["decisions"][0], "Sign JWTs with EdDSA");
+    assert_eq!(v["interrupted"], true);
+    assert!(v["files"].as_array().unwrap().len() < 400);
+}

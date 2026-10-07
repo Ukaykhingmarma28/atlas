@@ -625,9 +625,21 @@ impl SharedMemoryStore {
     pub fn session_ended(&self, session_id: &str) -> Option<SessionMeta> {
         let meta = self.inner.live.lock().remove(session_id)?;
         let written = store_for(&meta.cwd).and_then(|store| {
+            let now = (self.inner.clock)();
             store
-                .session_ended(session_id, &meta.agent, (self.inner.clock)())
+                .session_ended(session_id, &meta.agent, now)
                 .map_err(|e| format!("{e:#}"))?;
+            // The note the next agent is handed (M4). An empty session
+            // leaves none, unless the recorder saw it work.
+            match atlas_memory::handoff::build_handoff(&store, session_id, &meta.agent, now) {
+                Ok(note) if !note.is_empty() || recorded_work(&meta.cwd, session_id) => {
+                    store.record_episode(&note).map_err(|e| format!("{e:#}"))?;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(target: "atlas::shared_memory", "handoff note not built: {e:#}");
+                }
+            }
             self.announce(&store, &[affected_kind(EventKind::SessionEnd)]);
             Ok(())
         });
@@ -688,6 +700,16 @@ impl SharedMemoryStore {
         self.announce(&store, &kinds);
         Ok(())
     }
+}
+
+/// Whether the session recorder saw `session_id` (run in `cwd`) do work:
+/// files written, tools failing, commits, or a turn left open. Decides only
+/// whether a handoff note is kept; the note stores none of it.
+fn recorded_work(cwd: &str, session_id: &str) -> bool {
+    let stores = super::memory_capture::CaptureReader::default().stores(cwd);
+    stores
+        .find(session_id)
+        .is_some_and(|found| !super::memory_capture::session_facts(&found).is_empty())
 }
 
 /// The provenance of every entry the extractor writes.
