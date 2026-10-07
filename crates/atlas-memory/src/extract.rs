@@ -52,6 +52,13 @@ pub struct TranscriptTurn {
     pub text: String,
     /// Number of tool calls attached to this turn (drives the gate's tool-call count).
     pub tool_calls: usize,
+    /// One of this turn's tool calls brought outside content into the session
+    /// (a web fetch or search, or a third-party MCP tool). Whatever a pass over
+    /// such a session extracts is stored as a candidate: a web page or a tool
+    /// result may be talking the extractor into a memory. A README read from
+    /// disk is untrusted too, but counts as local here; candidates and
+    /// read-time validation cover that path.
+    pub external: bool,
 }
 
 /// When an extraction pass is asked for.
@@ -324,6 +331,7 @@ mod tests {
             role: role.into(),
             text: text.into(),
             tool_calls,
+            external: false,
         }
     }
 

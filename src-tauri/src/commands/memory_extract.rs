@@ -229,6 +229,7 @@ impl Extractor {
             return 0; // no pass ran (the gates are not met yet): nothing to save
         }
 
+        let external = turns.iter().any(|t| t.external);
         // Persist the counters and land the entries (SQLite writes: off the
         // async runtime).
         let (memory, cwd, writer) = (self.memory.clone(), cwd.to_string(), writer.clone());
@@ -238,7 +239,14 @@ impl Extractor {
             }
             let mut recorded = 0;
             for entry in found {
-                match memory.record_extracted(&cwd, &writer, entry.kind, &entry.content, entry.confidence) {
+                // A pass over a session that read outside content proposes,
+                // it does not decide: its entries are candidates (M0, 12c).
+                let confidence = if external {
+                    entry.confidence.min(atlas_memory::record::CANDIDATE_CONFIDENCE)
+                } else {
+                    entry.confidence
+                };
+                match memory.record_extracted(&cwd, &writer, entry.kind, &entry.content, confidence) {
                     Ok(_) => recorded += 1,
                     Err(e) => tracing::debug!(target: "atlas::shared_memory", "extracted entry not recorded: {e}"),
                 }
@@ -267,8 +275,53 @@ pub fn transcript_turns(messages: &[atlas_agent_wire::Message]) -> Vec<Transcrip
             .to_string(),
             text: atlas_agent_transcript::strip_injected_context(&m.content),
             tool_calls: m.tool_calls.len(),
+            external: m.tool_calls.iter().any(is_external),
         })
         .collect()
+}
+
+/// Atlas's own tool servers: their results are not outside content.
+const OWN_SERVERS: [&str; 4] = ["atlas_memory", "atlas_code", "atlas_ui", "atlas_org"];
+
+/// Whether a tool call brought outside content into the session: a web fetch
+/// or search, or an MCP tool of a server other than Atlas's own. MCP calls
+/// are spelled `mcp__<server>__<tool>` by ACP agents and `<server>.<tool>` by
+/// the native agent, in the tool name or the title.
+fn is_external(call: &atlas_agent_wire::ToolCall) -> bool {
+    if call.kind.as_deref() == Some("fetch") {
+        return true;
+    }
+    let names = std::iter::once(call.tool_name.as_str()).chain(call.title.as_deref());
+    names.into_iter().any(|name| {
+        let lower = name.to_ascii_lowercase();
+        let first = lower
+            .split(|c: char| c.is_whitespace() || matches!(c, '(' | ':' | '[' | '<'))
+            .next()
+            .unwrap_or("");
+        ["web_search", "websearch", "web_fetch", "webfetch"]
+            .iter()
+            .any(|w| first.contains(w))
+            || mcp_server(first).is_some_and(|server| !OWN_SERVERS.contains(&server))
+    })
+}
+
+/// The server half of an MCP call's name (see [`is_external`]); `None` for
+/// anything else, and for a token with a `/` in it, so a file path is never
+/// read as a call.
+fn mcp_server(token: &str) -> Option<&str> {
+    if let Some(rest) = token.strip_prefix("mcp__") {
+        return rest.split_once("__").map(|(server, _)| server);
+    }
+    if token.contains('/') {
+        return None;
+    }
+    let ident = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    let (server, tool) = token.split_once('.')?;
+    (ident(server) && ident(tool)).then_some(server)
 }
 
 // ── The real model ───────────────────────────────────────────────────────────
@@ -463,6 +516,7 @@ mod tests {
                 role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
                 text: format!("turn {i}"),
                 tool_calls: 0,
+                external: false,
             })
             .collect()
     }
@@ -684,5 +738,65 @@ mod tests {
             !h.extractor.turns.lock().contains_key("sess-1"),
             "not kept after its end"
         );
+    }
+
+    #[tokio::test]
+    async fn a_pass_over_a_session_that_fetched_the_web_stores_candidates() {
+        let h = harness("external", true);
+        let mut turns = session(26);
+        turns[10].external = true;
+        let recorded = h
+            .extractor
+            .turn_finished(&h.sharing, &h.project, &writer(), turns)
+            .await;
+        assert!(recorded > 0);
+        let entries = h.memory.entries(&h.project);
+        assert!(
+            entries
+                .iter()
+                .all(|e| e.confidence <= atlas_memory::record::CANDIDATE_CONFIDENCE),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn outside_content_is_a_web_call_or_a_third_party_mcp_tool() {
+        let call =
+            |name: &str, title: Option<&str>, kind: Option<&str>| atlas_agent_wire::ToolCall {
+                id: "c".into(),
+                tool_name: name.into(),
+                title: title.map(str::to_string),
+                kind: kind.map(str::to_string),
+                status: atlas_agent_wire::ToolCallStatus::Completed,
+                arguments: serde_json::json!({}),
+                result: None,
+                locations: vec![],
+                raw_output: None,
+                content_blocks: vec![],
+            };
+        assert!(is_external(&call("WebFetch", None, Some("fetch"))));
+        assert!(is_external(&call("WebSearch", None, None)));
+        assert!(is_external(&call("mcp__acme__deploy", None, None)));
+        assert!(is_external(&call(
+            "tool",
+            Some("github.search_issues"),
+            None
+        )));
+        assert!(!is_external(&call(
+            "mcp__atlas_memory__memory_search",
+            None,
+            None
+        )));
+        assert!(!is_external(&call("atlas_code.grep", None, None)));
+        assert!(!is_external(&call(
+            "Edit src/foo.rs",
+            Some("Edit src/foo.rs"),
+            Some("edit")
+        )));
+        assert!(!is_external(&call(
+            "Read",
+            Some("Read /repo/README.md"),
+            Some("read")
+        )));
     }
 }
