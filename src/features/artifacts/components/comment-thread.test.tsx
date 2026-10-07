@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrgMember } from "@/features/auth/lib/auth-api";
 import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
 
-import type { Comment } from "../lib/comments-api";
+import { COMMENT_BODY_MAX, type Comment } from "../lib/comments-api";
+import { selectionCommentBody } from "../lib/selection-comment";
 import { CommentButton, type CommentActions } from "./comment-thread";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
@@ -77,6 +78,55 @@ function open(comments: Comment[], edit: CommentActions["edit"]) {
 const field = () => screen.getByRole("textbox", { name: "Edit comment" }) as HTMLTextAreaElement;
 
 describe("editing a comment", () => {
+  it("keeps the selected passage literal while editing only the comment and its mentions", async () => {
+    const edit = vi.fn(async () => {});
+    const selection = "  ask <@u_grace> & keep indentation\n\nsecond line";
+    open([comment({ body: selectionCommentBody(selection, "ask <@u_grace> about @retry") })], edit);
+    fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+
+    expect(field().value).toBe("ask @Grace Hopper about @retry");
+    expect(screen.getByRole("blockquote", { name: "Selected passage" }).textContent).toBe(
+      selection,
+    );
+    fireEvent.change(field(), { target: { value: "ask @Grace Hopper about the retry" } });
+    await act(async () => {
+      fireEvent.keyDown(field(), { key: "Enter" });
+    });
+
+    expect(edit).toHaveBeenCalledWith(
+      "c1",
+      selectionCommentBody(selection, "ask <@u_grace> about the retry"),
+    );
+  });
+
+  it("does not rewrite an unchanged passage comment", async () => {
+    const edit = vi.fn(async () => {});
+    open([comment({ body: selectionCommentBody("<@u_grace>", "thanks @Grace Hopper") })], edit);
+    fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+    await act(async () => {
+      fireEvent.keyDown(field(), { key: "Enter" });
+    });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it("counts the preserved passage toward the edit body limit, including Enter submissions", async () => {
+    const edit = vi.fn(async () => {});
+    const selection = "A long selected passage";
+    const prefixLength = selectionCommentBody(selection, "").length;
+    open([comment({ body: selectionCommentBody(selection, "original") })], edit);
+    fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+    fireEvent.change(field(), {
+      target: { value: "x".repeat(COMMENT_BODY_MAX - prefixLength + 1) },
+    });
+    expect(
+      (screen.getByRole("button", { name: "Save comment" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await act(async () => {
+      fireEvent.keyDown(field(), { key: "Enter" });
+    });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
   it("opens with mentions as names, and saves them back as tokens", async () => {
     const edit = vi.fn(async () => {});
     open([comment()], edit);

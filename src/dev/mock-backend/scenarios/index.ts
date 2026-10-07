@@ -12,6 +12,7 @@ import {
 } from "../fake-agent";
 import {
   chatComments,
+  chatCommentsSelection,
   chatCommentsError,
   chatCommentsMany,
   chatCommentsOrphan,
@@ -53,6 +54,7 @@ const all: Scenario[] = [
   },
   chatTools,
   chatComments,
+  chatCommentsSelection,
   chatCommentsOrphan,
   chatCommentsMany,
   chatCommentsRepliesOnly,

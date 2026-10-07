@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 
 import { toEditable, toWireBody } from "../lib/comment-edit";
 import { COMMENT_BODY_MAX, visibleCount, type AnchorKind, type Comment } from "../lib/comments-api";
+import { selectionCommentBody, splitSelectionComment } from "../lib/selection-comment";
 
 /** Everything the thread needs to talk to the server, supplied by the panel. */
 export interface CommentActions {
@@ -149,6 +150,10 @@ export const CommentButton = memo(function CommentButton({
   className,
   bare,
   label = "Comment",
+  showLabel = false,
+  selectedText,
+  onOpenChange,
+  collisionBoundary,
 }: {
   anchorKind: AnchorKind;
   anchorId: string;
@@ -159,6 +164,11 @@ export const CommentButton = memo(function CommentButton({
   /** Rendered inside a shared surround; draw no border or fill of my own. */
   bare?: boolean;
   label?: string;
+  showLabel?: boolean;
+  /** Persist this exact excerpt on a new root comment, still anchored to its message. */
+  selectedText?: string;
+  onOpenChange?: (open: boolean) => void;
+  collisionBoundary?: HTMLElement;
 }) {
   const count = visibleCount(comments);
   const faces = useMemo(
@@ -167,7 +177,7 @@ export const CommentButton = memo(function CommentButton({
   );
 
   return (
-    <Popover.Root>
+    <Popover.Root onOpenChange={onOpenChange}>
       <Popover.Trigger
         aria-label={count > 0 ? `${label} (${count})` : label}
         className={cn(
@@ -182,7 +192,17 @@ export const CommentButton = memo(function CommentButton({
               : cn("px-1 opacity-0", className ?? "group-hover/row:opacity-100"),
         )}
       >
-        {count > 0 ? (
+        {showLabel ? (
+          <>
+            <MessageSquare size={11} strokeWidth={1.7} />
+            <span className="text-xs">{label}</span>
+            {count > 0 && (
+              <span className="text-2xs tabular-nums">
+                {count > MAX_COUNT ? `${MAX_COUNT}+` : count}
+              </span>
+            )}
+          </>
+        ) : count > 0 ? (
           <>
             {/* Overlapped, in reading order: the ring is the row's own surface,
              *  so the stack reads as depth rather than as touching circles. */}
@@ -204,10 +224,16 @@ export const CommentButton = memo(function CommentButton({
         )}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner className="isolate z-popover" side="bottom" align="end" sideOffset={6}>
+        <Popover.Positioner
+          className="isolate z-popover"
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionBoundary={collisionBoundary}
+        >
           <Popover.Popup
             className={cn(
-              "w-[360px] origin-[var(--transform-origin)] overflow-hidden rounded-xl shadow-md outline-none",
+              "w-[360px] max-w-(--available-width) max-h-(--available-height) origin-[var(--transform-origin)] overflow-hidden rounded-xl shadow-md outline-none",
               // Border, translucent fill and blur all on THIS element — the
               // same one the animation transforms. Splitting them across a
               // wrapper isolates the compositing layer and flattens the blur to
@@ -230,6 +256,7 @@ export const CommentButton = memo(function CommentButton({
               comments={comments ?? []}
               actions={actions}
               directory={directory}
+              selectedText={selectedText}
             />
           </Popover.Popup>
         </Popover.Positioner>
@@ -244,12 +271,14 @@ function Thread({
   comments,
   actions,
   directory,
+  selectedText,
 }: {
   anchorKind: AnchorKind;
   anchorId: string;
   comments: Comment[];
   actions: CommentActions;
   directory: OrgDirectory;
+  selectedText?: string;
 }) {
   /** Which root has its reply box open. One at a time — see `Replying`. */
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -277,7 +306,7 @@ function Thread({
   }, [comments.length]);
 
   return (
-    <div className="flex max-h-[380px] flex-col">
+    <div className="flex max-h-[min(380px,var(--available-height))] flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {threads.length === 0 ? (
           <p
@@ -315,11 +344,28 @@ function Thread({
           borderTop: `1px solid ${RULE}`,
         }}
       >
+        {selectedText !== undefined && <SelectionExcerpt text={selectedText} />}
         <Composer
-          placeholder={threads.length === 0 ? "Start a discussion" : "Start a new thread…"}
+          placeholder={
+            selectedText !== undefined
+              ? "Comment on this passage…"
+              : threads.length === 0
+                ? "Start a discussion"
+                : "Start a new thread…"
+          }
           directory={directory}
-          autoFocus={threads.length === 0}
-          onSend={(body) => actions.post(anchorKind, anchorId, body, null)}
+          autoFocus={selectedText !== undefined || threads.length === 0}
+          bodyPrefixLength={
+            selectedText === undefined ? 0 : selectionCommentBody(selectedText, "").length
+          }
+          onSend={(body) =>
+            actions.post(
+              anchorKind,
+              anchorId,
+              selectedText === undefined ? body : selectionCommentBody(selectedText, body),
+              null,
+            )
+          }
         />
       </div>
     </div>
@@ -427,6 +473,8 @@ const CommentRow = memo(function CommentRow({
   const name = comment.guestName ?? member?.name ?? "A member";
   const mine = directory.currentUserId !== null && comment.authorId === directory.currentUserId;
   const resolved = comment.resolvedAt !== null;
+  const excerpt = splitSelectionComment(comment.body ?? "");
+  const editableBody = excerpt?.body ?? comment.body ?? "";
 
   if (comment.deletedAt) {
     // The row survives so replies keep their places, and saying so is more
@@ -519,12 +567,14 @@ const CommentRow = memo(function CommentRow({
 
           {editing && actions.edit ? (
             <div className="mt-1">
+              {excerpt && <SelectionExcerpt text={excerpt.selection} />}
               <Composer
                 placeholder="Edit comment…"
                 directory={directory}
                 autoFocus
                 ariaLabel="Edit comment"
-                initial={toEditable(comment.body ?? "", directory)}
+                initial={toEditable(editableBody, directory)}
+                bodyPrefixLength={excerpt ? selectionCommentBody(excerpt.selection, "").length : 0}
                 onCancel={stopEditing}
                 onSend={async (text) => {
                   // Saving what was already there is not an edit — no request,
@@ -532,17 +582,19 @@ const CommentRow = memo(function CommentRow({
                   // as the person saw it: re-encoding an untouched body can
                   // still differ from the stored one (a plain "@Ada" typed
                   // before it was a mention would quietly become one).
-                  if (text.trim() !== toEditable(comment.body ?? "", directory).trim()) {
-                    await actions.edit?.(comment.id, toWireBody(text, directory).trim());
+                  if (text.trim() !== toEditable(editableBody, directory).trim()) {
+                    const body = toWireBody(text, directory).trim();
+                    await actions.edit?.(
+                      comment.id,
+                      excerpt ? selectionCommentBody(excerpt.selection, body) : body,
+                    );
                   }
                   stopEditing();
                 }}
               />
             </div>
           ) : (
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-[var(--secondary-foreground)]">
-              <Body text={comment.body ?? ""} directory={directory} />
-            </p>
+            <CommentBody text={comment.body ?? ""} directory={directory} />
           )}
 
           {/* Root only. A reply has no actions of its own: the server refuses
@@ -598,6 +650,27 @@ function Action({
  */
 const MENTION = /<@([A-Za-z0-9_.:-]{1,128})>/g;
 
+function SelectionExcerpt({ text }: { text: string }) {
+  return (
+    <blockquote
+      className="mb-2 max-h-24 overflow-auto whitespace-pre-wrap break-words border-l-2 border-border pl-2 text-xs leading-snug text-muted-foreground"
+      aria-label="Selected passage"
+    >
+      {text}
+    </blockquote>
+  );
+}
+
+export function CommentBody({ text, directory }: { text: string; directory: OrgDirectory }) {
+  const excerpt = splitSelectionComment(text);
+  return (
+    <div className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-snug text-secondary-foreground">
+      {excerpt && <SelectionExcerpt text={excerpt.selection} />}
+      <Body text={excerpt?.body ?? text} directory={directory} />
+    </div>
+  );
+}
+
 function Body({ text, directory }: { text: string; directory: OrgDirectory }) {
   const parts = useMemo(() => {
     const out: Array<{ text: string; mention: boolean }> = [];
@@ -640,6 +713,7 @@ function Composer({
   initial,
   onCancel,
   ariaLabel,
+  bodyPrefixLength = 0,
 }: {
   placeholder: string;
   /** The field's accessible name. The placeholder vanishes once there is
@@ -652,6 +726,7 @@ function Composer({
   initial?: string;
   /** Escape. Only an edit has something to go back to. */
   onCancel?: () => void;
+  bodyPrefixLength?: number;
 }) {
   const editing = initial !== undefined;
   const [value, setValue] = useState(initial ?? "");
@@ -671,7 +746,7 @@ function Composer({
 
   const send = useCallback(() => {
     const body = value.trim();
-    if (!body || busy) return;
+    if (!body || busy || body.length + bodyPrefixLength > COMMENT_BODY_MAX) return;
     setBusy(true);
     setError(null);
     onSend(body)
@@ -680,9 +755,10 @@ function Composer({
       // clearing it would destroy what the developer wrote.
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [value, busy, onSend]);
+  }, [value, busy, onSend, bodyPrefixLength]);
 
-  const over = value.length > COMMENT_BODY_MAX;
+  const totalLength = value.length + bodyPrefixLength;
+  const over = totalLength > COMMENT_BODY_MAX;
 
   const ready = value.trim().length > 0 && !busy && !over;
 
@@ -766,7 +842,8 @@ function Composer({
       </div>
       {over && (
         <p className="mt-1 text-3xs text-[var(--atlas-status-error-foreground)]">
-          {value.length.toLocaleString()} / {COMMENT_BODY_MAX.toLocaleString()} characters
+          {totalLength.toLocaleString()} / {COMMENT_BODY_MAX.toLocaleString()} characters
+          {bodyPrefixLength > 0 ? " (including the selected passage)" : ""}
         </p>
       )}
       {error && (

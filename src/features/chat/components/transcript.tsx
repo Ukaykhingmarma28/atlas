@@ -52,6 +52,7 @@ import { cn } from "@/lib/utils";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { GradualBlur } from "@/components/gradual-blur";
 import { LoadingState, WAITING_LABEL } from "./loading-state";
+import { ResponseSelectionActions } from "./response-selection-actions";
 import {
   UserRowView,
   ProseRowView,
@@ -966,6 +967,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
           )}
         </div>
       </div>
+
+      <ResponseSelectionActions viewportRef={scrollRef} tabId={tabId} enabled={live} />
 
       {/* Progressive blur behind the floating header. It starts at y=0 and
             runs past the bar, so text scrolling underneath is blurred rather

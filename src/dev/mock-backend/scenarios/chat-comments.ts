@@ -6,6 +6,7 @@
 import type { Scenario } from "../types";
 import type { Comment } from "@/features/artifacts/lib/comments-api";
 import { mockComment } from "../fixtures/artifacts";
+import { selectionCommentBody } from "@/features/artifacts/lib/selection-comment";
 import { text, thinking, tool, tools, user, t } from "../fixtures/chat";
 import { setSeedTranscript } from "../fake-agent";
 
@@ -60,11 +61,16 @@ const comments = [
 
 /** A chat-comments scenario over `rows`, with `list` answering the comments
  *  call (or throwing, for the error variant). */
-function commentScenario(name: string, description: string, list: () => Comment[]): Scenario {
+function commentScenario(
+  name: string,
+  description: string,
+  list: () => Comment[],
+  rows = transcript,
+): Scenario {
   return {
     name,
     description,
-    init: () => setSeedTranscript(transcript),
+    init: () => setSeedTranscript(rows),
     commands: {
       chat_comment_target: () => ({
         remoteProjectId: "rw_8c41f20b",
@@ -76,7 +82,7 @@ function commentScenario(name: string, description: string, list: () => Comment[
             rowId: RESPONSE_ROW,
             kind: "response",
             turnSeq: 1,
-            nativeId: transcript[1].id,
+            nativeId: rows[1].id,
             toolName: null,
           },
           // A checkpoint row: never in the chat, so comments on it are orphans there.
@@ -264,3 +270,39 @@ export const chatCommentsTools: Scenario = {
     }),
   },
 };
+
+// Long prose, code and a persisted passage comment: the selection toolbar and
+// the whole-response hover control must stay near what the reader sees.
+const longResponse = [
+  "The window focus listener invalidates every query. Scope it to the usage page.",
+  "",
+  "```ts",
+  "const onFocus = () => {",
+  "  refreshUsage();",
+  "};",
+  "```",
+  "",
+  ...Array.from(
+    { length: 16 },
+    (_, i) =>
+      `### Check ${i + 1}\n\nSwitch between windows and confirm the admin table retains its data. The usage page should still refresh on focus. This check belongs in the regression suite.`,
+  ),
+].join("\n");
+export const chatCommentsSelection = commentScenario(
+  "chat-comments-selection",
+  "A long response with code and a persisted selection comment, for Cite/Comment and hover checks.",
+  () => [
+    ...comments,
+    mockComment({
+      id: "cc_selection",
+      sessionId: SESSION,
+      anchorId: RESPONSE_ROW,
+      body: selectionCommentBody(
+        "Scope it to the usage page.",
+        "Should this cover the billing page as well?",
+      ),
+      authorId: "usr_sam",
+    }),
+  ],
+  [transcript[0], text(longResponse, t(1))],
+);

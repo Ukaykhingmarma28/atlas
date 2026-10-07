@@ -338,7 +338,9 @@ export const ProseRowView = memo(function ProseRowView({
           className="atlas-prose"
         />
       ) : (
-        <CachedMarkdown source={row.text} unstyled priority={priority} className="atlas-prose" />
+        <div data-agent-response={row.id.slice(2)}>
+          <CachedMarkdown source={row.text} unstyled priority={priority} className="atlas-prose" />
+        </div>
       )}
       {!row.streaming && (
         <ProseRowActions

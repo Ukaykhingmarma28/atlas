@@ -51,6 +51,7 @@ import {
 } from "../lib/comment-threads";
 import type { EntryKind, SessionDetail as Detail } from "../types";
 import { avatarUser } from "./comment-thread";
+import { splitSelectionComment } from "../lib/selection-comment";
 import type { RowComments } from "./session-detail";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 
@@ -240,6 +241,7 @@ const ThreadRow = memo(function ThreadRow({
   label: string;
   onJump: (anchorId: string) => void;
 }) {
+  const excerpt = splitSelectionComment(thread.root.body ?? "");
   const tally = threadTally(thread);
   const author = directory.byId.get(thread.root.authorId) ?? null;
   const name = thread.root.guestName ?? author?.name ?? "A member";
@@ -284,6 +286,14 @@ const ThreadRow = memo(function ThreadRow({
         </span>
       </span>
 
+      {excerpt && !thread.root.deletedAt && (
+        <span
+          aria-label="Selected passage"
+          className="line-clamp-2 w-full whitespace-pre-wrap break-words border-l-2 border-border pl-2 text-xs text-muted-foreground"
+        >
+          {excerpt.selection}
+        </span>
+      )}
       {/* The comment itself, unprefixed — the byline above already said who. */}
       <span className="line-clamp-2 w-full text-xs leading-snug text-[var(--secondary-foreground)]">
         {thread.root.deletedAt ? (
@@ -291,7 +301,7 @@ const ThreadRow = memo(function ThreadRow({
         ) : (
           // Mentions are stored as `<@user-id>`; the preview names them, as
           // the thread itself does.
-          (thread.root.body ?? "").replace(
+          (excerpt?.body ?? thread.root.body ?? "").replace(
             /<@([A-Za-z0-9_.:-]{1,128})>/g,
             (_, id: string) => `@${directory.byId.get(id)?.name ?? id}`,
           )
