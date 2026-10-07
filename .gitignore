@@ -51,6 +51,8 @@ skills-lock.json
 !docs/research/*.md
 !docs/qa/*.md
 !docs/reference/*.md
+# How agents file and label Linear work; CLAUDE.md points every session here.
+!docs/agents/issue-tracker.md
 # Requests to other teams (the server team's gateway changes): the desktop
 # code cites them, so they have to be in the repo it lives in.
 !docs/requests/*.md
