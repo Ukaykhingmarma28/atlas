@@ -472,6 +472,11 @@ mod tests {
             found,
             vec![
                 Extracted {
+                    kind: EntryKind::Preference,
+                    content: "Likes tabs over spaces".into(),
+                    confidence: 1.0
+                },
+                Extracted {
                     kind: EntryKind::Fact,
                     content: "Uses pnpm workspaces".into(),
                     confidence: 1.0

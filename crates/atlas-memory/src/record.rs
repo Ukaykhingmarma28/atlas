@@ -2910,7 +2910,9 @@ fn chain_link(prev: &[u8], row: &[u8]) -> [u8; 32] {
     let mut h = blake3::Hasher::new();
     h.update(prev);
     h.update(row);
-    *h.finalize().as_bytes()
+    // Not `h.finalize()`: with `sha2::Digest` in scope and blake3's
+    // `traits-preview` feature on, that resolves to `Digest::finalize`.
+    *blake3::Hasher::finalize(&h).as_bytes()
 }
 
 /// Seal revision `rev` onto the revision before it (32 zero bytes for the
